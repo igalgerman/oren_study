@@ -422,9 +422,12 @@ def deploy_text(log):
     for k, v in env_file().items():
         if k.startswith("CLOUDFLARE_"): env[k] = v
     rc, out = run([BASH, "oren2/cf/tools/deploy.sh"], cwd=INTEG, env=env, log=log, timeout=900)
-    if rc != 0 or not out.strip().startswith("ok"):
+    last = (out.strip().splitlines() or [""])[-1]           # deploy.sh prints progress lines first, "ok <url>" last (#50)
+    if rc != 0 or not last.startswith("ok"):
         raise Blocked("deploy failed")
-    url = out.strip().splitlines()[-1]
+    url = last
+    if not CFG.get("pregen", False):                       # off until #68: pregen burns the free KV write limit
+        return f"deployed {url} (pregen off)"
     rc, _ = run(["node", "oren2/cf/tools/pregen.js"], cwd=INTEG, env=env, log=log, timeout=1800)
     return f"deployed {url}" + ("" if rc == 0 else " (pregen failed, see log)")
 
