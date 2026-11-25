@@ -203,10 +203,12 @@ step();</script></html>`;
  const key=await ttsKey(voice,rate,text);
  const hit=await env.SAVES.get(key,'arrayBuffer');if(hit)return new Response(hit,{headers:AH});
  if(req.headers.get('x-cache-only'))return new Response('{"ok":false,"why":"not made yet"}',{status:404,headers:JH});/* "download all voices" never creates new sentences */
+ const du=await dayUsed(env);if(du>=dayBudget(env))return overBudget();
  const month=monthKey();const used=+(await env.SAVES.get(month))||0;
  if(used+text.length>TTS_CAP)return new Response('{"ok":false,"why":"monthly cap"}',{status:429,headers:JH});
  const bin=await synth(env,voice,rate,text);if(!bin.length)return new Response(JSON.stringify({ok:false,why:'google '+bin.status}),{status:502,headers:JH});
  await env.SAVES.put(key,bin);await env.SAVES.put(month,String(used+text.length),{expirationTtl:60*60*24*62});
+ if((du+1)%%5===0||du+1>=dayBudget(env))await dayPut(env,du+1);
  return new Response(bin,{headers:AH});}
 /* English voice for the game's English words: blind "A or B" like /api/tts/final (winner stays, a new voice challenges it) */
 function enPage(){const F=['Kore','Leda','Sulafat','Aoede','Achernar','Despina'];
@@ -226,6 +228,15 @@ step();</script></html>`;
 const AH={'content-type':'audio/mpeg','cache-control':'public, max-age=31536000, immutable'};/* fixed audio reaches devices through &k=ver (see /api/tts/status) */
 let verV=null,verAt=0;async function ttsVer(env,fresh){if(fresh||verV==null||Date.now()-verAt>FX_TTL){verV=+(await env.SAVES.get('ttsver'))||1;verAt=Date.now();}return verV;}
 const monthKey=()=>'ttsuse:'+new Date().toISOString().slice(0,7);
+/* Daily KV write budget (Workers KV free tier: ~1000 writes a day, shared with the family save). Voice (TTS) writes stop at
+   TTS_DAY_BUDGET (env, default 600 new sentences a day); the family save (api) never looks at it. State: one KV key 'ttsday:YYYY-MM-DD',
+   written once per batch (pregen, queue) and at most every 5th single sentence. When it is used up /api/tts answers 429
+   and the game plays the browser voice for audio that is not made yet. */
+const dayBudget=env=>+env.TTS_DAY_BUDGET||600;
+const dayKey=()=>'ttsday:'+new Date().toISOString().slice(0,10);
+const dayUsed=async env=>+(await env.SAVES.get(dayKey()))||0;
+const dayPut=(env,n)=>env.SAVES.put(dayKey(),String(n),{expirationTtl:172800});
+const overBudget=()=>J({ok:false,error:'daily voice budget used, retry tomorrow',why:'daily budget'},429);
 const ttsKey=async(voice,rate,text)=>'tts:'+await sha(voice+'|'+rate.toFixed(2)+'|'+text);
 /* Pronunciation dictionary for the Hebrew voices: KV 'ttsfixw' = {plainWord: vocalized or respelled}, exact whole words only
    (a word = a run of Hebrew letters/nikud; prefixed forms like ועשרות are their own entries). Kept in isolate memory for 5 minutes. */
@@ -248,10 +259,11 @@ async function fix(req,env){if(req.method==='GET')return J(await fixWords(env,tr
  const W={...await fixWords(env,true)};let changed=false;
  for(const k in words){if(words[k]===null){if(k in W){delete W[k];changed=true;}}else if(W[k]!==words[k]){W[k]=words[k];changed=true;}}
  if(changed){await env.SAVES.put('ttsfixw',JSON.stringify(W));fxW=W;fxAt=Date.now();}
+ const du=await dayUsed(env);if(du>=dayBudget(env))return overBudget();
  const used=+(await env.SAVES.get(monthKey()))||0;if(used+t.length>TTS_CAP)return J({ok:false,why:'monthly cap'},429);
  const sent=v.startsWith('he-')?await fixText(env,heNum(noEmoji(t)),only):noEmoji(t);
  const bin=await synth(env,v,rate,t,only);if(!bin.length)return J({ok:false,why:'google '+bin.status},502);
- await env.SAVES.put(await ttsKey(v,rate,t),bin);
+ await env.SAVES.put(await ttsKey(v,rate,t),bin);if((du+1)%%5===0||du+1>=dayBudget(env))await dayPut(env,du+1);
  return J({ok:true,sent,changed,words:Object.keys(W).length});}
 /* a sentence made fresh (with the dictionary) and NOT stored: variants to choose from, checks of a respelling */
 async function tryTts(env,t,v,rt){const used=+(await env.SAVES.get(monthKey()))||0;if(used+t.length>TTS_CAP)return J({ok:false,why:'monthly cap'},429);
@@ -284,14 +296,16 @@ async function synth(env,voice,rate,text,only){text=noEmoji(text);if(voice.start
    one KV write per new sentence and the month counter written once per call. */
 async function pregen(req,env){if(req.method!=='POST')return new Response('{"error":"method"}',{status:405,headers:JH});
  let L;try{L=(await req.json()).texts;if(!Array.isArray(L)||L.length>15||L.some(t=>typeof t!=='string'&&!(t&&typeof t==='object'&&typeof t.t==='string')))throw 0;}catch(e){return new Response('{"error":"bad request"}',{status:400,headers:JH});}
- const month=monthKey();let used=+(await env.SAVES.get(month))||0;const u0=used;const out=[];
+ const month=monthKey();let used=+(await env.SAVES.get(month))||0;const u0=used;const out=[];const du=await dayUsed(env);let made=0;
  for(const x of L){const c=qClean(x);if(c==null){out.push(typeof x==='string'||!x.t.trim()?'empty':'bad voice');continue;}const i=qItem(c),text=i[0],voice=i[1],rate=+i[2];
   const key=await ttsKey(voice,rate,text);
   if(await env.SAVES.get(key,'arrayBuffer')){out.push('hit');continue;}
+  if(du+made>=dayBudget(env)){out.push('budget');continue;}
   if(used+text.length>TTS_CAP){out.push('cap');continue;}
   const bin=await synth(env,voice,rate,text);if(!bin.length){out.push('google '+bin.status);continue;}
-  await env.SAVES.put(key,bin);used+=text.length;out.push('new');}
+  await env.SAVES.put(key,bin);used+=text.length;made++;out.push('new');}
  if(used!==u0)await env.SAVES.put(month,String(used),{expirationTtl:60*60*24*62});
+ if(made)await dayPut(env,du+made);
  return new Response(JSON.stringify({ok:true,res:out,used,cap:TTS_CAP}),{headers:JH});}
 const J=(o,s)=>new Response(JSON.stringify(o),{status:s||200,headers:JH});
 /* Automatic pregen queue (no cron, no person): cf/tools/pregen.js POSTs the sentences the server does not have yet
@@ -319,14 +333,15 @@ async function queue(req,env){
  return J({ok:true,added,left:s.q.length,doneToday:s.n});}
 async function qRun(env){if(!env.GOOGLE_TTS_KEY)return;const now=Date.now();if(now-qAt<QGAP)return;qAt=now;
  const s=await qLoad(env);if(!s.q.length||s.n>=QDAY||now-(s.at||0)<QGAP)return;
- const month=monthKey();let used=+(await env.SAVES.get(month))||0;const u0=used,done=new Set();let made=0,looked=0;
+ const month=monthKey();let used=+(await env.SAVES.get(month))||0;const u0=used,done=new Set();let made=0,looked=0;const du=await dayUsed(env);
  for(const x of s.q){if(made>=QN||s.n>=QDAY||looked>=4*QN)break;looked++;const i=qItem(x),t=i[0],v=i[1],r=+i[2];
   const key=await ttsKey(v,r,t);
   if(await env.SAVES.get(key,'arrayBuffer')){done.add(qId(x));continue;}
-  if(used+t.length>TTS_CAP)break;
+  if(du+made>=dayBudget(env)||used+t.length>TTS_CAP)break;
   const bin=await synth(env,v,r,t);if(!bin.length){if(bin.status===400)done.add(qId(x));else break;continue;}/* 400: Google will never make it */
   await env.SAVES.put(key,bin);used+=t.length;made++;s.n++;done.add(qId(x));}
  if(used!==u0)await env.SAVES.put(month,String(used),{expirationTtl:60*60*24*62});
+ if(made)await dayPut(env,du+made);
  if(!done.size)return;
  const s2=await qLoad(env);/* read again so sentences queued meanwhile are kept */
  s2.q=s2.q.filter(x=>!done.has(qId(x)));s2.at=now;s2.day=s.day;s2.n=s.n;await env.SAVES.put('ttsq',JSON.stringify(s2));}

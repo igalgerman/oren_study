@@ -33,7 +33,7 @@ const path = require('path');
   const n0 = writes();
   const pg = await f('/api/tts/pregen', { method: 'POST', body: JSON.stringify({ texts: ['שָׁלוֹם', 'אַחַת', 'שְׁתַּיִם ', ''] }) }); const pj = await pg.json();
   ok('pregen skips cached and creates new', pg.status === 200 && pj.res.join() === 'hit,new,new,empty' && calls.length === 4, JSON.stringify(pj));
-  ok('pregen: one KV write per new sentence, month counter once', writes() - n0 === 2 && +kv.get('ttsuse:' + new Date().toISOString().slice(0, 7)) === 'שָׁלוֹם'.length + 1 + 'אַחַת'.length + 'שְׁתַּיִם'.length);
+  ok('pregen: one KV write per new sentence, month and day counters once', writes() - n0 === 3 && +kv.get('ttsuse:' + new Date().toISOString().slice(0, 7)) === 'שָׁלוֹם'.length + 1 + 'אַחַת'.length + 'שְׁתַּיִם'.length);
   const a3 = await f('/api/tts?t=' + encodeURIComponent('שְׁתַּיִם') + '&v=he-IL-Chirp3-HD-Kore&r=0.9');
   ok('pregen sentence served from cache with the client key', a3.status === 200 && calls.length === 4);
   ok('pregen rejects >15 texts / GET / bad json', (await f('/api/tts/pregen', { method: 'POST', body: JSON.stringify({ texts: Array(16).fill('a') }) })).status === 400 && (await f('/api/tts/pregen')).status === 405 && (await f('/api/tts/pregen', { method: 'POST', body: 'x' })).status === 400);
@@ -71,7 +71,7 @@ const path = require('path');
   ok('page load schedules background work', (await fc('/')) === 1);
   let q = await qs();
   ok('batch: at most 5 new, cached ones skipped free', calls.length - c0 === 5 && q.left === 4 && q.doneToday === 5, JSON.stringify(q));
-  ok('batch: KV writes = new sentences + queue + month counter', puts === 7, 'puts ' + puts);
+  ok('batch: KV writes = new sentences + queue + month counter + day counter', puts === 8, 'puts ' + puts);
   c0 = calls.length; now += 5000; await fc('/api/save/' + id);
   ok('no new batch within the gap', calls.length === c0);
   now += 31000; await fc('/api/save/' + id); q = await qs();
@@ -83,6 +83,14 @@ const path = require('path');
   now += 31000; c0 = calls.length; await fc('/'); q = await qs();
   ok('daily budget (300) respected', calls.length - c0 === 2 && q.doneToday === 300 && q.left === 4, JSON.stringify(q));
   now += 31000; c0 = calls.length; await fc('/'); ok('over budget: nothing more today', calls.length === c0);
+  // daily KV write budget (#68): TTS writes stop at the budget, family saves never do
+  const DK = 'ttsday:' + new Date().toISOString().slice(0, 10);
+  kv.set(DK, '599'); { const st2 = JSON.parse(kv.get('ttsq')); st2.n = 0; kv.set('ttsq', JSON.stringify(st2)); }
+  await f('/api/tts/queue', { method: 'POST', body: JSON.stringify(['תַּקְצִיב א', 'תַּקְצִיב ב', 'תַּקְצִיב ג']) });
+  now += 31000; c0 = calls.length; await fc('/');
+  ok('queue batch stops at the daily budget (1 left = 1 sentence)', calls.length - c0 === 1 && kv.get(DK) === '600', calls.length - c0 + ' ' + kv.get(DK));
+  now += 31000; c0 = calls.length; await fc('/'); ok('budget used: background queue makes nothing more', calls.length === c0);
+  kv.set(DK, '0');
   Date.now = realNow; env.SAVES.put = put0;
   // pronunciation dictionary: POST /api/tts/fix merges words, re-makes the sentence under its ORIGINAL key; synth applies whole words only
   const S1 = 'יש עשרות, אחדות, ועשרות.'; const u1 = '/api/tts?t=' + encodeURIComponent(S1) + '&v=he-IL-Chirp3-HD-Kore&r=0.9';
@@ -144,6 +152,20 @@ const path = require('path');
   const v0 = (await (await f('/api/tts/status')).json()).ver; const vb = await (await f('/api/tts/ver', { method: 'POST' })).json();
   ok('status gives the audio version; POST /api/tts/ver bumps it', v0 === 1 && vb.ver === 2 && (await (await f('/api/tts/status')).json()).ver === 2 && kv.get('ttsver') === '2');
   const ck = calls.length; ok('k= is ignored by the cache key', (await f('/api/tts?t=' + encodeURIComponent('כמה עשרות?') + '&r=0.9&k=2')).status === 200 && calls.length === ck);
+  // daily budget (#68): pregen and new single sentences stop at the budget; cached audio and saves keep working
+  kv.set(DK, '598'); const cb = calls.length;
+  const pb = await (await f('/api/tts/pregen', { method: 'POST', body: JSON.stringify({ texts: ['בּוּדְגֶט 1', 'בּוּדְגֶט 2', 'בּוּדְגֶט 3'] }) })).json();
+  ok('pregen: stops at the daily budget', pb.res.join() === 'new,new,budget' && calls.length - cb === 2 && kv.get(DK) === '600', JSON.stringify(pb) + ' ' + kv.get(DK));
+  const nb = await f('/api/tts?t=' + encodeURIComponent('משפט חדש לגמרי') + '&r=0.9'); const nbj = await nb.json().catch(() => null);
+  ok('single new sentence: 429 with a clear message, no Google call', nb.status === 429 && nbj && /daily voice budget used, retry tomorrow/.test(nbj.error) && calls.length - cb === 2, nb.status + ' ' + JSON.stringify(nbj));
+  ok('cached sentence still served over the budget', (await f('/api/tts?t=' + encodeURIComponent('בּוּדְגֶט 1') + '&r=0.9')).status === 200 && calls.length - cb === 2);
+  const sv = await f('/api/save/' + id, { method: 'PUT', body: JSON.stringify({ v: 4, gems: 9 }) });
+  ok('family save is never blocked by the voice budget', sv.status === 200 && JSON.parse(kv.get(id)).gems === 9);
+  const fx2 = await f('/api/tts/fix', { method: 'POST', body: JSON.stringify({ t: 'עוד משפט', words: {} }) });
+  ok('fix over the budget: 429, nothing written for audio', fx2.status === 429);
+  kv.set(DK, '0'); env.TTS_DAY_BUDGET = '2'; kv.set(DK, '1');
+  ok('budget is configurable (TTS_DAY_BUDGET)', (await f('/api/tts?t=' + encodeURIComponent('אחד') + '&r=0.9')).status === 200 && (await f('/api/tts?t=' + encodeURIComponent('שניים') + '&r=0.9')).status === 429);
+  delete env.TTS_DAY_BUDGET; kv.set(DK, '0');
   // a KV write that fails (daily write limit) must give readable JSON, not Cloudflare's HTML error 1101 (#22)
   const realPut = env.SAVES.put; env.SAVES.put = async () => { throw new Error('KV put() limit exceeded for the day.'); };
   const fl = await f('/api/tts/fix', { method: 'POST', body: JSON.stringify({ t: S1, words: { 'עשרות': 'עֲשָׂרוֹתא' } }) }); const flj = await fl.json().catch(() => null);

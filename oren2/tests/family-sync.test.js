@@ -1,10 +1,10 @@
 // Website mode: every device shares one fixed family save (no codes or links) through a fake /api/save server; an old per-device family id is merged in once.
 const L = require('./lib');
 const http=require('http'),fs=require('fs'),path=require('path');const {chromium}=require('playwright');const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const PUB=path.join(L.ROOT,'cf','public');const KV=new Map();let puts=0;
+const PUB=path.join(L.ROOT,'cf','public');const KV=new Map();let puts=0,FAILN=0;
 const srv=http.createServer(async(q,r)=>{const m=/^\/api\/save\/([a-f0-9]{32})$/.exec(q.url);
   if(m){if(q.method==='GET'){const v=KV.get(m[1]);r.writeHead(v?200:404,{'content-type':'application/json'});return r.end(v||'{}');}
-    if(q.method==='PUT'){let b='';q.on('data',c=>b+=c);q.on('end',()=>{puts++;KV.set(m[1],b);r.end('{"ok":true}');});return;}}
+    if(q.method==='PUT'){let b='';q.on('data',c=>b+=c);q.on('end',()=>{puts++;if(FAILN>0){FAILN--;r.writeHead(500);return r.end('{}');}KV.set(m[1],b);r.end('{"ok":true}');});return;}}
   const f=path.join(PUB,q.url==='/'?'index.html':q.url.split('?')[0].split('#')[0]);if(fs.existsSync(f)){r.end(fs.readFileSync(f));}else{r.writeHead(404);r.end();}}).listen(0);const BASE=()=>'http://localhost:'+srv.address().port;
 const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''));
 const FIX='a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0',OLD='0123456789abcdef0123456789abcdef';
@@ -32,6 +32,12 @@ const FIX='a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0',OLD='0123456789abcdef0123456789abcd
  const before=KV.get(fid);await B.evaluate(()=>{window.TAL.parentPanel('try');});await B.locator('#sPar .bigbtn',{hasText:'כניסה למשחק כהורה'}).click();await sleep(300);await B.evaluate(()=>{window.OREN.save.gems=999;window.OREN.persist();});await sleep(2000);
  ok('parent sandbox never uploads',JSON.parse(KV.get(fid)).gems!==999);
  ok('save note says family',(await A.evaluate(()=>{window.TAL_noHome=true;window.OREN.showJourney();const t=(document.querySelector('#saveNote')||{}).textContent||'';window.TAL_noHome=false;return t;})).includes('לַמִּשְׁפָּחָה'));
+ // a failing save (e.g. KV daily limit) is retried with a short backoff and noted for the parent, not lost
+ FAILN=2;await A.evaluate(()=>{window.__famRetry=50;window.__fast=false;const O=window.OREN;O.save.gems=51;O.persist();});
+ await A.waitForFunction(()=>true);for(let i=0;i<60&&JSON.parse(KV.get(fid)).gems!==51;i++)await sleep(100);
+ ok('failed save is retried until it works',JSON.parse(KV.get(fid)).gems===51&&FAILN===0,String(FAILN));
+ ok('failed save is noted in the parent problem log',await A.evaluate(()=>(window.OREN.save.iss||[]).some(x=>x.k==='sync')));
+ await A.evaluate(()=>{window.__fast=true;});
  // device C still has an old per-device family id: its old remote save and its local save are merged into the fixed one, once
  KV.set(OLD,JSON.stringify({v:4,t:1,s:{'sub-0-0':2},m:{},seen:{},story:{},rq:[],days:['2026-01-02']}));
  const C=await (await b.newContext({viewport:{width:1366,height:768}})).newPage();
