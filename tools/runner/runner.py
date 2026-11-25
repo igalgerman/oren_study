@@ -169,7 +169,7 @@ def parent_args():
 
 def agent(name, prompt, cwd, tools, log, marker, n, role):
     """Run an INTERACTIVE claude in a herdr terminal the owner can open; return (screen text, marker line).
-    Terminals are left open afterwards. Falls back to the hidden `claude -p` when herdr is unavailable."""
+    Terminals are closed after success and left open when BLOCKED. Falls back to the hidden `claude -p` when herdr is unavailable."""
     if not USE_HERDR:
         out = claude_hidden(prompt, cwd, tools, log)
         return out, last_line(out, marker)
@@ -319,7 +319,7 @@ def process_locked(issue):
             raise Blocked(res or "worker gave no RESULT line")
         if lane == "review":
             gh("issue", "close", str(n), "--comment", "Review report posted above (runner).")
-            set_labels(n, remove=["in-progress"]); return "DONE report posted"
+            set_labels(n, remove=["in-progress"]); close_windows(n); return "DONE report posted"
 
         verdict = ""
         for rnd in (1, 2):
@@ -348,11 +348,18 @@ def process_locked(issue):
         gh("issue", "close", str(n), "--comment", f"Merged to {BRANCH}, tests green, {dep}.")
         set_labels(n, remove=["in-progress"])
         run(["git", "worktree", "remove", "--force", str(wt)], cwd=ROOT, log=log)
+        close_windows(n)
         return f"DONE {dep}"
     except Blocked as e:
         block(n, str(e), log); return f"BLOCKED: {e}"
     except Exception as e:                      # any crash: never leave the issue in-progress
         block(n, f"runner error: {e!r}", log); return f"BLOCKED: runner error {e!r}"
+
+def close_windows(n):
+    """After a successful issue: close its worker/reviewer windows (kept open when BLOCKED, so the owner can look)."""
+    if not USE_HERDR: return
+    for t in (f"issue-{n}", f"issue-{n}-fix", f"review-{n}", f"review-{n}-2"):
+        hc("kill", t, timeout=30); hc("rm", t, timeout=30)
 
 # ---------- main ----------
 def issue_by_number(n):
