@@ -22,13 +22,13 @@ const SHOTS=process.env.GAPS_SHOTS;                 /* folder for screenshots */
 
  /* ---------- data: nikud, parsing, voice text ---------- */
  const D=await p.evaluate(()=>{const G=window.GAPS;const bad=[];const NIK=/[֑-ׇ]/;
-   const ex={'סִירָה':['סִי','ia'],'חָתוּל':['חָ','au'],'שָׁלוֹם':['שָׁ','ao'],'בֵּיצָה':['בֵּי','ea'],'מֶלֶךְ':['מֶ','e'],'כִּבְשָׂה':['כִּ','isa'],'דֻּבִּי':['דֻּ','ui'],'שׁוּק':['שׁוּ','u'],'אוֹר':['אוֹ','o'],'יָדַיִם':['יָ','ai'],'צְפַרְדֵּעַ':['צְ','sae'],'אֹהֶל':['אֹ','oe']};
+   const ex={'סִירָה':['סִי','ia'],'חָתוּל':['חָ','au'],'שָׁלוֹם':['שָׁ','ao'],'בֵּיצָה':['בֵּי','ea'],'מֶלֶךְ':['מֶ','e'],'כִּבְשָׂה':['כִּ','isa'],'דּוּבִּי':['דּוּ','ui'],'שׁוּק':['שׁוּ','u'],'אוֹר':['אוֹ','o'],'יָדַיִם':['יָ','ai'],'צְפַרְדֵּעַ':['צְ','sae'],'אוֹהֶל':['אוֹ','oe']};
    for(const [w,[s1,vs]] of Object.entries(ex)){const x=G.WD.find(y=>y.w===w);if(!x){bad.push('missing '+w);continue;}if(!x.s1||x.s1.s!==s1)bad.push('s1 '+w+' '+(x.s1&&x.s1.s));if([...new Set(vs)].sort().join('')!==x.vs.slice().sort().join(''))bad.push('vowels '+w+' '+x.vs.join(''));}
    G.WD.forEach(w=>{if(!w.syl.length)bad.push('no syllables '+w.w);if(!(w.r>=0))bad.push('rung '+w.w);if(w.spr&&!window.TAL.ALLSPR(w.spr))bad.push('sprite '+w.spr);
      const fs=window.__fullSpell(w.w);if(/[^א-ת]/.test(fs)||fs.length<w.plain.length)bad.push('fullSpell '+w.w+' → '+fs);});
    const dup=G.WD.map(w=>w.w).filter((w,i,a)=>a.indexOf(w)!==i);if(dup.length)bad.push('dup '+dup);
    const perRung=[0,1,2,3,4,5].map(r=>G.WD.filter(w=>w.r===r).length);
-   const want={'חַלּוֹן':'חלון','דֻּבִּי':'דובי','סֻכָּה':'סוכה','שֻׁלְחָן':'שולחן','מִטָּה':'מיטה','קֻפָּה':'קופה','תַּנִּין':'תנין','שׁוֹקוֹלָד':'שוקולד','דְּבוֹרָה':'דבורה','גִּיטָרָה':'גיטרה','בֻּבָּה':'בובה','סְבִיבוֹן':'סביבון'};
+   const want={'חַלּוֹן':'חלון','דּוּבִּי':'דובי','סוּכָּה':'סוכה','שׁוּלְחָן':'שולחן','מִטָּה':'מיטה','קוּפָּה':'קופה','תַּנִּין':'תנין','שׁוֹקוֹלָד':'שוקולד','דְּבוֹרָה':'דבורה','גִּיטָרָה':'גיטרה','בּוּבָּה':'בובה','סְבִיבוֹן':'סביבון'};
    for(const [w,f] of Object.entries(want))if(window.__fullSpell(w)!==f)bad.push('fullSpell '+w+' → '+window.__fullSpell(w)+' (want '+f+')');
    /* every Hebrew word a child sees has nikud */
    const kid=[];G.RUNG.forEach(r=>kid.push(r.n,r.say));G.FINALS.forEach(f=>kid.push(f[1],f[3]));Object.values(G.ACTS).flat().forEach(a=>kid.push(a.name));
