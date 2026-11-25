@@ -127,6 +127,11 @@ def waiting_now(status, screen):
     """True when the window waits for a person: a permission/trust menu (blocked) or a finished turn ending in QUESTION:."""
     return status == "blocked" or (status in ("done", "idle") and bool(pending_question(screen)))
 
+def is_stale_window(status, screen):
+    """A live window found when an agent starts is from an earlier run, so if its turn already finished (done/idle) its marker is old news.
+    Only windows still working, blocked, or waiting for an answer are re-attached."""
+    return status in ("done", "idle") and not pending_question(screen)
+
 def should_park(since, now, minutes):
     """since = when the window started waiting (epoch) or None. Park (give the lane back) after `minutes` of waiting."""
     return since is not None and now - since >= minutes * 60
@@ -291,6 +296,10 @@ def agent(name, prompt, cwd, tools, log, marker, n, role):
     if not USE_HERDR:
         out = claude_hidden(prompt, cwd, tools, log)
         return out, last_line(out, marker)
+    if live(name):
+        info0 = hc_json("get", name, "--json"); screen0 = hc("read", name, "--lines", "400")[1]
+        if is_stale_window(info0.get("status"), screen0):      # finished before this run: its old verdict/result must not be reused
+            hc("kill", name, timeout=30); hc("rm", name, timeout=30)
     if not live(name):
         # bash wrapper only puts the python3 shim on PATH; the prompt goes after `--` ("--allowedTools" is variadic)
         cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), "--label", f"issue={n}", "--label", f"role={role}", *space_args(), *parent_args(),

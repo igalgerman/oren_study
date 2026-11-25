@@ -124,3 +124,12 @@ _p = W.parse_observer("noise\nOBSERVER: #3 needs no owner → label ready-for-ag
 assert _p == ["OBSERVER: #3 needs no owner → label ready-for-agent", "OBSERVER: backlog low → add work"]
 assert len(W.parse_observer(NL.join(f"OBSERVER: p{i} → f" for i in range(12)))) == 8
 print("ok observer")
+
+# stale window on resume: a finished (done/idle) window is stale, because every window found at the start of a run is older than this run
+# (and than the latest push); only working / blocked / waiting-for-an-answer windows are re-attached
+assert r.is_stale_window("done", scr("● hi", "  VERDICT: FIX", "❯"))                       # old finished review: stale
+assert r.is_stale_window("idle", scr("  RESULT: DONE"))
+assert not r.is_stale_window("working", scr("  VERDICT: FIX"))
+assert not r.is_stale_window("blocked", "")
+assert not r.is_stale_window("done", q)                                                      # finished but asked the owner: keep
+print("ok stale-window")
