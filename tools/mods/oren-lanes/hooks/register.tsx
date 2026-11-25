@@ -78,7 +78,10 @@ export const register: Register = on => {
           flow = flowRows(issues, closed, windows, prs)
           const dayAgo = Date.now() - 24 * 3600 * 1000
           const today = closed.filter(c => Date.parse((c as { closedAt?: string }).closedAt ?? '') > dayAgo).length
-          done = `done: ${today} in 24h · ${closed.length} total`
+          const g = groupIssues(issues)
+          const agentWork = g.running.count + g.ready.count + g.waiting.count
+          done = `backlog ${closed.length}/${closed.length + issues.length} done · ${today} in 24h · left ${issues.length}: ${g.running.count} running, ${g.ready.count} ready, ${g.waiting.count} waiting, ${g.needsYou.count + g.triage.count} need you`
+            + (agentWork <= 1 ? ' · ⚠ almost no work for the lanes — add to the backlog (/idea, /task)' : '')
         } catch { /* flow is optional */ }
         let usage = ''
         try { usage = usageText(((await $.session.usage()).rateLimits ?? []) as any) } catch { /* no reading */ }
