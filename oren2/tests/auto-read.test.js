@@ -11,7 +11,9 @@ const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + 
   const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message)); await p.goto(L.URL); await L.noCoach(p); await sleep(300);
   await p.evaluate(() => { const O = window.OREN, T = window.TAL; O.save.story.intro = 1; T.S().prof = { an: 'cat', col: '#3a8fc4', love: 'art' }; O.showMap(); });
   await sleep(500);
-  const said = async (f, ms = 800) => { await p.evaluate(() => { speechSynthesis.log = []; window.__fast = false; }); await f(); await sleep(ms);
+  /* neg = nothing should be read: wait the full time. Otherwise poll until the reading happens (max 8 s, not a fixed sleep), then 300 ms for any extra reading */
+  const said = async (f, ms = 800, neg = false) => { await p.evaluate(() => { speechSynthesis.log = []; window.__fast = false; }); await f();
+    if (neg) await sleep(ms); else { await p.waitForFunction(() => speechSynthesis.log.length > 0, null, { timeout: 8000 }).catch(() => {}); await sleep(300); }
     return p.evaluate(() => { window.__fast = true; return speechSynthesis.log.slice(); }); };
   let s = await said(() => p.evaluate(() => window.OREN.story([['nar', 'שָׁלוֹם לְךָ חָבֵר'], ['nar', 'הַפַּעַם הַשְּׁנִיָּה']], () => {})));
   ok('story panel is read by itself', s.length === 1 && /של/.test(s[0]), JSON.stringify(s));
@@ -37,11 +39,11 @@ const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + 
   s = await said(() => p.evaluate(() => window.TAL.openHub()));
   ok('screen instruction is read by itself', s.length === 1, JSON.stringify(s));
   await p.evaluate(() => { window.OREN.save.set.autoRead = 0; });
-  s = await said(() => p.evaluate(() => window.OREN.kingdom()));
+  s = await said(() => p.evaluate(() => window.OREN.kingdom()), 800, true);
   ok('parent setting off: nothing read', s.length === 0, JSON.stringify(s));
   await p.evaluate(() => { delete window.OREN.save.set.autoRead; window.TAL.parentPanel('voice'); }); await sleep(300);
   ok('parent voice section has the auto-read switch (on)', await p.evaluate(() => [...document.querySelectorAll('#sPar .pchip')].some(x => /הקראה אוטומטית/.test(x.textContent) && x.classList.contains('on'))));
-  s = await said(() => p.evaluate(() => { window.OREN.sayNow = 'בדיקה בלוח הורים'; }));
+  s = await said(() => p.evaluate(() => { window.OREN.sayNow = 'בדיקה בלוח הורים'; }), 800, true);
   ok('parent screen: nothing read', s.length === 0, JSON.stringify(s));
   ok('no page errors', !errs.length, errs.join(' | '));
   await b.close(); L.finish('auto-read', res);

@@ -131,7 +131,7 @@ const EMIT=await p.evaluate(()=>/tlDone/.test(String(window.TAL.record)));   /* 
  /* ---------- word race (honor mode + a fake microphone) ---------- */
  await p.evaluate(()=>{window.GAPS.dict=null;window.GAPS.race(()=>window.OREN.showMap());});await sleep(300);await shot('race-start');
  await p.click('#sTal .btnrow .bigbtn');await sleep(300);await shot('race-run');
- for(let k=0;k<5;k++){await p.evaluate(()=>window.__race.ok.click());await sleep(80);}
+ await p.evaluate(()=>{for(let k=0;k<5;k++)window.__race.ok.click();});   /* all five in one tick: under load, separate 80ms sleeps can add up past half a second */
  const fast=await p.evaluate(()=>window.__race.count);for(let k=0;k<4;k++){await sleep(520);await p.evaluate(()=>window.__race.ok.click());}
  const c2=await p.evaluate(()=>window.__race.count);ok('word race: taps faster than half a second are ignored',fast<=1&&c2>=4,fast+' '+c2);
  await p.evaluate(()=>window.__race.end());await sleep(300);const fl=await tl('read-flu');ok('word race records the personal best',fl&&fl.b===c2,JSON.stringify(fl));await shot('race-end');await closeOv();
