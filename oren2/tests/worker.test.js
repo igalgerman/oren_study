@@ -3,7 +3,7 @@ const L = require('./lib');
 const path = require('path');
 (async () => {
   const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + n + (i ? ' — ' + i : ''));
-  const m = await import(path.join(L.ROOT, 'cf', 'dist', '_worker.js'));
+  const m = await import(require('url').pathToFileURL(path.join(L.ROOT, 'cf', 'dist', '_worker.js')).href);
   const kv = new Map(); const env = { SAVES: { get: async k => kv.get(k) || null, put: async (k, v) => { kv.set(k, v); } } };
   const f = (u, o) => m.default.fetch(new Request('https://oren.test' + u, o), env);
   const id = 'ab'.repeat(16);
