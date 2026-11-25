@@ -44,6 +44,11 @@ def screen_tail(name, n=12):
     lines = [l.rstrip() for l in out.splitlines() if l.strip() and not set(l.strip()) <= set("─╌│ ")]
     return "\n".join(lines[-n:])
 
+def pin(t, on):
+    """Pin a window that waits for the owner to the top of Herdr's agent lists (unpin when answered)."""
+    if t.get("address") and Path(R.HERDR_APP).exists():
+        R.run([R.HERDR_APP, "do", "terminal.pin", "--terminal", t["address"], "--pinned", "true" if on else "false"], timeout=30)
+
 def check_windows(ts):
     names = {t.get("name") or "" for t in ts}
     if "orchestrator" not in names: log("orchestrator window is not running")
@@ -61,6 +66,7 @@ def check_windows(ts):
             h = hashlib.sha1((q or tail[-600:]).encode()).hexdigest()
             if told.get(name) != h:
                 told[name] = h
+                pin(t, True)
                 what = f"asks: {q}" if q else "is waiting for an answer"
                 tell(f"WATCHDOG: window {name} {what}. Ask the owner ONE short line in your window, then answer it "
                      f"(hc send {name} \"..\" or the menu option he picks). Its screen ends with:{chr(10)}{tail}")
@@ -68,7 +74,7 @@ def check_windows(ts):
             if m and R.should_park(since, now, R.PARK_MINUTES + 3) and R.park_issue(int(m[1]), name, tail, since):
                 log(f"parked #{m[1]} ({name} waiting since {time.strftime('%H:%M', time.localtime(since))})")
             continue
-        waiting_since.pop(name, None)
+        if waiting_since.pop(name, None) is not None: pin(t, False)  # answered: unpin
         if told.get(name) not in (None, "idle"): told.pop(name)       # answered: a later new question is reported again
         if status in ("done", "idle") and name.startswith(("issue-", "review-")):
             marker = "VERDICT:" if name.startswith("review-") else "RESULT:"
@@ -103,7 +109,7 @@ def leftovers(ts, closed, blocked):
     out = []
     for t in ts:
         name = t.get("name") or ""
-        m = re.match(r"^(issue|review|run)-(\d+)(-fix|-2)?$", name)
+        m = re.match(r"^(issue|review|run|intake)-(\d+)(-fix|-2)?$", name)
         if not m: continue
         n, role, suffix = int(m.group(2)), m.group(1), m.group(3) or ""
         if t.get("state") != "live":                                       # finished terminal: remove it (by address)
@@ -111,7 +117,7 @@ def leftovers(ts, closed, blocked):
             continue
         if n in blocked: continue                                           # parked: the owner looks at it later
         if n in closed: out.append(name); continue                          # issue done: everything for it goes
-        if role == "run" or t.get("status") not in ("done", "idle") or not t.get("marker"): continue
+        if role in ("run", "intake") or t.get("status") not in ("done", "idle") or not t.get("marker"): continue
         # a worker/reviewer that printed its RESULT/VERDICT and was superseded by the next step's window
         later = {"issue": [f"review-{n}", f"review-{n}-2", f"issue-{n}-fix"] if not suffix else [f"review-{n}-2"],
                  "review": [f"issue-{n}-fix"] if not suffix else []}[role]
@@ -127,7 +133,7 @@ def cleanup(ts):
     rows = []
     for t in ts:
         name = t.get("name") or ""
-        if not re.match(r"^(issue|review|run)-\d+", name): continue
+        if not re.match(r"^(issue|review|run|intake)-\d+", name): continue
         mk = "VERDICT:" if name.startswith("review-") else "RESULT:"
         marker = t.get("state") == "live" and t.get("status") in ("done", "idle") and bool(R.find_marker(screen_tail(name, 40), mk))
         rows.append({**t, "name": name, "marker": marker})

@@ -19,10 +19,11 @@ TERM = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--term=")), "
 INTEG = Path(CFG["worktree_prefix"] + "integrate")       # own checkout for merge/test/deploy, so a dirty orchestrator checkout never blocks it
 INTERACTIVE_NOTE = ("\nWhen you are completely finished, make the very last line of your final message exactly the marker line described above, "
                     "then stay open: the owner may open this terminal and ask you questions.\n"
-                    "If you need a decision from the owner, do NOT wait silently: end your turn with one line `QUESTION: <short question, with options>`. "
-                    "The orchestrator relays it to the owner and types the owner's answer back into this terminal; then continue.")
+                    "If you need a decision from the owner, do NOT wait silently: first print one line `QUESTION: <short question, with options>`, "
+                    "then ask it with the AskUserQuestion tool (this marks your window as waiting in Herdr, with a sound and an alert). "
+                    "The owner answers there, or the orchestrator relays his answer; then continue.")
 
-COMMON_TOOLS = ["Read", "Glob", "Grep", "Skill", "Bash(gh:*)"]
+COMMON_TOOLS = ["Read", "Glob", "Grep", "Skill", "AskUserQuestion", "Bash(gh:*)"]
 WORKER_TOOLS = COMMON_TOOLS + ["Edit", "Write", "Bash(git:*)", "Bash(node:*)", "Bash(npx:*)", "Bash(python3:*)",
                                "Bash(bash tools/:*)", "Bash(bash tests/:*)", "Bash(cd:*)", "Bash(ls:*)", "Bash(mkdir:*)"]
 READ_TOOLS = COMMON_TOOLS + ["Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"]
@@ -238,11 +239,27 @@ def claude_hidden(prompt, cwd, tools, log):
     return out
 
 # ---------- herdr terminals ----------
+HERDR_APP = CFG.get("herdr_app", r"C:\Users\97254\AppData\Local\Programs\herdr-app\herdr-app.exe")
+_SPACE = None
+def space_args():
+    """`--label herdr.space=<id>`: the terminal opens as a tab in that Herdr space, shows in the Agents panel and
+    gets Herdr's own blocked/done alerts. Space chosen by name (config herdr_space, default Oren_study_orech)."""
+    global _SPACE
+    if _SPACE is None:
+        _SPACE = ""
+        try:
+            rc, out = run([HERDR_APP, "ls"], timeout=30)
+            for sp in json.loads(out).get("spaces", []):
+                if sp.get("name") == CFG.get("herdr_space", "Oren_study_orech"): _SPACE = sp["id"]
+        except Exception:
+            pass
+    return ["--label", f"herdr.space={_SPACE}"] if _SPACE else []
+
 def show(name):
-    """Give the terminal its own tab in the Herdr app (herdr-app do terminal.keep), so the owner sees it at once.
-    It goes away with the terminal when the task succeeds. config: show = false turns it off."""
-    app = CFG.get("herdr_app", r"C:\Users\97254\AppData\Local\Programs\herdr-app\herdr-app.exe")
-    if not CFG.get("show", True) or not Path(app).exists(): return
+    """Fallback when no Herdr space was found: give the terminal its own tab (herdr-app do terminal.keep).
+    config: show = false turns it off."""
+    app = HERDR_APP
+    if not CFG.get("show", True) or not Path(app).exists() or space_args(): return   # already in a space via its label
     addr = hc_json("get", name, "--json").get("address")
     for _ in range(6):               # the app learns a new terminal a moment late ("no running terminal"): retry
         if addr and run([app, "do", "terminal.keep", "--terminal", addr, "--place", "tab"], timeout=30)[0] == 0: return
@@ -276,7 +293,7 @@ def agent(name, prompt, cwd, tools, log, marker, n, role):
         return out, last_line(out, marker)
     if not live(name):
         # bash wrapper only puts the python3 shim on PATH; the prompt goes after `--` ("--allowedTools" is variadic)
-        cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), "--label", f"issue={n}", "--label", f"role={role}", *parent_args(),
+        cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), "--label", f"issue={n}", "--label", f"role={role}", *space_args(), *parent_args(),
                BASH, "-c", 'export PATH="$1:$PATH"; shift; exec "$@"', "_", CFG["extra_path"],
                shutil.which("claude") or "claude", "--model", MODEL, "--permission-mode", "auto",
                "--allowedTools", *tools, "--", prompt + INTERACTIVE_NOTE]

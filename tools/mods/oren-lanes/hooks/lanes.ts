@@ -78,7 +78,7 @@ export function statusLine(d: OrenLanesData): string {
   const waiting = d.windows.filter(w => /^(issue|review|intake)-/.test(w.name) && w.state.endsWith('/blocked')).map(w => w.name)
   const you = [...d.groups.needsYou.titles.map(t => t.split(' ')[0]), ...waiting]
   if (you.length) s += ` · needs you: ${you.slice(0, 3).join(', ')}`
-  if (d.done) s += ` · ${d.done.replace('done: ', 'done ').replace(' in 24h', '/24h')}`
+  if (d.done) { const m = /^backlog (\d+\/\d+) done · (\d+) in 24h/.exec(d.done); if (m) s += ` · done ${m[1]} (${m[2]}/24h)`; if (d.done.includes('⚠')) s += ' · ⚠ add work' }
   if (d.usage) s += ` · ${d.usage.replace(/ → [^·]*?(?= ·|$)/g, '').trim()}`
   return s
 }
@@ -173,4 +173,59 @@ export function statsLines(text: string, nowSec: number): string[] {
     `avg build ${dur(avg(ps.filter(p => p.build !== undefined).map(p => p.build as number)))} · review ${dur(avg(ps.filter(p => p.review !== undefined).map(p => p.review as number)))}`,
     `last #${n}: build ${dur(last.build ?? null)} · review ${dur(last.review ?? null)} · merge ${dur(last.merge ?? null)}`,
   ]
+}
+
+/** One line per lane (3): what runs in it, or WHY it is free. */
+export function laneReasons(open: Issue[], wins: Win[], max = 3): string[] {
+  const lab = (i: Issue) => new Set((i.labels ?? []).map(x => x.name))
+  const openNums = new Set(open.map(i => i.number))
+  const running = open.filter(i => lab(i).has('in-progress'))
+  const rows = running.map((i, k) => `${k + 1}. #${i.number} running · ${i.title}`)
+  if (rows.length >= max) return rows.slice(0, max)
+  const coreBusy = running.some(i => lab(i).has('core'))
+  const ready = open.filter(i => { const l = lab(i); return l.has('ready-for-agent') && !l.has('in-progress') && !l.has('blocked')
+    && !parseBlockers(i.body).some(b => b !== i.number && openNums.has(b)) })
+  const startable = ready.filter(i => !(coreBusy && (lab(i).has('core') || !['pack', 'review'].some(x => lab(i).has(x)))))
+  const why: string[] = []
+  if (startable.length) why.push(`starting soon: #${startable.map(i => i.number).join(', #')}`)
+  const coreWait = ready.filter(i => !startable.includes(i))
+  if (coreWait.length) why.push(`#${coreWait.map(i => i.number).join(', #')} ready but only 1 core at a time`)
+  const waits = open.filter(i => lab(i).has('ready-for-agent') && !lab(i).has('in-progress') && parseBlockers(i.body).some(b => b !== i.number && openNums.has(b)))
+  if (waits.length) why.push(`${waits.length} wait in the chain (${[...waits].sort((a, b) => a.number - b.number).map(i => '#' + i.number).slice(0, 4).join(' ')}${waits.length > 4 ? ' …' : ''})`)
+  const you = open.filter(i => lab(i).has('ready-for-human') || lab(i).has('needs-triage'))
+  if (you.length) why.push(`need you first: #${you.map(i => i.number).join(', #')}`)
+  const reason = why.length ? why.join(' · ') : 'backlog empty — add work with /idea or /task'
+  for (let k = rows.length; k < max; k++) rows.push(`${k + 1}. free — ${reason}`)
+  return rows
+}
+
+export type View = { lanes: string[]; you: string[]; next: string[]; done: string[] }
+
+const short = (t: string, n = 34) => (t.length > n ? t.slice(0, n - 1) + '…' : t)
+
+/** The readable panel: 3 lanes (what runs + which step, or why free), your lane, up next, last done. */
+export function view(open: Issue[], closed: Issue[], wins: Win[], prBranches: string[], max = 3): View {
+  const lab = (i: Issue) => new Set((i.labels ?? []).map(x => x.name))
+  const live = new Set(wins.filter(isLive).map(w => w.name))
+  const has = (re: RegExp) => [...live].some(n => re.test(n))
+  const openNums = new Set(open.map(i => i.number))
+  const step = (n: number) => {
+    if (has(new RegExp(`^review-${n}(-|$)`))) return 'review'
+    if (has(new RegExp(`^issue-${n}-fix$`))) return 'fixing review notes'
+    if (prBranches.includes(`lane/${n}`)) return has(new RegExp(`^issue-${n}$`)) ? 'PR opened' : 'merge + tests'
+    return 'building'
+  }
+  const running = open.filter(i => lab(i).has('in-progress')).sort((a, b) => a.number - b.number)
+  const lanes = running.slice(0, max).map(i => `● #${i.number} ${short(i.title)} — ${step(i.number)}`)
+  const why = laneReasons(open, wins, max).filter(x => x.includes(' free — ')).map(x => x.replace(/^\d+\. free — /, ''))
+  while (lanes.length < max) lanes.push(`○ free — ${why[0] ?? 'nothing ready'}`)
+  const you = open.filter(i => lab(i).has('ready-for-human') || lab(i).has('needs-triage') || lab(i).has('blocked'))
+    .map(i => (lab(i).has('needs-triage') ? `? #${i.number} ${short(i.title)} — answer questions${has(new RegExp(`^intake-?${i.number}`)) ? ' (window open)' : ''}`
+      : lab(i).has('blocked') ? `⛔ #${i.number} ${short(i.title)} — stuck, see issue`
+      : `! #${i.number} ${short(i.title)} — your task`))
+  const next = open.filter(i => lab(i).has('ready-for-agent') && !lab(i).has('in-progress') && !lab(i).has('blocked'))
+    .sort((a, b) => a.number - b.number)
+    .map(i => { const w = parseBlockers(i.body).filter(b => b !== i.number && openNums.has(b)); return `#${i.number} ${short(i.title)}${w.length ? '  (after #' + w.join(', #') + ')' : '  (ready)'}` })
+  const done = closed.slice(0, 3).map(i => lab(i).has('needs-triage') ? `→ #${i.number} ${short(i.title)} (split into tasks)` : `✓ #${i.number} ${short(i.title)}`)
+  return { lanes, you, next, done }
 }
