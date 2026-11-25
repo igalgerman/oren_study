@@ -124,3 +124,18 @@ _p = W.parse_observer("noise\nOBSERVER: #3 needs no owner → label ready-for-ag
 assert _p == ["OBSERVER: #3 needs no owner → label ready-for-agent", "OBSERVER: backlog low → add work"]
 assert len(W.parse_observer(NL.join(f"OBSERVER: p{i} → f" for i in range(12)))) == 8
 print("ok observer")
+
+# deploy_text: "ok <url>" is the LAST line of deploy.sh; pregen only when config pregen = true (#50)
+_calls = []
+NL = chr(10)
+def _fake_run(cmd, **kw):
+    _calls.append(cmd)
+    return (0, "injected 1 2" + NL + "website copy written" + NL + "worker 3" + NL + "ok https://x.oren-game.pages.dev" + NL) if "deploy.sh" in " ".join(map(str, cmd)) else (0, "")
+_orig_run, _orig_env = r.run, r.env_file
+r.run, r.env_file = _fake_run, (lambda: {"CLOUDFLARE_API_TOKEN": "t"})
+r.CFG["pregen"] = False
+assert r.deploy_text(None) == "deployed ok https://x.oren-game.pages.dev (pregen off)" and not any("pregen.js" in " ".join(map(str, c)) for c in _calls)
+r.CFG["pregen"] = True; _calls.clear()
+assert r.deploy_text(None).startswith("deployed ok https://") and any("pregen.js" in " ".join(map(str, c)) for c in _calls)
+r.run, r.env_file = _orig_run, _orig_env; r.CFG["pregen"] = False
+print("ok deploy")
