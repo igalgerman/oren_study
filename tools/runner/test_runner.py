@@ -96,3 +96,10 @@ _p = W.parse_observer("noise\nOBSERVER: #3 needs no owner → label ready-for-ag
 assert _p == ["OBSERVER: #3 needs no owner → label ready-for-agent", "OBSERVER: backlog low → add work"]
 assert len(W.parse_observer(NL.join(f"OBSERVER: p{i} → f" for i in range(12)))) == 8
 print("ok observer")
+
+# priority: bug first, then P0<P1<P2<P3 (missing = P2), then oldest
+assert nums(r.select([I(1,[R,"pack","P3"]), I(2,[R,"pack"]), I(3,[R,"pack","P1"]), I(4,[R,"pack","P0"])], 4)) == [4,3,2,1]
+assert nums(r.select([I(1,[R,"pack","P0"]), I(2,[R,"pack","bug","P3"])], 2)) == [2,1]
+assert nums(r.select([I(5,[R,"pack","P1"]), I(3,[R,"pack","P1"])], 2)) == [3,5]
+assert r.priority_of(["P1", "x"]) == 1 and r.priority_of([]) == 2
+print("ok priority")

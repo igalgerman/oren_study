@@ -209,6 +209,7 @@ export function view(open: Issue[], closed: Issue[], wins: Win[], prBranches: st
   const live = new Set(wins.filter(isLive).map(w => w.name))
   const has = (re: RegExp) => [...live].some(n => re.test(n))
   const openNums = new Set(open.map(i => i.number))
+  const prio = (i: Issue) => { const l = lab(i); return [0, 1, 2, 3].find(n => l.has(`P${n}`)) ?? 2 }
   const step = (n: number) => {
     if (has(new RegExp(`^review-${n}(-|$)`))) return 'review'
     if (has(new RegExp(`^issue-${n}-fix$`))) return 'fixing review notes'
@@ -226,8 +227,8 @@ export function view(open: Issue[], closed: Issue[], wins: Win[], prBranches: st
   const orchNums = open.filter(i => (lab(i).has('blocked') || lab(i).has('needs-orchestrator')) && !lab(i).has('ready-for-human') && !lab(i).has('needs-triage')).map(i => `#${i.number}`)
   const orch = orchNums.length ? [`orchestrator handling: ${orchNums.join(' ')}`] : []
   const next = open.filter(i => lab(i).has('ready-for-agent') && !lab(i).has('in-progress') && !lab(i).has('blocked'))
-    .sort((a, b) => a.number - b.number)
-    .map(i => { const w = parseBlockers(i.body).filter(b => b !== i.number && openNums.has(b)); return `#${i.number} ${short(i.title)}${w.length ? '  (after #' + w.join(', #') + ')' : '  (ready)'}` })
+    .sort((a, b) => (+!lab(a).has('bug') - +!lab(b).has('bug')) || prio(a) - prio(b) || a.number - b.number)
+    .map(i => { const w = parseBlockers(i.body).filter(b => b !== i.number && openNums.has(b)); return `[P${prio(i)}] #${i.number} ${short(i.title)}${w.length ? '  (after #' + w.join(', #') + ')' : '  (ready)'}` })
   const done = closed.slice(0, 3).map(i => lab(i).has('needs-triage') ? `→ #${i.number} ${short(i.title)} (split into tasks)` : `✓ #${i.number} ${short(i.title)}`)
   return { lanes, you, orch, next, done }
 }
