@@ -19,6 +19,20 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
    window.Audio=function(x){return {play:()=>Promise.reject(new Error('x')),pause(){}};};speechSynthesis.speak=x=>{fb=x.lang;};window.OREN.sayLang('cat','en');await new Promise(r=>setTimeout(r,50));
    window.__fast=true;G.ok=ok0;window.Audio=A0;speechSynthesis.speak=sp0;G.audio=null;return {u:u1,fb};});
  ok('English: Google Despina 0.85, plain text, browser fallback',/^\/api\/tts\?t=Apple%20pie&v=en-US-Chirp3-HD-Despina&r=0\.85&k=\d+$/.test(fe.u)&&fe.fb==='en-US',JSON.stringify(fe));
+ /* #36: Oren must not hear the browser voice while Google audio can still arrive */
+ const fw=await p.evaluate(async()=>{const G=window.__gv,A0=window.Audio,ok0=G.ok,sp0=speechSynthesis.speak;let urls=[],fb=0,go=null;
+   window.Audio=function(x){urls.push(x);return {play:()=>Promise.resolve(),pause(){}};};speechSynthesis.speak=()=>{fb++;};window.__fast=false;
+   G.ok=false;G.wait=new Promise(r=>{go=r;});G.pending=true;window.OREN.say('שָׁלוֹם');const early={urls:urls.length,fb};/* status check still running */
+   G.ok=true;G.pending=false;go();await new Promise(r=>setTimeout(r,50));const late={urls:urls.length,fb};
+   /* the audio errors once: try again before any browser voice */
+   urls=[];let n=0;window.Audio=function(x){urls.push(x);const first=n++===0;return {play:()=>first?Promise.reject(new Error('x')):Promise.resolve(),pause(){}};};
+   window.OREN.say('שָׁלוֹם');await new Promise(r=>setTimeout(r,50));const retry={urls:urls.length,fb};
+   /* slow audio (no 'playing' yet) is waited for, not replaced by the browser voice after 3 s */
+   urls=[];window.Audio=function(x){urls.push(x);return {play:()=>new Promise(()=>{}),pause(){}};};fb=0;window.OREN.say('שָׁלוֹם');await new Promise(r=>setTimeout(r,3400));const slow={urls:urls.length,fb};
+   G.audio=null;window.__fast=true;G.ok=ok0;window.Audio=A0;speechSynthesis.speak=sp0;return {early,late,retry,slow};});
+ ok('#36 waits for the voice status before speaking (no browser voice)',fw.early.urls===0&&fw.early.fb===0&&fw.late.urls===1&&fw.late.fb===0,JSON.stringify(fw));
+ ok('#36 audio error: one retry, no browser voice',fw.retry.urls===2&&fw.retry.fb===0,JSON.stringify(fw));
+ ok('#36 slow audio is waited for, not replaced',fw.slow.urls===1&&fw.slow.fb===0,JSON.stringify(fw));
  await p.locator('#sPar .bigbtn',{hasText:'אוקי'}).click();await sleep(200);ok('voice approved saved',await p.evaluate(()=>!!window.TAL.S().set.voiceOk));
  await p.evaluate(()=>window.TAL.parentPanel('try'));await sleep(200);await L.shot(p,{path:L.SHOTDIR+'/try.png',fullPage:true});
  await p.locator('#sPar .bigbtn',{hasText:'כניסה למשחק כהורה'}).click();await sleep(400);
