@@ -75,7 +75,9 @@ export function finishedRuns(prevLive: string[], now: Win[]): string[] {
 export function statusLine(d: OrenLanesData): string {
   const lanes = d.windows.filter(w => w.name.startsWith('issue-') && isLive(w)).length
   let s = `lanes ${lanes}/3 · ready ${d.groups.ready.count} · blocked ${d.groups.blocked.count}`
-  if (d.groups.needsYou.count > 0) s += ` · needs you ${d.groups.needsYou.count}`
+  const waiting = d.windows.filter(w => /^(issue|review|intake)-/.test(w.name) && w.state.endsWith('/blocked')).map(w => w.name)
+  const you = [...d.groups.needsYou.titles.map(t => t.split(' ')[0]), ...waiting]
+  if (you.length) s += ` · needs you: ${you.slice(0, 3).join(', ')}`
   return s
 }
 
