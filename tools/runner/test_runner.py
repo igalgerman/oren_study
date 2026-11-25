@@ -36,3 +36,16 @@ _q2 = [{"number": 5, "labels": ["pack", "ready-for-agent"], "createdAt": "1"},
        {"number": 6, "labels": ["pack", "ready-for-agent", "bug"], "createdAt": "2"}]
 assert [i["number"] for i in _sel(_q2, 1)] == [6]
 print("ok bugs-first")
+
+# questions + parking
+NL = chr(10)
+def scr(*lines): return NL.join(lines) + NL
+q = scr("x", "● thinking", "  QUESTION: a or b?", "✻ Churned for 3s", "❯")
+assert r.pending_question(q) == "QUESTION: a or b?"
+assert r.pending_question(q + scr("❯  h<hc from=t2g>a</hc>", "● ok")) == ""            # answered
+assert r.pending_question(scr("QUESTION: x?", "RESULT: DONE")) == ""                         # finished afterwards
+assert r.pending_question("❯ end with `QUESTION: <short question, with options>`.") == ""  # prompt echo
+assert r.waiting_now("blocked", "") and r.waiting_now("done", q) and not r.waiting_now("working", q) and not r.waiting_now("done", "hi")
+assert not r.should_park(None, 1000, 30)
+assert not r.should_park(1000, 1000 + 29 * 60, 30) and r.should_park(1000, 1000 + 30 * 60, 30)
+print("ok park")

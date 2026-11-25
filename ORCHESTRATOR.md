@@ -55,3 +55,11 @@ The herdr window `watchdog` (tools/runner/watchdog.py, started by tools/orchestr
 - `WATCHDOG: X stopped … without its RESULT/VERDICT line` → get it to finish, or ask the owner.
 It also starts a runner pass by itself when a lane is free and an issue is ready. Its log: tools/runner/.runs/watchdog.log.
 If the `watchdog` window is missing (hc ls), start it again: the watchdog line in tools/orchestrator.cmd.
+
+## Parked issues (nobody answered for 30 min; nights)
+A worker/reviewer waiting longer than `park_minutes` (config.toml) is PARKED by its run process (the watchdog does it if the run is gone): comment with the question on the issue, labels `blocked` + `ready-for-human`, `in-progress` removed, the run exits (issue lock and core lock released), a new pass starts the next ready issue. The windows stay OPEN. The watchdog line / the run's note tells you "#n parked: waiting for you since HH:MM".
+Resume when the owner answers: type the answer into the window (`hc send issue-<n> "..."`), remove the labels `blocked` and `ready-for-human` on the issue, then `tools/runner/run.cmd <n>`. The run re-attaches to the still-open windows and worktree (nothing restarted). If the windows were closed, a re-run keeps pushed work: an existing `origin/lane/<n>` / open PR is never deleted, the worktree continues from it.
+
+## Code changes
+- runner.py changes apply to the NEXT issue run (every run is a fresh `python runner.py` process; running runs keep the code they started with). The watchdog reloads runner.py by itself when the file changes; a change in watchdog.py itself needs the `watchdog` window restarted (kill it, run the watchdog line of tools/orchestrator.cmd) at a quiet moment.
+- tools/integrate.sh works in its own checkout `C:\work\Oren_study\wt-integrate` (branch `integrate`), so uncommitted edits in this checkout never block a merge; this checkout is fast-forwarded afterwards when clean. Deploy and pregen run there too.

@@ -16,12 +16,13 @@ DRY = "--dry-run" in sys.argv
 HC = CFG.get("hc", "")                            # herdr CLI; missing -> old hidden `claude -p` path
 USE_HERDR = bool(HC) and Path(HC).exists() and not DRY and os.environ.get("RUNNER_NO_HERDR") != "1"
 TERM = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--term=")), "")   # our own herdr terminal name (set by launch_self)
+INTEG = Path(CFG["worktree_prefix"] + "integrate")       # own checkout for merge/test/deploy, so a dirty orchestrator checkout never blocks it
 INTERACTIVE_NOTE = ("\nWhen you are completely finished, make the very last line of your final message exactly the marker line described above, "
                     "then stay open: the owner may open this terminal and ask you questions.\n"
                     "If you need a decision from the owner, do NOT wait silently: end your turn with one line `QUESTION: <short question, with options>`. "
                     "The orchestrator relays it to the owner and types the owner's answer back into this terminal; then continue.")
 
-COMMON_TOOLS = ["Read", "Glob", "Grep", "Bash(gh:*)"]
+COMMON_TOOLS = ["Read", "Glob", "Grep", "Skill", "Bash(gh:*)"]
 WORKER_TOOLS = COMMON_TOOLS + ["Edit", "Write", "Bash(git:*)", "Bash(node:*)", "Bash(npx:*)", "Bash(python3:*)",
                                "Bash(bash tools/:*)", "Bash(bash tests/:*)", "Bash(cd:*)", "Bash(ls:*)", "Bash(mkdir:*)"]
 READ_TOOLS = COMMON_TOOLS + ["Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"]
@@ -76,6 +77,27 @@ def last_line(text, prefix):
     hits = [l.strip() for l in text.splitlines() if l.strip().startswith(prefix)]
     return hits[-1] if hits else ""
 
+def pending_question(text):
+    """The worker's last `QUESTION:` line if it is still unanswered (no later owner/orchestrator message, no RESULT/VERDICT line), else ''."""
+    q = u = m = -1; qtext = ""
+    for i, l in enumerate(text.splitlines()):
+        s = l.strip().lstrip("●⏺•").strip()
+        if s.startswith("QUESTION:") and "`" not in s and "<short" not in s:
+            q, qtext = i, s
+        elif s.startswith(("RESULT:", "VERDICT:")) and "`" not in s and "<why>" not in s and " or " not in s:
+            m = i
+        elif (s.startswith("❯") and s[1:].strip()) or s.startswith("<hc from"):
+            u = i                                   # a message typed into the window (answer from the orchestrator / owner)
+    return qtext if q > max(u, m) else ""
+
+def waiting_now(status, screen):
+    """True when the window waits for a person: a permission/trust menu (blocked) or a finished turn ending in QUESTION:."""
+    return status == "blocked" or (status in ("done", "idle") and bool(pending_question(screen)))
+
+def should_park(since, now, minutes):
+    """since = when the window started waiting (epoch) or None. Park (give the lane back) after `minutes` of waiting."""
+    return since is not None and now - since >= minutes * 60
+
 # ---------- helpers ----------
 def env_file():
     out = {}
@@ -114,6 +136,32 @@ def now():
 # ---------- pipeline for one issue ----------
 class Blocked(Exception):
     pass
+
+class Parked(Exception):
+    """The issue waits for the owner (question unanswered for park_minutes): lane freed, windows stay open, the run exits cleanly."""
+
+PARK_MINUTES = int(CFG.get("park_minutes", 30))
+
+def tell_orchestrator(text):
+    if USE_HERDR: hc("send", "orchestrator", text, timeout=30)
+
+def live(name):
+    return USE_HERDR and hc_json("get", name, "--json").get("state") == "live"
+
+def issue_labels(n):
+    rc, out = gh("issue", "view", str(n), "--json", "labels")
+    try: return [l["name"] for l in json.loads(out)["labels"]]
+    except (ValueError, KeyError): return None      # gh failed: unknown, never treat as parked
+
+def park_issue(n, name, tail, since):
+    """Give the lane back: comment with the question, blocked + ready-for-human, drop in-progress, tell the orchestrator. Idempotent."""
+    if "blocked" in (issue_labels(n) or []): return False
+    hhmm = time.strftime("%H:%M", time.localtime(since))
+    set_labels(n, add=["blocked", "ready-for-human"], remove=["in-progress"])
+    gh("issue", "comment", str(n), "--body", redact(f"Parked: window `{name}` has waited for the owner since {hhmm}. It stays open.\n\nIts screen ends with:\n```\n{tail[-2000:]}\n```\n"
+       f"To resume: answer in the window, remove labels `blocked` and `ready-for-human`, run `tools/runner/run.cmd {n}`."))
+    tell_orchestrator(f"#{n} parked: waiting for you since {hhmm} (window {name}). Ask the owner; to resume: answer in {name}, remove labels blocked + ready-for-human, run.cmd {n}.")
+    return True
 
 def pid_alive(pid):
     rc, out = run(["tasklist", "/FI", f"PID eq {pid}", "/NH"])
@@ -156,7 +204,9 @@ def show(name):
     app = CFG.get("herdr_app", r"C:\Users\97254\AppData\Local\Programs\herdr-app\herdr-app.exe")
     if not CFG.get("show", True) or not Path(app).exists(): return
     addr = hc_json("get", name, "--json").get("address")
-    if addr: run([app, "do", "terminal.keep", "--terminal", addr, "--place", "tab"], timeout=30)
+    for _ in range(6):               # the app learns a new terminal a moment late ("no running terminal"): retry
+        if addr and run([app, "do", "terminal.keep", "--terminal", addr, "--place", "tab"], timeout=30)[0] == 0: return
+        time.sleep(2)
 
 def hc(*args, timeout=300):
     return run([HC, *args], timeout=timeout)
@@ -179,29 +229,47 @@ def parent_args():
 
 def agent(name, prompt, cwd, tools, log, marker, n, role):
     """Run an INTERACTIVE claude in a herdr terminal the owner can open; return (screen text, marker line).
-    Terminals are closed after success and left open when BLOCKED. Falls back to the hidden `claude -p` when herdr is unavailable."""
+    Terminals are closed after success and left open when BLOCKED/PARKED. A window of that name that is still live (parked earlier) is re-attached, not restarted.
+    Waiting for a person longer than park_minutes -> Parked. Falls back to the hidden `claude -p` when herdr is unavailable."""
     if not USE_HERDR:
         out = claude_hidden(prompt, cwd, tools, log)
         return out, last_line(out, marker)
-    # bash wrapper only puts the python3 shim on PATH; the prompt goes after `--` ("--allowedTools" is variadic)
-    cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), "--label", f"issue={n}", "--label", f"role={role}", *parent_args(),
-           BASH, "-c", 'export PATH="$1:$PATH"; shift; exec "$@"', "_", CFG["extra_path"],
-           shutil.which("claude") or "claude", "--model", MODEL, "--permission-mode", "auto",
-           "--allowedTools", *tools, "--", prompt + INTERACTIVE_NOTE]
-    rc, out = run(cmd, log=log)
-    if rc: raise Blocked(f"cannot start terminal {name}: {out.strip()[:200]}")
+    if not live(name):
+        # bash wrapper only puts the python3 shim on PATH; the prompt goes after `--` ("--allowedTools" is variadic)
+        cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), "--label", f"issue={n}", "--label", f"role={role}", *parent_args(),
+               BASH, "-c", 'export PATH="$1:$PATH"; shift; exec "$@"', "_", CFG["extra_path"],
+               shutil.which("claude") or "claude", "--model", MODEL, "--permission-mode", "auto",
+               "--allowedTools", *tools, "--", prompt + INTERACTIVE_NOTE]
+        rc, out = run(cmd, log=log)
+        if rc: raise Blocked(f"cannot start terminal {name}: {out.strip()[:200]}")
     show(name)
     deadline, screen = time.time() + 3 * 3600, ""
+    waiting = marker_since = None; last_check = 0
     try:
         while time.time() < deadline:
             info = hc_json("wait", name, "--timeout", "120", "--json")
             rc, screen = hc("read", name, "--lines", "400")
-            if info.get("status") == "blocked" and "trust this folder" in screen:   # fresh worktree: accept the folder-trust dialog
+            status = info.get("status")
+            if status == "blocked" and "trust this folder" in screen:   # fresh worktree: accept the folder-trust dialog
                 hc("keys", name, "down", "enter"); time.sleep(5); continue
-            if find_marker(screen, marker) and info.get("status") in ("done", "idle", None):
-                break
+            if find_marker(screen, marker):
+                if status in ("done", "idle", None): break
+                marker_since = marker_since or time.time()
+                if time.time() - marker_since > 180: break               # marker printed but a background shell keeps it "working"
+            else:
+                marker_since = None
             if hc_json("get", name, "--json").get("state") == "finished":
                 break
+            if waiting_now(status, screen):
+                waiting = waiting or time.time()
+                if should_park(waiting, time.time(), PARK_MINUTES):
+                    park_issue(n, name, "\n".join([l for l in screen.splitlines() if l.strip()][-14:]), waiting)
+                    raise Parked(name)
+            else:
+                waiting = None
+            if time.time() - last_check > 60:                           # someone (watchdog / owner) parked or blocked the issue: stop waiting
+                last_check = time.time()
+                if "blocked" in (issue_labels(n) or []): raise Parked(name)
             time.sleep(10)           # agent idle without a marker (e.g. the owner is talking to it): look again later
         else:
             raise Blocked(f"{name}: no {marker} line after 3h")
@@ -233,21 +301,21 @@ def launch_self():
 
 def worker_prompt(n, lane, review_text=None, bug=False):
     base = (f"You are an unattended worker for GitHub issue #{n} in repo {REPO} (lane: {lane}). Read CLAUDE.md and FLOW.md, then the issue "
-            f"(`gh issue view {n} --repo {REPO} --comments`). Work only inside this worktree (your cwd). Implement ONLY what the issue asks.\n")
+            f"(`gh issue view {n} --repo {REPO} --comments`). Work only inside this worktree (your cwd). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n")
     if lane == "review":
         return base + (f"This is a read-only review issue: change NO files, make no commits, open no PR. Post your report as ONE issue comment "
                        f"(`gh issue comment {n} --repo {REPO} --body-file <file>`; write the file under oren2/tests/.tmp/). "
-                       "End your output with a line `RESULT: DONE` or `RESULT: STUCK <why>`.")
+                       "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
     if bug:
-        base += ("This is a BUG: first reproduce it with a failing test (add it to the relevant suite in oren2/tests/), then fix it so the test passes; "
+        base += ("This is a BUG: use the mattpocock-skills:diagnosing-bugs skill, then tdd: reproduce it with a failing test (add it to the relevant suite in oren2/tests/), then fix it so the test passes; "
                  "say the root cause in the PR body.\n")
     steps = ("Steps: 1) implement; 2) python3 build_talents.py (in oren2/, PATH already has python3) and run the build + the suites for what you changed, muted "
              "(see FLOW.md); 3) for each changed screen take screenshots at phone 390x844 and desktop 1366x768 into "
              f"oren2/tests/.tmp/shots-{n}/ and LOOK at them (simple, one main action, Hebrew with nikud); 4) commit (do NOT commit oren2/index.html "
              f"or oren2/cf/public/index.html, node_modules, package*.json, tests/.tmp); 5) `git push -u {REMOTE} lane/{n}`; 6) open a PR to {BRANCH} with "
-             f"`gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Closes #{n}` (skip if a PR already exists). "
+             f"`gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Closes #{n}` (use the mattpocock-skills:pr skill to write the PR body; skip if a PR already exists). "
              "Never deploy, never force-push. If blocked or the issue is unclear, stop and say why. "
-             "End your output with a line `RESULT: DONE` or `RESULT: STUCK <why>`.")
+             "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
     if review_text:
         steps += ("\nThe PR already exists and a reviewer asked for fixes. Fix exactly these points on the same branch (new commit, push, no new PR), "
                   "re-run tests and screenshots:\n---\n" + review_text[-6000:] + "\n---")
@@ -257,7 +325,7 @@ def review_prompt(n, pr):
     return (f"You are a fresh, read-only reviewer for PR #{pr} (issue #{n}) in {REPO}. You may not edit files. Read CLAUDE.md, the issue "
             f"(`gh issue view {n} --repo {REPO}`), the diff (`gh pr diff {pr} --repo {REPO}`, ignore the built index.html files) and the screenshots in "
             f"oren2/tests/.tmp/shots-{n}/ (look at them). Check: correctness vs the issue, simplicity (one main action per screen), Hebrew with correct "
-            "nikud, facts correct, no unrelated changes. Post ONE comment with `gh pr comment " + f"{pr} --repo {REPO} --body-file <file>` (write the file under "
+            "nikud, facts correct, no unrelated changes. Use the mattpocock-skills:code-review skill (Standards = CLAUDE.md + FLOW.md, Spec = the issue), then post ONE comment with `gh pr comment " + f"{pr} --repo {REPO} --body-file <file>` (write the file under "
             "oren2/tests/.tmp/; this is the only file you may write, via the Bash echo/redirect). Print the same comment as your output. "
             "The very last line must be `VERDICT: PASS` or `VERDICT: FIX` (FIX = list the concrete points above it).")
 
@@ -290,11 +358,11 @@ def deploy_text(log):
     env = {"CLOUDFLARE_API_TOKEN": tok}
     for k, v in env_file().items():
         if k.startswith("CLOUDFLARE_"): env[k] = v
-    rc, out = run([BASH, "oren2/cf/tools/deploy.sh"], cwd=ROOT, env=env, log=log, timeout=900)
+    rc, out = run([BASH, "oren2/cf/tools/deploy.sh"], cwd=INTEG, env=env, log=log, timeout=900)
     if rc != 0 or not out.strip().startswith("ok"):
         raise Blocked("deploy failed")
     url = out.strip().splitlines()[-1]
-    rc, _ = run(["node", "oren2/cf/tools/pregen.js"], cwd=ROOT, env=env, log=log, timeout=1800)
+    rc, _ = run(["node", "oren2/cf/tools/pregen.js"], cwd=INTEG, env=env, log=log, timeout=1800)
     return f"deployed {url}" + ("" if rc == 0 else " (pregen failed, see log)")
 
 def process(issue):
@@ -315,13 +383,18 @@ def process_locked(issue):
     wt = Path(CFG["worktree_prefix"] + str(n))
     try:
         set_labels(n, add=["in-progress"]); gh("issue", "comment", str(n), "--body", f"Runner: started ({lane} lane, {MODEL}).")
-        if wt.exists() or run(["git", "rev-parse", "--verify", f"lane/{n}"], cwd=ROOT)[0] == 0:   # leftovers from an earlier try
-            run(["git", "worktree", "remove", "--force", str(wt)], cwd=ROOT, log=log)
-            run(["git", "branch", "-D", f"lane/{n}"], cwd=ROOT, log=log)
-            if not find_pr(n):
-                run(["git", "push", REMOTE, "--delete", f"lane/{n}"], cwd=ROOT, log=log)
-        rc, _ = run([BASH, "tools/lane.sh", str(n), BRANCH], cwd=ROOT, env={"REMOTE": REMOTE}, log=log)
-        if rc: raise Blocked("lane.sh failed")
+        run(["git", "fetch", "-q", REMOTE], cwd=ROOT, log=log)
+        pushed = bool(find_pr(n)) or bool(run(["git", "ls-remote", "--heads", REMOTE, f"lane/{n}"], cwd=ROOT)[1].strip())
+        resume = any(live(w) for w in (f"issue-{n}", f"issue-{n}-fix", f"review-{n}", f"review-{n}-2"))
+        if resume and wt.exists():
+            pass                                             # parked earlier: re-attach to its windows and worktree, change nothing
+        else:
+            if (wt.exists() or run(["git", "rev-parse", "--verify", f"lane/{n}"], cwd=ROOT)[0] == 0) and not pushed:   # leftovers of an unfinished try
+                run(["git", "worktree", "remove", "--force", str(wt)], cwd=ROOT, log=log)
+                run(["git", "branch", "-D", f"lane/{n}"], cwd=ROOT, log=log)
+            if not wt.exists():                              # lane.sh continues from origin/lane/<n> when pushed work exists (never deleted)
+                rc, _ = run([BASH, "tools/lane.sh", str(n), BRANCH], cwd=ROOT, env={"REMOTE": REMOTE}, log=log)
+                if rc: raise Blocked("lane.sh failed")
 
         out, res = agent(f"issue-{n}", worker_prompt(n, lane, bug="bug" in issue["labels"]), wt, WORKER_TOOLS if lane != "review" else REVIEW_LANE_TOOLS,
                          d / "worker1.log", "RESULT:", n, "worker")
@@ -353,7 +426,7 @@ def process_locked(issue):
             rc, out = run([BASH, "tools/integrate.sh", f"lane/{n}", BRANCH], cwd=ROOT,
                           env={"REMOTE": REMOTE, "JOBS": "4", "RUNNER": "1"}, log=log, timeout=3600)
             if rc:
-                run(["git", "merge", "--abort"], cwd=ROOT, log=log)
+                run(["git", "merge", "--abort"], cwd=INTEG, log=log)
                 raise Blocked(f"integrate.sh exit {rc}")
             dep = deploy_text(log)
         gh("issue", "close", str(n), "--comment", f"Merged to {BRANCH}, tests green, {dep}.")
@@ -361,6 +434,8 @@ def process_locked(issue):
         run(["git", "worktree", "remove", "--force", str(wt)], cwd=ROOT, log=log)
         close_windows(n)
         return f"DONE {dep}"
+    except Parked as e:                         # waiting for the owner: windows stay open, locks are released by the caller's `with`
+        return f"PARKED: waiting for the owner in {e}"
     except Blocked as e:
         block(n, str(e), log); return f"BLOCKED: {e}"
     except Exception as e:                      # any crash: never leave the issue in-progress
@@ -427,7 +502,7 @@ def main():
     if chosen and USE_HERDR and TERM:
         for c in chosen:
             set_labels(c["number"], add=["in-progress"])          # claim now so the next pass doesn't pick it twice
-            spawn([str(c["number"])])
+            if spawn([str(c["number"])]): set_labels(c["number"], remove=["in-progress"])   # could not start: give it back
         results = [(c["number"], "started") for c in chosen]
     elif chosen:
         with ThreadPoolExecutor(max_workers=len(chosen)) as ex:
