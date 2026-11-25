@@ -2,7 +2,7 @@ import type { Register } from 'claude-code'
 
 import type { OrenLanesData } from '../types/index'
 import {
-  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc,
+  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText,
 } from './lanes'
 import type { Issue, Win } from './lanes'
 
@@ -55,6 +55,9 @@ export const register: Register = on => {
           // no runner log: nothing to show
         }
 
+        let usage = ''
+        try { usage = usageText(((await $.session.usage()).rateLimits ?? []) as any) } catch { /* no reading */ }
+
         const prev = (await $.state.get(LIVE)).value ?? []
         const hcOk = !errors.some(x => x.startsWith('windows'))
         if (hcOk) {
@@ -62,7 +65,7 @@ export const register: Register = on => {
           await $.state.set(LIVE, windows.filter(isLive).map(w => w.name))
         }
         const data: OrenLanesData = {
-          windows, groups: groupIssues(issues), lastLog, errors,
+          windows, groups: groupIssues(issues), lastLog, errors, usage,
           updatedAt: await $.clock.now(),
         }
         await $.state.set(DATA, data)
@@ -112,6 +115,7 @@ export const register: Register = on => {
             {d.groups[k].titles.slice(0, 5).map(t => <Text dimColor>{trunc(t, width)}</Text>)}
           </Box>
         ))}
+        {d && d.usage ? <Text>{'usage: ' + d.usage}</Text> : null}
         {d && d.lastLog !== '' && <Text dimColor>{trunc(d.lastLog, width)}</Text>}
       </Box>
     )

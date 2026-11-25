@@ -44,3 +44,10 @@ test('windows, finished runs and status line', () => {
   groups.needsYou.count = 2
   expect(statusLine(d)).toMatch(/^lanes 1\/3 · ready 0 · blocked 0/)
 })
+
+import { usageText } from './lanes'
+test('usage text', () => {
+  const t = usageText([{ kind: 'five_hour', percentUsed: 23.4, resetsAt: '2026-11-25T19:00:00Z' }, { kind: 'seven_day', percentUsed: 41, resetsAt: '2026-11-27T07:00:00Z' }])
+  expect(t).toMatch(/^5h 23% → \d\d:\d\d · week 41% → \w+ \d\d:\d\d$/)
+  expect(usageText([])).toBe('')
+})

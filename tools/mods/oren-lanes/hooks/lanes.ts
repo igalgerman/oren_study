@@ -78,7 +78,28 @@ export function statusLine(d: OrenLanesData): string {
   const waiting = d.windows.filter(w => /^(issue|review|intake)-/.test(w.name) && w.state.endsWith('/blocked')).map(w => w.name)
   const you = [...d.groups.needsYou.titles.map(t => t.split(' ')[0]), ...waiting]
   if (you.length) s += ` · needs you: ${you.slice(0, 3).join(', ')}`
+  if (d.usage) s += ` · ${d.usage.replace(/ → [^·]*/g, '').trim()}`
   return s
 }
 
 export const trunc = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s)
+
+export type Limit = { kind: string; percentUsed: number; resetsAt?: string }
+
+/** "5h 23% → 21:00 · week 41% → Fri 09:00" (Israel time); '' when no reading (not on a subscription). */
+export function usageText(limits: Limit[]): string {
+  const fmt = (iso: string | undefined, withDay: boolean) => {
+    if (!iso) return ''
+    try {
+      const d = new Date(iso)
+      const opt: Intl.DateTimeFormatOptions = { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false }
+      if (withDay) opt.weekday = 'short'
+      return ' → ' + new Intl.DateTimeFormat('en-GB', opt).format(d)
+    } catch { return '' }
+  }
+  const part = (kind: string, label: string, withDay: boolean) => {
+    const l = limits.find(x => x.kind === kind)
+    return l ? `${label} ${Math.round(l.percentUsed)}%${fmt(l.resetsAt, withDay)}` : ''
+  }
+  return [part('five_hour', '5h', false), part('seven_day', 'week', true)].filter(Boolean).join(' · ')
+}

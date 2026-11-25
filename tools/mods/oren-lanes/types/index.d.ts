@@ -11,6 +11,7 @@ export type OrenLanesData = {
     triage: OrenLanesGroup
   }
   lastLog: string
+  usage?: string
   errors: string[]
   updatedAt: number
 }
