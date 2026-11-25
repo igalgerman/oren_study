@@ -199,6 +199,17 @@ def agent(name, prompt, cwd, tools, log, marker, n, role):
         Path(log).with_suffix(".screen.txt").write_text(redact(full), encoding="utf-8")
     return screen, find_marker(screen, marker)
 
+def spawn(extra_args):
+    """From inside a run terminal: start another run (one issue, or a pass) as its own terminal, reporting to the same main session."""
+    name = f"run-{extra_args[0].lstrip('#')}" if extra_args else f"run-pass-{int(time.time()) % 100000}"
+    parent = CFG.get("parent") or (hc_json("get", TERM, "--json").get("parent", "") if TERM else "")
+    cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(ROOT), "--label", "role=runner"]
+    if parent: cmd += ["--parent", parent]
+    cmd += [sys.executable, str(HERE / "runner.py"), *extra_args, f"--term={name}"]
+    rc, out = run(cmd)
+    print(out.strip() or f"started terminal {name}")
+    return rc
+
 def launch_self():
     """run.cmd entry: start this whole run as terminal run-<n> (its exit note goes to the main session) and return at once."""
     pos = [a for a in sys.argv[1:] if not a.startswith("--")]
@@ -373,7 +384,9 @@ def main():
         ensure_labels()
         res = process(issue)
         log_line(f"{now()} #{n}: {res}")
-        print(f"ISSUE {n}: {res}"); return 0
+        print(f"ISSUE {n}: {res}")
+        if USE_HERDR and TERM: spawn([])        # keep the lanes full: a fresh pass picks the next ready issues
+        return 0
     rc, out = gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: print("gh failed:", out); return 1
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
@@ -393,7 +406,12 @@ def main():
         set_labels(s["number"], add=["blocked"], remove=["in-progress"])
         gh("issue", "comment", str(s["number"]), "--body", f"Runner: in-progress for over {CFG['stuck_hours']}h with no runner process; marked blocked.")
     results = []
-    if chosen:
+    if chosen and USE_HERDR and TERM:
+        for c in chosen:
+            set_labels(c["number"], add=["in-progress"])          # claim now so the next pass doesn't pick it twice
+            spawn([str(c["number"])])
+        results = [(c["number"], "started") for c in chosen]
+    elif chosen:
         with ThreadPoolExecutor(max_workers=len(chosen)) as ex:
             results = list(ex.map(lambda c: (c["number"], process(c)), chosen))
     log_line(f"{now()} pass: started={len(chosen)} stuck={len(stuck)} " + " ".join(f"#{n}:{r}" for n, r in results))
