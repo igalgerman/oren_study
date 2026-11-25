@@ -1,6 +1,6 @@
 # Issue runner config. Edit here when the repo moves.
 repo = "igalgerman/oren_study"   # gh --repo
-remote = "new"                  # TEMPORARY: origin = old repo igalgerman/a; "new" = igalgerman/oren_study (the repo above). Switch back to "origin" after the move.
+remote = "origin"
 branch = "main"
 model = "sonnet"
 max_parallel = 3

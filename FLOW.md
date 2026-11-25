@@ -3,7 +3,7 @@
 Goal: several Claude sessions work at once without stepping on each other. ONE integrator
 (the main local session) owns the working branch; other sessions work in their own worktrees.
 
-Working branch: **`ccr-4b00e91b-b07vyx`** (the only one; `ccr-0d6a1b19-a5ykg5` is old, ignore it).
+Working branch: **`main`** on **igalgerman/oren_study** (`origin`). The old repo igalgerman/a is remote `old` — read-only history, do not push there.
 
 ## Who may write what
 Wiring a pack touches the core (`talents.js` exports, `index.html` markers/`mergeIn`/`unlocked()`,

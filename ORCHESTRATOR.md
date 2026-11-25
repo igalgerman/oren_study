@@ -4,8 +4,8 @@ You are the **orchestrator** (main session) for Oren's game. The owner talks onl
 Keep your own context small: do the work through the runner (herdr windows) or Sonnet subagents; read only short reports.
 
 ## Where things are
-- Repo: `C:\work\Oren_study\a`. Remotes: `origin` = igalgerman/a (old, public), `new` = **igalgerman/oren_study** (private, the future home).
-  Working branch today: `ccr-4b00e91b-b07vyx` on origin. **Move pending** (see Next).
+- Repo: `C:\work\Oren_study\a`. `origin` = **igalgerman/oren_study** (private), branch **`main`** = what is live on the site.
+  `old` = igalgerman/a (old history, never push there).
 - Rules: `CLAUDE.md`, `FLOW.md`. Owner guide: `HOWTO.md` (to be shortened to "just talk to the orchestrator").
 - Backlog: GitHub issues in **igalgerman/oren_study** (#1–#11). Labels: lane `core`/`pack`/`review`, `bug`, `ready-for-agent`,
   `ready-for-human`, `needs-triage`, `in-progress`, `blocked`. Dependencies as a `Blocked by: #n` line in the body.
@@ -27,14 +27,12 @@ idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → r
 - Open the intake window: `hc run --bg --name intake --cwd C:\work\Oren_study\a claude "/grill-me"`.
 
 ## State at handoff (25 Nov 2026)
-- #1 batch A: was running as a subagent of the previous orchestrator. Check: `oren2/docs/STATUS.md` has a line
-  "core: local — batch A" while it's running; when done, a commit "batch A" appears and the line is gone.
-- Content-review report for batch A packs is inside issue #2.
-- Owner still to do: put the token in `C:\work\Oren_study\a\.env`; #10 (voice spellings).
+- #1 batch A merged (923c5d8) and closed. Moved to oren_study `main`. First deploy: see the comment on #1.
+- Token is in `.env`. Owner still to do: #10 (voice spellings).
+- Repo slash commands: /idea /bug /task /go /status /undo (`.claude/commands`). Panel `/lanes` needs a session started by `tools/orchestrator.cmd`.
+- Known: `reading` suite flaky under load (passes alone); `worker` suite fails only on Windows.
 
 ## Next
-1. When batch A is merged on `ccr-4b00e91b-b07vyx` and tests are green: close #1.
-2. Move: `git push new origin/ccr-4b00e91b-b07vyx:main`, then `git remote rename origin old && git remote rename new origin`,
-   set `remote = "origin"` in tools/runner/config.toml, `git checkout -B main origin/main`. Update FLOW.md/HOWTO.md branch names to `main`. Tell the owner to point the cloud agent at oren_study.
-3. Start the flow: `tools/runner/run.cmd` (picks #2 pack + #3 core in parallel). Watch the first real run closely (`hc read`), fix the runner if it breaks.
-4. Shorten HOWTO.md to: "talk to the orchestrator; it does the rest".
+1. `/go` (= `tools/runner/run.cmd`): starts #2 (pack, content fixes) and #3 (core, batch B). This is the runner's FIRST real run:
+   watch it (`hc read run-2`, `hc read issue-2`), fix the runner if it breaks, one line per issue to the owner.
+2. Keep the queue moving: #4 → #5 → #6 → #7 → #8; #9 after #7. #11 needs grilling with the owner (`/idea`).
