@@ -51,3 +51,18 @@ test('usage text', () => {
   expect(t).toMatch(/^5h 23% → \d\d:\d\d · week 41% → \w+ \d\d:\d\d$/)
   expect(usageText([])).toBe('')
 })
+
+import { flowRows } from './lanes'
+test('flow rows', () => {
+  const lab = (...n: string[]) => n.map(name => ({ name }))
+  const open = [
+    { number: 3, title: 'B', labels: lab('core', 'ready-for-agent', 'in-progress') },
+    { number: 4, title: 'C', labels: lab('core', 'ready-for-agent'), body: 'Blocked by: #3' },
+    { number: 10, title: 'voice', labels: lab('ready-for-human') },
+  ]
+  const rows = flowRows(open, [{ number: 1, title: 'A' }], [{ name: 'review-3', state: 'live/working' }], ['lane/3'])
+  expect(rows[0]).toMatch(/^#3 ✓Plan ✓Build ●Review ○Merge ○Live/)
+  expect(rows[1]).toMatch(/waits for #3/)
+  expect(rows[2]).toMatch(/your task/)
+  expect(rows[3]).toMatch(/^#1 ✓Plan ✓Build ✓Review ✓Merge ✓Live/)
+})

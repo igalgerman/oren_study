@@ -2,7 +2,7 @@ import type { Register } from 'claude-code'
 
 import type { OrenLanesData } from '../types/index'
 import {
-  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText,
+  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, flowRows,
 } from './lanes'
 import type { Issue, Win } from './lanes'
 
@@ -62,6 +62,18 @@ export const register: Register = on => {
           // no runner log: nothing to show
         }
 
+        let flow: string[] = []
+        let done = ''
+        try {
+          const pr = await $.process.run(['gh', 'pr', 'list', '-R', REPO, '--state', 'open', '--json', 'headRefName'], { timeoutMs: 20000 })
+          const cl = await $.process.run(['gh', 'issue', 'list', '-R', REPO, '--state', 'closed', '--limit', '500', '--json', 'number,title,labels,body,closedAt'], { timeoutMs: 20000 })
+          const prs = pr.exitCode === 0 ? (JSON.parse(pr.stdout) as { headRefName: string }[]).map(p => p.headRefName) : []
+          const closed = cl.exitCode === 0 ? (JSON.parse(cl.stdout) as Issue[]) : []
+          flow = flowRows(issues, closed, windows, prs)
+          const dayAgo = Date.now() - 24 * 3600 * 1000
+          const today = closed.filter(c => Date.parse((c as { closedAt?: string }).closedAt ?? '') > dayAgo).length
+          done = `done: ${today} in 24h · ${closed.length} total`
+        } catch { /* flow is optional */ }
         let usage = ''
         try { usage = usageText(((await $.session.usage()).rateLimits ?? []) as any) } catch { /* no reading */ }
 
@@ -72,7 +84,7 @@ export const register: Register = on => {
           await $.state.set(LIVE, windows.filter(isLive).map(w => w.name))
         }
         const data: OrenLanesData = {
-          windows, groups: groupIssues(issues), lastLog, errors, usage,
+          windows, groups: groupIssues(issues), lastLog, errors, usage, flow, done,
           updatedAt: await $.clock.now(),
         }
         await $.state.set(DATA, data)
@@ -113,6 +125,8 @@ export const register: Register = on => {
         <Button key="refresh" label="Refresh" onPress={() => void refreshRef()} />
         {!d && <Text dimColor>Loading...</Text>}
         {d && d.errors.map(x => <Text dimColor>{trunc(x, width)}</Text>)}
+        {d && d.flow && d.flow.length > 0 && <Text bold>Flow  (Plan → Build → Review → Merge+tests → Live)</Text>}
+        {d && d.flow && d.flow.map(x => <Text>{trunc(x, width)}</Text>)}
         {d && <Text bold>Windows</Text>}
         {d && d.windows.length === 0 && <Text dimColor>none</Text>}
         {d && d.windows.map(w => <Text>{trunc(`${w.name} · ${w.state}`, width)}</Text>)}
@@ -122,6 +136,7 @@ export const register: Register = on => {
             {d.groups[k].titles.slice(0, 5).map(t => <Text dimColor>{trunc(t, width)}</Text>)}
           </Box>
         ))}
+        {d && d.done ? <Text bold>{d.done}</Text> : null}
         {d && d.usage ? <Text>{'usage: ' + d.usage}</Text> : null}
         {d && d.lastLog !== '' && <Text dimColor>{trunc(d.lastLog, width)}</Text>}
       </Box>

@@ -78,6 +78,7 @@ export function statusLine(d: OrenLanesData): string {
   const waiting = d.windows.filter(w => /^(issue|review|intake)-/.test(w.name) && w.state.endsWith('/blocked')).map(w => w.name)
   const you = [...d.groups.needsYou.titles.map(t => t.split(' ')[0]), ...waiting]
   if (you.length) s += ` · needs you: ${you.slice(0, 3).join(', ')}`
+  if (d.done) s += ` · ${d.done.replace('done: ', 'done ').replace(' in 24h', '/24h')}`
   if (d.usage) s += ` · ${d.usage.replace(/ → [^·]*?(?= ·|$)/g, '').trim()}`
   return s
 }
@@ -102,4 +103,35 @@ export function usageText(limits: Limit[]): string {
     return l ? `${label} ${Math.round(l.percentUsed)}%${fmt(l.resetsAt, withDay)}` : ''
   }
   return [part('five_hour', '5h', false), part('seven_day', 'week', true)].filter(Boolean).join(' · ')
+}
+
+export const STAGES = ['Plan', 'Build', 'Review', 'Merge', 'Live'] as const
+
+/** One line per issue: where it is in idea → build → review → merge+tests → live. */
+export function flowRows(open: Issue[], closed: Issue[], wins: Win[], prBranches: string[]): string[] {
+  const live = new Set(wins.filter(isLive).map(w => w.name))
+  const has = (re: RegExp) => [...live].some(n => re.test(n))
+  const openNums = new Set(open.map(i => i.number))
+  const bar = (at: number, mark = '●') =>
+    STAGES.map((s, k) => (k < at ? '✓' : k === at ? mark : '○') + s).join(' ')
+  const rows: string[] = []
+  for (const i of [...open].sort((a, b) => a.number - b.number)) {
+    const l = new Set((i.labels ?? []).map(x => x.name)); const n = i.number
+    let at = 1, mark = '·', note = ''
+    if (l.has('needs-triage')) { at = 0; mark = '?'; note = 'needs grilling' }
+    else if (l.has('ready-for-human') && !l.has('in-progress')) { at = 0; mark = '!'; note = 'your task' }
+    if (l.has('in-progress')) {
+      mark = '●'
+      if (has(new RegExp(`^review-${n}(-|$)`))) at = 2
+      else if (has(new RegExp(`^issue-${n}(-|$)`)) && !prBranches.includes(`lane/${n}`)) at = 1
+      else if (prBranches.includes(`lane/${n}`)) at = has(new RegExp(`^issue-${n}-fix$`)) ? 1 : 3
+    } else if (!note) {
+      const wait = parseBlockers(i.body).filter(b => openNums.has(b))
+      note = wait.length ? `waits for #${wait.join(', #')}` : 'next in line'
+    }
+    if (l.has('blocked')) { mark = '⛔'; note = 'blocked — see issue' }
+    rows.push(`#${n} ${bar(at, mark)}${note ? '  ' + note : ''}  · ${i.title}`)
+  }
+  for (const i of closed.slice(0, 3)) rows.push(`#${i.number} ${bar(5)}  · ${i.title}`)
+  return rows
 }

@@ -12,6 +12,8 @@ export type OrenLanesData = {
   }
   lastLog: string
   usage?: string
+  flow?: string[]
+  done?: string
   errors: string[]
   updatedAt: number
 }
