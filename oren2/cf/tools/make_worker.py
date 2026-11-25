@@ -208,7 +208,7 @@ step();</script></html>`;
  if(used+text.length>TTS_CAP)return new Response('{"ok":false,"why":"monthly cap"}',{status:429,headers:JH});
  const bin=await synth(env,voice,rate,text);if(!bin.length)return new Response(JSON.stringify({ok:false,why:'google '+bin.status}),{status:502,headers:JH});
  await env.SAVES.put(key,bin);await env.SAVES.put(month,String(used+text.length),{expirationTtl:60*60*24*62});
- if((du+1)%%5===0||du+1>=dayBudget(env))await dayPut(env,du+1);
+ await dayPut(env,du+1);
  return new Response(bin,{headers:AH});}
 /* English voice for the game's English words: blind "A or B" like /api/tts/final (winner stays, a new voice challenges it) */
 function enPage(){const F=['Kore','Leda','Sulafat','Aoede','Achernar','Despina'];
@@ -256,14 +256,14 @@ async function fix(req,env){if(req.method==='GET')return J(await fixWords(env,tr
  const t=String(b&&b.t||'').slice(0,400).trim(),v=b.v||GAME_VOICE,rate=Math.min(1.3,Math.max(.7,+b.r||GAME_RATE));
  const words=fxMap(b.words),only=fxMap(b.only);
  if(!t||!VOICES.test(v)||!words||!only)return J({error:'bad request'},400);
+ const du=await dayUsed(env);if(du>=dayBudget(env))return overBudget();
  const W={...await fixWords(env,true)};let changed=false;
  for(const k in words){if(words[k]===null){if(k in W){delete W[k];changed=true;}}else if(W[k]!==words[k]){W[k]=words[k];changed=true;}}
  if(changed){await env.SAVES.put('ttsfixw',JSON.stringify(W));fxW=W;fxAt=Date.now();}
- const du=await dayUsed(env);if(du>=dayBudget(env))return overBudget();
  const used=+(await env.SAVES.get(monthKey()))||0;if(used+t.length>TTS_CAP)return J({ok:false,why:'monthly cap'},429);
  const sent=v.startsWith('he-')?await fixText(env,heNum(noEmoji(t)),only):noEmoji(t);
  const bin=await synth(env,v,rate,t,only);if(!bin.length)return J({ok:false,why:'google '+bin.status},502);
- await env.SAVES.put(await ttsKey(v,rate,t),bin);if((du+1)%%5===0||du+1>=dayBudget(env))await dayPut(env,du+1);
+ await env.SAVES.put(await ttsKey(v,rate,t),bin);await dayPut(env,du+1);
  return J({ok:true,sent,changed,words:Object.keys(W).length});}
 /* a sentence made fresh (with the dictionary) and NOT stored: variants to choose from, checks of a respelling */
 async function tryTts(env,t,v,rt){const used=+(await env.SAVES.get(monthKey()))||0;if(used+t.length>TTS_CAP)return J({ok:false,why:'monthly cap'},429);
