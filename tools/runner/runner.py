@@ -133,6 +133,14 @@ def gh(*args, **kw):
 def now():
     return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
+def stat(n, lane, event):
+    """Append one timing event to .runs/stats.jsonl; never raises."""
+    try:
+        RUNS.mkdir(exist_ok=True)
+        with open(RUNS / "stats.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": int(time.time()), "issue": n, "lane": lane, "event": event}) + chr(10))
+    except Exception: pass
+
 # ---------- pipeline for one issue ----------
 class Blocked(Exception):
     pass
@@ -382,6 +390,7 @@ def process_locked(issue):
     log = d / "run.log"
     wt = Path(CFG["worktree_prefix"] + str(n))
     try:
+        stat(n, lane, "start")
         set_labels(n, add=["in-progress"]); gh("issue", "comment", str(n), "--body", f"Runner: started ({lane} lane, {MODEL}).")
         run(["git", "fetch", "-q", REMOTE], cwd=ROOT, log=log)
         pushed = bool(find_pr(n)) or bool(run(["git", "ls-remote", "--heads", REMOTE, f"lane/{n}"], cwd=ROOT)[1].strip())
@@ -401,6 +410,7 @@ def process_locked(issue):
         (d / "worker1.out").write_text(redact(out), encoding="utf-8")
         if not res.startswith("RESULT: DONE"):
             raise Blocked(res or "worker gave no RESULT line")
+        stat(n, lane, "worker_done")
         if lane == "review":
             gh("issue", "close", str(n), "--comment", "Review report posted above (runner).")
             set_labels(n, remove=["in-progress"]); close_windows(n); return "DONE report posted"
@@ -413,14 +423,17 @@ def process_locked(issue):
                                 d / f"review{rnd}.log", "VERDICT:", n, "reviewer")
             (d / f"review{rnd}.out").write_text(redact(rv), encoding="utf-8")
             if verdict.startswith("VERDICT: PASS"):
-                break
+                stat(n, lane, "review_pass"); break
             if not verdict.startswith("VERDICT: FIX"):
                 raise Blocked(verdict or "reviewer gave no VERDICT line")
+            stat(n, lane, "review_fix")
             if rnd == 2:
+                stat(n, lane, "blocked")
                 block(n, "reviewer asked for fixes twice; needs a human", log, human=True); return "BLOCKED: reviewer asked for fixes twice; needs a human"
             out, res = agent(f"issue-{n}-fix", worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / "worker2.log", "RESULT:", n, "worker")
             if not res.startswith("RESULT: DONE"):
                 raise Blocked(res or "fix worker gave no RESULT line")
+            stat(n, lane, "fix_done")
 
         with FileLock("integrate", wait=True):
             rc, out = run([BASH, "tools/integrate.sh", f"lane/{n}", BRANCH], cwd=ROOT,
@@ -428,17 +441,22 @@ def process_locked(issue):
             if rc:
                 run(["git", "merge", "--abort"], cwd=INTEG, log=log)
                 raise Blocked(f"integrate.sh exit {rc}")
+            stat(n, lane, "merged")
             dep = deploy_text(log)
         gh("issue", "close", str(n), "--comment", f"Merged to {BRANCH}, tests green, {dep}.")
         set_labels(n, remove=["in-progress"])
         run(["git", "worktree", "remove", "--force", str(wt)], cwd=ROOT, log=log)
         close_windows(n)
+        stat(n, lane, "deployed")
         return f"DONE {dep}"
     except Parked as e:                         # waiting for the owner: windows stay open, locks are released by the caller's `with`
+        stat(n, lane, "parked")
         return f"PARKED: waiting for the owner in {e}"
     except Blocked as e:
+        stat(n, lane, "blocked")
         block(n, str(e), log); return f"BLOCKED: {e}"
     except Exception as e:                      # any crash: never leave the issue in-progress
+        stat(n, lane, "blocked")
         block(n, f"runner error: {e!r}", log); return f"BLOCKED: runner error {e!r}"
 
 def close_windows(n):

@@ -2,7 +2,7 @@ import type { Register } from 'claude-code'
 
 import type { OrenLanesData } from '../types/index'
 import {
-  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, flowRows,
+  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, flowRows, statsLines,
 } from './lanes'
 import type { Issue, Win } from './lanes'
 
@@ -10,6 +10,7 @@ const PANE = 'oren-lanes'
 const HC = 'C:/Users/97254/AppData/Local/Programs/herdr-core/hc.exe'
 const REPO = 'igalgerman/oren_study'
 const LOG = 'C:/work/Oren_study/a/tools/runner/.runs/runner.log'
+const STATS = 'C:/work/Oren_study/a/tools/runner/.runs/stats.jsonl'
 const ROOT = /^c:[\\/]+work[\\/]+oren_study([\\/]|$)/i
 const DATA = { plugin: 'oren-lanes', key: 'data' } as const
 const LIVE = { plugin: 'oren-lanes', key: 'live' } as const
@@ -62,6 +63,8 @@ export const register: Register = on => {
           // no runner log: nothing to show
         }
 
+        let stats: string[] = []
+        try { stats = statsLines((await $.fs.read(STATS)) as string, Date.now() / 1000) } catch { /* no stats yet */ }
         let flow: string[] = []
         let done = ''
         try {
@@ -84,7 +87,7 @@ export const register: Register = on => {
           await $.state.set(LIVE, windows.filter(isLive).map(w => w.name))
         }
         const data: OrenLanesData = {
-          windows, groups: groupIssues(issues), lastLog, errors, usage, flow, done,
+          windows, groups: groupIssues(issues), lastLog, errors, usage, flow, done, stats,
           updatedAt: await $.clock.now(),
         }
         await $.state.set(DATA, data)
@@ -137,6 +140,8 @@ export const register: Register = on => {
           </Box>
         ))}
         {d && d.done ? <Text bold>{d.done}</Text> : null}
+        {d && d.stats && d.stats.length > 0 && <Text bold>Stats</Text>}
+        {d && d.stats && d.stats.map(x => <Text dimColor>{trunc(x, width)}</Text>)}
         {d && d.usage ? <Text>{'usage: ' + d.usage}</Text> : null}
         {d && d.lastLog !== '' && <Text dimColor>{trunc(d.lastLog, width)}</Text>}
       </Box>

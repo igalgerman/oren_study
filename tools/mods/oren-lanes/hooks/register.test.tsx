@@ -66,3 +66,16 @@ test('flow rows', () => {
   expect(rows[2]).toMatch(/your task/)
   expect(rows[3]).toMatch(/^#1 ✓Plan ✓Build ✓Review ✓Merge ✓Live/)
 })
+
+import { statsLines } from './lanes'
+test('stats lines', () => {
+  const ev = (ts: number, issue: number, event: string) => JSON.stringify({ ts, issue, lane: 'core', event })
+  const text = [ev(1000, 1, 'start'), ev(1600, 1, 'worker_done'), ev(2500, 1, 'review_pass'), ev(3000, 1, 'merged'),
+    ev(90000, 2, 'start'), ev(90300, 2, 'worker_done'), 'garbage'].join('\n')
+  const l = statsLines(text, 91000)
+  expect(l[0]).toBe('merged 0 in 24h · 1 total')
+  expect(l[1]).toBe('avg to merge 33m')
+  expect(l[2]).toBe('avg build 8m · review 15m')
+  expect(l[3]).toBe('last #2: build 5m · review - · merge -')
+  expect(statsLines('', 0)).toEqual([])
+})

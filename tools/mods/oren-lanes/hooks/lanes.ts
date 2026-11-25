@@ -135,3 +135,42 @@ export function flowRows(open: Issue[], closed: Issue[], wins: Win[], prBranches
   for (const i of closed.slice(0, 3)) rows.push(`#${i.number} ${bar(5)}  · ${i.title}`)
   return rows
 }
+
+export type StatEvent = { ts: number; issue: number; event: string }
+
+const dur = (s: number | null) => {
+  if (s === null) return '-'
+  const m = Math.round(s / 60)
+  return m < 90 ? `${m}m` : `${(s / 3600).toFixed(1)}h`
+}
+
+/** Stats lines from stats.jsonl text (ts in epoch seconds); [] when there are no events. */
+export function statsLines(text: string, nowSec: number): string[] {
+  const per = new Map<number, { start: number; build?: number; wd?: number; review?: number; merge?: number; mergedAt?: number }>()
+  const evs: StatEvent[] = []
+  for (const l of text.split('\n')) {
+    try { const e = JSON.parse(l) as StatEvent; if (typeof e.ts === 'number') evs.push(e) } catch { /* skip */ }
+  }
+  evs.sort((a, b) => a.ts - b.ts)
+  for (const e of evs) {
+    if (e.event === 'start') { per.set(e.issue, { start: e.ts }); continue }
+    const p = per.get(e.issue)
+    if (!p) continue
+    if (e.event === 'worker_done' && p.build === undefined) { p.build = e.ts - p.start; p.wd = e.ts }
+    else if (e.event === 'review_pass' && p.wd !== undefined) p.review = e.ts - p.wd
+    else if (e.event === 'merged') { p.merge = e.ts - p.start; p.mergedAt = e.ts }
+  }
+  const all = [...per.entries()]
+  if (!all.length) return []
+  const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null)
+  const ps = all.map(([, p]) => p)
+  const merged = ps.filter(p => p.merge !== undefined)
+  const m24 = merged.filter(p => (p.mergedAt ?? 0) > nowSec - 86400).length
+  const [n, last] = all.reduce((a, b) => (b[1].start > a[1].start ? b : a))
+  return [
+    `merged ${m24} in 24h · ${merged.length} total`,
+    `avg to merge ${dur(avg(merged.map(p => p.merge as number)))}`,
+    `avg build ${dur(avg(ps.filter(p => p.build !== undefined).map(p => p.build as number)))} · review ${dur(avg(ps.filter(p => p.review !== undefined).map(p => p.review as number)))}`,
+    `last #${n}: build ${dur(last.build ?? null)} · review ${dur(last.review ?? null)} · merge ${dur(last.merge ?? null)}`,
+  ]
+}

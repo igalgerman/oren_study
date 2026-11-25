@@ -66,3 +66,19 @@ print("ok cleanup")
 # regression: a finished run-2 next to a live run-2 must not close anything (the live one is working)
 assert W.leftovers([{"name": "run-2", "state": "finished"}, {"name": "run-2", "state": "live", "status": ""}], set(), set()) == []
 print("ok same-name")
+
+# timing stats
+import stats as st
+_ev = lambda t, n, e: {"ts": t, "issue": n, "lane": "core", "event": e}
+_log = [_ev(1000, 1, "start"), _ev(1600, 1, "worker_done"), _ev(1900, 1, "review_fix"), _ev(2200, 1, "fix_done"),
+        _ev(2500, 1, "review_pass"), _ev(3000, 1, "merged"), _ev(3100, 1, "deployed"),
+        _ev(90000, 2, "start"), _ev(90300, 2, "worker_done"), _ev(90400, 2, "review_pass"), _ev(90600, 2, "merged"),
+        _ev(91000, 3, "start"), _ev(91100, 3, "parked"), _ev(91200, 3, "blocked")]
+_r = st.compute(_log, now=91000)
+_i = {p["issue"]: p for p in _r["issues"]}
+assert (_i[1]["build"], _i[1]["review"], _i[1]["fix_rounds"], _i[1]["merge"]) == (600, 900, 1, 2000)
+_t = _r["totals"]
+assert (_t["merged_24h"], _t["merged_total"], _t["parked"], _t["blocked"]) == (1, 2, 1, 1)
+assert _t["avg_merge"] == 1300 and _t["avg_build"] == 450 and _t["avg_review"] == 500
+assert st.compute([])["totals"]["avg_merge"] is None and "merged: 0" in st.report([])
+print("stats ok")

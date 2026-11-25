@@ -63,3 +63,5 @@ Resume when the owner answers: type the answer into the window (`hc send issue-<
 ## Code changes
 - runner.py changes apply to the NEXT issue run (every run is a fresh `python runner.py` process; running runs keep the code they started with). The watchdog reloads runner.py by itself when the file changes; a change in watchdog.py itself needs the `watchdog` window restarted (kill it, run the watchdog line of tools/orchestrator.cmd) at a quiet moment.
 - tools/integrate.sh works in its own checkout `C:\work\Oren_study\wt-integrate` (branch `integrate`), so uncommitted edits in this checkout never block a merge; this checkout is fast-forwarded afterwards when clean. Deploy and pregen run there too.
+
+Owner asks for stats → `python tools/runner/stats.py`, answer in ≤5 lines.
