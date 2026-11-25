@@ -35,6 +35,4 @@ On PASS: `tools/integrate.sh` merges into main, rebuilds, runs ALL tests, pushes
 Known: `worker` suite fails only on Windows (ESM c:\ path); `reading`/`activities`/`time-missions` can be flaky under load — rerun alone once.
 
 ## Observer
-Every `observer_minutes` the watchdog starts a fresh read-only Claude (`tools/runner/observer_prompt.md`) that audits labels, PRs, lanes, duplicates and closed issues, and tells the orchestrator `OBSERVER found: ...`. Result in `tools/runner/.runs/observer.last` (panel bottom line).
-
-Questions to the owner: in Hebrew, through tools/ask/ask.py (browser page), one round at a time; never ask in the terminal when the owner prefers Hebrew.
+Every `observer_minutes` the watchdog runs `tools/runner/observer.py`, an observer that ACTS within limits (make_ready, rerun, fix Blocked-by lines, nudge the orchestrator; max 5 per run, each commented on the issue). Result in `.runs/observer.last`; `observer_minutes = 0` stops it.

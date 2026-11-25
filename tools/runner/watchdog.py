@@ -181,6 +181,7 @@ def observer_once():
     return probs
 
 def observer_tick():
+    import observer; observer.run_if_due(); return   # acting observer (observer.py); the old read-only code below is unused
     if not observer_due(_obs["last"], time.time(), OBSERVER_MIN, _obs["running"]): return
     _obs["last"], _obs["running"] = time.time(), True
     def work():

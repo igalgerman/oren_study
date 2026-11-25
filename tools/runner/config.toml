@@ -18,5 +18,5 @@ show = true
 # Herdr space where worker/reviewer tabs open (by name)
 herdr_space = "Oren_study_orech"
 
-# read-only auditor (observer_prompt.md), started headless by the watchdog every N minutes
-observer_minutes = 30
+# acting observer (observer.py, observer_prompt.md), started headless by the watchdog every N minutes
+observer_minutes = 10   # 0 = observer off
