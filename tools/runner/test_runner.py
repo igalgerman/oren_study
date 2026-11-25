@@ -82,3 +82,17 @@ assert (_t["merged_24h"], _t["merged_total"], _t["parked"], _t["blocked"]) == (1
 assert _t["avg_merge"] == 1300 and _t["avg_build"] == 450 and _t["avg_review"] == 500
 assert st.compute([])["totals"]["avg_merge"] is None and "merged: 0" in st.report([])
 print("stats ok")
+
+# routing: STUCK / runner error -> orchestrator (not the owner); a parked question -> the owner
+assert r.stuck_labels() == ["blocked", "needs-orchestrator"] and "ready-for-human" not in r.stuck_labels()
+import inspect
+assert '"ready-for-human"' in inspect.getsource(r.park_issue) and "ready-for-human" not in inspect.getsource(r.block)
+print("ok routing")
+
+# observer scheduling + parse
+assert W.observer_due(0, 1800, 30, False) and not W.observer_due(0, 1799, 30, False) and not W.observer_due(0, 99999, 30, True)
+assert W.parse_observer("OBSERVER: OK\nOBSERVER-END") == []
+_p = W.parse_observer("noise\nOBSERVER: #3 needs no owner → label ready-for-agent\nOBSERVER: backlog low → add work\nOBSERVER-END")
+assert _p == ["OBSERVER: #3 needs no owner → label ready-for-agent", "OBSERVER: backlog low → add work"]
+assert len(W.parse_observer(NL.join(f"OBSERVER: p{i} → f" for i in range(12)))) == 8
+print("ok observer")
