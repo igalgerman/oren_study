@@ -1,0 +1,5 @@
+{"title":"שאלות על #57","intro":"טקסט קצר לבדיקה",
+ "questions":[
+ {"id":"format","text":"איך לבדוק מה אורן יודע?","options":["ההורה עונה בלוח ההורים","מבחן קצר במשחק","שניהם"],"multi":false,"other":true},
+ {"id":"multi","text":"אילו נושאים?","options":["חיבור","חיסור","שעון"],"multi":true},
+ {"id":"notes","text":"משהו נוסף?","free":true}]}
