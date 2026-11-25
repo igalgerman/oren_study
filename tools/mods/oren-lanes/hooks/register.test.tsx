@@ -120,3 +120,14 @@ test('blocked + needs-orchestrator stays out of your lane', () => {
   expect(v.you).toEqual(['! #23 parked q — your task'])
   expect(v.orch).toEqual(['orchestrator handling: #22 #24'])
 })
+
+test('status line counts distinct issues, capped at 3', () => {
+  const live = (name: string) => ({ name, state: 'live' })
+  const d = {
+    windows: ['issue-12', 'issue-12-fix', 'issue-13', 'issue-14', 'issue-15'].map(live),
+    groups: groupIssues([]), lastLog: '', errors: [], updatedAt: 0,
+  }
+  expect(statusLine(d)).toMatch(/^lanes 3\/3 /)
+  d.windows = ['issue-12', 'issue-12-fix'].map(live)
+  expect(statusLine(d)).toMatch(/^lanes 1\/3 /)
+})
