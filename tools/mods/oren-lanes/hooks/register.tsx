@@ -148,9 +148,9 @@ export const register: Register = on => {
         {v && v.next.length > 6 ? dim(`… and ${v.next.length - 6} more`) : null}
         {v && v.done.length > 0 && head('DONE')}
         {v && v.done.map(dim)}
-        {d.stats && d.stats.length > 0 && head('STATS')}
-        {d.stats && d.stats.slice(0, 2).map(dim)}
+        {(() => { const s = (d.stats ?? []).filter(x => !/^merged /.test(x) && !/ -$/.test(x.trim())); return s.length ? [head('STEP TIMES'), ...s.slice(0, 2).map(dim)] : null })()}
         <Box marginTop={1}><Button key="refresh" label="Refresh" onPress={() => void refreshRef()} /></Box>
+        {dim('updated ' + new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(d.updatedAt)) + ' · every 30 s')}
       </Box>
     )
   })

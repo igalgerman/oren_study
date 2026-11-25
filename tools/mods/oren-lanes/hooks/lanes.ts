@@ -191,7 +191,7 @@ export function laneReasons(open: Issue[], wins: Win[], max = 3): string[] {
   const coreWait = ready.filter(i => !startable.includes(i))
   if (coreWait.length) why.push(`#${coreWait.map(i => i.number).join(', #')} ready but only 1 core at a time`)
   const waits = open.filter(i => lab(i).has('ready-for-agent') && !lab(i).has('in-progress') && parseBlockers(i.body).some(b => b !== i.number && openNums.has(b)))
-  if (waits.length) why.push(`${waits.length} wait in the chain (${waits.map(i => '#' + i.number).slice(0, 4).join(' ')}${waits.length > 4 ? ' …' : ''})`)
+  if (waits.length) why.push(`${waits.length} wait in the chain (${[...waits].sort((a, b) => a.number - b.number).map(i => '#' + i.number).slice(0, 4).join(' ')}${waits.length > 4 ? ' …' : ''})`)
   const you = open.filter(i => lab(i).has('ready-for-human') || lab(i).has('needs-triage'))
   if (you.length) why.push(`need you first: #${you.map(i => i.number).join(', #')}`)
   const reason = why.length ? why.join(' · ') : 'backlog empty — add work with /idea or /task'
@@ -226,6 +226,6 @@ export function view(open: Issue[], closed: Issue[], wins: Win[], prBranches: st
   const next = open.filter(i => lab(i).has('ready-for-agent') && !lab(i).has('in-progress') && !lab(i).has('blocked'))
     .sort((a, b) => a.number - b.number)
     .map(i => { const w = parseBlockers(i.body).filter(b => b !== i.number && openNums.has(b)); return `#${i.number} ${short(i.title)}${w.length ? '  (after #' + w.join(', #') + ')' : '  (ready)'}` })
-  const done = closed.slice(0, 3).map(i => `✓ #${i.number} ${short(i.title)}`)
+  const done = closed.slice(0, 3).map(i => lab(i).has('needs-triage') ? `→ #${i.number} ${short(i.title)} (split into tasks)` : `✓ #${i.number} ${short(i.title)}`)
   return { lanes, you, next, done }
 }
