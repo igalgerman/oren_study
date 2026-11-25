@@ -131,3 +131,17 @@ assert nums(r.select([I(1,[R,"pack","P0"]), I(2,[R,"pack","bug","P3"])], 2)) == 
 assert nums(r.select([I(5,[R,"pack","P1"]), I(3,[R,"pack","P1"])], 2)) == [3,5]
 assert r.priority_of(["P1", "x"]) == 1 and r.priority_of([]) == 2
 print("ok priority")
+# deploy_text: "ok <url>" is the LAST line of deploy.sh; pregen only when config pregen = true (#50)
+_calls = []
+NL = chr(10)
+def _fake_run(cmd, **kw):
+    _calls.append(cmd)
+    return (0, "injected 1 2" + NL + "website copy written" + NL + "worker 3" + NL + "ok https://x.oren-game.pages.dev" + NL) if "deploy.sh" in " ".join(map(str, cmd)) else (0, "")
+_orig_run, _orig_env = r.run, r.env_file
+r.run, r.env_file = _fake_run, (lambda: {"CLOUDFLARE_API_TOKEN": "t"})
+r.CFG["pregen"] = False
+assert r.deploy_text(None) == "deployed ok https://x.oren-game.pages.dev (pregen off)" and not any("pregen.js" in " ".join(map(str, c)) for c in _calls)
+r.CFG["pregen"] = True; _calls.clear()
+assert r.deploy_text(None).startswith("deployed ok https://") and any("pregen.js" in " ".join(map(str, c)) for c in _calls)
+r.run, r.env_file = _orig_run, _orig_env; r.CFG["pregen"] = False
+print("ok deploy")
