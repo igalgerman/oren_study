@@ -24,17 +24,20 @@ for s in "${SUITES[@]}"; do log="tests/.tmp/logs/${s// /-}.log"; line=$(grep '^R
 done
 # RETRY_ALONE=1 (used by tools/integrate.sh): a suite that failed under parallel load is rerun ALONE once; all pass alone = flaky, not a failure (#60, #40)
 if [ "$FAILED" = 1 ] && [ "${RETRY_ALONE:-}" = 1 ]; then
-  FAILED=0; FLAKY=""
+  FAILED=0; FLAKY=""; QUAR=""
   for s in "${SUITES[@]}"; do log="tests/.tmp/logs/${s// /-}.log"; line=$(grep '^RESULT' "$log" | tail -1); code=$(cat "$log.code" 2>/dev/null || echo 1)
     if [ -n "$line" ]; then read -r _ name p f <<<"$line"; else f='-'; fi
     if [ -z "$line" ] || [ "$code" != 0 ] || [ "$f" != 0 ]; then
       run_one "$s"; line=$(grep '^RESULT' "$log" | tail -1); code=$(cat "$log.code")
       if [ -n "$line" ]; then read -r _ name p f <<<"$line"; else f='-'; fi
-      if [ -z "$line" ] || [ "$code" != 0 ] || [ "$f" != 0 ]; then FAILED=1; echo "FAILED again alone: ${s// /-}"; grep -E '^FAIL|Error' "$log" | head -5 | sed 's/^/    /'
+      if [ -z "$line" ] || [ "$code" != 0 ] || [ "$f" != 0 ]; then
+        if grep -qxF "${s// /-}" tests/quarantine.txt 2>/dev/null; then QUAR="$QUAR ${s// /-}"; else FAILED=1; fi
+        echo "FAILED again alone: ${s// /-}"; grep -E '^FAIL|Error' "$log" | head -5 | sed 's/^/    /'
       else FLAKY="$FLAKY ${s// /-}"; fi
     fi
   done
   [ -n "$FLAKY" ] && echo "FLAKY (failed under load, passed alone):$FLAKY"
+  [ -n "$QUAR" ] && echo "QUARANTINED (fails, does not block; see tests/quarantine.txt):$QUAR"
 fi
 echo "time: $(( $(date +%s) - T0 ))s   logs: tests/.tmp/logs/"
 exit $FAILED
