@@ -82,3 +82,60 @@ assert (_t["merged_24h"], _t["merged_total"], _t["parked"], _t["blocked"]) == (1
 assert _t["avg_merge"] == 1300 and _t["avg_build"] == 450 and _t["avg_review"] == 500
 assert st.compute([])["totals"]["avg_merge"] is None and "merged: 0" in st.report([])
 print("stats ok")
+
+# max_core: 2 core + 1 other, never 3 core
+_c = lambda n: I(n, [R, "core"])
+assert nums(r.select([_c(1), _c(2), _c(3), I(4, [R, "pack"])], 3, 2)) == [1, 2, 4]
+assert nums(r.select([_c(1), _c(2), _c(3)], 3, 2)) == [1, 2]
+assert nums(r.select([I(1, ["in-progress", "core"]), _c(2), _c(3)], 3, 2)) == [2]
+assert nums(r.select([I(1, ["in-progress", "core"]), I(2, ["in-progress", "core"]), _c(3), I(4, [R, "pack"])], 3, 2)) == [4]
+assert nums(r.select([_c(1), _c(2)], 3)) == [1]          # default max_core = 1
+assert r.CFG["max_core"] == 2
+print("ok max_core")
+
+# conflict -> resolve -> retry, at most 2 resolve rounds
+def _drive(results):
+    """results: integrate outcomes in order, each (rc, out); resolve always succeeds. -> (outcome, #integrate calls, #resolve calls)"""
+    it, calls = iter(results), {"i": 0, "r": 0}
+    def integ(): calls["i"] += 1; return next(it)
+    def resolve(files): calls["r"] += 1; return True
+    return r.integrate_with_resolve(integ, resolve, 2), calls
+(o, c) = _drive([(0, "integrated")]);                                       assert o[0] == "merged" and (c["i"], c["r"]) == (1, 0)
+(o, c) = _drive([(2, "CONFLICTS (fix)\na.js\nb.js\n"), (0, "ok")]);          assert o[0] == "merged" and (c["i"], c["r"]) == (2, 1)
+(o, c) = _drive([(5, "commit/push failed"), (2, "CONFLICTS\na.js\n"), (0, "ok")]); assert o[0] == "merged" and (c["i"], c["r"]) == (3, 2)
+(o, c) = _drive([(2, "CONFLICTS\na.js\n")] * 3);                              assert o[0] == "giveup" and o[1] == ["a.js"] and (c["i"], c["r"]) == (3, 2)
+(o, c) = _drive([(4, "TESTS FAILED")]);                                      assert o[0] == "failed" and (c["i"], c["r"]) == (1, 0)   # not a conflict: no resolve
+def _bad(files): return False
+assert r.integrate_with_resolve(lambda: (2, "CONFLICTS\nx\n"), _bad, 2)[0] == "failed"                                        # resolver did not finish
+assert r.conflict_files("CONFLICTS (fix by hand, or send back to the lane):\nx/a.js\ny/b.css\n") == ["x/a.js", "y/b.css"]
+assert "git fetch origin && git merge origin/main" in r.resolve_prompt(7, ["a.js"]) and "RESULT: DONE" in r.resolve_prompt(7, ["a.js"]) and "force" in r.resolve_prompt(7, [])
+print("ok resolve")
+
+# routing: STUCK / runner error -> orchestrator (not the owner); a parked question -> the owner
+assert r.stuck_labels() == ["blocked", "needs-orchestrator"] and "ready-for-human" not in r.stuck_labels()
+import inspect
+assert '"ready-for-human"' in inspect.getsource(r.park_issue) and "ready-for-human" not in inspect.getsource(r.block)
+print("ok routing")
+
+# observer scheduling + parse
+assert W.observer_due(0, 1800, 30, False) and not W.observer_due(0, 1799, 30, False) and not W.observer_due(0, 99999, 30, True)
+assert W.parse_observer("OBSERVER: OK\nOBSERVER-END") == []
+_p = W.parse_observer("noise\nOBSERVER: #3 needs no owner → label ready-for-agent\nOBSERVER: backlog low → add work\nOBSERVER-END")
+assert _p == ["OBSERVER: #3 needs no owner → label ready-for-agent", "OBSERVER: backlog low → add work"]
+assert len(W.parse_observer(NL.join(f"OBSERVER: p{i} → f" for i in range(12)))) == 8
+print("ok observer")
+
+# deploy_text: "ok <url>" is the LAST line of deploy.sh; pregen only when config pregen = true (#50)
+_calls = []
+NL = chr(10)
+def _fake_run(cmd, **kw):
+    _calls.append(cmd)
+    return (0, "injected 1 2" + NL + "website copy written" + NL + "worker 3" + NL + "ok https://x.oren-game.pages.dev" + NL) if "deploy.sh" in " ".join(map(str, cmd)) else (0, "")
+_orig_run, _orig_env = r.run, r.env_file
+r.run, r.env_file = _fake_run, (lambda: {"CLOUDFLARE_API_TOKEN": "t"})
+r.CFG["pregen"] = False
+assert r.deploy_text(None) == "deployed ok https://x.oren-game.pages.dev (pregen off)" and not any("pregen.js" in " ".join(map(str, c)) for c in _calls)
+r.CFG["pregen"] = True; _calls.clear()
+assert r.deploy_text(None).startswith("deployed ok https://") and any("pregen.js" in " ".join(map(str, c)) for c in _calls)
+r.run, r.env_file = _orig_run, _orig_env; r.CFG["pregen"] = False
+print("ok deploy")

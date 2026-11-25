@@ -79,3 +79,44 @@ test('stats lines', () => {
   expect(l[3]).toBe('last #2: build 5m · review - · merge -')
   expect(statsLines('', 0)).toEqual([])
 })
+
+import { laneReasons } from './lanes'
+test('lane reasons', () => {
+  const lab = (...n: string[]) => n.map(name => ({ name }))
+  const r = laneReasons([
+    { number: 4, title: 'C', labels: lab('core', 'ready-for-agent', 'in-progress') },
+    { number: 5, title: 'G', labels: lab('core', 'ready-for-agent'), body: 'Blocked by: #4' },
+    { number: 10, title: 'voice', labels: lab('ready-for-human') },
+  ], [])
+  expect(r.length).toBe(3)
+  expect(r[0]).toMatch(/^1\. #4 running/)
+  expect(r[1]).toMatch(/free — .*wait in the chain .*need you first: #10/)
+})
+
+import { view } from './lanes'
+test('readable view', () => {
+  const lab = (...n: string[]) => n.map(name => ({ name }))
+  const v = view([
+    { number: 4, title: 'Batch C', labels: lab('core', 'ready-for-agent', 'in-progress') },
+    { number: 5, title: 'G1-G8', labels: lab('core', 'ready-for-agent'), body: 'Blocked by: #4' },
+    { number: 10, title: 'voice', labels: lab('ready-for-human') },
+    { number: 11, title: 'math ideas', labels: lab('core', 'needs-triage') },
+  ], [{ number: 3, title: 'Batch B' }], [{ name: 'review-4', state: 'live/working' }], ['lane/4'])
+  expect(v.lanes[0]).toBe('● #4 Batch C — review')
+  expect(v.lanes[1]).toMatch(/^○ free — /)
+  expect(v.you).toEqual(['! #10 voice — your task', '? #11 math ideas — answer questions'])
+  expect(v.orch).toEqual([])
+  expect(v.next).toEqual(['#5 G1-G8  (after #4)'])
+  expect(v.done).toEqual(['✓ #3 Batch B'])
+})
+
+test('blocked + needs-orchestrator stays out of your lane', () => {
+  const lab = (...n: string[]) => n.map(name => ({ name }))
+  const v = view([
+    { number: 22, title: 'deploy', labels: lab('blocked', 'needs-orchestrator') },
+    { number: 23, title: 'parked q', labels: lab('blocked', 'ready-for-human') },
+    { number: 24, title: 'old blocked', labels: lab('blocked') },
+  ], [], [], [])
+  expect(v.you).toEqual(['! #23 parked q — your task'])
+  expect(v.orch).toEqual(['orchestrator handling: #22 #24'])
+})

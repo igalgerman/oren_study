@@ -20,7 +20,7 @@ Keep your own context small: do the work through the runner (herdr windows) or S
   `worker` suite fails only on Windows (ESM c:\ path) — known, not a game bug. `activities`/`time-missions` flaky under load: rerun alone.
 
 ## The flow (agreed with the owner)
-idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → runner, 3 lanes (max 1 core) → review → merge to main → tests → deploy → one line to the owner.
+idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → runner, 3 lanes (max 2 core; merge conflicts are resolved by the worker automatically, 2 rounds, then parked) → review → merge to main → tests → deploy → one line to the owner.
 - Bugs: same flow, label `bug`, no grilling, go first in the queue, worker writes a failing test first.
 - Clear tasks (already specified) skip grilling. Fuzzy ideas get `/grill-me` in the `intake` window, not in your context.
 - Deploy after every green merge (owner OK'd the flow). Never force-push. No secrets in chat.
@@ -59,6 +59,12 @@ If the `watchdog` window is missing (hc ls), start it again: the watchdog line i
 ## Parked issues (nobody answered for 30 min; nights)
 A worker/reviewer waiting longer than `park_minutes` (config.toml) is PARKED by its run process (the watchdog does it if the run is gone): comment with the question on the issue, labels `blocked` + `ready-for-human`, `in-progress` removed, the run exits (issue lock and core lock released), a new pass starts the next ready issue. The windows stay OPEN. The watchdog line / the run's note tells you "#n parked: waiting for you since HH:MM".
 Resume when the owner answers: type the answer into the window (`hc send issue-<n> "..."`), remove the labels `blocked` and `ready-for-human` on the issue, then `tools/runner/run.cmd <n>`. The run re-attaches to the still-open windows and worktree (nothing restarted). If the windows were closed, a re-run keeps pushed work: an existing `origin/lane/<n>` / open PR is never deleted, the worktree continues from it.
+
+## needs-orchestrator (STUCK, runner errors, reviewer asked twice)
+The runner labels such an issue `blocked` + `needs-orchestrator` (NOT `ready-for-human`) and sends you `STUCK #n: <why> — decide: unblock, split, or ask the owner`. It is YOUR job: read the issue comment and the window, fix it yourself (rewrite/split the issue, fix the runner, do the missing step), then remove `blocked` + `needs-orchestrator` and `tools/runner/run.cmd <n>`. Ask the owner only if it is truly his decision (then ask in your window; if he is away it becomes a parked question with `ready-for-human`). The panel shows these in a dim "orchestrator handling" line, not in the owner's lane.
+
+## Observer
+Every `observer_minutes` (config.toml) the watchdog runs a read-only headless Sonnet with `tools/runner/observer_prompt.md` and types `OBSERVER found: <problem> → <fix>` lines into your window (nothing when OK). Act on them (fix labels, unblock, add backlog); do not ignore. Log: `tools/runner/.runs/observer.log`, last result: `observer.last`. A watchdog.py change needs the watchdog window restarted.
 
 ## Code changes
 - runner.py changes apply to the NEXT issue run (every run is a fresh `python runner.py` process; running runs keep the code they started with). The watchdog reloads runner.py by itself when the file changes; a change in watchdog.py itself needs the `watchdog` window restarted (kill it, run the watchdog line of tools/orchestrator.cmd) at a quiet moment.

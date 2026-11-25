@@ -1331,20 +1331,25 @@ function browserSay(t,lang){if(!('speechSynthesis' in window))return;speechSynth
 /* Google voice on the family website: one fixed voice on every device (chosen by the parents in blind tests),
    each sentence made in advance by cf/tools/pregen.js and cached by the server */
 const GVOICE='he-IL-Chirp3-HD-Kore',GRATE=0.9;
-const GV={ok:false,audio:null,ver:0};/* ver: the voice-fix version from the server; part of every audio URL so fixed sentences are fetched again */
-(async()=>{if(!/^https?:$/.test(location.protocol)||/claude\.ai|claudeusercontent/.test(location.host)||window.__noFamily)return;
-  try{const r=await fetch('/api/tts/status',{cache:'no-store'});GV.ok=r.ok;try{const j=await r.json();GV.ver=+j.ver||0;}catch(e){}}catch(e){}})();
+const GV={ok:false,audio:null,ver:0,pending:false,wait:null,ms:8000};/* ver: the voice-fix version from the server; part of every audio URL so fixed sentences are fetched again. pending/wait: the status check is still running (#36) */
+GV.wait=(async()=>{if(!/^https?:$/.test(location.protocol)||/claude\.ai|claudeusercontent/.test(location.host)||window.__noFamily)return;
+  GV.pending=true;
+  for(let i=0;i<3&&!GV.ok;i++){/* a slow or failed first try must not leave Oren on the browser voice for the whole visit */
+    try{const r=await fetch('/api/tts/status',{cache:'no-store'});GV.ok=r.ok;try{const j=await r.json();GV.ver=+j.ver||0;}catch(e){}}catch(e){}
+    if(!GV.ok&&i<2)await new Promise(r=>setTimeout(r,1500));}
+  GV.pending=false;})();
 window.__gv=GV;
 const GEN={v:'en-US-Chirp3-HD-Despina',r:0.85};/* English: one fixed Google voice too, chosen by the parents */
 const useGoogle=lang=>(lang==='he'||lang==='en')&&GV.ok;
-function googleSay(t,lang){const en=lang==='en';try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}try{speechSynthesis.cancel();}catch(e){}
+function googleSay(t,lang,again){const en=lang==='en';try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}try{speechSynthesis.cancel();}catch(e){}
   const url='/api/tts?t='+encodeURIComponent((en?plain(t):fullSpell(t)).slice(0,400))+'&v='+(en?GEN.v:GVOICE)+'&r='+(en?GEN.r:GRATE)+'&k='+GV.ver;
   const a=new Audio(url);GV.audio=a;let go=false;
-  const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;try{a.pause();}catch(e){}GV.audio=null;browserSay(t,en?'en':'he');if(why)logIssue('voice',why);};
-  const tm=setTimeout(()=>{if(!go)fall('timeout');},3000);/* never let Oren wait more than 3 seconds */
+  const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;try{a.pause();}catch(e){}GV.audio=null;if(!again){logIssue('voice',(why||'stop')+' (retry)');googleSay(t,lang,1);return;}browserSay(t,en?'en':'he');if(why)logIssue('voice',why);};
+  const tm=setTimeout(()=>{if(!go)fall('timeout');},GV.ms);/* the browser voice only after a retry and a long wait (#36) */
   a.onplaying=()=>{go=true;clearTimeout(tm);};a.onplay=()=>duck(true);a.onended=()=>{duck(false);if(GV.audio===a)GV.audio=null;};
   a.onerror=()=>fall('error');a.play().catch(e=>fall(e&&e.name==='NotAllowedError'?null:'error'));}
-function say(t,lang){if(!t||window.__fast)return;window.__autoSaid=Date.now();lang=lang||'he';
+function say(t,lang){if(!t||window.__fast)return;const stamp=window.__autoSaid=Date.now();lang=lang||'he';
+  if(GV.pending){const g=GV.wait;g.then(()=>{if(window.__autoSaid===stamp)say(t,lang);});return;}
   if(useGoogle(lang)){googleSay(t,lang);return;}
   if(useClaude(lang)){try{speechSynthesis.cancel();}catch(e){}const txt=(lang==='he'?withNikud(t):plain(t)).slice(0,1900);
     TTS.ns.speak(txt,{language:lang,rate:lang==='en'?.9:.95}).catch(e=>{const c=e&&(e.code||e.reason);if(c==='not_granted'||c==='unavailable'){TTS.blocked=true;return;}if(c==='stopped')return;browserSay(t,lang);});return;}
