@@ -53,7 +53,7 @@ export const register: Register = on => {
           const r = await $.process.run(
             ['gh', 'issue', 'list', '-R', REPO, '--state', 'open', '--limit', '100',
               '--json', 'number,title,labels,body'],
-            { timeoutMs: 20000 },
+            { timeoutMs: 90000 },
           )
           if (r.exitCode !== 0) throw new Error(trunc(r.stderr.trim() || `gh exit ${r.exitCode}`, 60))
           issues = JSON.parse(r.stdout) as Issue[]
@@ -75,8 +75,8 @@ export const register: Register = on => {
         let vw: View | undefined
         let done = ''
         try {
-          const pr = await $.process.run(['gh', 'pr', 'list', '-R', REPO, '--state', 'open', '--json', 'headRefName'], { timeoutMs: 20000 })
-          const cl = await $.process.run(['gh', 'issue', 'list', '-R', REPO, '--state', 'closed', '--limit', '500', '--json', 'number,title,labels,body,closedAt'], { timeoutMs: 20000 })
+          const pr = await $.process.run(['gh', 'pr', 'list', '-R', REPO, '--state', 'open', '--json', 'headRefName'], { timeoutMs: 90000 })
+          const cl = await $.process.run(['gh', 'issue', 'list', '-R', REPO, '--state', 'closed', '--limit', '300', '--json', 'number,title,labels,closedAt'], { timeoutMs: 90000 })
           const prs = pr.exitCode === 0 ? (JSON.parse(pr.stdout) as { headRefName: string }[]).map(p => p.headRefName) : []
           const closed = cl.exitCode === 0 ? (JSON.parse(cl.stdout) as Issue[]) : []
           flow = flowRows(issues, closed, windows, prs)
@@ -97,7 +97,14 @@ export const register: Register = on => {
           for (const n of finishedRuns(prev, windows)) $.ui.toast(`${n} finished`)
           await $.state.set(LIVE, windows.filter(isLive).map(w => w.name))
         }
-        const data: OrenLanesData = {
+        // GitHub slow or offline: keep showing the last good backlog instead of an empty panel
+        const prevData = await read($, dataAtom)
+        const ghFailed = errors.some(x => x.startsWith('backlog'))
+        const data: OrenLanesData = ghFailed && prevData ? {
+          ...prevData, windows, usage, stats, observer, lastLog,
+          errors: [`GitHub slow — showing data from ${new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(prevData.updatedAt))}`],
+          updatedAt: prevData.updatedAt,
+        } : {
           windows, groups: groupIssues(issues), lastLog, errors, usage, flow, done, lanes: laneReasons(issues, windows), view: vw, stats, observer,
           updatedAt: await $.clock.now(),
         }
