@@ -1,8 +1,9 @@
+import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import type { OrenLanesData } from '../types/index'
 import {
-  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, flowRows, statsLines,
+  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, flowRows, laneReasons, statsLines,
 } from './lanes'
 import type { Issue, Win } from './lanes'
 
@@ -13,6 +14,8 @@ const LOG = 'C:/work/Oren_study/a/tools/runner/.runs/runner.log'
 const STATS = 'C:/work/Oren_study/a/tools/runner/.runs/stats.jsonl'
 const ROOT = /^c:[\\/]+work[\\/]+oren_study([\\/]|$)/i
 const DATA = { plugin: 'oren-lanes', key: 'data' } as const
+// an atom, so every refresh REDRAWS the pane (a plain $.state.get in render did not subscribe)
+const dataAtom = atom(DATA, null as OrenLanesData | null, { shape: 'data-2' })
 const LIVE = { plugin: 'oren-lanes', key: 'live' } as const
 
 export const register: Register = on => {
@@ -87,10 +90,10 @@ export const register: Register = on => {
           await $.state.set(LIVE, windows.filter(isLive).map(w => w.name))
         }
         const data: OrenLanesData = {
-          windows, groups: groupIssues(issues), lastLog, errors, usage, flow, done, stats,
+          windows, groups: groupIssues(issues), lastLog, errors, usage, flow, done, lanes: laneReasons(issues, windows), stats,
           updatedAt: await $.clock.now(),
         }
-        await $.state.set(DATA, data)
+        await update($, dataAtom, () => data)
         $.ui.status(statusLine(data))
       } catch (err) {
         $.ui.log(`oren-lanes: ${String(err)}`, { to: 'debug' })
@@ -117,7 +120,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
-    const d = (await $.state.get(DATA)).value
+    const d = await read($, dataAtom)
     const width = Math.max(20, (e.props.bodyColumns ?? 40) - 2)
     const groups: [string, keyof OrenLanesData['groups']][] = [
       ['Running', 'running'], ['Ready', 'ready'], ['Waiting', 'waiting'],
@@ -128,6 +131,8 @@ export const register: Register = on => {
         <Button key="refresh" label="Refresh" onPress={() => void refreshRef()} />
         {!d && <Text dimColor>Loading...</Text>}
         {d && d.errors.map(x => <Text dimColor>{trunc(x, width)}</Text>)}
+        {d && d.lanes && <Text bold>Lanes</Text>}
+        {d && d.lanes && d.lanes.map(x => <Text>{trunc(x, width)}</Text>)}
         {d && d.flow && d.flow.length > 0 && <Text bold>Flow  (Plan → Build → Review → Merge+tests → Live)</Text>}
         {d && d.flow && d.flow.map(x => <Text>{trunc(x, width)}</Text>)}
         {d && <Text bold>Windows</Text>}

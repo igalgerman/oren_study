@@ -174,3 +174,27 @@ export function statsLines(text: string, nowSec: number): string[] {
     `last #${n}: build ${dur(last.build ?? null)} · review ${dur(last.review ?? null)} · merge ${dur(last.merge ?? null)}`,
   ]
 }
+
+/** One line per lane (3): what runs in it, or WHY it is free. */
+export function laneReasons(open: Issue[], wins: Win[], max = 3): string[] {
+  const lab = (i: Issue) => new Set((i.labels ?? []).map(x => x.name))
+  const openNums = new Set(open.map(i => i.number))
+  const running = open.filter(i => lab(i).has('in-progress'))
+  const rows = running.map((i, k) => `${k + 1}. #${i.number} running · ${i.title}`)
+  if (rows.length >= max) return rows.slice(0, max)
+  const coreBusy = running.some(i => lab(i).has('core'))
+  const ready = open.filter(i => { const l = lab(i); return l.has('ready-for-agent') && !l.has('in-progress') && !l.has('blocked')
+    && !parseBlockers(i.body).some(b => b !== i.number && openNums.has(b)) })
+  const startable = ready.filter(i => !(coreBusy && (lab(i).has('core') || !['pack', 'review'].some(x => lab(i).has(x)))))
+  const why: string[] = []
+  if (startable.length) why.push(`starting soon: #${startable.map(i => i.number).join(', #')}`)
+  const coreWait = ready.filter(i => !startable.includes(i))
+  if (coreWait.length) why.push(`#${coreWait.map(i => i.number).join(', #')} ready but only 1 core at a time`)
+  const waits = open.filter(i => lab(i).has('ready-for-agent') && !lab(i).has('in-progress') && parseBlockers(i.body).some(b => b !== i.number && openNums.has(b)))
+  if (waits.length) why.push(`${waits.length} wait in the chain (${waits.map(i => '#' + i.number).slice(0, 4).join(' ')}${waits.length > 4 ? ' …' : ''})`)
+  const you = open.filter(i => lab(i).has('ready-for-human') || lab(i).has('needs-triage'))
+  if (you.length) why.push(`need you first: #${you.map(i => i.number).join(', #')}`)
+  const reason = why.length ? why.join(' · ') : 'backlog empty — add work with /idea or /task'
+  for (let k = rows.length; k < max; k++) rows.push(`${k + 1}. free — ${reason}`)
+  return rows
+}

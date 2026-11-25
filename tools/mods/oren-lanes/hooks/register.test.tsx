@@ -79,3 +79,16 @@ test('stats lines', () => {
   expect(l[3]).toBe('last #2: build 5m · review - · merge -')
   expect(statsLines('', 0)).toEqual([])
 })
+
+import { laneReasons } from './lanes'
+test('lane reasons', () => {
+  const lab = (...n: string[]) => n.map(name => ({ name }))
+  const r = laneReasons([
+    { number: 4, title: 'C', labels: lab('core', 'ready-for-agent', 'in-progress') },
+    { number: 5, title: 'G', labels: lab('core', 'ready-for-agent'), body: 'Blocked by: #4' },
+    { number: 10, title: 'voice', labels: lab('ready-for-human') },
+  ], [])
+  expect(r.length).toBe(3)
+  expect(r[0]).toMatch(/^1\. #4 running/)
+  expect(r[1]).toMatch(/free — .*wait in the chain .*need you first: #10/)
+})
