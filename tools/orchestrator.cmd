@@ -1,7 +1,7 @@
 @echo off
-rem Start a fresh orchestrator (main session) in herdr, with the Oren lanes panel. Double-click.
+rem Double-click: opens the herdr layout 'oren' = orchestrator pane left, inbox pane right, worker tabs below.
+rem (starts the orchestrator + inbox terminals if they are not running, writes the layout, switches to it)
 cd /d "%~dp0.."
-"C:\Users\97254\AppData\Local\Programs\herdr-core\hc.exe" run --bg --no-parent --outlive-parent --name orchestrator --cwd "%CD%" claude --plugin-dir "%CD%\tools\mods\oren-lanes" "Read ORCHESTRATOR.md and continue as the orchestrator. Open the Oren lanes panel (/lanes)."
 rem the watchdog (checks every minute that nothing is stuck); already running = this line just fails, fine
 "C:\Users\97254\AppData\Local\Programs\herdr-core\hc.exe" run --bg --no-parent --outlive-parent --name watchdog --cwd "%CD%" "C:\Users\97254\miniforge3\python.exe" tools\runner\watchdog.py
-"C:\Users\97254\AppData\Local\Programs\herdr-core\hc.exe" attach orchestrator
+"C:\Users\97254\miniforge3\python.exe" tools\herdr_layout.py
