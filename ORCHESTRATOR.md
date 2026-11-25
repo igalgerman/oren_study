@@ -48,3 +48,10 @@ Workers and reviewers report to you (herdr notes arrive in your terminal). The o
 - Ask the owner ONE short line, prefixed with the issue: "#3 asks: … (a / b)?" or "#3 wants to run `<command>` — OK?".
 - Type the owner's answer back: `hc send issue-<n> "<answer>"`; for a permission menu, press the option the owner chose (`hc keys issue-<n> ...`). Never approve on the owner's behalf.
 - Check for waiting workers whenever a note arrives and whenever the owner talks to you (`hc ls` → status blocked).
+
+## Watchdog (never stuck)
+The herdr window `watchdog` (tools/runner/watchdog.py, started by tools/orchestrator.cmd) checks every minute and types into YOUR window:
+- `WATCHDOG: window X is waiting for an answer …` → ask the owner one line, then answer X (relay rules above).
+- `WATCHDOG: X stopped … without its RESULT/VERDICT line` → get it to finish, or ask the owner.
+It also starts a runner pass by itself when a lane is free and an issue is ready. Its log: tools/runner/.runs/watchdog.log.
+If the `watchdog` window is missing (hc ls), start it again: the watchdog line in tools/orchestrator.cmd.
