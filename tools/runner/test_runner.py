@@ -158,3 +158,13 @@ r.CFG["pregen"] = True; _calls.clear()
 assert r.deploy_text(None).startswith("deployed ok https://") and any("pregen.js" in " ".join(map(str, c)) for c in _calls)
 r.run, r.env_file = _orig_run, _orig_env; r.CFG["pregen"] = False
 print("ok deploy")
+# sync_decision: keep the main checkout up to date with origin/main (#47)
+assert r.sync_decision("main", "main", False, 3) == ("pull", "")
+assert r.sync_decision("main", "main", False, 0) == ("skip", "")                 # already current: nothing to say
+assert r.sync_decision("main", "main", True, 3)[0] == "skip" and "uncommitted" in r.sync_decision("main", "main", True, 3)[1]
+assert r.sync_decision("lane/9", "main", False, 3)[0] == "skip" and "lane/9" in r.sync_decision("lane/9", "main", False, 3)[1]
+# git status lines: untracked files are fine, tracked edits are dirty
+assert r.is_dirty("?? tools/x.txt\n?? y\n") is False
+assert r.is_dirty(" M tools/runner/runner.py\n?? y\n") is True
+assert r.is_dirty("") is False
+print("ok sync-main")
