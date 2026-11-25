@@ -14,7 +14,10 @@ const URL=L.URL;const sleep=ms=>new Promise(r=>setTimeout(r,ms));
  const click=sel=>p.evaluate(sel=>{const e=document.querySelector(sel);if(e)e.click();return !!e;},sel);
  /* batch A packs: each is played to the end in its own suite (gaps, read-bank2, music2, chess, explore2); here we only open it and check the screen is not empty */
  const OPENED=async()=>{const n=await p.evaluate(()=>document.querySelector('#sTal').children.length+(document.querySelector('#ov').hidden?0:1));return n>0?'skip':'EMPTY SCREEN';};
+ /* batch B: the thinking tracks and reading comprehension are answered through window.__think (always the right option) */
+ const THK=async()=>{for(let k=0;k<500&&!(await ovOpen());k++){await p.evaluate(()=>{const q=window.__think;if(!q||!q.wrap.isConnected)return;const c=q.wrap.querySelector('.chs');if(c&&c.children[q.ans])c.children[q.ans].click();});await sleep(120);}};
  const S={
+  'read-rc':THK,'think-pat':THK,'think-ana':THK,'think-ser':THK,'think-rel':THK,'think-mat':THK,'think-sen':THK,
   'write-mix':OPENED,
   'write-paper':OPENED,
   'read-nik':OPENED,

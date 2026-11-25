@@ -63,4 +63,19 @@ DL.nowLine=()=>{const nw=O.realSave.now;if(!nw||!nw.t)return '';const ago=Date.n
   const when=same?'היום':d.toDateString()===y.toDateString()?'אתמול':pad(d.getDate())+'.'+pad(d.getMonth()+1);
   return `<div class="dlnow">שיחק לאחרונה: ${when} ${pad(d.getHours())}:${pad(d.getMinutes())}</div>`;};
 DL.hhmm=hhmm;
+/* family merge: the log lines of a day from the other device are added (same line = once); "playing now" keeps the newer one */
+DL.merge=(save,o)=>{for(const d in o.alog||{}){const src=(o.alog[d]||{}).e;if(!Array.isArray(src)||!src.length)continue;const L=(save.alog[d]=save.alog[d]||{a:{},s:0,k:{}});L.e=L.e||[];
+    const have=new Set(L.e.map(x=>JSON.stringify(x)));src.forEach(x=>{const k=JSON.stringify(x);if(!have.has(k)){have.add(k);L.e.push(x);}});
+    L.e.sort((a,b)=>a[0]-b[0]);if(L.e.length>MAXE)L.e.splice(0,L.e.length-MAXE);}
+  if(o.now&&(+o.now.t||0)>(+(save.now||{}).t||0))save.now=o.now;trim();};
+/* parent panel, day tab: "playing now" and what he did today and yesterday, one line each. Tap a day to see its lines. */
+const rowsHTML=d=>{const r=DL.rows(d);return r.length?r.map(DL.rowHTML).join(''):'<div class="pnote">עוד לא שיחק</div>';};
+DL.panel=(box,sec)=>{const s=sec(box,'מה אורן עשה','<div class="dlnowbox">'+DL.nowLine()+'</div>');
+  const ds=[0,1].map(i=>{const x=new Date();x.setDate(x.getDate()-i);return x;});
+  ds.forEach((x,i)=>{const d=x.getFullYear()+'-'+pad(x.getMonth()+1)+'-'+pad(x.getDate());const det=document.createElement('details');det.className='pdet';if(i===0)det.open=true;
+    det.innerHTML=`<summary>${i?'אתמול':'היום'}</summary><div class="pdin dllog" data-d="${d}">${rowsHTML(d)}</div>`;s.appendChild(det);});return s;};
+/* top line of the summary tab */
+DL.nowBox=box=>{const d=document.createElement('div');d.className='dlnowbox';d.innerHTML=DL.nowLine();box.appendChild(d);};
+/* redraw the live parts (called after each family pull while the parent panel is open) */
+DL.refresh=()=>{document.querySelectorAll('.dlnowbox').forEach(e=>{e.innerHTML=DL.nowLine();});document.querySelectorAll('.dllog[data-d]').forEach(e=>{e.innerHTML=rowsHTML(e.dataset.d);});};
 })();

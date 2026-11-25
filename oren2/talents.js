@@ -69,7 +69,7 @@ addEventListener('keydown',e=>{if($('#sTal').hidden||!KEY||!$('#ov').hidden||!$(
 const hudT=(title,extra='')=>O.hud(`<div class="chip">${title}</div>${extra}`);
 const progressBar=(i,n)=>`<div class="progress">${Array.from({length:n},(_,k)=>`<i class="pb${k<i?' on':k===i?' cur':''}"></i>`).join('')}</div>`;
 const starsHTML=st=>`<div class="stars">${[0,1,2].map(k=>`<span style="animation-delay:${.3+k*.35}s">${k<st?SPR.star:SPR.starOff}</span>`).join('')}</div>`;
-function record(id,st,extra){const s=S();const c=s.tl[id]||{s:0,n:0,b:0};c.s=Math.max(c.s|0,st|0);c.n=(c.n|0)+1;if(extra&&extra.b!=null)c.b=Math.max(c.b|0,extra.b|0);s.tl[id]=c;dailyMark(id);O.persist();O.emit('tlDone',id);}
+function record(id,st,extra){const s=S();const c=s.tl[id]||{s:0,n:0,b:0};c.s=Math.max(c.s|0,st|0);c.n=(c.n|0)+1;if(extra&&extra.b!=null)c.b=Math.max(c.b|0,extra.b|0);s.tl[id]=c;dailyMark(id);O.persist();O.emit('tlDone',id,st|0);}
 function result(o){const ov=$('#ov');ov.hidden=false;
   ov.innerHTML=`<div class="card"><h2>${o.title||'כָּל הַכָּבוֹד!'}</h2>${o.sub?`<div class="sub">${o.sub}</div>`:''}${o.stars!=null?starsHTML(o.stars):''}${o.gems?`<div class="gain">+${o.gems} ${SPR.gem}</div>`:''}${o.extra||''}</div>`;
   const row=h('div','btnrow');if(o.again){const a=h('button','bigbtn plain sm',ICON.redo+'<span>שׁוּב</span>');a.onclick=()=>{ov.hidden=true;o.again();};row.appendChild(a);}
@@ -85,7 +85,7 @@ function quiz(o){const qs=[],seen=new Set();let t=0;while(qs.length<o.n&&t++<400
     wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});const row=h('div','chs'+(q.ltr?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');if(q.auto&&q.play)setTimeout(()=>{if(qs[i]===q)q.play();},D(350));};
   const resolve=(q)=>{const ex=wrap.querySelector('.hintbox');if(q.explain){ex.hidden=false;ex.innerHTML=`<div class="cap">${q.explain}</div>`;}if(q.reveal)q.reveal(wrap.querySelector('.tqc'));};
-  function pickA(k,b){if(lock||b.disabled)return;const q=qs[i];
+  function pickA(k,b){if(lock||b.disabled)return;const q=qs[i];if(!tries)O.emit('tq',o.id,k===q.ans);
     if(k===q.ans){if(window.TAL.rdA)window.TAL.rdA(q,tries,b);lock=true;if(window.FRIEND)window.FRIEND.onCorrect({tries});b.classList.add('ok');sfx.ok(i);const g=tries?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);resolve(q);setTimeout(next,D(q.explain||q.reveal?2300:1000));return;}
     tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();const fin=tries>=2||q.opts.length<=2;if(window.FRIEND)window.FRIEND.onWrong({final:fin});
     if(fin){lock=true;const c=wrap.querySelector('.chs').children[q.ans];c.classList.add('show');resolve(q);setTimeout(next,D(2600));}}
@@ -937,9 +937,9 @@ const fmtMin=sec=>{const m=Math.round(sec/60);return m<60?m+' דק׳':(m/60).toF
 function lastDays(n){const out=[];const d=new Date();for(let i=n-1;i>=0;i--){const x=new Date(d);x.setDate(d.getDate()-i);const k=x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');out.push([k,x]);}return out;}
 /* three simple tabs; everything else lives in closed sections under "settings" */
 const TABS=[['sum','📊 סיכום'],['day','📅 היום של אורן'],['more','⚙️ הגדרות']];
-const MORE=[['voice','🔊 קול — בדיקה ובחירה'],['try','🎮 לשחק כהורה (ניסיון)'],['msg','💌 הודעה לאורן'],['parts','🧩 להפעיל / לכבות חלקים'],['prog','⏭️ דילוג, איפוס ויהלומים'],['perm','🎤 הרשאות'],['set','🔑 סיסמה וגיבוי']];
-const GROUP={plan:'day',time:'day',voice:'more',try:'more',msg:'more',parts:'more',prog:'more',perm:'more',set:'more'};
-const FN={sum:sumTab,try:tryTab,plan:planTab,time:timeTab,voice:voiceTab,perm:permTab,parts:partsTab,prog:progTab,msg:msgTab,set:setTab};
+const MORE=[['voice','🔊 קול — בדיקה ובחירה'],['try','🎮 לשחק כהורה (ניסיון)'],['msg','💌 הודעה לאורן'],['parts','🧩 להפעיל / לכבות חלקים'],['prog','⏭️ דילוג, איפוס ויהלומים'],['perm','🎤 הרשאות'],['set','🔑 סיסמה וגיבוי'],['map','🗺️ מפת התוכן']];
+const GROUP={plan:'day',time:'day',map:'more',voice:'more',try:'more',msg:'more',parts:'more',prog:'more',perm:'more',set:'more'};
+const FN={map:box=>{if(T.contentMap)T.contentMap(box,sec,BAR);},sum:sumTab,try:tryTab,plan:planTab,time:timeTab,voice:voiceTab,perm:permTab,parts:partsTab,prog:progTab,msg:msgTab,set:setTab};
 let curTab='sum',openSec=null;
 const exitParent=()=>{parentOn=false;O.showMap();};
 function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(dl&&!dl.hidden)dl.hidden=true;if(!parentOn)return login(()=>panel(tab));
@@ -948,12 +948,16 @@ function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(
   s.appendChild(h('div','whead',`<h1>לוח הורים</h1>`));const tb=h('div','ptabs');TABS.forEach(([id,n])=>{const b=h('button','ptab'+(id===curTab?' on':''),n);b.onclick=()=>{openSec=null;panel(id);};tb.appendChild(b);});s.appendChild(tb);
   const body=h('div','pbody');s.appendChild(body);
   if(curTab==='sum')sumTab(body);
-  else if(curTab==='day'){timeTab(body);if(window.HEALTH)window.HEALTH.panel(body,sec,()=>panel('day'));planTab(body);if(T.rdSettings)T.rdSettings(body,sec,()=>panel('day'));}
+  else if(curTab==='day'){timeTab(body);if(window.HEALTH)window.HEALTH.panel(body,sec,()=>panel('day'));planTab(body);if(window.DAYLOG)window.DAYLOG.panel(body,sec);if(T.rdSettings)T.rdSettings(body,sec,()=>panel('day'));}
   else MORE.forEach(([id,n])=>{const d=document.createElement('details');d.className='pdet';const sm=document.createElement('summary');sm.textContent=n;d.appendChild(sm);const inner=h('div','pdin');d.appendChild(inner);let done=false;
     const fill=()=>{if(done)return;done=true;FN[id](inner);};d.addEventListener('toggle',()=>{if(d.open){openSec=id;fill();}});if(openSec===id){d.open=true;fill();}body.appendChild(d);});
-  const out=h('div','btnrow');const bb=h('button','bigbtn plain sm',ICON.home+'<span>יציאה מלוח ההורים</span>');bb.onclick=exitParent;out.appendChild(bb);s.appendChild(out);window.__par=curTab;
+  const out=h('div','btnrow');const bb=h('button','bigbtn plain sm',ICON.home+'<span>יציאה מלוח ההורים</span>');bb.onclick=exitParent;out.appendChild(bb);s.appendChild(out);window.__par=curTab;parLiveOn();
   if(GROUP[tab]&&openSec)setTimeout(()=>{const o=s.querySelector('details[open]');if(o&&tab===openSec&&curTab==='more')o.scrollIntoView({block:'start'});else $('#screens').scrollTop=sy;},0);}
 T.parentPanel=t=>{parentOn=true;panel(t);};
+/* while the parent panel is open: pull the family save every 20s so "playing now" and the log follow Oren from another house */
+let parLive=0;
+function parLiveOn(){if(parLive)return;parLive=setInterval(()=>{if(!parentOn||$('#sPar').hidden){clearInterval(parLive);parLive=0;return;}
+  Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(window.DAYLOG)window.DAYLOG.refresh();});},window.__parPull||20000);}
 const sec=(box,t,html)=>{const d=h('section','psec',`<h3>${t}</h3>`);if(html)d.insertAdjacentHTML('beforeend',html);box.appendChild(d);return d;};
 /* --- summary --- */
 /* problems in the last 14 days: one short line, details only on tap */
@@ -965,6 +969,7 @@ function sumTab(box){const s0=T.S(),sv=O.save;
   permStates().then(st=>{if(st&&Object.values(st).some(v=>v==='prompt'||v==='denied')){const w=h('button','pwarn','⚠️ יש הרשאות שעוד לא אושרו (למשל מיקרופון). לחצו כאן כדי לאשר מראש, כדי שאורן לא ייתקע באמצע.');w.onclick=()=>panel('perm');box.prepend(w);}});
   if(!SET().voiceOk){const w=h('button','pwarn','🔊 עוד לא בדקתם את הקול של המשחק. לחצו כאן — לוקח דקה: שומעים דוגמה ואומרים אוקי.');w.onclick=()=>panel('voice');box.appendChild(w);}
   issues(box);
+  if(window.DAYLOG)window.DAYLOG.nowBox(box);if(T.thinkSummary)T.thinkSummary(box,sec);
   const acc=sv.ans?Math.round((sv.ok|0)/sv.ans*100):0;const totT=Object.values(s0.time).reduce((a,v)=>a+(v|0),0);const talSt=Object.values(s0.tl).reduce((a,c)=>a+(c.s|0),0);
   sec(box,'במבט אחד',`<div class="ptiles">
     <div><b>${new Set([...(sv.days||[]),...Object.keys(s0.time).filter(k=>(s0.time[k]|0)>=60)]).size}</b><span>ימי משחק</span></div><div><b>${O.dayStreak()}</b><span>רצף ימים</span></div>
@@ -973,7 +978,7 @@ function sumTab(box){const s0=T.S(),sv=O.save;
     <div><b>${talSt}</b><span>כוכבים בעיר הכשרונות</span></div><div><b>${Object.keys(s0.bdg||{}).length}/${BADGES.length}</b><span>תגים</span></div></div>`);
   const days=lastDays(14);const mx=Math.max(600,...days.map(([k])=>s0.time[k]|0));
   sec(box,'זמן משחק — 14 ימים אחרונים',`<div class="pchart">${days.map(([k,x])=>{const v=s0.time[k]|0;return `<div class="pcol" title="${k}: ${fmtMin(v)}"><span class="pv">${v?Math.round(v/60):''}</span><i style="height:${v/mx*100}%"></i><small>${'אבגדהוש'[x.getDay()]}</small></div>`;}).join('')}</div><div class="pnote">בדקות, היום מימין. נספר רק זמן פעיל.</div>`);
-  const det=document.createElement('details');det.className='pdet';det.innerHTML='<summary>📈 פירוט מלא (עולמות, נושאים, בניינים, רגשות)</summary>';const dbox=h('div','pdin');det.appendChild(dbox);box.appendChild(det);box=dbox;
+  const det=document.createElement('details');det.className='pdet';det.innerHTML='<summary>📈 פירוט מלא (עולמות, נושאים, בניינים, רגשות)</summary>';const dbox=h('div','pdin');det.appendChild(dbox);box.appendChild(det);box=dbox;if(T.thinkSkills)T.thinkSkills(box,sec,BAR);
   sec(box,'התקדמות בעולמות המסע',O.WORLDS.map(w=>{const got=w.levels.reduce((a,l)=>a+O.stars(l.id),0),max=w.levels.length*3;return `<div class="prow"><span class="pn">${w.name}${SET().offW[w.id]?' <small>(כבוי)</small>':''}</span>${BAR(got,max,w.color)}<span class="pc">${got}/${max}</span></div>`;}).join(''));
   const st=sv.st||{};const units=O.ALLU.filter(u=>!u.boss&&st[u.id]&&st[u.id].a>=4).map(u=>({u,r:st[u.id].o/st[u.id].a}));
   const weak=[...units].sort((a,b)=>a.r-b.r).slice(0,5),strong=[...units].sort((a,b)=>b.r-a.r).slice(0,3);
@@ -1130,6 +1135,7 @@ async function permTab(box){const d=sec(box,'הרשאות','<div class="pnote">�
 /* --- parts: enable / disable / gradual --- */
 function toggle(on,lbl,fn){const b=h('button','pchip'+(on?' on':''),(on?'✓ ':'')+lbl);b.onclick=()=>{fn();O.persist();panel('parts');};return b;}
 function partsTab(box){const st=SET();const g=st.grad;
+  if(T.thinkSettings)T.thinkSettings(box,sec,()=>panel('parts'));
   const gs=sec(box,'פתיחה הדרגתית של עיר הכשרונות','<div class="pnote">כשההפעלה ההדרגתית פועלת, אורן מתחיל עם 2 בניינים ובניין חדש נפתח כל כמה ימי משחק — זה שומר על עניין ועל הפתעה. אורן רואה את הבניינים הסגורים ומתי ייפתחו.</div>');
   const r1=h('div','popt','<span>מצב:</span>');r1.appendChild(toggle(!!g.on,g.on?'פועל':'כבוי',()=>{g.on=g.on?0:1;if(g.on){g.base=(O.save.days||[]).length;g.extra=0;g.seen=2;}}));gs.appendChild(r1);
   if(g.on){const r2=h('div','popt','<span>בניין חדש כל:</span>');[1,2,3,7].forEach(n=>r2.appendChild(toggle((g.every|0)===n,n===1?'יום משחק':n+' ימי משחק',()=>{g.every=n;})));gs.appendChild(r2);
