@@ -96,6 +96,43 @@ def check_lanes(ts):
     rc, out = R.run(cmd, timeout=60)
     log(f"free lane + ready issue -> started {name} (rc {rc})")
 
+def leftovers(ts, closed, blocked):
+    """Pure: names of finished windows to close. ts = hc terminals (name, state, status, marker True/False),
+    closed = closed issue numbers, blocked = issue numbers labelled blocked (parked: keep their windows for the owner)."""
+    live = {t["name"] for t in ts if t.get("state") == "live"}
+    out = []
+    for t in ts:
+        name = t.get("name") or ""
+        m = re.match(r"^(issue|review|run)-(\d+)(-fix|-2)?$", name)
+        if not m: continue
+        n, role, suffix = int(m.group(2)), m.group(1), m.group(3) or ""
+        if t.get("state") != "live": out.append(name); continue            # finished terminal: remove it
+        if n in blocked: continue                                           # parked: the owner looks at it later
+        if n in closed: out.append(name); continue                          # issue done: everything for it goes
+        if role == "run" or t.get("status") not in ("done", "idle") or not t.get("marker"): continue
+        # a worker/reviewer that printed its RESULT/VERDICT and was superseded by the next step's window
+        later = {"issue": [f"review-{n}", f"review-{n}-2", f"issue-{n}-fix"] if not suffix else [f"review-{n}-2"],
+                 "review": [f"issue-{n}-fix"] if not suffix else []}[role]
+        if any(x in live for x in later): out.append(name)
+    return out
+
+def cleanup(ts):
+    rc, out = R.gh("issue", "list", "--state", "all", "--limit", "300", "--json", "number,state,labels")
+    if rc: return
+    iss = json.loads(out)
+    closed = {i["number"] for i in iss if i["state"] == "CLOSED"}
+    blocked = {i["number"] for i in iss if any(l["name"] == "blocked" for l in i["labels"])}
+    rows = []
+    for t in ts:
+        name = t.get("name") or ""
+        if not re.match(r"^(issue|review|run)-\d+", name): continue
+        mk = "VERDICT:" if name.startswith("review-") else "RESULT:"
+        marker = t.get("state") == "live" and t.get("status") in ("done", "idle") and bool(R.find_marker(screen_tail(name, 40), mk))
+        rows.append({**t, "name": name, "marker": marker})
+    for name in leftovers(rows, closed, blocked):
+        R.hc("kill", name, timeout=30); R.hc("rm", name, timeout=30)
+        log(f"closed finished window {name}")
+
 def main():
     log("watchdog started")
     stamp = (HERE / "runner.py").stat().st_mtime
@@ -107,6 +144,7 @@ def main():
             ts = windows()
             check_windows(ts)
             check_lanes(ts)
+            cleanup(R.hc_json("ls", "--all", "--json").get("terminals", []) or ts)
         except Exception as e:
             log(f"error: {e!r}")
         if "--once" in sys.argv: return

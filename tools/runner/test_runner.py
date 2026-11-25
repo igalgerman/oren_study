@@ -49,3 +49,17 @@ assert r.waiting_now("blocked", "") and r.waiting_now("done", q) and not r.waiti
 assert not r.should_park(None, 1000, 30)
 assert not r.should_park(1000, 1000 + 29 * 60, 30) and r.should_park(1000, 1000 + 30 * 60, 30)
 print("ok park")
+
+# watchdog cleanup: which windows are leftovers
+import watchdog as W
+_ts = [
+  {"name": "issue-2", "state": "live", "status": "done", "marker": True},    # superseded by review-2 -> close
+  {"name": "review-2", "state": "live", "status": "working", "marker": False},
+  {"name": "issue-5", "state": "live", "status": "done", "marker": True},    # issue 5 closed -> close
+  {"name": "run-5", "state": "live", "status": "", "marker": False},          # closed -> close
+  {"name": "issue-7", "state": "live", "status": "blocked", "marker": False}, # parked -> keep
+  {"name": "run-9", "state": "finished", "status": "", "marker": False},     # finished terminal -> remove
+  {"name": "issue-8", "state": "live", "status": "working", "marker": False}, # working -> keep
+]
+assert sorted(W.leftovers(_ts, closed={5}, blocked={7})) == ["issue-2", "issue-5", "run-5", "run-9"], W.leftovers(_ts, {5}, {7})
+print("ok cleanup")
