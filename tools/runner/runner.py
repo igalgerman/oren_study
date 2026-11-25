@@ -141,7 +141,7 @@ class FileLock:
         self.path.unlink(missing_ok=True)
 
 def claude_hidden(prompt, cwd, tools, log):
-    cmd = [shutil.which("claude") or "claude", "-p", "--model", MODEL, "--permission-mode", "acceptEdits",
+    cmd = [shutil.which("claude") or "claude", "-p", "--model", MODEL, "--permission-mode", "auto",
            "--allowedTools", *tools]
     # prompt goes via stdin; "--allowedTools" is variadic so keep it last
     rc, out = run(cmd, cwd=cwd, input=prompt, log=log, timeout=3 * 3600)
@@ -176,7 +176,7 @@ def agent(name, prompt, cwd, tools, log, marker, n, role):
     # bash wrapper only puts the python3 shim on PATH; the prompt goes after `--` ("--allowedTools" is variadic)
     cmd = [HC, "run", "--bg", "--name", name, "--cwd", str(cwd), "--label", f"issue={n}", "--label", f"role={role}", *parent_args(),
            BASH, "-c", 'export PATH="$1:$PATH"; shift; exec "$@"', "_", CFG["extra_path"],
-           shutil.which("claude") or "claude", "--model", MODEL, "--permission-mode", "acceptEdits",
+           shutil.which("claude") or "claude", "--model", MODEL, "--permission-mode", "auto",
            "--allowedTools", *tools, "--", prompt + INTERACTIVE_NOTE]
     rc, out = run(cmd, log=log)
     if rc: raise Blocked(f"cannot start terminal {name}: {out.strip()[:200]}")
