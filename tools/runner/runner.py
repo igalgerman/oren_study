@@ -590,7 +590,7 @@ def main():
     elif chosen:
         with ThreadPoolExecutor(max_workers=len(chosen)) as ex:
             results = list(ex.map(lambda c: (c["number"], process(c)), chosen))
-    log_line(f"{now()} pass: started={sum(r == "started" for _, r in results) if results else len(chosen)} stuck={len(stuck)} " + " ".join(f"#{n}:{r}" for n, r in results))
+    log_line(f"{now()} pass: started={sum(r == 'started' for _, r in results) if results else len(chosen)} stuck={len(stuck)} " + " ".join(f"#{n}:{r}" for n, r in results))
     for n, r in results: print(f"ISSUE {n}: {r}")
     return 0
 
