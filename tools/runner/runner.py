@@ -149,12 +149,12 @@ def claude_hidden(prompt, cwd, tools, log):
 
 # ---------- herdr terminals ----------
 def show(name):
-    """Pop the terminal up for the owner: a tab in one Windows Terminal window named 'oren', attached to it.
-    The tab closes by itself when the terminal is closed (after success). config: show = false turns it off."""
-    wt = shutil.which("wt.exe") or shutil.which("wt")
-    if not CFG.get("show", True) or not wt: return
-    try: subprocess.Popen([wt, "-w", "oren", "nt", "--title", name, HC, "attach", name])
-    except Exception: pass
+    """Give the terminal its own tab in the Herdr app (herdr-app do terminal.keep), so the owner sees it at once.
+    It goes away with the terminal when the task succeeds. config: show = false turns it off."""
+    app = CFG.get("herdr_app", r"C:\Users\97254\AppData\Local\Programs\herdr-app\herdr-app.exe")
+    if not CFG.get("show", True) or not Path(app).exists(): return
+    addr = hc_json("get", name, "--json").get("address")
+    if addr: run([app, "do", "terminal.keep", "--terminal", addr, "--place", "tab"], timeout=30)
 
 def hc(*args, timeout=300):
     return run([HC, *args], timeout=timeout)
