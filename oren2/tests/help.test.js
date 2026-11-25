@@ -46,7 +46,7 @@ const shot = async (page, name) => { if (!process.env.SHOTS) return; fs.mkdirSyn
     const recompute = x => x.op === '+' ? x.l + x.r : x.op === '−' ? x.l - x.r : x.op === '×' ? x.l * x.r : x.l / x.r;
     for (const lv of O4.ALLLV) for (let i = 0; i < 40; i++) {
       const q = lv.gen(i); n++; const ctx = { gen: lv.gen, unit: lv.u.id, topic: lv.u.name }; const d = HELP.classify(q, ctx);
-      if (!d) { if (q.k !== 'col') bad.push(lv.id + ' not classified ' + q.k); continue; }
+      if (!d) { if (q.k !== 'col' && !(q.chk && !['cmp', 'clock', 'frac'].includes(q.chk.t))) bad.push(lv.id + ' not classified ' + q.k); continue; }
       covered++; types[d.type] = (types[d.type] || 0) + 1; if (d.type !== 'generic') plainTypes[d.type] = 1;
       const tag = lv.id + ' ' + d.type + ' ' + JSON.stringify([q.l, q.op, q.r, q.miss, q.chk]).slice(0, 60);
       const ex = exCheck(d, tag, ctx); if (!ex) continue;

@@ -109,8 +109,11 @@ node cf/tools/voicecheck.js       # בדיקת הגייה (משתמש ב-GEMINI_
   - לוח ההורים: summary, skills, settings ומפת התוכן.
   - daylog.js: יומן הפעילות ושורת "משחק עכשיו".
   - כשלוח ההורים פתוח: famPull כל 20 שניות.
-- **batch C:**
-  - learn: ה-hooks, וגם `pickItem`/`seen` בכל חבילה, ושורות "נשאר תוכן".
-  - help: ה-hooks, והסרת כפתור "רֶמֶז".
-  - topic.js: צריך CSS, ו-hook על החבר בבית (רק כשזה לא זמן חופשי).
+- **batch C (חובר, #4):**
+  - learn.js, help.js, topic.js ו-topic.css נכנסו ל-build_talents.py (אחרי think, לפני daylog ו-wire).
+  - learn: `stepsOf` ב-talents.js מבקש את הצעדים של המסלול מ-`LEARN.plan`; בלוח ההורים: בלוק "המסלול של אורן" (יום), "רמות לפי מיומנות" (התקדמות) ושורת "כמעט נגמר תוכן" (סיכום); במפת התוכן "נשארו N חדשים"; `mergeIn` ממזג `lrn` ו-`help`.
+  - pickItem/seen: read-bank2 (מילים, משפטים, סיפורים; ה-quiz קורא ל-`LEARN.seen` בתשובה הראשונה דרך `q.bank`/`q.key`) והבנת הנקרא ב-think. **עוד לא מחוברות:** חידות think-sen/ana/rel (נוצרות אקראית), gaps, english2, explore2.
+  - help: מתחיל בכל שאלת חשבון (`helpStart` ב-index.html), `HELP.wrong`/`right`, בלי כפתור "רֶמֶז". שאלות תמונות/צורות/גרפים מחבילת gaps עדיין בלי explainer: נשאר הרמז האוטומטי הישן. קריאה: מילים מ-READBANK2 מזוהות.
+  - topic: לחיצה על החבר בבית פותחת את שתי הבחירות (חוץ מזמן חופשי, שם נשאר הבונוס).
+  - בדיקות: `batchc` (חדש) ב-run.sh, וגם learn ו-help.
 - **pregen.js** כבר אוסף משפטים מכל החבילות כשהן קיימות. אחרי כל העלאה מריצים `node oren2/cf/tools/pregen.js`.

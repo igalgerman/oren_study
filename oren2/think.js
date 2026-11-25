@@ -176,7 +176,9 @@ const easyWord=p=>{const b=bare(p);return EASY.has(b)||(/^[והבלמשכ]/.test
 /* nikud stage: 0 = full nikud · 1 = common words without nikud · 2 = passage without nikud · 3 = passage and question without nikud */
 function nikud(t,p,stage){if(!stage||!p)return t;if(stage>=2)return p;const tw=t.split(' '),pw=p.split(' ');if(tw.length!==pw.length)return t;return tw.map((w,i)=>easyWord(pw[i])?pw[i]:w).join(' ');}
 /* a passage (not used recently) with its questions as ready options */
-function rcPick(lv,recent){const pool=B.RC.map((x,i)=>i).filter(i=>B.RC[i].lv===lv);const fresh=pool.filter(i=>!(recent||[]).includes(i));const i=pk(fresh.length?fresh:pool);const P=B.RC[i];const n=nOpts(lv>=4?4:2);
+function rcPick(lv,recent){const pool=B.RC.map((x,i)=>i).filter(i=>B.RC[i].lv===lv);const fresh=pool.filter(i=>!(recent||[]).includes(i));let i=pk(fresh.length?fresh:pool);
+  const LN=typeof window!=='undefined'&&window.LEARN;if(LN&&LN.pickItem&&pool.length){try{const r=LN.pickItem('rc',(fresh.length?fresh:pool).map(j=>({k:B.RC[j].p})));const j=r&&(fresh.length?fresh:pool).find(j=>B.RC[j].p===r.item.k);if(j!=null){i=j;LN.seen('rc',B.RC[j].p,true,false);}}catch(e){}}
+  const P=B.RC[i];const n=nOpts(lv>=4?4:2);
   const qs=P.q.map(([q,qp,a,ds],k)=>{const o=x=>x[0]==='@'?spr(x.slice(1)):{t:'txt',v:x};return mk('rc',lv,{kind:'rc',text:q,textP:qp,ans:o(a),ds:shuf(ds).slice(0,n-1).map(o),key:'rc'+i+'-'+k});});
   return {i,P,qs};}
 
@@ -436,7 +438,8 @@ const DESC={'read-first':'זיהוי הצליל הראשון במילה','read-p
   'code-maze':'תכנות: רצף פקודות ולולאות','think-sudoku':'סודוקו — היגיון','think-maze':'מבוך — תכנון דרך','think-mem':'זיכרון חזותי','write-trace':'כתיבת אותיות'};
 const packs=()=>Object.keys(window).map(k=>{try{return window[k];}catch(e){return null;}}).filter(x=>x&&typeof x==='object'&&x.SKILLS&&typeof x.register==='function');
 const descOf=a=>{if(a.desc)return a.desc;for(const p of packs())if(p.SKILLS[a.id])return p.SKILLS[a.id];if(/^story-/.test(a.id))return 'סיפור קצר עם שאלות הבנה';return DESC[a.id]||'';};
-const lvOf=a=>{for(const p of packs())if(typeof p.levelOf==='function'){const v=p.levelOf(a.id);if(v)return v;}return '';};
+const lvOf=a=>{let v='';for(const p of packs())if(p!==window.LEARN&&typeof p.levelOf==='function'){v=p.levelOf(a.id);if(v)break;}
+  const ru=window.LEARN&&window.LEARN.runwayOf?window.LEARN.runwayOf(a.id):'';return v&&ru?v+' · '+ru:v||ru;};
 /* review: the parent tries each item in the sandbox and ticks "checked" (saved in the synced settings: set.reviewed{id:day}) */
 const REV=()=>{const st=O.realSave.set=O.realSave.set||{};st.reviewed=st.reviewed||{};return st.reviewed;};
 let cmOnlyNew=false,cmLast=null;
