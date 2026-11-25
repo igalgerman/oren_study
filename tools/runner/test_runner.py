@@ -82,3 +82,31 @@ assert (_t["merged_24h"], _t["merged_total"], _t["parked"], _t["blocked"]) == (1
 assert _t["avg_merge"] == 1300 and _t["avg_build"] == 450 and _t["avg_review"] == 500
 assert st.compute([])["totals"]["avg_merge"] is None and "merged: 0" in st.report([])
 print("stats ok")
+
+# max_core: 2 core + 1 other, never 3 core
+_c = lambda n: I(n, [R, "core"])
+assert nums(r.select([_c(1), _c(2), _c(3), I(4, [R, "pack"])], 3, 2)) == [1, 2, 4]
+assert nums(r.select([_c(1), _c(2), _c(3)], 3, 2)) == [1, 2]
+assert nums(r.select([I(1, ["in-progress", "core"]), _c(2), _c(3)], 3, 2)) == [2]
+assert nums(r.select([I(1, ["in-progress", "core"]), I(2, ["in-progress", "core"]), _c(3), I(4, [R, "pack"])], 3, 2)) == [4]
+assert nums(r.select([_c(1), _c(2)], 3)) == [1]          # default max_core = 1
+assert r.CFG["max_core"] == 2
+print("ok max_core")
+
+# conflict -> resolve -> retry, at most 2 resolve rounds
+def _drive(results):
+    """results: integrate outcomes in order, each (rc, out); resolve always succeeds. -> (outcome, #integrate calls, #resolve calls)"""
+    it, calls = iter(results), {"i": 0, "r": 0}
+    def integ(): calls["i"] += 1; return next(it)
+    def resolve(files): calls["r"] += 1; return True
+    return r.integrate_with_resolve(integ, resolve, 2), calls
+(o, c) = _drive([(0, "integrated")]);                                       assert o[0] == "merged" and (c["i"], c["r"]) == (1, 0)
+(o, c) = _drive([(2, "CONFLICTS (fix)\na.js\nb.js\n"), (0, "ok")]);          assert o[0] == "merged" and (c["i"], c["r"]) == (2, 1)
+(o, c) = _drive([(5, "commit/push failed"), (2, "CONFLICTS\na.js\n"), (0, "ok")]); assert o[0] == "merged" and (c["i"], c["r"]) == (3, 2)
+(o, c) = _drive([(2, "CONFLICTS\na.js\n")] * 3);                              assert o[0] == "giveup" and o[1] == ["a.js"] and (c["i"], c["r"]) == (3, 2)
+(o, c) = _drive([(4, "TESTS FAILED")]);                                      assert o[0] == "failed" and (c["i"], c["r"]) == (1, 0)   # not a conflict: no resolve
+def _bad(files): return False
+assert r.integrate_with_resolve(lambda: (2, "CONFLICTS\nx\n"), _bad, 2)[0] == "failed"                                        # resolver did not finish
+assert r.conflict_files("CONFLICTS (fix by hand, or send back to the lane):\nx/a.js\ny/b.css\n") == ["x/a.js", "y/b.css"]
+assert "git fetch origin && git merge origin/main" in r.resolve_prompt(7, ["a.js"]) and "RESULT: DONE" in r.resolve_prompt(7, ["a.js"]) and "force" in r.resolve_prompt(7, [])
+print("ok resolve")

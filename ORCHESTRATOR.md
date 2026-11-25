@@ -20,7 +20,7 @@ Keep your own context small: do the work through the runner (herdr windows) or S
   `worker` suite fails only on Windows (ESM c:\ path) — known, not a game bug. `activities`/`time-missions` flaky under load: rerun alone.
 
 ## The flow (agreed with the owner)
-idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → runner, 3 lanes (max 1 core) → review → merge to main → tests → deploy → one line to the owner.
+idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → runner, 3 lanes (max 2 core; merge conflicts are resolved by the worker automatically, 2 rounds, then parked) → review → merge to main → tests → deploy → one line to the owner.
 - Bugs: same flow, label `bug`, no grilling, go first in the queue, worker writes a failing test first.
 - Clear tasks (already specified) skip grilling. Fuzzy ideas get `/grill-me` in the `intake` window, not in your context.
 - Deploy after every green merge (owner OK'd the flow). Never force-push. No secrets in chat.
