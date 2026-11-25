@@ -44,12 +44,12 @@ def blockers(body):
             out += [int(x) for x in re.findall(r"#(\d+)", line)]
     return out
 
-def select(issues, max_parallel):
+def select(issues, max_parallel, max_core=1):
     """issues: [{number, labels:[names], createdAt, body}] -> issues to start now (oldest first).
     An issue waits while any issue in its 'Blocked by:' line is still open (= in this list)."""
     open_nums = {i["number"] for i in issues}
     active = [i for i in issues if "in-progress" in i["labels"]]
-    core_busy = any(lane_of(i["labels"]) == "core" for i in active)
+    core_running = sum(lane_of(i["labels"]) == "core" for i in active)
     slots = max_parallel - len(active)
     ready = [i for i in issues if "ready-for-agent" in i["labels"]
              and "in-progress" not in i["labels"] and "blocked" not in i["labels"]
@@ -59,11 +59,43 @@ def select(issues, max_parallel):
         if slots <= 0:
             break
         if lane_of(i["labels"]) == "core":
-            if core_busy:
+            if core_running >= max_core:
                 continue
-            core_busy = True
+            core_running += 1
         chosen.append(i); slots -= 1
     return chosen
+
+def conflict_files(out):
+    """File names listed after the CONFLICTS line of integrate.sh output."""
+    lines = out.splitlines()
+    for k, l in enumerate(lines):
+        if l.startswith("CONFLICTS"):
+            return [x.strip() for x in lines[k + 1:] if x.strip() and not x.startswith(("[", "$"))]
+    return []
+
+def integrate_with_resolve(integrate, resolve, max_rounds=2):
+    """integrate() -> (rc, out); resolve(files) -> True when the worker merged main in and pushed.
+    rc 2 (merge conflict) or 5 (push rejected: main moved) -> up to max_rounds resolve rounds, each followed by a retry.
+    Returns ('merged', out) | ('giveup', files, out) | ('failed', rc, out)."""
+    files = []
+    for rnd in range(max_rounds + 1):
+        rc, out = integrate()
+        if rc == 0:
+            return ("merged", out)
+        if rc not in (2, 5):
+            return ("failed", rc, out)
+        files = conflict_files(out) or files
+        if rnd == max_rounds:
+            return ("giveup", files, out)
+        if not resolve(files):
+            return ("failed", rc, out)
+
+def resolve_prompt(n, files):
+    return (f"Issue #{n}: merging lane/{n} into {BRANCH} failed because {BRANCH} moved on" + (f" (conflicting files: {', '.join(files)})" if files else "") + ". "
+            f"In this worktree run `git fetch {REMOTE} && git merge {REMOTE}/{BRANCH}`, resolve the conflicts keeping BOTH sides' intent, "
+            "run `python3 build_talents.py` (in oren2/) and the full tests (`oren2/tests/run.sh`; rerun a flaky suite alone once), commit, "
+            f"and `git push {REMOTE} lane/{n}`. Never force-push, never rewrite {BRANCH}, never push to {BRANCH}. "
+            "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
 
 def find_marker(text, prefix):
     """Last RESULT:/VERDICT: line on a terminal screen (skips the echoed prompt: it has backticks / placeholders)."""
@@ -390,18 +422,36 @@ def deploy_text(log):
     for k, v in env_file().items():
         if k.startswith("CLOUDFLARE_"): env[k] = v
     rc, out = run([BASH, "oren2/cf/tools/deploy.sh"], cwd=INTEG, env=env, log=log, timeout=900)
-    if rc != 0 or not out.strip().startswith("ok"):
+    last = (out.strip().splitlines() or [""])[-1]           # deploy.sh prints progress lines first, "ok <url>" last (#50)
+    if rc != 0 or not last.startswith("ok"):
         raise Blocked("deploy failed")
-    url = out.strip().splitlines()[-1]
+    url = last
+    if not CFG.get("pregen", False):                       # off until #68: pregen burns the free KV write limit
+        return f"deployed {url} (pregen off)"
     rc, _ = run(["node", "oren2/cf/tools/pregen.js"], cwd=INTEG, env=env, log=log, timeout=1800)
     return f"deployed {url}" + ("" if rc == 0 else " (pregen failed, see log)")
+
+MAX_CORE = int(CFG.get("max_core", 1))
+
+class core_slot:
+    """One of MAX_CORE core slot locks (cross-process)."""
+    def __enter__(self):
+        while True:
+            for k in range(MAX_CORE):
+                try:
+                    self.lock = FileLock(f"core-{k}").__enter__(); return self
+                except Blocked:
+                    pass
+            time.sleep(20)
+    def __exit__(self, *a):
+        self.lock.__exit__()
 
 def process(issue):
     n = issue["number"]
     try:
         with FileLock(f"issue-{n}"):
             if lane_of(issue["labels"]) == "core":
-                with FileLock("core", wait=True):   # a second core issue waits here, it does not fail
+                with core_slot():                   # at most max_core core issues run; an extra one waits here, it does not fail
                     return process_locked(issue)
             return process_locked(issue)
     except Blocked:
@@ -458,12 +508,29 @@ def process_locked(issue):
                 raise Blocked(res or "fix worker gave no RESULT line")
             stat(n, lane, "fix_done")
 
+        def integrate():
+            with FileLock("integrate", wait=True):          # one merge at a time
+                rc, out = run([BASH, "tools/integrate.sh", f"lane/{n}", BRANCH], cwd=ROOT,
+                              env={"REMOTE": REMOTE, "JOBS": "4", "RUNNER": "1"}, log=log, timeout=3600)
+                if rc:
+                    run(["git", "merge", "--abort"], cwd=INTEG, log=log)
+                return rc, out
+        rounds = [0]
+        def resolve(files):
+            rounds[0] += 1
+            stat(n, lane, "resolve")
+            o, r_ = agent(f"issue-{n}-resolve{rounds[0]}", resolve_prompt(n, files), wt, WORKER_TOOLS, d / f"resolve{rounds[0]}.log", "RESULT:", n, "worker")
+            return r_.startswith("RESULT: DONE")
+        outcome = integrate_with_resolve(integrate, resolve, 2)
+        if outcome[0] == "giveup":
+            stat(n, lane, "blocked")
+            files = outcome[1]
+            set_labels(n, add=["blocked", "ready-for-human"], remove=["in-progress"])
+            gh("issue", "comment", str(n), "--body", redact("Runner: merge conflicts not resolved after 2 rounds. Conflicting files: " + (", ".join(files) or "(see log)")))
+            return "BLOCKED: merge conflicts after 2 resolve rounds"
+        if outcome[0] == "failed":
+            raise Blocked(f"integrate.sh exit {outcome[1]}")
         with FileLock("integrate", wait=True):
-            rc, out = run([BASH, "tools/integrate.sh", f"lane/{n}", BRANCH], cwd=ROOT,
-                          env={"REMOTE": REMOTE, "JOBS": "4", "RUNNER": "1"}, log=log, timeout=3600)
-            if rc:
-                run(["git", "merge", "--abort"], cwd=INTEG, log=log)
-                raise Blocked(f"integrate.sh exit {rc}")
             stat(n, lane, "merged")
             dep = deploy_text(log)
         gh("issue", "close", str(n), "--comment", f"Merged to {BRANCH}, tests green, {dep}.")
@@ -485,7 +552,7 @@ def process_locked(issue):
 def close_windows(n):
     """After a successful issue: close its worker/reviewer windows (kept open when BLOCKED, so the owner can look)."""
     if not USE_HERDR: return
-    for t in (f"issue-{n}", f"issue-{n}-fix", f"review-{n}", f"review-{n}-2"):
+    for t in (f"issue-{n}", f"issue-{n}-fix", f"issue-{n}-resolve1", f"issue-{n}-resolve2", f"review-{n}", f"review-{n}-2"):
         hc("kill", t, timeout=30); hc("rm", t, timeout=30)
 
 # ---------- main ----------
@@ -524,12 +591,12 @@ def main():
     rc, out = gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: print("gh failed:", out); return 1
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
-    chosen = [c for c in select(issues, CFG["max_parallel"]) if not FileLock(f"issue-{c['number']}").held_by_other()]
+    chosen = [c for c in select(issues, CFG["max_parallel"], MAX_CORE) if not FileLock(f"issue-{c['number']}").held_by_other()]
     cutoff = CFG["stuck_hours"] * 3600
     stuck = [i for i in issues if "in-progress" in i["labels"] and not FileLock(f"issue-{i['number']}").held_by_other()
              and (time.time() - datetime.fromisoformat(i["updatedAt"].replace("Z", "+00:00")).timestamp()) > cutoff]
     if DRY:
-        print(f"[dry-run] repo={REPO} branch={BRANCH} model={MODEL} max_parallel={CFG['max_parallel']}")
+        print(f"[dry-run] repo={REPO} branch={BRANCH} model={MODEL} max_parallel={CFG['max_parallel']} max_core={MAX_CORE}")
         print(f"[dry-run] open issues: {len(issues)}; in-progress: {sum('in-progress' in i['labels'] for i in issues)}")
         for c in chosen: print(f"[dry-run] would start #{c['number']} ({lane_of(c['labels'])}): {c['title']}")
         for s in stuck: print(f"[dry-run] would block stuck #{s['number']} (in-progress, idle > {CFG['stuck_hours']}h, no runner process)")
@@ -543,12 +610,13 @@ def main():
     if chosen and USE_HERDR and TERM:
         for c in chosen:
             set_labels(c["number"], add=["in-progress"])          # claim now so the next pass doesn't pick it twice
-            if spawn([str(c["number"])]): set_labels(c["number"], remove=["in-progress"])   # could not start: give it back
-        results = [(c["number"], "started") for c in chosen]
+            if spawn([str(c["number"])]):                         # could not start (e.g. name_taken): give it back, log it, don't count it
+                set_labels(c["number"], remove=["in-progress"]); results.append((c["number"], "not started (hc run failed)"))
+            else: results.append((c["number"], "started"))
     elif chosen:
         with ThreadPoolExecutor(max_workers=len(chosen)) as ex:
             results = list(ex.map(lambda c: (c["number"], process(c)), chosen))
-    log_line(f"{now()} pass: started={len(chosen)} stuck={len(stuck)} " + " ".join(f"#{n}:{r}" for n, r in results))
+    log_line(f"{now()} pass: started={sum(r == 'started' for _, r in results) if results else len(chosen)} stuck={len(stuck)} " + " ".join(f"#{n}:{r}" for n, r in results))
     for n, r in results: print(f"ISSUE {n}: {r}")
     return 0
 

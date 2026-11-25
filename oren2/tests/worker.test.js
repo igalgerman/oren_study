@@ -144,6 +144,13 @@ const path = require('path');
   const v0 = (await (await f('/api/tts/status')).json()).ver; const vb = await (await f('/api/tts/ver', { method: 'POST' })).json();
   ok('status gives the audio version; POST /api/tts/ver bumps it', v0 === 1 && vb.ver === 2 && (await (await f('/api/tts/status')).json()).ver === 2 && kv.get('ttsver') === '2');
   const ck = calls.length; ok('k= is ignored by the cache key', (await f('/api/tts?t=' + encodeURIComponent('כמה עשרות?') + '&r=0.9&k=2')).status === 200 && calls.length === ck);
+  // a KV write that fails (daily write limit) must give readable JSON, not Cloudflare's HTML error 1101 (#22)
+  const realPut = env.SAVES.put; env.SAVES.put = async () => { throw new Error('KV put() limit exceeded for the day.'); };
+  const fl = await f('/api/tts/fix', { method: 'POST', body: JSON.stringify({ t: S1, words: { 'עשרות': 'עֲשָׂרוֹתא' } }) }); const flj = await fl.json().catch(() => null);
+  ok('fix: a failing KV write gives JSON 503 with the reason', fl.status === 503 && flj && flj.ok === false && /limit/.test(flj.why), fl.status + ' ' + JSON.stringify(flj));
+  const vl = await f('/api/tts/ver', { method: 'POST' }); const vlj = await vl.json().catch(() => null);
+  ok('ver: a failing KV write gives JSON 503 with the reason', vl.status === 503 && vlj && vlj.ok === false && /limit/.test(vlj.why), vl.status);
+  env.SAVES.put = realPut;
   // /api/tts/try: made fresh with the dictionary, never stored
   const k0 = kv.size, c2 = calls.length; const tr = await f('/api/tts/try?t=' + encodeURIComponent('יש עשרות'));
   ok('try: fresh audio with the dictionary, no KV write', tr.status === 200 && calls.length === c2 + 1 && calls.at(-1).input.text === 'יש עֲשָׂרוֹת' && kv.size === k0);
