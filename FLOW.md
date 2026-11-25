@@ -5,7 +5,7 @@ Backlog = GitHub issues. Owner guide: `HOWTO.md`. Main session: `ORCHESTRATOR.md
 
 ## The flow
 idea → `/grill-me` → `/to-tickets` → issue (backlog) → runner → worker → reviewer → merge to main → all tests → deploy → issue closed.
-Everything after the issue is automatic (`tools/runner`). Up to 3 issues at once, at most ONE `core` issue.
+Everything after the issue is automatic (`tools/runner`). Up to 3 issues at once, at most TWO `core` issues. If merging into main conflicts, the runner has the worker merge main in and retries (2 rounds, then the issue is parked).
 
 ## If you are a WORKER (window `issue-<n>`, in worktree `wt-<n>`, branch `lane/<n>`)
 Do the WHOLE job yourself, then report. Nobody merges for you by hand.
@@ -28,7 +28,7 @@ On PASS: `tools/integrate.sh` merges into main, rebuilds, runs ALL tests, pushes
 ## Lanes
 | label | what | parallel |
 |---|---|---|
-| `core` | touches talents.js / index.html core / reading.js / build_talents.py / wire.js / tests/run.sh | one at a time |
+| `core` | touches talents.js / index.html core / reading.js / build_talents.py / wire.js / tests/run.sh | max 2 at a time (`max_core`) |
 | `pack` | only inside one pack file + its own test | yes |
 | `review` | read-only check, report as an issue comment | yes |
 
