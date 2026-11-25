@@ -37,3 +37,11 @@ Default five roles (needs-triage, needs-info, ready-for-agent, ready-for-human, 
 ### Domain docs
 
 Single-context: `GLOSSARY.md` + `docs/adr/` at the repo root (created lazily). See `docs/agents/domain.md`.
+
+## One backlog, no duplicates (every session: orchestrator, intake/grill-me, workers)
+- The only source of truth for work is GitHub issues in igalgerman/oren_study (open AND closed). Before creating any issue or starting any work:
+  `gh issue list -R igalgerman/oren_study --state all --limit 200 --json number,title,state,labels` and read the related ones.
+- Already exists (open or done)? Don't create it again — add a comment to that issue instead, or reopen it.
+- Overlaps an open issue (same screen or same files)? Add `Blocked by: #n` so they run one after the other, never in parallel.
+- Everything that touches the core gets the `core` label (only one core runs at a time).
+- A worker does only its own issue. Something else found? Open a new issue (after the check above), don't fix it on the side.
