@@ -30,4 +30,7 @@ step('english2',()=>{if(W.ENGLISH2)W.ENGLISH2.register();});
 
 /* health counts the minutes of every activity: wrap the runs of the activities the packs added or replaced */
 step('health',()=>{if(W.HEALTH&&W.HEALTH.wrapRuns)W.HEALTH.wrapRuns();});
+
+/* day log: every activity run opens a log line (after all packs added theirs); path steps he did not reach yesterday */
+step('daylog',()=>{const D=W.DAYLOG;if(!D)return;D.wrap();D.pathLeft();});
 })();
