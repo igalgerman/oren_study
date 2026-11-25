@@ -63,3 +63,6 @@ _ts = [
 ]
 assert sorted(W.leftovers(_ts, closed={5}, blocked={7})) == ["issue-2", "issue-5", "run-5", "run-9"], W.leftovers(_ts, {5}, {7})
 print("ok cleanup")
+# regression: a finished run-2 next to a live run-2 must not close anything (the live one is working)
+assert W.leftovers([{"name": "run-2", "state": "finished"}, {"name": "run-2", "state": "live", "status": ""}], set(), set()) == []
+print("ok same-name")

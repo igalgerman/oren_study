@@ -106,7 +106,9 @@ def leftovers(ts, closed, blocked):
         m = re.match(r"^(issue|review|run)-(\d+)(-fix|-2)?$", name)
         if not m: continue
         n, role, suffix = int(m.group(2)), m.group(1), m.group(3) or ""
-        if t.get("state") != "live": out.append(name); continue            # finished terminal: remove it
+        if t.get("state") != "live":                                       # finished terminal: remove it (by address)
+            if name not in live: out.append(name)
+            continue
         if n in blocked: continue                                           # parked: the owner looks at it later
         if n in closed: out.append(name); continue                          # issue done: everything for it goes
         if role == "run" or t.get("status") not in ("done", "idle") or not t.get("marker"): continue
@@ -130,8 +132,13 @@ def cleanup(ts):
         marker = t.get("state") == "live" and t.get("status") in ("done", "idle") and bool(R.find_marker(screen_tail(name, 40), mk))
         rows.append({**t, "name": name, "marker": marker})
     for name in leftovers(rows, closed, blocked):
-        R.hc("kill", name, timeout=30); R.hc("rm", name, timeout=30)
-        log(f"closed finished window {name}")
+        # act on the ADDRESS of the matching row, never the bare name: a finished terminal can share its
+        # name with a new live one, and `hc kill <name>` would hit the live one.
+        for t in rows:
+            if t["name"] != name or not t.get("address"): continue
+            if t.get("state") == "live": R.hc("kill", t["address"], timeout=30)
+            R.hc("rm", t["address"], timeout=30)
+            log(f"closed window {name} ({t['address']}, was {t.get('state')})")
 
 def main():
     log("watchdog started")
