@@ -198,3 +198,34 @@ export function laneReasons(open: Issue[], wins: Win[], max = 3): string[] {
   for (let k = rows.length; k < max; k++) rows.push(`${k + 1}. free — ${reason}`)
   return rows
 }
+
+export type View = { lanes: string[]; you: string[]; next: string[]; done: string[] }
+
+const short = (t: string, n = 34) => (t.length > n ? t.slice(0, n - 1) + '…' : t)
+
+/** The readable panel: 3 lanes (what runs + which step, or why free), your lane, up next, last done. */
+export function view(open: Issue[], closed: Issue[], wins: Win[], prBranches: string[], max = 3): View {
+  const lab = (i: Issue) => new Set((i.labels ?? []).map(x => x.name))
+  const live = new Set(wins.filter(isLive).map(w => w.name))
+  const has = (re: RegExp) => [...live].some(n => re.test(n))
+  const openNums = new Set(open.map(i => i.number))
+  const step = (n: number) => {
+    if (has(new RegExp(`^review-${n}(-|$)`))) return 'review'
+    if (has(new RegExp(`^issue-${n}-fix$`))) return 'fixing review notes'
+    if (prBranches.includes(`lane/${n}`)) return has(new RegExp(`^issue-${n}$`)) ? 'PR opened' : 'merge + tests'
+    return 'building'
+  }
+  const running = open.filter(i => lab(i).has('in-progress')).sort((a, b) => a.number - b.number)
+  const lanes = running.slice(0, max).map(i => `● #${i.number} ${short(i.title)} — ${step(i.number)}`)
+  const why = laneReasons(open, wins, max).filter(x => x.includes(' free — ')).map(x => x.replace(/^\d+\. free — /, ''))
+  while (lanes.length < max) lanes.push(`○ free — ${why[0] ?? 'nothing ready'}`)
+  const you = open.filter(i => lab(i).has('ready-for-human') || lab(i).has('needs-triage') || lab(i).has('blocked'))
+    .map(i => (lab(i).has('needs-triage') ? `? #${i.number} ${short(i.title)} — answer questions${has(new RegExp(`^intake-?${i.number}`)) ? ' (window open)' : ''}`
+      : lab(i).has('blocked') ? `⛔ #${i.number} ${short(i.title)} — stuck, see issue`
+      : `! #${i.number} ${short(i.title)} — your task`))
+  const next = open.filter(i => lab(i).has('ready-for-agent') && !lab(i).has('in-progress') && !lab(i).has('blocked'))
+    .sort((a, b) => a.number - b.number)
+    .map(i => { const w = parseBlockers(i.body).filter(b => b !== i.number && openNums.has(b)); return `#${i.number} ${short(i.title)}${w.length ? '  (after #' + w.join(', #') + ')' : '  (ready)'}` })
+  const done = closed.slice(0, 3).map(i => `✓ #${i.number} ${short(i.title)}`)
+  return { lanes, you, next, done }
+}

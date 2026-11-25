@@ -3,9 +3,9 @@ import type { Register } from 'claude-code'
 
 import type { OrenLanesData } from '../types/index'
 import {
-  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, flowRows, laneReasons, statsLines,
+  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, flowRows, laneReasons, view, statsLines,
 } from './lanes'
-import type { Issue, Win } from './lanes'
+import type { Issue, View, Win } from './lanes'
 
 const PANE = 'oren-lanes'
 const HC = 'C:/Users/97254/AppData/Local/Programs/herdr-core/hc.exe'
@@ -69,6 +69,7 @@ export const register: Register = on => {
         let stats: string[] = []
         try { stats = statsLines((await $.fs.read(STATS)) as string, Date.now() / 1000) } catch { /* no stats yet */ }
         let flow: string[] = []
+        let vw: View | undefined
         let done = ''
         try {
           const pr = await $.process.run(['gh', 'pr', 'list', '-R', REPO, '--state', 'open', '--json', 'headRefName'], { timeoutMs: 20000 })
@@ -76,6 +77,7 @@ export const register: Register = on => {
           const prs = pr.exitCode === 0 ? (JSON.parse(pr.stdout) as { headRefName: string }[]).map(p => p.headRefName) : []
           const closed = cl.exitCode === 0 ? (JSON.parse(cl.stdout) as Issue[]) : []
           flow = flowRows(issues, closed, windows, prs)
+          vw = view(issues, closed, windows, prs)
           const dayAgo = Date.now() - 24 * 3600 * 1000
           const today = closed.filter(c => Date.parse((c as { closedAt?: string }).closedAt ?? '') > dayAgo).length
           const g = groupIssues(issues)
@@ -93,7 +95,7 @@ export const register: Register = on => {
           await $.state.set(LIVE, windows.filter(isLive).map(w => w.name))
         }
         const data: OrenLanesData = {
-          windows, groups: groupIssues(issues), lastLog, errors, usage, flow, done, lanes: laneReasons(issues, windows), stats,
+          windows, groups: groupIssues(issues), lastLog, errors, usage, flow, done, lanes: laneReasons(issues, windows), view: vw, stats,
           updatedAt: await $.clock.now(),
         }
         await update($, dataAtom, () => data)
@@ -125,33 +127,30 @@ export const register: Register = on => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const d = await read($, dataAtom)
     const width = Math.max(20, (e.props.bodyColumns ?? 40) - 2)
-    const groups: [string, keyof OrenLanesData['groups']][] = [
-      ['Running', 'running'], ['Ready', 'ready'], ['Waiting', 'waiting'],
-      ['Blocked', 'blocked'], ['Needs you', 'needsYou'], ['Triage', 'triage'],
-    ]
+    const line = (s: string) => <Text>{trunc(s, width)}</Text>
+    const dim = (s: string) => <Text dimColor>{trunc(s, width)}</Text>
+    const head = (s: string) => <Box marginTop={1}><Text bold>{s}</Text></Box>
+    if (!d) return <Text dimColor>Loading…</Text>
+    const v = d.view
+    const summary = (d.done ?? '').replace(/ · left .*/, '').replace(/^backlog /, 'Backlog ')
     return (
       <Box flexDirection="column">
-        <Button key="refresh" label="Refresh" onPress={() => void refreshRef()} />
-        {!d && <Text dimColor>Loading...</Text>}
-        {d && d.errors.map(x => <Text dimColor>{trunc(x, width)}</Text>)}
-        {d && d.lanes && <Text bold>Lanes</Text>}
-        {d && d.lanes && d.lanes.map(x => <Text>{trunc(x, width)}</Text>)}
-        {d && d.flow && d.flow.length > 0 && <Text bold>Flow  (Plan → Build → Review → Merge+tests → Live)</Text>}
-        {d && d.flow && d.flow.map(x => <Text>{trunc(x, width)}</Text>)}
-        {d && <Text bold>Windows</Text>}
-        {d && d.windows.length === 0 && <Text dimColor>none</Text>}
-        {d && d.windows.map(w => <Text>{trunc(`${w.name} · ${w.state}`, width)}</Text>)}
-        {d && groups.map(([label, k]) => (
-          <Box flexDirection="column">
-            <Text bold>{label} {d.groups[k].count}</Text>
-            {d.groups[k].titles.slice(0, 5).map(t => <Text dimColor>{trunc(t, width)}</Text>)}
-          </Box>
-        ))}
-        {d && d.done ? <Text bold>{d.done}</Text> : null}
-        {d && d.stats && d.stats.length > 0 && <Text bold>Stats</Text>}
-        {d && d.stats && d.stats.map(x => <Text dimColor>{trunc(x, width)}</Text>)}
-        {d && d.usage ? <Text>{'usage: ' + d.usage}</Text> : null}
-        {d && d.lastLog !== '' && <Text dimColor>{trunc(d.lastLog, width)}</Text>}
+        <Text bold>{trunc(summary || 'Backlog …', width)}</Text>
+        {d.usage ? dim('Usage ' + d.usage) : null}
+        {(d.done ?? '').includes('⚠') ? <Text color="yellow">{trunc('⚠ Lanes running out of work — add to the backlog (/idea, /task)', width)}</Text> : null}
+        {d.errors.map(dim)}
+        {v && head('LANES')}
+        {v && v.lanes.map(line)}
+        {v && v.you.length > 0 && head('YOUR LANE — needs you')}
+        {v && v.you.map(s => <Text color="yellow">{trunc(s, width)}</Text>)}
+        {v && v.next.length > 0 && head('UP NEXT')}
+        {v && v.next.slice(0, 6).map(dim)}
+        {v && v.next.length > 6 ? dim(`… and ${v.next.length - 6} more`) : null}
+        {v && v.done.length > 0 && head('DONE')}
+        {v && v.done.map(dim)}
+        {d.stats && d.stats.length > 0 && head('STATS')}
+        {d.stats && d.stats.slice(0, 2).map(dim)}
+        <Box marginTop={1}><Button key="refresh" label="Refresh" onPress={() => void refreshRef()} /></Box>
       </Box>
     )
   })

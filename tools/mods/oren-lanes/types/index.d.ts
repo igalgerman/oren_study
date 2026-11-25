@@ -15,6 +15,7 @@ export type OrenLanesData = {
   flow?: string[]
   done?: string
   lanes?: string[]
+  view?: { lanes: string[]; you: string[]; next: string[]; done: string[] }
   stats?: string[]
   errors: string[]
   updatedAt: number
