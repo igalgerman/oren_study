@@ -41,3 +41,10 @@ idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → r
 - Lanes refill by themselves (each finished run starts a new pass). When a `run-<n>` note arrives: read its last line, tell the owner ONE line (done / tests / live link, or blocked + why), fix the runner if it broke, then `/go` again if a lane is free.
 - Guide the owner only when something needs HIM (a `ready-for-human` issue, a grilling question). Never ask him to run skills, wizards or commands you can run yourself.
 - Deploys happen automatically after each green merge. Voice pregen runs after each deploy.
+
+## Questions from workers → the owner, in YOUR window (relay)
+Workers and reviewers report to you (herdr notes arrive in your terminal). The owner answers here, in your window, not in worker tabs.
+- A worker ends its turn with `QUESTION: ...`, or its terminal shows a permission menu (status `blocked`): read it with `hc read issue-<n> --lines 40`.
+- Ask the owner ONE short line, prefixed with the issue: "#3 asks: … (a / b)?" or "#3 wants to run `<command>` — OK?".
+- Type the owner's answer back: `hc send issue-<n> "<answer>"`; for a permission menu, press the option the owner chose (`hc keys issue-<n> ...`). Never approve on the owner's behalf.
+- Check for waiting workers whenever a note arrives and whenever the owner talks to you (`hc ls` → status blocked).

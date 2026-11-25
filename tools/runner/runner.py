@@ -17,7 +17,10 @@ HC = CFG.get("hc", "")                            # herdr CLI; missing -> old hi
 USE_HERDR = bool(HC) and Path(HC).exists() and not DRY and os.environ.get("RUNNER_NO_HERDR") != "1"
 TERM = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--term=")), "")   # our own herdr terminal name (set by launch_self)
 INTERACTIVE_NOTE = ("\nWhen you are completely finished, make the very last line of your final message exactly the marker line described above, "
-                    "then stay open: the owner may open this terminal and ask you questions.")
+                    "then stay open: the owner may open this terminal and ask you questions.
+"
+                    "If you need a decision from the owner, do NOT wait silently: end your turn with one line `QUESTION: <short question, with options>`. "
+                    "The orchestrator relays it to the owner and types the owner's answer back into this terminal; then continue.")
 
 COMMON_TOOLS = ["Read", "Glob", "Grep", "Bash(gh:*)"]
 WORKER_TOOLS = COMMON_TOOLS + ["Edit", "Write", "Bash(git:*)", "Bash(node:*)", "Bash(npx:*)", "Bash(python3:*)",
@@ -182,7 +185,7 @@ def agent(name, prompt, cwd, tools, log, marker, n, role):
         out = claude_hidden(prompt, cwd, tools, log)
         return out, last_line(out, marker)
     # bash wrapper only puts the python3 shim on PATH; the prompt goes after `--` ("--allowedTools" is variadic)
-    cmd = [HC, "run", "--bg", "--name", name, "--cwd", str(cwd), "--label", f"issue={n}", "--label", f"role={role}", *parent_args(),
+    cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), "--label", f"issue={n}", "--label", f"role={role}", *parent_args(),
            BASH, "-c", 'export PATH="$1:$PATH"; shift; exec "$@"', "_", CFG["extra_path"],
            shutil.which("claude") or "claude", "--model", MODEL, "--permission-mode", "auto",
            "--allowedTools", *tools, "--", prompt + INTERACTIVE_NOTE]

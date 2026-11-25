@@ -78,7 +78,7 @@ export function statusLine(d: OrenLanesData): string {
   const waiting = d.windows.filter(w => /^(issue|review|intake)-/.test(w.name) && w.state.endsWith('/blocked')).map(w => w.name)
   const you = [...d.groups.needsYou.titles.map(t => t.split(' ')[0]), ...waiting]
   if (you.length) s += ` · needs you: ${you.slice(0, 3).join(', ')}`
-  if (d.usage) s += ` · ${d.usage.replace(/ → [^·]*/g, '').trim()}`
+  if (d.usage) s += ` · ${d.usage.replace(/ → [^·]*?(?= ·|$)/g, '').trim()}`
   return s
 }
 
