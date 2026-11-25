@@ -4,6 +4,7 @@ remote = "origin"
 branch = "main"
 model = "sonnet"
 max_parallel = 3
+max_core = 2                    # core issues running at once (conflicts at merge are resolved automatically)
 worktree_prefix = "C:/work/Oren_study/wt-"
 bash = "C:/Program Files/Git/bin/bash.exe"   # Git Bash (not WSL's bash)
 extra_path = "/c/work/Oren_study/bin"        # python3 shim
