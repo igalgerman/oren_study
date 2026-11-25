@@ -34,6 +34,13 @@ export const register: Register = on => {
           const r = await $.process.run([HC, 'ls', '--json'], { timeoutMs: 10000 })
           if (r.exitCode !== 0) throw new Error(`hc exit ${r.exitCode}`)
           windows = parseWindows(r.stdout)
+          // guard: the watchdog must always run — start it again if its window is gone
+          // (`hc ls` lists live terminals only)
+          if (!/"name":\s*"watchdog"/.test(r.stdout)) {
+            await $.process.run([HC, 'run', '--bg', '--no-parent', '--outlive-parent', '--name', 'watchdog',
+              '--cwd', 'C:\\work\\Oren_study\\a', 'C:\\Users\\97254\\miniforge3\\python.exe', 'tools\\runner\\watchdog.py'], { timeoutMs: 15000 })
+            $.ui.toast('watchdog restarted')
+          }
         } catch (err) {
           errors.push(`windows unavailable: ${trunc(String(err), 60)}`)
         }
