@@ -135,3 +135,14 @@ test('up next shows priority and sorts bug, then P0-P3, then number', () => {
     '[P2] #2 normal  (ready)', '[P3] #1 low  (ready)',
   ])
 })
+
+test('status line counts distinct issues, capped at 3', () => {
+  const live = (name: string) => ({ name, state: 'live' })
+  const d = {
+    windows: ['issue-12', 'issue-12-fix', 'issue-13', 'issue-14', 'issue-15'].map(live),
+    groups: groupIssues([]), lastLog: '', errors: [], updatedAt: 0,
+  }
+  expect(statusLine(d)).toMatch(/^lanes 3\/3 /)
+  d.windows = ['issue-12', 'issue-12-fix'].map(live)
+  expect(statusLine(d)).toMatch(/^lanes 1\/3 /)
+})

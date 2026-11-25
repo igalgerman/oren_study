@@ -367,11 +367,11 @@ function classify(q,ctx){if(!q||typeof q!=='object')return null;ctx=ctx||{};
     if(c.t==='cmp')return g('cmp',{a:c.a,b:c.b,max:Math.max(c.a,c.b)>=100?1000:100});
     if(c.t==='clock')return g('clock',{h:c.h,m:c.m});
     if(c.t==='frac')return g('frac',{parts:c.parts,shape:/<path/.test(q.pr)?'circle':'bar'});
-    return g('generic',{topic:ctx.topic});}
+    return null;}                                    /* other check types (pictures, shapes, graphs from the gaps pack): no step-by-step explainer yet, the game's own hint stays */
   if(q.k==='word')return g('story',{});
   if(['add3','rem','eq','ch'].includes(q.k))return g('generic',{topic:ctx.topic});
   if(q.k==='col')return null;                       /* column math keeps its own guided steps */
-  const W=T().WORDS;if(W&&(q.key||q.w)){const w=W.find(x=>x.w===(q.key||q.w));if(w)return g('read',{w:w.w,syl:w.syl});}
+  const W=T().WORDS,W2=(window.READBANK2||{}).words;if((W||W2)&&(q.key||q.w)){const k=q.key||q.w;const w=(W&&W.find(x=>x.w===k))||(W2&&W2.find(x=>x.w===k&&x.syl&&x.syl.length));if(w)return g('read',{w:w.w,syl:w.syl});}
   return null;}
 
 /* ---------- saved data: hard items, spaced return, teach-back log ---------- */

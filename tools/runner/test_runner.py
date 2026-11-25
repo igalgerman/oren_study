@@ -63,6 +63,17 @@ _ts = [
 ]
 assert sorted(W.leftovers(_ts, closed={5}, blocked={7})) == ["issue-2", "issue-5", "run-5", "run-9"], W.leftovers(_ts, {5}, {7})
 print("ok cleanup")
+# #43: every finished record goes; idle windows with no live run-<n> go (unless ready-for-human)
+_f = [{"name": n, "state": "finished"} for n in ("run-pass-123", "run-4-r", "watchdog", "flowtest-1", "intake-3", "review-25")]
+assert sorted(W.leftovers(_f, set(), set())) == sorted(x["name"] for x in _f)
+_idle = [{"name": "review-25", "state": "live", "status": "idle"}, {"name": "issue-26", "state": "live", "status": "idle"},
+         {"name": "run-26", "state": "live", "status": ""}, {"name": "intake-27", "state": "live", "status": "done"},
+         {"name": "issue-28", "state": "live", "status": "idle"}, {"name": "issue-29", "state": "live", "status": "idle"}]
+_st = {"review-25", "issue-26", "intake-27", "issue-28", "issue-29"}
+assert sorted(W.leftovers(_idle, set(), set(), human={28}, stale=_st)) == ["intake-27", "issue-29", "review-25"]   # 26 has live run, 28 is for the owner
+assert W.leftovers(_idle, set(), set(), human={28}, stale=set()) == []                                          # not idle long enough
+print("ok orphans")
+
 # regression: a finished run-2 next to a live run-2 must not close anything (the live one is working)
 assert W.leftovers([{"name": "run-2", "state": "finished"}, {"name": "run-2", "state": "live", "status": ""}], set(), set()) == []
 print("ok same-name")
@@ -131,6 +142,14 @@ assert nums(r.select([I(1,[R,"pack","P0"]), I(2,[R,"pack","bug","P3"])], 2)) == 
 assert nums(r.select([I(5,[R,"pack","P1"]), I(3,[R,"pack","P1"])], 2)) == [3,5]
 assert r.priority_of(["P1", "x"]) == 1 and r.priority_of([]) == 2
 print("ok priority")
+# stale window on resume: a finished (done/idle) window is stale, because every window found at the start of a run is older than this run
+# (and than the latest push); only working / blocked / waiting-for-an-answer windows are re-attached
+assert r.is_stale_window("done", scr("● hi", "  VERDICT: FIX", "❯"))                       # old finished review: stale
+assert r.is_stale_window("idle", scr("  RESULT: DONE"))
+assert not r.is_stale_window("working", scr("  VERDICT: FIX"))
+assert not r.is_stale_window("blocked", "")
+assert not r.is_stale_window("done", q)                                                      # finished but asked the owner: keep
+print("ok stale-window")
 # deploy_text: "ok <url>" is the LAST line of deploy.sh; pregen only when config pregen = true (#50)
 _calls = []
 NL = chr(10)
