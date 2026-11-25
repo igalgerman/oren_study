@@ -36,3 +36,5 @@ Known: `worker` suite fails only on Windows (ESM c:\ path); `reading`/`activitie
 
 ## Observer
 Every `observer_minutes` the watchdog starts a fresh read-only Claude (`tools/runner/observer_prompt.md`) that audits labels, PRs, lanes, duplicates and closed issues, and tells the orchestrator `OBSERVER found: ...`. Result in `tools/runner/.runs/observer.last` (panel bottom line).
+
+Questions to the owner: in Hebrew, through tools/ask/ask.py (browser page), one round at a time; never ask in the terminal when the owner prefers Hebrew.
