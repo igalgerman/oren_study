@@ -110,3 +110,17 @@ assert r.integrate_with_resolve(lambda: (2, "CONFLICTS\nx\n"), _bad, 2)[0] == "f
 assert r.conflict_files("CONFLICTS (fix by hand, or send back to the lane):\nx/a.js\ny/b.css\n") == ["x/a.js", "y/b.css"]
 assert "git fetch origin && git merge origin/main" in r.resolve_prompt(7, ["a.js"]) and "RESULT: DONE" in r.resolve_prompt(7, ["a.js"]) and "force" in r.resolve_prompt(7, [])
 print("ok resolve")
+
+# routing: STUCK / runner error -> orchestrator (not the owner); a parked question -> the owner
+assert r.stuck_labels() == ["blocked", "needs-orchestrator"] and "ready-for-human" not in r.stuck_labels()
+import inspect
+assert '"ready-for-human"' in inspect.getsource(r.park_issue) and "ready-for-human" not in inspect.getsource(r.block)
+print("ok routing")
+
+# observer scheduling + parse
+assert W.observer_due(0, 1800, 30, False) and not W.observer_due(0, 1799, 30, False) and not W.observer_due(0, 99999, 30, True)
+assert W.parse_observer("OBSERVER: OK\nOBSERVER-END") == []
+_p = W.parse_observer("noise\nOBSERVER: #3 needs no owner → label ready-for-agent\nOBSERVER: backlog low → add work\nOBSERVER-END")
+assert _p == ["OBSERVER: #3 needs no owner → label ready-for-agent", "OBSERVER: backlog low → add work"]
+assert len(W.parse_observer(NL.join(f"OBSERVER: p{i} → f" for i in range(12)))) == 8
+print("ok observer")

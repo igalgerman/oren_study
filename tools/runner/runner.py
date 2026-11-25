@@ -392,14 +392,20 @@ def set_labels(n, add=(), remove=()):
     for r in remove: args += ["--remove-label", r]
     gh(*args)
 
-def block(n, why, log, human=False):
+def stuck_labels():
+    """Labels for a runner/worker failure (STUCK, runner error, reviewer asked twice): the ORCHESTRATOR handles it, not the owner.
+    Only a parked owner question (park_issue) or a hand task gets `ready-for-human`."""
+    return ["blocked", "needs-orchestrator"]
+
+def block(n, why, log):
     tail = ""
     try:
         tail = "\n".join(Path(log).read_text(encoding="utf-8").splitlines()[-20:])
     except OSError:
         pass
-    set_labels(n, add=["blocked"] + (["ready-for-human"] if human else []), remove=["in-progress"])
+    set_labels(n, add=stuck_labels(), remove=["in-progress"])
     gh("issue", "comment", str(n), "--body", redact(f"Runner blocked: {why}\n\nLast log lines:\n```\n{tail[-2500:]}\n```"))
+    tell_orchestrator(f"STUCK #{n}: {why[:300]} — decide: unblock, split, or ask the owner")
 
 def find_pr(n):
     rc, out = gh("pr", "list", "--head", f"lane/{n}", "--state", "open", "--json", "number")
@@ -493,7 +499,7 @@ def process_locked(issue):
             stat(n, lane, "review_fix")
             if rnd == 2:
                 stat(n, lane, "blocked")
-                block(n, "reviewer asked for fixes twice; needs a human", log, human=True); return "BLOCKED: reviewer asked for fixes twice; needs a human"
+                block(n, "reviewer asked for fixes twice; needs a human", log); return "BLOCKED: reviewer asked for fixes twice; needs a human"
             out, res = agent(f"issue-{n}-fix", worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / "worker2.log", "RESULT:", n, "worker")
             if not res.startswith("RESULT: DONE"):
                 raise Blocked(res or "fix worker gave no RESULT line")
@@ -555,7 +561,7 @@ def issue_by_number(n):
     return {**d, "labels": [l["name"] for l in d["labels"]]}
 
 def ensure_labels():
-    for lbl, color in (("in-progress", "fbca04"), ("blocked", "b60205"), ("ready-for-human", "0e8a16")):
+    for lbl, color in (("in-progress", "fbca04"), ("blocked", "b60205"), ("ready-for-human", "0e8a16"), ("needs-orchestrator", "d93f0b")):
         gh("label", "create", lbl, "--color", color, "--force")   # no-op when present
 
 def log_line(line):
@@ -595,7 +601,7 @@ def main():
         return 0
     ensure_labels()
     for s in stuck:
-        set_labels(s["number"], add=["blocked"], remove=["in-progress"])
+        set_labels(s["number"], add=stuck_labels(), remove=["in-progress"])
         gh("issue", "comment", str(s["number"]), "--body", f"Runner: in-progress for over {CFG['stuck_hours']}h with no runner process; marked blocked.")
     results = []
     if chosen and USE_HERDR and TERM:

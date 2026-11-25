@@ -15,15 +15,15 @@ Do the WHOLE job yourself, then report. Nobody merges for you by hand.
 3. Screenshots of every changed screen at phone 390x844 and desktop 1366x768 into `C:/work/Oren_study/shots/<n>/` (outside the repo: tests/run.sh wipes tests/.tmp); look at them (simple, one main action, Hebrew with nikud).
 4. Commit your changes (NOT the built `oren2/index.html` / `oren2/cf/public/index.html`, node_modules, package*.json, tests/.tmp).
 5. `git push -u origin lane/<n>`, then **open the PR**: `gh pr create --repo igalgerman/oren_study --base main --head lane/<n>` with `Closes #<n>` (write the body with the `mattpocock-skills:pr` skill), a short summary and the screenshot paths.
-6. The very last line of your final message: `RESULT: DONE` (or `RESULT: STUCK <why>`).
-7. Need the owner? End your turn with `QUESTION: <short question, options>` — the orchestrator asks him and types the answer back. Unanswered for 30 min: the issue is parked (blocked + ready-for-human), your window stays open, the lane goes to the next issue.
+6. The very last line of your final message: `RESULT: DONE` (or `RESULT: STUCK <why>`). STUCK goes to the orchestrator (labels `blocked` + `needs-orchestrator`), not to the owner.
+7. Need the owner? End your turn with `QUESTION: <short question, options>` — the orchestrator asks him and types the answer back. Unanswered for 30 min: the issue is parked (blocked + ready-for-human: a real owner question), your window stays open, the lane goes to the next issue.
 Never push to main, never deploy, never force-push. Found another problem? Open a new issue (see "One backlog, no duplicates" in CLAUDE.md).
 
 ## If you are a REVIEWER (window `review-<n>`)
 Read-only. Use the `mattpocock-skills:code-review` skill (Standards = CLAUDE.md + FLOW.md, Spec = the issue), then check the PR against the issue: correct, simple (one main action per screen), Hebrew nikud, facts, no unrelated changes. One PR comment; last line `VERDICT: PASS` or `VERDICT: FIX`.
 
 ## The runner does the rest
-On PASS: `tools/integrate.sh` merges into main, rebuilds, runs ALL tests, pushes, deploys (token in `.env`), prepares voice, closes the issue, closes the windows, and starts the next ready issues. On any failure: nothing goes live, the issue gets `blocked` with the reason.
+On PASS: `tools/integrate.sh` merges into main, rebuilds, runs ALL tests, pushes, deploys (token in `.env`), prepares voice, closes the issue, closes the windows, and starts the next ready issues. On any failure: nothing goes live, the issue gets `blocked` + `needs-orchestrator` with the reason; the orchestrator handles it (the owner only sees `ready-for-human` / `needs-triage`).
 
 ## Lanes
 | label | what | parallel |
@@ -33,3 +33,6 @@ On PASS: `tools/integrate.sh` merges into main, rebuilds, runs ALL tests, pushes
 | `review` | read-only check, report as an issue comment | yes |
 
 Known: `worker` suite fails only on Windows (ESM c:\ path); `reading`/`activities`/`time-missions` can be flaky under load — rerun alone once.
+
+## Observer
+Every `observer_minutes` the watchdog starts a fresh read-only Claude (`tools/runner/observer_prompt.md`) that audits labels, PRs, lanes, duplicates and closed issues, and tells the orchestrator `OBSERVER found: ...`. Result in `tools/runner/.runs/observer.last` (panel bottom line).

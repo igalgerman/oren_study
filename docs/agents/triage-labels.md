@@ -23,3 +23,12 @@ Every ticket also gets exactly one lane label, so parallel sessions don't collid
 | `core` | Touches core files (`talents.js`, `index.html` core, `reading.js`, `build_talents.py`, `wire.js`, `tests/run.sh`). Only ONE `core` ticket in progress at a time. |
 | `pack` | Only inside one pack file + its own test. Many can run in parallel. |
 | `review` | Read-only check (content, clutter, screenshots). Produces a report, no code. |
+
+## Routing labels (runner)
+
+| Label | Who acts | Set when |
+|---|---|---|
+| `blocked` + `needs-orchestrator` | the orchestrator (unblocks, splits, or asks the owner only if it is truly his decision) | worker `RESULT: STUCK`, runner error, reviewer asked for fixes twice |
+| `blocked` + `ready-for-human` | the owner | a real owner question parked after `park_minutes`; or a task a human must do by hand |
+
+The owner's lane (panel "YOUR LANE") shows only `ready-for-human` and `needs-triage`. The read-only observer (`tools/runner/observer_prompt.md`) checks this every `observer_minutes`.

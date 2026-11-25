@@ -17,3 +17,6 @@ parent = ""                     # herdr terminal that gets the notes (e.g. "t2g"
 show = true
 # Herdr space where worker/reviewer tabs open (by name)
 herdr_space = "Oren_study_orech"
+
+# read-only auditor (observer_prompt.md), started headless by the watchdog every N minutes
+observer_minutes = 30

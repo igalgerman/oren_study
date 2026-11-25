@@ -199,7 +199,7 @@ export function laneReasons(open: Issue[], wins: Win[], max = 3): string[] {
   return rows
 }
 
-export type View = { lanes: string[]; you: string[]; next: string[]; done: string[] }
+export type View = { lanes: string[]; you: string[]; orch: string[]; next: string[]; done: string[] }
 
 const short = (t: string, n = 34) => (t.length > n ? t.slice(0, n - 1) + '…' : t)
 
@@ -219,13 +219,15 @@ export function view(open: Issue[], closed: Issue[], wins: Win[], prBranches: st
   const lanes = running.slice(0, max).map(i => `● #${i.number} ${short(i.title)} — ${step(i.number)}`)
   const why = laneReasons(open, wins, max).filter(x => x.includes(' free — ')).map(x => x.replace(/^\d+\. free — /, ''))
   while (lanes.length < max) lanes.push(`○ free — ${why[0] ?? 'nothing ready'}`)
-  const you = open.filter(i => lab(i).has('ready-for-human') || lab(i).has('needs-triage') || lab(i).has('blocked'))
+  // owner's lane: only ready-for-human and needs-triage. blocked + needs-orchestrator is the orchestrator's job (separate dim line)
+  const you = open.filter(i => lab(i).has('ready-for-human') || lab(i).has('needs-triage'))
     .map(i => (lab(i).has('needs-triage') ? `? #${i.number} ${short(i.title)} — answer questions${has(new RegExp(`^intake-?${i.number}`)) ? ' (window open)' : ''}`
-      : lab(i).has('blocked') ? `⛔ #${i.number} ${short(i.title)} — stuck, see issue`
       : `! #${i.number} ${short(i.title)} — your task`))
+  const orchNums = open.filter(i => (lab(i).has('blocked') || lab(i).has('needs-orchestrator')) && !lab(i).has('ready-for-human') && !lab(i).has('needs-triage')).map(i => `#${i.number}`)
+  const orch = orchNums.length ? [`orchestrator handling: ${orchNums.join(' ')}`] : []
   const next = open.filter(i => lab(i).has('ready-for-agent') && !lab(i).has('in-progress') && !lab(i).has('blocked'))
     .sort((a, b) => a.number - b.number)
     .map(i => { const w = parseBlockers(i.body).filter(b => b !== i.number && openNums.has(b)); return `#${i.number} ${short(i.title)}${w.length ? '  (after #' + w.join(', #') + ')' : '  (ready)'}` })
   const done = closed.slice(0, 3).map(i => lab(i).has('needs-triage') ? `→ #${i.number} ${short(i.title)} (split into tasks)` : `✓ #${i.number} ${short(i.title)}`)
-  return { lanes, you, next, done }
+  return { lanes, you, orch, next, done }
 }

@@ -105,6 +105,18 @@ test('readable view', () => {
   expect(v.lanes[0]).toBe('● #4 Batch C — review')
   expect(v.lanes[1]).toMatch(/^○ free — /)
   expect(v.you).toEqual(['! #10 voice — your task', '? #11 math ideas — answer questions'])
+  expect(v.orch).toEqual([])
   expect(v.next).toEqual(['#5 G1-G8  (after #4)'])
   expect(v.done).toEqual(['✓ #3 Batch B'])
+})
+
+test('blocked + needs-orchestrator stays out of your lane', () => {
+  const lab = (...n: string[]) => n.map(name => ({ name }))
+  const v = view([
+    { number: 22, title: 'deploy', labels: lab('blocked', 'needs-orchestrator') },
+    { number: 23, title: 'parked q', labels: lab('blocked', 'ready-for-human') },
+    { number: 24, title: 'old blocked', labels: lab('blocked') },
+  ], [], [], [])
+  expect(v.you).toEqual(['! #23 parked q — your task'])
+  expect(v.orch).toEqual(['orchestrator handling: #22 #24'])
 })
