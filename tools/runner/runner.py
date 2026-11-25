@@ -17,8 +17,7 @@ HC = CFG.get("hc", "")                            # herdr CLI; missing -> old hi
 USE_HERDR = bool(HC) and Path(HC).exists() and not DRY and os.environ.get("RUNNER_NO_HERDR") != "1"
 TERM = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--term=")), "")   # our own herdr terminal name (set by launch_self)
 INTERACTIVE_NOTE = ("\nWhen you are completely finished, make the very last line of your final message exactly the marker line described above, "
-                    "then stay open: the owner may open this terminal and ask you questions.
-"
+                    "then stay open: the owner may open this terminal and ask you questions.\n"
                     "If you need a decision from the owner, do NOT wait silently: end your turn with one line `QUESTION: <short question, with options>`. "
                     "The orchestrator relays it to the owner and types the owner's answer back into this terminal; then continue.")
 
