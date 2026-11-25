@@ -214,7 +214,7 @@ def launch_self():
     """run.cmd entry: start this whole run as terminal run-<n> (its exit note goes to the main session) and return at once."""
     pos = [a for a in sys.argv[1:] if not a.startswith("--")]
     name = f"run-{pos[0].lstrip('#')}" if pos else "run-pass"
-    cmd = [HC, "run", "--bg", "--name", name, "--cwd", str(ROOT), "--label", "role=runner",
+    cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(ROOT), "--label", "role=runner",
            sys.executable, str(HERE / "runner.py"), *sys.argv[1:], f"--term={name}"]
     rc, out = run(cmd)
     print(out.strip() or f"started terminal {name}")

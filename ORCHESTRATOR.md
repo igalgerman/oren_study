@@ -33,6 +33,11 @@ idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → r
 - Known: `reading` suite flaky under load (passes alone); `worker` suite fails only on Windows.
 
 ## Next
-1. `/go` (= `tools/runner/run.cmd`): starts #2 (pack, content fixes) and #3 (core, batch B). This is the runner's FIRST real run:
+1. FIRST THING, without asking: `/go` (= `tools/runner/run.cmd`): starts #2 (pack, content fixes) and #3 (core, batch B). This is the runner's FIRST real run:
    watch it (`hc read run-2`, `hc read issue-2`), fix the runner if it breaks, one line per issue to the owner.
 2. Keep the queue moving: #4 → #5 → #6 → #7 → #8; #9 after #7. #11 needs grilling with the owner (`/idea`).
+
+## Your job, always (owner's wish: everything automatic)
+- Lanes refill by themselves (each finished run starts a new pass). When a `run-<n>` note arrives: read its last line, tell the owner ONE line (done / tests / live link, or blocked + why), fix the runner if it broke, then `/go` again if a lane is free.
+- Guide the owner only when something needs HIM (a `ready-for-human` issue, a grilling question). Never ask him to run skills, wizards or commands you can run yourself.
+- Deploys happen automatically after each green merge. Voice pregen runs after each deploy.
