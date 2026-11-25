@@ -156,7 +156,7 @@ flush('sentences and stories are new (not in think-bank / gaps / talents)');
 
 /* ---------- 4. writing ---------- */
 const WR = R.writing;
-WR.copy.forEach(c => chk(c.letters.join('') === bare(c.w) && c.letters.length, 'copy letters: ' + c.w)); flush('writing: copy items');
+WR.copy.forEach(c => chk(c.letters.join('') === (W.find(x => x.w === c.w).plain) && c.letters.length, 'copy letters: ' + c.w)); flush('writing: copy items');
 ok(WR.dict.length >= 200, `dictation items (${WR.dict.length})`);
 const plains = new Set(W.map(w => bare(w.w)));
 WR.miss.forEach(m => {
