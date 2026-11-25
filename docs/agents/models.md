@@ -8,6 +8,7 @@ No label = `model:sonnet`.
 |---|---|---|
 | `model:haiku` | Haiku 5.5 | tiny, mechanical work: a typo, a label/text change, one-line config, a status/log summary |
 | `model:sonnet` | Sonnet 5.5 (default) | normal code: bugs, pack content, wiring, tests, runner/tooling, docs |
+| `model:fable` | Fable 5.2 (`claude-fable-5-2`) | ONLY when the owner asks for it by name ("use Fable for #61"); never proposed by default |
 | `model:opus` | Opus 5.5 | design / UI / UX for Oren's screens, teaching logic (how he learns), anything touching many core files at once, a bug two Sonnet tries could not fix, security/save/sync of the family data |
 
 Helpers (sub-agents): a worker MAY start its own helpers for independent read-only work
