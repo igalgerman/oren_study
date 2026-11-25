@@ -11,5 +11,5 @@ stuck_hours = 2
 hc = "C:/Users/97254/AppData/Local/Programs/herdr-core/hc.exe"   # herdr CLI; if missing the runner falls back to hidden `claude -p`
 parent = ""                     # herdr terminal that gets the notes (e.g. "t2g"); empty = the terminal that started run.cmd
 
-# pop each worker/reviewer window up as a Windows Terminal tab (window "oren")
+# give each worker/reviewer its own tab in the Herdr app
 show = true
