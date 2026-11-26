@@ -146,6 +146,14 @@ test('#296 usage line says (stale) when governor.json is older than 15 min', () 
   expect(panel(base({ limits: lim, gov: { at: at(16) } })).header[1]!.text).toMatch('(stale)')
 })
 
+test('#245 usage line shows efficiency (merged PRs per 10% of 5h) and wasted runs from governor.json', () => {
+  const lim = [{ kind: 'five_hour', percentUsed: 15, resetsAt: new Date(NOW + 3600e3).toISOString() }] as any
+  const at = NOW / 1000
+  expect(panel(base({ limits: lim, gov: { at, eff: 0.75, wasted: 2 } })).header[1]!.text).toMatch(/ · eff 0\.75\/10% · wasted 2$/)
+  expect(panel(base({ limits: lim, gov: { at, eff: null, wasted: 0 } })).header[1]!.text).toMatch(/ · eff - · wasted 0$/)
+  expect(panel(base({ limits: lim, gov: { at } })).header[1]!.text).not.toMatch('eff')
+})
+
 test('#305 every process call goes through pythonw + quiet.py', () => {
   expect(quietArgv(['gh', 'x']).slice(0, 2).map(a => a.replace(/^.*[/]/, ''))).toEqual(['pythonw.exe', 'quiet.py'])
   const src = readFileSync(new URL('./register.tsx', import.meta.url), 'utf8')

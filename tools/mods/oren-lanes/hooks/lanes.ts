@@ -62,7 +62,7 @@ export function usageJson(limits: Limit[], nowMs: number) {
 }
 
 /** #239: the runner's governor state from .runs/governor.json (reset in epoch seconds). */
-export type Gov = { lanes?: number; stop?: boolean; pct?: number | null; projected?: number | null; reset?: number | null; text?: string; at?: number }
+export type Gov = { lanes?: number; stop?: boolean; pct?: number | null; projected?: number | null; reset?: number | null; text?: string; at?: number; eff?: number | null; wasted?: number }
 
 export function parseGov(json: string): Gov | null {
   try { const g = JSON.parse(json); return g && typeof g === 'object' ? g as Gov : null } catch { return null }
@@ -290,6 +290,8 @@ export function panel(p: PanelIn): Panel {
     if (even !== null && week.percentUsed > even + 10) warn = true
   }
   const stale = p.gov?.at !== undefined && now - p.gov.at * 1000 > 15 * 60e3   // the runner's own cutoff
+  if (parts.length && p.gov?.wasted !== undefined)   // #245: merged PRs per 10% of this 5h window, runs ended without a merged PR
+    parts.push(`eff ${typeof p.gov.eff === 'number' ? p.gov.eff.toFixed(2) + '/10%' : '-'} · wasted ${p.gov.wasted}`)
   if (parts.length) header.push({ text: parts.join(' · ') + (stale ? ' (stale)' : ''), tone: warn ? 'amber' : 'dim' })
 
   const youShown = youIssues.filter(i => !laneNums.has(i.number))   // a lane already shows 'blocked: waits for you'
