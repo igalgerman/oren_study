@@ -121,7 +121,7 @@ async function collect() {
       tryf(() => W.HELP.allTexts().forEach(s => add(sp(s))));
       tryf(() => W.LESSONS.speakList().forEach(s => add(sp(s))));
       tryf(() => W.HEALTH.remTexts().forEach(add));
-      tryf(() => W.ENGLISH2.speakList().forEach(t => { t = sp(t); if (/[א-ת]/.test(t)) add(t); else if (t) window.__ttsParts(t).forEach(t => out.push({ t, v: 'en-US-Chirp3-HD-Despina', r: 0.85 })); }));
+      tryf(() => W.ENGLISH2.speakList().forEach(t => { t = sp(t); if (/[א-ת]/.test(t)) add(t); else if (t) window.__ttsParts(t).forEach(t => out.push({ t, v: 'en-US-Chirp3-HD-Despina', r: 0.85 }, { t, v: 'en-US-Chirp3-HD-Despina', r: 0.7 })); }));   /* r 0.7: the slow replay, a second tap on the speaker (#425) */
       return out; }, DATA);
     (await p.evaluate(() => window.__said)).concat(stat).forEach(x => { const c = norm(x); if (c) SAID.set(idOf(c), c); });
     console.log('collected', SAID.size, 'so far (' + (vp.isMobile ? 'phone' : 'desktop') + ')'); await ctx.close(); }

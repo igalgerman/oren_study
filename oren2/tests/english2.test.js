@@ -220,7 +220,7 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
   await ctx.addInitScript(() => { try { localStorage.clear(); } catch (e) { } window.__fast = true; window.__noFamily = true; });
   const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/fonts|ERR_|Failed to load/.test(m.text())) errs.push('console: ' + m.text()); });
   await p.goto('file://' + PAGE); await L.noCoach(p); await L.sleep(300);
-  await p.evaluate(() => { const O = window.OREN; O.save.story.intro = 1; O.save.set = { brk: 0, hide: {} }; O.save.prof = { an: 'cat', col: '#3a8fc4', love: 'eng' }; window.__said = []; const o = O.sayLang; O.sayLang = (t, l) => { window.__said.push(t); return o(t, l); }; if (!has()) window.ENGLISH2.register(); function has() { return window.TAL.BUILD.find(x => x.id === 'eng').acts.some(a => a.id === 'eng-voc'); } });
+  await p.evaluate(() => { const O = window.OREN; O.save.story.intro = 1; O.save.set = { brk: 0, hide: {} }; O.save.prof = { an: 'cat', col: '#3a8fc4', love: 'eng' }; window.__said = []; const o = O.sayLang; O.sayLang = (t, l, slow) => { window.__said.push(t); (window.__said2 = window.__said2 || []).push([t, !!slow]); return o(t, l, slow); }; if (!has()) window.ENGLISH2.register(); function has() { return window.TAL.BUILD.find(x => x.id === 'eng').acts.some(a => a.id === 'eng-voc'); } });
   const v = L.variant;
   const shot = async n => { if (SHOT) { await L.sleep(650); await p.screenshot({ path: path.join(SHOT, `${v}-${n}.png`) }); } };
   const overflow = () => p.evaluate(() => { const e = document.scrollingElement; return e.scrollWidth - innerWidth; });
@@ -316,6 +316,17 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
     if (r) { spk.push(r.rd); if (r.four) g4 = r.grid; } await answer(false); await L.sleep(40); }
   ok(spk.length && spk.every(n => n === 1), 'one sound button per question card', JSON.stringify(spk));
   ok(g4 !== false, '4 options are laid out 2x2', String(g4));
+  await p.evaluate(() => { document.querySelector('#ov').hidden = true; });
+  /* #425: a second tap on the 🔊 (soon after the first) says the English slowly; the first tap and a late tap at normal speed */
+  await p.evaluate(() => { window.ENGLISH2.screens.ACTS[0].run(() => { }); }); await L.sleep(150);
+  for (let k = 0; k < 30 && !(await p.evaluate(() => !!document.querySelector('#sTal .tqc .hintbtn:not(.lsn)'))); k++) { await answer(false); await L.sleep(60); }
+  const sl = await p.evaluate(async () => { const z = ms => new Promise(r => setTimeout(r, ms)); const b = () => document.querySelector('#sTal .tqc .hintbtn:not(.lsn)');
+    const tap = async () => { window.__said2 = []; b().click(); await z(250); return window.__said2.filter(x => /[A-Za-z]/.test(x[0])); };
+    await z(300); const a = await tap(), s = await tap(); await z(2600); const c = await tap(); return { a, s, c }; });
+  ok(sl.a.length && sl.a.every(x => !x[1]) && sl.s.length && sl.s.every(x => x[1]) && sl.c.length && sl.c.every(x => !x[1]), '#425 second tap on 🔊 says it slowly; first and late taps normal, no new button', JSON.stringify(sl));
+  /* #425: the slow version of every English string is made in advance (pregen at 0.7) */
+  const pg = fs.readFileSync(path.join(ROOT, 'cf', 'tools', 'pregen.js'), 'utf8');
+  ok(/ENGLISH2\.speakList\(\)[^\n]*r: 0\.85[^\n]*r: 0\.7|ENGLISH2\.speakList\(\)[^\n]*r: 0\.7[^\n]*r: 0\.85/.test(pg), '#425 pregen makes every English2 string at 0.85 and slow at 0.7');
   await p.evaluate(() => { document.querySelector('#ov').hidden = true; });
   /* the activities-suite helper (window.__quiz) can play every act */
   ok(await p.evaluate(() => typeof window.__quiz.ans === 'number'), 'window.__quiz is there for the activities suite');
