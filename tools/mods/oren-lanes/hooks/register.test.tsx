@@ -263,6 +263,12 @@ test('usage.json for the governor (#239)', () => {
   expect(governorLine('junk')).toBe('')
 })
 
+import { DESKS } from './lanes'
+test('#306 the panel reads the cloud desks line (.runs/desks.json, same {text} shape as governor.json)', () => {
+  expect(DESKS).toMatch(/tools\/runner\/\.runs\/desks\.json$/)
+  expect(governorLine('{"text":"cloud desks: inbox ok · ask down"}')).toBe('cloud desks: inbox ok · ask down')
+})
+
 import { cloudCount } from './lanes'
 
 test('#236 cloud count = labelled cloud issues + live remote lanes from remote.py cloud (no double count)', () => {

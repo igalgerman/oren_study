@@ -34,6 +34,8 @@ recover_issue = 138              # #140: recover reports what it did in one comm
 # acting observer (observer.py, rules only), run by the watchdog every N minutes
 observer_minutes = 10   # 0 = off
 ai_observer_minutes = 60   # #203: AI observer (ai_observer.py, headless Sonnet, read-only), findings to the orchestrator; 0 = off
+status_minutes = 10             # #306: cloud desks (desks.py): pinned links + live status every N min; keep-alive of the two cloud sessions; 0 = off
+desk_probe_hours = 12           # #306: a PING to each cloud desk this often; no answer -> a new session
 retro_hour = 23                 # #219: nightly retro + handoff (nightly.py, headless Sonnet, read-only) at this local hour; 0 = off
 inspector_handoff = "C:/work/Oren_study/INSPECTOR_HANDOFF.md"   # #219: the nightly run refreshes its UPDATE section
 pregen = true    # voice pregen after each deploy; on since #68 (KV write budget) went live 26 Nov

@@ -12,6 +12,8 @@ Every minute it checks, deterministically:
   5c. every tick (#262): an open PR that conflicts with main and has auto-merge or a review PASS -> a resolve run (window resolve-<n>, conflicts.py)
   5c. #219 nightly.py: once a day at retro_hour ONE read-only headless Sonnet retro + handoff (issue 'Daily retro <date>', handoff PR);
       batch trigger: tells the inbox to run /batch once a day, and early when >= 8 ready P2/P3 issues share a lane
+  5d. #306 desks.py: keeps the two cloud sessions 'Oren inbox (cloud)' / 'Oren ask (cloud)' alive and every status_minutes
+      writes the session links + dashboard.py --text into ONE pinned issue (edited in place, nothing committed)
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
   4b. orchestrator / inbox / inspector terminal finished (#140)                -> removed by address and started again (recover.py commands)
@@ -260,6 +262,9 @@ def nightly_tick():
     nightly.retro_if_due(tell, log)
     nightly.batch_tick(lambda t: R.hc("send", "inbox", t, timeout=30)[0], log)
 
+def desks_tick():
+    import desks; desks.run_if_due(log)   # #306: cloud inbox + ask sessions, pinned links + live status (thread; not reloaded: never-two guard)
+
 SYNC_MIN = int(R.CFG.get("sync_minutes", 3))
 _sync = {"last": 0.0, "msg": ""}
 
@@ -417,6 +422,7 @@ def tick():
     observer_tick()
     ai_observer_tick()
     nightly_tick()
+    desks_tick()
     sync_tick()
     alarm_tick()
     trends_tick()
