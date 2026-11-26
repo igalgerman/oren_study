@@ -148,3 +148,24 @@ test('status line counts distinct issues, capped at 3', () => {
   d.windows = ['issue-12', 'issue-12-fix'].map(live)
   expect(statusLine(d)).toMatch(/^lanes 1\/3 /)
 })
+
+test('express lane shows as ⚡ and express issues go first in up next', () => {
+  const lab = (...n: string[]) => n.map(name => ({ name }))
+  const v = view([
+    { number: 1, title: 'a', labels: lab('ready-for-agent', 'in-progress') },
+    { number: 2, title: 'b', labels: lab('ready-for-agent', 'in-progress') },
+    { number: 3, title: 'c', labels: lab('ready-for-agent', 'in-progress') },
+    { number: 4, title: 'fast one', labels: lab('ready-for-agent', 'in-progress', 'express') },
+    { number: 5, title: 'normal', labels: lab('ready-for-agent', 'P0') },
+    { number: 6, title: 'approved', labels: lab('ready-for-agent', 'express', 'P3') },
+  ], [], [], [])
+  expect(v.lanes.length).toBe(4)
+  expect(v.lanes[3]).toBe('⚡ #4 fast one — building')
+  expect(v.lanes.slice(0, 3).some(l => l.includes('#4'))).toBe(false)
+  expect(v.next).toEqual(['⚡ [P3] #6 approved  (ready)', '[P0] #5 normal  (ready)'])
+})
+
+test('no express issue: no ⚡ line', () => {
+  const v = view([], [], [], [])
+  expect(v.lanes.some(l => l.startsWith('⚡'))).toBe(false)
+})

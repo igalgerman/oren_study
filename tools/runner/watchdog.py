@@ -102,7 +102,7 @@ def check_lanes(ts):
     rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: return
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
-    if not R.select(issues, R.CFG["max_parallel"]): return
+    if not R.select(issues, R.CFG["max_parallel"], R.MAX_CORE, R.EXPRESS): return
     orch = R.hc_json("get", "orchestrator", "--json").get("address", "")
     name = f"run-pass-{int(time.time()) % 100000}"
     cmd = [R.HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(R.ROOT), "--label", "role=runner"]

@@ -51,20 +51,26 @@ def blockers(body):
             out += [int(x) for x in re.findall(r"#(\d+)", line)]
     return out
 
-def select(issues, max_parallel, max_core=1):
-    """issues: [{number, labels:[names], createdAt, body}] -> issues to start now (oldest first).
-    An issue waits while any issue in its 'Blocked by:' line is still open (= in this list)."""
+def select(issues, max_parallel, max_core=1, express_lanes=0):
+    """issues: [{number, labels:[names], createdAt, body}] -> issues to start now (express first, then oldest).
+    An issue waits while any issue in its 'Blocked by:' line is still open (= in this list).
+    #72: label 'express' = owner-approved. It gets its own extra lane (express_lanes), starts before any other ready issue,
+    and an express core issue in that lane ignores max_core. When the express lane is busy it uses a normal slot."""
     open_nums = {i["number"] for i in issues}
     active = [i for i in issues if "in-progress" in i["labels"]]
     core_running = sum(lane_of(i["labels"]) == "core" for i in active)
-    slots = max_parallel - len(active)
+    exp_active = sum("express" in i["labels"] for i in active)
+    exp_free = max(0, express_lanes - exp_active)
+    slots = max_parallel - (len(active) - min(exp_active, express_lanes))
     ready = [i for i in issues if "ready-for-agent" in i["labels"]
              and "in-progress" not in i["labels"] and "blocked" not in i["labels"]
              and not any(b in open_nums for b in blockers(i.get("body")))]
     chosen = []
-    for i in sorted(ready, key=lambda i: ("bug" not in i["labels"], priority_of(i["labels"]), i["createdAt"])):   # bugs first, then P0..P3, then oldest
+    for i in sorted(ready, key=lambda i: ("express" not in i["labels"], "bug" not in i["labels"], priority_of(i["labels"]), i["createdAt"])):   # express first, bugs, then P0..P3, then oldest
+        if "express" in i["labels"] and exp_free > 0:
+            exp_free -= 1; chosen.append(i); continue
         if slots <= 0:
-            break
+            continue
         if lane_of(i["labels"]) == "core":
             if core_running >= max_core:
                 continue
@@ -576,6 +582,7 @@ def deploy_main(log):
     return dep
 
 MAX_CORE = int(CFG.get("max_core", 1))
+EXPRESS = int(CFG.get("express_lanes", 0))
 
 class core_slot:
     """One of MAX_CORE core slot locks (cross-process)."""
@@ -743,7 +750,7 @@ def main():
     rc, out = gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: print("gh failed:", out); return 1
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
-    chosen = [c for c in select(issues, CFG["max_parallel"], MAX_CORE) if not FileLock(f"issue-{c['number']}").held_by_other()]
+    chosen = [c for c in select(issues, CFG["max_parallel"], MAX_CORE, EXPRESS) if not FileLock(f"issue-{c['number']}").held_by_other()]
     cutoff = CFG["stuck_hours"] * 3600
     stuck = [i for i in issues if "in-progress" in i["labels"] and not FileLock(f"issue-{i['number']}").held_by_other()
              and (time.time() - datetime.fromisoformat(i["updatedAt"].replace("Z", "+00:00")).timestamp()) > cutoff]

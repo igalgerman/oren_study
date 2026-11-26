@@ -4,6 +4,7 @@ remote = "origin"
 branch = "main"
 model = "sonnet"
 max_parallel = 3
+express_lanes = 1               # #72: extra lane for issues labelled express (owner-approved), on top of max_parallel
 max_core = 2                    # core issues running at once (conflicts at merge are resolved automatically)
 worktree_prefix = "C:/work/Oren_study/wt-"
 bash = "C:/Program Files/Git/bin/bash.exe"   # Git Bash (not WSL's bash)

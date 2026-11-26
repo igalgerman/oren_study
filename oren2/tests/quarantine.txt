@@ -1,3 +1,1 @@
 # Suites whose failure does not block a merge (only with RETRY_ALONE=1). One name per line. Each needs an open issue.
-# reading: 'words light up in order' / 'level 1: waits, then reads by itself' fail even alone on a loaded PC (#40), 25 Nov 2026
-reading
