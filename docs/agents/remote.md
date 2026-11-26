@@ -54,3 +54,15 @@ No verdict within 60 min (or a refused start) -> the issue is blocked for the or
 RED (`VERDICT: FIX`) goes back to the worker's session (`remote.py send`, id kept in `.runs/<n>/remote.json`); if there is no
 session or the send fails, a new cloud fix session checks out `lane/<n>`. The fix reports `RESULT: DONE` on the issue as before.
 Same limits as local: 2 fix rounds, then blocked. The local worktree is made only after the last round (for merge/resolve).
+
+## Questions from a cloud session (#135)
+1. The session posts `QUESTION: <question, options>` on the issue and stops. The runner sees it within one poll (60 s).
+2. `park_remote`: labels `blocked` + `ready-for-human` (lane freed, `in-progress` dropped), a `Parked (cloud)` comment, the question in the
+   pinned 'Questions for the owner' issue (window `remote-<n>`: question window, panel, dashboard 'needs you'), and the orchestrator is told.
+3. The owner answers: in the question window (qwin posts `OWNER ANSWER ...` on the issue), through the orchestrator, or directly on the issue.
+4. Every watchdog tick `resume_answered()` finds parked cloud issues (`.runs/<n>/where` = remote) whose last QUESTION has an answer
+   (`remote.answer_after_question`: a later comment not written by the runner, owner_q or a Claude session), stores it in
+   `.runs/<n>/answer.json`, removes `blocked` + `ready-for-human` and comments `Runner: ...`.
+5. The next runner pass starts the issue again (always remote): `remote_resume` sends the answer to the saved session
+   (`remote.json`); no session or the send fails -> a new cloud session that reads the thread and continues `lane/<n>`. Then review/merge as usual.
+qwin does not send the answer itself for these issues (no double send); a cloud issue the runner does not manage still gets it from qwin directly.
