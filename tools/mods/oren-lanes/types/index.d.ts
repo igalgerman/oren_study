@@ -7,6 +7,7 @@ export type Panel = {
   needsYou: Row | null
   pc: Row | null
   desks: Row | null   // #306: 'cloud desks: inbox ok · ask down' (red when down)
+  canary: Row | null  // #330: 'flow ok HH:MM' or NEEDS-ATTENTION ... (red)
   lanesHead: string
   starts: Row
   lanes: Row[]

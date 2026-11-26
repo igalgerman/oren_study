@@ -151,6 +151,11 @@ print("ok dashboard governor")
 m3["github"] = "GitHub: 12 calls/min · graphql 900/5000 (18%) · core 4900/5000 (98%) · cache 20 s old · ALARM GitHub budget < 20%"   # #329
 assert m3["github"] in D.text(m3) and "graphql 900/5000 (18%)" in D.page(m3)
 print("ok dashboard GitHub line (#329)")
+m3["canary"] = "flow ok 14:45"   # #330: .runs/canary.json text
+assert "Canary: flow ok 14:45" in D.text(m3) and "Canary: flow ok 14:45" in D.page(m3)
+m3["canary"] = "NEEDS-ATTENTION: canary #401 step pr late (30 min)"
+assert "Canary: NEEDS-ATTENTION: canary #401 step pr late (30 min)" in D.text(m3)
+print("ok dashboard canary line (#330)")
 # #236: an in-progress issue running remote without the cloud label is a cloud lane (a remote.cloud() row), not local
 ic4 = issues + [I(13, "OPEN", ["in-progress", "P0"])]
 cl4 = [{"n": 13, "title": "t13", "state": "working", "line": "", "last": "2026-11-26T07:50:00Z", "stale": False, "pr": "", "session": ""}]

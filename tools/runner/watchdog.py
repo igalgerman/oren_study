@@ -21,6 +21,8 @@ Every minute it checks, deterministically:
       label owner -> an owner question (popup)
   5d. #306 desks.py: keeps the two cloud sessions 'Oren inbox (cloud)' / 'Oren ask (cloud)' alive and every status_minutes
       writes the session links + dashboard.py --text into ONE pinned issue (edited in place, nothing committed)
+  5d. #330 canary.py: every 6 h (and after a merge into tools/runner or tools/mods) ONE tiny canary issue runs the whole flow;
+      a step past its deadline -> alarm to the orchestrator + inspector, NEEDS-ATTENTION on panel/dashboard; side paths hourly
   5e. #187 once a week: tools/test_garden.py (test trim proposal: ONE issue 'Test trim proposal (week N)'; it never deletes a test)
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
   7. #304: a network error (sync, or a tick that raised a network/timeout error) is retried next tick and only logged + told to the
@@ -312,6 +314,9 @@ def due_tick():
     import due
     due.tick(tell=tell, log=log)
 
+def canary_tick():
+    import canary; canary.tick(say=lambda t: (tell(t), R.hc("send", "inspector", t, timeout=30)), log=lambda m: log("canary: " + m))   # #330
+
 def desks_tick():
     import desks; desks.run_if_due(log)   # #306: cloud inbox + ask sessions, pinned links + live status (thread; its never-two lock survives a reload)
 
@@ -592,6 +597,7 @@ def tick():
         garden_tick()       # #187
         issues_stuck_tick() # #280
         desks_tick()
+        canary_tick()       # #330
         sync_tick()
         alarm_tick()
         trends_tick()
