@@ -1,4 +1,4 @@
-"""Owner dashboard (#142, v2 #169): open issues, forecast, how the work really gets done. On demand, always fresh.
+"""Owner dashboard (#142, v2 #169): the answer first (on track or not, when it will be finished), details folded below. On demand, always fresh.
 Usage: python3 tools/runner/dashboard.py          write .runs/dashboard.html and open it in the browser
        python3 tools/runner/dashboard.py --text   the same numbers as plain text (for a terminal / the orchestrator)
 Every number is measured from GitHub (issues, PRs) or the runner's own records (.runs/stats.jsonl, runner.log);
@@ -59,7 +59,8 @@ def model(issues, prs, events, now, log_text="", cloud=()):
     closed_at = {i["number"]: epoch(i.get("closedAt")) for i in issues if i["state"] == "CLOSED"}
     created = {i["number"]: epoch(i.get("createdAt")) for i in issues}
     rows = sorted(({"n": i["number"], "title": i["title"], "state": state_of(i, open_nums), "prio": prio_of(i),
-                    "age_h": (now - (created[i["number"]] or now)) / 3600} for i in op),
+                    "age_h": (now - (created[i["number"]] or now)) / 3600,
+                    "blockers": [b for b in R.blockers(i.get("body")) if b in open_nums and b != i["number"]]} for i in op),
                   key=lambda r: (r["prio"], r["n"]))
     by_state = {k: [r for r in rows if r["state"] == k] for k, _ in STATES}
     by_prio = {p: sum(r["prio"] == p for r in rows) for p in ("P0", "P1", "P2", "P3", "-")}
@@ -107,7 +108,9 @@ def model(issues, prs, events, now, log_text="", cloud=()):
                     key=lambda x: -x[0])[:10]
     t = S.compute(events, now)["totals"]
     p0_closed = [closed_at[i["number"]] for i in issues if i["state"] == "CLOSED" and "P0" in i["labels"]]
+    fc = forecast(len(op), list(closed_at.values()), list(created.values()), now, history_h)
     return {
+        "plan": eta_plan(rows, running, t, fc, now),
         "now": now, "open": len(op), "cloud": list(cloud), "cloud_n": len(cloud_n),
         "lanes": f"local {len(running)}/{R.CFG.get('local_lanes', 3)} · cloud {len(cloud_n)}/{R.CFG.get('remote_lanes', 0)}", "by_state": by_state, "by_prio": by_prio, "rows": rows, "running": running,
         "closed_24h": sum(within(c, 24) for c in closed_at.values()), "closed_7d": sum(within(c, 168) for c in closed_at.values()),
@@ -116,7 +119,7 @@ def model(issues, prs, events, now, log_text="", cloud=()):
         "open_prs": sum(1 for p in prs if p.get("state") == "OPEN"), "days": days, "hours": hours, "history_h": history_h,
         "avg_build": t["avg_build"], "avg_review": t["avg_review"], "avg_merge": t["avg_merge"],
         "last_deploy": max(deploys, key=lambda e: e["ts"]) if deploys else None,
-        "fc": forecast(len(op), list(closed_at.values()), list(created.values()), now, history_h),
+        "fc": fc,
         "fc_p0": forecast(by_prio["P0"], p0_closed, [], now, history_h) if by_prio["P0"] else None, "p0_open": by_prio["P0"],
         "truth": {"started": len(started), "by_runner": len(by_runner), "fixes": fixes, "passes": passes,
                   "deploys_ok": sum(1 for d in deploys if d["ts"] > now - 86400 and d.get("ok")),
@@ -124,6 +127,71 @@ def model(issues, prs, events, now, log_text="", cloud=()):
                   "stuck": sorted(stuck.items(), key=lambda x: -len(x[1]))[:6]},
         "recent": [{"n": i["number"], "title": i["title"], "at": c, "open_s": c - (created[i["number"]] or c)} for c, i in recent],
     }
+
+def eta_plan(rows, running, t, fc, now, lanes=None):
+    """Pure estimate (#173): when each open issue should be merged -> {n: (earliest, latest) epoch, or a reason string}.
+    Running: time left for its current step (runner averages; latest = 1.5x). Queue = ready issues, then waiting ones,
+    in priority order; a waiting issue goes after its blockers (their merge + one full cycle). Queue position k ->
+    k / close rate, earliest with the faster rate (6 h or 24 h), latest with the slower. Needs you / blocked / not triaged: no estimate."""
+    b, rv, mg = t.get("avg_build") or 1200, t.get("avg_review") or 300, t.get("avg_merge") or 3600
+    wait = max(300, mg - b - rv)
+    left = {"in review": rv + wait, "fixing review notes": b / 2 + rv + wait, "merging (CI)": wait / 2,
+            "resolving a conflict": 900 + wait / 2, "deploying": 300}
+    out = {}
+    for r in running:
+        sec = max(600, b - (r["for_s"] or 0)) + rv + wait if r["step"] == "building" else left.get(r["step"], mg / 2)
+        out[r["n"]] = (now + sec, now + sec * 1.5)
+    for r in rows:
+        if r["state"] in ("needs_you", "blocked", "other"):
+            out[r["n"]] = {"needs_you": "waits for you", "blocked": "blocked", "other": "not triaged"}[r["state"]]
+    fast, slow = max(fc["c6"], fc["c24"]), min(fc["c6"], fc["c24"]) or max(fc["c6"], fc["c24"])
+    lanes = lanes or int(R.CFG.get("max_parallel", 3))
+    busy = [v[0] - now for v in out.values() if isinstance(v, tuple)]
+    free0 = min(busy) if busy and len(running) >= lanes else 0          # all lanes busy: the first one frees when its issue merges
+    queue = [r for r in rows if r["state"] in ("ready", "waiting")]         # rows are in priority order, as the runner picks
+    k = 0
+    while queue:
+        pending = {q["n"] for q in queue}
+        r = next((q for q in queue if not any(x in pending for x in q.get("blockers", []))), None)   # first whose blockers are placed
+        if r is None: break
+        queue.remove(r)
+        bl = r.get("blockers", [])
+        hard = [x for x in bl if isinstance(out.get(x), str) or x not in out]
+        if hard: out[r["n"]] = "after #" + ", #".join(map(str, hard)); continue
+        if fast <= 0: out[r["n"]] = "no speed measured yet"; continue
+        k += 1
+        rnd = -(-k // lanes)                                                 # lane round of the k-th queued issue
+        lo = now + max(k / fast * 3600, free0 + rnd * mg)                    # not started: its lane frees, then full cycles
+        hi = now + max(k / slow * 3600, free0 + rnd * mg * 1.5)
+        for x in bl:
+            lo, hi = max(lo, out[x][0] + mg), max(hi, out[x][1] + mg * 1.5)
+        out[r["n"]] = (lo, hi)
+    for r in queue: out.setdefault(r["n"], "circular Blocked-by")
+    return out
+
+def eta_str(v, now):
+    """(lo, hi) -> '10:40 – 11:30' today, else with the day; a reason string stays as it is."""
+    if not isinstance(v, tuple): return v or "-"
+    r10 = lambda x: x - x % 600 + (600 if x % 600 else 0)
+    lo, hi = r10(v[0]), r10(v[1])
+    f = lambda x: time.strftime("%H:%M" if time.strftime("%d", time.localtime(x)) == time.strftime("%d", time.localtime(now)) else "%a %H:%M", time.localtime(x))
+    return f(lo) if hi - lo < 900 else f"{f(lo)} – {f(hi)}"
+
+def last_eta(m, rs):
+    """-> ((earliest, latest) when the last estimated issue of `rs` merges, or None; the rows that have no estimate)."""
+    plan = m["plan"]
+    ts = [plan[r["n"]] for r in rs if isinstance(plan.get(r["n"]), tuple)]
+    return ((max(x[0] for x in ts), max(x[1] for x in ts)) if ts else None), [r for r in rs if not isinstance(plan.get(r["n"]), tuple)]
+
+def bottom_line(m):
+    """-> list of (label, eta text) for the P0s and the whole estimated queue."""
+    rows, now = m["rows"], m["now"]
+    (p0, a), (allq, b) = last_eta(m, [r for r in rows if r["prio"] == "P0"]), last_eta(m, rows)
+    p0_none, all_none = len(a), len(b)
+    out = []
+    if p0: out.append((f"all {sum(r['prio'] == 'P0' for r in rows)} P0", eta_str(p0, now) + (f" ({p0_none} without an estimate)" if p0_none else "")))
+    if allq: out.append(("everything open now", eta_str(allq, now) + (f" ({all_none} without an estimate: wait for you, blocked or not triaged)" if all_none else "")))
+    return out
 
 def hhmm(ts): return time.strftime("%H:%M", time.localtime(ts))
 def when(now, hours): return time.strftime("%a %d %b %H:%M", time.localtime(now + hours * 3600))
@@ -157,6 +225,10 @@ def text(m):
         lines.append(f"  cloud #{c['n']} {c['title'][:40]} — {c['state']} · last {hhmm(epoch(c['last'])) if epoch(c['last']) else '-'}"
                      + (" · STALE" if c["stale"] else "") + (f" · {c['pr']}" if c["pr"] else "") + (f" · {c['session']}" if c["session"] else ""))
     if m["running"]: lines.append("Running: " + "; ".join(f"#{r['n']} {r['step']} {dur(r['for_s'])}" for r in m["running"]))
+    lines.append("Bottom line (estimate): " + "; ".join(f"{a} merged by {b}" for a, b in bottom_line(m)))
+    nxt = sorted(((v, n) for n, v in m["plan"].items() if isinstance(v, tuple)))[:8]
+    title = {r["n"]: r["title"] for r in m["rows"]}
+    if nxt: lines.append("Next merges (estimate): " + "; ".join(f"#{n} {title.get(n, '')[:35]} ≈ {eta_str(v, m['now'])}" for v, n in nxt))
     if s["needs_you"]: lines.append("Needs you: " + ", ".join(f"#{r['n']} {r['title'][:50]}" for r in s["needs_you"]))
     for q in m.get("questions", []): lines.append(f"Needs you (question): {q['window']} {q['text'][:120]} {q['url']}")   # #193
     return "\n".join(lines)
@@ -198,114 +270,259 @@ def _line(days, aria="Open issues at the end of each day", every=2):
     return "".join(out) + "</svg>"
 
 CSS = """
-:root{--bg:#f4f5f7;--card:#fff;--fg:#191919;--sub:#666;--line:#e3e5e8;--s1:#257de0;--s2:#f47230;--bad:#dc3c3d;--est:#fff7e0}
-@media(prefers-color-scheme:dark){:root{--bg:#111;--card:#191919;--fg:#efefef;--sub:#9c9c9c;--line:#333;--s1:#338ced;--s2:#e76624;--est:#2a2416}}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 "Segoe UI",Arial,sans-serif}
-main{max-width:1040px;margin:0 auto;padding:18px}
-h1{font-size:22px;margin:0 0 2px}h2{font-size:16px;margin:0 0 10px}.sub{color:var(--sub);font-size:13px}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:14px 0}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
-.big{font-size:34px;font-weight:600;line-height:1.1}.mid{font-size:20px;font-weight:600}.tiles .card{margin:0}
+:root{--bg:#f4f5f7;--card:#fff;--fg:#191919;--sub:#666;--line:#e3e5e8;--s1:#257de0;--s2:#f47230;--bad:#dc3c3d;--good:#0aac23;--goodtx:#006c10;--warn:#fbb315;--est:#fff7e0}
+@media(prefers-color-scheme:dark){:root{--bg:#111;--card:#191919;--fg:#efefef;--sub:#9c9c9c;--line:#333;--s1:#338ced;--s2:#e76624;--goodtx:#53c556;--est:#2a2416}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 "Segoe UI",Arial,sans-serif}
+main{max-width:900px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:22px;margin:0}h2{font-size:18px;margin:0 0 6px}h3{font-size:15px;margin:16px 0 0}p{margin:6px 0}
+.sub{color:var(--sub);font-size:14px;font-weight:normal}a{color:var(--s1);text-decoration:none}a:hover{text-decoration:underline}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-top:12px}
+.verdict{border-left:6px solid var(--sub);padding:18px 20px}.verdict .head{font-size:28px;font-weight:600;line-height:1.2;margin:8px 0 4px}
+.verdict.ok{border-left-color:var(--good)}.verdict.slow,.verdict.you{border-left-color:var(--warn)}.verdict.bad{border-left-color:var(--bad)}
+.chip{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.04em;border-radius:999px;padding:2px 10px;background:var(--line);color:var(--fg)}
+.ok .chip{background:var(--good);color:#fff}.slow .chip,.you .chip{background:var(--warn);color:#0b0b0b}.bad .chip{background:var(--bad);color:#fff}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:12px}.tiles .card{padding:14px 16px;margin:0}
+.big{font-size:36px;font-weight:600;line-height:1.1}.attn{border:2px solid var(--warn)}
 .est{background:var(--est)}.tag{font-size:11px;font-weight:600;border:1px solid var(--sub);border-radius:6px;padding:0 5px;color:var(--sub);margin-left:6px;vertical-align:2px}
-.warnbg{border-color:var(--bad)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin:4px 0 8px}
+.ans{font-size:24px;font-weight:600;line-height:1.3}
+ul.rows{list-style:none;margin:6px 0 0;padding:0;display:grid;grid-template-columns:minmax(140px,max-content) 1fr}ul.rows li{display:contents}
+ul.rows .when,ul.rows .what{padding:8px 0;border-top:1px solid var(--line)}
+ul.rows .when{font-weight:600;white-space:nowrap;padding-right:20px;font-variant-numeric:tabular-nums}
+ul.checks{list-style:none;margin:8px 0;padding:0}ul.checks li{display:grid;grid-template-columns:84px 1fr;padding:6px 0;border-top:1px solid var(--line)}
+.st{font-size:12px;font-weight:700;letter-spacing:.03em;padding-top:3px}
+.pill{font-size:11px;border:1px solid var(--line);border-radius:6px;padding:0 5px;color:var(--sub)}
+.p0{color:var(--bad);border-color:var(--bad);font-weight:600}.count{color:var(--sub);font-weight:normal}.warn{color:var(--bad);font-weight:600}.good{color:var(--goodtx);font-weight:600}
+ul.facts{margin:6px 0;padding-left:20px}ul.facts li{margin:4px 0}
+h2.more{margin:28px 0 0}details summary{cursor:pointer}details.card[open]>summary{margin-bottom:10px}
+.scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:5px 6px;border-top:1px solid var(--line);vertical-align:top;text-align:left}
+th{color:var(--sub);font-weight:normal;font-size:13px}td.n{white-space:nowrap;width:1%}code{font-size:13px}
 .grid{stroke:var(--line);stroke-width:1}.ax{fill:var(--sub);font-size:13px}.lab{fill:var(--fg);font-size:14px;font-weight:600}
 .s1{fill:var(--s1)}.s2{fill:var(--s2)}.ln{fill:none;stroke:var(--s1);stroke-width:2}.dot{fill:var(--s1);stroke:var(--card);stroke-width:2}.hit{fill:transparent}
 rect:hover,.hit:hover+.dot{opacity:.75}
 .legend{display:flex;gap:16px;font-size:13px;color:var(--sub);margin-bottom:6px}.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
-.cols{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:760px){.cols{grid-template-columns:1fr}}
-table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:5px 6px;border-top:1px solid var(--line);vertical-align:top;text-align:left}th{color:var(--sub);font-weight:normal;font-size:13px}
-td.n{white-space:nowrap;width:1%}a{color:var(--s1);text-decoration:none}.pill{font-size:11px;border:1px solid var(--line);border-radius:6px;padding:0 5px;color:var(--sub)}
-.p0{color:var(--bad);border-color:var(--bad);font-weight:600}.count{color:var(--sub);font-weight:normal}.warn{color:var(--bad);font-weight:600}.good{color:#0aac23;font-weight:600}
-ul.facts{margin:0;padding-left:18px}ul.facts li{margin:3px 0}details summary{cursor:pointer}
+@media(max-width:760px){.tiles{grid-template-columns:1fr 1fr}.two{grid-template-columns:1fr}.verdict .head{font-size:24px}
+ul.rows{grid-template-columns:1fr}ul.rows .when{padding-bottom:0}ul.rows .what{border-top:0;padding-top:0}}
 """
 
+# the runner's step names (STEP) in plain words for the owner
+PLAIN = {"building": "being built", "in review": "being checked by the reviewer", "fixing review notes": "fixing what the reviewer found",
+         "merging (CI)": "passed the review, now running the tests", "resolving a conflict": "fixing a clash with other work",
+         "deploying": "merged, now going live", "started by hand": "started by hand"}
+HEALTH = [("runner", "does the work on each issue", "runner_age", 6 * 3600), ("watchdog", "checks every minute that nothing is stuck", "watchdog_age", 300),
+          ("observer", "checks the rules for each issue every 30 minutes", "observer_age", 3600)]
+
+def plural(n, one, many): return f"{n} {one if n == 1 else many}"
+
+def watcher_health(o):
+    """Pure: [(name, role in plain words, seconds since its last sign of life or None, ok)]; ok = within its limit (6 h, 5 min, 1 h)."""
+    return [(n, role, o[k], o[k] is not None and o[k] <= lim) for n, role, k, lim in HEALTH]
+
+def verdict(m):
+    """Pure: the one answer at the top of the page -> {'level', 'head', 'why': [plain sentences]}.
+    Levels, worst first: 'bad' (a watcher stopped or the last deploy failed), 'you' (issues wait for the owner),
+    'slow' (nothing runs, or more issues open than close), 'ok', 'none' (nothing closed yet to measure). Every number comes from m."""
+    s, fc, d = m["by_state"], m["fc"], m["last_deploy"]
+    bad = [f"The {n} looks stopped: " + ("no sign of life found." if age is None else f"its last sign of life was {dur(age)} ago.")
+           for n, _, age, ok in (watcher_health(m["ov"]) if m.get("ov") else []) if not ok]
+    if d and not d.get("ok"): bad.append(f"The last deploy (at {hhmm(d['ts'])}) failed.")
+    you = [plural(len(s["needs_you"]), "issue waits", "issues wait") + " for your answer or decision."] if s["needs_you"] else []
+    slow, pace, head = [], [], "On track"
+    if not s["running"] and s["ready"]:
+        head = "Nothing is being worked on right now"; slow.append(plural(len(s["ready"]), "issue is", "issues are") + " ready to start, but none is running.")
+    speed6 = f"closing {fc['c6']:.1f} per hour, new {fc['o6']:.1f} per hour"
+    if not m["open"]: head = "All done"; pace.append("No issue is open.")
+    elif fc["c6"] > fc["o6"]:
+        pace.append(f"In the last 6 hours more issues were closed than opened ({speed6})." + ("" if fc["c24"] > fc["o24"] else " Over 24 hours it was the other way round."))
+    elif fc["c24"] > fc["o24"]:
+        if not slow: head = "Work is slowing down"
+        slow.append(f"In the last 6 hours more new issues came in than were closed ({speed6}).")
+    elif fc["c6"] or fc["c24"]:
+        if not slow: head = "Work is moving, but the list is growing"
+        slow.append(f"In the last 24 hours {plural(m['closed_24h'], 'issue was', 'issues were')} closed and {plural(m['opened_24h'], 'new one', 'new ones')} came in.")
+    else: pace.append("No issue was closed yet, so the speed cannot be measured.")
+    if bad: return {"level": "bad", "head": "Something looks wrong", "why": bad + you + slow}
+    if you: return {"level": "you", "head": plural(len(s["needs_you"]), "issue needs", "issues need") + " you", "why": you + slow + pace}
+    if slow: return {"level": "slow", "head": head, "why": slow + pace}
+    if m["open"] and not (fc["c6"] or fc["c24"]): return {"level": "none", "head": "Too early to say", "why": pace}
+    return {"level": "ok", "head": head, "why": pace}
+
 def page(m):
-    e = html.escape; repo = R.CFG["repo"]; s = m["by_state"]; p = m["by_prio"]; tr = m["truth"]; fc = m["fc"]; now = m["now"]
+    e = html.escape; repo = R.CFG["repo"]; s = m["by_state"]; p = m["by_prio"]; tr = m["truth"]; fc = m["fc"]; now = m["now"]; plan = m["plan"]
     link = lambda n: f'<a href="https://github.com/{repo}/issues/{n}">#{n}</a>'
-    tile = lambda big, label, sub="", cls="": f'<div class="card {cls}"><div class="big">{big}</div><div>{label}</div><div class="sub">{sub}</div></div>'
-    d = m["last_deploy"]
-    dep = (f"{hhmm(d['ts'])} " + ("ok" if d.get("ok") else '<span class="warn">FAILED</span>')) if d else "no record yet"
-    fin = tr["by_runner"] / tr["started"] if tr["started"] else None
+    est_tag = '<span class="tag">ESTIMATE</span>'
     qs = m.get("questions", [])   # #193: open owner questions (pinned 'Questions for the owner' issue)
     qrows = "".join(f'<tr><td class="n">{e(q["window"])}</td><td>{e(q["text"])}</td><td class="n"><a href="{e(q["url"])}">answer</a></td></tr>' for q in qs)
-    qcard = f'<div class="card"><h2>Needs you: open questions</h2><table><tr><th>from</th><th>question</th><th></th></tr>{qrows}</table></div>' if qrows else ""
-    tiles = "".join([
-        tile(m["open"], "open issues", f"P0 {p['P0']} · P1 {p['P1']} · P2 {p['P2']} · P3 {p['P3']}" + (f" · <span class='warn'>{p['-']} without priority</span>" if p['-'] else "")),
-        tile(len(s["needs_you"]) + len(qs), "need you", "answer or decide" if s["needs_you"] or qs else "nothing waits for you"),
-        tile(len(s["running"]), "running now", f"{len(s['ready'])} ready · {len(s['waiting'])} waiting · {len(s['blocked'])} blocked"),
-        tile(m["closed_24h"], "closed in 24 h", f"{m['opened_24h']} new in 24 h · {m['closed_total']} closed in total"),
-        tile(m["merged_24h"], "PRs merged in 24 h", f"{m['open_prs']} PRs open · last deploy {dep}"),
-        tile(pct(tr["by_runner"], tr["started"]), "finished by the runner itself",
-             f"{tr['by_runner']} of {tr['started']} it started in 24 h; the rest needed a human", "" if fin is None or fin >= 0.5 else "warnbg"),
-    ])
-    def fc_block(f, what):
-        if not f: return f"<div class='mid'>{what}: nothing open</div>"
-        if f["net"]:
-            a, b = f["net"][0], f["net"][-1]; rng = len(f["net"]) > 1 and b - a > 0.5
-            return (f"<div class='mid'>{what}: ≈ {dur(a * 3600)}" + (f" – {dur(b * 3600)}" if rng else "") + "</div>"
-                    f"<div class='sub'>around {when(now, a)}" + (f" to {when(now, b)}" if rng else "") + "</div>")
-        if f["gross"]:
-            return (f"<div class='mid'>{what}: <span class='warn'>not shrinking</span></div><div class='sub'>new issues arrive as fast as old ones close. "
-                    f"If nothing new came in: ≈ {dur(f['gross'][0] * 3600)}</div>")
-        return f"<div class='mid'>{what}: not enough data yet</div>"
-    p0 = fc_block(m["fc_p0"], f"The {m['p0_open']} open P0") if m["fc_p0"] else "<div class='mid'>No open P0</div>"
-    fcard = (f'<div class="card est"><h2>Forecast <span class="tag">ESTIMATE</span></h2><div class="cols">'
-             f'<div>{fc_block(fc, "All " + str(m["open"]) + " open issues")}</div><div>{p0}</div></div>'
-             f'<ul class="facts sub" style="margin-top:8px"><li>Measured speed: closing <b>{fc["c6"]:.1f}/h</b> in the last 6 h and <b>{fc["c24"]:.1f}/h</b> over 24 h; '
-             f'new issues {fc["o6"]:.1f}/h and {fc["o24"]:.1f}/h. The range is the faster and the slower of the two.</li>'
-             f'<li>Based on only {m["history_h"]:.0f} h of history. P0 work is bigger than average (new systems), so the P0 line is optimistic.</li>'
-             f'<li>Assumes today\'s lanes. Remote lanes (#133) and faster merges (#166) should shorten it; a new batch of issues makes it longer.</li></ul></div>')
-    stuck = "".join(f"<tr><td>{e(k)}</td><td class='n'>{len(v)} issues</td><td class='sub'>{' '.join('#' + str(x) for x in v[:6])}</td></tr>" for k, v in tr["stuck"])
-    truth = (f'<div class="card"><h2>How the work really gets done (last 24 h)</h2><ul class="facts">'
-             f'<li>The runner started <b>{tr["started"]}</b> issues and finished <b>{tr["by_runner"]}</b> by itself ({pct(tr["by_runner"], tr["started"])}). '
-             f'{m["merged_24h"]} PRs merged in total, so about <b>{max(0, m["merged_24h"] - tr["by_runner"])}</b> were not finished by the runner: merged by hand (orchestrator), or the runner crashed right after merging and never recorded it.</li>'
-             f'<li>Reviews: {tr["passes"]} passed, <b>{tr["fixes"]}</b> sent back for fixes ({pct(tr["fixes"], tr["fixes"] + tr["passes"])}).</li>'
-             f'<li>Runner deploys: {tr["deploys_ok"]} ok, {tr["deploys_fail"]} failed (hand deploys are not recorded).</li>'
-             f'<li>Average times (runner records): build {S.fmt(m["avg_build"])}, review {S.fmt(m["avg_review"])}, start to merge {S.fmt(m["avg_merge"])}.</li></ul>'
-             + (f'<h2 style="margin-top:12px">Why issues got stuck (distinct issues, 24 h)</h2><table>{stuck}</table>' if stuck else "") + '</div>')
+    qcard = f'<section class="card attn"><h2>Needs you: open questions</h2><table><tr><th>from</th><th>question</th><th></th></tr>{qrows}</table></section>' if qrows else ""
     cl_rows = "".join(f'<tr><td class="n">{link(c["n"])}</td><td>{e(c["title"])}</td><td class="n">{e(c["state"])}' + (' <span class="warn">STALE</span>' if c["stale"] else '')
                       + f'</td><td class="n sub">{hhmm(epoch(c["last"])) if epoch(c["last"]) else "-"}</td><td class="n">' + (f'<a href="{e(c["pr"])}">PR</a>' if c["pr"] else "-")
                       + '</td><td class="n">' + (f'<a href="{e(c["session"])}">session</a>' if c["session"] else "-") + '</td></tr>' for c in m["cloud"])
-    cloud = (f'<div class="card"><h2>Cloud lanes <span class="count">{m["cloud_n"]}</span></h2><table><tr><th>#</th><th>issue</th><th>state</th>'
-             f'<th>last activity</th><th>PR</th><th>session</th></tr>{cl_rows}</table></div>') if m["cloud_n"] else ""
-    run_rows = "".join(f'<tr><td class="n">{link(r["n"])}</td><td>{e(r["title"])}</td><td class="n">{r["step"]}</td><td class="n sub">{dur(r["for_s"])}</td></tr>' for r in m["running"])
-    running = f'<div class="card"><h2>Running now <span class="count">{len(m["running"])}</span></h2><table><tr><th>#</th><th>issue</th><th>step</th><th>running for</th></tr>{run_rows}</table></div>' if run_rows else ""
-    rec_rows = "".join(f'<tr><td class="n">{link(r["n"])}</td><td>{e(r["title"])}</td><td class="n sub">{hhmm(r["at"])}</td><td class="n sub">{dur(r["open_s"])}</td></tr>' for r in m["recent"])
-    recent = f'<div class="card"><h2>Recently finished</h2><table><tr><th>#</th><th>issue</th><th>closed</th><th>was open</th></tr>{rec_rows}</table></div>' if rec_rows else ""
-    def table(key, name):
-        rs = s[key]
-        if not rs or key == "running": return ""
-        body = "".join(f'<tr><td class="n">{link(r["n"])}</td><td>{e(r["title"])}</td><td class="n"><span class="pill{" p0" if r["prio"] == "P0" else ""}">{r["prio"]}</span></td>'
-                       f'<td class="n sub">{dur(r["age_h"] * 3600)}</td></tr>' for r in rs)
-        return (f'<details class="card" {"open" if key in ("needs_you", "blocked", "ready") else ""}><summary><b>{name}</b> <span class="count">{len(rs)}</span></summary>'
-                f'<table><tr><th>#</th><th>issue</th><th>prio</th><th>open for</th></tr>{body}</table></details>')
-    lists = "".join(table(k, n) for k, n in STATES)
+    cloud = (f'<section class="card"><h2>Cloud lanes <span class="count">{m["cloud_n"]}</span></h2><table><tr><th>#</th><th>issue</th><th>state</th>'
+             f'<th>last activity</th><th>PR</th><th>session</th></tr>{cl_rows}</table></section>') if m["cloud_n"] else ""
+    approx = lambda v: "≈ " + eta_str(v, now) if isinstance(v, tuple) else "no estimate"
+    pill = lambda r: f'<span class="pill{" p0" if r["prio"] == "P0" else ""}">{r["prio"] if r["prio"] != "-" else "no priority"}</span>'
+    row = lambda when, r, note: (f'<li><div class="when">{when}</div><div class="what">{link(r["n"])} {e(r["title"])}'
+                                 f'<div class="sub">{pill(r)} {note}</div></div></li>')
+    rows_ul = lambda items: f'<ul class="rows">{"".join(items)}</ul>'
+    fold = lambda title, hint, body: (f'<details class="card"><summary><b>{title}</b> <span class="sub">{hint}</span></summary>{body}</details>')
+    # 1. the answer, then four numbers
+    v = verdict(m)
+    chip = {"bad": "! PROBLEM", "you": "! NEEDS YOU", "slow": "! SLOW", "ok": "✓ ON TRACK", "none": "? NO DATA YET"}[v["level"]]
+    why = (f'<p>{e(v["why"][0])}</p>' if len(v["why"]) == 1 else '<ul class="facts">' + "".join(f"<li>{e(x)}</li>" for x in v["why"]) + "</ul>")
+    top = f'<section class="card verdict {v["level"]}"><span class="chip">{chip}</span><div class="head">{e(v["head"])}</div>{why}</section>'
+    tile = lambda big, label, sub, cls="": f'<div class="card {cls}"><div class="big">{big}</div><div>{label}</div><div class="sub">{sub}</div></div>'
+    tiles = (tile(m["open"], "open issues", f"{p['P0']} of them urgent (P0)")
+             + tile(m["closed_24h"], "closed in 24 hours", f"{m['opened_24h']} new ones came in")
+             + tile(len(m["running"]), "being worked on now", f"{len(s['ready'])} more ready to start")
+             + tile(len(s["needs_you"]) + len(qs), "need you", "your answer or decision" if s["needs_you"] or qs else "nothing waits for you", "attn" if s["needs_you"] or qs else ""))
+    # 2. needs you (only when something does)
+    needs = (f'<section class="card attn"><h2>Needs you <span class="count">{len(s["needs_you"])}</span></h2>'
+             f'<p class="sub">These issues wait for your answer or decision. They have no time estimate: they depend on you.</p>'
+             + rows_ul(row(f'open {dur(r["age_h"] * 3600)}', r, "waits for you") for r in s["needs_you"]) + '</section>') if s["needs_you"] else ""
+    # 3. bottom line: when the P0s and everything open now should be merged
+    big_when = lambda t: "≈ " + ("today " if eta_str(t, now)[:1].isdigit() else "") + eta_str(t, now)      # eta_str names the day only when it is not today
+    def answer(label, rs, list_them):
+        t, none = last_eta(m, rs)
+        note = ""
+        if none and list_them:
+            note = "No estimate for " + ", ".join(f'{link(r["n"])} ({e(str(plan.get(r["n"]) or "no reason recorded"))})' for r in none[:4]) + (f" and {len(none) - 4} more" if len(none) > 4 else "") + "."
+        elif none:
+            note = f"{len(none)} of them {'has' if len(none) == 1 else 'have'} no estimate. The reason is next to each one in the full list below."
+        return f'<div><div>{label}</div><div class="ans">{big_when(t) if t else "no estimate yet"}</div><div class="sub">{note}</div></div>'
+    p0_rows = [r for r in m["rows"] if r["prio"] == "P0"]
+    rough = ""
+    if m["fc_p0"] and m["fc_p0"]["net"]:
+        a, b = m["fc_p0"]["net"][0], m["fc_p0"]["net"][-1]
+        rough = (f'<p class="sub">A second, rougher check for the urgent issues (from their closing speed only): ≈ {dur(a * 3600)}' + (f" to {dur(b * 3600)}" if b - a > 0.5 else "")
+                 + ' from now. Both are estimates.</p>')
+    bottom = (f'<section class="card est"><h2>When will it be finished? {est_tag}</h2><div class="two">'
+              + (answer("The " + plural(p["P0"], "urgent issue (P0), finished by", "urgent issues (P0), all finished by"), p0_rows, True) if p0_rows else '<div><div>Urgent issues (P0)</div><div class="ans">none open</div></div>')
+              + (answer("The 1 open issue, finished by" if m["open"] == 1 else f"All {m['open']} open issues, finished by", m["rows"], False) if m["rows"] else '<div><div>All issues</div><div class="ans">nothing open</div></div>')
+              + f'</div><p class="sub">Finished = merged into the game after review and tests. The times come from the speed of the last hours; '
+              f'new urgent issues push them later.</p>{rough}</section>')
+    # 4. timeline: what runs now, what comes next
+    est = sorted(((x, r) for r in m["rows"] for x in [plan.get(r["n"])] if isinstance(x, tuple)), key=lambda x: x[0])
+    run_n = {r["n"] for r in m["running"]}
+    step = lambda r: PLAIN.get(r["step"], r["step"]) + (f' · started {dur(r["for_s"])} ago' if r["for_s"] is not None else "")
+    qnote = lambda r: ("waits for " + ", ".join(link(b) for b in r["blockers"])) if r.get("blockers") else "ready to start"
+    run_rows = [row(approx(plan.get(r["n"])), r, step(r)) for r in sorted(m["running"], key=lambda r: plan[r["n"]] if isinstance(plan.get(r["n"]), tuple) else (now, now))]
+    queue = [row(approx(x), r, qnote(r)) for x, r in est if r["n"] not in run_n]
+    timeline = (f'<section class="card"><h2>Timeline {est_tag}</h2><p class="sub">The time next to each issue is when it should be finished. ≈ means an estimate, not a promise.</p>'
+                f'<h3>Being worked on now <span class="count">{len(run_rows)}</span></h3>'
+                + (rows_ul(run_rows) if run_rows else '<p class="sub">Nothing is being worked on right now.</p>')
+                + f'<h3>Next in line <span class="count">{len(queue)}</span></h3>'
+                + (rows_ul(queue[:6]) if queue else '<p class="sub">No issue is waiting in line with an estimate.</p>')
+                + (f'<details><summary class="sub">Show the other {len(queue) - 6} in line</summary>{rows_ul(queue[6:])}</details>' if len(queue) > 6 else "") + '</section>')
+    # 6. everything else, folded
+    legend = '<div class="legend"><span><i style="background:var(--s1)"></i>opened</span><span><i style="background:var(--s2)"></i>closed</span></div>'
+    charts = fold("Charts", "issues opened and closed, per hour and per day",
+                  f'<h3>Opened and closed, per hour (last 24 hours)</h3>{legend}{_bars(m["hours"], "Issues opened and closed per hour", 3)}'
+                  f'<h3>Open issues, hour by hour (last 24 hours)</h3>{_line(m["hours"], "Open issues at the end of each hour", 3)}'
+                  f'<h3>Opened and closed, per day</h3>{legend}{_bars(m["days"], "Issues opened and closed per day", 1 if len(m["days"]) <= 7 else 2)}')
+    stuck = "".join(f"<tr><td>{e(k)}</td><td class='n'>{len(x)} issues</td><td class='sub'>{' '.join('#' + str(n) for n in x[:6])}</td></tr>" for k, x in tr["stuck"])
+    truth = fold("How the work really gets done", "last 24 hours: who finished what, reviews, why issues got stuck",
+                 f'<ul class="facts"><li>The runner started <b>{tr["started"]}</b> issues and finished <b>{tr["by_runner"]}</b> by itself ({pct(tr["by_runner"], tr["started"])}). '
+                 f'{m["merged_24h"]} pull requests were merged in total, so about <b>{max(0, m["merged_24h"] - tr["by_runner"])}</b> were not finished by the runner: '
+                 f'merged by hand (orchestrator), or the runner crashed right after merging and never recorded it.</li>'
+                 f'<li>Reviews: {tr["passes"]} passed, <b>{tr["fixes"]}</b> sent back for fixes ({pct(tr["fixes"], tr["fixes"] + tr["passes"])}).</li>'
+                 f'<li>Runner deploys: {tr["deploys_ok"]} ok, {tr["deploys_fail"]} failed (hand deploys are not recorded).</li>'
+                 f'<li>Average times (runner records): build {S.fmt(m["avg_build"])}, review {S.fmt(m["avg_review"])}, start to merge {S.fmt(m["avg_merge"])}.</li>'
+                 f'<li>Pull requests: {m["merged_24h"]} merged in 24 hours, {m["merged_7d"]} in 7 days, {m["open_prs"]} open now. '
+                 f'Issues closed: {m["closed_24h"]} in 24 hours, {m["closed_7d"]} in 7 days, {m["closed_total"]} in total.</li></ul>'
+                 + (f'<h3>Why issues got stuck (distinct issues, 24 hours)</h3><div class="scroll"><table>{stuck}</table></div>' if stuck else ""))
+    def fc_block(f, what):
+        if not f: return f"<p><b>{what}:</b> nothing open</p>"
+        if f["net"]:
+            a, b = f["net"][0], f["net"][-1]; rng = len(f["net"]) > 1 and b - a > 0.5
+            return (f"<p><b>{what}:</b> ≈ {dur(a * 3600)}" + (f" – {dur(b * 3600)}" if rng else "") + f" <span class='sub'>(around {when(now, a)}" + (f" to {when(now, b)}" if rng else "") + ")</span></p>")
+        if f["gross"]:
+            return (f"<p><b>{what}:</b> <span class='warn'>not shrinking</span> <span class='sub'>(new issues arrive as fast as old ones close; "
+                    f"if nothing new came in: ≈ {dur(f['gross'][0] * 3600)})</span></p>")
+        return f"<p><b>{what}:</b> not enough data yet</p>"
+    speed = fold(f"A second estimate, from speed alone {est_tag}", "issues open now divided by how fast they close",
+                 fc_block(fc, f"All {m['open']} open issues") + (fc_block(m["fc_p0"], f"The {m['p0_open']} open P0") if m["fc_p0"] else "<p><b>No open P0</b></p>")
+                 + f'<ul class="facts sub"><li>Measured speed: closing <b>{fc["c6"]:.1f}/h</b> in the last 6 h and <b>{fc["c24"]:.1f}/h</b> over 24 h; '
+                 f'new issues {fc["o6"]:.1f}/h and {fc["o24"]:.1f}/h. The range is the faster and the slower of the two.</li>'
+                 f'<li>Based on only {m["history_h"]:.0f} h of history. It does not know which issues are big or small, and a new batch of issues makes it longer.</li>'
+                 f'<li>The timeline above is the more detailed estimate: it follows each issue\'s place in line. This one only divides the count by the speed.</li></ul>')
+    def state_rows(key):
+        note = lambda r: (f'open for {dur(r["age_h"] * 3600)}' + (" · " + PLAIN.get(r["step"], r["step"]) if "step" in r else "")
+                          + (" · " + e(plan[r["n"]]) if isinstance(plan.get(r["n"]), str) else " · " + qnote(r) if r["state"] == "waiting" else ""))
+        return rows_ul(row(approx(plan.get(r["n"])), r, note(r)) for r in (m["running"] if key == "running" else s[key]))
+    lists = fold(f'All open issues <span class="count">{m["open"]}</span>', "by state, each with its estimate or the reason it has none",
+                 f'<p class="sub">By priority: P0 {p["P0"]} · P1 {p["P1"]} · P2 {p["P2"]} · P3 {p["P3"]}'
+                 + (f' · <span class="warn">{p["-"]} without priority</span>' if p["-"] else "") + '</p>'
+                 + "".join(f'<h3>{name} <span class="count">{len(s[k])}</span></h3>{state_rows(k)}' for k, name in STATES if s[k]))
+    rec = "".join(f'<li><div class="when">{_clock(r["at"], now)}</div><div class="what">{link(r["n"])} {e(r["title"])}'
+                  f'<div class="sub">was open for {dur(r["open_s"])}</div></div></li>' for r in m["recent"])
+    recent = fold(f'Recently finished <span class="count">{len(m["recent"])}</span>', "the last closed issues and when they closed",
+                  f'<ul class="rows">{rec}</ul>' if rec else '<p class="sub">No issue was closed yet.</p>')
+    how = fold("How these numbers are made", "sources and how the estimates are calculated",
+               '<ul class="facts"><li>Issues and pull requests are read live from GitHub every time this page is made.</li>'
+               '<li>Steps, times and deploys come from the runner\'s own records (<code>.runs/stats.jsonl</code>, <code>runner.log</code>). '
+               'Watcher health comes from the watchers\' own files (<code>watchdog.log</code>, <code>watchdog.beat</code>, <code>observer.last</code>).</li>'
+               '<li>In the timeline, finished means merged. The steps of each issue are: build, review, tests and merge, deploy, close.</li>'
+               f'<li>Issues being worked on now: the time left for their current step, from the runner\'s average step times (build {S.fmt(m["avg_build"])}, '
+               f'review {S.fmt(m["avg_review"])}, start to merge {S.fmt(m["avg_merge"])}). The later time is 1.5 times the earlier one.</li>'
+               f'<li>Issues in line: their place in line (by priority, as the runner picks) divided by the measured closing speed ({fc["c6"]:.1f}/h in 6 h, {fc["c24"]:.1f}/h in 24 h), '
+               f'never sooner than a lane is free plus one full measured cycle ({S.fmt(m["avg_merge"])}) per round of {R.CFG.get("max_parallel", 3)} lanes. '
+               'An issue that waits for another one comes after it, plus one full cycle.</li>'
+               '<li>No estimate for issues that wait for you, are blocked or are not triaged: they depend on a person. New issues with a higher priority push the line back.</li>'
+               f'<li>All speeds are measured over only {m["history_h"]:.0f} h of history, so the estimates are rough.</li></ul>')
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<title>Oren game: status {hhmm(now)}</title><style>{CSS}</style></head><body><main>'
-            f'<h1>Oren game: work status</h1><div class="sub">Made {time.strftime("%d %b %H:%M", time.localtime(now))} (Israel time). '
-            f'Sources: GitHub issues and PRs (live), the runner\'s records (.runs/stats.jsonl, runner.log). Estimates are marked. '
+            f'<h1>Oren game: work status</h1><div class="sub">Updated {time.strftime("%a %d %b %H:%M", time.localtime(now))} (Israel time). '
             f'For fresh numbers run tools\\dashboard.cmd again.</div>'
-            f'<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}</div>{qcard}{_ai_card(m)}{fcard}{running}{cloud}'
-            f'<div class="cols"><div class="card"><h2>Opened vs closed, per hour (last 24 h)</h2>'
-            f'<div class="legend"><span><i style="background:var(--s1)"></i>opened</span><span><i style="background:var(--s2)"></i>closed</span></div>{_bars(m["hours"], "Issues opened and closed per hour", 3)}</div>'
-            f'<div class="card"><h2>Open issues, hour by hour (last 24 h)</h2>{_line(m["hours"], "Open issues at the end of each hour", 3)}</div></div>'
-            f'<div class="cols"><div class="card"><h2>Opened vs closed, per day</h2>'
-            f'<div class="legend"><span><i style="background:var(--s1)"></i>opened</span><span><i style="background:var(--s2)"></i>closed</span></div>{_bars(m["days"], "Issues opened and closed per day", 1 if len(m["days"]) <= 7 else 2)}</div>'
-            f'{truth}</div>{_ov_card(m)}{recent}{lists}</main></body></html>')
+            f'{top}<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}</div>{qcard}{needs}{bottom}{timeline}{cloud}{_health_card(m)}{_ai_card(m)}'
+            f'<h2 class="more">More details</h2><div class="sub">Everything else is here. Click a line to open it.</div>'
+            f'{lists}{recent}{truth}{charts}{speed}{_ov_card(m)}{how}</main></body></html>')
+
+def _clock(ts, now):
+    """'09:22' today, 'Wed 21:40' on another day."""
+    same = time.strftime("%d", time.localtime(ts)) == time.strftime("%d", time.localtime(now))
+    return time.strftime("%H:%M" if same else "%a %H:%M", time.localtime(ts))
+
+def _health_card(m):
+    """Short 'is the system healthy' list: one line per check, a plain label first (OK / STOPPED? / FAILED / LOW / STUCK)."""
+    o, tr, d, blocked = m.get("ov"), m["truth"], m["last_deploy"], m["by_state"]["blocked"]
+    checks = []                                                       # (ok or None = not measured, label, name, detail)
+    for n, role, age, ok in (watcher_health(o) if o else []):
+        checks.append((ok, "OK" if ok else "STOPPED?", n.capitalize(), f"{role}; " + ("no sign of life found" if age is None else f"last active {dur(age)} ago")))
+    if d: checks.append((bool(d.get("ok")), "OK" if d.get("ok") else "FAILED", "Last deploy", f"at {hhmm(d['ts'])}; runner deploys in 24 hours: {tr['deploys_ok']} ok, {tr['deploys_fail']} failed"))
+    else: checks.append((None, "NO DATA", "Last deploy", "no deploy is recorded yet"))
+    if tr["started"]:
+        ok = tr["by_runner"] / tr["started"] >= 0.5
+        checks.append((ok, "OK" if ok else "LOW", "Finished without help", f"{tr['by_runner']} of the {plural(tr['started'], 'issue', 'issues')} the runner started in 24 hours "
+                       f"({pct(tr['by_runner'], tr['started'])}); the rest were finished by hand or not recorded"))
+    else: checks.append((None, "NO DATA", "Finished without help", "the runner started no issue in 24 hours"))
+    checks.append((not blocked, "STUCK" if blocked else "OK", "Stuck issues", (f"{len(blocked)} blocked: " + " ".join(f"#{r['n']}" for r in blocked[:8])) if blocked else "no issue is blocked"))
+    bad = sum(ok is False for ok, *_ in checks)
+    cls = lambda ok: "sub" if ok is None else ("good" if ok else "warn")
+    head = (f'<span class="warn">{bad} of {len(checks)} checks {"needs" if bad == 1 else "need"} a look</span>' if bad else f'<span class="good">All {len(checks)} checks are OK</span>')
+    notes = (f'<p class="sub">In the last 24 hours the watchers sent {plural(o["told"], "note", "notes")} to the orchestrator (the session that manages the work), among them '
+             f'{plural(o["idle"], "idle alarm", "idle alarms")} and {plural(o["trend"], "trend alarm", "trend alarms")}. '
+             f'The watchdog logged {plural(o["errors"], "error", "errors")}. Details are in "Oversight" below.</p>') if o else \
+            '<p class="sub">Watcher status is not available in this run.</p>'
+    return (f'<section class="card"><h2>Is the system healthy?</h2><div>{head}</div><ul class="checks">'
+            + "".join(f'<li><span class="st {cls(ok)}">{lab}</span><div><b>{name}</b> <span class="sub">{html.escape(det)}</span></div></li>' for ok, lab, name, det in checks)
+            + f'</ul>{notes}</section>')
 
 def _ai_card(m):
     a = m.get("ai")
     if not a:
-        return ('<div class="card est"><h2>AI assessment <span class="tag">AI</span></h2><div class="sub">Not written yet. '
-                'The watchdog writes it every hour; run <code>python3 tools/runner/dashboard.py --ai</code> for one now.</div></div>')
+        return ('<section class="card"><h2>AI assessment <span class="tag">AI</span></h2><div class="sub">Not written yet. '
+                'The watchdog writes it every hour. For one now, run tools\\dashboard_ai.cmd.</div></section>')
     old = m["now"] - a.get("at", 0) > 2 * 3600
     pts = [re.sub(r"^(?:[-•]|\*(?!\*))\s*", "", l.strip()) for l in a["text"].splitlines() if l.strip()]   # drop a bullet mark, keep **bold**
-    return (f'<div class="card est"><h2>AI assessment <span class="tag">AI</span></h2><ul class="facts">'
+    return (f'<section class="card"><h2>AI assessment <span class="tag">AI</span></h2>'
+            f'<div class="sub">An AI model read the numbers on this page and wrote this. AI-written, may be wrong: check the numbers.</div><ul class="facts">'
             + "".join("<li>" + re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", html.escape(x)) + "</li>" for x in pts) +
-            f'</ul><div class="sub" style="margin-top:6px">Written {time.strftime("%d %b %H:%M", time.localtime(a["at"]))} by Claude {html.escape(a["model"])} '
-            f'from the numbers on this page{" (<span class=warn>older than 2 h</span>)" if old else ""}. AI-written, may be wrong: check the numbers below.</div></div>')
+            f'</ul><div class="sub">Written {time.strftime("%d %b %H:%M", time.localtime(a["at"]))} by Claude {html.escape(a["model"])}'
+            f'{" (<span class=warn>older than 2 h</span>)" if old else ""}.</div></section>')
 
 def _ov_card(m):
+    """Folded detail: every watcher, what it watches, its last activity, and the latest notes to the orchestrator."""
     o = m.get("ov")
     if not o: return ""
     def health(age, limit):
@@ -316,11 +533,12 @@ def _ov_card(m):
             "orchestrator": f'{o["told"]} notes received in 24 h'}
     rows = "".join(f"<tr><td class='n'><b>{n}</b></td><td>{w}</td><td class='n sub'>{h}</td><td class='sub'>{last[n]}</td></tr>" for n, w, h in WATCHERS)
     notes = "".join(f"<tr><td class='n sub'>{hhmm(t)}</td><td>{html.escape(x[:160])}</td></tr>" for t, x in o["last_told"])
-    return (f'<div class="card"><h2>Oversight: who watches the system</h2><table><tr><th>watcher</th><th>watches</th><th>how often</th><th>last activity</th></tr>{rows}</table>'
-            f'<ul class="facts" style="margin-top:10px"><li>Last 24 h: <b>{o["told"]}</b> notes to the orchestrator ({o["idle"]} idle alarms, {o["trend"]} trend alarms), '
+    return (f'<details class="card"><summary><b>Oversight: who watches the system</b> <span class="sub">every watcher, its last activity, the latest alarms</span></summary>'
+            f'<div class="scroll"><table><tr><th>watcher</th><th>watches</th><th>how often</th><th>last activity</th></tr>{rows}</table></div>'
+            f'<ul class="facts"><li>Last 24 h: <b>{o["told"]}</b> notes to the orchestrator ({o["idle"]} idle alarms, {o["trend"]} trend alarms), '
             f'{o["closed_windows"]} finished windows cleaned up, {o["errors"]} watchdog errors.</li>'
             f'<li>Observer last result: {html.escape(o["observer_last"]) or "-"}</li></ul>'
-            + (f'<h2 style="margin-top:12px">Latest notes to the orchestrator</h2><table>{notes}</table>' if notes else "") + '</div>')
+            + (f'<h3>Latest notes to the orchestrator</h3><div class="scroll"><table>{notes}</table></div>' if notes else "") + '</details>')
 
 def fetch():
     rc, out = R.gh("issue", "list", "--state", "all", "--limit", "1000", "--json", "number,title,state,labels,createdAt,closedAt,body")
