@@ -510,3 +510,23 @@ assert "Agent" in r.WORKER_TOOLS
 assert "Batch:" in r.worker_prompt(7, "core") and "sub-agents" in r.worker_prompt(7, "core")
 assert (r.HERE.parent.parent / ".claude" / "skills" / "batch" / "SKILL.md").exists()
 print("ok batch skill")
+# #225 watch the checker: idle orchestrator + reviews waiting -> nudge, then escalate after 30 min
+import calendar as _c2
+_n = _c2.timegm((2026, 11, 26, 10, 0, 0, 0, 0, 0))
+_g = [{"conclusion": "SUCCESS"}]
+_prs = [{"number": 213, "statusCheckRollup": _g, "updatedAt": "2026-11-26T09:40:00Z"},                      # waits 20 min
+        {"number": 214, "statusCheckRollup": _g, "updatedAt": "2026-11-26T09:55:00Z"},                      # 5 min: too new
+        {"number": 215, "statusCheckRollup": _g, "updatedAt": "2026-11-26T09:00:00Z", "autoMergeRequest": {}},  # already set
+        {"number": 216, "statusCheckRollup": [{"status": "IN_PROGRESS"}], "updatedAt": "2026-11-26T09:00:00Z"},  # not green
+        {"number": 180, "isDraft": True, "statusCheckRollup": _g, "updatedAt": "2026-11-26T08:00:00Z"}]
+assert W.waiting_reviews(_prs, _n) == [213], W.waiting_reviews(_prs, _n)
+_st = {"nudged": 0.0, "first": 0.0, "escalated": 0.0}
+assert W.orch_decision("working", [213], _st, _n) == "reset" and W.orch_decision("done", [], _st, _n) == "reset"
+assert W.orch_decision("done", [213], _st, _n) == "nudge"
+_st.update(nudged=_n, first=_n)
+assert W.orch_decision("done", [213], _st, _n + 5 * 60) is None                 # nudged 5 min ago
+assert W.orch_decision("done", [213], _st, _n + 11 * 60) == "nudge"
+assert W.orch_decision("done", [213], _st, _n + 31 * 60) == "escalate"
+_st["escalated"] = _n + 31 * 60
+assert W.orch_decision("done", [213], _st, _n + 40 * 60) == "nudge"              # no second escalation within 2 h
+print("ok watch the checker")

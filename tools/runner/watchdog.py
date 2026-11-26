@@ -363,6 +363,7 @@ def tick():
     trends_tick()
     ai_tick()
     lock_tick()
+    orch_idle_tick()
 
 # ---------- #181: merge lock watch ----------
 LOCK_WARN_MIN, LOCK_REPEAT_MIN = 20, 30
@@ -391,6 +392,57 @@ def green_waiting():
 def lock_state(now=None):
     lk = R.FileLock("integrate"); info = lk.info()
     return lk, info, (bool(info) and R.pid_alive(info[0]))
+
+# ---------- #225: watch the checker (an idle orchestrator while work waits) ----------
+ORCH_WAIT_MIN, ORCH_NUDGE_EVERY_MIN, ORCH_ESCALATE_MIN, ORCH_ESCALATE_EVERY_H = 10, 10, 30, 2
+OWNER_ISSUE = int(R.CFG.get("owner_questions_issue", 205))
+_orch = {"nudged": 0.0, "first": 0.0, "escalated": 0.0}
+
+def waiting_reviews(prs, now):
+    """Pure: open non-draft PRs, all checks green, no auto-merge yet, open >= ORCH_WAIT_MIN -> [numbers] (they wait for a review)."""
+    out = []
+    for p in prs:
+        if p.get("isDraft") or p.get("autoMergeRequest") is not None: continue
+        checks = p.get("statusCheckRollup") or []
+        if not checks or not all((c.get("conclusion") or c.get("status")) in ("SUCCESS", "SKIPPED", "NEUTRAL") for c in checks): continue
+        t = _age_min(p.get("updatedAt") or p.get("createdAt"), now)
+        if t >= ORCH_WAIT_MIN: out.append(p["number"])
+    return sorted(out)
+
+def orch_decision(state, waiting, st, now):
+    """Pure: -> 'reset' | 'nudge' | 'escalate' | None. state = orchestrator terminal state; st = _orch-like dict."""
+    idle = state in ("done", "idle", "blocked")
+    if not idle or not waiting: return "reset"
+    if st["first"] and now - st["first"] >= ORCH_ESCALATE_MIN * 60 and now - st["escalated"] >= ORCH_ESCALATE_EVERY_H * 3600:
+        return "escalate"
+    if now - st["nudged"] >= ORCH_NUDGE_EVERY_MIN * 60: return "nudge"
+    return None
+
+def orch_idle_tick(now=None):
+    now = now or time.time()
+    d = R.hc_json("get", "orchestrator", "--json") or {}
+    stt = d.get("status") or {}
+    state = stt.get("state") if isinstance(stt, dict) else stt
+    if not d or d.get("state") != "live": return                      # gone/finished: the #140 restart check handles it
+    rc, out = R.gh("pr", "list", "--state", "open", "--json", "number,isDraft,autoMergeRequest,statusCheckRollup,updatedAt,createdAt")
+    if rc: return
+    waiting = waiting_reviews(json.loads(out), now)
+    act = orch_decision(state, waiting, _orch, now)
+    if act == "reset":
+        _orch.update(nudged=0.0, first=0.0); return
+    if act == "nudge":
+        if not _orch["first"]: _orch["first"] = now
+        _orch["nudged"] = now
+        tell(f"WATCHDOG (#225): you are idle while PRs wait for review: #{', #'.join(map(str, waiting))}. Review them now "
+             f"(gh pr merge N --auto --squash after a PASS). Owner questions never stop your work.")
+    elif act == "escalate":
+        _orch["escalated"] = now
+        try: R.run([R.HERDR_APP, "do", "terminal.pin", json.dumps({"terminal": d.get("address"), "pinned": True})], timeout=30)
+        except Exception: pass
+        R.gh("issue", "comment", str(OWNER_ISSUE), "--body",
+             f"ESCALATION (watchdog #225): the orchestrator has been idle {int((now - _orch['first']) / 60)} min while PRs wait for review: "
+             f"#{', #'.join(map(str, waiting))}. It was nudged and did not move. Open the orchestrator window (pinned in herdr).")
+        log(f"orchestrator idle escalation: {waiting}")
 
 def lock_tick(now=None):
     now = now or time.time()
