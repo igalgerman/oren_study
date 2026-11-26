@@ -172,7 +172,7 @@ def ci_fix_prompt(n, names):
 
 def resolve_prompt(n, files):
     return (f"Issue #{n}: merging lane/{n} into {BRANCH} failed because {BRANCH} moved on" + (f" (conflicting files: {', '.join(files)})" if files else "") + ". "
-            f"In this worktree run `git fetch {REMOTE} && git merge {REMOTE}/{BRANCH}`, resolve the conflicts keeping BOTH sides' intent, "
+            f"In this worktree run `git fetch {REMOTE} && git merge -X renormalize {REMOTE}/{BRANCH}`, resolve the conflicts keeping BOTH sides' intent, "
             "run `python3 build_talents.py` (in oren2/) and the full tests (`oren2/tests/run.sh`; rerun a flaky suite alone once), commit, "
             f"and `git push {REMOTE} lane/{n}`. Never force-push, never rewrite {BRANCH}, never push to {BRANCH}. "
             "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
@@ -560,7 +560,7 @@ def ci_integrate(n, wt, log):
     pr = find_pr(n)
     if not pr: return 4, "no open PR for lane/%d" % n
     run(["git", "fetch", "-q", REMOTE], cwd=wt, log=log)
-    rc, out = run(["git", "merge", "--no-edit", f"{REMOTE}/{BRANCH}"], cwd=wt, log=log)
+    rc, out = run(["git", "merge", "--no-edit", "-X", "renormalize", f"{REMOTE}/{BRANCH}"], cwd=wt, log=log)
     if rc:
         files = run(["git", "diff", "--name-only", "--diff-filter=U"], cwd=wt, log=log)[1].split()
         run(["git", "merge", "--abort"], cwd=wt, log=log)

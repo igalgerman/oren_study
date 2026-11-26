@@ -158,7 +158,9 @@ def _drive(results):
 def _bad(files): return False
 assert r.integrate_with_resolve(lambda: (2, "CONFLICTS\nx\n"), _bad, 2)[0] == "failed"                                        # resolver did not finish
 assert r.conflict_files("CONFLICTS (fix by hand, or send back to the lane):\nx/a.js\ny/b.css\n") == ["x/a.js", "y/b.css"]
-assert "git fetch origin && git merge origin/main" in r.resolve_prompt(7, ["a.js"]) and "RESULT: DONE" in r.resolve_prompt(7, ["a.js"]) and "force" in r.resolve_prompt(7, [])
+assert "git fetch origin && git merge -X renormalize origin/main" in r.resolve_prompt(7, ["a.js"]) and "RESULT: DONE" in r.resolve_prompt(7, ["a.js"]) and "force" in r.resolve_prompt(7, [])
+import os as _os
+assert "* text=auto eol=lf" in open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "..", ".gitattributes"), encoding="utf-8").read()   # #62
 print("ok resolve")
 
 # routing: STUCK / runner error -> orchestrator (not the owner); a parked question -> the owner
