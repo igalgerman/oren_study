@@ -35,6 +35,7 @@ from pathlib import Path
 
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
+import ghauth     # #363: GitHub App token for the bots
 import runner as R   # config, gh(), select(), hc paths
 import owner_q as OQ # #193: the pinned 'Questions for the owner' issue
 
@@ -820,7 +821,8 @@ def ghcache_tick(start=None):
     if _GH_BUSY.is_set() or (c and time.time() - c.get("ts", 0) < 50): return False
     _GH_BUSY.set()
     def work():
-        try: ghcache.refresh(lambda cmd: R.run(cmd, timeout=120))
+        owner = (lambda cmd: R.run(cmd, env={ghauth.OWNER: "1"}, timeout=120)) if ghauth.app_cfg(R.CFG) else None   # #363: owner budget too
+        try: ghcache.refresh(lambda cmd: R.run(cmd, timeout=120), run_owner=owner)
         except Exception as e: log(f"gh cache refresh failed: {e}"[:300])      # old cache stays; readers fall back to gh when it is stale
         finally: _GH_BUSY.clear()
     (start or (lambda f: threading.Thread(target=f, daemon=True).start()))(work)

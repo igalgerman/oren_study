@@ -14,7 +14,7 @@ it is removed so claude uses the stored claude.ai login.
 State comes from GitHub (the CLI's agents/logs do not list cloud sessions)."""
 import json, os, re, shutil, subprocess, sys, tomllib
 from pathlib import Path
-import ghcache
+import ghauth, ghcache
 
 HERE = Path(__file__).resolve().parent
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -26,6 +26,7 @@ TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # same as runner.py: .runs/<n>/where says local|remote
 
 def sh(cmd, env=None):
+    if cmd and str(cmd[0]) in ("gh", "gh.exe"): env = ghauth.apply(cmd, dict(os.environ if env is None else env))   # #363: the App token
     def raw():
         p = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
                            stdin=subprocess.DEVNULL, timeout=600,
