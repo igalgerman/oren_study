@@ -85,10 +85,11 @@ def status(n, run=sh, since=None):
     """since = ISO UTC time (#133): only comments created at or after it count, so an earlier run's RESULT line is ignored.
     Without since (CLI) the latest 'Runner: started' comment marks the run start (#236)."""
     rc, out = run(["gh", "issue", "view", str(n), "--repo", REPO, "--json", "comments"])
-    comments = [c.get("body", "") for c in current_run(json.loads(out).get("comments", []))
-                if not since or c.get("createdAt", "") >= since] if rc == 0 else []
+    cur = current_run(json.loads(out).get("comments", [])) if rc == 0 else []
+    comments = [c.get("body", "") for c in cur if not since or c.get("createdAt", "") >= since]
     st = state_from(comments, None)
-    st["pr"] = find_pr(n, run, "all", st["line"], "number,url,isDraft")      # #246: also a claude/* head
+    if not since and cur and (cur[0].get("body") or "").startswith(STARTED): since = cur[0].get("createdAt", "")
+    st["pr"] = find_pr(n, run, "all", st["line"], "number,url,isDraft", since=since)   # #246: also a claude/* head; #264: this run's PR only
     return st
 
 PR_URL = re.compile(r"/pull/(\d+)")
@@ -101,11 +102,18 @@ def _json(rc, out, default):
     try: return json.loads(out) if rc == 0 and out.strip() else default
     except ValueError: return default
 
-def find_pr(n, run=sh, state="open", line=None, fields="number,headRefName"):
+def find_pr(n, run=sh, state="open", line=None, fields="number,headRefName", since=None):
     """#246: the PR of issue n (dict with `fields`, or None). Cloud sessions may only push claude/* branches, so:
     lane/<n> first, else the PR URL in this run's RESULT: DONE line (line=None: read from the issue), else a PR whose body says Fixes/Closes #n.
-    state = open | merged | all."""
-    prs = _json(*run(["gh", "pr", "list", "--repo", REPO, "--head", f"lane/{n}", "--state", state, "--json", fields]), [])
+    state = open | merged | all. since (ISO UTC, #264): a PR found by lane/<n> or the Fixes line must be opened at/after it
+    (an earlier run's PR is not this run's); the RESULT line's PR always counts."""
+    fl = fields + (",createdAt" if since and "createdAt" not in fields.split(",") else "")
+    def fresh(p):
+        if not since: return True
+        ok = p.get("createdAt", "") >= since
+        if "createdAt" not in fields.split(","): p.pop("createdAt", None)
+        return ok
+    prs = [p for p in _json(*run(["gh", "pr", "list", "--repo", REPO, "--head", f"lane/{n}", "--state", state, "--json", fl]), []) if fresh(p)]
     if prs: return prs[0]
     if line is None:
         rc, out = run(["gh", "issue", "view", str(n), "--repo", REPO, "--json", "comments"])
@@ -116,8 +124,8 @@ def find_pr(n, run=sh, state="open", line=None, fields="number,headRefName"):
         if p.get("number") and (state == "all" or p.get("state", "").lower() == state):
             if "state" not in fields.split(","): p.pop("state", None)
             return p
-    prs = _json(*run(["gh", "pr", "list", "--repo", REPO, "--state", state, "--limit", "100", "--json", fields + ",body"]), [])
-    p = next((p for p in prs if fixes(p.get("body"), n)), None)
+    prs = _json(*run(["gh", "pr", "list", "--repo", REPO, "--state", state, "--limit", "100", "--json", fl + ",body"]), [])
+    p = next((p for p in prs if fixes(p.get("body"), n) and fresh(p)), None)
     if p and "body" not in fields.split(","): p.pop("body", None)
     return p
 

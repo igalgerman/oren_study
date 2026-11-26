@@ -502,6 +502,92 @@ def parse_verdict(line):
         return ("purple", text, flag)
     return ({"PASS-NOTES": "notes", "PASS": "pass", "FIX": "fix"}[kind], text, "")
 
+# #264: a blocked issue whose PR is open resumes by itself at the right step (max AUTO_RESUMES times), never parked on the owner.
+AUTO_RESUMES = 2
+
+def resume_step(mergeable, verdict):
+    """Pure: PR mergeable state + the VERDICT for its head -> resolve | fix | review | merge, or '' (a PURPLE owner question: never)."""
+    if mergeable == "CONFLICTING": return "resolve"
+    kind = parse_verdict(verdict)[0]
+    return {"fix": "fix", "pass": "merge", "notes": "merge", "none": "review"}.get(kind, "")
+
+def head_verdict(comments, head_time):
+    """Pure: last VERDICT line of the PR comments made at/after the head commit (head_time ISO UTC); '' = the head has no review."""
+    return remote.verdict_from([c.get("body", "") for c in comments if c.get("createdAt", "") >= (head_time or "")])[0]
+
+def pr_resume_info(pj):
+    """Pure: `gh pr view --json number,mergeable,headRefOid,commits,comments` -> {pr, mergeable, verdict, sha}."""
+    head = max((c.get("committedDate", "") for c in pj.get("commits") or []), default="")
+    return {"pr": pj.get("number"), "mergeable": pj.get("mergeable", ""), "verdict": head_verdict(pj.get("comments") or [], head),
+            "sha": pj.get("headRefOid", "")}
+
+def _resume_file(n, name):
+    return RUNS / str(n) / name
+
+def set_resume(n, step, verdict=""):
+    (RUNS / str(n)).mkdir(parents=True, exist_ok=True)
+    _resume_file(n, "resume").write_text(step, encoding="utf-8")
+    _resume_file(n, "resume_verdict").write_text(verdict, encoding="utf-8")
+
+def take_resume(n):
+    """The step the next run of n starts at (read once), '' = from the start."""
+    p = _resume_file(n, "resume")
+    try: step = p.read_text(encoding="utf-8").strip()
+    except OSError: return ""
+    p.unlink(missing_ok=True)
+    return step
+
+def take_resume_verdict(n):
+    """The red VERDICT stored with a 'fix' resume (read once), '' when none."""
+    p = _resume_file(n, "resume_verdict")
+    try: v = p.read_text(encoding="utf-8").strip()
+    except OSError: return ""
+    p.unlink(missing_ok=True)
+    return v
+
+def _count(n, name):
+    try: return int(_resume_file(n, name).read_text().strip() or 0)
+    except (OSError, ValueError): return 0
+
+def auto_resume(issues, lookup, set_labels, comment, tell):
+    """#264, each pass: OPEN issues labelled blocked (not an owner question, not manual, not running) whose PR is open
+    -> unblock and store the step (lookup(n) -> pr_resume_info or None). Max AUTO_RESUMES per issue, then it stays with the
+    orchestrator (told once). Updates the labels in `issues` so select() can start them in this pass. -> [(n, step)]."""
+    out = []
+    for i in issues:
+        n, L = i["number"], i["labels"]
+        if "blocked" not in L or {"ready-for-human", "manual", "in-progress"} & set(L): continue
+        info = lookup(n)
+        if not info or not info.get("pr"): continue
+        step = resume_step(info.get("mergeable", ""), info.get("verdict", ""))
+        if not step: continue
+        k = _count(n, "resumes")
+        if k >= AUTO_RESUMES:
+            if not _resume_file(n, "resume_capped").exists():
+                _resume_file(n, "resume_capped").write_text("1")
+                comment(n, f"Runner: auto-resumed {k} times, still blocked; stays blocked + needs-orchestrator (PR #{info['pr']}).")
+                tell(f"#{n} still blocked after {k} auto-resumes (PR #{info['pr']}, next step {step}) - decide: fix by hand, split or close")
+            continue
+        set_resume(n, step, info.get("verdict", ""))
+        _resume_file(n, "resumes").write_text(str(k + 1))
+        set_labels(n, add=["ready-for-agent"], remove=["blocked", "needs-orchestrator"])
+        comment(n, f"Runner: auto-resume {k + 1}/{AUTO_RESUMES} at {step} (PR #{info['pr']} is open).")
+        i["labels"] = [l for l in L if l not in ("blocked", "needs-orchestrator")] + ([] if "ready-for-agent" in L else ["ready-for-agent"])
+        out.append((n, step))
+    return out
+
+def human_without_question(issues):
+    """Pure (#264): blocked + ready-for-human issues (gh JSON with comments) with no QUESTION: line and no PURPLE owner question
+    -> numbers. The owner only gets real questions; a hand task (not blocked) is his own and stays."""
+    out = []
+    for i in issues:
+        L = {(l.get("name") if isinstance(l, dict) else l) for l in i.get("labels") or []}
+        if not {"blocked", "ready-for-human"} <= L: continue
+        bodies = [(c.get("body") or "") for c in i.get("comments") or []]
+        if any(re.search(r"^\s*QUESTION:", b, re.M) or b.startswith("Reviewer PURPLE question") for b in bodies): continue
+        out.append(i["number"])
+    return out
+
 def polish_title(lane):
     return f"Polish backlog ({lane})"
 
@@ -648,9 +734,15 @@ def issue_labels(n):
     except (ValueError, KeyError): return None      # gh failed: unknown, never treat as parked
 
 def park_issue(n, name, tail, since):
-    """Give the lane back: comment with the question, blocked + ready-for-human, drop in-progress, tell the orchestrator. Idempotent."""
+    """Give the lane back: comment with the screen, blocked + ready-for-human (a QUESTION on screen) or needs-orchestrator (#264: anything else), drop in-progress, tell the orchestrator. Idempotent."""
     if "blocked" in (issue_labels(n) or []): return False
     hhmm = time.strftime("%H:%M", time.localtime(since))
+    if not pending_question(tail):                   # #264: a permission menu / stuck window is not an owner question
+        set_labels(n, add=stuck_labels(), remove=["in-progress"])
+        gh("issue", "comment", str(n), "--body", redact(f"Runner blocked: window `{name}` has waited since {hhmm} with no QUESTION (permission menu?). It stays open.\n\n"
+           f"Its screen ends with:\n```\n{tail[-2000:]}\n```"))
+        tell_orchestrator(f"STUCK #{n}: window {name} waits since {hhmm} with no QUESTION (permission menu?) - answer it in {name} or unblock")
+        return True
     set_labels(n, add=["blocked", "ready-for-human"], remove=["in-progress"])
     gh("issue", "comment", str(n), "--body", redact(f"Parked: window `{name}` has waited for the owner since {hhmm}. It stays open.\n\nIts screen ends with:\n```\n{tail[-2000:]}\n```\n"
        f"To resume: answer in the window, remove labels `blocked` and `ready-for-human`, run `tools/runner/run.cmd {n}`."))
@@ -1029,6 +1121,24 @@ def block(n, why, log):
     gh("issue", "comment", str(n), "--body", redact(f"Runner blocked: {why}\n\nLast log lines:\n```\n{tail[-2500:]}\n```"))
     tell_orchestrator(f"STUCK #{n}: {why[:300]} — decide: unblock, split, or ask the owner")
 
+def resume_lookup(n):
+    """#264: pr_resume_info of issue n's open PR (lane/<n> or claude/*, #249 helper), or None."""
+    pr = find_pr(n)
+    if not pr: return None
+    rc, out = gh("pr", "view", str(pr), "--json", "number,state,mergeable,headRefOid,commits,comments")
+    try: pj = json.loads(out) if rc == 0 else {}
+    except ValueError: return None
+    return pr_resume_info(pj) if pj.get("state", "OPEN") == "OPEN" else None
+
+def migrate_human():
+    """#264: blocked + ready-for-human with no QUESTION (old runner failures, e.g. merge conflicts) -> needs-orchestrator. -> numbers."""
+    rc, out = gh("issue", "list", "--state", "open", "--label", "blocked", "--label", "ready-for-human", "--limit", "50", "--json", "number,labels,comments")
+    try: issues = json.loads(out) if rc == 0 and out.strip() else []
+    except ValueError: return []
+    moved = human_without_question(issues)
+    for n in moved: set_labels(n, add=["needs-orchestrator"], remove=["ready-for-human"])
+    return moved
+
 def find_pr(n):
     """Open PR number of issue n: lane/<n>, or a cloud worker's claude/* PR (#246, remote.pr_for)."""
     return remote.pr_for(n, run=run)[0]
@@ -1245,8 +1355,13 @@ def process_locked(issue, where="local"):
         def saved_session():
             try: return json.loads((d / "remote.json").read_text(encoding="utf-8")).get("session", "")
             except (OSError, ValueError): return ""
-        answer = take_answer(n) if where == "remote" else None
-        if answer:                                       # #135: parked on a QUESTION, the owner answered: same session continues
+        step = take_resume(n)                            # #264: auto-resume of a blocked issue with an open PR: skip what is done
+        red0 = take_resume_verdict(n)
+        answer = take_answer(n) if where == "remote" and not step else None
+        if step:
+            out = res = f"RESULT: DONE (auto-resume at {step})"
+            gh("issue", "comment", str(n), "--body", f"Runner: resuming at {step} (no new worker).")
+        elif answer:                                       # #135: parked on a QUESTION, the owner answered: same session continues
             res = remote_resume(n, lane, "bug" in issue["labels"], saved_session(), answer, remote.send, remote.start,
                                 lambda: remote.status(n, since=started), time.sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over)
             remote_question(res)
@@ -1266,7 +1381,7 @@ def process_locked(issue, where="local"):
                     return f"WAITING: cloud start refused ({str(e)[:200]}), no local lane free"
                 where = "local"; set_where(n, where)
                 gh("issue", "comment", str(n), "--body", redact(f"Runner: cloud start refused ({str(e)[:200]}); running locally instead."))
-        if where == "local":
+        if where == "local" and not step:
             prep_worktree()
             out, res = agent(f"issue-{n}", worker_prompt(n, lane, bug="bug" in issue["labels"]), wt, WORKER_TOOLS if lane != "review" else REVIEW_LANE_TOOLS,
                              d / "worker1.log", "RESULT:", n, "worker", wm, over=over)
@@ -1279,17 +1394,24 @@ def process_locked(issue, where="local"):
             set_labels(n, remove=["in-progress"]); close_windows(n); return "DONE report posted"
 
         verdict = ""; red = ""; reviewed = {"sha": ""}
+        if step in ("resolve", "merge"):                 # #264: the head already has a PASS (or must be resolved first): straight to integrate
+            pr = find_pr(n)
+            if not pr: raise Blocked(f"auto-resume: no open PR for #{n}")
+            reviewed["sha"] = gh("pr", "view", str(pr), "--json", "headRefOid", "-q", ".headRefOid")[1].strip()
         for rnd in range(1, FIX_ROUNDS + 2):
+            if step in ("resolve", "merge"): break
             pr = find_pr(n)
             if not pr: raise Blocked("worker said DONE but no open PR for #%d (lane/%d, the RESULT line's PR, or a PR body 'Fixes #%d')" % (n, n, n))
             reviewed["sha"] = gh("pr", "view", str(pr), "--json", "headRefOid", "-q", ".headRefOid")[1].strip()   # #185: the head the reviewer sees; the merge must match it
-            if where == "remote":                  # #134: the reviewer is a cloud session too; its VERDICT is a PR comment
+            if rnd == 1 and step == "fix":         # #264: the head's red VERDICT is known: fix first, then review
+                rv = verdict = red0 or f"VERDICT: FIX see the last VERDICT comment on PR #{pr}"
+            elif where == "remote":                  # #134: the reviewer is a cloud session too; its VERDICT is a PR comment
                 since = utc()
                 rv, verdict = remote_review(n, pr, red, remote.start, lambda: remote.review_status(pr, since=since), time.sleep, time.time, 3600, 60, ended=over)
             else:
                 rv, verdict = agent(f"review-{n}" + ("" if rnd == 1 else f"-{rnd}"), review_prompt(n, pr, red), wt, READ_TOOLS,
                                     d / f"review{rnd}.log", "VERDICT:", n, "reviewer", rm, over=over)
-            (d / f"review{rnd}.out").write_text(redact(rv), encoding="utf-8")
+            if not (rnd == 1 and step == "fix"): (d / f"review{rnd}.out").write_text(redact(rv), encoding="utf-8")
             kind, text, extra = parse_verdict(verdict)
             if kind == "pass":
                 stat(n, lane, "review_pass"); break
@@ -1509,6 +1631,14 @@ def run_pass():
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
     issues, refused = gate(issues)                          # #186: no Acceptance section -> not started
     if refused and not DRY: ask_acceptance(refused)
+    if not DRY:                                             # #264: owner gets only real questions; blocked issues with an open PR resume
+        moved = set(migrate_human())
+        for i in issues:                                    # migrated ones are now plain blocked: auto_resume may take them
+            if i["number"] in moved:
+                i["labels"] = [l for l in i["labels"] if l != "ready-for-human"] + ["needs-orchestrator"]
+                log_line(f"{now()} #{i['number']}: ready-for-human without a QUESTION -> needs-orchestrator")
+        for m, step in auto_resume(issues, resume_lookup, set_labels, lambda k, b: gh("issue", "comment", str(k), "--body", b), tell_orchestrator):
+            log_line(f"{now()} #{m}: auto-resume at {step}")
     busy = [i["number"] for i in issues if "in-progress" in i["labels"]]
     remote_busy = sum(where_of(b) == "remote" for b in busy)
     gv = governor_pass(remote_busy)                     # #239: remote lane count from the 5h usage
