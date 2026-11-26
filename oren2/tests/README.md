@@ -34,6 +34,7 @@ Needs Node and the `playwright` package with Chromium (no npm install inside the
 | health | body breaks (water, toilet, movement, eyes) at the end of an activity, meal pauses by the clock, topic switching and resting doors, parent settings and log, family merge |
 | timelimit | what is left in the top bar, spoken reminders, finish-the-current-activity grace, count-based limits, the parent's "⏱️ היום" block, a grant from the parent's phone unlocking Oren's device |
 | worker | the Cloudflare `_worker.js` bundle: page, icons, manifest, save API (GET/PUT/400/404/405/413), Google voice cache and `/api/tts/pregen` (fake Google) |
+| instructions | every activity (and the code-robot level, piano song and typing lesson behind a menu) speaks a short instruction when it opens (#55) |
 | playthrough (FULL=1) | plays every world level by level on a viewport, extras, layout overflow |
 
 ## Voice in advance
