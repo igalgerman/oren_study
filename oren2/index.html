@@ -1154,7 +1154,12 @@ function logIssue(k,m){try{if(kidSave||window.__fast)return;const d=today();save
 /* #350: a crash keeps its first stack line ("fn file:line:col", Chrome "at ..." or Safari "fn@...") so the next one can be found */
 function errWhere(e){try{const st=String(e.error&&e.error.stack||'').split('\n').map(x=>x.trim()).find(x=>/:\d+:\d+\)?$/.test(x));
   const at=st?st.replace(/^at /,'').replace(/ \((.*)\)$/,' $1').replace(/@/,' '):e.filename?e.filename+':'+e.lineno+':'+e.colno:'';return at.replace(/(?:https?|file):\/\/\S*\/([^\/\s]*?)(:\d+:\d+)/g,(_,f,n)=>(f||'index.html')+n);}catch(x){return '';}}
-window.addEventListener('error',e=>{const w=e?errWhere(e):'';logIssue('err',String(e&&e.message||'').slice(0,120)+(w?' @ '+w:''));try{track('err',Object.assign({msg:String(e&&e.message||'').slice(0,120),at:w},evSnap()));}catch(x){}});
+window.addEventListener('error',e=>{const w=e?errWhere(e):'';logIssue('err',String(e&&e.message||'').slice(0,120)+(w?' @ '+w:''));try{track('err',Object.assign({msg:String(e&&e.message||'').slice(0,120),at:w},evSnap()));}catch(x){}oopsHome();});
+/* #433: an error in the middle of a mission never leaves Oren on a stuck screen: save first, back home, the friend says "oops, back to our path".
+   Only from a mission screen (an error on home stays put, no loop), at most once in 3 s. */
+let oopsT=0;
+function oopsHome(){try{if(!['sTal','sPlay','sLearn'].some(id=>{const x=$('#'+id);return x&&!x.hidden;}))return;if(Date.now()-oopsT<3000)return;oopsT=Date.now();
+  try{persist();}catch(x){}showMap();setTimeout(()=>{try{if(window.FRIEND&&FRIEND.oops)FRIEND.oops();}catch(x){}},0);}catch(x){}}
 function persist(){save.t=Date.now();if(!kidSave){const j=JSON.stringify(save.set||{});if(j!==lastSetJ){if(lastSetJ)save.setT=Date.now();lastSetJ=j;}}if(kidSave){try{localStorage.setItem(KEY+'-parent',JSON.stringify(save));}catch(e){}return;}try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}cloudSave();evFlush('save');}
 /* parent play: a separate sandbox user with everything open; never touches Oren's save or the cloud */
 let kidSave=null;
@@ -5556,7 +5561,10 @@ O.on('screen',id=>{FR.reset();
   else FR.unmount();});
 O.on('levelDone',()=>setTimeout(FR.stepCheck,D(600)));
 
-FR.speakList=()=>[READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
+/* #433: an error in the middle of a mission sent Oren home (core error handler): the friend says it on the home screen */
+const OOPS='אוֹי, חוֹזְרִים לַמַּסָּע';
+FR.oops=()=>{FR.mount();anim('sad');return talk(OOPS,{ms:3000});};
+FR.speakList=()=>[OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
   ...[...Object.values(STORY),STORY0].flatMap(([a,b])=>[a,FIRST+' '+a,LAST+' '+a,b,b+' '+ALL])];
 FR._cur=()=>cur;FR._lines={ok:OK,streak:[...Object.values(STREAK),STREAK_MORE],effort:EFFORT,wrong:WRONG,shown:SHOWN};
 window.FRIEND=FR;window.PATHBAR=PATHBAR;

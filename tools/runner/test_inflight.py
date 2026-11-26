@@ -121,3 +121,18 @@ calls["kill"].clear()
 assert W.net_tick(ts, now=NOW + 60, gh=gh, hc=hc, say=calls["said"].append, events=events, find_pr=lambda n: 354) == []
 assert calls["kill"] == []                                                          # same head: never twice
 print("ok net_tick: quiet PR -> review starts")
+
+# #289: a virtual run-<n> (a lane of the ONE poller, no address) is not killed: the poller is asked to stop that lane
+import lanes as _L
+calls = {"kill": [], "gh": [], "said": []}
+(r.RUNS / "356").mkdir(parents=True, exist_ok=True)
+events356 = [E(356, "start", 1)]
+done = W.net_tick([{"name": "run-356", "state": "live", "status": "working", "virtual": True}], now=NOW, gh=gh, hc=hc,
+                  say=calls["said"].append, events=events356, find_pr=lambda n: 356)
+assert done == [356] and calls["kill"] == [] and _L.stopped(r.RUNS, 356), (done, calls["kill"])
+assert (r.RUNS / "356" / "resume").read_text() == "review"
+# the watchdog's checks see the poller's lanes as live run-<n> rows
+_L.write_state(r.RUNS, os.getpid(), {357})
+assert "run-357" in [t["name"] for t in W.run_rows([{"name": "orchestrator", "state": "live"}])]
+(r.RUNS / "lanes.json").unlink()
+print("ok #289 net_tick stops a poller lane")
