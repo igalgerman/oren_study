@@ -1165,9 +1165,11 @@ function parentPlay(on,fresh){if(on&&!kidSave){kidSave=save;let ps=null;if(!fres
   else if(on&&fresh){save=parentSandbox();}
   updateGems();emit('mode',!!kidSave);}
 function skipLevel(){const p=play;if(!p||!p.lv)return false;const lv=p.lv;save.s[lv.id]=Math.max(stars(lv.id),3);persist();showWorld(lv.w);return true;}
-function cloudSave(){if(!cloud.ref)return;cloud.dirty=true;clearTimeout(cloud.timer);cloud.timer=setTimeout(cloudFlush,1500);}
-async function cloudFlush(){if(!cloud.ref||cloud.busy||!cloud.dirty)return;cloud.busy=true;cloud.dirty=false;
-  try{const body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;if(JSON.stringify(body).length>200000){save.rq=save.rq.slice(-15);body.rq=save.rq;}await cloud.ref.set(body);cloud.fail=0;}catch(e){if(FAM.on){logIssue('sync',e&&e.why);if(e&&e.code!=='invalid_argument'&&(cloud.fail|0)<4){const d=(window.__famRetry!=null?window.__famRetry:5000)*Math.pow(3,cloud.fail|0);cloud.fail=(cloud.fail|0)+1;clearTimeout(cloud.rt);cloud.rt=setTimeout(()=>{cloud.dirty=true;FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},d);}else diagSend();}if(e&&e.code==='invalid_argument'){if(!cloud.retried&&save.rq.length>10){cloud.retried=1;save.rq=save.rq.slice(-10);cloud.dirty=true;}else cloud.ref=null;}}
+/* #349: a failed save is ONE problem until a save works again: the parent log counts it once, the retries wait 5 s, 15 s, 45 s ... up to
+   about 20 min (cloud.next) and carry the newest data; new moves meanwhile only mark the save dirty (no write per move, no retry loop) */
+function cloudSave(){if(!cloud.ref)return;cloud.dirty=true;if(Date.now()<(cloud.next||0))return;clearTimeout(cloud.timer);cloud.timer=setTimeout(cloudFlush,1500);}
+async function cloudFlush(){if(!cloud.ref||cloud.busy||!cloud.dirty)return;if(Date.now()<(cloud.next||0))return;cloud.busy=true;cloud.dirty=false;
+  try{const body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;if(JSON.stringify(body).length>200000){save.rq=save.rq.slice(-15);body.rq=save.rq;}if(await cloud.ref.set(body)!=='later'){cloud.fail=0;cloud.next=0;clearTimeout(cloud.rt);}}catch(e){if(FAM.on){const f=cloud.fail|0;if(!f)logIssue('sync',e&&e.why);if(e&&e.code!=='invalid_argument'){if(f>=4)diagSend();const d=(window.__famRetry!=null?window.__famRetry:5000)*Math.pow(3,Math.min(f,5));cloud.fail=f+1;cloud.next=Date.now()+d;clearTimeout(cloud.rt);cloud.rt=setTimeout(()=>{cloud.next=0;cloud.dirty=true;FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},d);}}if(e&&e.code==='invalid_argument'){if(!cloud.retried&&save.rq.length>10){cloud.retried=1;save.rq=save.rq.slice(-10);cloud.dirty=true;}else cloud.ref=null;}}
   cloud.busy=false;if(cloud.dirty)cloudSave();updateSaveNote();}
 /* ---------- own-website mode: one private family save at /api/save (no codes or links: every device sees the same progress) ---------- */
 const FAM={id:null,on:false,last:0};
@@ -1176,7 +1178,7 @@ const FAMILY='a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0';
 function oldFamId(){let o=null;try{o=localStorage.getItem('oren4-family');}catch(e){}return o&&o!==FAMILY&&/^[a-f0-9]{32}$/.test(o)?o:null;}
 function famRef(id){const url='/api/save/'+id;return {
   get:async()=>{const r=await fetch(url,{cache:'no-store'});if(r.status===404)return {exists:false};if(!r.ok)throw new Error('http '+r.status);const d=await r.json();return {exists:true,data:()=>d};},
-  set:async body=>{const GAP=window.__famGap!=null?window.__famGap:25000;if(Date.now()-FAM.last<GAP&&!FAM.force){cloud.dirty=true;clearTimeout(FAM.tm);FAM.tm=setTimeout(()=>{FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},GAP-(Date.now()-FAM.last));return;}
+  set:async body=>{const GAP=window.__famGap!=null?window.__famGap:25000;if(Date.now()-FAM.last<GAP&&!FAM.force){cloud.dirty=true;clearTimeout(FAM.tm);FAM.tm=setTimeout(()=>{FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},GAP-(Date.now()-FAM.last));return 'later';}
     try{const cur=await fetch(url,{cache:'no-store'});if(cur.ok){mergeIn(await cur.json());body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;}}catch(e){}
     FAM.last=Date.now();let r;try{r=await fetch(url,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(body),keepalive:JSON.stringify(body).length<60000});}catch(e){const x=new Error(e&&e.message||'network');x.why=syncWhy(0);diagLog('PUT /api/save',0,x.message);throw x;}
     if(!r.ok){let j=null;try{j=await r.json();}catch(e){}const x=new Error('http '+r.status+(j&&j.error?' '+j.error:''));x.why=syncWhy(r.status,j);diagLog('PUT /api/save',r.status,x.message+(j&&j.why?': '+j.why:''));throw x;}diagLog('PUT /api/save',r.status,'');}};}
@@ -1194,7 +1196,7 @@ async function diagSend(retry){if(DIAG.sent||!FAM.on||kidSave)return;DIAG.sent=1
   try{const r=await fetch('/api/diag',{method:'POST',headers:{'content-type':'application/json'},body:diagBody(FAM.id,log,diagSnap())});if(!r.ok)throw 0;
     const e=(save.iss||[]).find(x=>x.d===today()&&x.k==='sync');if(e){e.r=1;try{localStorage.setItem(KEY,JSON.stringify(save));}catch(x){}}}catch(e){if(!retry)setTimeout(()=>{DIAG.sent=0;diagSend(1);},60000);}}
 /* the parent changed the time limit: send it now, not after the 25 s save delay (#34) */
-async function famNow(){if(!FAM.on||kidSave)return;cloud.dirty=true;FAM.force=true;try{await cloudFlush();}finally{FAM.force=false;}}
+async function famNow(){if(!FAM.on||kidSave)return;cloud.dirty=true;cloud.next=0;FAM.force=true;try{await cloudFlush();}finally{FAM.force=false;}}
 async function famPull(){if(!FAM.on||kidSave)return;try{const snap=await cloud.ref.get();if(snap.exists){const before=JSON.stringify([save.set,save.gems,save.time]);mergeIn(snap.data());updateGems();if(before!==JSON.stringify([save.set,save.gems,save.time]))emit('synced');}}catch(e){}}
 async function cloudInit(){
   try{for(let i=0;i<40&&!window.__site&&!(window.claude&&window.claude.use);i++)await new Promise(r=>setTimeout(r,100));
@@ -1203,7 +1205,7 @@ async function cloudInit(){
       const old=oldFamId();let moved=!old;if(old)try{const os=await famRef(old).get();if(os.exists)mergeIn(os.data());moved=true;}catch(e){}
       cloud.ref=ref;FAM.on=true;try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}cloud.dirty=true;FAM.force=true;await cloudFlush();FAM.force=false;
       if(moved&&!cloud.dirty)try{localStorage.setItem('oren4-family',FAMILY);}catch(e){}
-      setInterval(famPull,60000);addEventListener('online',()=>{cloud.dirty=true;cloudSave();});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')famPull();else if(cloud.dirty){FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});}});
+      setInterval(famPull,60000);addEventListener('online',()=>{cloud.next=0;cloud.dirty=true;cloudSave();});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')famPull();else if(cloud.dirty){FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});}});
       updateGems();emit('synced');return;}const db=await window.claude.use('db');const user=await window.claude.use('user');if(!db||!user)return;
     const id=await user.id();if(!id)return;const base='data/users/'+id+'/';const ref=db.doc(base+'progress4');
     const snap=await ref.get();if(snap.exists)mergeIn(snap.data());else{const old=await db.doc(base+'progress').get();if(old.exists)migrateOld(old.data());}
