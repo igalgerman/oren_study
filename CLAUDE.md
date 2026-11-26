@@ -1,5 +1,19 @@
 # Working rules for this repo (Oren's games)
 
+## Be proactive (every role; owner, 26 Nov 2026)
+- Never wait idle. Blocked on a question? Send it to the owner channel (question popup, #220/#224) and keep doing the other work you can do.
+- Fix what you find in your own area: do it now (issue + `lane/<n>` branch + PR) or hand it to the right role with the exact fix. Never only report.
+- Close the loop: after an action, check the result yourself (merged? deployed? live? the window gone?) and say the outcome in one line.
+- Notice waste and act on it: idle lanes, green PRs waiting, stuck or chained issues, repeated failures.
+- Ask the owner only what only he can decide; give one recommended option. Decide everything else yourself (CLAUDE.md, FLOW.md) and say what you decided.
+- No empty promises: say "I'll check later" only when an automatic check exists and you name it.
+- Per role:
+  - Orchestrator: every turn, scan for green PRs to review/merge, cloud `RESULT:` lines to review, blocked issues to unblock; never end a turn while such work waits.
+  - Inbox: give every new issue a P-level, an Acceptance list and a lane yourself; batch small issues (`/batch`); propose the model label and proceed with it unless the owner objects.
+  - Workers: try at least two approaches before a `QUESTION:`; split independent parts to sub-agents; leave the build green.
+  - Reviewers: GREEN/BLUE/PURPLE/RED (#149); every RED comes with the concrete fix.
+  - Inspector: watch trends and the checkers themselves; fix the system end to end, verify it in real runs.
+
 ## Simplicity first
 - Keep everything simple. Do not complicate things that don't need it.
 - Do not add a feature, option, button or setting unless it was asked for or is clearly needed. No features "just to add".
