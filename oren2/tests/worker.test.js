@@ -323,7 +323,7 @@ const path = require('path');
     ok('voicecheck report: covers every sentence and lists the findings', /4 sentences/.test(rep) && /1 checked/.test(rep) && /3 to check/.test(rep), rep.slice(0, 300));
     const wf = require('fs').readFileSync(path.join(L.ROOT, '..', '.github', 'workflows', 'deploy.yml'), 'utf8');
     ok('CI pregen job runs voicecheck time-boxed with its state kept (no PC cost)', /node oren2\/cf\/tools\/voicecheck\.js/.test(wf) && /MAX_MIN/.test(wf) && /oren-voicecheck/.test(wf), '');
-    /*SRCFIX*/ }
+  }
   globalThis.fetch = realFetch;
   L.finish('worker', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT worker 0 1'); process.exitCode = 1; });

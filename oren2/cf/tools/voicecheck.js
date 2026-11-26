@@ -267,7 +267,7 @@ async function check(it) {
 const todo = (said, items, again) => said.filter(x => { const o = items[id(x)]; return again || !o || !o.st || o.st === 'err' || (o.st === 'fix' && !o.at); });
 /* #405: a static pass over every sentence (no network): what the voice is likely to misread.
    spell = a spelling the voice reads wrong (fix it at the source); num-noun = a digit before a plural noun the worker's
-   number gender list (NG in make_worker.py) does not know, so the number may get the wrong gender; risky = a homograph
+   number gender list (NG in make_worker.py) does not know (the number may get the wrong gender); risky = a homograph
    the parent picks on the listening page; latin = Latin letters inside a Hebrew sentence */
 const SPELL = { 'שוה': 'שווה', 'מלה': 'מילה', 'למלה': 'למילה', 'המלה': 'המילה', 'כסא': 'כיסא', 'הכסא': 'הכיסא', 'מידי': 'מדי' };
 function readNG() { const g = {}; try { const s = fs.readFileSync(path.join(__dirname, 'make_worker.py'), 'utf8');
