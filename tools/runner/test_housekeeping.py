@@ -75,3 +75,26 @@ def other(): raise ValueError("bad")
 W.tick = other; W.loop(once=True)
 assert any("ValueError" in l for l in logged), "other errors are still logged at once"
 print("test_housekeeping: ok")
+
+# ---- #492: every tick removes finished run/issue/review/resolve/question terminals 5+ min after they finished ----
+T5 = lambda name, state, addr: {"name": name, "state": state, "address": addr}
+seen = {}
+ts = [T5("run-5", "finished", "a1"), T5("run-pass-77", "exited", "a2"), T5("issue-6", "finished", "a3"),
+      T5("review-7", "finished", "a4"), T5("resolve-8", "finished", "a5"), T5("question-9", "finished", "a6"),
+      T5("run-10", "live", "a7"), T5("orchestrator", "finished", "a8"), T5("inbox", "finished", "a9"),
+      T5("watchdog", "finished", "a10"), T5("intake-3", "finished", "a11"), {"name": "run-11", "state": "finished"}]
+assert W.finished_old(ts, seen, NOW) == [], "just seen finished: kept (clock starts now)"
+assert W.finished_old(ts, seen, NOW + 299) == [], "under 5 min: kept"
+assert W.finished_old(ts, seen, NOW + 301) == [("run-5", "a1"), ("run-pass-77", "a2"), ("issue-6", "a3"), ("review-7", "a4"),
+                                               ("resolve-8", "a5"), ("question-9", "a6")], "finished 5+ min: removed by address; live/control/no address kept"
+assert W.finished_old([T5("run-5", "live", "a1")], seen, NOW + 400) == [] and "a1" not in seen, "live again: forgotten"
+# the tick: rm by address, one log line with the count, none when 0
+rm, lines = [], []
+seen2 = {"a1": NOW - 600, "a7": NOW - 600}
+assert W.sweep_tick([T5("run-5", "finished", "a1"), T5("run-5", "live", "a7")], now=NOW, seen=seen2,
+                    hc=lambda *a, **k: (rm.append(a), (0, ""))[1], say=lines.append) == 1
+assert rm == [("rm", "a1")], f"rm by address only, never the live twin: {rm}"
+assert len(lines) == 1 and "1" in lines[0], lines
+assert W.sweep_tick([T5("run-10", "live", "a7")], now=NOW, seen=seen2, hc=lambda *a, **k: (rm.append(a), (0, ""))[1], say=lines.append) == 0
+assert len(lines) == 1, "no log line when nothing was removed"
+print("ok sweep (#492)")
