@@ -44,7 +44,7 @@ test('windows, finished runs and status line', () => {
   const d = { windows: wins, groups, lastLog: '', errors: [], updatedAt: 0 }
   expect(statusLine(d)).toBe('lanes local 1/3 · cloud 0/0 · ready 0 · blocked 0')
   groups.needsYou.count = 2
-  expect(statusLine(d)).toMatch(/^lanes local 1\/3 · cloud 0/0 · ready 0 · blocked 0/)
+  expect(statusLine(d)).toMatch(/^lanes local 1\/3 · cloud 0\/0 · ready 0 · blocked 0/)
 })
 
 import { usageText } from './lanes'
@@ -182,7 +182,7 @@ test('model label shows in up next and lanes, e.g. [P1·opus]', () => {
     { number: 3, title: 'busy', labels: lab('in-progress', 'P1', 'model:fable') },
   ], [], [], [])
   expect(v.next).toEqual(['[P1·opus] #1 ui  (ready)', '[P2] #2 plain  (ready)'])
-  expect(v.lanes[0]).toBe('1. #3 running [fable] · busy')
+  expect(laneReasons([{ number: 3, title: 'busy', labels: lab('in-progress', 'P1', 'model:fable') }], [])[0]).toBe('1. #3 running [fable] · busy')
 })
 
 import { parseMaxCore } from './lanes'
@@ -216,7 +216,7 @@ test('your lane shows the open intake window', () => {
   const v = view(open, [], [{ name: 'intake-8', state: 'live/working' }], [])
   expect(v.you[0]).toBe('▶ #8 Idea about maps — intake window open')
   expect(v.you[1]).toMatch(/^\? #9 /)
-  expect(v.lanes.some(l => l.includes('#8'))).toBe(false)
+  expect(v.lanes.some(l => l.startsWith('● #8'))).toBe(false)   // not a running lane (a free lane may say "need you first: #8")
 })
 
 import { cloudRows, parseLocalLanes, parseRemoteLanes } from './lanes'
