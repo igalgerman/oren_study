@@ -10,7 +10,11 @@
 2. Batch trigger: tells the inbox to run /batch once a day, and early when >= BATCH_MIN P2/P3 ready, unbatched issues share a lane.
 3. Night report (#282): once a day at retro_hour, every open issue that is not ready-for-agent with its reason (parked.py); none = ALARM.
 4. Prune (#304): once a day removes .runs/<n> of issues closed > PRUNE_HOURS (stats.jsonl and other root files stay).
-Usage: python tools/runner/nightly.py retro   (one retro run now)
+#289: `retro_where = "cloud"` (default): step 1's Claude part runs as a nightly CLOUD scheduled task (docs/agents/cloud-tasks.md,
+the subscription, no claude on the PC); it opens 'Daily retro <date>' itself with the RETRO lines and both HANDOFF sections.
+From retro_hour on the watchdog looks for that issue (every RELAY_MIN) and only writes the two handoffs; none MISSING_H h
+after retro_hour -> one note to the orchestrator. "local" = the old headless run here.
+Usage: python tools/runner/nightly.py retro   (one local retro run now)
 """
 import base64, calendar, json, re, shutil, subprocess, sys, threading, time
 from pathlib import Path
@@ -246,10 +250,38 @@ def run_once(tell=print, log=print, now=None):
          + ". Turn the accepted ones into tickets.")
     return res
 
-def retro_if_due(tell, log, hour=None, now=None):
-    """Watchdog hook, every tick. Background run once a day at retro_hour; never two at once; 0 = off. -> started?"""
+RELAY_MIN, MISSING_H = 10, 2
+
+def cloud_retro(tell, log, hour, now):
+    """#289: the cloud task's 'Daily retro <date>' issue -> the inspector + orchestrator handoffs, once a day. -> handled?"""
+    lt = time.localtime(now); date = time.strftime("%Y-%m-%d", lt)
+    st = load_state()
+    if hour <= 0 or lt.tm_hour < hour or st.get("retro_day") == date or now - st.get("relay_at", 0) < RELAY_MIN * 60: return False
+    st["relay_at"] = now; save_state(st)
+    title = f"Daily retro {date}"
+    rc, out = gh("issue", "list", "--state", "all", "--search", f'"{title}" in:title', "--json", "number,title,body,url")
+    try: found = next((i for i in json.loads(out or "[]") if i.get("title") == title), None) if rc == 0 else None
+    except ValueError: found = None
+    res = parse(found.get("body")) if found else None
+    if res is None:
+        if lt.tm_hour >= hour + MISSING_H and st.get("missing_day") != date:
+            st["missing_day"] = date; save_state(st)
+            tell(f"NIGHTLY RETRO: no '{title}' issue from the cloud scheduled task by {hour + MISSING_H}:00. Check the scheduled task (docs/agents/cloud-tasks.md).")
+        return False
+    props, insp, orch = res
+    st = load_state(); st["retro_day"] = date; save_state(st)
+    if insp: write_inspector_handoff(insp, log)
+    pr = orchestrator_handoff_pr(orch, date, log) if orch else None
+    tell(f"NIGHTLY RETRO {date} (cloud task): {len(props)} proposal(s) in {found.get('url') or '#' + str(found.get('number'))}"
+         + (f"; handoff PR {pr}" if pr else "") + ". Turn the accepted ones into tickets.")
+    return True
+
+def retro_if_due(tell, log, hour=None, now=None, where=None):
+    """Watchdog hook, every tick. Background run once a day at retro_hour; never two at once; 0 = off. -> started?
+    #289: where = cloud (config retro_where): no local run; cloud_retro() writes the handoffs from the cloud task's issue."""
     hour = int(R.CFG.get("retro_hour", 23)) if hour is None else hour
     now = now or time.time()
+    if (where or R.CFG.get("retro_where", "cloud")) == "cloud": return cloud_retro(tell, log, hour, now)
     if _running["v"]: return False
     st = load_state()
     if not retro_due(time.localtime(now), hour, st.get("retro_day")): return False

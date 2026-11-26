@@ -3,6 +3,14 @@
 You are the **orchestrator** (main session) for Oren's game. The owner talks only to you, in English, short.
 Keep your own context small: do the work through the runner (herdr windows) or Sonnet subagents; read only short reports.
 
+## Your sub-agents are read-only lookups (#289, owner 26 Nov)
+The PC runs only the 3 control sessions (orchestrator, inbox, inspector), the watchdog and one runner pass at a time. Nothing else runs Claude or tests here.
+- Local Agent sub-agents: **read-only lookups only** (find a file, read a log, summarize a PR). Never a review, a fix, tests or a browser.
+- A review of a PR: `python tools/runner/runner.py <n> --cloud-review` (the cloud reviewer, #134; its VERDICT lands as a PR comment).
+- A fix: `python tools/runner/runner.py <n> --cloud-fix="<points>"` (a cloud fix session on the PR's branch; it reports `RESULT:` on the issue).
+- A conflicting PR gets a cloud resolve session by itself (watchdog, #262); all cloud lanes run in ONE `lanes` window (runner.py --lanes), never one `run-<n>` per lane.
+- The AI observer and the nightly retro are cloud scheduled tasks (docs/agents/cloud-tasks.md); the watchdog relays their findings to you.
+
 ## Where things are
 - Repo: `C:\work\Oren_study\a`. `origin` = **igalgerman/oren_study** (private), branch **`main`** = what is live on the site.
   `old` = igalgerman/a (old history, never push there).
@@ -87,7 +95,7 @@ The runner labels such an issue `blocked` + `needs-orchestrator` (NOT `ready-for
 Every `observer_minutes` (config.toml, default 10) the watchdog runs `tools/runner/observer.py`, python rules only (no LLM): `make_ready` (needs-orchestrator/P0 untouched 30+ min while you are idle), `rerun` (in-progress with no live run-n terminal for 10+ min), `fix_blocked_by` (normalize dependency lines). Limits: max 5 actions per run, same action+issue once per 60 min, never on ready-for-human, never on an issue with an open lane/<n> PR, never while `integrate.lock` is alive (re-checked before each action). Each action is commented on the issue ("Observer: ...") and logged in `tools/runner/.runs/observer.log`; last result `observer.last`. To stop it: `observer_minutes = 0`. Dry run: `python tools/runner/observer.py --dry`. Use `needs-orchestrator` on purpose to keep the observer off an issue for 30 min. The `rerun` rule skips issues labelled `cloud` (no local run window by design).
 
 ## AI observer (#203, read-only)
-Every `ai_observer_minutes` (default 60, 0 = off) the watchdog runs `tools/runner/ai_observer.py`: one headless Sonnet session with read-only tools looks for inconsistencies (labels vs Blocked-by, PRs not moving, cloud lanes, log errors, the merge lock). You get `AI OBSERVER (hourly, read-only):` with up to 5 `OBSERVER: <problem #n> -> <fix, who>` lines; act on them yourself (the same finding is not repeated for 6 h). Owner findings also land in #193. Last result: `tools/runner/.runs/ai_observer.last`. One run by hand: `python tools/runner/ai_observer.py`.
+#289: it runs as an hourly cloud scheduled task (`ai_observer_where = "cloud"`, docs/agents/cloud-tasks.md): it posts its lines on the issue 'AI observer (cloud)' and the watchdog relays new ones to you (`"local"` = the old headless run on the PC). It looks for inconsistencies (labels vs Blocked-by, PRs not moving, cloud lanes, log errors, the merge lock). You get `AI OBSERVER (hourly, read-only):` with up to 5 `OBSERVER: <problem #n> -> <fix, who>` lines; act on them yourself (the same finding is not repeated for 6 h). Owner findings also land in #193. Last result: `tools/runner/.runs/ai_observer.last`. One run by hand: `python tools/runner/ai_observer.py`.
 
 ## Code changes
 - runner.py changes apply to the NEXT issue run (every run is a fresh `python runner.py` process; running runs keep the code they started with). The watchdog reloads runner.py by itself when the file changes; a change in watchdog.py itself needs the `watchdog` window restarted (kill it, run the watchdog line of tools/orchestrator.cmd) at a quiet moment.

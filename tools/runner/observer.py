@@ -52,6 +52,7 @@ def snapshot(now=None, st=None):
     terms = []
     try: terms = json.loads(out.strip().splitlines()[-1]).get("terminals", [])
     except Exception: pass
+    terms = R.with_lanes(terms)          # #289: cloud lanes run in the ONE poller: virtual run-<n> rows, never 'rerun' them
     terms = [{"name": t.get("name") or "", "address": t.get("address"), "status": t.get("status", ""), "state": t.get("state")} for t in terms]
     orch = next((t["status"] for t in terms if t["name"] == "orchestrator" and t["state"] == "live"), "missing")
     st["orch_idle_since"] = (st.get("orch_idle_since") or now) if orch in ("idle", "done") else None

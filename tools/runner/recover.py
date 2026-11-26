@@ -209,7 +209,7 @@ def main():
         print(f"installed: '{TASK}' runs tools\\recover.cmd at logon" if rc == 0 else "install failed: run tools\\recover.cmd --install once as administrator")
         return rc
     import freeze, subprocess
-    def terminals(): return R.hc_json("ls", "--all", "--json").get("terminals", [])
+    def terminals(): return R.with_lanes(R.hc_json("ls", "--all", "--json").get("terminals", []))   # #289: + the poller's cloud lanes
     def herdr_up(): return R.hc("ls", "--json", timeout=30)[0] == 0 and bool(spaces(R))
     def start_herdr():
         try: subprocess.Popen([R.HERDR_APP])

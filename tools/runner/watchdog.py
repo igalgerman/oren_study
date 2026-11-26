@@ -9,7 +9,7 @@ Every minute it checks, deterministically:
   3c. owner lane: no intake window open + a needs-triage/needs-info issue -> opens ONE `intake-<n>` (oldest issue), `NEEDS YOU: intake-<n> is open`
   5. every observer_minutes: observer.py applies deterministic rules (make_ready, rerun, fix Blocked-by lines) within limits
   5b. every ai_observer_minutes (#203): ai_observer.py, ONE read-only headless Sonnet check in a thread; new findings -> the orchestrator
-  5c. every tick (#262): an open PR that conflicts with main and has auto-merge or a review PASS -> a resolve run (window resolve-<n>, conflicts.py)
+  5c. every tick (#262): an open PR that conflicts with main and has auto-merge or a review PASS -> a cloud resolve session (#289, conflicts.py)
   5c. #219 nightly.py: once a day at retro_hour ONE read-only headless Sonnet retro + handoff (issue 'Daily retro <date>', handoff PR);
       batch trigger: tells the inbox to run /batch once a day, and early when >= 8 ready P2/P3 issues share a lane
   5d. #282 parked.py, once an hour: closed batch -> its open members get ready-for-agent back; a polish list at 5 notes or 24 h -> ready-for-agent P3;
@@ -51,6 +51,10 @@ def log(msg):
     R.RUNS.mkdir(parents=True, exist_ok=True)
     with open(LOG, "a", encoding="utf-8") as f:
         f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + msg + "\n")
+
+def run_rows(ts):
+    """#289: the live windows + one virtual live run-<n> per lane of the ONE poller (`lanes` window), which has no run-<n> window."""
+    return R.with_lanes(ts)
 
 def windows():
     rc, out = R.hc("ls", "--json", timeout=30)
@@ -598,10 +602,11 @@ def tick():
         all_ts = (step("all_windows", R.hc_json, "ls", "--all", "--json") or {}).get("terminals", []) or ts
         step("check_control", check_control, all_ts)
         step("cleanup", cleanup, all_ts)
-        step("reap_tick", reap_tick, ts)       # #248
-        step("stuck_tick", stuck_tick, ts)
-        step("net_due_tick", net_due_tick, ts) # #364
-        step("conflicts_tick", conflicts_tick, ts)  # #262
+        rts = step("run_rows", run_rows, ts) or ts   # #289: + the ONE poller's cloud lanes as virtual run-<n> rows
+        step("reap_tick", reap_tick, ts)       # #248 (a virtual run ends itself when its issue closes)
+        step("stuck_tick", stuck_tick, rts)
+        step("net_due_tick", net_due_tick, rts) # #364
+        step("conflicts_tick", conflicts_tick, rts)  # #262
         for name, fn in (("observer_tick", observer_tick), ("ai_observer_tick", ai_observer_tick), ("nightly_tick", nightly_tick),
                          ("parked_tick", parked_tick), ("due_tick", due_tick), ("garden_tick", garden_tick),   # #282 #241 #187
                          ("issues_stuck_tick", issues_stuck_tick), ("desks_tick", desks_tick), ("canary_tick", canary_tick),   # #280 #330
@@ -610,18 +615,21 @@ def tick():
             step(name, fn)
 
 # ---------- #262: a green/approved PR that conflicts with main gets a resolve run by itself ----------
-def resolve_cmd(a):
-    """hc command for one resolve run: terminal resolve-<n> runs `runner.py <n> --resolve-pr --round=<k>` (the runner's resolve worker)."""
-    name = f"resolve-{a['n']}"
-    return [R.HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(R.ROOT), "--label", f"issue={a['n']}", "--label", "role=runner",
-            *R.parent_args(), sys.executable, str(HERE / "runner.py"), str(a["n"]), "--resolve-pr", f"--round={a['round']}", f"--term={name}"]
+def resolve_start(a, launch=None):
+    """#289: one resolve round = a CLOUD session on the PR's branch (remote.launch: returns at once, no local worker or worktree).
+    Window resolve-<n> only lives while `claude --cloud` creates the session; conflicts.py waits RESOLVE_WAIT_MIN per round."""
+    import remote
+    launch = launch or remote.launch
+    s = launch(a["n"], R.remote_resolve_prompt(a["n"], [], a["branch"]), R.CFG.get("main_checkout", str(R.ROOT)), name=f"resolve-{a['n']}")
+    if s.get("ok"): R.stat(a["n"], "", "resolve", by="watchdog", round=a["round"], where="remote")
+    return bool(s.get("ok"))
 
 def conflicts_tick(ts):
     import conflicts
     def start(a):
-        rc, out = R.run(resolve_cmd(a))
-        log(f"#262 PR #{a['pr']} conflicts with main: " + (f"resolve round {a['round']} started (resolve-{a['n']})" if rc == 0 else f"could not start resolve-{a['n']}: {out.strip()[:200]}"))
-        return rc == 0
+        ok = resolve_start(a)
+        log(f"#262 PR #{a['pr']} conflicts with main: " + (f"cloud resolve round {a['round']} started" if ok else f"could not start the cloud resolve for #{a['n']}"))
+        return ok
     conflicts.tick(conflicts.busy(ts), review_passed, R.gh, start, tell, R.RUNS / "conflicts.json")
 
 # ---------- #248: backstop: a lane is never held for a closed issue or a silent run ----------
@@ -679,7 +687,7 @@ def net_tick(ts, now=None, gh=None, hc=None, say=None, events=None, find_pr=None
     done = []
     for t in ts:
         m = re.match(r"^run-(\d+)$", t.get("name") or "")
-        if not m or t.get("state") != "live" or not t.get("address"): continue
+        if not m or t.get("state") != "live" or not (t.get("address") or t.get("virtual")): continue
         n = int(m.group(1))
         phase = R.run_phase(events, n)
         if phase not in ("start", "review_fix"): continue
@@ -693,7 +701,9 @@ def net_tick(ts, now=None, gh=None, hc=None, say=None, events=None, find_pr=None
         try:
             if mark.read_text(encoding="utf-8").strip() == pj.get("headRefOid", ""): continue
         except OSError: pass
-        hc("kill", t["address"], timeout=30)
+        if t.get("virtual"):
+            import lanes; lanes.stop(R.RUNS, n)       # #289: a lane of the ONE poller: its wait loop ends the run
+        else: hc("kill", t["address"], timeout=30)
         R.set_resume(n, "review")
         mark.write_text(pj.get("headRefOid", ""), encoding="utf-8")
         gh("issue", "edit", str(n), "--remove-label", "in-progress", "--add-label", "ready-for-agent")

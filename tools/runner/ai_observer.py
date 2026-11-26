@@ -4,7 +4,11 @@ It reads issues/PRs/cloud lanes/logs/the merge lock and reports at most 5 lines 
 (or 'no problems'). Python then: writes .runs/ai_observer.last, sends NEW findings to the orchestrator (the same issue + text start
 not again within 6 h), and posts a finding for the OWNER in the 'Questions for the owner' issue (#193) when that issue exists.
 The AI observer never edits, merges, labels or comments by itself.
-Usage: python tools/runner/ai_observer.py   (one run now, prints the findings)
+#289: `ai_observer_where = "cloud"` (default): the check runs as an hourly CLOUD scheduled task (docs/agents/cloud-tasks.md, the
+subscription, no claude on the PC). It posts its lines as a comment on the open issue labelled `ai-observer` ('AI observer (cloud)');
+the watchdog only relays the newest unseen comment through the same path (.last file, 6 h repeat filter, orchestrator, #193).
+Silent for SILENT_H h -> one note to the orchestrator. "local" = the old headless run on the PC.
+Usage: python tools/runner/ai_observer.py   (one local run now, prints the findings)
 """
 import json, re, shutil, subprocess, sys, threading, time
 from pathlib import Path
@@ -119,7 +123,10 @@ def save_state(st):
 def run_once(tell=print, log=print, now=None):
     """One observer run. -> findings list ([] = no problems) or None when claude failed."""
     ok, out = ask_claude(build_prompt())
-    now = now or time.time()
+    return report(ok, out, tell, log, now or time.time())
+
+def report(ok, out, tell, log, now, head="AI OBSERVER (hourly, read-only):"):
+    """The findings in out -> .last file, repeat filter, orchestrator, owner (#193). -> findings or None (unreadable)."""
     found = parse(out) if ok else None
     stamp = time.strftime("%Y-%m-%d %H:%M ", time.localtime(now))
     R.RUNS.mkdir(parents=True, exist_ok=True)
@@ -132,17 +139,55 @@ def run_once(tell=print, log=print, now=None):
     new, st["sent"] = fresh(found, st.get("sent", {}), now)
     save_state(st)
     log(f"ai observer: {len(found)} finding(s), {len(new)} new")
-    if new: tell("AI OBSERVER (hourly, read-only):\n" + "\n".join(new))
+    if new: tell(head + "\n" + "\n".join(new))
     owner = [f for f in new if for_owner(f)]
     if owner and owner_issue():
         import owner_q as OQ
         for f in owner: OQ.post("ai-observer", "QUESTION: " + re.sub(r"^OBSERVER:\s*", "", f))
     return found
 
-def run_if_due(tell, log, minutes=None, now=None):
-    """Watchdog hook, every tick. Starts a background run when due; never two at once; ai_observer_minutes = 0 = off. -> started?"""
+CLOUD_TITLE, CLOUD_LABEL = "AI observer (cloud)", "ai-observer"
+RELAY_MIN, SILENT_H = 5, 3
+
+def _epoch(iso):
+    import calendar
+    try: return calendar.timegm(time.strptime((iso or "")[:19], "%Y-%m-%dT%H:%M:%S"))
+    except ValueError: return 0
+
+def relay(tell, log, now, gh=None):
+    """#289: the cloud task's newest unseen comment on the ai-observer issue -> report(). Every RELAY_MIN; a gh error does nothing."""
+    st = load_state()
+    if now - st.get("relay_at", 0) < RELAY_MIN * 60: return None
+    st["relay_at"] = now; save_state(st)
+    rc, out = (gh or R.gh)("issue", "list", "--state", "open", "--label", CLOUD_LABEL, "--limit", "5", "--json", "number,title,comments")
+    try: issues = json.loads(out) if rc == 0 else None
+    except ValueError: issues = None
+    if issues is None: return None
+    comments = sorted((c for i in issues for c in i.get("comments") or []), key=lambda c: c.get("createdAt", ""))
+    readable = [c for c in comments if parse(c.get("body")) is not None]
+    last = readable[-1] if readable else None
+    st = load_state()
+    if last and last.get("createdAt", "") > st.get("cloud_seen", ""):
+        st["cloud_seen"] = last["createdAt"]; save_state(st)
+        found = report(True, last.get("body"), tell, log, now, head="AI OBSERVER (hourly cloud task, read-only):")
+        st = load_state()
+    newest = _epoch(last.get("createdAt")) if last else 0
+    st.setdefault("relay_since", now); save_state(st)             # the first relay is no 'silent' alarm
+    if now - max(newest, st.get("silent_told", 0), st["relay_since"]) >= SILENT_H * 3600:
+        st["silent_told"] = now; save_state(st)
+        tell(f"AI OBSERVER: the cloud scheduled task has been silent for {SILENT_H}+ h (no comment on the '{CLOUD_TITLE}' issue). "
+             "Check the scheduled task (docs/agents/cloud-tasks.md).")
+        log("ai observer (cloud): silent")
+    return last
+
+def run_if_due(tell, log, minutes=None, now=None, where=None, gh=None):
+    """Watchdog hook, every tick. Starts a background run when due; never two at once; ai_observer_minutes = 0 = off. -> started?
+    #289: where = cloud (config ai_observer_where): no local run, only relay() of the cloud task's comment."""
     minutes = int(R.CFG.get("ai_observer_minutes", 60)) if minutes is None else minutes
     now = now or time.time()
+    if (where or R.CFG.get("ai_observer_where", "cloud")) == "cloud":
+        if minutes > 0: relay(tell, log, now, gh)
+        return False
     if minutes <= 0 or _running["v"]: return False
     st = load_state()
     if now - st.get("last_run", 0) < minutes * 60: return False
