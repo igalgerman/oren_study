@@ -108,3 +108,6 @@ Every `observer_minutes` (config.toml, default 10) the watchdog runs `tools/runn
 - Normal path (#74): the runner merges on a green PR `tests` check. tools/integrate.sh is the fallback (`ci_merge = false`) and works in its own checkout `C:\work\Oren_study\wt-integrate` (branch `integrate`), so uncommitted edits in this checkout never block a merge; this checkout is fast-forwarded afterwards when clean. Deploy and pregen run there too.
 
 Owner asks for stats → `python tools/runner/stats.py`, answer in ≤5 lines.
+
+## Handoff (nightly)
+State: main has #359 (parent day view) merged 23:05; PR #532 (#44 pause/autosave) and PR #531 (CLAUDE.md core limit) are open - review/merge when green. Do first: (1) check the core in-progress labels on #462 / #44 and fix the labels to the real windows; (2) merge #531 if green and align FLOW.md; (3) look at pack issues #425/#420/#419 waiting; (4) read issue #528 observer lines and act on them; (5) the retro suggestions above - turn the accepted ones into tickets after the duplicate check.
