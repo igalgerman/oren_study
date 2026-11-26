@@ -64,6 +64,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Build check (a fresh build_talents.py on the merged tree changes no built file, #503)
+        run: python3 tools/ci/buildcheck.py
       - name: Python tool tests
         run: |
           fail=0
