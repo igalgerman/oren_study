@@ -93,3 +93,13 @@ b = OQ.body("abcdef012345", "remote-7", "QUESTION: כן או לא?")
 q = OQ.open_questions([{"body": b, "url": "u"}])[0]
 assert q["window"] == "#7" and q["source"] == "remote-7" and QW.win_name(q) == "question-7", q
 print("ok qwin source")
+
+# #135: a runner-managed cloud issue (.runs/<n>/where = remote): the answer is NOT sent here; the runner resumes the session with it
+(R.RUNS / "3").mkdir(parents=True, exist_ok=True); (R.RUNS / "3" / "where").write_text("remote")
+remote_sent.clear(); h.sent.clear(); gh_calls.clear()
+d = QW.answer("k3", "ירוק")
+assert not remote_sent and d.get("remote") is None, (d, remote_sent)
+assert any(a[:3] == ("issue", "comment", "3") and "OWNER ANSWER" in a[-1] for a in gh_calls)   # the issue comment the runner resumes from
+assert any(s[0] == "orchestrator" and "resume" in s[1] for s in h.sent), h.sent
+(R.RUNS / "3" / "where").unlink()
+print("ok qwin runner-managed cloud answer")

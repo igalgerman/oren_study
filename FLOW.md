@@ -5,7 +5,7 @@ Backlog = GitHub issues. Owner guide: `HOWTO.md`. Main session: `ORCHESTRATOR.md
 
 ## The flow
 idea → `/grill-me` → `/to-tickets` → issue (backlog) → runner → worker → reviewer → merge to main → all tests → deploy → issue closed.
-Everything after the issue is automatic (`tools/runner`). Lanes: `local_lanes` on this PC (0 now) + `remote_lanes` cloud sessions (4), at most `max_core` (3) `core` issues at once (see `tools/runner/config.toml`). If merging into main conflicts, the runner has the worker merge main in and retries (2 rounds, then the issue is parked).
+Everything after the issue is automatic (`tools/runner`). Lanes: `local_lanes` on this PC (0 now) + cloud sessions: the usage governor (#239) picks 2-8 so the 5h window ends near 90% (no new run at 93%+, max 4 when the week runs ahead; no fresh `.runs/usage.json` from the panel -> `remote_lanes` (4)), at most `max_core` (3) `core` issues at once (see `tools/runner/config.toml`). If merging into main conflicts, the runner has the worker merge main in and retries (2 rounds, then the issue is parked).
 
 Hand work by the orchestrator/inspector carries the label `manual`, never `in-progress` and no `core` on tooling: the runner ignores `manual` (no lane, never started) (#177).
 
@@ -42,6 +42,8 @@ Known: `worker` suite fails only on Windows (ESM c:\ path); `reading`/`activitie
 
 ## Observer
 Every `observer_minutes` the watchdog runs `tools/runner/observer.py` (deterministic rules, no LLM): make_ready (needs-orchestrator/P0 untouched 30+ min while the orchestrator is idle), rerun (in-progress with no live run window for 10+ min), fix Blocked-by lines. Max 5 actions per run, each commented on the issue; never on ready-for-human, on an issue with an open lane/<n> PR, or while integrate.lock is alive. Result in `tools/runner/.runs/observer.last`; `observer_minutes = 0` stops it.
+
+Lane backstop (#248, independent of the runner): every minute the watchdog kills (by herdr address) a live `run-<n>` window whose issue has been CLOSED for 10+ min and that does not hold the merge lock, removes `in-progress`, logs it and tells the orchestrator; a `run-<n>` whose `.runs/<n>` is unchanged for `stuck_hours` gets one alarm, and if still unchanged 30 min later a second one and it counts as a stuck lane (`dashboard.py --text` prints `STUCK LANES`). A gh error reaps nothing.
 
 AI observer (#203): every `ai_observer_minutes` (60; 0 = off) the watchdog starts ONE headless `claude -p --model sonnet` (`tools/runner/ai_observer.py`, read-only tools, 10 min timeout, never two at once). It checks open issues/labels/Blocked-by, open PRs, cloud issues (`remote.py status`), runner/watchdog log tails and the merge lock, and reports at most 5 `OBSERVER: <problem #n> -> <fix, who>` lines (or `no problems`) in `.runs/ai_observer.last`. New findings go to the orchestrator (same issue + text start not again within 6 h); one for the owner also goes to #193. It never edits, merges, labels or comments itself. Issues labelled `cloud` have no local window/worktree by design: neither observer flags that.
 
