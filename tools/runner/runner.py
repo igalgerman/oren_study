@@ -462,9 +462,11 @@ def governor_text(gv):
     return s + ")" + (" · STOP" if gv["stop"] else " · new 5h window" if gv.get("why") == "new 5h window" else "")
 
 def stop_filter(chosen, gv):
-    """Pure (#269): on a governor stop only owner-approved 'express' issues still start, and only below 100%."""
+    """Pure (#269): on a governor stop only owner-approved 'express' issues still start, and only below 100%.
+    #450: the canary (express too, for its own lane) never starts on a stop."""
     if not gv["stop"]: return chosen
-    return [c for c in chosen if "express" in c.get("labels", [])] if (gv.get("pct") or 0) < 100 else []
+    ok = lambda c: "express" in c.get("labels", []) and "canary" not in c.get("labels", [])
+    return [c for c in chosen if ok(c)] if (gv.get("pct") or 0) < 100 else []
 
 def governor_pass(remote_busy, now=None):
     """Read .runs/usage.json, keep a sample in .runs/usage_hist.jsonl, write .runs/governor.json. Returns the governor dict; never raises."""

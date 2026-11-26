@@ -65,15 +65,15 @@ class GH:
     def writes(self, *head): return [c for c in self.calls if c[:len(head)] == list(head)]
 
 said = []
-def tick(gh, st, now, changed=0, side=None):
+def tick(gh, st, now, changed=0, side=None, stopped=False):
     return C.tick(run=gh, say=said.append, log=lambda m: None, now=now, st=st, changed=lambda: changed,
-                  side=side or (lambda st, now: []))
+                  side=side or (lambda st, now: []), stopped=lambda: stopped)
 
 # a green canary: issue opened -> started -> PR -> review -> merge -> closed; panel 'flow ok HH:MM'
 gh, st = GH(), {}
 tick(gh, st, T0)
 c = gh.writes("gh", "issue", "create")[0]
-assert c[c.index("--label") + 1] == "canary,P3,pack,ready-for-agent", c
+assert c[c.index("--label") + 1] == "canary,express,P3,pack,ready-for-agent", c   # #450: its own express lane
 body = c[c.index("--body") + 1]
 assert "## Acceptance" in body and C.FILE in body and "Out of scope" in body, "the runner refuses an issue without Acceptance (#186)"
 assert st["run"]["n"] == 401 and st["started"] == T0
@@ -121,6 +121,28 @@ gh, st, said[:] = GH(), {}, []
 gh.p0 = [{"number": 499, "title": "Canary: step 'start' of the flow is broken"}]
 tick(gh, st, T0); tick(gh, st, T0 + 12 * M)
 assert len(said) == 1 and len(gh.p0) == 1, gh.p0
+
+# #450: all normal lanes busy -> the canary (express) still starts in the express lane, ahead of queued work; no false alarm
+import runner as R
+busy = [{"number": k, "labels": ["in-progress", "pack"], "createdAt": "2026-11-26T10:00:00Z"} for k in range(1, 9)]
+queued = [{"number": 20, "labels": ["ready-for-agent", "pack", "P0"], "createdAt": "2026-11-26T09:00:00Z", "body": "## Acceptance\n- x"}]
+can = {"number": 401, "labels": "canary,express,P3,pack,ready-for-agent".split(","), "createdAt": "2026-11-26T14:00:00Z", "body": C.issue_body("x")}
+ch = R.select(busy + queued + [can], 8, 1, 2)
+assert [i["number"] for i in ch] == [401], ch
+assert [(i["number"], w) for i, w in R.assign_where(ch, 0, 8, 0, 8)] == [(401, "remote")], "all lanes busy: the express slot"
+assert [i["number"] for i in R.select(queued + [can], 8, 1, 2)][0] == 401, "ahead of queued work"
+# the canary never runs while the governor says STOP (an owner 'express' still does, #269)
+assert R.stop_filter([can], {"stop": True, "pct": 95}) == []
+assert R.stop_filter([{"number": 9, "labels": ["express"]}], {"stop": True, "pct": 95}) != []
+assert R.stop_filter([can], {"stop": False, "pct": 50}) == [can]
+# ... and its 'start' clock waits while STOP holds it: no false 'start missed deadline'
+gh, st, said[:] = GH(), {}, []
+tick(gh, st, T0)
+tick(gh, st, T0 + 5 * M, stopped=True); tick(gh, st, T0 + 30 * M, stopped=True)
+tick(gh, st, T0 + 38 * M)
+assert said == [], said
+tick(gh, st, T0 + 41 * M)
+assert len(said) == 1 and "'start'" in said[0], "10 min after the stop ended it is late again"
 
 # leftover canary issues (state lost, watchdog restart) are closed before a new canary opens
 gh, st, said[:] = GH(), {}, []

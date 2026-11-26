@@ -1,6 +1,7 @@
 """#330 End-to-end canary: a broken step of the flow is found by the system, not by the owner.
-Every EVERY_H (and after a merge that touches tools/runner or tools/mods) the watchdog opens ONE tiny issue (label canary, P3,
-pack, ready-for-agent: append one line to tools/runner/.canary.md) and lets the normal flow run it:
+Every EVERY_H (and after a merge that touches tools/runner or tools/mods) the watchdog opens ONE tiny issue (label canary, express,
+P3, pack, ready-for-agent: append one line to tools/runner/.canary.md) and lets the normal flow run it. #450: 'express' gives it its
+own express lane, so all normal lanes busy never delay it; it never starts on a governor STOP, and its 'start' clock waits meanwhile:
   start (in-progress or a PR) -> PR -> review (a VERDICT comment) -> merge -> issue closed.
 Each step has a deadline (STEPS, minutes), counted from the time the step before it was seen done (start: from the opening).
 A missed deadline -> ONE alarm per step to the orchestrator and the inspector naming the step, a NEEDS-ATTENTION line, and
@@ -59,7 +60,7 @@ def advance(run, done, now):
 
 def late(run, now):
     """-> (step, minutes) of the first step not done whose deadline has passed, or None."""
-    t = run["opened"]
+    t = max(run["opened"], run.get("held", 0))      # #450: 'start' counts from the last tick a governor STOP held it
     for s, mins in STEPS:
         if s in run.get("at", {}): t = run["at"][s]; continue
         return (s, mins) if now - t > mins * 60 else None
@@ -109,6 +110,13 @@ def desks_problems(text):
 def _sh(cmd, env=None):
     import remote
     return remote.sh(cmd, env)
+
+def gov_stop():
+    """#450: the governor says STOP now (.runs/governor.json, fresh, the 5h reset not passed) -> the canary cannot start."""
+    try:
+        gv = json.loads((R.RUNS / "governor.json").read_text(encoding="utf-8"))
+        return bool(gv["stop"]) and time.time() - gv["at"] < 15 * 60 and not (gv.get("reset") and gv["reset"] <= time.time())
+    except Exception: return False
 
 def _say(text):
     for w in ("orchestrator", "inspector"): R.hc("send", w, text, timeout=30)
@@ -199,7 +207,7 @@ def _open(run, st, now, why, log):
     for i in _json(rc, out, []):
         run(["gh", "issue", "close", str(i["number"]), "--repo", R.REPO, "--reason", "not planned", "--comment", "Leftover canary, closed by the next one (#330)."])
     stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(now))
-    rc, out = run(["gh", "issue", "create", "--repo", R.REPO, "--title", f"Canary {stamp}", "--label", f"{LABEL},P3,pack,ready-for-agent",
+    rc, out = run(["gh", "issue", "create", "--repo", R.REPO, "--title", f"Canary {stamp}", "--label", f"{LABEL},express,P3,pack,ready-for-agent",
                    "--body", issue_body(stamp)])
     try: n = int(out.strip().rstrip("/").rsplit("/", 1)[-1]) if rc == 0 else 0
     except ValueError: n = 0
@@ -221,7 +229,7 @@ def _p0(run, step, n, detail, log):
                    f"fix it, then close this issue. The next canary shows whether it works again."])
     log(f"P0 opened for step {step} (canary #{n})")
 
-def _check(run, st, now, say, log):
+def _check(run, st, now, say, log, stopped=gov_stop):
     """Read the canary's issue/PR, advance its steps, alarm late steps, finish (green) or give up."""
     import remote
     r = st["run"]; n = r["n"]
@@ -234,6 +242,7 @@ def _check(run, st, now, say, log):
         pv = _json(*run(["gh", "pr", "view", str(pr["number"]), "--repo", R.REPO, "--json", "comments"]), {})
         verdict = remote.verdict_from([c.get("body", "") for c in pv.get("comments", [])])[0]
     advance(r, steps_done(issue, pr, verdict), now)
+    if "start" not in r["at"] and stopped(): r["held"] = now
     if "close" in r["at"]:
         st["run"], st["last_ok"], st["fail"] = None, now, None
         log(f"#{n} green: flow ok")
@@ -255,7 +264,7 @@ def _check(run, st, now, say, log):
         _p0(run, step, n, f"stuck for {GIVE_UP_H} h, canary closed", log)
         log(f"#{n} given up at {step}")
 
-def tick(run=_sh, say=_say, log=_log, now=None, st=None, changed=last_tool_change, side=side_tick):
+def tick(run=_sh, say=_say, log=_log, now=None, st=None, changed=last_tool_change, side=side_tick, stopped=gov_stop):
     """Watchdog, every minute (GitHub at most every CHECK_S)."""
     now = time.time() if now is None else now
     if st is None:
@@ -263,7 +272,7 @@ def tick(run=_sh, say=_say, log=_log, now=None, st=None, changed=last_tool_chang
         if not st.get("loaded"): st.update({**_load(), "loaded": True})   # survives a watchdog restart
     if now - st.get("checked", 0) >= CHECK_S:
         st["checked"] = now
-        if st.get("run"): _check(run, st, now, say, log)
+        if st.get("run"): _check(run, st, now, say, log, stopped)
         if not st.get("run") and (why := due(st, now, changed())): _open(run, st, now, why, log)
     side(st, now)
     _save(st)
