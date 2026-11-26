@@ -431,8 +431,8 @@ calls = []
 def fake_start(n, task, cwd): calls.append(("start", n, task)); return {"ok": True, "session": "session_x", "url": "https://claude.ai/code/session_x"}
 res = r.remote_worker(7, "pack", False, fake_start, lambda: {"state": "done", "line": "RESULT: DONE https://p", "pr": {"number": 3}}, lambda s: None, lambda: 0, 60, 30)
 assert res == "RESULT: DONE https://p" and calls[0][0] == "start" and calls[0][1] == 7 and "lane/7" in calls[0][2]
-res = r.remote_worker(7, "pack", False, lambda n, t, cwd: {"ok": False, "error": "403"}, lambda: {"state": "working"}, lambda s: None, lambda: 0, 60, 30)
-assert res.startswith("RESULT: STUCK") and "403" in res
+try: r.remote_worker(7, "pack", False, lambda n, t, cwd: {"ok": False, "error": "403"}, lambda: {"state": "working"}, lambda s: None, lambda: 0, 60, 30); assert False, "no Refused"
+except r.Refused as e: assert "403" in str(e)                       # #137: a refused start is not STUCK: the caller falls back / waits
 res = r.remote_worker(7, "pack", False, fake_start, lambda: {"state": "question", "line": "QUESTION: x?"}, lambda s: None, lambda: 0, 60, 30)
 assert res == "QUESTION: x?"
 kept = []
@@ -703,6 +703,64 @@ assert r.issue_over(7, _S0, run_=_fr246)
 assert not r.issue_over(7, "2026-11-26T14:00:00Z", run_=_fr246)         # merged before this run started
 print("ok run ends when its issue is closed or PR merged (#234)")
 
+# #137: cloud start refused -> local lane if free, else wait; one note per hour; dead session -> retry once, then STUCK
+_t = [0]
+def _clk(): return _t[0]
+def _sl(x): _t[0] += x
+_starts, _notes = [], []
+def _st2(n, task, cwd): _starts.append(task); return {"ok": True, "session": f"s{len(_starts)}", "url": f"u{len(_starts)}"}
+_seq = iter([{"state": "working"}] * 3 + [{"state": "done", "line": "RESULT: DONE p"}])
+_res = r.remote_worker(7, "pack", False, _st2, lambda: next(_seq), _sl, _clk, 60, 30, comment=_notes.append)
+assert _res == "RESULT: DONE p" and len(_starts) == 2 and len(_notes) == 1 and "u1" in _notes[0] and "retry" in _notes[0].lower(), (_res, _notes)
+assert "continue" in _starts[1] and "continue" not in _starts[0]          # the retry continues pushed work on lane/7
+assert not any(l.startswith(("RESULT:", "QUESTION:", "Runner: started (")) for l in _notes[0].splitlines())   # never read as a marker / a new run
+_starts.clear(); _notes.clear(); _t[0] = 0
+_res = r.remote_worker(7, "pack", False, _st2, lambda: {"state": "working"}, _sl, _clk, 60, 30, comment=_notes.append)
+assert _res.startswith("RESULT: STUCK") and "twice" in _res and "u1" in _res and "u2" in _res and len(_starts) == 2 and len(_notes) == 1, _res
+# pause + note throttle (pure)
+assert not r.remote_paused({}, 10_000) and r.remote_paused({"at": 10_000}, 10_000 + 3599) and not r.remote_paused({"at": 10_000}, 10_000 + 3600)
+assert r.note_due({}, 5) and not r.note_due({"noted": 100}, 100 + 3599) and r.note_due({"noted": 100}, 100 + 3600)
+assert r.lanes_now(4, {"at": 100}, 200) == 0 and r.lanes_now(4, {"at": 100}, 100 + 3600) == 4 and r.lanes_now(4, {}, 5) == 4
+# record_refusal: state file + one orchestrator note and one watchdog.log line per hour, however many starts fail
+import tempfile as _tf, pathlib as _pl
+_saved = {k: getattr(r, k) for k in ("RUNS", "tell_orchestrator")}
+r.RUNS = _pl.Path(_tf.mkdtemp(prefix="runs137-")); _told = []; r.tell_orchestrator = _told.append
+try:
+    assert r.record_refusal(7, "Error: usage limit", now=1000) is True
+    assert r.record_refusal(8, "Error: usage limit", now=1100) is False          # second refusal within the hour: no new note
+    assert r.remote_paused(r.refusal_state(), 1200)
+    assert r.record_refusal(9, "Error: x", now=1000 + 3600) is True
+    _wl = (r.RUNS / "watchdog.log").read_text(encoding="utf-8").splitlines()
+    assert len(_told) == 2 and len(_wl) == 2 and "#7" in _told[0] and "usage limit" in _wl[0], (_told, _wl)
+finally:
+    for k, v in _saved.items(): setattr(r, k, v)
+# process_locked: refused start, no local lane free -> WAITING (in-progress dropped, not blocked); local lane free -> runs locally
+_saved = {k: getattr(r, k) for k in ("gh", "run", "set_labels", "stat", "remove_worktree", "close_windows", "block", "issue_over",
+                                       "set_where", "record_refusal", "local_lane_free", "agent")}
+_saved_remote = r.remote.start
+_lab, _did, _wh = [], [], []
+r.gh = lambda *a, **k: (_did.append(("gh",) + a), (0, ""))[1]; r.run = lambda *a, **k: (0, ""); r.stat = lambda *a, **k: None
+r.set_where = lambda n, w: _wh.append(w); r.set_labels = lambda n, add=(), remove=(): _lab.append((tuple(add), tuple(remove)))
+r.remove_worktree = lambda *a, **k: None; r.close_windows = lambda n: None
+r.block = lambda *a, **k: _did.append("block"); r.issue_over = lambda n, since: False
+r.record_refusal = lambda n, err, now=None: _did.append(("refused", err)) or True
+r.remote.start = lambda *a: {"ok": False, "error": "Error: Cloud session create failed: limit"}
+r.agent = lambda *a, **k: (_did.append("agent"), ("out", "RESULT: STUCK test stop"))[1]
+try:
+    r.local_lane_free = lambda n: False
+    _res = r.process_locked({"number": 7, "labels": ["pack"]}, "remote")
+    assert _res.startswith("WAITING") and "block" not in _did and "agent" not in _did and ("refused", "Error: Cloud session create failed: limit") in _did, (_res, _did)
+    assert _lab[-1] == ((), ("in-progress",)), _lab
+    _did.clear(); _wh.clear()
+    r.local_lane_free = lambda n: True
+    _res = r.process_locked({"number": 7, "labels": ["pack"]}, "remote")
+    assert "agent" in _did and _wh[-1] == "local", (_res, _did, _wh)       # ran in the local lane (agent stub then stops it)
+    assert any(c[0] == "gh" and "comment" in c and any("locally" in str(x) for x in c) for c in _did if isinstance(c, tuple))
+finally:
+    for k, v in _saved.items(): setattr(r, k, v)
+    r.remote.start = _saved_remote
+if r.LOCAL_LANES == 0: assert r.local_lane_free(7) is False              # 0 local lanes (config now): never free, no gh call
+print("ok cloud fallback (#137)")
 # #248: watchdog backstop: reap run windows of closed issues, escalate stuck runs
 import json
 _rt = [{"name": f"run-{n}", "state": "live", "address": f"a{n}"} for n in (1, 2, 3, 4)] + [{"name": "run-pass-9", "state": "live", "address": "ap"}, {"name": "run-5", "state": "finished", "address": "a5"}]
