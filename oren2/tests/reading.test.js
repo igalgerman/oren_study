@@ -90,7 +90,7 @@ const STUB = () => {
   await p.evaluate(() => window.OREN.showMap()); await L.sleep(400);
   ok('🔊 on the home bubble', await p.locator('#sHome .hbub2 .rdb').count() === 1);
   // 8. parent setting: one place, sets the level
-  await p.evaluate(() => window.TAL.parentPanel('day')); await L.sleep(300);
+  await p.evaluate(() => window.TAL.parentPanel('read')); await L.sleep(300);
   await p.locator('#sPar .pchip', { hasText: 'קורא לבד' }).click(); await L.sleep(200);
   ok('parent sets level 3', await p.evaluate(() => window.TAL.S().set.rdMode === 3 && window.__rd.level() === 3));
   await p.locator('#sPar .pchip', { hasText: 'אוטומטי' }).click(); await L.sleep(200);

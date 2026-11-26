@@ -16,6 +16,7 @@ MIN_STARTS, FINISH_MIN, MIN_REVIEWS, FIX_MAX, NOPRIO_MAX = 5, 0.5, 5, 0.4, 5
 TITLE = "Repeated runner failure: "
 STATE = R.RUNS / "trends.state.json"
 LINE = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) #(\d+): BLOCKED: (.*)$")
+PASS_FAILED = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) pass: FAILED ")   # #357; 'pass: SKIPPED rate limit' is not a failure
 
 def reason_key(why):
     """'runner error FileNotFoundError(2, ...)' / 'integrate.sh exit 4' -> a short stable key (issue numbers and long tails removed)."""
@@ -51,7 +52,9 @@ def findings(log_text, events, open_issues, now):
         alarms.append(("fix", f"{fixes} of {fixes + passes} reviews in 24 h sent the work back"))
     if len(noprio) > NOPRIO_MAX:
         alarms.append(("noprio", f"{len(noprio)} open issues have no P-level (#{', #'.join(map(str, noprio[:8]))}{' …' if len(noprio) > 8 else ''})"))
+    failed = sum(1 for l in log_text.splitlines() if (m := PASS_FAILED.match(l)) and time.mktime(time.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")) >= since)
     summary = (f"24h: started {len(starts)}, merged by runner {len(merged)}, reviews {passes} pass / {fixes} fix, "
+               + (f"passes failed {failed}, " if failed else "") +
                f"blocked in {REPEAT_HOURS} h {sum(len(v) for v in rep.values())}" + (", repeated: " + "; ".join(f"{k} x{len(v)}" for k, v in repeats.items()) if repeats else ""))
     return {"repeats": repeats, "alarms": alarms, "summary": summary}
 

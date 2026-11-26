@@ -50,6 +50,21 @@ const { chromium } = require('playwright');
     ok('problem log counts and merges', iss.e === 2 && iss.v === 2, JSON.stringify(iss));
     await ctx.close();
   }
+  // journey map (#7): no cage and no "0/49" count on the world cards; one progress bar per card that grows with the stars
+  {
+    const ctx = await b.newContext(L.VIEWPORT);
+    await ctx.addInitScript(() => { try { localStorage.clear(); } catch (e) {} window.__fast = true; });
+    const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
+    await p.goto(L.URL); await L.noCoach(p);
+    const j = await p.evaluate(() => { const O = window.OREN; O.save.story.intro = 1; window.TAL_noHome = true; O.showJourney();
+      const cards = [...document.querySelectorAll('#sMap .worlds > .wcard2')];
+      const r = { cards: cards.length, caged: document.querySelectorAll('#sMap .caged').length, count: cards.filter(c => /\d+\s*\/\s*\d+/.test(c.textContent)).length,
+        bars: cards.every(c => c.querySelectorAll('.bar').length === 1), w0: cards[0] && cards[0].querySelector('.bar i').style.width };
+      window.TAL_noHome = false; return r; });
+    ok('journey: no cage, no "0/49" count, one progress bar per world card', j.cards > 0 && j.caged === 0 && j.count === 0 && j.bars && j.w0 === '0%', JSON.stringify(j));
+    ok('no page errors (journey)', !errs.length, errs.join(' | '));
+    await ctx.close();
+  }
   await b.close();
   L.finish('regressions', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message.split('\n')[0]); console.log('RESULT regressions 0 1'); process.exitCode = 1; });

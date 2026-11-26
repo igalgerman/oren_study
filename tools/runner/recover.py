@@ -38,15 +38,24 @@ def pick_space(sp, want):
     """Id of space `want` in {name: id}, else of its old name (SPACE_FALLBACK); never creates one. -> id or ''."""
     return sp.get(want) or sp.get(SPACE_FALLBACK.get(want, ""), "") or ""
 
+FINISHED = ("finished", "exited")   # #332: the only states that mean the program ended; status 'done' (idle between turns) is NOT one
+
+def _labels(t):
+    """#332: herdr labels as {key: value}: a dict, or a list of 'k=v' strings."""
+    L = t.get("labels") or {}
+    if isinstance(L, dict): return {str(k): str(v) for k, v in L.items()}
+    return dict(str(x).split("=", 1) for x in L if "=" in str(x))
+
 def _argv(t):
     fg = t.get("foreground") if isinstance(t.get("foreground"), dict) else {}
-    a = fg.get("argv") or t.get("foreground_argv") or t.get("argv") or []
+    a = fg.get("argv") or t.get("foreground_argv") or t.get("argv") or t.get("command") or t.get("cmd") or []
     return a.split() if isinstance(a, str) else [str(x) for x in a]
 
 def control_role(t):
     """#331: the control role (orchestrator/inbox/inspector) a terminal is, matched by name, by '--remote-control oren-<role>' in its
-    foreground argv, or by its tab ('where' ending in '/ <role>'). A hand-started session has no name. -> role or None"""
+    foreground argv, by its tab ('where' ending in '/ <role>') or by label name=<role> (#332). A hand-started session has no name. -> role or None"""
     if t.get("name") in CONTROL: return t["name"]
+    if _labels(t).get("name") in CONTROL: return _labels(t)["name"]
     a = _argv(t)
     for i, x in enumerate(a[:-1]):
         if x == "--remote-control" and a[i + 1].startswith("oren-") and a[i + 1][5:] in CONTROL: return a[i + 1][5:]
@@ -60,14 +69,14 @@ def live_roles(ts):
 
 def finished(ts):
     """Addresses of terminals whose program ended (a restart leaves them as 'finished')."""
-    return [t["address"] for t in ts if t.get("state") != "live" and t.get("address")]
+    return [t["address"] for t in ts if t.get("state") in FINISHED and t.get("address")]
 
 def finished_control(ts):
     """Watchdog check: control windows (CONTROL + watchdog is not here: it is the one checking) that are finished and have no live twin.
-    -> [(name, address)]"""
+    Matched by control_role, so an unnamed row counts too; only state finished/exited is finished (#332). -> [(role, address)]"""
     live = live_roles(ts)
-    return [(t["name"], t["address"]) for t in ts
-            if t.get("name") in CONTROL and t.get("state") != "live" and t.get("address") and t["name"] not in live]
+    return [(r, t["address"]) for t in ts
+            if t.get("state") in FINISHED and t.get("address") and (r := control_role(t)) and r not in live]
 
 def stale_locks(runs, alive, boot):
     """Remove lock files whose pid is dead or that were taken before this boot (a reused pid is not ours). -> removed names."""
@@ -236,7 +245,9 @@ def main():
         print(text)
         R.hc("send", "orchestrator", text, timeout=30)
     R.RUNS.mkdir(parents=True, exist_ok=True)
-    cleared = stale_locks(R.RUNS, R.pid_alive, boot_time())     # first, so a recover.lock left by a crash does not block us
+    import beatcheck
+    if beatcheck.install(R): print("could not install the beatcheck task (#365): run python tools/runner/beatcheck.py --install")
+    cleared =stale_locks(R.RUNS, R.pid_alive, boot_time())     # first, so a recover.lock left by a crash does not block us
     try:
         with R.FileLock("recover"):
             recover(dict(runs=R.RUNS, alive=R.pid_alive, boot=boot_time(), cleared=cleared, herdr_up=herdr_up, start_herdr=start_herdr,

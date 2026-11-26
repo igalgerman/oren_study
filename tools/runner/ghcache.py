@@ -5,7 +5,7 @@ Every gh call of the runner, the per-lane polls, the panel (remote.py cloud) and
   - anything else runs gh; a rate-limit answer ("API rate limit", "secondary rate limit") is retried after Retry-After / 60 s;
   - a WRITE marks its issue/PR dirty, so reads of it go to GitHub until the next refresh (lists: after any newer write).
 A cache older than MAX_AGE (watchdog down) is never used: everything falls back to plain gh."""
-import json, os, re, time
+import json, os, re, threading, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -30,6 +30,10 @@ def rate_limited(text): return bool(_RL.search(text or ""))
 def wait_s(text, default=60):
     m = re.search(r"retry[- ]after:?\s*(\d+)", text or "", re.I)
     return max(1, min(300, int(m[1]))) if m else default
+
+# #365: set by runner.tick_mode inside a watchdog tick (per thread; survives a module reload): calls are bounded, no rate-limit sleeps
+_TICK = globals().get("_TICK") or threading.local()
+def tick_cap(): return getattr(_TICK, "cap", None)
 
 def with_retry(once, sleep=None, tries=TRIES):
     """once() -> (rc, out). A rate-limit failure is transient: wait and try again (up to `tries`), never raise."""
@@ -142,8 +146,16 @@ def merge_closed(prev, new, open_nums, keep=CLOSED_KEEP):
     by.update({i["number"]: i for i in new if i["number"] not in open_nums})
     return sorted(by.values(), key=lambda i: i.get("closedAt") or "", reverse=True)[:keep]
 
-def refresh(run, now=None):
-    """The ONE reader (watchdog, once a minute). run(cmd) -> (rc, out). Writes and returns the cache; raises on a gh error (old cache stays)."""
+def _rate(run):
+    rc, out = run(["gh", "api", "rate_limit"])                         # free: does not count against the limit
+    try:
+        res = json.loads(out)["resources"] if rc == 0 else {}
+        return {k: [res[k]["remaining"], res[k]["limit"]] for k in ("graphql", "core") if k in res}
+    except (ValueError, KeyError, TypeError): return {}
+
+def refresh(run, now=None, run_owner=None):
+    """The ONE reader (watchdog, once a minute). run(cmd) -> (rc, out). Writes and returns the cache; raises on a gh error (old cache stays).
+    #363: run_owner (set when the GitHub App is on) reads the owner's own budget too -> c['rate_owner']."""
     now = time.time() if now is None else now
     repo = _query(run, True)
     opn, cur = [_flat(i) for i in repo["open"]["nodes"]], repo["open"]["pageInfo"]
@@ -165,11 +177,8 @@ def refresh(run, now=None):
          "prs_complete": len((repo.get("prs") or {}).get("nodes") or []) < 100,
          "lanes": {n["name"]: (n.get("target") or {}).get("committedDate", "") for n in refs.get("nodes") or []},
          "lanes_complete": not (refs.get("pageInfo") or {}).get("hasNextPage"), "rate": dict(prev.get("rate") or {})}
-    rc, out = run(["gh", "api", "rate_limit"])                         # free: does not count against the limit
-    try:
-        res = json.loads(out)["resources"] if rc == 0 else {}
-        c["rate"] = {k: [res[k]["remaining"], res[k]["limit"]] for k in ("graphql", "core") if k in res} or c["rate"]
-    except (ValueError, KeyError, TypeError): pass
+    c["rate"] = _rate(run) or c["rate"]
+    if run_owner: c["rate_owner"] = _rate(run_owner) or dict(prev.get("rate_owner") or {})
     _save(c)
     keep = [l for l in _lines(CALLS) if l.strip() and float(l) >= now - 600]     # trim the logs
     try:
@@ -268,7 +277,7 @@ def call(cmd, raw, now=None, sleep=None):
     if hit: return hit
     def once():
         note_call(now); return raw()
-    rc, out = with_retry(once, sleep)
+    rc, out = with_retry(once, sleep, 1 if tick_cap() else TRIES)
     if is_write(cmd) and write_target(cmd): mark_dirty(write_target(cmd), None if now is None else now + 0.5)
     return rc, out
 
@@ -277,12 +286,14 @@ def status_line(c, calls, now=None):
     now = time.time() if now is None else now
     if not c: return f"GitHub: {calls} calls/min · no cache yet (watchdog reads GitHub once a minute)"
     parts, low = [f"GitHub: {calls} calls/min"], False
-    for k in ("graphql", "core"):
-        if k in (c.get("rate") or {}):
-            rem, lim = c["rate"][k]
-            p = round(100 * rem / lim) if lim else 0
-            low = low or p < ALARM_PCT
-            parts.append(f"{k} {rem}/{lim} ({p}%)")
+    ids = [("app ", c.get("rate") or {}), ("owner ", c["rate_owner"])] if c.get("rate_owner") else [("", c.get("rate") or {})]   # #363
+    for who, rate in ids:
+        for k in ("graphql", "core"):
+            if k in rate:
+                rem, lim = rate[k]
+                p = round(100 * rem / lim) if lim else 0
+                low = low or p < ALARM_PCT
+                parts.append(f"{who}{k} {rem}/{lim} ({p}%)")
     age = int(now - c.get("ts", 0))
     parts.append(f"cache {age} s old")
     if low: parts.append(f"ALARM GitHub budget < {ALARM_PCT}%")

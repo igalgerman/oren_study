@@ -75,7 +75,7 @@ const shot = async (page, name) => { if (!process.env.SHOTS) return; fs.mkdirSyn
   ok(await page.evaluate(() => { const s = HELP._speech('<span class="ltr">8 + 5 = ?</span>'); const t = HELP._speech('הַשָּׁעָה 3:30. עַד 10: 3 + 7 = 10. 12 : 3 = ?'); return /שמונה ועוד חמש שווה כמה/.test(s) && /שלוש וחצי/.test(t) && /עשר, שלוש ועוד שבע/.test(t.replace(':',',')) && /שתים עשרה חלקי שלוש שווה כמה/.test(t) && !/\d/.test(s + t); }), 'voice text: numbers and signs spoken as words');
 
   /* ---------- 2. the ladder in the real play screen ---------- */
-  await page.evaluate(() => { window.__fast = false; HELP.cfg.idle = 60000; HELP.cfg.teachP = 0; HELP.cfg.teachSoloP = 0; window.__sayLog = []; const o = window.OREN; const s0 = o.say; o.say = t => { window.__sayLog.push(t); }; });
+  await page.evaluate(() => { window.__fast = false; HELP.cfg.idle = 60000; HELP.cfg.teachP = 0; window.__sayLog = []; const o = window.OREN; const s0 = o.say; o.say = t => { window.__sayLog.push(t); }; });
   const startMake10 = async () => page.evaluate(() => { const O4 = window.__oren4; const lv = O4.ALLLV.find(l => l.id === 'add-2-0');
     const q = { k: 'bin', l: 8, op: '+', r: 5, res: 13, miss: 'res', ans: 13 }; O4.playLevel(lv, [q, { k: 'bin', l: 7, op: '+', r: 6, res: 13, miss: 'res', ans: 13 }]);
     window.__presented = null; window.__done = null;
@@ -135,14 +135,31 @@ const shot = async (page, name) => { if (!process.env.SHOTS) return; fs.mkdirSyn
   await page.evaluate(() => { HELP.stop(); HELP.cfg.idle = 60000; });
 
   // teach-back
-  await page.evaluate(() => { HELP.cfg.teachP = 1; HELP.cfg.teachGap = 0; HELP.start({ k: 'bin', l: 7, op: '+', r: 5, res: 12, miss: 'res', ans: 12 }, window.__ctx); HELP.wrong(); HELP.wrong(); HELP.right(); });
+  await page.evaluate(() => { HELP.cfg.teachP = 1; HELP.start({ k: 'bin', l: 7, op: '+', r: 5, res: 12, miss: 'res', ans: 12 }, window.__ctx); HELP.wrong(); HELP.wrong(); HELP.right(); });
   await page.waitForSelector('#ov:not([hidden]) .hlp-tb', { timeout: 5000 });
   const tb = await page.evaluate(() => ({ h: document.querySelector('.hlp-tb h2').textContent, n: document.querySelectorAll('.hlp-tb .hlp-opt').length, aloud: !!document.querySelector('.hlp-tb .hlp-aloud') }));
   ok(/תַּסְבִּיר לִי, אֵיךְ עָשִׂיתָ\?/.test(tb.h) && tb.n === 3 && tb.aloud, 'teach-back: 3 explanations + "I said it aloud"');
   await shot(page, '5-teach');
   await page.click('.hlp-tb .hlp-opt');
   ok(await page.evaluate(() => /אֵיזֶה הֶסְבֵּר יָפֶה/.test(document.querySelector('.hlp-tb').textContent) && HELP.teachLog().length === 1), 'any explanation is honored and logged');
-  await page.waitForTimeout(1700); await page.evaluate(() => { HELP.cfg.teachP = 0; });
+  await page.waitForTimeout(1700);
+  // #347: at most once a day, and only after a helped question (never after a solo answer)
+  const tbDay = await page.evaluate(async () => {
+    const wait = ms => new Promise(r => setTimeout(r, ms)); const card = () => !!document.querySelector('#ov:not([hidden]) .hlp-tb');
+    const helpedRight = q => { HELP.start(q, window.__ctx); HELP.wrong(); HELP.wrong(); HELP.right(); };
+    const t = new Date(); t.setDate(t.getDate() + 1); const tom = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+    const s = window.OREN.save, stored = s && s.help && s.help.tday;
+    helpedRight({ k: 'bin', l: 6, op: '+', r: 6, res: 12, miss: 'res', ans: 12 }); await wait(1200); const sameDay = card();
+    HELP._today = () => tom;
+    HELP.start({ k: 'bin', l: 9, op: '+', r: 3, res: 12, miss: 'res', ans: 12 }, window.__ctx); HELP.right(); await wait(1200); const solo = card();
+    helpedRight({ k: 'bin', l: 8, op: '+', r: 4, res: 12, miss: 'res', ans: 12 }); await wait(1200); const nextDay = card();
+    HELP._today = null; return { stored, sameDay, solo, nextDay };
+  });
+  ok(tbDay.stored && !tbDay.sameDay, 'teach-back: a second helped answer the same day → no second card (day saved: ' + tbDay.stored + ')');
+  ok(!tbDay.solo, 'teach-back: never after a solo correct answer');
+  ok(tbDay.nextDay, 'teach-back: the next day it can show again');
+  if (tbDay.nextDay) { await page.click('.hlp-tb .hlp-aloud'); await page.waitForTimeout(1700); }
+  await page.evaluate(() => { HELP.cfg.teachP = 0; });
 
   // spaced return + parent list
   const sp = await page.evaluate(() => { const list = HELP.stuckList(); const it = list.find(x => x.example === '8 + 5 = ?');
