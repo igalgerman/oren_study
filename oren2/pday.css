@@ -1,0 +1,15 @@
+/* #359 parent day view */
+.pdnav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0 8px}
+.pdnav .pdday{font-size:19px;flex:1;text-align:center}
+.pdnav .pchip{min-width:48px;font-size:22px;margin:0}
+.pdnav .pchip:disabled{opacity:.3}
+.pdtot{margin:0 0 8px;font-size:15px}
+.pdnone{margin:6px 0 10px}
+.dlrow.dl-p{opacity:.8}
+.dlrow .pchip{margin:0 6px 0 0;flex:none}
+.pdpend .pc{font-size:13px}
+.pdtops{display:inline-flex;flex-wrap:wrap;gap:6px}
+.pdtop.ok .pc{color:#2e7d32}.pdtop.hard .pc{color:#c0392b}
+.pdback{margin:0 0 10px}
+.pdskip{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35)}
+.pdskip .card{max-width:420px;text-align:center}

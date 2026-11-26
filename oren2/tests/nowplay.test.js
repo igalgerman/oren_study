@@ -24,17 +24,17 @@ const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + 
   await B.goto(BASE); await B.waitForFunction(() => window.OREN && window.OREN.family && window.OREN.save.now, null, { timeout: 20000 }).catch(() => { }); await L.noCoach(B);
   await B.evaluate(() => window.TAL.parentPanel('sum')); await sleep(300);
   const top = () => B.evaluate(() => { const e = document.querySelector('#sPar .pnow'); const btn = e && [...e.querySelectorAll('button')].find(x => x.textContent.includes('לעצור עכשיו'));
-    const tabs = document.querySelector('#sPar .ptabs'); return { txt: e ? e.textContent : null, btn: !!btn, above: !!(e && tabs && (e.compareDocumentPosition(tabs) & 4)) }; });
+    const tot = document.querySelector('#sPar .pdtot'); return { txt: e ? e.textContent : null, btn: !!btn, above: !!(e && tot && (e.compareDocumentPosition(tot) & 4)) }; });
   { const t = await top(); ok('parent sees "playing now" at the top, with one stop button', /משחק עכשיו/.test(t.txt) && t.btn && t.above, JSON.stringify(t)); }
   // the right minutes from the session start: heartbeat 1 min ago, started 25 min ago
   const at = (ago, len) => B.evaluate(([ago, len]) => { const t = Date.now() - ago * 60000, s = t - len * 60000; window.OREN.save.now = { id: null, t, s }; window.TAL.parentPanel('sum');
     const d = new Date(Date.now() - (ago + len) * 60000); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }, [ago, len]);
   { const hm = await at(1, 24); const t = await top(); ok('heartbeat 1 min ago: "משחק עכשיו · 25 דק׳ (מ-HH:MM)"', t.txt && t.txt.includes('משחק עכשיו · 25 דק׳ (מ-' + hm + ')') && t.btn, JSON.stringify(t) + ' ' + hm); }
   { await at(4, 20); const t = await top(); ok('heartbeat 4 min ago: "שיחק לאחרונה", no stop button', /שיחק לאחרונה: היום/.test(t.txt) && !/משחק עכשיו/.test(t.txt) && !t.btn, JSON.stringify(t)); }
-  { await B.evaluate(() => window.TAL.parentPanel('day')); const t = await top(); ok('the line is at the top of the other tabs too', !!t.txt, JSON.stringify(t)); }
+  { await B.evaluate(() => window.TAL.parentPanel('day')); const t = await top(); ok('#359: the line is at the top of the day view', !!t.txt && t.above, JSON.stringify(t)); }
 
   // "today" card: minutes but no activity in today's list -> no "hasn't played yet"; the arcade is named
-  await B.evaluate(() => { window.__tt = () => { window.TAL.parentPanel('sum'); const s = [...document.querySelectorAll('#sPar .psec')].find(x => (x.querySelector('h3') || {}).textContent === 'היום'); return s ? s.querySelector('.pnote').textContent : null; };
+  await B.evaluate(() => { window.__tt = () => { window.TAL.parentPanel('full'); const s = [...document.querySelectorAll('#sPar .psec')].find(x => (x.querySelector('h3') || {}).textContent === 'היום'); return s ? s.querySelector('.pnote').textContent : null; };
     window.__day = () => { const O = window.OREN, d = O.today(); O.save.alog = O.save.alog || {}; return O.save.alog[d] = O.save.alog[d] || { a: {}, s: 0, k: {} }; }; });
   { const t = await B.evaluate(() => { window.TAL.S().time[window.OREN.today()] = 480; window.__day().a = {}; return window.__tt(); }); ok('today: 8 min and no activity -> never "עוד לא שיחק"', t && /8 דק׳/.test(t) && !/עוד לא שיחק/.test(t), t); }
   { const t = await B.evaluate(() => { window.__day().a = { 'arc-balloon': 2 }; return window.__tt(); }); ok('today: arcade play is counted and named', t && /ארקייד/.test(t) && !/arc-/.test(t), t); }
