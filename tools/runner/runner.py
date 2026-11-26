@@ -551,8 +551,34 @@ def deploy_text(log):
     stat(0, "", "deploy", ok=True, d1=d1, url=last.split()[-1])
     if not CFG.get("pregen", False):                       # off until #68: pregen burns the free KV write limit
         return f"deployed {url} (pregen off)"
-    rc, _ = run(["node", "oren2/cf/tools/pregen.js"], cwd=INTEG, env=env, log=log, timeout=1800)
-    return f"deployed {url}" + ("" if rc == 0 else " (pregen failed, see log)")
+    return f"deployed {url} (voice pregen runs in the background)"   # #175: started by process() after the merge lock is released
+
+def pregen_cmd():
+    return ["node", "oren2/cf/tools/pregen.js"]
+
+def start_pregen(log=None, popen=None):
+    """#175: voice pregen in the background, OUTSIDE the merge lock (it can take 30 min); one at a time; never blocks an issue.
+    -> 'started' / 'already running' / 'off' / 'failed: ...'."""
+    if not CFG.get("pregen", False): return "off"
+    lock = FileLock("pregen")
+    if lock.held_by_other(): return "already running"
+    env = dict(os.environ); env.update({k: v for k, v in env_file().items() if k.startswith("CLOUDFLARE_")})
+    try:
+        RUNS.mkdir(exist_ok=True)
+        out = open(RUNS / "pregen.log", "a", encoding="utf-8")
+        out.write(f"\n=== pregen {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n"); out.flush()
+        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        p = (popen or subprocess.Popen)(pregen_cmd(), cwd=str(MAIN_CHECKOUT), env=env, stdout=out, stderr=subprocess.STDOUT, creationflags=flags)
+        lock.path.write_text(str(p.pid))                     # held while that process lives (FileLock checks the pid)
+        if log: log_to(log, f"voice pregen started in the background (pid {p.pid}, .runs/pregen.log)")
+        return "started"
+    except Exception as e:
+        return f"failed: {e!r}"
+
+def log_to(log, text):
+    try:
+        with open(log, "a", encoding="utf-8") as f: f.write(text + "\n")
+    except OSError: pass
 
 def ci_integrate(n, wt, log):
     """CI-based integrate (#74): update the lane with main, push, wait for the PR checks, `gh pr merge --squash`. -> (rc, out) like integrate.sh:
@@ -724,6 +750,7 @@ def process_locked(issue):
         with FileLock("integrate", wait=True):
             stat(n, lane, "merged")
             dep = deploy_main(log) if CFG.get("ci_merge", True) and find_pr_merged(n) else deploy_text(log)
+        if dep.startswith("deployed"): start_pregen(log)    # #175: after the lock, in the background
         m = sync_main(log)                       # result logged (review of #47)
         if m: log_line(m)
         gh("issue", "close", str(n), "--comment", f"Merged to {BRANCH}, tests green, {dep}.")
