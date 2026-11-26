@@ -11,8 +11,9 @@ governor_min = 2
 governor_max = 8
 governor_stop = 99              # 5h at/above this %: no new run (owner 26 Nov 14:10: was 93)
 governor_pace = 3.5             # 5h % per hour per busy cloud lane when the last hour has too few samples
-governor_week_cap = 4           # week above its even pace +10 pts -> at most this many cloud lanes
-express_lanes = 1               # #72: extra lane for issues labelled express (owner-approved), on top of the local + remote lanes
+governor_week_cap = 4           # week projected above governor_week_target at its reset (ahead) -> at most this many cloud lanes
+governor_week_target = 99       # #274: aim for the week % at the weekly reset; projected below (behind) -> governor_max lanes; the 5h stop still wins
+express_lanes = 2               # #72: extra lanes for issues labelled express (owner-approved), on top of the local + remote lanes (26 Nov: 2, two express P0s at once)
 max_core = 3                    # 26 Nov: was 2; #166 waited 59 min for a core slot. LF fixed (#62) + auto-resolve (#160) make parallel core safe enough
 worktree_prefix = "C:/work/Oren_study/wt-"
 bash = "C:/Program Files/Git/bin/bash.exe"   # Git Bash (not WSL's bash)
@@ -26,13 +27,15 @@ parent = ""                     # herdr terminal that gets the notes (e.g. "t2g"
 
 # give each worker/reviewer its own tab in the Herdr app
 # Herdr space where worker/reviewer tabs open (by name)
-herdr_space = "Oren workers"
-control_space = "Oren control"   # #140: tabs orchestrator, inbox, inspector (started by tools/recover.cmd and the watchdog)
+herdr_space = "oren-workers"   # #25: worker/review windows, kept out of the main space
+control_space = "oren"           # #140/#25: the ONE main space: tabs orchestrator, inbox, inspector (tools/orchestrator.cmd, recover.cmd, the watchdog); runner + watchdog have no tab
 recover_issue = 138              # #140: recover reports what it did in one comment on this issue (freeze/recover epic)
 
 # acting observer (observer.py, rules only), run by the watchdog every N minutes
 observer_minutes = 10   # 0 = off
 ai_observer_minutes = 60   # #203: AI observer (ai_observer.py, headless Sonnet, read-only), findings to the orchestrator; 0 = off
+status_minutes = 10             # #306: cloud desks (desks.py): pinned links + live status every N min; keep-alive of the two cloud sessions; 0 = off
+desk_probe_hours = 12           # #306: a PING to each cloud desk this often; no answer -> a new session
 retro_hour = 23                 # #219: nightly retro + handoff (nightly.py, headless Sonnet, read-only) at this local hour; 0 = off
 inspector_handoff = "C:/work/Oren_study/INSPECTOR_HANDOFF.md"   # #219: the nightly run refreshes its UPDATE section
 pregen = true    # voice pregen after each deploy; on since #68 (KV write budget) went live 26 Nov

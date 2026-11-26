@@ -14,6 +14,8 @@ Every minute it checks, deterministically:
       batch trigger: tells the inbox to run /batch once a day, and early when >= 8 ready P2/P3 issues share a lane
   5d. #282 parked.py, once an hour: closed batch -> its open members get ready-for-agent back; a polish list at 5 notes or 24 h -> ready-for-agent P3;
       later/manual 2 h+ with no owner question, run, PR or future date -> 'parked without owner question: #n' to the orchestrator; night report at retro_hour
+  5d. #306 desks.py: keeps the two cloud sessions 'Oren inbox (cloud)' / 'Oren ask (cloud)' alive and every status_minutes
+      writes the session links + dashboard.py --text into ONE pinned issue (edited in place, nothing committed)
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
   4b. orchestrator / inbox / inspector terminal finished (#140)                -> removed by address and started again (recover.py commands)
@@ -268,6 +270,9 @@ def parked_tick():
     import parked
     parked.tick(tell=tell, log=log)
 
+def desks_tick():
+    import desks; desks.run_if_due(log)   # #306: cloud inbox + ask sessions, pinned links + live status (thread; not reloaded: never-two guard)
+
 SYNC_MIN = int(R.CFG.get("sync_minutes", 3))
 _sync = {"last": 0.0, "msg": ""}
 
@@ -286,10 +291,14 @@ def _age_min(iso, now):
     try: return (now - calendar.timegm(time.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S"))) / 60   # GitHub times are UTC
     except (TypeError, ValueError): return 0
 
-def idle_alarms(issues, prs, now, free_since, max_parallel):
+def idle_alarms(issues, prs, now, free_since, max_parallel, finish=(0, 0)):
     """Pure (#117): -> list of (key, text). issues: open, labels as names; prs: open (number, title, updatedAt);
-    free_since = epoch when 'free lane + startable work' was first seen (None = not now)."""
+    free_since = epoch when 'free lane + startable work' was first seen (None = not now);
+    finish = (finished, started) by the runner in 24 h (stats.finish_rate, #148)."""
     out = []
+    done, started = finish
+    if started and done / started < 0.5:
+        out.append(("finish", f"runner finished on its own only {done} of {started} issues in 24 h ({100 * done / started:.0f}%, goal 80%)"))
     running = sum("in-progress" in i["labels"] for i in issues)
     if free_since is not None and now - free_since >= FREE_MIN * 60:
         out.append(("free", f"{max_parallel - running} lane(s) free for {int((now - free_since) / 60)} min while work is ready"))
@@ -326,7 +335,9 @@ def alarms_once(now=None):
         import remote; cloud = remote.cloud(now=now)
     except Exception as e:
         log(f"cloud lanes unreadable: {e!r}"); cloud = []
-    return idle_alarms(issues, json.loads(out2), now, _alarm["free_since"], R.total_lanes()) + cloud_stuck_alarms(cloud, now, float(R.CFG.get("stuck_hours", 2)))
+    import stats
+    finish = stats.finish_rate(stats.read_events(R.RUNS / "stats.jsonl"), now)    # #148
+    return idle_alarms(issues, json.loads(out2), now, _alarm["free_since"], R.total_lanes(), finish) + cloud_stuck_alarms(cloud, now, float(R.CFG.get("stuck_hours", 2)))
 
 def alarm_tick():
     """Every 10 min: idle alarms to the orchestrator (+ watchdog.log); the same alarm at most once an hour."""
@@ -340,7 +351,61 @@ def alarm_tick():
         if t in new: _alarm["sent"][k] = now
     tell("IDLE ALARM (watchdog): " + " · ".join(new))
 
-RELOAD = ("remote", "owner_q", "freeze", "stats", "recover", "conflicts")   # #229: reloaded on change, before runner.py (observer/ai_observer keep in-memory guards: not reloaded)
+KEEP = ("observer", "ai_observer", "nightly")   # #229: in-memory never-two guards: never reloaded (they use R in place, which is reloaded)
+
+def local_modules(here=None):
+    """#300: names of the loaded modules that live in tools/runner (except watchdog itself / __main__)."""
+    here = Path(here or HERE).resolve(); out = []
+    for n, m in list(sys.modules.items()):
+        f = getattr(m, "__file__", None)
+        if n in ("__main__", "watchdog") or not f: continue
+        try:
+            if Path(f).resolve().parent == here: out.append(n)
+        except OSError: pass
+    return sorted(out)
+
+def _imports(path):
+    """Local-looking module names a file imports (top level and inside functions)."""
+    import ast
+    try: tree = ast.parse(Path(path).read_text(encoding="utf-8", errors="replace"))
+    except (OSError, SyntaxError, ValueError): return set()
+    out = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import): out |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level: out.add(node.module.split(".")[0])
+    return out
+
+def dep_order(names, here=None):
+    """#300: names sorted so a module comes after the local modules it imports (cycles: file order)."""
+    here, names, done, seen = Path(here or HERE), list(names), [], set()
+    def visit(n):
+        if n in seen: return
+        seen.add(n)
+        for d in sorted(_imports(here / f"{n}.py")):
+            if d in names and d != n: visit(d)
+        done.append(n)
+    for n in names: visit(n)
+    return done
+
+def reload_all(log, here=None, keep=KEEP):
+    """#300: reload every loaded tools/runner module (not `keep`) in dependency order. Raises on a failed reload
+    (the caller keeps the old stamps, so the next tick retries). -> the names reloaded."""
+    order = [n for n in dep_order(local_modules(here), here) if n not in keep]
+    for n in order: importlib.reload(sys.modules[n])
+    if order: log("reloaded " + ", ".join(f"{n}.py" for n in order))
+    return order
+
+def stamps(here=None):
+    """#300: mtime of every .py in tools/runner (a merge touches several at once)."""
+    out = {}
+    for f in Path(here or HERE).glob("*.py"):
+        try: out[f.name] = f.stat().st_mtime
+        except OSError: pass
+    return out
+
+def reload_self(W):
+    """Load the newest watchdog.py (main() runs as __main__ the first time)."""
+    return importlib.reload(W) if W.__name__ == "watchdog" else importlib.import_module("watchdog")
 
 def parse_args(argv):
     """#229: unknown flags (and --help) end here, before the loop."""
@@ -370,30 +435,21 @@ def main():
     try: loop(a.once)
     finally: lock.__exit__()
 
-def _mtime(name):
-    try: return (HERE / f"{name}.py").stat().st_mtime
-    except OSError: return None
-
 def loop(once):
     log("watchdog started")
-    W, me = sys.modules[__name__], Path(__file__).resolve()
-    stamp, wstamp = (HERE / "runner.py").stat().st_mtime, me.stat().st_mtime
-    mods = {n: _mtime(n) for n in RELOAD}
+    W = sys.modules[__name__]
+    st, force, seen = stamps(), False, set()
     while True:
         try:
-            for n in RELOAD:                  # #229: remote.py & co changed: reload them first, so runner.py and the ticks use the new code
-                t = _mtime(n)
-                if t != mods[n]:
-                    mods[n] = t
-                    if n in sys.modules: importlib.reload(sys.modules[n]); log(f"reloaded {n}.py")
-            m = (HERE / "runner.py").stat().st_mtime
-            if m != stamp:                    # runner.py changed: pick up the new select()/park logic without restarting this window
-                stamp = m; importlib.reload(R); log("reloaded runner.py")
-            w = me.stat().st_mtime
-            if w != wstamp:                   # #127: watchdog.py changed (a merged fix): load it too, no manual restart
-                wstamp = w; W = importlib.reload(W) if W.__name__ == "watchdog" else importlib.import_module("watchdog")
-                log("reloaded watchdog.py")
+            now = stamps()
+            if now != st or force:            # #300: a merged fix (any tools/runner file) or a half-updated tick: reload ALL, in dependency order, then watchdog.py
+                reload_all(log)
+                W = reload_self(W); log("reloaded watchdog.py")
+                st, force = now, False        # only after a clean reload: a failed one is retried next tick
             W.tick()
+        except AttributeError as e:           # #300: new code calling an old module: log once, full reload next tick
+            if repr(e) not in seen: seen.add(repr(e)); log(f"error: {e!r} (full reload)")
+            force = True
         except Exception as e:
             log(f"error: {e!r}")
         if once: return
@@ -420,6 +476,7 @@ def tick():
     ai_observer_tick()
     nightly_tick()
     parked_tick()       # #282
+    desks_tick()
     sync_tick()
     alarm_tick()
     trends_tick()
