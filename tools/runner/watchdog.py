@@ -292,6 +292,8 @@ def main():
 
 def tick():
     """One watchdog pass (main() calls it on the newest loaded copy of this file)."""
+    try: (R.RUNS / "watchdog.beat").write_text(str(int(time.time())), encoding="utf-8")   # #171: liveness for the dashboard
+    except OSError: pass
     ts = windows()
     check_windows(ts)
     check_lanes(ts)
@@ -301,6 +303,21 @@ def tick():
     sync_tick()
     alarm_tick()
     trends_tick()
+    ai_tick()
+
+_ai = {"running": False}
+def ai_tick():
+    """#171: hourly AI assessment for the dashboard, in a background thread (claude -p can take a minute)."""
+    if _ai["running"] or not R.CFG.get("ai_model", "haiku"): return
+    import dashboard; importlib.reload(dashboard)
+    a = dashboard.ai_load()
+    if a and time.time() - a.get("at", 0) < dashboard.AI_EVERY_MIN * 60: return
+    _ai["running"] = True
+    def work():
+        try: dashboard.ai_tick(log)
+        except Exception as e: log(f"ai assessment error: {e!r}")
+        finally: _ai["running"] = False
+    threading.Thread(target=work, daemon=True).start()
 
 def trends_tick():
     """#155: hourly patterns over 24 h (repeated BLOCKED reasons, finish/fix rates); reloaded so merged fixes apply."""

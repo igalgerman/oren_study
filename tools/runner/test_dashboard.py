@@ -38,3 +38,17 @@ assert "Forecast (estimate" in t2 and "finished by itself 1 (50%)" in t2, t2
 pg = D.page(m2)
 assert "ESTIMATE" in pg and "How the work really gets done" in pg and "Recently finished" in pg
 print("ok dashboard v2")
+# #171 oversight + AI card
+wl = "\n".join(["2026-11-26 07:30:00 told orchestrator: IDLE ALARM (watchdog): PR #31 quiet", "2026-11-26 07:40:00 told orchestrator: TREND ALARM: x",
+                "2026-11-26 07:50:00 closed window issue-5 (t1, was live)", "2026-11-26 07:55:00 error: boom", "2026-11-26 07:56:00 trends: 24h: started 3",
+                "2026-11-24 07:00:00 told orchestrator: too old", "garbage"])
+o = D.oversight(wl, now - 30, now - 600, "09:32 · 0 actions", now - 4000, now)
+assert (o["told"], o["idle"], o["trend"], o["closed_windows"], o["errors"]) == (2, 1, 1, 1, 1), o
+assert o["last_told"][0][1].startswith("TREND") and o["trends_last"] == "trends: 24h: started 3"
+assert "STOPPED" not in D.ov_text(o) and "STOPPED" in D.ov_text(D.oversight("", now - 900, None, "", None, now))
+m2["ov"] = o; m2["ai"] = {"at": now - 60, "model": "haiku", "text": "- **Good:** things go well.\n- Risk: <b>x</b>"}
+pg = D.page(m2)
+assert "Oversight: who watches the system" in pg and "STOPPED?" in pg     # observer last ran 67 min ago > 60
+assert "<b>Good:</b>" in pg and "AI assessment" in pg and "&lt;b&gt;x&lt;/b&gt;" in pg and "may be wrong" in pg
+m2["ai"] = None; assert "Not written yet" in D.page(m2)
+print("ok dashboard ai/oversight")
