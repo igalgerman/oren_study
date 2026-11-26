@@ -552,6 +552,7 @@ def issue_over(n, since, run_=None):
         return False
 
 _FRESH = {}   # #364: file -> the newest loaded copy of that module
+_FRESH_FAILED = {}   # #378: file -> the mtime whose copy failed to load (logged once)
 
 def _file_mtime(m):
     try: return Path(m.__file__).stat().st_mtime
@@ -560,7 +561,7 @@ def _file_mtime(m):
 def fresh(mod, log=None):
     """#364: a run in flight never kept its start-time code: -> the newest copy of mod. The file changed on disk since it was
     loaded -> reloaded (runner.py running as __main__: a fresh copy is imported, never re-run as a script). A half-written
-    file -> the old copy this poll (logged), retried at the next poll. First look only stamps the module."""
+    file -> the old copy (logged once), retried when the file changes again (#378). First look only stamps the module."""
     f = getattr(mod, "__file__", None)
     cur = _FRESH.get(f, mod)
     t = _file_mtime(cur)
@@ -568,14 +569,22 @@ def fresh(mod, log=None):
     if getattr(cur, "_loaded_mtime", None) is None:
         cur._loaded_mtime = t; return cur
     if t == cur._loaded_mtime: return cur
+    if _FRESH_FAILED.get(f) == t: return cur             # #378: this broken copy was tried already: no retry, no log line per poll
     import importlib, importlib.util
     try:
-        if cur.__name__ == "__main__":
-            spec = importlib.util.spec_from_file_location(Path(f).stem, f)
-            new = importlib.util.module_from_spec(spec); spec.loader.exec_module(new)
+        if cur.__name__ == "__main__":                   # #378: imported by path under a fixed name, registered before it runs
+            name = Path(f).stem; prev = sys.modules.get(name)  # (its own top level reads sys.modules[__name__])
+            spec = importlib.util.spec_from_file_location(name, f)
+            new = importlib.util.module_from_spec(spec); sys.modules[name] = new
+            try: spec.loader.exec_module(new)
+            except BaseException:
+                if prev is None: sys.modules.pop(name, None)
+                else: sys.modules[name] = prev
+                raise
         else:
             new = importlib.reload(cur)
     except Exception as e:
+        _FRESH_FAILED[f] = t
         if log: log(f"fresh: {Path(f).name} not reloaded yet ({e!r})")
         return cur
     new._loaded_mtime = t; _FRESH[f] = new

@@ -46,6 +46,32 @@ write("zz_script", "X = 2\nif __name__ == '__main__': raise SystemExit('ran main
 assert r.fresh(fake_main).X == 2 and r.fresh(fake_main).X == 2                     # the copy is kept for the next polls
 print("ok fresh copy of a script")
 
+# ---- #378: runner.py itself running as __main__ ('runner' not in sys.modules): fresh copy loads, no KeyError('runner') ----
+import shutil
+rd = Path(tempfile.mkdtemp(prefix="selfcopy-test-")); rp = rd / "runner.py"; shutil.copy(r.__file__, rp); shutil.copy(r.HERE / "config.toml", rd / "config.toml")
+me = types.ModuleType("__main__"); me.__file__ = str(rp)
+logs = []
+assert r.fresh(me, logs.append) is me                                               # first look: stamped
+t = time.time() + 40; os.utime(rp, (t, t))
+saved = sys.modules.pop("runner")                                                   # as in a live run: runner is __main__ only
+try:
+    new = r.fresh(me, logs.append)
+finally:
+    sys.modules["runner"] = saved
+assert new is not me and hasattr(new, "fresh_self") and hasattr(new, "issue_over"), logs
+assert not any("not reloaded" in m for m in logs) and sum("reloaded runner.py" in m for m in logs) == 1, logs
+print("ok runner.py as __main__ reloads (#378)")
+
+# ---- #378: a file that stays broken logs once per change on disk, never once per poll ----
+write("zz_broken", "X = 1\n")
+import zz_broken
+r.fresh(zz_broken); write("zz_broken", "X = (\n", 50); logs = []
+for _ in range(5): assert r.fresh(zz_broken, logs.append).X == 1
+assert len(logs) == 1 and "not reloaded" in logs[0], logs
+write("zz_broken", "X = 3\n", 60)
+assert r.fresh(zz_broken, logs.append).X == 3 and r.fresh(zz_broken, logs.append).X == 3 and len(logs) == 2, logs
+print("ok one log line per change, not per poll (#378)")
+
 # ---- the runner's own wait loops go through fresh() (status, review status, issue_over) ----
 src = (Path(r.__file__)).read_text(encoding="utf-8")
 body = src[src.index("def process_locked"):src.index("def close_windows")]
