@@ -1173,6 +1173,8 @@ const evHash=s=>{let h=5381;s=String(s);for(let i=0;i<s.length;i++)h=(h*33+s.cha
 function evScreen(id){const now=Date.now();if(id===EV.s)return;track('scr',{s:id,from:EV.s,ms:EV.s?now-EV.sT:0});EV.s=id;EV.sT=now;}
 function evMission(m,lv){EV.m=String(m||'');EV.lv=lv?String(lv):'';EV.q='';track('mis',{m:EV.m,lv:EV.lv});}
 function evQ(key,d){EV.q=evHash(key);EV.qT=Date.now();track('q',Object.assign({q:EV.q},d));}
+/* #436: a tap in the first 400 ms of a new question is ignored, so a double tap from the last question cannot answer this one */
+function tapTooSoon(){return !!EV.qT&&Date.now()-EV.qT<D(400);}
 function evAns(ok,d){track('ans',Object.assign({q:EV.q,ok:ok?1:0,ms:EV.qT?Date.now()-EV.qT:-1},d));}
 function evKeep(){try{if(EV.buf.length)localStorage.setItem(EV.k,JSON.stringify({sid:EV.sid,ev:EV.buf}));else localStorage.removeItem(EV.k);}catch(x){}}
 function evFlush(why){try{if(!FAM.on||kidSave||!EV.buf.length)return;const hide=why==='hide';
@@ -1906,7 +1908,7 @@ function playLevel(lv,preset){
   const hintbox=h('div','hintbox');hintbox.id='hint';hintbox.hidden=true;
   left.append(top,qa,hintRow,hintbox);
   const pad=h('div','pad');pad.id='pad';
-  ['1','2','3','4','5','6','7','8','9','del','0','go'].forEach(k=>{const b=h('button','key'+(k==='go'?' go':''),k==='del'?ICON.del:k==='go'?ICON.check:k);b.dataset.k=k;b.setAttribute('aria-label',k==='del'?'מחק':k==='go'?'בדוק':k);b.onclick=()=>press(k);pad.appendChild(b);});
+  ['1','2','3','4','5','6','7','8','9','del','0','go'].forEach(k=>{const b=h('button','key'+(k==='go'?' go':''),k==='del'?ICON.del:k==='go'?ICON.check:k);b.dataset.k=k;b.setAttribute('aria-label',k==='del'?'מחק':k==='go'?'בדוק':k);b.onclick=()=>{if(!tapTooSoon())press(k);};pad.appendChild(b);});
   wrap.append(left,pad);s.appendChild(wrap);
   const bub=$('#bubble');if(bub)bub.onclick=()=>say(sayNow);
   if(mode==='boss'){sayNow=u.final?'המבלבל! הקרב האחרון.':'ענק הבלוקים! כל תשובה נכונה מורידה לו בלוק.';}
@@ -1921,7 +1923,7 @@ function showQ(){
   else if(q.k==='ch'||(p.mode==='bubbles'&&['bin','add3','eq','word'].includes(q.k))){
     const isCh=q.k==='ch';const opts=isCh?q.opts:bubbleOpts(q);const ansI=isCh?q.ans:opts.indexOf(q.ans);
     qa.innerHTML=questionHTML(q);const row=h('div',isCh?`chs ${q.ltr?'ltr':''}`:'bubs');
-    opts.forEach((o,i)=>{const b=h('button',isCh?`chb ${q.cls}`:'bubb',String(o));b.dataset.i=i;b.onclick=()=>choose(i,b);row.appendChild(b);});
+    opts.forEach((o,i)=>{const b=h('button',isCh?`chb ${q.cls}`:'bubb',String(o));b.dataset.i=i;b.onclick=()=>{if(!tapTooSoon())choose(i,b);};row.appendChild(b);});
     qa.appendChild(row);p.choice={opts,ans:ansI,row,bub:!isCh};pad.hidden=true;}
   else{qa.innerHTML=questionHTML(q);p.boxes=[...qa.querySelectorAll('.ans')].map((el,i)=>({el,val:'',ans:answersOf(q)[i],done:false}));p.bi=0;
     p.boxes.forEach((b,i)=>b.el.onclick=()=>{if(!b.done){p.bi=i;renderBoxes();}});renderBoxes();pad.hidden=false;}
@@ -2158,7 +2160,7 @@ function showFinal(){setScreen('sFinal','final',showMap);$('#hudMid').innerHTML=
 
 updateGems();cloudInit();
 const BUS={};function emit(e,...a){(BUS[e]||[]).forEach(f=>{try{f(...a);}catch(x){console.error(x);}});}
-window.OREN={get save(){return save;},persist,track,evFlush,evMission,evQ,evAns,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l)=>say(t,l),get heVoice(){return heVoice;},setVoicePref,
+window.OREN={get save(){return save;},persist,track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l)=>say(t,l),get heVoice(){return heVoice;},setVoicePref,
   set sayNow(v){sayNow=v;AUTO.gen++;},get sayNow(){return sayNow;},hud:html=>{$('#hudMid').innerHTML=html;document.body.classList.toggle('act',!document.body.classList.contains('inpar')&&/class="chip"/.test(html));},resetAll:keep=>{const snd=save.snd;save=blank();save.snd=snd;Object.assign(save,keep||{});persist();renderStart();},on:(e,f)=>{(BUS[e]=BUS[e]||[]).push(f);},emit,blank};
 window.__oren4={renderAudio,THEMES,RAW,setTheme,get mus(){return mus;},WORLDS,ALLLV,ALLU,hintHTML,hintData,uniq,colInit,colNeedBorrow,digs,qkey,bubbleOpts,storyFor,teachCheck,HEROES,get play(){return play;},get save(){return save;},startLevel,playLevel,showMap,showWorld,kingdom,studio,teacher,playSpeed,setFast:v=>{window.__fast=v;},mergeIn,migrateOld,lp};
 })();
