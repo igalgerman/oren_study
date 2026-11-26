@@ -160,3 +160,9 @@ test('#297 cloud row waiting review shows the PR number even without a PR in the
   expect(t1).toMatch(/^.{1,3}#269 Quiet . waiting review . PR #270 . \d\d:\d\d$/)
   expect(panel(base({ open, prs: [], cloud: [cl({ manual: true })] })).lanes[0]!.text).toMatch(/PR #270 . manual . \d\d:\d\d$/)
 })
+
+test('#306 the panel shows the cloud desks line (.runs/desks.json text), red when a desk is down', () => {
+  expect(panel(base()).desks).toBe(null)
+  expect(panel(base({ desks: 'cloud desks: inbox ok · ask ok' })).desks).toEqual({ text: 'cloud desks: inbox ok · ask ok', tone: 'dim' })
+  expect(panel(base({ desks: 'cloud desks: inbox ok · ask down' })).desks!.tone).toBe('red')
+})

@@ -98,7 +98,7 @@ print("ok park_issue labels")
 _names = ("gh", "run", "set_labels", "stat", "set_where", "issue_over", "tell_orchestrator", "find_pr", "branch_of", "agent",
           "ci_integrate", "remote_review", "remote_fix", "remote_worker", "find_pr_merged", "deploy_main", "sync_main", "remove_worktree", "close_windows")
 _saved = {k: getattr(r, k) for k in _names}
-def e2e(n, step, verdicts, integ, where="remote", stored=""):
+def e2e(n, step, verdicts, integ, where="remote", stored="", real_review=False):
     calls = {"agent": [], "review": 0, "fix": 0, "worker": 0, "labels": [], "comments": []}
     r.gh = lambda *a, **k: (calls["comments"].append(a[3]) if a[:2] == ("issue", "comment") else None) or (0, "sha1")
     r.run = lambda *a, **k: (0, ""); r.stat = lambda *a, **k: None; r.set_where = lambda *a: None
@@ -107,7 +107,8 @@ def e2e(n, step, verdicts, integ, where="remote", stored=""):
     r.find_pr = lambda n: 99; r.branch_of = lambda n: f"lane/{n}"
     r.remote_worker = lambda *a, **k: calls.__setitem__("worker", calls["worker"] + 1) or "RESULT: DONE"
     vs = list(verdicts)
-    r.remote_review = lambda *a, **k: (calls.__setitem__("review", calls["review"] + 1), ("", vs.pop(0)))[1]
+    if not real_review:
+        r.remote_review = lambda *a, **k: (calls.__setitem__("review", calls["review"] + 1), ("", vs.pop(0)))[1]
     r.remote_fix = lambda *a, **k: calls.__setitem__("fix", calls["fix"] + 1) or "RESULT: DONE"
     r.agent = lambda name, *a, **k: calls["agent"].append(name) or ("", "RESULT: STUCK cannot")
     ig = list(integ)
@@ -139,6 +140,17 @@ assert res.startswith("DONE") and c["fix"] == 0 and c["review"] == 1, (res, c)  
 res, c = e2e(193, "resolve", [], [(2, "CONFLICTS\na.js"), (0, "")], stored="VERDICT: PASS")
 assert c["review"] == 0 and c["agent"], (res, c)                                              # PASS head: resolve in integrate, no new review
 print("ok resolve-resume reviews a head without a PASS before merging")
+
+# #322: the cloud reviewer never starts (3 tries) -> blocked + needs-orchestrator with the real error, no local reviewer, PR kept
+_rs, _sleep, _starts, _slept = r.remote.start, r.time.sleep, [], []
+r.remote.start = lambda *a, **k: _starts.append(1) or {"ok": False, "error": "timeout of 15000ms exceeded"}
+r.time.sleep = _slept.append
+try: res, c = e2e(322, "review", [], [], real_review=True)
+finally: r.remote.start, r.time.sleep = _rs, _sleep
+assert res.startswith("BLOCKED") and "timeout of 15000ms exceeded" in res and len(_starts) == 3, (res, _starts)
+assert _slept[:2] == [60, 300] and c["agent"] == [] and c["worker"] == 0, (_slept, c)        # no local reviewer window, nothing redone
+assert any("needs-orchestrator" in a for a, _ in c["labels"]) and not any("ready-for-human" in a for a, _ in c["labels"]), c["labels"]
+print("ok cloud reviewer start retried 60 s / 300 s, then needs-orchestrator")
 
 # remote.status: only this run's PR (an older PR that says Fixes #n is not this run's)
 def fake_run(cmd):

@@ -112,3 +112,13 @@ N.GH = FakeGH(); N._batch_chk["at"] = 0
 N.batch_tick(send, logs.append, None, bnow + 3 * 86400); N.batch_tick(send, logs.append, None, bnow + 3 * 86400 + 60)
 assert len([c for c in N.GH.calls if c[:2] == ["issue", "list"]]) == 1                              # issue list read at most every 30 min
 print("ok batch")
+
+# #282: night report once a day at retro_hour: every open issue not ready-for-agent with its reason; no reason = alarm
+lt = lambda h: time.mktime((2026, 11, 26, h, 5, 0, 0, 0, -1))
+iss = [{"number": 5, "title": "t5", "state": "OPEN", "labels": ["later"], "body": "", "updatedAt": "2026-11-20T00:00:00Z", "createdAt": "2026-11-20T00:00:00Z"}]
+told = []
+assert N.night_report_if_due(told.append, lambda s: None, hour=23, now=lt(22), data=lambda: (iss, [], set())) is None and told == []
+assert N.night_report_if_due(told.append, lambda s: None, hour=23, now=lt(23), data=lambda: (iss, [], set())).startswith("NIGHT REPORT")
+assert len(told) == 1 and "ALARM no reason: #5" in told[0], told
+assert N.night_report_if_due(told.append, lambda s: None, hour=23, now=lt(23) + 60, data=lambda: (iss, [], set())) is None and len(told) == 1   # once a day
+print("nightly #282 night report OK")

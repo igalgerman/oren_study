@@ -13,7 +13,7 @@ ev = [{"ts": now - 3600, "issue": 1, "event": "start"}, {"ts": now - 1800, "issu
       {"ts": now - 600, "issue": 0, "event": "deploy", "ok": True}]
 m = D.model(issues, prs, ev, now)
 assert m["open"] == 6 and m["by_prio"] == {"P0": 1, "P1": 1, "P2": 2, "P3": 0, "-": 2}, m["by_prio"]
-assert {k: [r["n"] for r in v] for k, v in m["by_state"].items()} == {"running": [1], "needs_you": [2], "blocked": [3], "waiting": [4], "ready": [5], "other": [6]}, m["by_state"]
+assert {k: [r["n"] for r in v] for k, v in m["by_state"].items() if v or k in ("running", "needs_you", "blocked", "waiting", "ready", "other")} == {"running": [1], "needs_you": [2], "blocked": [3], "waiting": [4], "ready": [5], "other": [6]}, m["by_state"]
 assert (m["closed_24h"], m["closed_7d"], m["closed_total"], m["merged_24h"], m["open_prs"]) == (1, 2, 2, 1, 1), (m["closed_24h"], m["closed_7d"], m["closed_total"], m["merged_24h"], m["open_prs"])
 assert len(m["days"]) == 14 and m["days"][0]["label"] == "13 Nov" and m["days"][-1]["closed"] == 1 and m["days"][-1]["open_end"] == 6, m["days"][-1]
 t = D.text(m)
@@ -152,3 +152,13 @@ m4 = D.model(ic4, prs, ev, now, "", cl4)
 assert m4["cloud_n"] == 1 and 13 not in [r["n"] for r in m4["running"]], (m4["cloud_n"], m4["running"])
 assert m4["lanes"] == f"local 1/{D.R.CFG.get('local_lanes', 3)} · cloud 1/{D.R.CFG.get('remote_lanes', 0)}", m4["lanes"]
 print("ok dashboard remote lanes")
+# #282: batch members count under their batch; manual and later have their own counts, not 'not triaged'
+pk = [I(40, "OPEN", ["ready-for-agent", "P2"], body="- [ ] #41  a\n- [ ] #42  b") | {"title": "Batch: x (#41, #42)"},
+      I(41, "OPEN", ["P2"]), I(42, "OPEN", ["P2"]), I(43, "OPEN", ["manual"]), I(44, "OPEN", ["later"]), I(45, "OPEN", [])]
+mp = D.model(pk, prs, ev, now)
+assert {k: [r["n"] for r in v] for k, v in mp["by_state"].items() if v} == {"ready": [40], "batch": [41, 42], "manual": [43], "later": [44], "other": [45]}, mp["by_state"]
+assert [r["batch"] for r in mp["by_state"]["batch"]] == [40, 40] and mp["plan"][41] == "in batch #40" and mp["plan"][43] == "manual"
+tp = D.text(mp)
+assert "in a batch 2" in tp and "not triaged / other 1" in tp and "In batches: #40 (#41 #42)" in tp, tp
+assert "In a batch" in D.page(mp)
+print("dashboard #282 OK")

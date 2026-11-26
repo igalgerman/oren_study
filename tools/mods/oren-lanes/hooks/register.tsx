@@ -106,7 +106,7 @@ export const register: Register = on => {
         } : {
           panel: panel({
             now, open: open ?? [], closed, prs, wins: windows, cloud, events: parseEvents(await readText(`${RUNS}/stats.jsonl`)), where,
-            gov: parseGov(await readText(`${RUNS}/governor.json`)) as Gov | null, limits, questions, questionIssue, pc, refusedAt,
+            gov: parseGov(await readText(`${RUNS}/governor.json`)) as Gov | null, limits, questions, questionIssue, pc, refusedAt, desks: parseGov(await readText(`${RUNS}/desks.json`))?.text ?? '',   // #306
             cfg: parseConfig(await readText(CONFIG)),
           }),
           errors, updatedAt: now,
@@ -150,6 +150,7 @@ export const register: Register = on => {
         {p.header.map((r, k) => row(r, k === 0))}
         {p.needsYou ? row(p.needsYou, true) : null}
         {p.pc ? row(p.pc) : null}
+        {p.desks ? row(p.desks) : null}
         {d.errors.map(s => row({ text: s, tone: 'dim' }))}
         {head(p.lanesHead)}
         {row(p.starts)}

@@ -2,17 +2,17 @@
 The WHOLE recovery after a restart (planned freeze #139, or a crash), in order:
   1. clears stale .runs/*.lock files (dead pid, or taken before this boot), starts Herdr if it is not running
   2. removes finished terminals left by the restart (by address, never by name)
-  3. layout: space 'Oren control' (control_space) holds the tabs orchestrator, inbox, inspector; worker windows go to herdr_space ('Oren workers')
+  3. layout: space 'oren' (control_space) holds the tabs orchestrator, inbox, inspector; worker windows go to herdr_space ('oren-workers')
   4. starts orchestrator, inbox, inspector when missing (same commands as the watchdog's restart check, CONTROL below)
   5. every open in-progress issue (local or cloud) whose runner is dead: a half-done merge in its worktree is reset to the pushed branch,
      in-progress is removed (ready-for-agent kept/added) so the runner restarts it; .runs/frozen is removed first
   6. starts the watchdog when missing (it starts the runner passes), then reports in ONE issue comment (recover_issue) and to the orchestrator
-Usage: python recover.py [--install]"""
+Usage: python recover.py [--install | --open]   (--open = tools/orchestrator.cmd, #25: steps 1-4 + watchdog only)"""
 import json, os, shutil, sys, time
 from pathlib import Path
 
 TASK = "Oren recover"
-CONTROL = ("orchestrator", "inbox", "inspector")    # the 3 Claude sessions on the PC, tabs of 'Oren control' in this order
+CONTROL = ("orchestrator", "inbox", "inspector")    # the 3 Claude sessions on the PC, tabs of 'oren' in this order
 INBOX_PROMPT = ("You are the INBOX of the Oren game multi-agent system (repo igalgerman/oren_study). Read CLAUDE.md and FLOW.md. "
                 "The owner talks to you: a new idea -> /idea, a clear task -> /task, a bug -> /bug, a status question -> /status. "
                 "Write every new issue the way docs/agents/skills/writing-for-agents.md says. Propose each new issue's model label (docs/agents/models.md). Do nothing else; wait for the owner.")
@@ -63,6 +63,35 @@ def dead_runs(issues, live_names, lock_held):
     return sorted(i["number"] for i in issues if "in-progress" in i["labels"] and "manual" not in i["labels"]
                   and f"run-{i['number']}" not in live_names and not lock_held(i["number"]))
 
+def start_tabs(d, lines):
+    """The 3 tabs of the main space (control_space, 'oren'), in order, when missing. -> names of live terminals."""
+    sp = d["spaces"]()
+    ctl = sp.get(d["control_space"], "")
+    for s in (d["control_space"], d["worker_space"]):
+        if s not in sp: lines.append(f"space '{s}' not found in Herdr: its windows open in the default space")
+    live = {t.get("name") for t in d["terminals"]() if t.get("state") == "live"}
+    for name in CONTROL:
+        if name in live: continue
+        rc = d["start"](name, ctl)
+        lines.append(f"started {name}" + (f" (FAILED, rc {rc})" if rc else ""))
+    return live
+
+def start_watchdog(d, live, lines):
+    """The watchdog runs with no tab (no space label); it starts the runner passes, which have no tab either."""
+    if "watchdog" in live: return
+    rc = d["start"]("watchdog", "")
+    lines.append("started watchdog" + (f" (FAILED, rc {rc})" if rc else ""))
+
+def open_oren(d):
+    """#25, tools/orchestrator.cmd (double-click): Herdr up, space 'oren' = tabs orchestrator, inbox, inspector; the watchdog with no tab.
+    Only starts what is missing; touches no issue and no other terminal. d: herdr_up, start_herdr, terminals, spaces, control_space,
+    worker_space, start(name, space_id). -> lines (what it did)"""
+    lines = []
+    if not d["herdr_up"]():
+        d["start_herdr"](); lines.append("started Herdr")
+    start_watchdog(d, start_tabs(d, lines), lines)
+    return lines
+
 def recover(d):
     """One recovery. d = dict of callables (fakes in tests):
     runs, alive(pid), boot, herdr_up() -> bool, start_herdr(), terminals() -> hc ls --all, rm(address), spaces() -> {name: id},
@@ -76,15 +105,7 @@ def recover(d):
     gone = finished(d["terminals"]())
     for a in gone: d["rm"](a)
     if gone: lines.append(f"removed {len(gone)} finished terminal(s)")
-    sp = d["spaces"]()
-    ctl = sp.get(d["control_space"], "")
-    for s in (d["control_space"], d["worker_space"]):
-        if s not in sp: lines.append(f"space '{s}' not found in Herdr: its windows open in the default space")
-    live = {t.get("name") for t in d["terminals"]() if t.get("state") == "live"}
-    for name in CONTROL:                              # in this order: the tabs of 'Oren control'
-        if name in live: continue
-        rc = d["start"](name, ctl)
-        lines.append(f"started {name}" + (f" (FAILED, rc {rc})" if rc else ""))
+    live = start_tabs(d, lines)
     issues = d["issues"]()
     restarted = []
     if issues is None:
@@ -102,9 +123,7 @@ def recover(d):
             lines.append(f"#{n} ({d['where'](n)}): runner was dead; in-progress removed so the runner restarts it" + (f"; {note}" if note else ""))
         fz = runs / "freeze.json"
         if fz.exists(): fz.replace(runs / "freeze.recovered.json"); lines.append("freeze.json used up (now freeze.recovered.json)")
-    if "watchdog" not in live:
-        rc = d["start"]("watchdog", "")
-        lines.append("started watchdog" + (f" (FAILED, rc {rc})" if rc else ""))
+    start_watchdog(d, live, lines)
     text = "RECOVER after a restart:\n" + "\n".join(f"- {l}" for l in lines or ["nothing to do: everything was running"])
     if issues is not None: d["comment"](text)
     d["tell"](text.replace("\n", " "))
@@ -129,14 +148,14 @@ def _R():
     import runner as R
     return R
 
-def control_space(R): return R.CFG.get("control_space", "Oren control")
+def control_space(R): return R.CFG.get("control_space", "oren")
 
 def spaces(R):
     try: return {s.get("name"): s.get("id") for s in json.loads(R.run([R.HERDR_APP, "ls"], timeout=30)[1]).get("spaces", [])}
     except Exception: return {}
 
 def start_control(R, name, space_id=None):
-    """Start orchestrator / inbox / inspector (in 'Oren control') or the watchdog. Used by recover and by the watchdog's restart check."""
+    """Start orchestrator / inbox / inspector (in 'oren') or the watchdog. Used by recover and by the watchdog's restart check."""
     if space_id is None: space_id = spaces(R).get(control_space(R), "") if name in CONTROL else ""
     mc = R.CFG.get("main_checkout", str(R.ROOT))
     cwd, argv = control_argv(name, mc, Path(mc) / "tools" / "mods" / "oren-lanes", shutil.which("claude") or "claude",
@@ -162,6 +181,12 @@ def main():
         for _ in range(18):                           # up to 90 s for the app and its server
             time.sleep(5)
             if herdr_up(): return
+    if "--open" in sys.argv:                          # #25: tools/orchestrator.cmd
+        for l in open_oren(dict(herdr_up=herdr_up, start_herdr=start_herdr, terminals=terminals, spaces=lambda: spaces(R),
+                                control_space=control_space(R), worker_space=R.CFG.get("herdr_space", "oren-workers"),
+                                start=lambda name, sid: start_control(R, name, sid))) or ["everything was running"]:
+            print(l)
+        return 0
     def issues():
         for k in range(10):                           # at logon the network may come up late
             rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels")
@@ -189,7 +214,7 @@ def main():
         with R.FileLock("recover"):
             recover(dict(runs=R.RUNS, alive=R.pid_alive, boot=boot_time(), cleared=cleared, herdr_up=herdr_up, start_herdr=start_herdr,
                          terminals=terminals, rm=lambda a: R.hc("rm", a, timeout=30), spaces=lambda: spaces(R),
-                         control_space=control_space(R), worker_space=R.CFG.get("herdr_space", "Oren workers"),
+                         control_space=control_space(R), worker_space=R.CFG.get("herdr_space", "oren-workers"),
                          start=lambda name, sid: start_control(R, name, sid), issues=issues, where=R.where_of,
                          lock_held=lambda n: R.FileLock(f"issue-{n}").held_by_other(), reset_merge=reset_merge,
                          relabel=lambda n: R.set_labels(n, add=["ready-for-agent"], remove=["in-progress"]),

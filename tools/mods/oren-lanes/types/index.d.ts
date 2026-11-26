@@ -6,6 +6,7 @@ export type Panel = {
   header: Row[]
   needsYou: Row | null
   pc: Row | null
+  desks: Row | null   // #306: 'cloud desks: inbox ok · ask down' (red when down)
   lanesHead: string
   starts: Row
   lanes: Row[]
