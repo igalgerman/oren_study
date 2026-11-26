@@ -170,7 +170,8 @@ assert c["rate"] == {"graphql": [900, 5000], "core": [4900, 5000]}, "the bots' o
 assert "rate_owner" not in G.refresh(fake_gh, now=NOW + 62), "no App: one identity, no owner line"
 print("ok #363 budget per identity (app / owner)")
 # ---------- runner.run: the real entry point, with a fake gh ----------
-import subprocess, runner as RN
+import subprocess, runner as RN, ghauth
+ghauth.token = lambda *a, **k: ""    # config.toml has the App set up: never mint (openssl/network) in a unit test; the patched subprocess.run would be eaten
 class P:
     def __init__(self, rc, out): self.returncode, self.stdout, self.stderr = rc, out, ""
 outs, waits = [P(1, "GraphQL: API rate limit already exceeded for user ID 1."), P(0, '{"number": 5}')], []
@@ -190,7 +191,6 @@ finally:
     RN.subprocess.run, G.time.sleep = real_sub, real_sleep
 print("ok runner.run: cache first, rate limit retried")
 # #363: runner.run gives gh (and only gh) the App token; OWNER marker -> owner login
-import ghauth
 envs, real_tok = [], ghauth.token
 ghauth.token = lambda *a, **k: "ghs_app"
 RN.subprocess.run = lambda cmd, **k: (envs.append(k["env"]), P(0, "{}"))[1]
