@@ -528,6 +528,7 @@ def tick():
     try: (R.RUNS / "watchdog.beat").write_text(str(int(time.time())), encoding="utf-8")   # #171: liveness for the dashboard
     except OSError: pass
     fresh(log)          # #300: never run a step against a module older than its file
+    ghcache_tick()      # #329: the ONE GitHub reader (every reader below uses its cache)
     ts = windows()
     check_windows(ts)
     OQ.answers_tick(tell)
@@ -748,6 +749,21 @@ def ai_tick():
         except Exception as e: log(f"ai assessment error: {e!r}")
         finally: _ai["running"] = False
     threading.Thread(target=work, daemon=True).start()
+
+_GH_BUSY = threading.Event()
+def ghcache_tick(start=None):
+    """#329: refresh .runs/gh_cache.json (one batched GraphQL query) in a thread: a slow or rate-limited GitHub never holds the tick.
+    Never two at once; skipped when the cache is younger than 50 s."""
+    import ghcache
+    c = ghcache.load()
+    if _GH_BUSY.is_set() or (c and time.time() - c.get("ts", 0) < 50): return False
+    _GH_BUSY.set()
+    def work():
+        try: ghcache.refresh(lambda cmd: R.run(cmd, timeout=120))
+        except Exception as e: log(f"gh cache refresh failed: {e}"[:300])      # old cache stays; readers fall back to gh when it is stale
+        finally: _GH_BUSY.clear()
+    (start or (lambda f: threading.Thread(target=f, daemon=True).start()))(work)
+    return True
 
 def garden_tick():
     """#187, once a week: the test gardener (its own process; it opens/updates ONE 'Test trim proposal' issue, never deletes a test)."""

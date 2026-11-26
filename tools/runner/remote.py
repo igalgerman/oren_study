@@ -14,6 +14,7 @@ it is removed so claude uses the stored claude.ai login.
 State comes from GitHub (the CLI's agents/logs do not list cloud sessions)."""
 import json, os, re, shutil, subprocess, sys, tomllib
 from pathlib import Path
+import ghcache
 
 HERE = Path(__file__).resolve().parent
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -25,10 +26,12 @@ TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # same as runner.py: .runs/<n>/where says local|remote
 
 def sh(cmd, env=None):
-    p = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                       stdin=subprocess.DEVNULL, timeout=600,
-                       creationflags=0x08000000 if os.name == "nt" else 0)   # #284: same as runner.no_window()
-    return p.returncode, (p.stdout or "") + (p.stderr or "")
+    def raw():
+        p = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           stdin=subprocess.DEVNULL, timeout=600,
+                           creationflags=0x08000000 if os.name == "nt" else 0)   # #284: same as runner.no_window()
+        return p.returncode, (p.stdout or "") + (p.stderr or "")
+    return ghcache.call(list(map(str, cmd)), raw)       # #329: gh reads from the shared cache (panel, per-lane polls), rate limits retried
 
 def clean_env():
     return {k: v for k, v in os.environ.items() if k != TOKEN_VAR}
@@ -269,7 +272,7 @@ def cloud(run=sh, now=None):
     for i in listed("in-progress"):
         if i["number"] not in issues and where(i["number"]) == "remote": issues[i["number"]] = i
     issues = list(issues.values())
-    rc, out = run(["gh", "pr", "list", "--repo", REPO, "--state", "all", "--limit", "200", "--json", "number,url,headRefName,commits,body,mergedAt,state"])
+    rc, out = run(["gh", "pr", "list", "--repo", REPO, "--state", "all", "--limit", "100", "--json", "number,url,headRefName,commits,body,mergedAt,state"])   # #329: what the cache holds
     allp = json.loads(out) if rc == 0 and out.strip() else []
     prs = {p["headRefName"]: p for p in allp}
     rows = []

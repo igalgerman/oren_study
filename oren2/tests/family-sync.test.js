@@ -36,7 +36,7 @@ const FIX='a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0',OLD='0123456789abcdef0123456789abcd
  await B.evaluate(()=>{window.__synced=0;window.OREN.on('synced',()=>window.__synced++);});await B.evaluate(()=>window.OREN.famPull());await sleep(800);
  {const r=await B.evaluate(a=>({t:window.TAL.S().time[a[0]]|0,sy:window.__synced,sv:(window.OREN.save.time||{})[a[0]]|0}),tA);ok('phone B gets the play time',r.t>=tA[1],JSON.stringify(r)+JSON.stringify(tA));}
  // parent sandbox on B must not reach the server
- const before=KV.get(fid);await B.evaluate(()=>{window.TAL.parentPanel('try');});await B.locator('#sPar .bigbtn',{hasText:'כניסה למשחק כהורה'}).click();await sleep(300);await B.evaluate(()=>{window.OREN.save.gems=999;window.OREN.persist();});await sleep(2000);
+ const before=KV.get(fid);await B.evaluate(()=>{window.TAL.parentPanel('try');});await B.locator('#sPar .bigbtn',{hasText:'לשחק כהורה'}).click();await sleep(300);await B.evaluate(()=>{window.OREN.save.gems=999;window.OREN.persist();});await sleep(2000);
  ok('parent sandbox never uploads',JSON.parse(KV.get(fid)).gems!==999);
  ok('save note says family',(await A.evaluate(()=>{window.TAL_noHome=true;window.OREN.showJourney();const t=(document.querySelector('#saveNote')||{}).textContent||'';window.TAL_noHome=false;return t;})).includes('לַמִּשְׁפָּחָה'));
  // a failing save (e.g. KV daily limit) is retried with a short backoff and noted for the parent, not lost

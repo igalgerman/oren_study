@@ -222,7 +222,7 @@ function runMate(back){const cz=ST();const lv=cz.mate===2?2:1;const set=lv===1?P
 /* ---------- 6. a small game against a very gentle computer ---------- */
 function botMove(p){const ms=legal(p);const caps=ms.filter(m=>m.cap);const pool=caps.length?caps:ms;const m=pick(pool);return m.pr?Object.assign({},m,{pr:m.pc==='p'?'q':'Q'}):m;}
 function runGame(back){O.setScreen('sTal','valley',back);T.hudT('מְשַׂחֲקִים!');const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq cz');s.appendChild(wrap);
-  let p=fromFEN(START),last=null,lock=false,over=false;const msg=h('div','lcap czmsg','אַתָּה הַלָּבָן. גַּע בִּכְלִי, וְאַחַר כָּךְ בַּמִּשְׁבֶּצֶת.');say(msg.textContent);O.say(T.spk?T.spk(msg.textContent):msg.textContent);
+  let p=fromFEN(START),last=null,lock=false,over=false;const msg=h('div','lcap czmsg','אַתָּה הַלְּבָנִים. הָזֵז כְּלִי, כְּמוֹ הַחֵץ!');say(msg.textContent);O.say(T.spk?T.spk(msg.textContent):msg.textContent);
   const el=boardEl(null);wrap.append(msg,el);const arrow=hintArrow(el,sqOf('e2'),sqOf('e4'));
   const end=res=>{over=true;lock=true;CUR=null;const st=res==='win'?3:res==='draw'?2:1;const g=res==='win'?10:3;O.addGems(g);T.record('chess-play',st);
     setTimeout(()=>T.result({title:res==='win'?'מָט! נִצַּחְתָּ!':res==='draw'?'תֵּיקוּ!':'הַמַּחְשֵׁב נִצֵּחַ הַפַּעַם.',sub:res==='lose'?'נְשַׂחֵק שׁוּב?':'',stars:st,gems:g,back,again:()=>runGame(back)}),D(900));};

@@ -128,6 +128,11 @@ E.PUZ.forEach((f, i) => {
   ok('game opens when all pieces are learned', (await acts()).includes('chess-play'));
   await open('chess-play'); await L.sleep(200); await shot('game-start');
   ok('game: one instruction line + a big arrow hint for the first move; no a–h/1–8 labels', await p.evaluate(() => document.querySelectorAll('#sTal .czarrow').length === 1 && document.querySelectorAll('#sTal .czq,#sTal .czsub').length === 0 && !document.querySelector('#sTal .rk,#sTal .fl') && !/[a-h][1-8]|\b[1-8]\b/.test(document.querySelector('#sTal .czb').textContent)));
+  // #7: the one line is short, spoken, and points at the arrow; the arrow shows a legal first move (e2 → e4)
+  const gi = await p.evaluate(() => { const t = document.querySelector('#sTal .czmsg').textContent; const s = String(window.OREN.sayNow || '');
+    const ln = document.querySelector('#sTal .czarrow line'); return { t, spoken: s.includes('הַחֵץ') || s.includes('החץ'), x1: ln && +ln.getAttribute('x1'), y1: ln && +ln.getAttribute('y1') }; });
+  ok('game: the start line is short, spoken and points at the arrow', gi.t.includes('הַחֵץ') && gi.t.replace(/[֑-ׇ]/g, '').length <= 32 && gi.spoken, JSON.stringify(gi));
+  ok('game: the arrow starts on the e2 pawn', gi.x1 === 4 * 12.5 + 6.25 && gi.y1 === 6 * 12.5 + 6.25, JSON.stringify(gi));
   await p.evaluate(() => { const C = window.CHESS, E = C.ENG; C.cur.play(E.legal(C.cur.pos).find(m => E.sqName(m.f) === 'e2' && E.sqName(m.t) === 'e4')); });
   ok('game: the arrow goes away after the first move', await p.evaluate(() => !document.querySelector('#sTal .czarrow')));
   const g = await p.evaluate(async () => {

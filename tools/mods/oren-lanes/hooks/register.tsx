@@ -3,13 +3,12 @@ import type { Register } from 'claude-code'
 
 import type { OrenLanesData, Row } from '../types/index'
 import {
-  finishedRuns, isLive, parseWindows, statusLine, trunc, usageJson, parseGov, parseConfig, parseEvents, panel, quietArgv,
+  finishedRuns, isLive, parseWindows, statusLine, trunc, usageJson, parseGov, parseConfig, parseEvents, panel, quietArgv, fromCache, GH_CACHE,
 } from './lanes'
 import type { CloudLane, Gov, Issue, Limit, Pr, Win } from './lanes'
 
 const PANE = 'oren-lanes'
 const HC = 'C:/Users/97254/AppData/Local/Programs/herdr-core/hc.exe'
-const REPO = 'igalgerman/oren_study'
 const RUNS = 'C:/work/Oren_study/a/tools/runner/.runs'
 const CONFIG = 'C:/work/Oren_study/a/tools/runner/config.toml'
 const PY = 'C:\\Users\\97254\\miniforge3\\python.exe'
@@ -23,7 +22,6 @@ const DATA = { plugin: 'oren-lanes', key: 'data' } as const
 // an atom, so every refresh REDRAWS the pane (a plain $.state.get in render did not subscribe)
 const dataAtom = atom(DATA, null as OrenLanesData | null, { shape: 'data-3' })
 const LIVE = { plugin: 'oren-lanes', key: 'live' } as const
-const PR_FIELDS = 'number,headRefName,createdAt,isDraft,mergeable,autoMergeRequest,closingIssuesReferences,statusCheckRollup'
 
 export const register: Register = on => {
   let timer: { cancel: () => void } | undefined
@@ -62,10 +60,14 @@ export const register: Register = on => {
         } catch (err) {
           errors.push(`windows unavailable: ${trunc(String(err), 60)}`)
         }
-        const open = await json<Issue[]>(['gh', 'issue', 'list', '-R', REPO, '--state', 'open', '--limit', '200', '--json', 'number,title,labels,body,createdAt'], 'backlog', errors)
-        const closed = (await json<Issue[]>(['gh', 'issue', 'list', '-R', REPO, '--state', 'closed', '--limit', '300', '--json', 'number,title,labels,createdAt,closedAt'], 'closed issues', errors)) ?? []
-        const prs = (await json<Pr[]>(['gh', 'pr', 'list', '-R', REPO, '--state', 'open', '--json', PR_FIELDS], 'PRs', errors)) ?? []
-        const cloud = (await json<CloudLane[]>([PY, REMOTE, 'cloud'], 'cloud lanes', errors)) ?? []   // #136
+        let open: Issue[] | null = null
+        let closed: Issue[] = []
+        let prs: Pr[] = []
+        try {   // #329: GitHub only from the shared cache (the watchdog reads it once a minute); no gh call here
+          const gh = fromCache(await readText(GH_CACHE), await $.clock.now())
+          open = gh.issues; closed = gh.closed; prs = gh.prs
+        } catch (err) { errors.push(`backlog unavailable: ${trunc(String(err), 60)}`) }
+        const cloud = (await json<CloudLane[]>([PY, REMOTE, 'cloud'], 'cloud lanes', errors)) ?? []   // #136 (remote.py reads through the same cache)
 
         let questions = 0
         try {   // #193: open owner questions (the pinned 'Questions for the owner' issue)
@@ -121,7 +123,7 @@ export const register: Register = on => {
     }
 
     timer?.cancel()
-    timer = $.clock.every(30000, () => { void refresh() })
+    timer = $.clock.every(60000, () => { void refresh() })   // #329: 60 s, from the cache only
     void refresh()
     refreshRef = refresh
 
