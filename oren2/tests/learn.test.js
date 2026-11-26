@@ -259,6 +259,25 @@ let rr = seeded(7); C.setRandom(seeded(11));
   const p = C.plan('math', 3); ok(Array.isArray(p) && p.length >= 1 && p.every(x => x === 'ln-math'), 'LEARN.plan returns step ids (Node: drills only → one ln-math)', p.join(','));
   const sm = C.summary(); ok(sm && Array.isArray(sm.strong) && Array.isArray(sm.weak), 'LEARN.summary has strong / weak');
 }
+{ // #360 task pool: solved items leave, wrong ones come back on schedule, picking alone records nothing
+  C.setRandom(seeded(360)); const its = ['a', 'b', 'c', 'd', 'e', 'f'];
+  const s1 = fresh(); K.seen(s1, 'p', 'a', true); const firsts = []; for (let i = 0; i < 5; i++) { const r = K.pickItem(s1, 'p', its); firsts.push(r.item.k); K.seen(s1, 'p', r.item.k, true); }
+  ok(!firsts.includes('a') && new Set(firsts).size === 5, 'pool: a solved item is not picked again before the unseen ones', firsts.join(','));
+  const s2 = fresh(), d0 = day; K.seen(s2, 'p', 'x', false); for (const y of ['y', 'z']) K.seen(s2, 'p', y, true); const W = () => (s2.wr.p || {})[C.hash('x')];
+  ok(W()[0] === d0 + 1 && K.pickItem(s2, 'p', ['x', 'y', 'z']).item.k !== 'x', 'pool: wrong → due again after exactly 1 day (not the same day)', JSON.stringify(W()));
+  const gaps = []; let last = d0; for (let n = 0; n < 4; n++) { day = W()[0]; const r = K.pickItem(s2, 'p', ['x', 'y', 'z']); gaps.push(day - last + (r.item.k === 'x' && r.why === 'review' ? '' : '!')); last = day; K.seen(s2, 'p', 'x', true); if (!W()) break; }
+  ok(gaps.join(',') === '1,2,4,8' && !W(), 'pool: then right each time it is due → back after 2, 4, 8 days, then it leaves', gaps.join(',')); day = d0;
+  const s3 = fresh(); K.seen(s3, 'p', 'x', false); day = d0 + 1; K.seen(s3, 'p', 'x', true); day = d0 + 3; K.seen(s3, 'p', 'x', false);
+  ok(s3.wr.p[C.hash('x')][0] === d0 + 4 && s3.wr.p[C.hash('x')][1] === 0, 'pool: wrong again on a review → back to 1 day'); day = d0;
+  const s4 = fresh(); K.seen(s4, 'p', 'h', true, true); ok(s4.wr.p[C.hash('h')][0] === d0 + 1, 'pool: helped counts as wrong (due after 1 day)');
+  // the API: a pick is not an answer — nothing is recorded until LEARN.seen; a picked item is held so one quiz does not ask it twice
+  const s5 = fresh(); C.bind({ state: () => s5, after: null }); const r5 = C.pickItem('p', its);
+  ok(!(s5.sn && s5.sn.p) && !(s5.wr && s5.wr.p), 'pool: picking an item (opening it) records nothing — not solved, not wrong', JSON.stringify({ sn: s5.sn, wr: s5.wr }));
+  K.seen(s5, 'p', 'x', false); day = d0 + 1; const p1 = C.pickItem('p', ['x', 'y', 'z']), p2 = C.pickItem('p', ['x', 'y', 'z']);
+  ok(p1.item.k === 'x' && p1.why === 'review' && p2.item.k !== 'x', 'pool: a due item picked once is not picked again before it is answered', p1.item.k + ',' + p2.item.k);
+  C.seen('p', 'x', true); ok(s5.wr.p[C.hash('x')][0] === d0 + 3 && s5.wr.p[C.hash('x')][1] === 1, 'pool: one answer on a due item moves it one step only', JSON.stringify(s5.wr.p[C.hash('x')]));
+  day = d0; C.bind({ state: null }); void r5;
+}
 C.setNow(null); C.setRandom(null);
 
 /* ---------- 4. the screens (built page + learn.js injected) ---------- */
@@ -333,6 +352,24 @@ async function ui(variant) {
   // family merge through the save
   const mg = await p.evaluate(() => { const a = window.OREN.save.lrn; const m = window.LEARN.merge(JSON.parse(JSON.stringify(a)), { k: { 'mm-ten': { l: 5, h: '1'.repeat(12), n: 999, d: 1 } }, pt: 1 }); return { l: m.k['mm-ten'].l, lk: m.k['mm-ten'].lk, pace: m.pf.pace }; });
   ok(mg.l === 5 && mg.lk === 1 && mg.pace === 2, V + 'merge keeps the newer parent lock and pace', JSON.stringify(mg));
+  // #360 stories: opening one records nothing; one record per story after its questions (a wrong answer or read-aloud → back after 1 day)
+  const bankOf = b => p.evaluate(b => { const s = window.OREN.save.lrn; return { sn: ((s.sn || {})[b] || '').split(',').filter(Boolean), wr: (s.wr || {})[b] || {}, t: window.LEARN.dayNum() }; }, b);
+  const answerQuiz = async wrongAt => { for (let n = 0; n < 12 && await p.evaluate(() => document.getElementById('ov').hidden && !!window.__quiz && !!window.__quiz.wrap.isConnected); n++) {
+    if (n === wrongAt) await p.evaluate(() => { const q = window.__quiz; const bs = q.wrap.querySelectorAll('.chs .chb'); bs[(q.ans + 1) % bs.length].click(); });
+    await sleep(60); await p.evaluate(() => { const q = window.__quiz; q.wrap.querySelectorAll('.chs .chb')[q.ans].click(); }); await sleep(250); } };
+  const story = async (wrongAt, aloud) => { await p.evaluate(() => { document.getElementById('ov').hidden = true; window.TAL.ACT['story-new'].run(window.OREN.showMap); }); await sleep(300);
+    const open = await bankOf('rb-story'); if (aloud) await p.evaluate(() => document.querySelector('#sTal .sl').click());
+    await p.evaluate(() => [...document.querySelectorAll('#sTal .bigbtn')].pop().click()); await sleep(200); await answerQuiz(wrongAt); await sleep(200);
+    const done = await bankOf('rb-story'); const h = done.sn[done.sn.length - 1]; return { open, done, h, e: done.wr[h] }; };
+  const s0 = await bankOf('rb-story'); await p.evaluate(() => { document.getElementById('ov').hidden = true; window.TAL.ACT['story-new'].run(window.OREN.showMap); }); await sleep(300);
+  const s0b = await bankOf('rb-story'); ok(s0b.sn.length === s0.sn.length && !Object.keys(s0b.wr).length, V + 'story opened but not answered → not recorded as solved', JSON.stringify(s0b));
+  const sw = await story(1); ok(sw.done.sn.length === sw.open.sn.length + 1 && sw.e && sw.e[0] === sw.done.t + 1, V + 'story with a wrong answer → recorded after the questions, back in 1 day', JSON.stringify(sw.e));
+  const sr = await story(-1); ok(sr.done.sn.length === sr.open.sn.length + 1 && !sr.e, V + 'story all right on the first try → solved, leaves the pool', JSON.stringify(sr.e));
+  const sa = await story(-1, true); ok(sa.e && sa.e[0] === sa.done.t + 1, V + 'story read aloud (helped) → counts as wrong, back in 1 day', JSON.stringify(sa.e));
+  // #360 a quiz that had no recording (flags): each first answer goes into its own finite bank
+  await p.evaluate(() => { document.getElementById('ov').hidden = true; window.TAL.ACT['world-flag'].run(window.OREN.showMap); }); await sleep(300); await answerQuiz(0); await sleep(200);
+  const fl = await bankOf('tq-world-flag'); ok(fl.sn.length === 8 && Object.keys(fl.wr).length === 1 && Object.values(fl.wr)[0][0] === fl.t + 1, V + 'flags quiz: 8 answers recorded, the wrong one back in 1 day', JSON.stringify(fl));
+  await p.evaluate(() => { document.getElementById('ov').hidden = true; });
   ok(errs.length === 0, V + 'no page errors', errs.slice(0, 3).join(' | '));
   await b.close();
 }

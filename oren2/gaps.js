@@ -59,9 +59,9 @@ const RUNG=[{v:'a',n:'קָמָץ וּפַתָּח',say:'קָמָץ וּפַתָ�
 const learnedAt=r=>VO.slice(0,r+1);
 const poolAt=r=>WD.filter(w=>w.r<=r);
 const focusAt=r=>WD.filter(w=>w.r===r);
-/* a word chosen by the learning engine (LEARN.pickItem: wrong ones back on schedule, unseen first, no repeats) and marked seen; focus = the words of the newest rung, tried first 70% of the time */
+/* a word chosen by the learning engine (LEARN.pickItem: wrong ones back on schedule, unseen first, no repeats); the question carries bank + bkey, the quiz records the answer (#360); focus = the words of the newest rung, tried first 70% of the time */
 function lword(bank,pool,focus){const LN=window.LEARN;if(LN&&LN.pickItem&&pool.length>1)try{const ask=a=>{const r=LN.pickItem(bank,a.map(x=>({k:x.w})));return r&&{w:a.find(x=>x.w===r.item.k),why:r.why};};
-  let r=focus&&focus.length&&Math.random()<.7?ask(focus):null;if(!r||!r.w||r.why==='recycle')r=ask(pool);if(r&&r.w){LN.seen(bank,r.w.w,true,false);return r.w;}}catch(e){}
+  let r=focus&&focus.length&&Math.random()<.7?ask(focus):null;if(!r||!r.w||r.why==='recycle')r=ask(pool);if(r&&r.w)return r.w;}catch(e){}
   return focus&&focus.length&&Math.random()<.7?pick(focus):pick(pool);}
 /* question kinds: hs = hear a word, choose its first syllable · ss = see a syllable, choose the word · rw = hear a word, choose it */
 function sylOpts(w,learned){const a=w.s1;const out=[{s:a.s,v:a.v,b:w.base}];
@@ -73,14 +73,14 @@ function nikQ(r,i,n){const learned=learnedAt(r);const kind=i<n*.4?'hs':i<n*.75?'
   const pool=poolAt(r).filter(w=>w.s1);const focus=focusAt(r).filter(w=>w.s1);
   const w=lword('gp-nik',pool,focus);
   if(kind==='hs'){const os=sylOpts(w,learned);return {pr:`<div class="gp-ear">👂</div><div class="qq">בְּאֵיזוֹ הֲבָרָה מַתְחִילָה הַמִּלָּה?</div>`,opts:os.map(o=>o.s),ans:os.findIndex(o=>o.s===w.s1.s),cls:'tx big2',
-      play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו הברה מתחילה המילה',explain:`<span class="bigw">${hi(w)}</span>`,key:'hs'+w.w,chk:{t:'syl',w:w.w}};}
+      play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו הברה מתחילה המילה',explain:`<span class="bigw">${hi(w)}</span>`,bank:'gp-nik',bkey:w.w,key:'hs'+w.w,chk:{t:'syl',w:w.w}};}
   if(kind==='ss'){const same=pool.filter(x=>x!==w&&x.base===w.base&&x.s1.v!==w.s1.v&&!clash(x.s1.v,w.s1.v));
     const diff=pool.filter(x=>x!==w&&!sameSound(x.f,w.f));const ds=[];for(const x of [...shuffle(same),...shuffle(diff)]){if(ds.length>=2)break;if(!ds.includes(x)&&!ds.some(d=>d.w===x.w))ds.push(x);}
     const os=shuffle([w,...ds]);return {pr:`<div class="qq">אֵיזוֹ מִלָּה מַתְחִילָה כָּךְ?</div><div class="bigw gp-syl">${w.s1.s}</div>`,opts:os.map(x=>x.w),ans:os.indexOf(w),cls:'tx',
-      reveal:()=>sayW(w),explain:`<span class="bigw">${hi(w)}</span>`,key:'ss'+w.s1.s,chk:{t:'start',syl:w.s1.s,w:w.w}};}
+      reveal:()=>sayW(w),explain:`<span class="bigw">${hi(w)}</span>`,bank:'gp-nik',bkey:w.w,key:'ss'+w.s1.s,chk:{t:'start',syl:w.s1.s,w:w.w}};}
   const like=pool.filter(x=>x!==w&&(x.f===w.f||x.plain.length===w.plain.length));const ds=shuffle(like.length>=2?like:pool.filter(x=>x!==w)).slice(0,2);
   const os=shuffle([w,...ds]);return {pr:`<div class="gp-ear">👂</div><div class="qq">אֵיזוֹ מִלָּה שָׁמַעְתָּ?</div>`,opts:os.map(x=>x.w),ans:os.indexOf(w),cls:'tx',
-    play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'איזו מילה שמעת',explain:`${pic(w)}<span class="bigw">${w.w}</span>`,key:'rw'+w.w,chk:{t:'word',w:w.w}};}
+    play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'איזו מילה שמעת',explain:`${pic(w)}<span class="bigw">${w.w}</span>`,bank:'gp-nik',bkey:w.w,key:'rw'+w.w,chk:{t:'word',w:w.w}};}
 function nikRound(r,back){const n=8;T.quiz({id:'nik-'+(r+1),title:RUNG[r].n,bg:'city',back,n,gen:i=>nikQ(r,i,n),doneTitle:'עָלִיתָ בַּסֻּלָּם!'});}
 function nikIntro(r,back){O.setScreen('sTal','city',back);T.hudT('סֻלַּם הַנִּקּוּד');const R=RUNG[r];const s=$('#sTal');s.innerHTML='';
   const ex=shuffle(focusAt(r).filter(w=>w.s1)).slice(0,3);O.sayNow=R.n+'. כמו במילים: '+ex.map(w=>plainHe(w.w)).join(', ');
@@ -98,9 +98,9 @@ const LETTERS='בגדזחטיכלמנסעפצקרשת'.split('');
 function sndQ(L){const pool=WD.filter(w=>w.s1&&(L<3||w.s1.v!=='s'));const w=lword('gp-snd',pool);
   if(L<3){const k=L===1?3:4;const ds=[];for(const c of shuffle(LETTERS)){if(ds.length>=k-1)break;if(!sameSound(c,w.f)&&!ds.some(d=>sameSound(d,c)))ds.push(c);}
     const os=shuffle([w.f,...ds]);return {pr:`<div class="gp-ear">👂</div><div class="qq">בְּאֵיזוֹ אוֹת מַתְחִילָה הַמִּלָּה שֶׁשָּׁמַעְתָּ?</div>`,opts:os,ans:os.indexOf(w.f),cls:'tx big2'+(os.length===4?' gp4':''),
-      play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו אות מתחילה המילה ששמעת',explain:`${pic(w)}<span class="bigw">${hi(w)}</span>`,key:w.w,chk:{t:'letter',w:w.w}};}
+      play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו אות מתחילה המילה ששמעת',explain:`${pic(w)}<span class="bigw">${hi(w)}</span>`,bank:'gp-snd',bkey:w.w,key:w.w,chk:{t:'letter',w:w.w}};}
   const os=sylOpts(w,['a','i','o','u','e']);return {pr:`<div class="gp-ear">👂</div><div class="qq">בְּאֵיזוֹ הֲבָרָה מַתְחִילָה הַמִּלָּה שֶׁשָּׁמַעְתָּ?</div>`,opts:os.map(o=>o.s),ans:os.findIndex(o=>o.s===w.s1.s),cls:'tx big2',
-    play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו הברה מתחילה המילה ששמעת',explain:`${pic(w)}<span class="bigw">${hi(w)}</span>`,key:w.w,chk:{t:'syl',w:w.w}};}
+    play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו הברה מתחילה המילה ששמעת',explain:`${pic(w)}<span class="bigw">${hi(w)}</span>`,bank:'gp-snd',bkey:w.w,key:w.w,chk:{t:'syl',w:w.w}};}
 function sndRound(back,L0){const L=L0||level('snd',3);T.quiz({id:'snd-'+L,title:'מָה שׁוֹמְעִים בַּהַתְחָלָה?',bg:'city',back,n:8,gen:()=>sndQ(L)});}
 
 /* ===================== 7. SPELLING: hear a word, build it from letters ===================== */
