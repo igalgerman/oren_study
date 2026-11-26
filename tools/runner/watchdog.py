@@ -2,7 +2,7 @@
 Every minute it checks, deterministically:
   1. a worker/reviewer/intake window waiting for an answer (status blocked)  -> tells the orchestrator (once per new screen; also a worker whose last line is QUESTION:)
      and posts the question in the pinned issue 'Questions for the owner' (owner_q.py, #193; once per window+question); an owner reply there -> tells the orchestrator
-  1b. every open owner question -> ONE pinned window question-<n> (qwin.py, #220): Hebrew page (tools/ask) + phone push, first answer wins, relayed
+  1b. every open owner question (qwin.py, #220/#368): python starts the Hebrew page (tools/ask) and reads its answer; after 2 min a pinned window question-<n> sends the phone push; first answer wins, relayed
   2. a worker/reviewer that stopped without its RESULT:/VERDICT: line for 10 min -> tells the orchestrator
   3. free lanes + ready issues but no runner pass running                       -> starts a runner pass
   3b. a window waiting for the owner longer than park_minutes (the runner parks it itself; this is the fallback): issue gets blocked + ready-for-human, lane freed
