@@ -147,7 +147,7 @@ const SH = process.env.HSHOTS; if (SH) fs.mkdirSync(SH, { recursive: true });
     await p.evaluate(() => window.TAL.parentPanel('day')); await sleep(400);
     const rs = p.locator('#sPar .psec', { hasText: 'תזכורת לאורן' });
     const rp = await rs.evaluate(s => ({ big: [...s.querySelectorAll('.bigbtn')].map(b => b.textContent.trim()), chips: [...s.querySelectorAll('.pchip')].map(b => b.textContent.trim()), inputs: s.querySelectorAll('input,textarea').length })).catch(() => null);
-    ok('parent panel: 3 reminder buttons, "now" or in X minutes, no free text', rp && rp.big.length === 3 && rp.chips[0] === 'עכשיו' && rp.chips.length >= 3 && !rp.inputs, JSON.stringify(rp));
+    ok('parent panel: 3 reminder buttons, "now" or in X minutes, one message field (#353)', rp && rp.big.length === 3 && rp.chips[0] === 'עכשיו' && rp.chips.length >= 3 && rp.inputs === 1, JSON.stringify(rp));
     await rs.locator('.pchip', { hasText: /^5 דק׳$/ }).click(); await sleep(200);
     await p.locator('#sPar .psec', { hasText: 'תזכורת לאורן' }).locator('.bigbtn', { hasText: 'מים' }).click(); await sleep(300);
     const sr = await p.evaluate(() => ({ r: window.TAL.S().set.rem, now: window.HEALTH.clock() }));
@@ -184,6 +184,48 @@ const SH = process.env.HSHOTS; if (SH) fs.mkdirSync(SH, { recursive: true });
   // an old reminder (device was off for hours) is not shown
   await p.evaluate(() => { const t = window.HEALTH.clock() - 3 * 3600e3; window.TAL.S().set.rem = { k: 'water', at: t, t }; window.HEALTH.check(); }); await sleep(300);
   ok('a reminder from hours ago is skipped', !(await rem()));
+  // ---------- #353: a typed message from the parent, the friend says it aloud ----------
+  const msg = () => p.evaluate(() => { const e = document.querySelector('.hlock.hmsg'); if (!e) return null; return { h2: (e.querySelector('h2') || {}).textContent, again: !!e.querySelector('.hagain'), close: !!e.querySelector('.hback'), fr: !!e.querySelector('.hav') }; });
+  const TXT = 'אורן, יש לך 2 דקות ואז לאכול <b>';
+  if (BUILT) {
+    await p.evaluate(() => window.TAL.parentPanel('day')); await sleep(400);
+    const ms = () => p.locator('#sPar .psec', { hasText: 'תזכורת לאורן' });
+    const fld = await ms().evaluate(s => { const i = s.querySelector('input.hmsgin'); return i ? { ph: i.placeholder, max: i.maxLength, lbl: s.textContent.includes('הודעה מהחבר') } : null; }).catch(() => null);
+    ok('#353 one text field "a message from the friend", max ~120 chars', fld && fld.lbl && fld.max >= 100 && fld.max <= 140, JSON.stringify(fld));
+    await p.evaluate(() => { window.TAL.S().set.rem = null; });
+    await ms().locator('.pchip', { hasText: /^עכשיו$/ }).click(); await sleep(200);
+    await ms().locator('input.hmsgin').fill('   '); const dis = await ms().locator('.hmsgsend').isDisabled();
+    await ms().locator('.hmsgsend').evaluate(b => { b.disabled = false; b.click(); }); await sleep(200);
+    ok('#353 an empty / only-spaces message cannot be sent', dis && await p.evaluate(() => !window.TAL.S().set.rem));
+    await ms().locator('input.hmsgin').fill(TXT); await sleep(100);
+    await p.evaluate(() => { const s = [...document.querySelectorAll('#sPar .psec')].find(x => /תזכורת לאורן/.test(x.textContent)); s.scrollIntoView(); }); await shot('parent-message');
+    await ms().locator('.hmsgsend').click(); await sleep(300);
+    const sm = await p.evaluate(() => ({ r: window.TAL.S().set.rem, now: window.HEALTH.clock() }));
+    ok('#353 parent sends the text "now", same delivery path as the reminders', sm.r && sm.r.k === 'msg' && sm.r.x === 'אורן, יש לך 2 דקות ואז לאכול <b>' && sm.r.at === sm.now && !sm.r.ok, JSON.stringify(sm));
+    ok('#353 the panel says it waits for the end of the activity', /ממתינה לסוף הפעילות/.test(await ms().textContent()));
+    await p.evaluate(() => { window.__msg = window.TAL.S().set.rem; window.TAL.S().set.rem = null; window.OREN.showMap(); }); await sleep(200);
+  } else await p.evaluate(x => { window.__msg = { k: 'msg', x }; }, TXT);
+  // "now" during an activity: delivered at the next safe point (the end of the activity)
+  await p.evaluate(id => window.TAL.ACT[id].run(() => window.OREN.showMap()), rid); await sleep(200);
+  await p.evaluate(() => { window.__says = []; const t = window.HEALTH.clock(); window.TAL.S().set.rem = Object.assign({}, window.__msg, { at: t, t }); window.HEALTH.check(); }); await sleep(300);
+  ok('#353 the message does not interrupt an activity', !(await msg()));
+  await p.evaluate(id => window.TAL.finishAct(id, 0, 5, 0, () => window.OREN.showMap()), rid); await sleep(600);
+  await p.locator('#ov .bigbtn:not(.plain)').click(); await sleep(700); l = await msg();
+  ok('#353 at the end of the activity: the friend big, the text big, hear-again and close', l && l.fr && l.h2 === TXT && l.again && l.close, JSON.stringify(l));
+  ok('#353 the friend says the text in the game voice', await p.evaluate(x => window.__says.some(s => s.includes('אורן, יש לך 2 דקות ואז לאכול')), TXT), JSON.stringify(await p.evaluate(() => window.__says)));
+  ok('#353 digits are spoken as Hebrew words (#122 path)', await p.evaluate(() => !/\d/.test(window.__fullSpell('יש לך 2 דקות')) && /שתי/.test(window.__fullSpell('יש לך 2 דקות'))));
+  await shot('message-kid');
+  await p.evaluate(() => { window.__says = []; }); await p.locator('.hlock .hagain').click(); await sleep(300);
+  ok('#353 "hear again" says it again', await p.evaluate(() => window.__says.some(s => s.includes('2 דקות'))) && !!(await msg()));
+  ok('#353 shown = said', await p.evaluate(() => !!window.TAL.S().set.rem.s));
+  await pressBack(); await sleep(300);
+  ok('#353 close dismisses it and it does not come back', !(await msg()) && await p.evaluate(() => { window.HEALTH.check(); return window.TAL.S().set.rem.ok === 1 && !document.querySelector('.hlock.hmsg'); }));
+  if (BUILT) { await p.evaluate(() => window.TAL.parentPanel('day')); await sleep(300);
+    ok('#353 the parent sees "said"', /נאמרה/.test(await p.locator('#sPar .psec', { hasText: 'תזכורת לאורן' }).textContent()));
+    await p.evaluate(() => window.OREN.showMap()); await sleep(300); }
+  await p.evaluate(() => { const t = window.HEALTH.clock(); window.TAL.S().set.rem = { k: 'msg', x: '   ', at: t, t }; window.HEALTH.check(); }); await sleep(300);
+  ok('#353 an empty message is never shown', !(await msg()));
+  await p.evaluate(() => { window.TAL.S().set.rem = null; });
   // ---------- tomorrow ----------
   await setClock('2026-11-26T09:00:00'); await p.evaluate(() => { const r = window.HEALTH.day(); r.on = 60; });
   const rv = await p.evaluate(() => ({ rest: window.HEALTH.resting('read'), sci: window.HEALTH.resting('sci'), review: window.HEALTH.review() }));
