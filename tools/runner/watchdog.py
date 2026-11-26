@@ -154,7 +154,7 @@ def check_lanes(ts):
     rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: return
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
-    ready = R.select(issues, R.total_lanes(), R.MAX_CORE, R.EXPRESS)
+    ready = [i for i, _ in R.pass_now(issues)]     # #279: the pass's own lane check; no free lane -> no pass (and no gh call of it)
     if not ready: return
     key, now = tuple(sorted(i["number"] for i in ready)), time.time()
     ok, why = pass_decision(R.FileLock("pass").held_by_other(), key, last_pass_start(), now)   # #284/#250: one pass alive at a time
@@ -162,10 +162,7 @@ def check_lanes(ts):
     note_pass_start(key, now)
     orch = R.hc_json("get", "orchestrator", "--json").get("address", "")
     name = f"run-pass-{int(time.time()) % 100000}"
-    cmd = [R.HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(R.ROOT), "--label", "role=runner"]
-    cmd += ["--parent", orch] if orch else ["--no-parent"]
-    cmd += [sys.executable, str(HERE / "runner.py"), f"--term={name}"]
-    rc, out = R.run(cmd, timeout=60)
+    rc, out = R.run(R.pass_cmd(name, orch), timeout=60)   # #279: notify off; the pass tells the orchestrator only when it started/blocked something
     log(f"free lane + ready issue -> started {name} (rc {rc})")
 
 def pick_intake(issues, ts):
