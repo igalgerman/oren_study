@@ -60,11 +60,19 @@ const srv = http.createServer((q, r) => { const m = /^\/api\/save\/([a-f0-9]{32}
   await plan(); await lim({ today: null, stopDone: 1 }); await startAct(); await sleep(100); await endAct(); await p.evaluate(() => window.TAL.limCheck());
   ok('setting ON: no lock over the last result', !(await locked()));
   await cont(); ok('setting ON: the lock right after the last task', (await locked()) === 'סִיַּמְתָּ אֶת הַמְּשִׂימוֹת שֶׁל הַיּוֹם!', await locked());
+  // the parent dialog on the lock: "tasks done" = one continue button; time lock keeps its minute buttons
+  const dlgBtns = async () => { await p.locator('.tlock .bigbtn').click(); await sleep(150); await p.locator('#pw1').click(); await p.keyboard.type('abcd'); if (await p.locator('#pw2').count()) { await p.locator('#pw2').click(); await p.keyboard.type('abcd'); } await p.keyboard.press('Enter'); await sleep(250); return p.evaluate(() => [...document.querySelectorAll('#ov .bigbtn')].map(x => x.textContent)); };
+  const dd = await dlgBtns(); ok('done-lock parent dialog: one continue button, no +minutes', dd.length === 2 && dd[0] === 'להמשיך לשחק היום' && !dd.some(x => /דק׳/.test(x)), JSON.stringify(dd));
+  if (process.env.HSHOTS) await p.screenshot({ path: path.join(process.env.HSHOTS, 'done-lock-dialog-' + L.variant + '.png') });
+  await p.locator('#ov .bigbtn', { hasText: 'להמשיך' }).click(); await sleep(300); ok('done-lock: continue lifts the lock for today', !(await locked()));
+  await lim({ stopDone: 0, daily: 30 }); await used(31); await lim({}); const td = await dlgBtns(); ok('time-lock parent dialog keeps +10/+20/+30', ['+10 דק׳', '+20 דק׳', '+30 דק׳'].every(x => td.includes(x)) && !td.includes('להמשיך לשחק היום'), JSON.stringify(td));
+  await p.locator('#ov .bigbtn', { hasText: '+20' }).click(); await sleep(300); await lim({ daily: 0, today: null }); await p.evaluate(() => document.querySelectorAll('.tyay').forEach(e => e.remove()));
   // the parent's block
   await p.evaluate(() => { document.querySelectorAll('.tlock').forEach(e => e.remove()); document.body.classList.remove('tlocked'); window.TAL.parentPanel('day'); }); await sleep(300);
   const pb = await p.evaluate(() => { const s = document.querySelector('#sPar .pbody .psec'); return { h: s && s.querySelector('h3').textContent, chips: s ? [...s.querySelectorAll('.pchip')].map(x => x.textContent) : [], big: s ? [...s.querySelectorAll('.pbig .bigbtn')].map(x => x.textContent).join('|') : '' }; });
   ok('parent: "⏱️ היום" block first: two big buttons, the rest folded', pb.h === '⏱️ היום' && ['ללא הגבלה', '⏹ לסיים עכשיו'].every(c => pb.chips.includes(c)) && pb.big === '+15 דק׳', JSON.stringify(pb));
   if (process.env.HSHOTS) await p.screenshot({ path: path.join(process.env.HSHOTS, 'parent-today-' + L.variant + '.png') });
+  if (process.env.HSHOTS) { await p.evaluate(() => document.querySelectorAll('#sPar details.pdet').forEach(d => d.open = true)); await p.evaluate(() => { const c = [...document.querySelectorAll('#sPar .pchip')].find(x => x.textContent.includes('לעצור אותו')); c && c.scrollIntoView({ block: 'center' }); }); await sleep(200); await p.screenshot({ path: path.join(process.env.HSHOTS, 'parent-switch-' + L.variant + '.png') }); }
   ok('parent: no task-count buttons', !pb.chips.some(c => /משימות$/.test(c)) && !pb.big.includes('משימה'), JSON.stringify(pb));
   const tog = () => p.evaluate(() => { const c = [...document.querySelectorAll('#sPar .pchip')].find(x => x.textContent.includes('לעצור אותו כשסיים את משימות היום')); if (!c) return null; const on = c.classList.contains('on'); c.click(); return on; });
   await lim({ stopDone: 0 }); await p.evaluate(() => window.TAL.parentPanel('day')); await sleep(300); const t1 = await tog(); ok('parent: "stop when tasks done" is OFF by default and turns ON', t1 === false && await p.evaluate(() => window.TAL.S().set.lim.stopDone === 1), String(t1));

@@ -1073,9 +1073,10 @@ function unlock(happy){if(lockEl){lockEl.remove();lockEl=null;}document.body.cla
 function timeUp(kind){if(lockEl&&lockEl.isConnected)return;endGrace();O.hush&&O.hush();O.musicStop();const n=doneN();lockKind=kind;const pr=T.S().prof||{};
   const head=kind==='bed'?'זְמַן לָנוּחַ':kind==='done'?'סִיַּמְתָּ אֶת הַמְּשִׂימוֹת שֶׁל הַיּוֹם!':'הַזְּמַן שֶׁל הַיּוֹם נִגְמַר';
   lockEl=h('div','tlock',`<div class="card"><div class="callp bob">${T.friend()}</div><h2>${head}</h2><div class="sub">כָּל הַכָּבוֹד הַיּוֹם, אוֹרֶן!${n?` סִיַּמְתָּ ${n===1?'מְשִׂימָה אַחַת':`${n} מְשִׂימוֹת`}.`:''}<br>הַמֹּחַ וְהַגּוּף צְרִיכִים גַּם לָנוּחַ וּלְשַׂחֵק בַּחוּץ.<br>הַכֹּל שָׁמוּר. נִתְרָאֶה מָחָר 👋</div></div>`);
-  const row=h('div','btnrow');const pb=h('button','bigbtn plain sm','🔒 <span>הוֹרֶה: עוֹד זְמַן</span>');pb.onclick=()=>login(()=>{const ov=$('#ov');ov.hidden=false;ov.innerHTML='<div class="card"><h2>כמה להוסיף להיום?</h2></div>';const r=h('div','btnrow');
+  const row=h('div','btnrow');const pb=h('button','bigbtn plain sm','🔒 <span>הוֹרֶה: עוֹד זְמַן</span>');pb.onclick=()=>login(()=>{const ov=$('#ov');ov.hidden=false;ov.innerHTML=kind==='done'?'<div class="card"><h2>להמשיך לשחק היום?</h2></div>':'<div class="card"><h2>כמה להוסיף להיום?</h2></div>';const r=h('div','btnrow');
       const give=f=>{f();if(kind==='bed')LIM().bedOff=O.today();if(kind==='done')LIM().doneOff=O.today();pnow();ov.hidden=true;parentOn=false;unlock(false);};
-      [[10,'+10 דק׳'],[20,'+20 דק׳'],[30,'+30 דק׳']].forEach(([v,n2])=>{const b=h('button','bigbtn sm','<span>'+n2+'</span>');b.onclick=()=>give(kind==='done'?()=>{}:()=>grant(v));r.appendChild(b);});
+      if(kind==='done'){const b=h('button','bigbtn sm','<span>להמשיך לשחק היום</span>');b.onclick=()=>give(()=>{});r.appendChild(b);}
+      else[[10,'+10 דק׳'],[20,'+20 דק׳'],[30,'+30 דק׳']].forEach(([v,n2])=>{const b=h('button','bigbtn sm','<span>'+n2+'</span>');b.onclick=()=>give(()=>grant(v));r.appendChild(b);});
       const c=h('button','bigbtn plain sm','<span>ביטול</span>');c.onclick=()=>{ov.hidden=true;parentOn=false;};r.appendChild(c);ov.firstChild.appendChild(r);});
   row.appendChild(pb);lockEl.firstChild.appendChild(row);document.body.appendChild(lockEl);document.body.classList.add('tlocked');O.say(T.spk(head+' כָּל הַכָּבוֹד הַיּוֹם, אוֹרֶן! נִתְרָאֶה מָחָר.'));}
 /* "finish what you started": a gentle banner, then the lock when the activity ends (at most 5 minutes) */
