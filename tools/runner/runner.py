@@ -727,6 +727,10 @@ def agent(name, prompt, cwd, tools, log, marker, n, role, model=MODEL, over=None
 
 def spawn(extra_args):
     """From inside a run terminal: start another run (one issue, or a pass) as its own terminal, reporting to the same main session."""
+    return spawn_out(extra_args)[0]
+
+def spawn_out(extra_args):
+    """spawn() -> (rc, output), so a caller can see why `hc run` failed (e.g. name_taken)."""
     name = f"run-{extra_args[0].lstrip('#')}" if extra_args else f"run-pass-{int(time.time()) % 100000}"
     parent = CFG.get("parent") or (hc_json("get", TERM, "--json").get("parent", "") if TERM else "")
     cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(ROOT), "--label", "role=runner"]
@@ -734,7 +738,7 @@ def spawn(extra_args):
     cmd += [sys.executable, str(HERE / "runner.py"), *extra_args, f"--term={name}"]
     rc, out = run(cmd)
     print(out.strip() or f"started terminal {name}")
-    return rc
+    return rc, out
 
 def launch_self():
     """run.cmd entry: start this whole run as terminal run-<n> (its exit note goes to the main session) and return at once."""
@@ -1330,6 +1334,40 @@ def main():
         print(f"ISSUE {n}: {res}")
         if USE_HERDR and TERM: spawn([])        # keep the lanes full: a fresh pass picks the next ready issues
         return 0
+    return one_pass(run_pass)
+
+def one_pass(fn):
+    """#250: one pass at a time (select + spawn under the 'pass' lock); a second pass exits at once."""
+    try: lock = FileLock("pass").__enter__()
+    except Blocked:
+        print("another pass is running"); return 0
+    try: return fn()
+    finally: lock.__exit__()
+
+def live_terminals():
+    rc, out = hc("ls", "--json", timeout=30)
+    try: return json.loads(out.strip().splitlines()[-1]).get("terminals", [])
+    except Exception: return []
+
+def may_give_back(n, out, terms):
+    """#250: drop in-progress after a failed spawn only when no run-<n> is live, never on name_taken (that run is someone else's)."""
+    return "name_taken" not in (out or "") and not any(t.get("name") == f"run-{n}" and t.get("state") == "live" for t in terms)
+
+def start_chosen(chosen, wmap, spawn_=None, terms_=None):
+    spawn_, terms_ = spawn_ or spawn_out, terms_ or live_terminals
+    results = []
+    for c in chosen:
+        n = c["number"]
+        set_labels(n, add=["in-progress"])          # claim now so the next pass doesn't pick it twice
+        set_where(n, wmap[n])
+        rc, out = spawn_([str(n)] + (["--remote"] if wmap[n] == "remote" else []))
+        if not rc: results.append((n, "started"))
+        elif may_give_back(n, out, terms_()):        # could not start: give it back, log it, don't count it
+            set_labels(n, remove=["in-progress"]); results.append((n, "not started (hc run failed)"))
+        else: results.append((n, "not started (run already live)"))
+    return results
+
+def run_pass():
     rc, out = gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: print("gh failed:", out); return 1
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
@@ -1357,12 +1395,7 @@ def main():
         gh("issue", "comment", str(s["number"]), "--body", f"Runner: in-progress for over {CFG['stuck_hours']}h with no runner process; marked blocked.")
     results = []
     if chosen and USE_HERDR and TERM:
-        for c in chosen:
-            set_labels(c["number"], add=["in-progress"])          # claim now so the next pass doesn't pick it twice
-            set_where(c["number"], wmap[c["number"]])
-            if spawn([str(c["number"])] + (["--remote"] if wmap[c["number"]] == "remote" else [])):                         # could not start (e.g. name_taken): give it back, log it, don't count it
-                set_labels(c["number"], remove=["in-progress"]); results.append((c["number"], "not started (hc run failed)"))
-            else: results.append((c["number"], "started"))
+        results = start_chosen(chosen, wmap)
     elif chosen:
         with ThreadPoolExecutor(max_workers=len(chosen)) as ex:
             results = list(ex.map(lambda c: (c["number"], process(c, wmap[c["number"]])), chosen))
