@@ -23,6 +23,9 @@ if (!m) ok('fullSpell found in index.html', false); else {
   const fullSpell = new Function(nm[0].replace('window.__numWords=numWords;', '') + m[0].replace('window.__fullSpell=fullSpell;', '') + ';return fullSpell;')();
   for (const [w, want] of W) { const got = fullSpell(w); ok('spell ' + want, got === want, got); }
   ok('sentence: words, prefixes and punctuation', fullSpell('אִמָּא, הַשָּׁמַיִם כְּחֻלִּים!') === 'אמא, השמיים כחולים!', fullSpell('אִמָּא, הַשָּׁמַיִם כְּחֻלִּים!'));
+  // #405 voicecheck findings over all kid sentences: words the voice read in the wrong spelling
+  for (const [w, want] of [['שָׁוֶה','שווה'],['שָׁוֶה בְּשָׁוֶה','שווה בשווה'],['שָׁוִים','שווים'],['מִדַּי','מדי'],['מִלִּים','מילים'],['הַמִּלִּים','המילים'],['לְמִלִּים','למילים']]) { const got = fullSpell(w); ok('spell ' + want + ' (#405)', got === want, got); }
+  ok('the quiz reads its question aloud in full spelling, not with the nikud only stripped (#405: מלה → מילה)', /O\.sayNow=\(q\.say\|\|spoken\(q\.pr\)\)/.test(fs.readFileSync(path.join(L.ROOT, 'talents.js'), 'utf8')));
   ok('text without nikud is unchanged', fullSpell('ברכה שלום') === 'ברכה שלום');
 }
 L.finish('spell', res);
