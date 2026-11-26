@@ -498,7 +498,20 @@ assert r.start_pregen(popen=_P) == "started" and _P.calls == [r.pregen_cmd()]
 assert r.start_pregen(popen=_P) == "already running" and len(_P.calls) == 1      # lock holds our (live) pid
 (r.RUNS / "pregen.lock").unlink(missing_ok=True)
 r.CFG["pregen"] = False; assert r.start_pregen(popen=_P) == "off"
+# #301: a pregen failure is a note, never a block: nothing in start_pregen may raise (lock check, log file, Popen)
+r.CFG["pregen"] = True; (r.RUNS / "pregen.lock").unlink(missing_ok=True)
+def _boom(*a, **k): raise TimeoutError("pregen.js 1800")
+assert r.start_pregen(popen=_boom).startswith("failed:")
+_hb = r.FileLock.held_by_other; r.FileLock.held_by_other = lambda self: _boom()
+assert r.start_pregen(popen=_P).startswith("failed:")
+r.FileLock.held_by_other = _hb
+assert r.pregen_note("started") == "" and r.pregen_note("off") == "" and r.pregen_note("already running") == ""
+assert r.pregen_note("failed: x").startswith(" Note: voice pregen did not start (failed: x)")
 r.CFG["pregen"] = _old
+# #301: no code path waits on pregen: pregen_cmd is only used by the detached Popen, and its result only becomes a note
+_src0 = (r.HERE / "runner.py").read_text(encoding="utf-8")
+assert _src0.count("pregen_cmd()") == 2 and "(popen or subprocess.Popen)(pregen_cmd()" in _src0
+assert "pre = start_pregen(log) if dep.startswith(\"deployed\") else \"\"" in _src0 and "{dep}.{pregen_note(pre)}" in _src0
 _src = (r.HERE / "runner.py").read_text(encoding="utf-8")
 _blk = _src.split('with FileLock("integrate", wait=True, note=f"#{n} deploy"):\n            stat(n, lane, "merged")', 1)[1].split("\n        m = sync_main", 1)[0]
 assert "pregen.js" not in _src.split("def deploy_text", 1)[1].split("def pregen_cmd", 1)[0] and "start_pregen(log)" in _blk

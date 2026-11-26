@@ -1202,10 +1202,10 @@ def start_pregen(log=None, popen=None):
     """#175: voice pregen in the background, OUTSIDE the merge lock (it can take 30 min); one at a time; never blocks an issue.
     -> 'started' / 'already running' / 'off' / 'failed: ...'."""
     if not CFG.get("pregen", False): return "off"
-    lock = FileLock("pregen")
-    if lock.held_by_other(): return "already running"
-    env = dict(os.environ); env.update({k: v for k, v in env_file().items() if k.startswith("CLOUDFLARE_")})
-    try:
+    try:                                                     # #301: nothing here may raise into process(): a failure is a note, never a block
+        lock = FileLock("pregen")
+        if lock.held_by_other(): return "already running"
+        env = dict(os.environ); env.update({k: v for k, v in env_file().items() if k.startswith("CLOUDFLARE_")})
         RUNS.mkdir(exist_ok=True)
         out = open(RUNS / "pregen.log", "a", encoding="utf-8")
         out.write(f"\n=== pregen {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n"); out.flush()
@@ -1216,6 +1216,10 @@ def start_pregen(log=None, popen=None):
         return "started"
     except Exception as e:
         return f"failed: {e!r}"
+
+def pregen_note(res):
+    """#301: start_pregen's result as a note for the close comment ('' unless it failed); the issue still closes."""
+    return f" Note: voice pregen did not start ({res}); it is resumable, run it again later." if res.startswith("failed") else ""
 
 def log_to(log, text):
     try:
@@ -1497,10 +1501,10 @@ def process_locked(issue, where="local"):
         with FileLock("integrate", wait=True, note=f"#{n} deploy"):
             stat(n, lane, "merged")
             dep = deploy_main(log) if CFG.get("ci_merge", True) and find_pr_merged(n) else deploy_text(log)
-        if dep.startswith("deployed"): start_pregen(log)    # #175: after the lock, in the background
+        pre = start_pregen(log) if dep.startswith("deployed") else ""    # #175: after the lock, in the background; #301: never blocks
         m = sync_main(log)                       # result logged (review of #47)
         if m: log_line(m)
-        gh("issue", "close", str(n), "--comment", f"Merged to {BRANCH}, tests green, {dep}.")
+        gh("issue", "close", str(n), "--comment", f"Merged to {BRANCH}, tests green, {dep}.{pregen_note(pre)}")
         set_labels(n, remove=["in-progress"])
         remove_worktree(wt, log)
         close_windows(n)
