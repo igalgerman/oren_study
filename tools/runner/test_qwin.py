@@ -2,7 +2,7 @@
 Run: python3 tools/runner/test_qwin.py"""
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
-import json, sys, tempfile
+import json, re, sys, tempfile
 from pathlib import Path
 sys.argv.append("--dry-run")
 import runner as R
@@ -42,8 +42,37 @@ opened = [dict(q) for q in qs]
 OQ.open_list = lambda gh=None: [dict(q) for q in opened]
 win = lambda: sorted(n for n, t in h.t.items() if t["state"] == "live" and n.startswith("question-"))
 
-# one window per question, oldest first, at most 3 at once; ticks repeat: no duplicates
-for k in range(3): QW.tick(h.ts(), now=1000 + 60 * k)
+class FakeSpawn:
+    """#368: ask.py started by qwin.tick itself (no LLM): records the command, hands back a pid."""
+    def __init__(self): self.cmds, self.killed = [], []
+    def spawn(self, cmd, out, err):
+        self.cmds.append(cmd); return 4000 + len(self.cmds)
+    def kill(self, pid): self.killed.append(pid)
+sp = FakeSpawn()
+QW._spawn, QW._kill = sp.spawn, sp.kill
+asked = lambda: [Path(c[c.index(QW.ASK) + 1]).stem for c in sp.cmds]
+
+# #368 deterministic: the first tick writes the question page file and starts ask.py itself - no window yet
+QW.tick(h.ts(), now=1000)
+assert asked() == ["k1", "k2", "k3"], sp.cmds                                         # at most 3 at once, oldest first
+c = sp.cmds[2]
+assert c[0] == sys.executable and c[c.index(QW.ASK) + 2:] == ["--timeout-min", "1440"], c
+d3 = json.loads((QW.DIR / "k3.json").read_text(encoding="utf-8"))
+assert d3["questions"][0]["text"] == "שאלה 3?" and d3["questions"][0]["id"] == "a", d3
+assert d3["questions"][0].get("free") or d3["questions"][0].get("other"), d3
+assert not win() and not any(a[0] == "run" for a in h.calls)                          # phone window only after 2 min
+assert QW.load()["k3"]["pid"] == 4003
+# the page URL is read from ask.py's stderr log and recorded
+(QW.DIR / "k3.log").write_text("http://127.0.0.1:5555/\n", encoding="utf-8")
+QW.tick(h.ts(), now=1060)
+assert QW.load()["k3"]["page"] == "http://127.0.0.1:5555/" and len(sp.cmds) == 3
+assert not win()
+# options in the question text -> radio buttons (recommended first), still with 'other'
+d = QW.page_data({"key": "x", "text": "איזה צבע? 1) ירוק (מומלץ) 2) כחול"})["questions"][0]
+assert d["text"] == "איזה צבע?" and d["options"] == ["ירוק (מומלץ)", "כחול"] and d["other"], d
+
+# 2 min without an answer: ONE phone window per question (haiku + Remote Control) whose only job is the push
+QW.tick(h.ts(), now=1120)
 assert win() == ["question-1", "question-2", "question-3"], win()
 assert sum(a[0] == "run" for a in h.calls) == 3, h.calls
 argv = h.t["question-3"]["argv"]
@@ -53,29 +82,37 @@ assert "herdr.space=ctl" in argv and "role=question" in argv
 assert R.BASH in argv and argv[argv.index(R.BASH) + 1] == "-c" and argv.index(R.BASH) < argv.index("--model"), argv
 assert argv[argv.index(R.BASH) + 3] == "_" and argv[argv.index(R.BASH) + 4] == R.CFG["extra_path"], argv
 p = argv[-1]
-assert "tools/ask/ask.py" in p and "PushNotification" in p and "(מומלץ)" in p and "qwin.py answer k3" in p and "שאלה 3?" in p and "TaskStop" in p
+assert "PushNotification" in p and "qwin.py answer k3" in p and "שאלה 3?" in p, p
+assert "ask.py" not in p and "TaskStop" not in p                                       # the page is python's job now
+assert not re.search(r"#\d", p.replace("שאלה 3?", "")), p                              # #368: no issue refs (it read #220 last time)
+assert QW.push_text({"text": "איזה צבע? 1) ירוק 2) כחול"}) in QW.prompt({"key": "z", "text": "איזה צבע? 1) ירוק 2) כחול"}, "question-9")
+assert "1. ירוק" in QW.push_text({"text": "איזה צבע? 1) ירוק 2) כחול"})
 assert [x for x in h.pins if x[1] == "true"].__len__() == 3                     # pinned on top
 # #310: the owner is never asked inside the terminal (AskUserQuestion shows reversed Hebrew there): tool removed + prompt says so
 assert argv[argv.index("--disallowedTools") + 1] == "AskUserQuestion" and argv.index("--disallowedTools") < argv.index("--"), argv
-assert "never" in p.lower() and "AskUserQuestion" in p and "page URL" in p, p
-# a second question of the same issue waits for the first one's window
+assert "never" in p.lower() and "AskUserQuestion" in p, p
+QW.tick(h.ts(), now=1180); assert sum(a[0] == "run" for a in h.calls) == 3      # still one window each
+# a second question of the same issue waits for the first one
 assert QW.plan([qs[0], {**qs[0], "key": "k1b"}], [], {}, 0)[0] == [qs[0]]
-# question 1 answered: its window is unpinned + closed, the oldest waiting (#4) opens
+# question 1 answered (elsewhere): ask.py stopped, window unpinned + closed, the oldest waiting (#4) gets its page
 opened.pop(0)
 QW.tick(h.ts(), now=1300)
-assert win() == ["question-2", "question-3", "question-4"], win()
+assert 4001 in sp.killed and asked()[-1] == "k4", (sp.killed, asked())
+assert win() == ["question-2", "question-3"], win()
 assert any(x[1] == "false" for x in h.pins) and "question-1" not in h.t
-QW.tick(h.ts(), now=1360); assert sum(a[0] == "run" for a in h.calls) == 4     # the orchestrator question still waits (3 open)
+QW.tick(h.ts(), now=1360); assert len(sp.cmds) == 4                             # the orchestrator question still waits (3 open)
+QW.tick(h.ts(), now=1420); assert win() == ["question-2", "question-3", "question-4"], win()
 # 2 h unanswered: one reminder, the window stays
 QW.tick(h.ts(), now=1000 + 7200); QW.tick(h.ts(), now=1000 + 7300)
 rem = [s for s in h.sent if s[1].startswith("WATCHDOG REMINDER")]
-assert sorted(s[0] for s in rem) == ["question-2", "question-3"], rem               # question-4 opened later: not yet
+assert sorted(s[0] for s in rem) == ["question-2", "question-3"], rem               # question-4 came later: not yet
 assert "question-2" in win()
 # a question that already had a window never gets a second one (window gone, question still open)
 h.t["question-2"]["state"] = "done"
 QW.tick(h.ts(), now=9000)
 assert sum(a[0] == "run" and a[a.index("--name") + 1] == "question-2" for a in h.calls) == 1
-print("ok qwin windows")
+assert asked().count("k2") == 1
+print("ok qwin page + phone window")
 
 # ---- answer relayed: issue + questions issue + orchestrator; a cloud worker gets it in its session ----
 gh_calls, marked, remote_sent = [], [], []
@@ -84,7 +121,8 @@ OQ.mark_answered = lambda key, answer="", gh=None: (marked.append((key, answer))
 QW._send_remote = lambda s, t: (remote_sent.append((s, t)), {"ok": True})[1]
 h.sent.clear()
 d = QW.answer("k3", "ירוק")
-assert d == {"issue": True, "answered": True, "remote": True, "closed": True}, d
+assert d == {"issue": True, "answered": True, "remote": True, "stopped": True, "closed": True}, d
+assert 4003 in sp.killed                                                             # the chat won: ask.py (the page) is stopped
 assert any(a[:3] == ("issue", "comment", "3") and "ירוק" in a[-1] for a in gh_calls), gh_calls
 assert marked == [("k3", "ירוק")]
 assert remote_sent and remote_sent[0][0] == "session_01ABC" and "ירוק" in remote_sent[0][1]
@@ -96,6 +134,16 @@ remote_sent.clear(); h.sent.clear()
 QW.answer("k2", "1")
 assert not remote_sent and any(s[0] == "orchestrator" and "review-2" in s[1] for s in h.sent)
 print("ok qwin answer relayed")
+
+# #368: the page answered: tick reads <key>.answers.json itself and relays it (no LLM); the phone window closes
+marked.clear(); h.sent.clear(); n_kill = len(sp.killed)
+(QW.DIR / "k4.answers.json").write_text(json.dumps({"answers": {"a": "כחול"}}, ensure_ascii=False), encoding="utf-8")
+QW.tick(h.ts(), now=9100)
+assert marked == [("k4", "כחול")], marked
+assert h.t.get("question-4", {}).get("state") != "live" and len(sp.killed) == n_kill, h.t.get("question-4")
+assert any(s[0] == "orchestrator" and "כחול" in s[1] for s in h.sent), h.sent
+QW.tick(h.ts(), now=9160); assert marked == [("k4", "כחול")]                          # relayed once
+print("ok qwin page answer read by python")
 
 # owner_q keeps the asking window (source) for the relay
 b = OQ.body("abcdef012345", "remote-7", "QUESTION: כן או לא?")
@@ -144,3 +192,26 @@ QW.tick(h3.ts(), now=40060)
 assert "question-cb326d" not in h3.t and ("wx", "false") in h3.pins, h3.t          # leftover: unpinned + gone
 assert h3.t["question-7"]["state"] == "live"                                         # its question is still open: stays
 print("ok qwin leftovers closed")
+
+# #368 real process: the real _spawn starts the real ask.py (no browser), the URL is read from its log,
+# an answer POSTed to the page lands in <key>.answers.json and page_answer reads it
+import importlib, time, urllib.request
+os.environ["ASK_NO_BROWSER"] = "1"
+real = importlib.reload(QW); real.DIR, real.log = tmp / "real", lambda m: None
+pid = real.start_page({"key": "r1", "text": "איזה צבע? 1) ירוק 2) כחול"})
+try:
+    assert pid > 0
+    for _ in range(100):
+        if real.page_url("r1"): break
+        time.sleep(0.1)
+    url = real.page_url("r1"); assert url.startswith("http://127.0.0.1:"), (tmp / "real" / "r1.log").read_text()
+    html = urllib.request.urlopen(url, timeout=5).read().decode("utf-8")
+    assert "איזה צבע?" in html and "ירוק" in html and 'dir="rtl"' in html
+    urllib.request.urlopen(urllib.request.Request(url + "answer", data=json.dumps({"a": "כחול"}).encode(), method="POST"), timeout=5)
+    for _ in range(100):
+        if real.page_answer("r1") is not None: break
+        time.sleep(0.1)
+    assert real.page_answer("r1") == "כחול", real.page_answer("r1")
+finally:
+    real._kill(pid)
+print("ok qwin real ask.py page")
