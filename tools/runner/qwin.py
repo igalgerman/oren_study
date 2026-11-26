@@ -157,11 +157,12 @@ def answer(key, text):
     n, src, done = info.get("issue", 0), info.get("source", ""), {}
     if n: done["issue"] = _gh("issue", "comment", str(n), "--body", R.redact(f"OWNER ANSWER (question window, owner-q:{key}): {text}"))[0] == 0
     done["answered"] = OQ.mark_answered(key, text)
-    if src.startswith("remote-") and n:
+    resumes = src.startswith("remote-") and n and R.where_of(n) == "remote"   # #135: runner-managed: the watchdog resumes the session from the issue comment
+    if src.startswith("remote-") and n and not resumes:
         s = session_of(n)
         done["remote"] = bool(s) and _send_remote(s, f"OWNER ANSWER to your QUESTION on #{n}: {text}\nContinue the issue with this answer.").get("ok", False)
     _hc("send", "orchestrator", f"OWNER ANSWERED (question window, {src or key}): {info.get('text', '')[:200]} -> {text}\n"
-        + ("The cloud session got it (remote.py send). " if done.get("remote") else f"Relay it to {src or 'the asker'} (hc send / the menu option). ")
+        + ("The runner resumes the cloud session with it (#135). " if resumes else "The cloud session got it (remote.py send). " if done.get("remote") else f"Relay it to {src or 'the asker'} (hc send / the menu option). ")
         + "Unpark the issue if it was parked.", timeout=30)
     return done
 
