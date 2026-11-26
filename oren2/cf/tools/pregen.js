@@ -115,6 +115,7 @@ async function collect() {
       tryf(() => (T.STORIES || []).forEach(st => { add(st.t); st.s.forEach(add); st.q.forEach(q => add(q[0])); }));
       tryf(() => W.READBANK2.speakList().forEach(add));
       tryf(() => T.storyWordList().forEach(add));   /* #420: a word tapped in a story is said alone; the "words we will meet" card */
+      tryf(() => W.GAPS.speakList().forEach(add));   /* rhymes (#419) */
       tryf(() => W.EXPLORE2.kidTexts().forEach(s => add(sp(s))));
       tryf(() => W.FRIEND.speakList().forEach(s => add(sp(s))));
       tryf(() => W.HELP.allTexts().forEach(s => add(sp(s))));

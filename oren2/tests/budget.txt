@@ -21,3 +21,5 @@ friend-phone 60           # same file on the phone viewport
 pday 90                   # #359 two devices through a fake save server: plan changes, skips, undo, offline queue, skip-now waiting for an answer: ~45 s alone
 network 60                # #434 slow network (throttled) + offline (service worker, voice from the device, save after reconnect): ~18 s alone
 reading 60                # 42 checks: reading mode + #355 stories + #420 story words (card, tap, next-day practice, pregen): ~27 s under load
+gaps-desktop 90           # #419 adds the rhymes checks (400 generated questions, voice timing ~5 s, a round of 5): ~38 s alone
+gaps-phone 90             # same file on the phone viewport
