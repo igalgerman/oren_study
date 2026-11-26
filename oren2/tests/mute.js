@@ -10,8 +10,8 @@ if(!c.__muted){c.__muted=1;const orig=c.launch.bind(c);
   const HOUR=+(process.env.TEST_HOUR||10),REAL=process.env.TEST_REAL_CLOCK==='1';
   const CLOCK=h=>{const D=Date,n=new D();const off=new D(n.getFullYear(),n.getMonth(),n.getDate(),h,0,0)-n;
     const F=function(...a){return a.length?new D(...a):new D(D.now()+off);};F.prototype=D.prototype;F.UTC=D.UTC;F.parse=D.parse;F.now=()=>D.now()+off;window.Date=F;};
-  // #79: the random 'explain how you did it' card (HELP.teach, 8% / 50%) must not pop up in tests: it covers #ov and blocks clicks/reads. Held off in every suite; help.test.js sets teachP itself when it tests the card. TEST_HELP_TEACH=1 turns this off.
-  const NOTEACH=()=>{const t=setInterval(()=>{try{const h=window.HELP;if(h&&h.cfg){h.cfg.teachP=0;h.cfg.teachSoloP=0;clearInterval(t);}}catch(e){}},20);setTimeout(()=>clearInterval(t),20000);};
+  // #79: the random 'explain how you did it' card (HELP.teach, max once a day after help) must not pop up in tests: it covers #ov and blocks clicks/reads. Held off in every suite; help.test.js sets teachP itself when it tests the card. TEST_HELP_TEACH=1 turns this off.
+  const NOTEACH=()=>{const t=setInterval(()=>{try{const h=window.HELP;if(h&&h.cfg){h.cfg.teachP=0;clearInterval(t);}}catch(e){}},20);setTimeout(()=>clearInterval(t),20000);};
   const noTeach=async x=>{if(process.env.TEST_HELP_TEACH!=='1')await x.addInitScript(NOTEACH);};
   const fakeClock=async x=>{if(!REAL)await x.addInitScript(CLOCK,HOUR);};
   c.launch=async(o={})=>{const b=await orig({...o,args:[...(o.args||[]),'--mute-audio']});

@@ -27,7 +27,7 @@ const E=t=>/^\d+$/.test(String(t))?String(t):`<span class="ltr">${t}</span>`;   
 const strip=s=>String(s==null?'':s).replace(/<svg[\s\S]*?<\/svg>/g,' ').replace(/<[^>]+>/g,' ').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&amp;/g,'&').replace(/\s+/g,' ').trim();
 const plain=s=>strip(s).replace(/[֑-ׇ]/g,'');
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const cfg={idle:25000,teachP:.5,teachSoloP:.08,teachGap:4*60000,keep:40};
+const cfg={idle:25000,teachP:.5,keep:40};/* #347: teach-back only after a helped question, at most once a day (DB().tday) */
 
 /* ---------- speech: numbers and signs as words (voice only) ---------- */
 const F=['אפס','אחת','שתיים','שלוש','ארבע','חמש','שש','שבע','שמונה','תשע','עשר','אחת עשרה','שתים עשרה','שלוש עשרה','ארבע עשרה','חמש עשרה','שש עשרה','שבע עשרה','שמונה עשרה','תשע עשרה','עשרים'];
@@ -465,7 +465,7 @@ function parents(){const st=S;if(!st)return;st.busy=true;clearTimeout(st.idleT);
   say('בּוֹא נִקְרָא לְאַבָּא אוֹ לְאִמָּא, נִפְתֹּר יַחַד');try{O().sfx&&O().sfx.star&&O().sfx.star(0);}catch(e){}}
 function teach(st){const ex=st.ex;if(!ex.teach)return false;const opts=shuffle(ex.teach(st.d));
   const eq=st.d.l!=null&&st.d.op?E(eqFull(st.d)):'';const card=openOv(`<div class="hlp-h"><span class="hlp-f">${pet()}</span><h2>תַּסְבִּיר לִי, אֵיךְ עָשִׂיתָ?</h2></div>${eq?`<div class="hlp-q">${eq}</div>`:''}<div class="hlp-opts"></div>`,'hlp-tb');
-  if(!card)return false;const box=card.querySelector('.hlp-opts');DB().t=Date.now();
+  if(!card)return false;const box=card.querySelector('.hlp-opts');DB().tday=today();persist();
   const done=pick_=>{const db=DB();db.tb.push({d:today(),type:st.d.type,ex:plain(ex.show?ex.show(st.d):''),pick:plain(pick_)});db.tb=db.tb.slice(-30);persist();
     box.innerHTML=`<div class="hlp-thanks">אֵיזֶה הֶסְבֵּר יָפֶה!</div>`;card.querySelector('.hlp-aloud')&&card.querySelector('.hlp-aloud').remove();say('אֵיזֶה הֶסְבֵּר יָפֶה!');try{O().sfx.ok(3);}catch(e){}setTimeout(closeOv,D(1500));};
   opts.forEach(o=>box.appendChild(btn('chb tx hlp-opt',`<span>${o}</span>`,()=>done(o))));
@@ -490,8 +490,8 @@ function right(){if(!S)return {solo:true,star:true};const st=S;const solo=st.lev
   clearTimeout(st.idleT);clearTimeout(st.exT);hidePanel();
   const db=DB();if(st.q.fromHelp&&db.items[st.q.fromHelp]){const it=db.items[st.q.fromHelp];if(solo&&st.wrong===0){it.ok=1;it.okd=today();}persist();}
   if(st.phase==='solo'&&st.origKey&&db.items[st.origKey])db.items[st.origKey].solo=today();
-  const helped=st.level>0||st.phase==='solo';const p=helped?cfg.teachP:cfg.teachSoloP;
-  if(st.ex.teach&&Date.now()-(db.t||0)>cfg.teachGap&&Math.random()<p&&st.ctx.teach!==false)setTimeout(()=>{if(!ovOpen())teach(st);},D(650));
+  const helped=st.level>0||st.phase==='solo';
+  if(helped&&st.ex.teach&&String(db.tday||'')<today()&&Math.random()<cfg.teachP&&st.ctx.teach!==false)setTimeout(()=>{if(!ovOpen())teach(st);},D(650));
   S=null;return {solo,star:solo};}
 function stop(keepPend){if(S){clearTimeout(S.idleT);clearTimeout(S.exT);hidePanel();if(ovOwn&&!ov().querySelector('.hlp-tb'))closeOv();}S=null;if(!keepPend)pend=null;}
 
