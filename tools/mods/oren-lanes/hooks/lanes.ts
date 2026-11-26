@@ -75,7 +75,7 @@ export function finishedRuns(prevLive: string[], now: Win[]): string[] {
 export function statusLine(d: OrenLanesData): string {
   const nums = new Set(d.windows.filter(w => isLive(w) && /^issue-\d+/.test(w.name)).map(w => /^issue-(\d+)/.exec(w.name)![1]))
   const lanes = Math.min(nums.size, 3)
-  let s = `lanes ${lanes}/3 · ready ${d.groups.ready.count} · blocked ${d.groups.blocked.count}`
+  let s = `lanes local ${lanes}/${d.localMax ?? 3} · cloud ${d.cloudCount ?? 0}/${d.remoteMax ?? 0} · ready ${d.groups.ready.count} · blocked ${d.groups.blocked.count}`
   const waiting = d.windows.filter(w => /^(issue|review|intake)-/.test(w.name) && w.state.endsWith('/blocked')).map(w => w.name)
   const you = [...d.groups.needsYou.titles.map(t => t.split(' ')[0]), ...waiting]
   if (you.length) s += ` · needs you: ${you.slice(0, 3).join(', ')}`
@@ -190,6 +190,38 @@ export function parseMaxCore(toml: string): number {
   return n >= 1 ? n : 1
 }
 
+/** #136: local_lanes from tools/runner/config.toml text; 3 when missing. */
+export function parseLocalLanes(toml: string): number {
+  const m = /^\s*local_lanes\s*=\s*(\d+)/m.exec(toml)
+  return m ? Number(m[1]) : 3
+}
+
+export function parseRemoteLanes(toml: string): number {
+  const m = /^\s*remote_lanes\s*=\s*(\d+)/m.exec(toml)
+  return m ? Number(m[1]) : 0
+}
+
+export const isCloud = (i: Issue) => (i.labels ?? []).some(x => x.name === 'cloud')
+
+/** #136: a row of `python tools/runner/remote.py cloud`. last = ISO UTC of the newest comment/commit. */
+export type CloudLane = { n: number; title: string; state: string; line?: string; last: string; stale: boolean; pr: string; session: string }
+
+const hhmmIso = (iso: string) => {
+  const t = Date.parse(iso)
+  return Number.isNaN(t) ? '-' : new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(t))
+}
+
+/** #136: per cloud lane a '☁ #n title — state · HH:MM' line (+ ' · STALE'), then the PR and session links on their own lines. */
+export function cloudRows(lanes: CloudLane[]): string[] {
+  const out: string[] = []
+  for (const c of lanes) {
+    out.push(`☁ #${c.n} ${short(c.title)} — ${c.state} · last ${hhmmIso(c.last)}${c.stale ? ' · STALE' : ''}`)
+    if (c.pr) out.push(`   PR ${c.pr}`)
+    if (c.session) out.push(`   session ${c.session}`)
+  }
+  return out
+}
+
 /** One line per lane (3): what runs in it, or WHY it is free. */
 export function laneReasons(open: Issue[], wins: Win[], max = 3, maxCore = 1): string[] {
   const lab = (i: Issue) => new Set((i.labels ?? []).map(x => x.name))
@@ -232,7 +264,7 @@ export function view(open: Issue[], closed: Issue[], wins: Win[], prBranches: st
     return 'building'
   }
   const exp = (i: Issue) => lab(i).has('express')
-  const running = open.filter(i => lab(i).has('in-progress')).sort((a, b) => a.number - b.number)
+  const running = open.filter(i => lab(i).has('in-progress') && !isCloud(i)).sort((a, b) => a.number - b.number)   // #136: cloud lanes have their own rows
   const expRun = running.filter(exp)[0]   // #72: one extra lane for owner-approved issues
   const lanes = running.filter(i => i !== expRun).slice(0, max).map(i => `● #${i.number} ${short(i.title)} — ${step(i.number)}`)
   const why = laneReasons(open, wins, max, maxCore).filter(x => x.includes(' free — ')).map(x => x.replace(/^\d+\. free — /, ''))

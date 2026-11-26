@@ -1,13 +1,16 @@
 """Watchdog: keeps the flow from getting stuck. Runs forever in the herdr window `watchdog` (started by tools/orchestrator.cmd).
 Every minute it checks, deterministically:
   1. a worker/reviewer/intake window waiting for an answer (status blocked)  -> tells the orchestrator (once per new screen; also a worker whose last line is QUESTION:)
+     and posts the question in the pinned issue 'Questions for the owner' (owner_q.py, #193; once per window+question); an owner reply there -> tells the orchestrator
   2. a worker/reviewer that stopped without its RESULT:/VERDICT: line for 10 min -> tells the orchestrator
   3. free lanes + ready issues but no runner pass running                       -> starts a runner pass
   3b. a window waiting for the owner longer than park_minutes (the runner parks it itself; this is the fallback): issue gets blocked + ready-for-human, lane freed
   3c. owner lane: no intake window open + a needs-triage/needs-info issue -> opens ONE `intake-<n>` (oldest issue), `NEEDS YOU: intake-<n> is open`
   5. every observer_minutes: observer.py applies deterministic rules (make_ready, rerun, fix Blocked-by lines) within limits
+  5b. every ai_observer_minutes (#203): ai_observer.py, ONE read-only headless Sonnet check in a thread; new findings -> the orchestrator
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
+  4b. orchestrator / inbox / inspector terminal finished (#140)                -> removed by address and started again (recover.py commands)
 It never answers questions or presses keys in other windows; it only tells the orchestrator and starts the runner.
 Usage: python watchdog.py [--once]
 """
@@ -17,6 +20,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 import runner as R   # config, gh(), select(), hc paths
+import owner_q as OQ # #193: the pinned 'Questions for the owner' issue
 
 EVERY = int(R.CFG.get("watchdog_seconds", 60))
 LOG = R.RUNS / "watchdog.log"
@@ -74,12 +78,16 @@ def check_windows(ts):
             if status == "blocked" and "trust this folder" in screen and now - since < 120: continue   # the runner accepts this dialog itself
             if status == "blocked" and now - since < 90: continue                                        # short menus the runner/owner answers at once: no alarm
             h = hashlib.sha1((q or tail[-600:]).encode()).hexdigest()
+            url = OQ.post(name, q, tail)                        # #193: into the pinned owner-questions issue (once; retried while gh fails)
+            if url: log(f"posted owner question for {name}: {url}")
             if told.get(name) != h:
                 told[name] = h
                 pin(t, True)
                 what = f"asks: {q}" if q else "is waiting for an answer"
-                tell(f"{needs_you_line(name, q, tail)}{chr(10)}WATCHDOG: window {name} {what}. Ask the owner ONE short line in your window, then answer it "
-                     f"(hc send {name} \"..\" or the menu option he picks). Its screen ends with:{chr(10)}{tail}")
+                tell(f"{needs_you_line(name, q, tail)}{chr(10)}WATCHDOG: window {name} {what}. NEW OWNER QUESTION"
+                     + (f" (posted: {url})" if url else " (in the 'Questions for the owner' issue)")
+                     + f": send a PushNotification with the question text, then relay his answer (hc send {name} \"..\" or the menu option he picks) "
+                     f"and mark it answered (owner_q.py answered <key>). Its screen ends with:{chr(10)}{tail}")
             m = re.match(r"(?:issue|review)-(\d+)", name)       # fallback for a runner that did not park by itself
             if m and R.should_park(since, now, R.PARK_MINUTES + 3) and R.park_issue(int(m[1]), name, tail, since):
                 log(f"parked #{m[1]} ({name} waiting since {time.strftime('%H:%M', time.localtime(since))})")
@@ -105,7 +113,7 @@ def check_lanes(ts):
     rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: return
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
-    if not R.select(issues, R.CFG["max_parallel"], R.MAX_CORE, R.EXPRESS): return
+    if not R.select(issues, R.total_lanes(), R.MAX_CORE, R.EXPRESS): return
     orch = R.hc_json("get", "orchestrator", "--json").get("address", "")
     name = f"run-pass-{int(time.time()) % 100000}"
     cmd = [R.HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(R.ROOT), "--label", "role=runner"]
@@ -141,7 +149,7 @@ IDLE_MIN = 15      # a live issue/review/intake window done/idle this long, with
 PARKED_MIN = 60    # #123: a parked (blocked) issue's done/idle windows, after this long
 quiet_since = {}   # live window name -> first time seen done/idle
 
-def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset(), busy=frozenset(), old=frozenset()):
+def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset(), busy=frozenset(), old=frozenset(), passed=frozenset()):
     """Pure: names of windows to close. ts = hc terminals (name, state, status, marker True/False),
     closed = closed issue numbers, blocked = issue numbers labelled blocked (parked: keep their windows for the owner),
     human = issue numbers labelled ready-for-human (owner may look), stale = live window names done/idle for IDLE_MIN+,
@@ -159,6 +167,8 @@ def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset(), busy=fr
         if not m: continue
         n, role, suffix = int(m.group(2)), m.group(1), m.group(3) or ""
         if t.get("state") != "live": continue
+        if n in passed and role in ("issue", "review") and not suffix.startswith("-resolve") and t.get("status") in ("done", "idle"):
+            out.append(name); continue                                      # #164: review passed, runner only merges now
         if n in busy: continue                                              # #113: runner still deploying/closing it
         if n in closed: out.append(name); continue                          # issue done: everything for it goes (#123: even if labelled blocked)
         if n in blocked:                                                    # parked: the owner may look, for PARKED_MIN
@@ -174,6 +184,18 @@ def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset(), busy=fr
                  "review": [f"issue-{n}-fix"] if not suffix else []}[role]
         if any(x in live for x in later): out.append(name)
     return out
+
+def review_passed(nums, events=None):
+    """#164: issues whose CURRENT run (after its last start) has a review_pass event in stats.jsonl."""
+    if events is None:
+        import stats; events = stats.read_events(R.RUNS / "stats.jsonl")
+    start, ok = {}, set()
+    for e in sorted(events, key=lambda e: e.get("ts", 0)):
+        n = e.get("issue")
+        if n not in nums: continue
+        if e.get("event") == "start": start[n] = e["ts"]; ok.discard(n)
+        elif e.get("event") == "review_pass" and n in start: ok.add(n)
+    return ok
 
 def cleanup(ts):
     rc, out = R.gh("issue", "list", "--state", "all", "--limit", "300", "--json", "number,state,labels")
@@ -197,7 +219,7 @@ def cleanup(ts):
         rows.append({**t, "name": name, "marker": marker})
     nums = {int(m.group(1)) for t in rows for m in [re.match(r"^\w+-(\d+)", t["name"])] if m}
     busy = {n for n in nums if R.FileLock(f"issue-{n}").held_by_other()}
-    for name in leftovers(rows, closed, blocked, human, stale, busy, old):
+    for name in leftovers(rows, closed, blocked, human, stale, busy, old, review_passed(nums)):
         # act on the ADDRESS of the matching row, never the bare name: a finished terminal can share its
         # name with a new live one, and `hc kill <name>` would hit the live one.
         for t in rows:
@@ -206,8 +228,20 @@ def cleanup(ts):
             R.hc("rm", t["address"], timeout=30)
             log(f"closed window {name} ({t['address']}, was {t.get('state')})")
 
+def check_control(ts):
+    """#140: a finished orchestrator / inbox / inspector terminal is removed (by address) and started again, same command as recover."""
+    import recover
+    for name, address in recover.finished_control(ts):
+        R.hc("rm", address, timeout=30)
+        rc = recover.start_control(R, name)
+        log(f"{name} had finished: restarted (rc {rc})")
+        if rc == 0 and name != "orchestrator": tell(f"WATCHDOG: {name} had finished; restarted it")
+
 def observer_tick():
     import observer; observer.run_if_due()      # acting observer (observer.py)
+
+def ai_observer_tick():
+    import ai_observer; ai_observer.run_if_due(tell, log)   # #203: hourly AI check (thread; not reloaded: that would reset its never-two guard)
 
 SYNC_MIN = int(R.CFG.get("sync_minutes", 3))
 _sync = {"last": 0.0, "msg": ""}
@@ -243,6 +277,15 @@ def idle_alarms(issues, prs, now, free_since, max_parallel):
             out.append((f"bl{i['number']}", f"#{i['number']} blocked for {h:.1f} h" + (" (waits for the owner)" if "ready-for-human" in i["labels"] else "")))
     return out
 
+def cloud_stuck_alarms(rows, now, stuck_hours):
+    """Pure (#136): -> list of (key, text) for cloud lanes (remote.cloud() rows) with no comment/commit for stuck_hours."""
+    out = []
+    for c in rows:
+        m = _age_min(c.get("last"), now)
+        if c.get("last") and m >= stuck_hours * 60:
+            out.append((f"cl{c['n']}", f"cloud lane #{c['n']} has had no activity for {m / 60:.1f} h (stuck_hours {stuck_hours:g}; state {c.get('state', '?')})"))
+    return out
+
 def alarms_once(now=None):
     now = now or time.time()
     rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
@@ -250,10 +293,14 @@ def alarms_once(now=None):
     if rc or rc2: return None
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
     running = sum("in-progress" in i["labels"] for i in issues)
-    free = running < R.CFG["max_parallel"] and bool(R.select(issues, R.CFG["max_parallel"]))
+    free = running < R.total_lanes() and bool(R.select(issues, R.total_lanes()))
     if not free: _alarm["free_since"] = None
     elif _alarm["free_since"] is None: _alarm["free_since"] = now
-    return idle_alarms(issues, json.loads(out2), now, _alarm["free_since"], R.CFG["max_parallel"])
+    try:
+        import remote; cloud = remote.cloud(now=now)
+    except Exception as e:
+        log(f"cloud lanes unreadable: {e!r}"); cloud = []
+    return idle_alarms(issues, json.loads(out2), now, _alarm["free_since"], R.total_lanes()) + cloud_stuck_alarms(cloud, now, float(R.CFG.get("stuck_hours", 2)))
 
 def alarm_tick():
     """Every 10 min: idle alarms to the orchestrator (+ watchdog.log); the same alarm at most once an hour."""
@@ -268,6 +315,13 @@ def alarm_tick():
     tell("IDLE ALARM (watchdog): " + " · ".join(new))
 
 def main():
+    if "--lock" in sys.argv:                 # #181: who holds the merge lock, why, for how long
+        sys.stdout.reconfigure(encoding="utf-8")
+        _, info, alive = lock_state()
+        if not info: print("merge lock: free"); return
+        pid, note, since = info
+        print(f"merge lock: held by {note or 'unknown step'} (pid {pid}, {'alive' if alive else 'DEAD'}) for {int((time.time() - since) / 60)} min")
+        w = green_waiting(); print("green PRs waiting: " + (", ".join(f"#{n}" for n in w) if w else "none")); return
     if "--alarms-once" in sys.argv:          # #117: one command: is anything idle or stuck?
         sys.stdout.reconfigure(encoding="utf-8")
         al = alarms_once()
@@ -296,14 +350,60 @@ def tick():
     except OSError: pass
     ts = windows()
     check_windows(ts)
+    OQ.answers_tick(tell)
     check_lanes(ts)
     check_intake(ts)
-    cleanup(R.hc_json("ls", "--all", "--json").get("terminals", []) or ts)
+    all_ts = R.hc_json("ls", "--all", "--json").get("terminals", []) or ts
+    check_control(all_ts)
+    cleanup(all_ts)
     observer_tick()
+    ai_observer_tick()
     sync_tick()
     alarm_tick()
     trends_tick()
     ai_tick()
+    lock_tick()
+
+# ---------- #181: merge lock watch ----------
+LOCK_WARN_MIN, LOCK_REPEAT_MIN = 20, 30
+_lock = {"sent": 0.0, "key": None}
+
+def lock_alarm(info, alive, now, waiting=()):
+    """Pure: -> ('clear', text) when the holder is dead, ('alarm', text) when held > LOCK_WARN_MIN, else None.
+    info = (pid, note, since) from FileLock.info(); waiting = green open PR numbers."""
+    if not info: return None
+    pid, note, since = info
+    mins = int((now - since) / 60)
+    who = f"{note or 'unknown step'} (pid {pid})"
+    if not alive:
+        return ("clear", f"merge lock held by a dead process: {who}, {mins} min; removed")
+    if mins >= LOCK_WARN_MIN:
+        w = f"; green PRs waiting: #{', #'.join(map(str, waiting))}" if waiting else ""
+        return ("alarm", f"MERGE LOCK held {mins} min by {who}{w}. Check that step; nothing slow belongs inside the lock (#181)")
+    return None
+
+def green_waiting():
+    rc, out = R.gh("pr", "list", "--state", "open", "--json", "number,isDraft,statusCheckRollup")
+    if rc: return []
+    ok = lambda p: p.get("statusCheckRollup") and all((c.get("conclusion") or c.get("status")) in ("SUCCESS", "SKIPPED", "NEUTRAL") for c in p["statusCheckRollup"])
+    return [p["number"] for p in json.loads(out) if not p.get("isDraft") and ok(p)]
+
+def lock_state(now=None):
+    lk = R.FileLock("integrate"); info = lk.info()
+    return lk, info, (bool(info) and R.pid_alive(info[0]))
+
+def lock_tick(now=None):
+    now = now or time.time()
+    lk, info, alive = lock_state()
+    if not info: _lock["key"] = None; return
+    if not alive:
+        a = lock_alarm(info, False, now)
+        lk.path.unlink(missing_ok=True); log(a[1]); return
+    if (now - info[2]) / 60 < LOCK_WARN_MIN: return
+    key = (info[0], info[1])
+    if _lock["key"] == key and now - _lock["sent"] < LOCK_REPEAT_MIN * 60: return
+    a = lock_alarm(info, True, now, green_waiting())
+    _lock.update(sent=now, key=key); tell(a[1])
 
 _ai = {"running": False}
 def ai_tick():

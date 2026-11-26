@@ -102,3 +102,17 @@ assert "Bottom line (estimate)" in D.text(m2)
 pl1 = D.eta_plan(rows0, run0, t0, {"c6": 50.0, "c24": 50.0}, now, lanes=1)        # 1 lane, busy until #6 merges
 assert pl1[1][0] == now + 1050 + 3600 and pl1[2][0] == now + 1050 + 7200, (pl1[1], pl1[2])   # lane frees, then one cycle each
 print("ok merge eta")
+# #136 cloud lanes: lanes line, one row per cloud lane, STALE, not in "Running now"
+ic = issues + [I(11, "OPEN", ["in-progress", "cloud", "P0"]), I(12, "OPEN", ["cloud"])]
+cl = [{"n": 11, "title": "t11", "state": "working", "line": "", "last": "2026-11-26T06:30:00Z", "stale": True, "pr": "", "session": "https://claude.ai/code/session_01A"},
+      {"n": 12, "title": "t12", "state": "done", "line": "RESULT: DONE", "last": "2026-11-26T07:50:00Z", "stale": False, "pr": "https://github.com/x/y/pull/201", "session": ""}]
+m3 = D.model(ic, prs, ev, now, "", cl)
+assert m3["lanes"] == f"local 1/{D.R.CFG.get('local_lanes', 3)} · cloud 2/{D.R.CFG.get('remote_lanes', 0)}", m3["lanes"]
+assert [r["n"] for r in m3["running"]] == [1], m3["running"]
+t3 = D.text(m3)
+assert "Lanes: local 1/" in t3 and "cloud #11 t11 — working · last " in t3 and " · STALE · https://claude.ai/code/session_01A" in t3, t3
+assert "cloud #12 t12 — done" in t3 and "STALE" not in t3.split("cloud #12")[1].split("\n")[0], t3
+pg3 = D.page(m3)
+assert "Cloud lanes" in pg3 and '<a href="https://github.com/x/y/pull/201">PR</a>' in pg3 and ">session</a>" in pg3 and "STALE" in pg3
+assert "Cloud lanes" not in D.page(m)
+print("ok dashboard cloud")

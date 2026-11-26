@@ -1304,10 +1304,26 @@ const TTS={ns:null,he:false,en:false,ok:false,blocked:false};
   if(!TTS.ns)return;let L;try{L=TTS.ns.languages?await TTS.ns.languages().catch(()=>undefined):undefined;}catch(e){}
   TTS.langs=L;TTS.he=!!(L&&L.some(x=>/^(he|iw)/i.test(x)));TTS.en=true;TTS.ok=true;try{TTS.ns.onState(({state,reason})=>{duck(state!=='idle');if(reason==='not_granted'||reason==='unavailable')TTS.blocked=true;});}catch(e){}pickVoice();})();
 const useClaude=lang=>!!TTS.ns&&!TTS.blocked&&(lang==='en'?TTS.en:TTS.he);
+/* #122: numbers are spoken as Hebrew words (digits stay on screen). Gender and construct by the next word; a prefix ל/ו/ב/כ/מ/ש/ה before "-10" joins the word. */
+function numWords(n,fem){n=Math.floor(+n);const F=['אפס','אחת','שתיים','שלוש','ארבע','חמש','שש','שבע','שמונה','תשע'],M=['אפס','אחד','שניים','שלושה','ארבעה','חמישה','שישה','שבעה','שמונה','תשעה'],T=['','','עשרים','שלושים','ארבעים','חמישים','שישים','שבעים','שמונים','תשעים'];
+  const u=(k,f)=>f?F[k]:M[k];
+  const b100=(k,f)=>{if(k<10)return u(k,f);if(k===10)return f?'עשר':'עשרה';
+    if(k<20){const x=k-10;return (x===1?(f?'אחת':'אחד'):x===2?(f?'שתים':'שנים'):u(x,f))+' '+(f?'עשרה':'עשר');}
+    const t=T[Math.floor(k/10)],r=k%10;return r?t+' ו'+u(r,f):t;};
+  if(n<100)return b100(n,fem);
+  if(n<1000){const h=Math.floor(n/100),r=n%100,hw=h===1?'מאה':h===2?'מאתיים':F[h]+' מאות';return r?hw+' ו'+b100(r,fem):hw;}
+  const th=Math.floor(n/1000),r=n%1000,tw=th===1?'אלף':th===2?'אלפיים':(th<10?M[th]:b100(th,false))+' אלפים';
+  return r?tw+(r<100||r%100===0?' ו':' ')+numWords(r,fem):tw;}
+function digitsToWords(t){return t.replace(/(^|[^א-ת֑-ׇ\d])(?:([ולבכמשה])[֑-ׇ]*-)?(\d+)(?!\d|[.,:\/]\d)/g,(m,p1,pf,d,off,s)=>{
+    if(d.length>4||(/[.,:\/]/.test(p1)&&/\d/.test(s[off-1]||'')))return m;
+    const nx=(s.slice(off+m.length).match(/^\s*([א-ת֑-ׇ]+)/)||[])[1],w=nx?nx.replace(/[֑-ׇ]/g,''):'';
+    const pl=/(ים|ות)$/.test(w)&&w.length>3,fem=!(pl&&/ים$/.test(w)),n=+d;
+    const x=n===2&&pl?(fem?'שתי':'שני'):numWords(n,fem);return p1+(pf||'')+x;});}
+window.__numWords=numWords;
 /* nikud text -> full spelling (ktiv male), so a voice that ignores nikud still reads it right */
 function fullSpell(str){/* words the rules cannot know (Israeli spelling), also after a prefix ו/ה/ב/כ/ל/מ/ש */
   const SPELL_RX=fullSpell.X||(fullSpell.X=Object.entries({'בְּרֵכָה':'בריכה','בְּרֵכוֹת':'בריכות','אִמָּא':'אמא','מַיִם':'מים','מַּיִם':'מים','מִכָּל':'מכל','מִשָּׁם':'משם','מִפֹּה':'מפה','אַרְיֵה':'אריה','מִרְיָם':'מרים','מַרְיָם':'מרים','יְרוּשָׁלַיִם':'ירושלים','לִוְיָתָן':'לווייתן','לִּוְיָתָן':'לווייתן','לִוְיָתָנִים':'לווייתנים','יְרוּשָׁלַםִ':'ירושלים'}).map(([k,v])=>[new RegExp('(^|[^\u05D0-\u05EA\u0591-\u05C7])((?:[ובכל][\u05B0\u05B4\u05B7\u05B8\u05BC]{0,2}|ה[\u05B6\u05B7\u05B8]|מ[\u05B4\u05B5]|ש[\u05B6\u05C1]{2}){0,3})'+k.normalize('NFC')+'(?![\u05D0-\u05EA\u0591-\u05C7])','g'),v]));
-  let t=String(str).replace(/<[^>]+>/g,' ').normalize('NFC');const NIK=/[\u0591-\u05C7]/;let out='';
+  let t=digitsToWords(String(str).replace(/<[^>]+>/g,' ').normalize('NFC'));const NIK=/[\u0591-\u05C7]/;let out='';
   for(const [rx,v] of SPELL_RX)t=t.replace(rx,(m,a,pre)=>a+pre.replace(/[\u0591-\u05C7]/g,'')+v);
   const words=t.split(/(\s+)/);for(const w of words){if(!NIK.test(w)){out+=w;continue;}
     const L=[];for(const ch of w){if(/[\u05D0-\u05EA]/.test(ch))L.push({c:ch,m:''});else if(L.length&&NIK.test(ch))L[L.length-1].m+=ch;else L.push({c:ch,m:'',x:1});}
@@ -4650,7 +4666,7 @@ function home(){const S0=T.S();
   const dayDone=!!(d&&nx<0&&d.claimed&&d.ch&&window.FRIEND);
   const say=!d?`${T.hello()}, אוֹרֶן! בְּמָה נְשַׂחֵק?`:dayDone?window.FRIEND.homeSay(d):pickDay?'שָׁלוֹם אוֹרֶן! מָה בָּא לְךָ הַיּוֹם?':nx>=0?`${q.e} ${q.a}`:d.claimed?'כָּל הַכָּבוֹד! עַכְשָׁו זְמַן חוֹפְשִׁי 🎈':'סִיַּמְתָּ אֶת הַשְּׁבִיל! בּוֹא נִרְאֶה אֵיךְ נִגְמַר הַסִּפּוּר.';
   const tl='';
-  s.appendChild(h('div','hstage',`<div class="hbub2" style="--fc:${pr.col||'#4fae4f'}">${say}${tl}</div><div class="hpair" role="button" aria-label="מָה אֶפְשָׁר לַעֲשׂוֹת כָּאן?"><span class="hav bob">${O.AV()}</span><span class="hpet2 bob" style="animation-delay:-.7s">${T.friend()}</span></div>`));
+  s.appendChild(h('div','hstage',`${say?`<div class="hbub2" style="--fc:${pr.col||'#4fae4f'}">${say}${tl}</div>`:''}<div class="hpair" role="button" aria-label="מָה אֶפְשָׁר לַעֲשׂוֹת כָּאן?"><span class="hav bob">${O.AV()}</span><span class="hpet2 bob" style="animation-delay:-.7s">${T.friend()}</span></div>`));
   s.querySelector('.hpair').onclick=()=>{sfx.pop(2);if(dayDone&&d.free)window.FRIEND.bonus();else if(window.TOPIC)window.TOPIC.open();else tour();};
   O.sayNow=T.spk(say);
   if(pickDay){/* "what do you feel like today?": 3 big cards (one is "continue" when there is a last activity) + something else */
@@ -5258,7 +5274,7 @@ const BONUS='עוֹד מַסְלוּל קָטָן',FREEB='זְמַן חוֹפְ�
 FR.bonus=()=>{const d=daily();if(!d)return;d.bs=d.t.length;d.ch=null;d.free=0;O.persist();T.home();};
 FR.free=()=>{const d=daily();if(!d)return;d.free=1;O.persist();T.home();};
 /* what the friend says on home when the day is done; in free time the friend reminds once (on a later visit) that tapping it brings another path */
-FR.homeSay=d=>{if(!d.free)return DONE;d.fv=(d.fv|0)+1;if(d.fv>=2&&!d.rem){d.rem=1;O.persist();return FREE+' '+MORE;}O.persist();return FREE;};
+FR.homeSay=d=>{if(!d.free){if(d.dsaid)return '';d.dsaid=1;O.persist();return DONE;}d.fv=(d.fv|0)+1;if(d.fv>=2&&!d.rem){d.rem=1;O.persist();return FREE+' '+MORE;}O.persist();return FREE;};
 FR.doneEl=()=>{const row=h('div','btnrow frdone');const a=h('button','bigbtn huge','➕ <span>'+BONUS+'</span>');a.onclick=()=>{O.sfx.pop(3);FR.bonus();};
   const b=h('button','bigbtn huge blue','🎈 <span>'+FREEB+'</span>');b.onclick=()=>{O.sfx.pop(3);FR.free();};row.append(a,b);return row;};
 FR.badgeEl=()=>h('div','frbadge','✓ '+BADGE);
