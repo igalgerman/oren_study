@@ -175,6 +175,12 @@ test('#306 the panel shows the cloud desks line (.runs/desks.json text), red whe
   expect(panel(base({ desks: 'cloud desks: inbox ok · ask down' })).desks!.tone).toBe('red')
 })
 
+test('#330 the panel shows the canary line (.runs/canary.json text), red on NEEDS-ATTENTION', () => {
+  expect(panel(base()).canary).toBe(null)
+  expect(panel(base({ canary: 'flow ok 14:45' })).canary).toEqual({ text: 'flow ok 14:45', tone: 'dim' })
+  expect(panel(base({ canary: 'NEEDS-ATTENTION: canary #401 step pr late (30 min)' })).canary!.tone).toBe('red')
+})
+
 import { fromCache, GH_CACHE } from './lanes'
 
 test('#329 the panel reads GitHub only from the shared cache (.runs/gh_cache.json), never when stale', () => {

@@ -141,6 +141,7 @@ export type PanelIn = {
   questionIssue?: number          // the pinned 'Questions for the owner' issue
   pc?: { text: string; alarm?: boolean } | null   // #293: .runs/pc.json when present
   desks?: string                  // #306: .runs/desks.json text, written by tools/runner/desks.py
+  canary?: string                 // #330: .runs/canary.json text, written by tools/runner/canary.py
   refusedAt?: number              // .runs/remote_refused.json 'at' (epoch s)
   cfg: Cfg
 }
@@ -317,6 +318,7 @@ export function panel(p: PanelIn): Panel {
   const needsYou: Row | null = you.length ? { text: `NEEDS YOU: ${you.join(' · ')}`, tone: 'red' } : null
   const pc: Row | null = p.pc?.text ? { text: p.pc.text, tone: p.pc.alarm ? 'red' : 'dim' } : null
   const desks: Row | null = p.desks ? { text: p.desks, tone: p.desks.includes('down') ? 'red' : 'dim' } : null   // #306
+  const canary: Row | null = p.canary ? { text: p.canary, tone: p.canary.includes('NEEDS-ATTENTION') ? 'red' : 'dim' } : null   // #330
 
   // forecast
   const p0 = (i: Issue) => labs(i).has('P0')
@@ -328,7 +330,7 @@ export function panel(p: PanelIn): Panel {
   const forecast: Row = { text: `Forecast: ${p0Text} · ${allText}`, tone: 'dim' }
 
   return {
-    header, needsYou, pc, desks,
+    header, needsYou, pc, desks, canary,
     lanesHead: `LANES ${lanes.length}/${cap}`, starts, lanes: laneRows,
     prs: prRow, next, nextMore: Math.max(0, nextAll.length - 5),
     doneHead: `DONE last hour: ${hour.length}`, done, forecast,
