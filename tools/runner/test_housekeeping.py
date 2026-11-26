@@ -1,6 +1,6 @@
 """#304 housekeeping: nightly prune of .runs/<n> for closed issues; network errors in watchdog ticks retry and alarm only
 after 3 in a row. Run: python3 tools/runner/test_housekeeping.py"""
-import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
+import os, tempfile; os.environ["OREN_TEST"] = "1"; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 import json, sys, time
 from pathlib import Path
 sys.argv.append("--dry-run")
