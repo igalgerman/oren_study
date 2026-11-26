@@ -41,6 +41,14 @@ _q2 = [{"number": 5, "labels": ["pack", "ready-for-agent"], "createdAt": "1"},
 assert [i["number"] for i in _sel(_q2, 1)] == [6]
 print("ok bugs-first")
 
+# #177: hand work labelled 'manual' never takes a lane and is never started by the runner
+_q3 = [{"number": 10, "labels": ["manual", "in-progress", "core"], "createdAt": "1"},
+       {"number": 11, "labels": ["manual"], "createdAt": "1"},
+       {"number": 12, "labels": ["manual", "ready-for-agent"], "createdAt": "1"},
+       {"number": 13, "labels": ["core", "ready-for-agent"], "createdAt": "2"}]
+assert [i["number"] for i in _sel(_q3, 1)] == [13]
+print("ok manual")
+
 # questions + parking
 NL = chr(10)
 def scr(*lines): return NL.join(lines) + NL
@@ -377,6 +385,10 @@ assert [(i["number"], w) for i, w in r.assign_where(ch, 0, 0, 1, 4)] == [(1, "lo
 assert [(i["number"], w) for i, w in r.assign_where(ch, 1, 0, 1, 4)] == [(1, "remote"), (2, "remote"), (3, "remote")]   # local busy -> remote
 assert [(i["number"], w) for i, w in r.assign_where(ch, 1, 3, 1, 4)] == [(1, "remote")]                                 # one remote slot left
 assert r.assign_where(ch, 1, 4, 1, 4) == []                                                                              # all busy
+ex = [{"number": 9, "labels": ["express"]}]
+assert [(i["number"], w) for i, w in r.assign_where(ex, 1, 4, 1, 4)] == [(9, "remote")]   # #72: express beyond the cap still gets a slot
+assert [(i["number"], w) for i, w in r.assign_where(ex, 1, 0, 1, 0)] == [(9, "local")]    # no remote lanes: local
+assert r.assign_where([{"number": 9, "labels": []}], 1, 4, 1, 4) == []                    # a normal issue still waits
 assert [(i["number"], w) for i, w in r.assign_where(ch, 0, 0, 1, 0)] == [(1, "local")]                                  # no remote lanes configured
 p = r.remote_worker_prompt(7, "core", bug=True)
 assert "#7" in p and "lane/7" in p and "FLOW.md" in p and "Fixes #7" in p and "gh issue comment 7" in p
