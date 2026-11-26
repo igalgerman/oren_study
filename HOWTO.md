@@ -11,6 +11,8 @@ Open Claude in `C:\work\Oren_study\a` and type:
 | see what's going on | `/status` |
 | take the last change off the site | `/undo` |
 
+At the end of a hard day, type `/retro` in the orchestrator or inspector window.
+
 Each task opens its own window in herdr (`issue-<n>`). You can talk to it there.
 When it's done, the change is tested, live on the site, and you get one line.
 
