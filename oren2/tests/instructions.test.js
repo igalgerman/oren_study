@@ -17,7 +17,7 @@ const {chromium}=require('playwright');
    await L.sleep(500);check(id,await spoken());
  }
  // sub-screens reached from a menu: [activity, what to click]
- const SUB=[['code-maze','#sTal .lvb'],['mus-piano','#sTal .acts .actc'],['type-lessons','#sTal .acts .actc']];
+ const SUB=[['code-maze','#sTal .lvgo'],['mus-piano','#sTal .pmode'],['type-lessons','#sTal .lvgo']];
  for(const [id,sel] of SUB){
    await p.evaluate(id=>{const O=window.OREN;document.querySelector('#ov').hidden=true;O.showMap();window.TAL.ACT[id].run(()=>O.showMap());},id);
    await L.sleep(300);await reset();await p.evaluate(sel=>document.querySelector(sel).click(),sel);await L.sleep(500);check(id+' > '+sel,await spoken());
