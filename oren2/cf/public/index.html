@@ -1160,9 +1160,11 @@ function parentPlay(on,fresh){if(on&&!kidSave){kidSave=save;let ps=null;if(!fres
   else if(on&&fresh){save=parentSandbox();}
   updateGems();emit('mode',!!kidSave);}
 function skipLevel(){const p=play;if(!p||!p.lv)return false;const lv=p.lv;save.s[lv.id]=Math.max(stars(lv.id),3);persist();showWorld(lv.w);return true;}
-function cloudSave(){if(!cloud.ref)return;cloud.dirty=true;clearTimeout(cloud.timer);cloud.timer=setTimeout(cloudFlush,1500);}
-async function cloudFlush(){if(!cloud.ref||cloud.busy||!cloud.dirty)return;cloud.busy=true;cloud.dirty=false;
-  try{const body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;if(JSON.stringify(body).length>200000){save.rq=save.rq.slice(-15);body.rq=save.rq;}await cloud.ref.set(body);cloud.fail=0;}catch(e){if(FAM.on){logIssue('sync',e&&e.why);if(e&&e.code!=='invalid_argument'&&(cloud.fail|0)<4){const d=(window.__famRetry!=null?window.__famRetry:5000)*Math.pow(3,cloud.fail|0);cloud.fail=(cloud.fail|0)+1;clearTimeout(cloud.rt);cloud.rt=setTimeout(()=>{cloud.dirty=true;FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},d);}else diagSend();}if(e&&e.code==='invalid_argument'){if(!cloud.retried&&save.rq.length>10){cloud.retried=1;save.rq=save.rq.slice(-10);cloud.dirty=true;}else cloud.ref=null;}}
+/* #349: a failed save is ONE problem until a save works again: the parent log counts it once, the retries wait 5 s, 15 s, 45 s ... up to
+   about 20 min (cloud.next) and carry the newest data; new moves meanwhile only mark the save dirty (no write per move, no retry loop) */
+function cloudSave(){if(!cloud.ref)return;cloud.dirty=true;if(Date.now()<(cloud.next||0))return;clearTimeout(cloud.timer);cloud.timer=setTimeout(cloudFlush,1500);}
+async function cloudFlush(){if(!cloud.ref||cloud.busy||!cloud.dirty)return;if(Date.now()<(cloud.next||0))return;cloud.busy=true;cloud.dirty=false;
+  try{const body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;if(JSON.stringify(body).length>200000){save.rq=save.rq.slice(-15);body.rq=save.rq;}if(await cloud.ref.set(body)!=='later'){cloud.fail=0;cloud.next=0;clearTimeout(cloud.rt);}}catch(e){if(FAM.on){const f=cloud.fail|0;if(!f)logIssue('sync',e&&e.why);if(e&&e.code!=='invalid_argument'){if(f>=4)diagSend();const d=(window.__famRetry!=null?window.__famRetry:5000)*Math.pow(3,Math.min(f,5));cloud.fail=f+1;cloud.next=Date.now()+d;clearTimeout(cloud.rt);cloud.rt=setTimeout(()=>{cloud.next=0;cloud.dirty=true;FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},d);}}if(e&&e.code==='invalid_argument'){if(!cloud.retried&&save.rq.length>10){cloud.retried=1;save.rq=save.rq.slice(-10);cloud.dirty=true;}else cloud.ref=null;}}
   cloud.busy=false;if(cloud.dirty)cloudSave();updateSaveNote();}
 /* ---------- own-website mode: one private family save at /api/save (no codes or links: every device sees the same progress) ---------- */
 const FAM={id:null,on:false,last:0};
@@ -1171,7 +1173,7 @@ const FAMILY='a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0';
 function oldFamId(){let o=null;try{o=localStorage.getItem('oren4-family');}catch(e){}return o&&o!==FAMILY&&/^[a-f0-9]{32}$/.test(o)?o:null;}
 function famRef(id){const url='/api/save/'+id;return {
   get:async()=>{const r=await fetch(url,{cache:'no-store'});if(r.status===404)return {exists:false};if(!r.ok)throw new Error('http '+r.status);const d=await r.json();return {exists:true,data:()=>d};},
-  set:async body=>{const GAP=window.__famGap!=null?window.__famGap:25000;if(Date.now()-FAM.last<GAP&&!FAM.force){cloud.dirty=true;clearTimeout(FAM.tm);FAM.tm=setTimeout(()=>{FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},GAP-(Date.now()-FAM.last));return;}
+  set:async body=>{const GAP=window.__famGap!=null?window.__famGap:25000;if(Date.now()-FAM.last<GAP&&!FAM.force){cloud.dirty=true;clearTimeout(FAM.tm);FAM.tm=setTimeout(()=>{FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},GAP-(Date.now()-FAM.last));return 'later';}
     try{const cur=await fetch(url,{cache:'no-store'});if(cur.ok){mergeIn(await cur.json());body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;}}catch(e){}
     FAM.last=Date.now();let r;try{r=await fetch(url,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(body),keepalive:JSON.stringify(body).length<60000});}catch(e){const x=new Error(e&&e.message||'network');x.why=syncWhy(0);diagLog('PUT /api/save',0,x.message);throw x;}
     if(!r.ok){let j=null;try{j=await r.json();}catch(e){}const x=new Error('http '+r.status+(j&&j.error?' '+j.error:''));x.why=syncWhy(r.status,j);diagLog('PUT /api/save',r.status,x.message+(j&&j.why?': '+j.why:''));throw x;}diagLog('PUT /api/save',r.status,'');}};}
@@ -1189,7 +1191,7 @@ async function diagSend(retry){if(DIAG.sent||!FAM.on||kidSave)return;DIAG.sent=1
   try{const r=await fetch('/api/diag',{method:'POST',headers:{'content-type':'application/json'},body:diagBody(FAM.id,log,diagSnap())});if(!r.ok)throw 0;
     const e=(save.iss||[]).find(x=>x.d===today()&&x.k==='sync');if(e){e.r=1;try{localStorage.setItem(KEY,JSON.stringify(save));}catch(x){}}}catch(e){if(!retry)setTimeout(()=>{DIAG.sent=0;diagSend(1);},60000);}}
 /* the parent changed the time limit: send it now, not after the 25 s save delay (#34) */
-async function famNow(){if(!FAM.on||kidSave)return;cloud.dirty=true;FAM.force=true;try{await cloudFlush();}finally{FAM.force=false;}}
+async function famNow(){if(!FAM.on||kidSave)return;cloud.dirty=true;cloud.next=0;FAM.force=true;try{await cloudFlush();}finally{FAM.force=false;}}
 async function famPull(){if(!FAM.on||kidSave)return;try{const snap=await cloud.ref.get();if(snap.exists){const before=JSON.stringify([save.set,save.gems,save.time]);mergeIn(snap.data());updateGems();if(before!==JSON.stringify([save.set,save.gems,save.time]))emit('synced');}}catch(e){}}
 async function cloudInit(){
   try{for(let i=0;i<40&&!window.__site&&!(window.claude&&window.claude.use);i++)await new Promise(r=>setTimeout(r,100));
@@ -1198,7 +1200,7 @@ async function cloudInit(){
       const old=oldFamId();let moved=!old;if(old)try{const os=await famRef(old).get();if(os.exists)mergeIn(os.data());moved=true;}catch(e){}
       cloud.ref=ref;FAM.on=true;try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}cloud.dirty=true;FAM.force=true;await cloudFlush();FAM.force=false;
       if(moved&&!cloud.dirty)try{localStorage.setItem('oren4-family',FAMILY);}catch(e){}
-      setInterval(famPull,60000);addEventListener('online',()=>{cloud.dirty=true;cloudSave();});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')famPull();else if(cloud.dirty){FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});}});
+      setInterval(famPull,60000);addEventListener('online',()=>{cloud.next=0;cloud.dirty=true;cloudSave();});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')famPull();else if(cloud.dirty){FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});}});
       updateGems();emit('synced');return;}const db=await window.claude.use('db');const user=await window.claude.use('user');if(!db||!user)return;
     const id=await user.id();if(!id)return;const base='data/users/'+id+'/';const ref=db.doc(base+'progress4');
     const snap=await ref.get();if(snap.exists)mergeIn(snap.data());else{const old=await db.doc(base+'progress').get();if(old.exists)migrateOld(old.data());}
@@ -1358,35 +1360,54 @@ function fullSpell(str){/* words the rules cannot know (Israeli spelling), also 
   return out.replace(/(^|[.!?:]\s*)([\u05D0-\u05EA]+)/g,(m,p1,w)=>p1+(CMD[w]||w));}
 window.__fullSpell=fullSpell;
 const withNikud=s=>String(s).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
-function browserSay(t,lang){if(!('speechSynthesis' in window))return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(lang==='en'?plain(t):fullSpell(t));u.lang=lang==='en'?'en-US':'he-IL';const v=lang==='en'?enVoice:heVoice;if(v)u.voice=v;u.rate=lang==='en'?.85:.92;u.pitch=1.05;u.onstart=()=>duck(true);u.onend=u.onerror=()=>duck(false);speechSynthesis.speak(u);}
+/* voice stats (#36): every sentence is counted per day by voice (google / claude / browser); every browser-voice use is one event with
+   its reason, the text, GV.ms and the host. Sent in ONE batch about once a minute and when the page is hidden (never per sentence) to
+   /api/tts/stats on the family site (from the Claude artifact too); the parent page is https://oren-game.pages.dev/api/tts/stats */
+const VS={n:{},ev:[],tm:0,own:null,wait:60000};
+const ARTIFACT=/claude\.ai|claudeusercontent/.test(location.host);
+const voiceWhy=()=>ARTIFACT?'artifact-host':/^https?:$/.test(location.protocol)&&!window.__noFamily?'status-failed':'no-site';
+function voiceLog(how,why,t,lang){try{const d=today(),n=VS.n[d]=VS.n[d]||{google:0,claude:0,browser:0};n[how]++;
+  if(how==='browser'){VS.ev.push({d,r:why,k:String(t||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,60),ms:GV.ms,h:location.host||location.protocol,l:lang==='en'?'en':'he'});if(VS.ev.length>100)VS.ev.shift();}
+  if(!VS.tm)VS.tm=setTimeout(voiceFlush,VS.wait);}catch(e){}}
+function voiceFlush(){clearTimeout(VS.tm);VS.tm=0;const days=VS.n,ev=VS.ev;if(!Object.keys(days).length)return;VS.n={};VS.ev=[];
+  if(!ARTIFACT&&(!/^https?:$/.test(location.protocol)||window.__noFamily))return;
+  const url=(ARTIFACT?'https://oren-game.pages.dev':'')+'/api/tts/stats',body=JSON.stringify({days,ev});
+  try{if(navigator.sendBeacon&&navigator.sendBeacon(url,body))return;}catch(e){}try{fetch(url,{method:'POST',body,mode:'no-cors',keepalive:true}).catch(()=>{});}catch(e){}}
+window.__vs=VS;window.__voiceFlush=voiceFlush;
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')voiceFlush();});addEventListener('pagehide',voiceFlush);
+function browserSay(t,lang,why){if(!('speechSynthesis' in window))return;voiceLog('browser',why||voiceWhy(),t,lang);speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(lang==='en'?plain(t):fullSpell(t));u.lang=lang==='en'?'en-US':'he-IL';const v=lang==='en'?enVoice:heVoice;if(v)u.voice=v;u.rate=lang==='en'?.85:.92;u.pitch=1.05;u.onstart=()=>duck(true);u.onend=u.onerror=()=>duck(false);VS.own=u;speechSynthesis.speak(u);}
 /* Google voice on the family website: one fixed voice on every device (chosen by the parents in blind tests),
    each sentence made in advance by cf/tools/pregen.js and cached by the server */
 const GVOICE='he-IL-Chirp3-HD-Kore',GRATE=0.9;
-const GV={ok:false,audio:null,ver:0,pending:false,wait:null,ms:8000};/* ver: the voice-fix version from the server; part of every audio URL so fixed sentences are fetched again. pending/wait: the status check is still running (#36) */
-GV.wait=(async()=>{if(!/^https?:$/.test(location.protocol)||/claude\.ai|claudeusercontent/.test(location.host)||window.__noFamily)return;
-  GV.pending=true;
-  for(let i=0;i<3&&!GV.ok;i++){/* a slow or failed first try must not leave Oren on the browser voice for the whole visit */
+const GV={ok:false,audio:null,ver:0,pending:false,wait:null,ms:8000,at:0,again:20000,site:/^https?:$/.test(location.protocol)&&!ARTIFACT&&!window.__noFamily};/* ver: the voice-fix version from the server; part of every audio URL so fixed sentences are fetched again. pending/wait: the status check is still running (#36) */
+GV.check=async n=>{GV.pending=true;
+  for(let i=0;i<n&&!GV.ok;i++){/* a slow or failed first try must not leave Oren on the browser voice for the whole visit */
     try{const r=await fetch('/api/tts/status',{cache:'no-store'});GV.ok=r.ok;try{const j=await r.json();GV.ver=+j.ver||0;}catch(e){}}catch(e){}
-    if(!GV.ok&&i<2)await new Promise(r=>setTimeout(r,1500));}
-  GV.pending=false;})();
+    if(!GV.ok&&i<n-1)await new Promise(r=>setTimeout(r,1500));}
+  GV.at=Date.now();GV.pending=false;};
+GV.wait=GV.site?GV.check(3):Promise.resolve();
 window.__gv=GV;
 const GEN={v:'en-US-Chirp3-HD-Despina',r:0.85};/* English: one fixed Google voice too, chosen by the parents */
 const useGoogle=lang=>(lang==='he'||lang==='en')&&GV.ok;
 function googleSay(t,lang,again){const en=lang==='en';try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}try{speechSynthesis.cancel();}catch(e){}
   const url='/api/tts?t='+encodeURIComponent((en?plain(t):fullSpell(t)).slice(0,400))+'&v='+(en?GEN.v:GVOICE)+'&r='+(en?GEN.r:GRATE)+'&k='+GV.ver;
   const a=new Audio(url);GV.audio=a;let go=false;
-  const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;try{a.pause();}catch(e){}GV.audio=null;if(!again){logIssue('voice',(why||'stop')+' (retry)');googleSay(t,lang,1);return;}browserSay(t,en?'en':'he');if(why)logIssue('voice',why);};
+  const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;try{a.pause();}catch(e){}GV.audio=null;
+    if(!again&&why!=='no-audio'&&why!=='blocked'){logIssue('voice',why+' (retry)');googleSay(t,lang,1);return;}browserSay(t,en?'en':'he',why);if(why!=='blocked')logIssue('voice',why);};
   const tm=setTimeout(()=>{if(!go)fall('timeout');},GV.ms);/* the browser voice only after a retry and a long wait (#36) */
-  a.onplaying=()=>{go=true;clearTimeout(tm);};a.onplay=()=>duck(true);a.onended=()=>{duck(false);if(GV.audio===a)GV.audio=null;};
-  a.onerror=()=>fall('error');a.play().catch(e=>fall(e&&e.name==='NotAllowedError'?null:'error'));}
+  a.onplaying=()=>{if(!go)voiceLog('google','',t,lang);go=true;clearTimeout(tm);};a.onplay=()=>duck(true);a.onended=()=>{duck(false);if(GV.audio===a)GV.audio=null;};
+  a.onerror=()=>fall(a.error&&a.error.code===4?'no-audio':'audio-error');/* 4: not audio, e.g. the server answered 429/502 (not made yet) */
+  a.play().catch(e=>fall(e&&e.name==='NotAllowedError'?'blocked':e&&e.name==='NotSupportedError'?'no-audio':'audio-error'));}
 function say(t,lang){if(!t||window.__fast)return;const stamp=window.__autoSaid=Date.now();lang=lang||'he';
   if(GV.pending){const g=GV.wait;g.then(()=>{if(window.__autoSaid===stamp)say(t,lang);});return;}
+  if(!GV.ok&&GV.site&&Date.now()-GV.at>=GV.again)GV.wait=GV.check(1);/* the status failed earlier: check again in the background, the next sentences get Google back */
   if(useGoogle(lang)){googleSay(t,lang);return;}
   if(useClaude(lang)){try{speechSynthesis.cancel();}catch(e){}const txt=(lang==='he'?withNikud(t):plain(t)).slice(0,1900);
-    TTS.ns.speak(txt,{language:lang,rate:lang==='en'?.9:.95}).catch(e=>{const c=e&&(e.code||e.reason);if(c==='not_granted'||c==='unavailable'){TTS.blocked=true;return;}if(c==='stopped')return;browserSay(t,lang);});return;}
+    TTS.ns.speak(txt,{language:lang,rate:lang==='en'?.9:.95}).then(()=>voiceLog('claude','',t,lang)).catch(e=>{const c=e&&(e.code||e.reason);if(c==='not_granted'||c==='unavailable'){TTS.blocked=true;return;}if(c==='stopped')return;browserSay(t,lang);});return;}
   browserSay(t,lang);}
 window.__tts=TTS;
-if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pickVoice;setTimeout(pickVoice,1500);}else $('#voiceNote').hidden=false;
+if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pickVoice;setTimeout(pickVoice,1500);
+  try{const ss=speechSynthesis,sp=ss.speak.bind(ss);ss.speak=u=>{if(u&&u!==VS.own)voiceLog('browser','direct-call',u.text,/^en/i.test(u.lang||'')?'en':'he');VS.own=null;return sp(u);};}catch(e){}}else $('#voiceNote').hidden=false;
 /* auto-read: when a screen, story panel, lesson step or question sets its instruction (sayNow), it is read once by
    itself after the screen settles (300 ms). Skipped when something was already said meanwhile, on parent screens, when the
    parents turned it off, and while reading practice wants Oren to read first (window.__noAuto, set by reading.js). 🔊 replays. */
@@ -3638,7 +3659,7 @@ function readStory(k,back){const st=STORIES[k];O.setScreen('sTal','final',back);
   const row=h('div','btnrow');const rd=h('button','bigbtn blue sm',ICON.say+'<span>הַקְרֵא לִי</span>');const go=h('button','bigbtn',ICON.play+'<span>לַשְּׁאֵלוֹת</span>');row.append(rd,go);s.appendChild(row);
   const mark=i=>{page.querySelectorAll('.sl').forEach(p=>p.classList.toggle('cur',+p.dataset.i===i));};
   page.querySelectorAll('.sl').forEach(p=>p.onclick=()=>{mark(+p.dataset.i);if(T.readEl)T.readEl(p);else O.say(T.spk(p.textContent));});
-  rd.onclick=()=>{if(T.readSeq){T.readSeq([...page.querySelectorAll('.sl')],mark);return;}if(!('speechSynthesis' in window))return;speechSynthesis.cancel();st.s.forEach((x,i)=>{const u=new SpeechSynthesisUtterance(window.__fullSpell?window.__fullSpell(x):T.plainHe(x));u.lang='he-IL';u.rate=.88;u.onstart=()=>mark(i);speechSynthesis.speak(u);});};
+  rd.onclick=()=>{if(T.readSeq){T.readSeq([...page.querySelectorAll('.sl')],mark);return;}let i=0;const nx=()=>{if(i>=st.s.length||!page.isConnected)return;mark(i);O.say(st.s[i]);i++;setTimeout(nx,3200);};nx();};/* the game voice, never the browser voice directly (#36) */
   go.onclick=()=>{O.hush();let qi=0;quiz({id:'story-'+k,title:st.t,bg:'final',back:()=>openStories(back),n:st.q.length,gen:()=>{const [q,a,ds]=st.q[qi++];const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}});};}
 function openStories(back){O.setScreen('sTal','final',back);T.hudT('סִפּוּרֵי עֶרֶב');const s=$('#sTal');s.innerHTML='';s.appendChild(h('div','whead',`<span class="gd">${X.moon}</span><h1>סִפּוּרֵי עֶרֶב</h1>`));
   const g=h('div','acts');STORIES.forEach((st,k)=>{const n=(T.S().tl['story-'+k]||{}).s|0;const c=h('button','actc',`<span class="ai">${ALLSPR(st.spr[0])}</span><span class="an">${st.t}</span><span class="st">${[0,1,2].map(j=>j<n?SPR.star:SPR.starOff).join('')}</span>`);c.onclick=()=>readStory(k,()=>openStories(back));g.appendChild(c);});s.appendChild(g);}
@@ -9583,7 +9604,7 @@ const E=t=>/^\d+$/.test(String(t))?String(t):`<span class="ltr">${t}</span>`;   
 const strip=s=>String(s==null?'':s).replace(/<svg[\s\S]*?<\/svg>/g,' ').replace(/<[^>]+>/g,' ').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&amp;/g,'&').replace(/\s+/g,' ').trim();
 const plain=s=>strip(s).replace(/[֑-ׇ]/g,'');
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const cfg={idle:25000,teachP:.5,teachSoloP:.08,teachGap:4*60000,keep:40};
+const cfg={idle:25000,teachP:.5,keep:40};/* #347: teach-back only after a helped question, at most once a day (DB().tday) */
 
 /* ---------- speech: numbers and signs as words (voice only) ---------- */
 const F=['אפס','אחת','שתיים','שלוש','ארבע','חמש','שש','שבע','שמונה','תשע','עשר','אחת עשרה','שתים עשרה','שלוש עשרה','ארבע עשרה','חמש עשרה','שש עשרה','שבע עשרה','שמונה עשרה','תשע עשרה','עשרים'];
@@ -10021,7 +10042,7 @@ function parents(){const st=S;if(!st)return;st.busy=true;clearTimeout(st.idleT);
   say('בּוֹא נִקְרָא לְאַבָּא אוֹ לְאִמָּא, נִפְתֹּר יַחַד');try{O().sfx&&O().sfx.star&&O().sfx.star(0);}catch(e){}}
 function teach(st){const ex=st.ex;if(!ex.teach)return false;const opts=shuffle(ex.teach(st.d));
   const eq=st.d.l!=null&&st.d.op?E(eqFull(st.d)):'';const card=openOv(`<div class="hlp-h"><span class="hlp-f">${pet()}</span><h2>תַּסְבִּיר לִי, אֵיךְ עָשִׂיתָ?</h2></div>${eq?`<div class="hlp-q">${eq}</div>`:''}<div class="hlp-opts"></div>`,'hlp-tb');
-  if(!card)return false;const box=card.querySelector('.hlp-opts');DB().t=Date.now();
+  if(!card)return false;const box=card.querySelector('.hlp-opts');DB().tday=today();persist();
   const done=pick_=>{const db=DB();db.tb.push({d:today(),type:st.d.type,ex:plain(ex.show?ex.show(st.d):''),pick:plain(pick_)});db.tb=db.tb.slice(-30);persist();
     box.innerHTML=`<div class="hlp-thanks">אֵיזֶה הֶסְבֵּר יָפֶה!</div>`;card.querySelector('.hlp-aloud')&&card.querySelector('.hlp-aloud').remove();say('אֵיזֶה הֶסְבֵּר יָפֶה!');try{O().sfx.ok(3);}catch(e){}setTimeout(closeOv,D(1500));};
   opts.forEach(o=>box.appendChild(btn('chb tx hlp-opt',`<span>${o}</span>`,()=>done(o))));
@@ -10046,8 +10067,8 @@ function right(){if(!S)return {solo:true,star:true};const st=S;const solo=st.lev
   clearTimeout(st.idleT);clearTimeout(st.exT);hidePanel();
   const db=DB();if(st.q.fromHelp&&db.items[st.q.fromHelp]){const it=db.items[st.q.fromHelp];if(solo&&st.wrong===0){it.ok=1;it.okd=today();}persist();}
   if(st.phase==='solo'&&st.origKey&&db.items[st.origKey])db.items[st.origKey].solo=today();
-  const helped=st.level>0||st.phase==='solo';const p=helped?cfg.teachP:cfg.teachSoloP;
-  if(st.ex.teach&&Date.now()-(db.t||0)>cfg.teachGap&&Math.random()<p&&st.ctx.teach!==false)setTimeout(()=>{if(!ovOpen())teach(st);},D(650));
+  const helped=st.level>0||st.phase==='solo';
+  if(helped&&st.ex.teach&&String(db.tday||'')<today()&&Math.random()<cfg.teachP&&st.ctx.teach!==false)setTimeout(()=>{if(!ovOpen())teach(st);},D(650));
   S=null;return {solo,star:solo};}
 function stop(keepPend){if(S){clearTimeout(S.idleT);clearTimeout(S.exT);hidePanel();if(ovOwn&&!ov().querySelector('.hlp-tb'))closeOv();}S=null;if(!keepPend)pend=null;}
 

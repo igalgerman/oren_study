@@ -113,11 +113,16 @@ const path = require('path');
   now += 31000; c0 = calls.length; await fc('/'); ok('over budget: nothing more today', calls.length === c0);
   // daily KV write budget (#68): TTS writes stop at the budget, family saves never do
   const DK = 'ttsday:' + new Date().toISOString().slice(0, 10);
-  kv.set(DK, '599'); { const st2 = JSON.parse(kv.get('ttsq')); st2.n = 0; kv.set('ttsq', JSON.stringify(st2)); }
+  // #36: the background (queue, pregen) leaves the last 100 of the day to the game, so a sentence Oren meets is still made
+  kv.set(DK, '499'); { const st2 = JSON.parse(kv.get('ttsq')); st2.n = 0; kv.set('ttsq', JSON.stringify(st2)); }
   await f('/api/tts/queue', { method: 'POST', body: JSON.stringify(['תַּקְצִיב א', 'תַּקְצִיב ב', 'תַּקְצִיב ג']) });
   now += 31000; c0 = calls.length; await fc('/');
-  ok('queue batch stops at the daily budget (1 left = 1 sentence)', calls.length - c0 === 1 && kv.get(DK) === '600', calls.length - c0 + ' ' + kv.get(DK));
-  now += 31000; c0 = calls.length; await fc('/'); ok('budget used: background queue makes nothing more', calls.length === c0);
+  ok('queue batch stops 100 before the daily budget (1 left = 1 sentence)', calls.length - c0 === 1 && kv.get(DK) === '500', calls.length - c0 + ' ' + kv.get(DK));
+  now += 31000; c0 = calls.length; await fc('/'); ok('background share used: queue makes nothing more', calls.length === c0);
+  { const pr = await (await f('/api/tts/pregen', { method: 'POST', body: JSON.stringify({ texts: ['שְׁמוּרָה לַמִּשְׁחָק'] }) })).json();
+    ok('pregen also leaves the game its share', pr.res.join() === 'budget', JSON.stringify(pr)); }
+  c0 = calls.length; ok('the game still gets a new sentence made', (await f('/api/tts?t=' + encodeURIComponent('מִשְׁפָּט שֶׁל הַמִּשְׁחָק') + '&r=0.9')).status === 200 && calls.length === c0 + 1);
+  kv.set(DK, '600'); ok('over the whole daily budget the game gets 429', (await f('/api/tts?t=' + encodeURIComponent('עוֹד מִשְׁפָּט') + '&r=0.9')).status === 429);
   kv.set(DK, '0');
   Date.now = realNow; env.SAVES.put = put0;
   // pronunciation dictionary: POST /api/tts/fix merges words, re-makes the sentence under its ORIGINAL key; synth applies whole words only
@@ -182,9 +187,10 @@ const path = require('path');
   ok('status gives the audio version; POST /api/tts/ver bumps it', v0 === 1 && vb.ver === 2 && (await (await f('/api/tts/status')).json()).ver === 2 && kv.get('ttsver') === '2');
   const ck = calls.length; ok('k= is ignored by the cache key', (await f('/api/tts?t=' + encodeURIComponent('כמה עשרות?') + '&r=0.9&k=2')).status === 200 && calls.length === ck);
   // daily budget (#68): pregen and new single sentences stop at the budget; cached audio and saves keep working
-  kv.set(DK, '598'); const cb = calls.length;
+  kv.set(DK, '498'); const cb = calls.length;
   const pb = await (await f('/api/tts/pregen', { method: 'POST', body: JSON.stringify({ texts: ['בּוּדְגֶט 1', 'בּוּדְגֶט 2', 'בּוּדְגֶט 3'] }) })).json();
-  ok('pregen: stops at the daily budget', pb.res.join() === 'new,new,budget' && calls.length - cb === 2 && kv.get(DK) === '600', JSON.stringify(pb) + ' ' + kv.get(DK));
+  ok('pregen: stops 100 before the daily budget (the game keeps its share)', pb.res.join() === 'new,new,budget' && calls.length - cb === 2 && kv.get(DK) === '500', JSON.stringify(pb) + ' ' + kv.get(DK));
+  kv.set(DK, '600');
   const nb = await f('/api/tts?t=' + encodeURIComponent('משפט חדש לגמרי') + '&r=0.9'); const nbj = await nb.json().catch(() => null);
   ok('single new sentence: 429 with a clear message, no Google call', nb.status === 429 && nbj && /daily voice budget used, retry tomorrow/.test(nbj.error) && calls.length - cb === 2, nb.status + ' ' + JSON.stringify(nbj));
   ok('cached sentence still served over the budget', (await f('/api/tts?t=' + encodeURIComponent('בּוּדְגֶט 1') + '&r=0.9')).status === 200 && calls.length - cb === 2);
@@ -274,6 +280,18 @@ const path = require('path');
     const v3 = await g('/api/tts?t=' + encodeURIComponent('דִּין') + '&r=0.9');
     ok('D1: old audio in KV is served without Google and copied to D1', v3.status === 200 && calls.length === nc2 + 1 && T.tts_audio.size === 1);
   }
+  // #36 voice stats: the game posts day counts + browser-voice events in one batch; GET shows per day Google vs browser by reason
+  { const d = new Date().toISOString().slice(0, 10);
+    const B = { days: { [d]: { google: 40, claude: 0, browser: 2 } }, ev: [{ d, r: 'no-audio', k: 'שָׁלוֹם', ms: 8000, h: 'oren-game.pages.dev', l: 'he' }, { d, r: 'timeout', k: 'אַחַת', ms: 8000, h: 'oren-game.pages.dev', l: 'he' }] };
+    const p1 = await f('/api/tts/stats', { method: 'POST', body: JSON.stringify(B) });
+    ok('stats: batch stored (text/plain beacon body)', p1.status === 200 && p1.headers.get('access-control-allow-origin') === '*');
+    await f('/api/tts/stats', { method: 'POST', body: JSON.stringify({ days: { [d]: { google: 8, browser: 1 } }, ev: [{ d, r: 'artifact-host', k: 'x', ms: 8000, h: 'a.claudeusercontent.com' }] }) });
+    ok('stats: bad batches rejected', (await f('/api/tts/stats', { method: 'POST', body: '{"days":1}' })).status === 400 && (await f('/api/tts/stats', { method: 'POST', body: JSON.stringify({ days: {}, ev: [{ d, r: 'evil' }] }) })).status === 400 && (await f('/api/tts/stats', { method: 'POST', body: JSON.stringify({ days: { x: { google: 1 } } }) })).status === 400 && (await f('/api/tts/stats', { method: 'DELETE' })).status === 405);
+    const sj = await (await f('/api/tts/stats?json')).json(); const t0 = sj.find(x => x.d === d) || {};
+    ok('stats: per day sentences, Google vs browser, by reason', t0.total === 51 && t0.n.google === 48 && t0.n.browser === 3 && t0.r['no-audio'] === 1 && t0.r.timeout === 1 && t0.r['artifact-host'] === 1 && t0.ev.length === 3 && t0.ev[0].k === 'שָׁלוֹם', JSON.stringify(t0));
+    ok('stats: browser share in percent', Math.abs(t0.browserPct - 5.9) < 0.05, JSON.stringify(t0.browserPct));
+    const sh = await f('/api/tts/stats'); const html = await sh.text();
+    ok('stats page for the parent (html)', sh.status === 200 && /text\/html/.test(sh.headers.get('content-type')) && html.includes(d) && html.includes('no-audio') && html.includes('5.9%')); }
   globalThis.fetch = realFetch;
   L.finish('worker', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT worker 0 1'); process.exitCode = 1; });
