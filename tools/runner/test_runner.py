@@ -1259,5 +1259,59 @@ try:
 finally:
     for k, v in _saved.items(): setattr(r, k, v)
 print("ok #357 early pass exits are logged")
+import json
+# #453: an issue whose Acceptance still needs a live check after merge is not closed by the PR / the run's DONE step
+_body = ("Intro mentions the owner and the phone.\n\n## Acceptance\n- The button works (test in suite x).\n"
+         "- [ ] Owner checks it live on the phone after deploy.\n* Measure the load time after deploy.\n\n## Out of scope\n- live chat\n")
+assert r.live_items(_body) == ["Owner checks it live on the phone after deploy.", "Measure the load time after deploy."], r.live_items(_body)
+assert r.live_items("## Acceptance\n- A test proves it.\n- The panel shows it.\n") == [] and r.live_items("no section, owner live") == []
+assert r.live_items("## Acceptance\n- Screenshot on device of the map.\n- delivered on time.\n") == ["Screenshot on device of the map."]
+assert r.live_close(7, _body, "Fixes #7\nsummary") and r.live_close(7, _body, "closes #7") and r.live_close(7, _body, "Resolves #7")
+assert r.live_close(7, _body, "Refs #7") == [] and r.live_close(7, _body, "Fixes #70") == [] and r.live_close(7, "## Acceptance\n- a test\n", "Fixes #7") == []
+assert r.remote.fixes("Refs #7", 7) and not r.remote.fixes("Refs #70", 7)          # a Refs-only PR is still found as issue 7's PR
+for _p in (r.worker_prompt(7, "pack"), r.remote_worker_prompt(7, "pack")):          # worker rule
+    assert "Refs #7" in _p and "`later`" in _p and "Due:" in _p and "after merge" in _p, _p
+for _p in (r.review_prompt(7, 9), r.remote_review_prompt(7, 9)):                       # reviewer rule
+    assert "live check" in _p and "Refs #" in _p and "RED" in _p
+_saved = {k: getattr(r, k) for k in ("gh",)}
+try:                                                                                   # reviewer hint with a fake gh
+    _calls = []
+    def _fake(body, prbody):
+        def g(*a, **k):
+            _calls.append(a)
+            if a[:2] == ("issue", "view"): return 0, json.dumps({"body": body})
+            if a[:2] == ("pr", "view"): return 0, json.dumps({"body": prbody})
+            return 0, ""
+        return g
+    r.gh = _fake(_body, "Fixes #7")
+    _h = r.live_hint(7, 9)
+    assert "Measure the load time after deploy." in _h and "Refs #7" in _h and "RED" in _h, _h
+    r.gh = _fake(_body, "Refs #7"); assert r.live_hint(7, 9) == ""
+    r.gh = _fake("## Acceptance\n- a test\n", "Fixes #7"); assert r.live_hint(7, 9) == ""
+    r.gh = lambda *a, **k: (1, "gh down"); assert r.live_hint(7, 9) == ""          # gh failure: no hint, never a crash
+    # the DONE step: a `later` issue stays open (comment only), any other issue is closed
+    def _lab(names):
+        _calls.clear()
+        def g(*a, **k):
+            _calls.append(a)
+            if a[:2] == ("issue", "view"): return 0, json.dumps({"labels": [{"name": x} for x in names]})
+            return 0, ""
+        return g
+    r.gh = _lab(["pack", "later"]); assert r.finish_issue(7, "Merged.") is False
+    assert not any(a[:2] == ("issue", "close") for a in _calls) and any(a[:2] == ("issue", "comment") and "later" in a[-1] for a in _calls), _calls
+    r.gh = _lab(["pack"]); assert r.finish_issue(7, "Merged.") is True
+    assert ("issue", "close", "7", "--comment", "Merged.") in _calls, _calls
+finally:
+    for k, v in _saved.items(): setattr(r, k, v)
+_src = open(r.__file__, encoding="utf-8").read()
+assert 'finish_issue(n, f"Merged to' in _src and 'gh("issue", "close", str(n), "--comment", f"Merged to' not in _src   # the run's DONE step uses it
+assert _src.count("live_hint(n, pr)") >= 2                                              # both reviewer paths get the hint
+print("ok #453 live checks keep the issue open")
 assert _pregen_popens == [], _pregen_popens          # #325: no test path launched the real pregen.js
 print("ok #325 no real pregen under tests")
+
+# 26 Nov (#453): an issue labelled 'later' (only a live/owner check left) never gets a worker, even with ready-for-agent
+_iss = [{"number": 900, "labels": ["ready-for-agent", "later", "pack", "P2"], "createdAt": "2026-11-26T00:00:00Z", "body": ""},
+        {"number": 901, "labels": ["ready-for-agent", "pack", "P2"], "createdAt": "2026-11-26T00:00:01Z", "body": ""}]
+assert [c["number"] for c in r.select(_iss, 4, 3, 0)] == [901]
+print("ok later skipped")

@@ -39,19 +39,12 @@ single(cmd)
 assert "multi\nline\nprompt" in (R.RUNS / "prompts" / "issue-9.md").read_text(encoding="utf-8")
 print("ok agent")
 
-# ---- question window (qwin.open_window): one line, NOT pinned (#390: a pinned window counts as 'active', push suppressed) ----
-calls, pins = [], []
-QW._hc = lambda *a, **k: (calls.append(a), (0, json.dumps({"address": "w1"}) if a[0] == "get" else "ok"))[1]
-QW._run = lambda cmd, **k: (pins.append(cmd), (0, ""))[1]
-QW._herdr_ok, QW.space_args = lambda: True, lambda: []
+# ---- phone push (qwin, #390): no window any more; one hc send line to a long-lived idle session ----
 q = {"key": "c984ed", "window": "#205", "source": "issue-205", "text": "לבחור? 1. כן 2. לא"}
-assert QW.open_window(q, "question-c984ed")
-run_cmd = next(a for a in calls if a[0] == "run")
-single(run_cmd)
-body = (R.RUNS / "prompts" / "question-c984ed.md").read_text(encoding="utf-8")
-assert "PushNotification" in body and "qwin.py answer c984ed" in body, body
-assert not [c for c in pins if "terminal.pin" in c and c[-1] == "true"], pins
-print("ok question window")
+m = QW.push_message(q)
+assert "\n" not in m and "\r" not in m and "PushNotification" in m and "qwin.py answer c984ed" in m, m
+assert not hasattr(QW, "open_window")
+print("ok phone push line")
 
 # ---- intake window (watchdog.check_intake) ----
 runs = []
@@ -76,16 +69,4 @@ single(start_cmd)
 assert start_cmd[-1] == "Do this. Then that.", start_cmd[-1]
 print("ok remote start")
 
-# ---- a push Claude Code did not send ('Not sent because you're active') is logged in watchdog.log, once ----
-logged = []
-QW.log = logged.append
-st = {"c984ed": {"name": "question-c984ed", "window": True, "since": 0}}
-QW._hc = lambda *a, **k: (0, "PushNotification\n  Not sent because you're active in this terminal.") if a[0] == "read" else (0, "")
-QW.check_not_sent(st); QW.check_not_sent(st)
-assert len(logged) == 1 and "not sent" in logged[0].lower() and "question-c984ed" in logged[0], logged
-assert st["c984ed"]["not_sent"]
-QW._hc = lambda *a, **k: (0, "Sent.")
-st2 = {"k": {"name": "question-k", "window": True, "since": 0}}; QW.check_not_sent(st2)
-assert len(logged) == 1 and not st2["k"].get("not_sent")
-print("ok not sent logged")
 print("ok oneline")

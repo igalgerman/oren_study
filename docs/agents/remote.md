@@ -60,8 +60,8 @@ Same limits as local: 2 fix rounds, then blocked. The local worktree is made onl
 ## Questions from a cloud session (#135)
 1. The session posts `QUESTION: <question, options>` on the issue and stops. The runner sees it within one poll (60 s).
 2. `park_remote`: labels `blocked` + `ready-for-human` (lane freed, `in-progress` dropped), a `Parked (cloud)` comment, the question in the
-   pinned 'Questions for the owner' issue (window `remote-<n>`: question window, panel, dashboard 'needs you'), and the orchestrator is told.
-3. The owner answers: in the question window (qwin posts `OWNER ANSWER ...` on the issue), through the orchestrator, or directly on the issue.
+   pinned 'Questions for the owner' issue (window `remote-<n>`: question page + phone push, panel, dashboard 'needs you'), and the orchestrator is told.
+3. The owner answers: on the question page or the phone push (qwin posts `OWNER ANSWER ...` on the issue), through the orchestrator, or directly on the issue.
 4. Every watchdog tick `resume_answered()` finds parked cloud issues (`.runs/<n>/where` = remote) whose last QUESTION has an answer
    (`remote.answer_after_question`: a later comment not written by the runner, owner_q or a Claude session), stores it in
    `.runs/<n>/answer.json`, removes `blocked` + `ready-for-human` and comments `Runner: ...`.
