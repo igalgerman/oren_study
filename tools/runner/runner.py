@@ -76,26 +76,70 @@ def conflict_files(out):
     """File names listed after the CONFLICTS line of integrate.sh output."""
     lines = out.splitlines()
     for k, l in enumerate(lines):
-        if l.startswith("CONFLICTS"):
+        if l.startswith(("CONFLICTS", "CI RED")):
             return [x.strip() for x in lines[k + 1:] if x.strip() and not x.startswith(("[", "$"))]
     return []
 
 def integrate_with_resolve(integrate, resolve, max_rounds=2):
     """integrate() -> (rc, out); resolve(files) -> True when the worker merged main in and pushed.
-    rc 2 (merge conflict) or 5 (push rejected: main moved) -> up to max_rounds resolve rounds, each followed by a retry.
+    rc 2 (merge conflict), 5 (push rejected / CI timeout) or 6 (CI red after one rerun, #74) -> up to max_rounds resolve rounds, each followed by a retry.
     Returns ('merged', out) | ('giveup', files, out) | ('failed', rc, out)."""
     files = []
     for rnd in range(max_rounds + 1):
         rc, out = integrate()
         if rc == 0:
             return ("merged", out)
-        if rc not in (2, 5):
+        if rc not in (2, 5, 6):
             return ("failed", rc, out)
         files = conflict_files(out) or files
         if rnd == max_rounds:
             return ("giveup", files, out)
         if not resolve(files):
             return ("failed", rc, out)
+
+def ci_verdict(checks):
+    """Pure (#74): `gh pr checks --json name,bucket` list -> 'none' (no checks yet) | 'pending' | 'red' | 'green'.
+    A missing or pending check is never green; skipped checks are ignored."""
+    b = [(c.get("name", ""), c.get("bucket", "")) for c in checks or []]
+    b = [x for x in b if x[1] != "skipping"]
+    if not b: return "none"
+    if any(x[1] in ("fail", "cancel") for x in b): return "red"
+    if any(x[1] != "pass" for x in b): return "pending"
+    return "green"
+
+def failed_checks(checks):
+    return [c.get("name", "?") for c in checks or [] if c.get("bucket") in ("fail", "cancel")]
+
+def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_reruns=1, stamp=None, max_stale=10):
+    """Pure decision loop (#74): wait for the PR checks, then merge. Red -> rerun the failed jobs once (flaky), still red -> send back to the worker.
+    stamp() = run id/status/attempt of the latest run: after a rerun, red is ignored until it changes (the old failed run is still shown for a while).
+    Returns ('merged',) | ('red', [names]) | ('timeout',) | ('merge-failed',)."""
+    waited, reruns, old, stale = 0, 0, None, 0
+    while True:
+        checks = get_checks()
+        v = ci_verdict(checks)
+        if v == "green":
+            return ("merged",) if merge() else ("merge-failed",)
+        if v == "red":
+            if reruns and stamp and old is not None and stamp() == old and stale < max_stale:
+                stale += 1; sleep(poll_s); waited += poll_s; continue      # still the old failed run: not judged yet
+            if reruns >= max_reruns:
+                return ("red", failed_checks(checks))
+            old = stamp() if stamp else None
+            reruns += 1; rerun(); sleep(poll_s); waited += poll_s; continue
+        if waited >= timeout_s:
+            return ("timeout",)
+        sleep(poll_s); waited += poll_s
+
+def deploy_needed(deployed_sha, main_sha):
+    """Pure (#74): batching. PRs merged one after another are deployed ONCE: the first deploy after the last merge covers all of them."""
+    return bool(main_sha) and deployed_sha != main_sha
+
+def ci_fix_prompt(n, names):
+    return (f"Issue #{n}: the CI check(s) {', '.join(names) or '(see the PR)'} failed on lane/{n} even after one rerun. "
+            f"Use `gh run list --branch lane/{n}` and `gh run view <id> --log-failed`, fix the real cause in this worktree, "
+            f"run the affected suites locally, commit, and `git push {REMOTE} lane/{n}`. Never force-push, never push to {BRANCH}. "
+            "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
 
 def resolve_prompt(n, files):
     return (f"Issue #{n}: merging lane/{n} into {BRANCH} failed because {BRANCH} moved on" + (f" (conflicting files: {', '.join(files)})" if files else "") + ". "
@@ -476,6 +520,59 @@ def deploy_text(log):
     rc, _ = run(["node", "oren2/cf/tools/pregen.js"], cwd=INTEG, env=env, log=log, timeout=1800)
     return f"deployed {url}" + ("" if rc == 0 else " (pregen failed, see log)")
 
+def ci_integrate(n, wt, log):
+    """CI-based integrate (#74): update the lane with main, push, wait for the PR checks, `gh pr merge --squash`. -> (rc, out) like integrate.sh:
+    0 merged, 2 conflict, 4 no PR, 5 push failed, 6 CI red after one rerun, 7 CI timeout / merge failed (blocked, real reason in out)."""
+    pr = find_pr(n)
+    if not pr: return 4, "no open PR for lane/%d" % n
+    run(["git", "fetch", "-q", REMOTE], cwd=wt, log=log)
+    rc, out = run(["git", "merge", "--no-edit", f"{REMOTE}/{BRANCH}"], cwd=wt, log=log)
+    if rc:
+        files = run(["git", "diff", "--name-only", "--diff-filter=U"], cwd=wt, log=log)[1].split()
+        run(["git", "merge", "--abort"], cwd=wt, log=log)
+        return 2, "CONFLICTS (fix by hand, or send back to the lane):\n" + "\n".join(files)
+    if run(["git", "rev-parse", "HEAD"], cwd=wt)[1] != run(["git", "rev-parse", f"{REMOTE}/lane/{n}"], cwd=wt)[1]:
+        if run(["git", "push", "-q", REMOTE, f"lane/{n}"], cwd=wt, log=log)[0]: return 5, "push failed"
+        time.sleep(20)                                           # let GitHub start the new run
+    def get_checks():
+        try: return json.loads(gh("pr", "checks", str(pr), "--json", "name,bucket", log=log)[1] or "[]")
+        except ValueError: return []
+    def stamp():
+        return run(["gh", "run", "list", "--repo", REPO, "--branch", f"lane/{n}", "--limit", "1", "--json", "databaseId,status,attempt", "-q", ".[0]|[.databaseId,.status,.attempt]|join(\":\")"], log=log)[1].strip()
+    def rerun():
+        rid = run(["gh", "run", "list", "--repo", REPO, "--branch", f"lane/{n}", "--limit", "1", "--json", "databaseId", "-q", ".[0].databaseId"], log=log)[1].strip()
+        if rid.isdigit(): run(["gh", "run", "rerun", rid, "--failed", "--repo", REPO], log=log)
+    def merge(): return gh("pr", "merge", str(pr), "--squash", log=log)[0] == 0
+    res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp)
+    if res[0] == "merged": return 0, "merged PR #%d" % pr
+    if res[0] == "red": return 6, "CI RED\n" + "\n".join(res[1])
+    return 7, "CI " + ("timed out" if res[0] == "timeout" else "green but `gh pr merge` failed")
+
+def find_pr_merged(n):
+    rc, out = gh("pr", "list", "--head", f"lane/{n}", "--state", "merged", "--json", "number")
+    try: return bool(json.loads(out))
+    except ValueError: return False
+
+def deploy_main(log):
+    """After CI merges (#74): bring the integrate checkout to main, rebuild, commit the built files if changed, deploy ONCE (skipped when this sha is already deployed)."""
+    run(["git", "fetch", "-q", REMOTE], cwd=ROOT, log=log)
+    if not (INTEG / ".git").exists():
+        run(["git", "worktree", "prune"], cwd=ROOT); run(["git", "worktree", "add", "-B", "integrate", str(INTEG), f"{REMOTE}/{BRANCH}"], cwd=ROOT, log=log)
+    run(["git", "merge", "--abort"], cwd=INTEG); run(["git", "reset", "-q", "--hard"], cwd=INTEG)
+    run(["git", "checkout", "-q", "-B", "integrate", f"{REMOTE}/{BRANCH}"], cwd=INTEG, log=log)
+    if run(["python3", "build_talents.py"], cwd=INTEG / "oren2", log=log)[0]: raise Blocked("build failed after CI merge")
+    run(["git", "add", "oren2/index.html", "oren2/cf/public/index.html"], cwd=INTEG)
+    if run(["git", "diff", "--cached", "--quiet"], cwd=INTEG)[0]:
+        run(["git", "commit", "-qm", "Rebuild index.html\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"], cwd=INTEG, log=log)
+        if run(["git", "push", "-q", REMOTE, f"HEAD:{BRANCH}"], cwd=INTEG, log=log)[0]: raise Blocked("push of rebuilt index.html failed")
+    sha = run(["git", "rev-parse", "HEAD"], cwd=INTEG)[1].strip()
+    mark = RUNS / "deployed.sha"
+    if not deploy_needed(mark.read_text().strip() if mark.exists() else "", sha):
+        return "already deployed with an earlier PR (batch)"
+    dep = deploy_text(log)
+    if dep.startswith("deployed"): mark.write_text(sha)       # never mark a sha that was not deployed (no token)
+    return dep
+
 MAX_CORE = int(CFG.get("max_core", 1))
 
 class core_slot:
@@ -553,8 +650,14 @@ def process_locked(issue):
                 raise Blocked(res or "fix worker gave no RESULT line")
             stat(n, lane, "fix_done")
 
+        kind = {"ci": False}
         def integrate():
-            with FileLock("integrate", wait=True):          # one merge at a time
+            if CFG.get("ci_merge", True) and find_pr(n):     # #74: CI decides, no local full suite
+                with FileLock("integrate", wait=True):
+                    rc, out = ci_integrate(n, wt, log)
+                    kind["ci"] = rc == 6
+                    return rc, out
+            with FileLock("integrate", wait=True):          # fallback: local merge + full suite
                 rc, out = run([BASH, "tools/integrate.sh", f"lane/{n}", BRANCH], cwd=ROOT,
                               env={"REMOTE": REMOTE, "JOBS": "4", "RUNNER": "1"}, log=log, timeout=3600)
                 if rc:
@@ -564,7 +667,7 @@ def process_locked(issue):
         def resolve(files):
             rounds[0] += 1
             stat(n, lane, "resolve")
-            o, r_ = agent(f"issue-{n}-resolve{rounds[0]}", resolve_prompt(n, files), wt, WORKER_TOOLS, d / f"resolve{rounds[0]}.log", "RESULT:", n, "worker")
+            o, r_ = agent(f"issue-{n}-resolve{rounds[0]}", ci_fix_prompt(n, files) if kind["ci"] else resolve_prompt(n, files), wt, WORKER_TOOLS, d / f"resolve{rounds[0]}.log", "RESULT:", n, "worker")
             return r_.startswith("RESULT: DONE")
         outcome = integrate_with_resolve(integrate, resolve, 2)
         if outcome[0] == "giveup":
@@ -574,10 +677,10 @@ def process_locked(issue):
             gh("issue", "comment", str(n), "--body", redact("Runner: merge conflicts not resolved after 2 rounds. Conflicting files: " + (", ".join(files) or "(see log)")))
             return "BLOCKED: merge conflicts after 2 resolve rounds"
         if outcome[0] == "failed":
-            raise Blocked(f"integrate.sh exit {outcome[1]}")
+            raise Blocked(outcome[2] if outcome[1] == 7 else f"integrate.sh exit {outcome[1]}")
         with FileLock("integrate", wait=True):
             stat(n, lane, "merged")
-            dep = deploy_text(log)
+            dep = deploy_main(log) if CFG.get("ci_merge", True) and find_pr_merged(n) else deploy_text(log)
         m = sync_main(log)                       # result logged (review of #47)
         if m: log_line(m)
         gh("issue", "close", str(n), "--comment", f"Merged to {BRANCH}, tests green, {dep}.")
