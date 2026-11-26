@@ -44,7 +44,7 @@ test('windows, finished runs and status line', () => {
   const d = { windows: wins, groups, lastLog: '', errors: [], updatedAt: 0 }
   expect(statusLine(d)).toBe('lanes local 1/3 · cloud 0/0 · ready 0 · blocked 0')
   groups.needsYou.count = 2
-  expect(statusLine(d)).toMatch(/^lanes local 1\/3 · cloud 0/0 · ready 0 · blocked 0/)
+  expect(statusLine(d)).toMatch(/^lanes local 1\/3 · cloud 0\/0 · ready 0 · blocked 0/)
 })
 
 import { usageText } from './lanes'
