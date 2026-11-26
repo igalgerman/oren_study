@@ -26,10 +26,16 @@ TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # same as runner.py: .runs/<n>/where says local|remote
 
 def sh(cmd, env=None):
+    cap = ghcache.tick_cap()                            # #365: inside a watchdog tick: bounded, a timeout is an answer, never raises
+    to = cap or 600
     def raw():
-        p = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                           stdin=subprocess.DEVNULL, timeout=600,
-                           creationflags=0x08000000 if os.name == "nt" else 0)   # #284: same as runner.no_window()
+        try:
+            p = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               stdin=subprocess.DEVNULL, timeout=to,
+                               creationflags=0x08000000 if os.name == "nt" else 0)   # #284: same as runner.no_window()
+        except subprocess.TimeoutExpired:
+            if not cap: raise
+            return 124, f"timed out after {to} s: {' '.join(map(str, cmd))[:120]}"
         return p.returncode, (p.stdout or "") + (p.stderr or "")
     return ghcache.call(list(map(str, cmd)), raw)       # #329: gh reads from the shared cache (panel, per-lane polls), rate limits retried
 

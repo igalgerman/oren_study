@@ -5,7 +5,7 @@ Every gh call of the runner, the per-lane polls, the panel (remote.py cloud) and
   - anything else runs gh; a rate-limit answer ("API rate limit", "secondary rate limit") is retried after Retry-After / 60 s;
   - a WRITE marks its issue/PR dirty, so reads of it go to GitHub until the next refresh (lists: after any newer write).
 A cache older than MAX_AGE (watchdog down) is never used: everything falls back to plain gh."""
-import json, os, re, time
+import json, os, re, threading, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -30,6 +30,10 @@ def rate_limited(text): return bool(_RL.search(text or ""))
 def wait_s(text, default=60):
     m = re.search(r"retry[- ]after:?\s*(\d+)", text or "", re.I)
     return max(1, min(300, int(m[1]))) if m else default
+
+# #365: set by runner.tick_mode inside a watchdog tick (per thread; survives a module reload): calls are bounded, no rate-limit sleeps
+_TICK = globals().get("_TICK") or threading.local()
+def tick_cap(): return getattr(_TICK, "cap", None)
 
 def with_retry(once, sleep=None, tries=TRIES):
     """once() -> (rc, out). A rate-limit failure is transient: wait and try again (up to `tries`), never raise."""
@@ -268,7 +272,7 @@ def call(cmd, raw, now=None, sleep=None):
     if hit: return hit
     def once():
         note_call(now); return raw()
-    rc, out = with_retry(once, sleep)
+    rc, out = with_retry(once, sleep, 1 if tick_cap() else TRIES)
     if is_write(cmd) and write_target(cmd): mark_dirty(write_target(cmd), None if now is None else now + 0.5)
     return rc, out
 

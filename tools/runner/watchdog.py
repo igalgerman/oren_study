@@ -524,36 +524,37 @@ def loop(once):
         time.sleep(EVERY)
 
 def tick():
-    """One watchdog pass (main() calls it on the newest loaded copy of this file)."""
-    try: (R.RUNS / "watchdog.beat").write_text(str(int(time.time())), encoding="utf-8")   # #171: liveness for the dashboard
-    except OSError: pass
-    fresh(log)          # #300: never run a step against a module older than its file
-    ghcache_tick()      # #329: the ONE GitHub reader (every reader below uses its cache)
-    ts = windows()
-    check_windows(ts)
-    OQ.answers_tick(tell)
-    qwin_tick(ts)
-    resume_tick()
-    check_lanes(ts)
-    check_intake(ts)
-    all_ts = R.hc_json("ls", "--all", "--json").get("terminals", []) or ts
-    check_control(all_ts)
-    cleanup(all_ts)
-    reap_tick(ts)       # #248
-    stuck_tick(ts)
-    conflicts_tick(ts)  # #262
-    observer_tick()
-    ai_observer_tick()
-    nightly_tick()
-    parked_tick()       # #282
-    garden_tick()       # #187
-    desks_tick()
-    sync_tick()
-    alarm_tick()
-    trends_tick()
-    ai_tick()
-    lock_tick()
-    orch_idle_tick()
+    """One watchdog pass (main() calls it on the newest loaded copy of this file). #365: every call inside is bounded (R.tick_mode)."""
+    with R.tick_mode():
+        try: (R.RUNS / "watchdog.beat").write_text(str(int(time.time())), encoding="utf-8")   # #171: liveness for the dashboard
+        except OSError: pass
+        fresh(log)          # #300: never run a step against a module older than its file
+        ghcache_tick()      # #329: the ONE GitHub reader (every reader below uses its cache)
+        ts = windows()
+        check_windows(ts)
+        OQ.answers_tick(tell)
+        qwin_tick(ts)
+        resume_tick()
+        check_lanes(ts)
+        check_intake(ts)
+        all_ts = R.hc_json("ls", "--all", "--json").get("terminals", []) or ts
+        check_control(all_ts)
+        cleanup(all_ts)
+        reap_tick(ts)       # #248
+        stuck_tick(ts)
+        conflicts_tick(ts)  # #262
+        observer_tick()
+        ai_observer_tick()
+        nightly_tick()
+        parked_tick()       # #282
+        garden_tick()       # #187
+        desks_tick()
+        sync_tick()
+        alarm_tick()
+        trends_tick()
+        ai_tick()
+        lock_tick()
+        orch_idle_tick()
 
 # ---------- #262: a green/approved PR that conflicts with main gets a resolve run by itself ----------
 def resolve_cmd(a):
