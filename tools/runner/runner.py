@@ -1772,7 +1772,7 @@ def process_locked(issue, where="local"):
             if not new: raise Blocked(integrate_failure(outcome[1], outcome[2]))
             stat(n, lane, "rereview")
             since = utc()
-            rv, verdict = remote_review(n, pr, "", remote.start, lambda: remote.review_status(pr, since=since), time.sleep, time.time, 3600, 60,
+            rv, verdict = remote_review(n, pr, "", remote.start, lambda: fresh_remote().review_status(pr, since=since), time.sleep, time.time, 3600, 60,
                                         ended=over, task=rereview_prompt(n, pr, reviewed["sha"], new))
             (d / "rereview.out").write_text(redact(rv), encoding="utf-8")
             kind_, text_, extra_ = parse_verdict(verdict)
