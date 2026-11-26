@@ -136,7 +136,7 @@ def run_once(log=print):
               edit=lambda n, body: R.gh("issue", "edit", str(n), "--body", body)[0],
               status_minutes=int(R.CFG.get("status_minutes", 10)), probe_hours=float(R.CFG.get("desk_probe_hours", 12))))
 
-_busy = threading.Lock()
+_busy = globals().get("_busy") or threading.Lock()   # #300: kept across a reload (a desks thread may hold it)
 
 def run_if_due(log):
     """Watchdog hook: one tick in a thread (dashboard.py --text and a cloud start take a while); never two at once."""
