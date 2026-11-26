@@ -692,6 +692,16 @@ assert r.gov_pace(_h, _now, "other", 3.5) == 3.5
 assert r.gov_pace([{**_h[1], "at": _now - 300}, _h[1]], _now, _rs, 3.5) == 3.5
 assert r.gov_pace([{**x, "busy": 0} for x in _h], _now, _rs, 3.5) == 3.5
 t = r.governor_text(r.governor(_u(20, 4), [], _now, _G)); assert t.startswith("governor: 5 lanes (5h 20% -> ~90% at ") and len(t.split(" at ")[1]) == 6, t
+# #269: the 5h reset is past -> a new window: pct 0, never stop, lanes as for a fresh window
+g = r.governor(_u(95, -0.05), [], _now, _G); assert not g["stop"] and g["lanes"] == r.governor(_u(0, 5), [], _now, _G)["lanes"] > 0 and g["pct"] == 0 and g["why"] == "new 5h window", g
+assert g["reset"] > _now and "new 5h window" in r.governor_text(g) and "STOP" not in r.governor_text(g), r.governor_text(g)
+g = r.governor(_u(95, 0.05), [], _now, _G); assert g["stop"] and "STOP" in r.governor_text(g)   # reset still ahead -> stop per governor_stop
+assert r.governor(_u(95, -0.05, age=16 * 60), [], _now, _G)["why"].startswith("no fresh usage")   # stale -> fallback unchanged
+# #269: on stop only express issues still start (below 100%); 100% -> nothing
+_ch = [{"number": 1, "labels": ["core"]}, {"number": 2, "labels": ["express", "core"]}]
+assert r.stop_filter(_ch, {"stop": False, "pct": 50}) == _ch
+assert [c["number"] for c in r.stop_filter(_ch, {"stop": True, "pct": 95})] == [2]
+assert r.stop_filter(_ch, {"stop": True, "pct": 100}) == []
 print("ok governor")
 # total_lanes follows a fresh governor.json (the watchdog uses it), else config
 import json as _json, time as _time
@@ -702,6 +712,11 @@ assert r.total_lanes() == r.LOCAL_LANES + 7
 assert r.total_lanes() == r.LOCAL_LANES
 (r.RUNS / "governor.json").write_text(_json.dumps({"lanes": 7, "stop": False, "at": _time.time() - 3600}))
 assert r.total_lanes() == r.LOCAL_LANES + r.REMOTE_LANES
+# #269: a stop written before the 5h reset does not hold the lanes at 0 after it (the watchdog then starts a pass)
+(r.RUNS / "governor.json").write_text(_json.dumps({"lanes": 7, "stop": True, "reset": _time.time() - 30, "at": _time.time()}))
+assert r.total_lanes() == r.LOCAL_LANES + 7
+(r.RUNS / "governor.json").write_text(_json.dumps({"lanes": 7, "stop": True, "reset": _time.time() + 600, "at": _time.time()}))
+assert r.total_lanes() == r.LOCAL_LANES
 (r.RUNS / "governor.json").unlink()
 print("ok governor lanes")
 # #234: a run ends as DONE when its issue is closed or its lane PR is merged elsewhere (every wait loop checks, one gh call per poll)
