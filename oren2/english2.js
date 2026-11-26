@@ -133,9 +133,9 @@ const SONG={};SONGS.forEach(s=>{SONG[s.th]=s;});
 /* ---------- levels and units ---------- */
 const tag=(p,list)=>list.map(x=>p+x);
 const LEVELS=[
- {id:'eng-voc',teach:1,newG:4,capG:6,units:THEMES.map(t=>({id:'v-'+t.id,he:t.he,p:t.p,items:tag('v:',t.w.map(w=>w[0]))}))},
+ {id:'eng-voc',teach:1,newG:2,capG:4,units:THEMES.map(t=>({id:'v-'+t.id,he:t.he,p:t.p,items:tag('v:',t.w.map(w=>w[0]))}))},
  {id:'eng-abc',teach:1,newG:2,capG:3,units:LGROUPS.map(g=>({id:'l-'+g.join('').toLowerCase(),he:`אוֹתִיּוֹת <span class="ltr">${g.join(' ')}</span>`,p:'האותיות '+g.join(' '),items:g.flatMap(L=>['n:'+L,'c:'+L,'s:'+L])}))},
- {id:'eng-read',teach:1,newG:3,capG:5,units:[...CVC.map(([v,ws])=>({id:'r-'+v,he:`מִלִּים עִם <span class="ltr">${v}</span>`,p:`קריאת מילים קצרות עם ${v} (${ws.slice(0,3).join(', ')}...)`,items:tag('r:',ws)})),
+ {id:'eng-read',teach:1,newG:2,capG:4,units:[...CVC.map(([v,ws])=>({id:'r-'+v,he:`מִלִּים עִם <span class="ltr">${v}</span>`,p:`קריאת מילים קצרות עם ${v} (${ws.slice(0,3).join(', ')}...)`,items:tag('r:',ws)})),
    {id:'r-sight',he:'מִלִּים שֶׁרוֹאִים הַרְבֵּה',p:'מילים שכיחות: '+SIGHT.map(s=>s[0]).join(', '),items:tag('w:',SIGHT.map(s=>s[0]))},
    {id:'r-sent',he:'מִשְׁפָּטִים',p:'קריאת משפטים קצרים',items:tag('x:',SENT.map(s=>s[0]))}]},
  {id:'eng-talk',teach:1,newG:2,capG:3,units:PUNITS.map(u=>({id:u.id,he:u.he,p:u.p,items:tag('p:',u.w)}))},
@@ -185,8 +185,8 @@ function words(q){const o=q.opts.filter(x=>x.t==='en').map(x=>x.v);
 function sentTeach(save,keys){const T=taught(save);return uniq(keys.filter(k=>/^x:/.test(k)).flatMap(k=>sentWords(k.slice(2)))).filter(w=>!T.has(w)&&WORD[w])
   .map(w=>WORD[w].th?'v:'+w:CVCW.includes(w)?'r:'+w:null).filter(Boolean);}
 
-/* ---------- a round: teach cards for new groups, then about 8 questions ---------- */
-const ROUND=8;
+/* ---------- a round: teach cards for new groups, then about 5 questions (#59) ---------- */
+const ROUND=5;
 function plan(save,lv,d){const L=LEVELS[lv];if(d==null)d=day();const E=st(save);
   const cur=curUnit(save,lv);let fresh=[],learn=[];
   if(cur){const gs=groupsOf(cur);const lg=gs.filter(g=>groupItems(cur,g).some(k=>seen(save,k))&&groupItems(cur,g).some(k=>!known(save,k)));
@@ -206,7 +206,7 @@ function plan(save,lv,d){const L=LEVELS[lv];if(d==null)d=day();const E=st(save);
   freshItems.forEach(k=>add(k,0));shuf(learn).slice(0,Math.max(0,cap-freshItems.length-review.length)).forEach(k=>add(k,0));review.forEach(k=>add(k,0));
   /* new and still-learning items come back once more (the other way round) while there is room */
   const again=[...freshItems,...learn].filter(k=>!/^[ncs]:|^x:/.test(k));for(let i=0;qs.length<ROUND&&i<again.length;i++)add(again[i],1);
-  const rest=shuf(old.filter(k=>!qs.some(q=>q.k===k)));while(qs.length<6&&rest.length)add(rest.pop(),0);
+  const rest=shuf(old.filter(k=>!qs.some(q=>q.k===k)));while(qs.length<ROUND&&rest.length)add(rest.pop(),0);
   const ord=spread(shuf(qs));return {lv,unit:cur,teach:[...(lv===2?sentTeach(save,ord.map(q=>q.k)):[]),...fresh.filter(teaches)],qs:ord};}
 /* no item twice in a row */
 function spread(a){const left=a.slice(),out=[];while(left.length){const last=out.length?out[out.length-1].k:null;

@@ -59,6 +59,7 @@ const READ=[
   {pool:[2,3,4,5,6,7],opts:3,names:0},           /* עַד דּוֹ הַגָּבוֹהַּ */
   {pool:[0,1,2,3,4,5,6,7],opts:4,names:0},       /* כָּל הָאוֹקְטָבָה */
   {pool:[-7,-6,-5,-4,-3,-2,-1,0],opts:4,names:1,clef:'bass'}];
+const QN=5;   /* #59: a round is about 5 questions */
 const EAR=['hl-big','same','hl-small','which2','which3'];
 const RHY=[{vals:['w','h','q'],nq:6,pats:[['q','q','q','q'],['h','h'],['q','q','h']]},
   {vals:['w','h','q'],nq:3,pats:[['q','q','h'],['h','q','q'],['q','h','q'],['w'],['h','h'],['q','q','q','q']]},
@@ -160,13 +161,13 @@ function keyMap(kb){const ws=[...kb.querySelectorAll('.mw')];T.setKey(e=>{const 
 /* ---------- question sets per level ---------- */
 const noteBtn=(i,clef)=>`<span class="m2opt">${staffSVG([{i,d:'q'}],{clef,minW:120,cls:'mini'})}<b>${nameOf(i)}</b></span>`;
 function readQs(){const L0=READ[ST().read-1];const qs=[];let last=null;
-  for(let n=0;n<8;n++){const rv=rev('read'),L=rv?READ[rv.lv[1]-1]:L0;let i;do i=pick(L.pool);while(i===last&&L.pool.length>1);last=i;
+  for(let n=0;n<QN;n++){const rv=rev('read'),L=rv?READ[rv.lv[1]-1]:L0;let i;do i=pick(L.pool);while(i===last&&L.pool.length>1);last=i;
     if(n%2===0){const right=nameOf(i);const names=[...new Set(L.pool.map(nameOf))].filter(x=>x!==right);const opts=shuffle([right,...shuffle(names).slice(0,L.opts-1)]);
       qs.push({k:'choice',pr:`${staffSVG([{i,d:'q'}],{clef:L.clef,minW:200})}<div class="qq">אֵיזֶה תָּו זֶה?</div>`,opts,ans:opts.indexOf(right),after:()=>play(midiOf(i)),key:'r'+n,rv:rv&&rv.id});}
     else qs.push({k:'piano',i,clef:L.clef,names:L.names,rv:rv&&rv.id});}
   return qs;}
 function earQs(){const kind=EAR[ST().ear-1];const qs=[];
-  for(let n=0;n<8;n++){
+  for(let n=0;n<QN;n++){
     if(kind==='hl-big'||kind==='hl-small'){const a=rand(60,67);const b=a+(Math.random()<.5?-1:1)*(kind==='hl-big'?rand(7,12):rand(2,4));const opts=['גָּבוֹהַּ יוֹתֵר ⬆️','נָמוּךְ יוֹתֵר ⬇️'];
       qs.push({k:'choice',pr:`<div class="m2ear">🎵 🎵</div><div class="qq">הַקְשֵׁב לִשְׁנֵי צְלִילִים. הַשֵּׁנִי גָּבוֹהַּ יוֹתֵר אוֹ נָמוּךְ יוֹתֵר?</div>`,opts,ans:b>a?0:1,play:()=>{play(a,.6);play(b,.6,1,.8);},auto:1,playLbl:'שׁוּב',say:'הקשב לשני צלילים. השני גבוה יותר או נמוך יותר?',a,b});}
     else if(kind==='same'){const a=rand(60,69);const same=n%2===0?Math.random()<.5:Math.random()<.5;const b=same?a:a+(Math.random()<.5?-1:1)*rand(2,5);const opts=['אוֹתוֹ צְלִיל','צְלִיל אַחֵר'];

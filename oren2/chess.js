@@ -134,8 +134,8 @@ function findTask(pc){return (wrap,done)=>{const u=pc.toUpperCase(),c=side(pc),[
   const el=boardEl((s)=>{if(lock)return;if(b[s]===pc){lock=true;paint(el,b,{good:new Set([s])});sfx.ok(tries);done(tries,el.querySelector(`[data-s="${s}"]`));return;}
     tries++;sfx.no();flashSq(el,s);if(tries>=3){lock=true;paint(el,b,{good:new Set(b.map((x,k)=>x===pc?k:-1).filter(k=>k>=0))});done(2,null);}});
   paint(el,b);wrap.appendChild(el);return {solve:()=>el.querySelector(`[data-s="${b.indexOf(pc)}"]`).click()};};}
-function runBoard(back){const kinds=shuffle(ORDER.slice()).slice(0,4);const finds=shuffle(['K','Q','R','B','N','P','k','q','r','n']).slice(0,4);
-  const tasks=[];for(let k=0;k<4;k++){tasks.push(nameTask(kinds[k]));tasks.push(findTask(finds[k]));}
+function runBoard(back){const kinds=shuffle(ORDER.slice()).slice(0,3);const finds=shuffle(['K','Q','R','B','N','P','k','q','r','n']).slice(0,3);   /* #59: 6 short tasks */
+  const tasks=[];for(let k=0;k<3;k++){tasks.push(nameTask(kinds[k]));tasks.push(findTask(finds[k]));}
   lesson('chess-board','הַלּוּחַ וְהַכֵּלִים',tasks,back,{done:'מַכִּיר אֶת הַכֵּלִים!',again:()=>runBoard(back)});}
 
 /* ---------- 2. how each piece moves: tap every square it can reach ---------- */
@@ -207,7 +207,7 @@ function escapeTask(withHelp){return (wrap,done)=>{let su=null;for(let t=0;t<50&
     if(errs>=4){lock=true;paint(el,p.b,{dots:new Set(legal(p).map(x=>x.t)),sel:withHelp?null:su.K});msg.textContent='לְכָאן אֶפְשָׁר לָלֶכֶת.';done(2,null);}}});
   if(withHelp)mv.draw();else mv.select(su.K);wrap.appendChild(el);
   return {get pos(){return p;},K:su.K,solve:()=>{const m=legal(p)[0];if(withHelp||mv.sel!==m.f)el.querySelector(`[data-s="${m.f}"]`).click();el.querySelector(`[data-s="${m.t}"]`).click();}};};}
-function runCheck(back){lesson('chess-check','שַׁח!',[isCheckTask(),isCheckTask(),isCheckTask(),escapeTask(0),escapeTask(0),escapeTask(0),escapeTask(1),escapeTask(1)],back,{done:'שׁוֹמֵר הַמֶּלֶךְ!',again:()=>runCheck(back)});}
+function runCheck(back){lesson('chess-check','שַׁח!',[isCheckTask(),isCheckTask(),escapeTask(0),escapeTask(0),escapeTask(1)],back,{done:'שׁוֹמֵר הַמֶּלֶךְ!',again:()=>runCheck(back)});}
 
 /* ---------- 5. mate in one (hand-made puzzles) ---------- */
 function mateTask(fen){return (wrap,done)=>{let p=fromFEN(fen);const sol=mates(p);prompt(wrap,'תֵּן מָט בְּמַהֲלָךְ אֶחָד!');const msg=note(wrap);let errs=0,lock=false;

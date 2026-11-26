@@ -124,18 +124,25 @@ const { chromium } = require('playwright');
     const screen = () => p.evaluate(() => { const s = [...document.querySelectorAll('.screen')].find(x => !x.hidden); return s ? s.id : ''; });
     const atHub = () => p.evaluate(() => !document.querySelector('#sTal').hidden && !!document.querySelector('#sTal .gdoors') && document.querySelector('#dlg').hidden);
     const ids = await p.evaluate(() => Object.keys(window.TAL.ACT));
-    const noBack = [], wrong = [];
+    const noBack = [], wrong = [], long = [], MAXQ = 6;   // #59: a round opened from a building is about 5 questions (at most 6)
     for (const id of ids) {
       await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.TAL.openHub(); });
       await p.evaluate(id => { const T = window.TAL; T.ACT[id].run(() => T.openHub()); }, id); await L.sleep(120);
       await p.evaluate(() => { const ov = document.querySelector('#ov'); if (!ov.hidden) ov.hidden = true; });   // a first-time popup (placement, lesson pick) is not this test
       if (await atHub()) continue;                // not open yet for Oren (e.g. the champions' test): the activity went straight back
+      const nq = await p.evaluate(() => { const pr = document.querySelector('#hud .progress'); return pr ? pr.children.length : 0; }); if (nq > MAXQ && id !== 'mind-scan') long.push(id + ':' + nq);   // mind-scan: 8 calm-down steps, no questions (~2 min)
       const at = await backAt(); if (!at) { noBack.push(id); continue; }
       await p.mouse.click(at.x, at.y); await L.sleep(120);
       if (!(await atHub())) wrong.push(id + '→' + (await screen()));
     }
     ok('every activity (' + ids.length + ') shows the back control in the top bar', noBack.length === 0, noBack.join(', '));
     ok('a tap on it lands on the screen Oren came from (the hub)', wrong.length === 0, wrong.join(', '));
+    ok('#59 no activity round is longer than ' + MAXQ + ' questions', long.length === 0, long.join(', '));
+    // #59: journey levels are short too; the place-value split (num-pv2, 42 = 40 + 2) is 5 questions a level, not 5 + 6 + 8
+    const jl = await p.evaluate(() => { const lv = window.OREN.WORLDS.flatMap(w => w.levels); const pv = lv.filter(l => l.u.id === 'num-pv2');
+      return { n: lv.length, long: lv.filter(l => l.n > (l.type === 'boss' ? 10 : 5)).map(l => l.id + ':' + l.n), pv: pv.map(l => l.n) }; });
+    ok('#59 every journey level is at most 5 questions (a boss at most 10)', jl.n > 0 && jl.long.length === 0, jl.long.slice(0, 8).join(', '));
+    ok('#59 place-value split: 3 levels of at most 5 questions', jl.pv.length === 3 && jl.pv.every(n => n <= 5), JSON.stringify(jl.pv));
     // journey screens: back goes one step up
     const steps = [['journey', 'O.showJourney()', 'sHome'], ['kingdom', 'O.kingdom()', 'sHome'], ['arcade', 'window.TAL_arcade(O.showMap)', 'sHome'],
       ['world', 'O.save.story[O.WORLDS[0].id+"-in"]=1;O.showWorld(O.WORLDS[0])', 'sMap']];

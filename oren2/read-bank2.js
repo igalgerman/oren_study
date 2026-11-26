@@ -946,13 +946,13 @@ const withAsked=gen=>{const due=R.askedDue().slice(0,3);return i=>i<due.length?a
 const otherWords=(w,n,f)=>shuffle(W.filter(x=>x!==w&&x.w!==w.w&&!R.near(x,w)&&(!f||f(x)))).slice(0,n);
 
 /* ---- library: the same activity ids, bigger graded pools ---- */
-function first(back){const L=level('word');T.quiz({id:'rb2-first-'+L,title:'אוֹת רִאשׁוֹנָה',bg:'city',back,n:8,gen:withAsked(()=>{const w=lvPick(withPic,L,null,'rb-word',wk);const f=w.f;
+function first(back){const L=level('word');T.quiz({id:'rb2-first-'+L,title:'אוֹת רִאשׁוֹנָה',bg:'city',back,n:5,gen:withAsked(()=>{const w=lvPick(withPic,L,null,'rb-word',wk);const f=w.f;
   const pool=shuffle([...new Set(W.map(x=>x.f))].filter(c=>!R.sameSound(c,f)));const opts=shuffle([f,pool[0],pool.find(c=>!R.sameSound(c,pool[0]))]);
   return {pr:`${pic(w.pic,1)}<div class="qq">${UI.first}</div>`,opts,ans:opts.indexOf(f),cls:'tx big2',say:'באיזו אות מתחילה המילה?',word:w.w,explain:`<span class="bigw">${w.w}</span>`,key:w.w,bank:'rb-word'};})});}
-function pw(back){const L=level('word');T.quiz({id:'rb2-pw-'+L,title:'אֵיזוֹ מִלָּה?',bg:'city',back,n:8,gen:withAsked(()=>{const w=lvPick(withPic,L,null,'rb-word',wk);
+function pw(back){const L=level('word');T.quiz({id:'rb2-pw-'+L,title:'אֵיזוֹ מִלָּה?',bg:'city',back,n:5,gen:withAsked(()=>{const w=lvPick(withPic,L,null,'rb-word',wk);
   const like=otherWords(w,2,x=>x.lv<=L&&(x.f===w.f||x.plain.length===w.plain.length));const ds=like.length>=2?like:otherWords(w,2,x=>x.lv<=L);const opts=shuffle([w,...ds]);
   return {pr:`${pic(w.pic,1)}<div class="qq">${UI.pw}</div>`,opts:opts.map(x=>x.w),ans:opts.indexOf(w),cls:'tx',reveal:()=>say(w.w),key:w.w,bank:'rb-word'};})});}
-function wp(back){const L=level('word');T.quiz({id:'rb2-wp-'+L,title:'אֵיזוֹ תְּמוּנָה?',bg:'city',back,n:8,gen:withAsked(()=>{const w=lvPick(withPic,L,null,'rb-word',wk);const ds=[];
+function wp(back){const L=level('word');T.quiz({id:'rb2-wp-'+L,title:'אֵיזוֹ תְּמוּנָה?',bg:'city',back,n:5,gen:withAsked(()=>{const w=lvPick(withPic,L,null,'rb-word',wk);const ds=[];
   for(const x of shuffle(withPic)){if(ds.length>=3)break;if(x!==w&&x.pic!==w.pic&&!R.near(x,w)&&!ds.some(d=>R.near(d,x)))ds.push(x);}const opts=shuffle([w,...ds]);
   return {pr:`<div class="bigw">${w.w}</div><div class="qq">${UI.wp}</div>`,opts:opts.map(x=>pic(x.pic)),ans:opts.indexOf(w),cls:'picb',reveal:()=>say(w.w),key:w.w,bank:'rb-word'};})});}
 /* tap tiles in order (syllables, letters or words); calls done(errors) */
@@ -973,7 +973,7 @@ function build(back){const L=level('word');const pool=[];for(let t=0;pool.length
   const run=()=>{const w=pool[i];T.hudT('בּוֹנִים מִלָּה',T.progressBar(i,pool.length));O.sayNow=T.spk(w.w);
     tiles(s,{need:w.syl,tiles:w.syl,head:w.pic?pic(w.pic,1):'',play:()=>say(w.w),tip:UI.build,end:()=>say(w.w)},e=>{err+=e;if(window.LEARN)try{LEARN.seen('rb-word',w.w,!e,false);}catch(x){}i++;if(i<pool.length)run();else T.finishAct('rb2-build-'+L,err,pool.length,pool.length*2,back,()=>build(back));});
     if(!w.pic)setTimeout(()=>say(w.w),D(300));};run();}
-function sent(back){const L=level('sent');T.quiz({id:'rb2-sent-'+L,title:'קוֹרְאִים מִשְׁפָּט',bg:'city',back,n:8,gen:()=>{const q=lvPick(R.sentences,L,null,'rb-sent',x=>x.t);const opts=shuffle([q.a,...q.ds]);
+function sent(back){const L=level('sent');T.quiz({id:'rb2-sent-'+L,title:'קוֹרְאִים מִשְׁפָּט',bg:'city',back,n:5,gen:()=>{const q=lvPick(R.sentences,L,null,'rb-sent',x=>x.t);const opts=shuffle([q.a,...q.ds]);
   return {pr:`<div class="sent">${nk(q.t,q.p)}</div><div class="qq">${nk(q.q,q.qp,1)}</div>`,opts:opts.map(ansHTML),ans:opts.indexOf(q.a),cls:q.a[0]==='@'?'picb':'tx',say:T.spk(q.q),key:q.t,bank:'rb-sent'};}});}
 
 /* ---- stories: one card, the next story at Oren's level ---- */
