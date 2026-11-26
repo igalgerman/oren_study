@@ -102,7 +102,10 @@ def model(issues, prs, events, now, log_text="", cloud=()):
         elif n in last and e.get("event") in STEP: last[n]["event"] = e["event"]
     running = [{**r, "step": STEP.get(last.get(r["n"], {}).get("event"), "started by hand"),
                 "for_s": now - last[r["n"]]["start"] if r["n"] in last else None} for r in by_state["running"]]
-    cloud_n = {i["number"] for i in op if "cloud" in i["labels"]} | {c["n"] for c in cloud if c["n"] in open_nums}   # #236: + remote runs
+    cloud_done = [c for c in cloud if not RM.active(c)]                  # #263: finished sessions are no lane and not counted
+    cloud = [c for c in cloud if RM.active(c)]
+    done_n = {c["n"] for c in cloud_done}
+    cloud_n = {i["number"] for i in op if "cloud" in i["labels"] and i["number"] not in done_n} | {c["n"] for c in cloud if c["n"] in open_nums}   # #236: + remote runs
     running = [r for r in running if r["n"] not in cloud_n]          # #136: cloud lanes have their own table
     recent = sorted(((closed_at[i["number"]], i) for i in issues if i["state"] == "CLOSED" and closed_at.get(i["number"])),
                     key=lambda x: -x[0])[:10]
@@ -111,7 +114,7 @@ def model(issues, prs, events, now, log_text="", cloud=()):
     fc = forecast(len(op), list(closed_at.values()), list(created.values()), now, history_h)
     return {
         "plan": eta_plan(rows, running, t, fc, now),
-        "now": now, "open": len(op), "cloud": list(cloud), "cloud_n": len(cloud_n),
+        "now": now, "open": len(op), "cloud": list(cloud), "cloud_done": cloud_done, "cloud_n": len(cloud_n),
         "lanes": f"local {len(running)}/{R.CFG.get('local_lanes', 3)} · cloud {len(cloud_n)}/{R.CFG.get('remote_lanes', 0)}", "by_state": by_state, "by_prio": by_prio, "rows": rows, "running": running,
         "closed_24h": sum(within(c, 24) for c in closed_at.values()), "closed_7d": sum(within(c, 168) for c in closed_at.values()),
         "closed_total": len(closed_at), "opened_24h": sum(within(c, 24) for c in created.values()),
@@ -229,8 +232,9 @@ def text(m):
     lines.append(conflicts_line(m.get("pr_conflicts") or []))
     lines.append("Lanes: " + m["lanes"] + (" · " + m["governor"] if m.get("governor") else ""))
     for c in m["cloud"]:
-        lines.append(f"  cloud #{c['n']} {c['title'][:40]} — {c['state']} · last {hhmm(epoch(c['last'])) if epoch(c['last']) else '-'}"
+        lines.append(f"  cloud #{c['n']} {c['title'][:40]} — {c['state']}{' · manual' if c.get('manual') else ''} · last {hhmm(epoch(c['last'])) if epoch(c['last']) else '-'}"
                      + (" · STALE" if c["stale"] else "") + (f" · {c['pr']}" if c["pr"] else "") + (f" · {c['session']}" if c["session"] else ""))
+    if m.get("cloud_done"): lines.append("Cloud done: " + "; ".join(f"#{c['n']} {c['title'][:40]}" for c in m["cloud_done"]))   # #263
     if m["running"]: lines.append("Running: " + "; ".join(f"#{r['n']} {r['step']} {dur(r['for_s'])}" for r in m["running"]))
     lines.append("Bottom line (estimate): " + "; ".join(f"{a} merged by {b}" for a, b in bottom_line(m)))
     nxt = sorted(((v, n) for n, v in m["plan"].items() if isinstance(v, tuple)))[:8]
@@ -362,11 +366,14 @@ def page(m):
     qs = m.get("questions", [])   # #193: open owner questions (pinned 'Questions for the owner' issue)
     qrows = "".join(f'<tr><td class="n">{e(q["window"])}</td><td>{e(q["text"])}</td><td class="n"><a href="{e(q["url"])}">answer</a></td></tr>' for q in qs)
     qcard = f'<section class="card attn"><h2>Needs you: open questions</h2><table><tr><th>from</th><th>question</th><th></th></tr>{qrows}</table></section>' if qrows else ""
-    cl_rows = "".join(f'<tr><td class="n">{link(c["n"])}</td><td>{e(c["title"])}</td><td class="n">{e(c["state"])}' + (' <span class="warn">STALE</span>' if c["stale"] else '')
+    cl_rows = "".join(f'<tr><td class="n">{link(c["n"])}</td><td>{e(c["title"])}</td><td class="n">{e(c["state"])}' + (' <span class="tag">manual</span>' if c.get("manual") else '') + (' <span class="warn">STALE</span>' if c["stale"] else '')
                       + f'</td><td class="n sub">{hhmm(epoch(c["last"])) if epoch(c["last"]) else "-"}</td><td class="n">' + (f'<a href="{e(c["pr"])}">PR</a>' if c["pr"] else "-")
                       + '</td><td class="n">' + (f'<a href="{e(c["session"])}">session</a>' if c["session"] else "-") + '</td></tr>' for c in m["cloud"])
     cloud = (f'<section class="card"><h2>Cloud lanes <span class="count">{m["cloud_n"]}</span></h2><table><tr><th>#</th><th>issue</th><th>state</th>'
              f'<th>last activity</th><th>PR</th><th>session</th></tr>{cl_rows}</table></section>') if m["cloud_n"] else ""
+    if m.get("cloud_done"):   # #263: finished cloud sessions go to DONE, not the lanes
+        cloud += ('<section class="card"><h2>Cloud done <span class="count">' + str(len(m["cloud_done"])) + '</span></h2><ul class="rows">'
+                  + "".join(f'<li>✓ {link(c["n"])} {e(c["title"])}</li>' for c in m["cloud_done"]) + '</ul></section>')
     approx = lambda v: "≈ " + eta_str(v, now) if isinstance(v, tuple) else "no estimate"
     pill = lambda r: f'<span class="pill{" p0" if r["prio"] == "P0" else ""}">{r["prio"] if r["prio"] != "-" else "no priority"}</span>'
     row = lambda when, r, note: (f'<li><div class="when">{when}</div><div class="what">{link(r["n"])} {e(r["title"])}'

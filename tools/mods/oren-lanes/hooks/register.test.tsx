@@ -232,12 +232,12 @@ test('#136 lanes line: local X/Y from config local_lanes, cloud = open issues la
 test('#136 one row per cloud lane: state, last activity HH:MM (Israel), STALE, PR and session links', () => {
   const rows = cloudRows([
     { n: 140, title: 'Cloud thing', state: 'working', last: '2026-11-26T09:41:00Z', stale: true, pr: '', session: 'https://claude.ai/code/session_01A' },
-    { n: 152, title: 'Other', state: 'done', last: '2026-11-26T10:05:00Z', stale: false, pr: 'https://github.com/x/y/pull/201', session: '' },
+    { n: 152, title: 'Other', state: 'question', last: '2026-11-26T10:05:00Z', stale: false, pr: 'https://github.com/x/y/pull/201', session: '' },
   ])
   expect(rows).toEqual([
     '☁ #140 Cloud thing — working · last 11:41 · STALE',
     '   session https://claude.ai/code/session_01A',
-    '☁ #152 Other — done · last 12:05',
+    '☁ #152 Other — question · last 12:05',
     '   PR https://github.com/x/y/pull/201',
   ])
   expect(cloudRows([])).toEqual([])
@@ -271,4 +271,20 @@ test('#236 cloud count = labelled cloud issues + live remote lanes from remote.p
   const issues = [{ number: 9, title: 'a', labels: L('in-progress', 'cloud') }, { number: 208, title: 'b', labels: L('in-progress') }]
   expect(cloudCount(issues, [lane(9), lane(208), lane(207), lane(192)])).toBe(4)
   expect(cloudCount(issues, [])).toBe(1)
+})
+
+import { activeCloud, cloudDone } from './lanes'
+
+test('#263 a done cloud session is not a lane, not counted, and goes to DONE; manual sessions are tagged', () => {
+  const L = (...n: string[]) => n.map(name => ({ name }))
+  const lane = (n: number, state = 'working', manual = false) => ({ n, title: 't' + n, state, last: '2026-11-26T09:41:00Z', stale: false, pr: '', session: '', manual })
+  const lanes = [lane(219, 'done', true), lane(208), lane(230, 'working', true)]
+  const issues = [{ number: 219, title: 'a', labels: L('cloud') }, { number: 208, title: 'b', labels: L('in-progress') }]
+  expect(activeCloud(lanes).map(c => c.n)).toEqual([208, 230])
+  expect(cloudCount(issues, lanes)).toBe(2)
+  expect(cloudCount(issues, [lane(219, 'done')])).toBe(0)
+  const rows = cloudRows(lanes)
+  expect(rows.some(r => r.includes('#219'))).toBe(false)
+  expect(rows).toEqual(['☁ #208 t208 — working · last 11:41', '☁ #230 t230 — working · manual · last 11:41'])
+  expect(cloudDone(lanes)).toEqual(['✓ #219 t219 (cloud)'])
 })

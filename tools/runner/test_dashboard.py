@@ -108,14 +108,21 @@ ic = issues + [I(11, "OPEN", ["in-progress", "cloud", "P0"]), I(12, "OPEN", ["cl
 cl = [{"n": 11, "title": "t11", "state": "working", "line": "", "last": "2026-11-26T06:30:00Z", "stale": True, "pr": "", "session": "https://claude.ai/code/session_01A"},
       {"n": 12, "title": "t12", "state": "done", "line": "RESULT: DONE", "last": "2026-11-26T07:50:00Z", "stale": False, "pr": "https://github.com/x/y/pull/201", "session": ""}]
 m3 = D.model(ic, prs, ev, now, "", cl)
-assert m3["lanes"] == f"local 1/{D.R.CFG.get('local_lanes', 3)} · cloud 2/{D.R.CFG.get('remote_lanes', 0)}", m3["lanes"]
+assert m3["lanes"] == f"local 1/{D.R.CFG.get('local_lanes', 3)} · cloud 1/{D.R.CFG.get('remote_lanes', 0)}", m3["lanes"]   # #263: done #12 not a lane
 assert [r["n"] for r in m3["running"]] == [1], m3["running"]
 t3 = D.text(m3)
 assert "Lanes: local 1/" in t3 and "cloud #11 t11 — working · last " in t3 and " · STALE · https://claude.ai/code/session_01A" in t3, t3
-assert "cloud #12 t12 — done" in t3 and "STALE" not in t3.split("cloud #12")[1].split("\n")[0], t3
+assert "cloud #12" not in t3 and "Cloud done: #12 t12" in t3, t3                         # #263: done goes to DONE, not the lanes
 pg3 = D.page(m3)
-assert "Cloud lanes" in pg3 and '<a href="https://github.com/x/y/pull/201">PR</a>' in pg3 and ">session</a>" in pg3 and "STALE" in pg3
+assert "Cloud lanes" in pg3 and ">session</a>" in pg3 and "STALE" in pg3
 assert "Cloud lanes" not in D.page(m)
+assert "Cloud lanes" in pg3 and "Cloud done" in pg3 and "pull/201" not in pg3.split("Cloud lanes")[1].split("</section>")[0]
+assert [c["n"] for c in m3["cloud"]] == [11] and [c["n"] for c in m3["cloud_done"]] == [12]
+# #263: all cloud sessions done -> no cloud lane, count 0; a manual session still working gets a 'manual' tag
+m5 = D.model(ic, prs, ev, now, "", [{**cl[0], "state": "done"}, cl[1]])
+assert m5["cloud_n"] == 0 and m5["cloud"] == [] and "Cloud lanes" not in D.page(m5), m5["lanes"]
+m6 = D.model(ic, prs, ev, now, "", [{**cl[0], "manual": True}, cl[1]])
+assert "cloud #11 t11 — working · manual · last " in D.text(m6) and '<span class="tag">manual</span>' in D.page(m6)
 print("ok dashboard cloud")
 # #192: with deploy_in_ci the deploys come from the GitHub deployments of the deploy workflow (environment production), not stats.jsonl
 st = [{"state": "success", "created_at": "2026-11-26T07:50:00Z", "environment_url": "https://ab.oren-game.pages.dev"},

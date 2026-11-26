@@ -84,7 +84,7 @@ iss = {"number": 140, "title": "t140", "createdAt": "2026-11-26T09:00:00Z", "com
     c("progress note", "2026-11-26T09:30:00Z")]}
 row = r.cloud_lane(iss, None, "", NOW)
 assert row == {"n": 140, "title": "t140", "state": "working", "line": "", "last": "2026-11-26T09:30:00Z", "stale": True,
-               "pr": "", "session": "https://claude.ai/code/session_01ABC"}, row
+               "pr": "", "session": "https://claude.ai/code/session_01ABC", "manual": False}, row
 assert r.cloud_lane(iss, None, "2026-11-26T11:30:00Z", NOW)["stale"] is False          # a new commit counts as activity
 pr = {"number": 201, "url": "https://github.com/x/y/pull/201"}
 done = {**iss, "comments": iss["comments"] + [c("RESULT: DONE https://github.com/x/y/pull/201", "2026-11-26T09:40:00Z")]}
@@ -120,6 +120,16 @@ inprog = [{"number": 208, "title": "t208", "createdAt": "2026-11-26T09:00:00Z", 
 f = Fake(("label cloud", 0, json.dumps([iss])), ("label in-progress", 0, json.dumps(inprog + [iss])), ("pr list", 0, "[]"))
 assert [x["n"] for x in r.cloud(run=f, now=NOW)] == [140, 208]
 print("ok current run")
+
+# #263: a merged PR means done (even without a RESULT line); a session with no run dir (remote.py start by hand) is manual
+assert r.cloud_lane(iss, {**pr, "mergedAt": "2026-11-26T10:00:00Z"}, "", NOW)["state"] == "done"
+assert r.cloud_lane(iss, {**pr, "mergedAt": None}, "", NOW)["state"] == "working"
+assert r.cloud_lane(iss, None, "", NOW, manual=True)["manual"] is True
+f = Fake(("label cloud", 0, json.dumps([iss])), ("label in-progress", 0, json.dumps(inprog)), ("pr list", 0, "[]"))
+assert [(x["n"], x["manual"]) for x in r.cloud(run=f, now=NOW)] == [(140, True), (208, False)]   # 140: no .runs/140
+assert "mergedAt" in " ".join(next(c for c, _ in f.calls if "pr" in c and "list" in c))
+assert [r.active(x) for x in [{"state": "working"}, {"state": "done"}, {"state": "question"}]] == [True, False, True]
+print("ok #263 done/manual")
 
 # #246: a cloud worker may only push claude/* branches: pr_for(n) -> (number, headRefName)
 #   lane/<n> first, else the PR URL in this run's RESULT: DONE line, else an open PR whose body says Fixes/Closes #n
