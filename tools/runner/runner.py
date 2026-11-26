@@ -324,16 +324,6 @@ def space_args():
             pass
     return ["--label", f"herdr.space={_SPACE}"] if _SPACE else []
 
-def show(name):
-    """Fallback when no Herdr space was found: give the terminal its own tab (herdr-app do terminal.keep).
-    config: show = false turns it off."""
-    app = HERDR_APP
-    if not CFG.get("show", True) or not Path(app).exists() or space_args(): return   # already in a space via its label
-    addr = hc_json("get", name, "--json").get("address")
-    for _ in range(6):               # the app learns a new terminal a moment late ("no running terminal"): retry
-        if addr and run([app, "do", "terminal.keep", "--terminal", addr, "--place", "tab"], timeout=30)[0] == 0: return
-        time.sleep(2)
-
 def hc(*args, timeout=300):
     return run([HC, *args], timeout=timeout)
 
@@ -372,7 +362,6 @@ def agent(name, prompt, cwd, tools, log, marker, n, role):
                "--allowedTools", *tools, "--", prompt + INTERACTIVE_NOTE]
         rc, out = run(cmd, log=log)
         if rc: raise Blocked(f"cannot start terminal {name}: {out.strip()[:200]}")
-    show(name)
     deadline, screen = time.time() + 3 * 3600, ""
     waiting = marker_since = None; last_check = 0
     try:
