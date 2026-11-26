@@ -117,6 +117,17 @@ pg3 = D.page(m3)
 assert "Cloud lanes" in pg3 and '<a href="https://github.com/x/y/pull/201">PR</a>' in pg3 and ">session</a>" in pg3 and "STALE" in pg3
 assert "Cloud lanes" not in D.page(m)
 print("ok dashboard cloud")
+# #192: with deploy_in_ci the deploys come from the GitHub deployments of the deploy workflow (environment production), not stats.jsonl
+st = [{"state": "success", "created_at": "2026-11-26T07:50:00Z", "environment_url": "https://ab.oren-game.pages.dev"},
+      {"state": "failure", "created_at": "2026-11-26T07:20:00Z", "environment_url": ""}, {"state": "in_progress", "created_at": "2026-11-26T07:55:00Z"}, None]
+de = D.deploy_events(st)
+assert de == [{"ts": now - 600, "issue": 0, "event": "deploy", "ok": True, "url": "https://ab.oren-game.pages.dev"},
+              {"ts": now - 2400, "issue": 0, "event": "deploy", "ok": False, "url": ""}], de
+md = D.model(issues, prs, [e for e in ev if e["event"] != "deploy"] + de, now)
+assert md["last_deploy"]["ok"] is True and md["truth"]["deploys_ok"] == 1 and md["truth"]["deploys_fail"] == 1
+assert D.merge_deploys(ev, de, ci=True) == [e for e in ev if e["event"] != "deploy"] + de      # old runner deploy records are dropped
+assert D.merge_deploys(ev, de, ci=False) == ev
+print("ok dashboard ci deploys")
 m3["governor"] = "governor: 6 lanes (5h 40% -> ~89% at 19:00)"
 assert "Lanes: " in D.text(m3) and "· governor: 6 lanes (5h 40% -> ~89% at 19:00)" in D.text(m3) and "governor: 6 lanes" in D.page(m3)
 print("ok dashboard governor")

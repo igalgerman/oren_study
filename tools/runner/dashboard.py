@@ -218,8 +218,10 @@ def text(m):
              f"PRs not finished by the runner (by hand, or it crashed after merging) ≈ {max(0, m['merged_24h'] - tr['by_runner'])}; reviews sent back {tr['fixes']} of {tr['fixes'] + tr['passes']}",
              f"Average: build {S.fmt(m['avg_build'])}, review {S.fmt(m['avg_review'])}, start to merge {S.fmt(m['avg_merge'])}"]
     d = m["last_deploy"]
-    lines.append("Last deploy: " + (f"{hhmm(d['ts'])} {'ok' if d.get('ok') else 'FAILED'}" if d else "no record yet") + f" · runner deploys 24 h: {tr['deploys_ok']} ok, {tr['deploys_fail']} failed")
+    lines.append("Last deploy: " + (f"{hhmm(d['ts'])} {'ok' if d.get('ok') else 'FAILED'}" if d else "no record yet") + f" · deploys 24 h: {tr['deploys_ok']} ok, {tr['deploys_fail']} failed")
     if tr["stuck"]: lines.append("Top stuck reasons (24 h): " + "; ".join(f"{k} ({len(v)})" for k, v in tr["stuck"][:3]))
+    sl = m.get("stuck_lanes") or []     # #248: runs unchanged past stuck_hours and still stuck 30 min after the alarm
+    if sl: lines.append(f"STUCK LANES: {len(sl)} (" + ", ".join(f"run-{n}" for n in sl) + ")")
     lines.append("Lanes: " + m["lanes"] + (" · " + m["governor"] if m.get("governor") else ""))
     for c in m["cloud"]:
         lines.append(f"  cloud #{c['n']} {c['title'][:40]} — {c['state']} · last {hhmm(epoch(c['last'])) if epoch(c['last']) else '-'}"
@@ -460,7 +462,7 @@ def page(m):
                   f'<ul class="rows">{rec}</ul>' if rec else '<p class="sub">No issue was closed yet.</p>')
     how = fold("How these numbers are made", "sources and how the estimates are calculated",
                '<ul class="facts"><li>Issues and pull requests are read live from GitHub every time this page is made.</li>'
-               '<li>Steps, times and deploys come from the runner\'s own records (<code>.runs/stats.jsonl</code>, <code>runner.log</code>). '
+               '<li>Steps and times come from the runner\'s own records (<code>.runs/stats.jsonl</code>, <code>runner.log</code>); deploys from the GitHub deploy workflow (deployments of environment production). '
                'Watcher health comes from the watchers\' own files (<code>watchdog.log</code>, <code>watchdog.beat</code>, <code>observer.last</code>).</li>'
                '<li>In the timeline, finished means merged. The steps of each issue are: build, review, tests and merge, deploy, close.</li>'
                f'<li>Issues being worked on now: the time left for their current step, from the runner\'s average step times (build {S.fmt(m["avg_build"])}, '
@@ -489,7 +491,7 @@ def _health_card(m):
     checks = []                                                       # (ok or None = not measured, label, name, detail)
     for n, role, age, ok in (watcher_health(o) if o else []):
         checks.append((ok, "OK" if ok else "STOPPED?", n.capitalize(), f"{role}; " + ("no sign of life found" if age is None else f"last active {dur(age)} ago")))
-    if d: checks.append((bool(d.get("ok")), "OK" if d.get("ok") else "FAILED", "Last deploy", f"at {hhmm(d['ts'])}; runner deploys in 24 hours: {tr['deploys_ok']} ok, {tr['deploys_fail']} failed"))
+    if d: checks.append((bool(d.get("ok")), "OK" if d.get("ok") else "FAILED", "Last deploy", f"at {hhmm(d['ts'])}; deploys in 24 hours: {tr['deploys_ok']} ok, {tr['deploys_fail']} failed"))
     else: checks.append((None, "NO DATA", "Last deploy", "no deploy is recorded yet"))
     if tr["started"]:
         ok = tr["by_runner"] / tr["started"] >= 0.5
@@ -545,6 +547,29 @@ def fetch():
     rc2, out2 = R.gh("pr", "list", "--state", "all", "--limit", "500", "--json", "number,state,mergedAt")
     if rc or rc2: raise SystemExit("could not read GitHub (gh): " + (out if rc else out2)[:300])
     return [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)], json.loads(out2)
+
+def deploy_events(statuses):
+    """Pure (#192): latest status of each GitHub deployment (environment production, made by the deploy workflow) -> deploy events
+    like the runner's stats.jsonl ones. Only finished ones: success = ok, failure/error = failed."""
+    out = []
+    for s in statuses:
+        if not s or s.get("state") not in ("success", "failure", "error"): continue
+        out.append({"ts": epoch(s.get("created_at")), "issue": 0, "event": "deploy", "ok": s["state"] == "success", "url": s.get("environment_url") or ""})
+    return out
+
+def merge_deploys(events, ci_events, ci=True):
+    """deploy_in_ci: the runner no longer deploys, so its old deploy records are replaced by the workflow's deploys."""
+    return [e for e in events if e.get("event") != "deploy"] + ci_events if ci else events
+
+def ci_deploys(n=8):
+    """The last `n` deploys of the deploy workflow, read from GitHub; [] if gh fails."""
+    rc, out = R.run(["gh", "api", f"repos/{R.REPO}/deployments?environment=production&per_page={n}", "--jq", "[.[].statuses_url]"])
+    if rc: return []
+    st = []
+    for u in json.loads(out or "[]"):
+        rc, o = R.run(["gh", "api", u + "?per_page=1", "--jq", ".[0]"])
+        st.append(None if rc or not o.strip() or o.strip() == "null" else json.loads(o))
+    return deploy_events(st)
 
 def runner_log():
     f = R.RUNS / "runner.log"
@@ -620,12 +645,16 @@ def governor_line():
 def gather():
     issues, prs = fetch()
     now = time.time()
-    m = model(issues, prs, S.read_events(R.RUNS / "stats.jsonl"), now, runner_log(), RM.cloud())
+    ci = R.CFG.get("deploy_in_ci", True)
+    ev = merge_deploys(S.read_events(R.RUNS / "stats.jsonl"), ci_deploys() if ci else [], ci)
+    m = model(issues, prs, ev, now, runner_log(), RM.cloud())
     w, wmt = _file("watchdog.log"); _, rmt = _file("runner.log"); ol, omt = _file("observer.last")
     _, bmt = _file("watchdog.beat"); wmt = bmt or wmt          # heartbeat every pass; the log is written only on events
     m["ov"] = oversight(w, wmt, rmt, ol, omt, now)
     import owner_q
     m["questions"] = owner_q.open_list() or []            # #193
+    try: m["stuck_lanes"] = json.loads((R.RUNS / "stuck_lanes.json").read_text(encoding="utf-8"))   # #248 (written by the watchdog)
+    except Exception: m["stuck_lanes"] = []
     m["governor"] = governor_line()                         # #239
     return m
 
