@@ -38,7 +38,8 @@ ASK = (HERE.parent / "ask" / "ask.py").as_posix()
 
 # swapped by the tests
 def _hc(*a, **kw): return R.hc(*a, **kw)
-def _gh(*a, **kw): return R.gh(*a, **kw)
+def _gh(*a, **kw):
+    with R.ghcache.quick(OQ.QUICK_S): return R.gh(*a, **kw)   # #469: never more than 10 s on GitHub per call
 def _run(cmd, **kw): return R.run(cmd, **kw)
 def _herdr_ok(): return Path(R.HERDR_APP).exists()
 def _spawn(cmd, out, err):

@@ -4,8 +4,12 @@ Every gh call of the runner, the per-lane polls, the panel (remote.py cloud) and
   - a READ the cache can answer (gh issue list/view, gh pr list/view, gh api .../branches/lane/<n>) is answered from it, no gh call;
   - anything else runs gh; a rate-limit answer ("API rate limit", "secondary rate limit") is retried after Retry-After / 60 s;
   - a WRITE marks its issue/PR dirty, so reads of it go to GitHub until the next refresh (lists: after any newer write).
-A cache older than MAX_AGE (watchdog down) is never used: everything falls back to plain gh."""
-import json, os, re, threading, time
+A cache older than MAX_AGE (watchdog down) is never used: everything falls back to plain gh.
+#469: two identities (the GitHub App and the owner login, two budgets). A rate-limited answer marks that identity limited
+(.runs/gh_limited.json) and the same call runs at once as the other one (log 'switched to owner/app'); while one is limited, calls start
+on the other. Both limited -> a short BOTH_WAIT, then retry. quick(s): every wait and timeout of the calls inside stays within s seconds
+(owner questions: 10 s). Each real call is logged with its identity and caller: `python ghcache.py top [minutes]` = calls per minute per caller."""
+import json, os, re, sys, threading, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -15,6 +19,10 @@ MAX_AGE = 180              # s; the watchdog refreshes every ~60 s
 CLOSED_KEEP = 300          # closed issues kept across refreshes (the panel's/cleanup's 300)
 TRIES = 5                  # rate-limited calls: tries before the caller gets the error
 ALARM_PCT = 20
+LIMITED = RUNS / "gh_limited.json"   # #469: {"until": {who: ts}, "hits": [[ts, who, kind], ...]}
+BOTH_WAIT = 5              # s: both identities limited -> wait this, then retry
+KEEP_CALLS = 7200          # s of gh_calls.log kept (enough to find a burst afterwards)
+OTHER = {"app": "owner", "owner": "app"}
 
 def _repo():
     try:
@@ -34,6 +42,44 @@ def wait_s(text, default=60):
 # #365: set by runner.tick_mode inside a watchdog tick (per thread; survives a module reload): calls are bounded, no rate-limit sleeps
 _TICK = globals().get("_TICK") or threading.local()
 def tick_cap(): return getattr(_TICK, "cap", None)
+
+_clock = time.monotonic    # tests swap in a fake clock
+class quick:
+    """#469: inside, gh waits (rate-limit sleeps, timeouts) end by `seconds` from now. Nested: the earlier deadline wins."""
+    def __init__(self, seconds): self.s = seconds
+    def __enter__(self):
+        self.prev = getattr(_TICK, "deadline", None)
+        d = _clock() + self.s
+        _TICK.deadline = min(d, self.prev) if self.prev is not None else d
+        return self
+    def __exit__(self, *a): _TICK.deadline = self.prev
+
+def quick_left():
+    """Seconds left inside quick(), else None."""
+    d = getattr(_TICK, "deadline", None)
+    return None if d is None else max(0.0, d - _clock())
+
+def _limits():
+    try: return json.loads(LIMITED.read_text(encoding="utf-8"))
+    except (OSError, ValueError): return {}
+
+def is_limited(who, now=None):
+    return (_limits().get("until") or {}).get(who, 0) > (time.time() if now is None else now)
+
+def mark_limited(who, text, now=None):
+    now = time.time() if now is None else now
+    d = _limits()
+    d.setdefault("until", {})[who] = now + wait_s(text)
+    kind = "secondary" if re.search(r"secondary|abuse", text or "", re.I) else "primary"
+    d["hits"] = (d.get("hits") or [])[-19:] + [[now, who, kind]]
+    try:
+        RUNS.mkdir(parents=True, exist_ok=True)
+        tmp = LIMITED.with_suffix(f".{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(d), encoding="utf-8"); os.replace(tmp, LIMITED)
+    except OSError: pass
+
+def _switch_log(frm, to):
+    _append(RUNS / "ghauth.log", f"{time.strftime('%Y-%m-%d %H:%M:%S')} {frm} rate limited: switched to {to} (#469)")
 
 def with_retry(once, sleep=None, tries=TRIES):
     """once() -> (rc, out). A rate-limit failure is transient: wait and try again (up to `tries`), never raise."""
@@ -72,15 +118,48 @@ def _append(path, line):
     except OSError: pass
 
 def mark_dirty(target, now=None): _append(DIRTY, f"{now if now is not None else time.time():.3f} {target}")
-def note_call(now=None): _append(CALLS, f"{now if now is not None else time.time():.0f}")
+def caller_of(cmd):
+    return f"{Path(sys.argv[0] or 'py').stem}:{cmd[1] if len(cmd) > 1 else ''}"
+
+def note_call(now=None, who="app", caller=None):
+    _append(CALLS, f"{now if now is not None else time.time():.0f} {who} {caller or caller_of(['gh'])}")
 
 def _lines(path):
     try: return path.read_text(encoding="utf-8").splitlines()
     except OSError: return []
 
+def _calls():
+    """gh_calls.log -> [(ts, who, caller)] (old one-field lines: who/caller '?')."""
+    out = []
+    for l in _lines(CALLS):
+        f = l.split()
+        try: out.append((float(f[0]), f[1] if len(f) > 1 else "?", f[2] if len(f) > 2 else "?"))
+        except (IndexError, ValueError): pass
+    return out
+
 def calls_per_min(now=None):
     now = time.time() if now is None else now
-    return sum(1 for l in _lines(CALLS) if l.strip() and now - 60 <= float(l) <= now + 1)
+    return sum(1 for t, _, _ in _calls() if now - 60 <= t <= now + 1)
+
+def calls_by(now=None):
+    now = time.time() if now is None else now
+    out = {}
+    for t, who, _ in _calls():
+        if now - 60 <= t <= now + 1: out[who] = out.get(who, 0) + 1
+    return out
+
+def top_report(t0, t1):
+    """Calls per minute between t0 and t1: 'HH:MM  total  who n top-caller · ...' (find what bursts, #469)."""
+    mins = {}
+    for t, who, caller in _calls():
+        if t0 <= t <= t1:
+            d = mins.setdefault(int(t // 60) * 60, {}).setdefault(who, {})
+            d[caller] = d.get(caller, 0) + 1
+    rows = []
+    for m in sorted(mins):
+        per = sorted(((sum(cs.values()), who, max(cs, key=cs.get)) for who, cs in mins[m].items()), key=lambda x: (-x[0], x[1]))
+        rows.append(f"{time.strftime('%H:%M', time.localtime(m))}  {sum(n for n, _, _ in per)}  " + " · ".join(f"{w} {n} {c}" for n, w, c in per))
+    return "\n".join(rows)
 
 def _dirty_since(ts):
     out = set()
@@ -180,7 +259,7 @@ def refresh(run, now=None, run_owner=None):
     c["rate"] = _rate(run) or c["rate"]
     if run_owner: c["rate_owner"] = _rate(run_owner) or dict(prev.get("rate_owner") or {})
     _save(c)
-    keep = [l for l in _lines(CALLS) if l.strip() and float(l) >= now - 600]     # trim the logs
+    keep = [l for l in _lines(CALLS) if l.strip() and float(l.split()[0]) >= now - KEEP_CALLS]     # trim the logs
     try:
         CALLS.write_text("".join(x + "\n" for x in keep), encoding="utf-8")
         DIRTY.write_text("".join(x + "\n" for x in _lines(DIRTY)[-200:]), encoding="utf-8")
@@ -270,22 +349,43 @@ def issue_over_cached(n, since, now=None):
     return any(p.get("mergedAt") and p["mergedAt"] >= since and (p.get("headRefName") == f"lane/{n}" or fixes.search(p.get("body") or ""))
                for p in c["prs"])
 
-def call(cmd, raw, now=None, sleep=None):
-    """The one gh entry point: cache first for reads; real calls counted and retried on rate limits; writes mark dirty."""
+def call(cmd, raw, now=None, sleep=None, alt=None, who="app"):
+    """The one gh entry point: cache first for reads; real calls counted; writes mark dirty.
+    #469: alt() = the same call as the other identity. A rate limit switches to it at once (no sleep); both limited -> BOTH_WAIT, retry.
+    No alt (one identity): the old Retry-After / 60 s wait. Inside quick(): all waiting stays within its deadline."""
     if not cmd or cmd[0] != "gh": return raw()
     hit = answer(cmd, now)
     if hit: return hit
-    def once():
-        note_call(now); return raw()
-    rc, out = with_retry(once, sleep, 1 if tick_cap() else TRIES)
+    ids = [(who, raw)] + ([(OTHER.get(who, "owner"), alt)] if alt else [])
+    if alt and is_limited(ids[0][0]) and not is_limited(ids[1][0]): ids.reverse()   # the free budget first (reads and writes)
+    caller, tries = caller_of(cmd), 1 if tick_cap() else TRIES
+    rc, out = 1, ""
+    for k in range(tries):
+        for j, (name, fn) in enumerate(ids):
+            note_call(now, name, caller); rc, out = fn()
+            if rc == 0 or not rate_limited(out): break
+            mark_limited(name, out)
+            if j + 1 < len(ids): _switch_log(name, ids[j + 1][0])
+        else:
+            if k == tries - 1: break
+            w, left = (BOTH_WAIT if alt else wait_s(out)), quick_left()
+            if left is not None:
+                if left <= 0: break
+                w = min(w, left)
+            (sleep or time.sleep)(w)
+            continue
+        break
     if is_write(cmd) and write_target(cmd): mark_dirty(write_target(cmd), None if now is None else now + 0.5)
     return rc, out
 
 # ---------- dashboard ----------
-def status_line(c, calls, now=None):
+def status_line(c, calls, now=None, by=None):
     now = time.time() if now is None else now
-    if not c: return f"GitHub: {calls} calls/min · no cache yet (watchdog reads GitHub once a minute)"
-    parts, low = [f"GitHub: {calls} calls/min"], False
+    per = f" ({' · '.join(f'{w} {n}' for w, n in sorted(by.items()))})" if by else ""     # #469: calls per identity
+    hit = next((h for h in reversed(_limits().get("hits") or []) if now - 3600 <= h[0] <= now + 1), None)
+    alarm = f"ALARM {hit[1]} hit the {hit[2]} rate limit {time.strftime('%H:%M', time.localtime(hit[0]))}" if hit else ""
+    if not c: return f"GitHub: {calls} calls/min{per} · no cache yet (watchdog reads GitHub once a minute)" + (f" · {alarm}" if alarm else "")
+    parts, low = [f"GitHub: {calls} calls/min{per}"], False
     ids = [("app ", c.get("rate") or {}), ("owner ", c["rate_owner"])] if c.get("rate_owner") else [("", c.get("rate") or {})]   # #363
     for who, rate in ids:
         for k in ("graphql", "core"):
@@ -298,7 +398,13 @@ def status_line(c, calls, now=None):
     parts.append(f"cache {age} s old")
     if low: parts.append(f"ALARM GitHub budget < {ALARM_PCT}%")
     if age > MAX_AGE: parts.append("ALARM cache stale (is the watchdog running?)")
+    if alarm: parts.append(alarm)
     return " · ".join(parts)
 
 def dashboard_line(now=None):
-    return status_line(load(), calls_per_min(now), now)
+    return status_line(load(), calls_per_min(now), now, calls_by(now))
+
+if __name__ == "__main__":     # python tools/runner/ghcache.py top [minutes]: gh calls per minute per identity and caller (#469)
+    if sys.argv[1:2] == ["top"]:
+        t = time.time(); print(top_report(t - 60 * int((sys.argv[2:3] or ["60"])[0]), t) or "no calls logged")
+    else: print(__doc__)

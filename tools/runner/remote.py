@@ -26,19 +26,26 @@ TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # same as runner.py: .runs/<n>/where says local|remote
 
 def sh(cmd, env=None):
-    if cmd and str(cmd[0]) in ("gh", "gh.exe"): env = ghauth.apply(cmd, dict(os.environ if env is None else env))   # #363: the App token
+    alt_env = None
+    if cmd and str(cmd[0]) in ("gh", "gh.exe"):
+        orig = dict(os.environ if env is None else env); orig.pop(ghauth.OWNER, None)
+        env = ghauth.apply(cmd, dict(os.environ if env is None else env))   # #363: the App token
+        if env.get("GH_TOKEN") and env.get("GH_TOKEN") != orig.get("GH_TOKEN"): alt_env = orig   # #469: same call as the owner
     cap = ghcache.tick_cap()                            # #365: inside a watchdog tick: bounded, a timeout is an answer, never raises
-    to = cap or 600
-    def raw():
+    def raw(env_=env):
+        left = ghcache.quick_left()
+        if left is not None and left < 1: return 124, "skipped: no time left for GitHub (quick budget spent)"
+        to = min(cap or 600, left) if left is not None else cap or 600
         try:
-            p = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            p = subprocess.run(cmd, env=env_, capture_output=True, text=True, encoding="utf-8", errors="replace",
                                stdin=subprocess.DEVNULL, timeout=to,
                                creationflags=0x08000000 if os.name == "nt" else 0)   # #284: same as runner.no_window()
         except subprocess.TimeoutExpired:
-            if not cap: raise
-            return 124, f"timed out after {to} s: {' '.join(map(str, cmd))[:120]}"
+            if not cap and left is None: raise
+            return 124, f"timed out after {to:.0f} s: {' '.join(map(str, cmd))[:120]}"
         return p.returncode, (p.stdout or "") + (p.stderr or "")
-    return ghcache.call(list(map(str, cmd)), raw)       # #329: gh reads from the shared cache (panel, per-lane polls), rate limits retried
+    return ghcache.call(list(map(str, cmd)), raw,       # #329: gh reads from the shared cache (panel, per-lane polls), rate limits retried
+                        alt=(lambda: raw(alt_env)) if alt_env is not None else None, who="app" if alt_env is not None else "owner")   # #469: app limited -> owner at once
 
 def clean_env():
     return {k: v for k, v in os.environ.items() if k != TOKEN_VAR}
