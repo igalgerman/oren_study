@@ -165,6 +165,18 @@ assert r.deploy_text(None).startswith("deployed ok https://") and any("pregen.js
 r.run, r.env_file = _orig_run, _orig_env; r.CFG["pregen"] = False
 print("ok deploy")
 
+# remove_worktree: the node_modules junction goes alone, the real modules survive; a half-made worktree is cleaned (#82)
+import tempfile, subprocess, os
+from pathlib import Path as _P
+_t = _P(tempfile.mkdtemp()); _real = _t / "real_modules"; _real.mkdir(); (_real / "keep.txt").write_text("x")
+_wt = _t / "wt-x"; (_wt / "oren2").mkdir(parents=True)
+subprocess.run(["cmd", "/c", "mklink", "/J", str(_wt / "oren2" / "node_modules"), str(_real)], capture_output=True, check=True)
+assert os.path.isjunction(_wt / "oren2" / "node_modules")
+r.remove_worktree(_wt)
+assert not _wt.exists() and (_real / "keep.txt").exists()
+import shutil; shutil.rmtree(_t, ignore_errors=True)
+print("ok remove-worktree")
+
 # CI merge decisions (#74)
 def _ck(*b): return [{"name": f"c{i}", "bucket": x} for i, x in enumerate(b)]
 assert r.ci_verdict([]) == "none" and r.ci_verdict(None) == "none"
