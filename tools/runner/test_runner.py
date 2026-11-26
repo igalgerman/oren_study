@@ -167,14 +167,33 @@ import inspect
 assert '"ready-for-human"' in inspect.getsource(r.park_issue) and "ready-for-human" not in inspect.getsource(r.block)
 print("ok routing")
 
-# observer scheduling + parse
-assert W.observer_due(0, 1800, 30, False) and not W.observer_due(0, 1799, 30, False) and not W.observer_due(0, 99999, 30, True)
-assert W.parse_observer("OBSERVER: OK\nOBSERVER-END") == []
-_p = W.parse_observer("noise\nOBSERVER: #3 needs no owner → label ready-for-agent\nOBSERVER: backlog low → add work\nOBSERVER-END")
-assert _p == ["OBSERVER: #3 needs no owner → label ready-for-agent", "OBSERVER: backlog low → add work"]
-assert len(W.parse_observer(NL.join(f"OBSERVER: p{i} → f" for i in range(12)))) == 8
-print("ok observer")
-
+# ---- acting observer ----
+import observer as ob
+def _I(n, L, touched=60, norun=0, body=""): return {"number": n, "labels": L, "touched_min_ago": touched, "no_run_min": norun, "body": body}
+def _S(issues, orch="idle", idle=40, integ=False): return {"issues": issues, "orchestrator": orch, "orchestrator_idle_min": idle, "integrating": integ}
+assert ob.rules(_S([_I(1, ["blocked", "P0", "needs-orchestrator"], 31)])) == [("make_ready", 1, ob.rules(_S([_I(1, ["blocked", "P0", "needs-orchestrator"], 31)]))[0][2])]
+assert ob.rules(_S([_I(1, ["needs-orchestrator"], 20)])) == []                       # younger than 30 min
+assert ob.rules(_S([_I(1, ["needs-orchestrator"], 40)], orch="working")) == []       # orchestrator busy
+assert ob.rules(_S([_I(1, ["needs-orchestrator"], 40)], integ=True)) == []           # manual integration
+assert ob.rules(_S([_I(1, ["needs-orchestrator", "ready-for-human"], 90)])) == []
+assert ob.rules(_S([_I(2, ["in-progress"], 5, norun=11)]))[0][:2] == ("rerun", 2)
+assert ob.rules(_S([_I(2, ["in-progress"], 5, norun=3)])) == []
+assert ob.normalize_body("x\n- Blocked by 56, 7\nBlocked by: 8\nBlocked by: #1, #2\n") == ("x\nBlocked by: #56, #7\nBlocked by: #8\nBlocked by: #1, #2\n", True)
+assert ob.normalize_body("Blocked by: #1\n")[1] is False
+_s = _S([_I(n, ["x"]) for n in range(1, 9)])
+assert len(ob.select_actions([("make_ready", n, "r") for n in range(1, 9)], _s, {}, 10**6)) == 5          # max 5
+assert ob.select_actions([("make_ready", 1, "r")], _s, {"acted": {"make_ready:1": 10**6 - 59 * 60}}, 10**6) == []   # repeat < 60 min
+assert len(ob.select_actions([("make_ready", 1, "r")], _s, {"acted": {"make_ready:1": 10**6 - 61 * 60}}, 10**6)) == 1
+assert ob.select_actions([("rerun", 1, "r")], _S([_I(1, ["ready-for-human"])]), {}, 10**6) == []          # never on ready-for-human
+assert ob.select_actions([("rerun", 1, "r")], _S([_I(1, ["x"])], integ=True), {}, 10**6) == []
+_pr = _S([_I(1, ["x"]), _I(2, ["x"])]); _pr["open_prs"] = [{"headRefName": "lane/1"}, {"headRefName": "lane/12"}]
+assert ob.select_actions([("make_ready", 1, "r"), ("fix_blocked_by", 1, "r"), ("rerun", 2, "r")], _pr, {}, 10**6) == [("rerun", 2, "r")]   # open lane/1 PR: being merged
+_sets = []; _old = (ob.integrating, ob.R.set_labels, ob.comment)
+ob.R.set_labels = lambda n, add=(), remove=(): _sets.append(n); ob.comment = lambda *a: None
+ob.integrating = lambda: True; assert ob.execute("make_ready", 1, "r", {"terminals": []}) is False and ob.execute("rerun", 1, "r", {"terminals": []}) is False and _sets == []   # lock appeared after snapshot
+ob.integrating = lambda: False; assert ob.execute("make_ready", 1, "r", {"terminals": []}) is True and _sets == [1]
+ob.integrating, ob.R.set_labels, ob.comment = _old
+print("observer ok")
 # priority: bug first, then P0<P1<P2<P3 (missing = P2), then oldest
 assert nums(r.select([I(1,[R,"pack","P3"]), I(2,[R,"pack"]), I(3,[R,"pack","P1"]), I(4,[R,"pack","P0"])], 4)) == [4,3,2,1]
 assert nums(r.select([I(1,[R,"pack","P0"]), I(2,[R,"pack","bug","P3"])], 2)) == [2,1]
@@ -319,6 +338,9 @@ assert nums(r.select([_e(1, ["pack", "blocked"]), _e(2, ["pack"], )], 3, 2, 1)) 
 assert r.CFG["express_lanes"] == 1
 print("ok express")
 
+# runner must not call "python3" directly: on Windows it is only a bash shim / Store alias -> FileNotFoundError after every CI merge (#79, #72, #41)
+assert '["python3"' not in (r.HERE / "runner.py").read_text(encoding="utf-8")
+print("ok no-python3")
 # #65: model from the issue's model:* label
 assert r.model_of([]) == "sonnet" and r.model_of(["pack", "P1"]) == "sonnet"     # no label = config default
 assert r.model_of(["model:opus"]) == "opus" and r.model_of(["model:haiku", "pack"]) == "haiku"

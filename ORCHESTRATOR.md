@@ -42,6 +42,7 @@ idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → r
 - Lanes refill by themselves (each finished run starts a new pass). When a `run-<n>` note arrives: read its last line, tell the owner ONE line (done / tests / live link, or blocked + why), fix the runner if it broke, then `/go` again if a lane is free.
 - Guide the owner only when something needs HIM (a `ready-for-human` issue, a grilling question). Never ask him to run skills, wizards or commands you can run yourself.
 - Deploys happen automatically after each green merge. Voice pregen runs after each deploy.
+- Owner says "stats" / "status" / "how many issues": run `python3 tools/runner/dashboard.py --text` and paste its lines (#142). He can also double-click `tools\dashboard.cmd` for the page.
 
 ## Questions from workers → the owner, in YOUR window (relay)
 Workers and reviewers report to you (herdr notes arrive in your terminal). The owner answers here, in your window, not in worker tabs.
@@ -64,8 +65,8 @@ Resume when the owner answers: type the answer into the window (`hc send issue-<
 ## needs-orchestrator (STUCK, runner errors, reviewer asked twice)
 The runner labels such an issue `blocked` + `needs-orchestrator` (NOT `ready-for-human`) and sends you `STUCK #n: <why> — decide: unblock, split, or ask the owner`. It is YOUR job: read the issue comment and the window, fix it yourself (rewrite/split the issue, fix the runner, do the missing step), then remove `blocked` + `needs-orchestrator` and `tools/runner/run.cmd <n>`. Ask the owner only if it is truly his decision (then ask in your window; if he is away it becomes a parked question with `ready-for-human`). The panel shows these in a dim "orchestrator handling" line, not in the owner's lane.
 
-## Observer
-Every `observer_minutes` (config.toml) the watchdog runs a read-only headless Sonnet with `tools/runner/observer_prompt.md` and types `OBSERVER found: <problem> → <fix>` lines into your window (nothing when OK). Act on them (fix labels, unblock, add backlog); do not ignore. Log: `tools/runner/.runs/observer.log`, last result: `observer.last`. A watchdog.py change needs the watchdog window restarted.
+## Observer (acting, within limits)
+Every `observer_minutes` (config.toml, default 10) the watchdog runs `tools/runner/observer.py`, python rules only (no LLM): `make_ready` (needs-orchestrator/P0 untouched 30+ min while you are idle), `rerun` (in-progress with no live run-n terminal for 10+ min), `fix_blocked_by` (normalize dependency lines). Limits: max 5 actions per run, same action+issue once per 60 min, never on ready-for-human, never on an issue with an open lane/<n> PR, never while `integrate.lock` is alive (re-checked before each action). Each action is commented on the issue ("Observer: ...") and logged in `tools/runner/.runs/observer.log`; last result `observer.last`. To stop it: `observer_minutes = 0`. Dry run: `python tools/runner/observer.py --dry`. Use `needs-orchestrator` on purpose to keep the observer off an issue for 30 min.
 
 ## Code changes
 - runner.py changes apply to the NEXT issue run (every run is a fresh `python runner.py` process; running runs keep the code they started with). The watchdog reloads runner.py by itself when the file changes; a change in watchdog.py itself needs the `watchdog` window restarted (kill it, run the watchdog line of tools/orchestrator.cmd) at a quiet moment.
