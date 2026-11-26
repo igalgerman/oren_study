@@ -100,14 +100,10 @@ svg.px{shape-rendering:crispEdges;display:block}
 .wcard2::before{content:"";position:absolute;inset:0 0 auto;height:14px;background:var(--lc);box-shadow:inset 0 -4px 0 rgba(0,0,0,.15)}
 .wcard2 .ico{height:56px;display:flex;align-items:flex-end;gap:4px}.wcard2 .ico svg{height:52px;width:auto}
 .wcard2 .gd{position:absolute;top:18px;inset-inline-end:6px;width:34px}
-.wcard2 .gd.caged{filter:grayscale(.7) brightness(.8)}
-.wcard2 .gd.caged::after{content:"";position:absolute;inset:-3px;background:repeating-linear-gradient(90deg,#3a3f45 0 3px,transparent 3px 8px)}
 .wcard2 .nm{font-weight:800;font-size:18px;text-align:center}
 .wcard2 .op{position:absolute;top:20px;inset-inline-start:6px;font-weight:900;font-size:17px;min-width:30px;height:30px;padding:0 4px;display:grid;place-items:center;background:var(--lc);color:#fff}
 .wcard2 .bar{width:100%;height:10px;background:rgba(0,0,0,.1)}
 .wcard2 .bar i{display:block;height:100%;background:var(--gold)}
-.wcard2 .cnt{font-size:14px;font-weight:700;color:var(--ink-soft);direction:ltr;display:flex;gap:4px;align-items:center}
-.wcard2 .cnt svg{width:15px}
 .wcard2.locked{filter:grayscale(.85);opacity:.75}
 .wcard2 .lk{position:absolute;top:44px;left:50%;transform:translateX(-50%);width:30px}
 .hello{display:flex;align-items:flex-end;gap:10px}
@@ -144,7 +140,6 @@ svg.px{shape-rendering:crispEdges;display:block}
 .pnode .pav{position:absolute;bottom:72%;left:50%;transform:translateX(-50%);pointer-events:none}.pnode .pav svg{width:34px}
 .guard{position:absolute;transform:translate(-50%,-50%);pointer-events:none}
 .guard svg{width:54px}
-.guard.caged::after{content:"";position:absolute;inset:-6px;background:repeating-linear-gradient(90deg,#3a3f45 0 4px,transparent 4px 11px);box-shadow:inset 0 4px 0 #3a3f45,inset 0 -4px 0 #3a3f45}
 .guard.free{animation:bob 1.6s ease-in-out infinite}
 
 /* STORY dialog */
@@ -923,7 +918,7 @@ function shapeSVG(t,hard,cls,size){const col=pick(COL);let body;
   else{let p;
     if(t==='tri')p=hard?(()=>{const a0=Math.random()*6.28,a1=a0+(100+Math.random()*40)*Math.PI/180,a2=a1+(95+Math.random()*40)*Math.PI/180;return [a0,a1,a2].map(a=>[50+44*Math.cos(a),50+44*Math.sin(a)]);})():ngon(3,44,-Math.PI/2);
     else if(t==='sq'){const s=(size||rand(50,66))/2;p=[[50-s,50-s],[50+s,50-s],[50+s,50+s],[50-s,50+s]];}
-    else if(t==='rect'){const w=rand(78,86)/2,hh=rand(28,44)/2;p=[[50-w,50-hh],[50+w,50-hh],[50+w,50+hh],[50-w,50+hh]];if(hard&&mm(.4))p=rot(p,Math.PI/2);}
+    else if(t==='rect'){const w=rand(78,86)/2,hh=(size||rand(28,44))/2;p=[[50-w,50-hh],[50+w,50-hh],[50+w,50+hh],[50-w,50+hh]];if(hard&&mm(.4))p=rot(p,Math.PI/2);}
     else p=ngon(SIDES[t],42,Math.random()*6.28,hard);
     if(hard&&(t==='sq'||t==='rect'||t==='tri'))p=rot(p,Math.random()*6.28);
     body=`<polygon points="${p.map(q=>q.map(v=>v.toFixed(1)).join(',')).join(' ')}"`;}
@@ -938,7 +933,8 @@ function nameQ(set,hard){const t=pick(set.filter(x=>x!=='circ'||set.length<5));c
 function countQ(hard){const t=pick(['tri','sq','rect','pent','hex']);const corners=mm(.5);const o=['3','4','5','6'];
   return ch(`<div class="qq">כַּמָּה ${corners?'קָדְקֳדִים':'צְלָעוֹת'} יֵשׁ לַצּוּרָה?</div>${shapeSVG(t,hard,'shp1')}`,o,SIDES[t]-3,
     corners?'קָדְקֹד הוּא פִּנָּה. סוֹפְרִים אֶת הַפִּנּוֹת':'צֶלַע הִיא קַו יָשָׁר. סוֹפְרִים אֶת הַקַּוִּים מִסָּבִיב','מַתְחִילִים בְּאֶחָד, וּמַמְשִׁיכִים מִסָּבִיב עַד שֶׁחוֹזְרִים אֵלָיו','',{t:'shape',ask:corners?'corners':'sides',target:t},true);}
-function sqQ(hard){const sq=shapeSVG('sq',hard,'');const ts=shuffle(['sq','rect','rect']);const svgs=ts.map(x=>x==='sq'?sq:shapeSVG('rect',hard,''));
+/* the two rectangles get different heights, so they never look the same (#292) */
+function sqQ(hard){const sq=shapeSVG('sq',hard,'');const ts=shuffle(['sq','rect','rect']);const h1=rand(28,44),hs=[h1,28+(h1-28+8)%17];let r=0;const svgs=ts.map(x=>x==='sq'?sq:shapeSVG('rect',hard,'',hs[r++]));
   return ch('<div class="qq">אֵיזֶה מַלְבֵּן הוּא גַּם רִבּוּעַ?</div>',svgs,ts.indexOf('sq'),'לָרִבּוּעַ כָּל אַרְבַּע הַצְּלָעוֹת שָׁווֹת','מְחַפְּשִׂים מַלְבֵּן שֶׁהָאֹרֶךְ וְהָרֹחַב שֶׁלּוֹ שָׁוִים','shp',{t:'shape',ask:'sqrect',ts});}
 const B4=['tri','sq','rect','circ'],B6=['tri','sq','rect','pent','hex','circ'];
 const shp1=i=>{const hard=i>=3;return mm(.65)?whichQ(B4,hard):nameQ(B4,hard);};
@@ -1553,7 +1549,7 @@ function showJourney(greet){
   const grid=h('div','worlds');
   WORLDS.forEach(Wd=>{const open=worldOpen(Wd);const done=Wd.levels.filter(l=>stars(l.id)).length;const fr=freed(Wd);
     const b=h('button','wcard2'+(open?'':' locked')+(Wd===nextW?' next':''));b.style.setProperty('--lc',Wd.color);b.setAttribute('aria-label',Wd.say);
-    b.innerHTML=`<span class="op ltr">${Wd.op}</span><span class="gd ${fr?'':'caged'}" style="position:absolute">${GUARD[Wd.gd]}</span>${open?'':`<span class="lk">${SPR.lock}</span>`}<span class="ico">${Wd.icon()}</span><span class="nm">${Wd.name}</span><span class="bar"><i style="width:${done/Wd.levels.length*100}%"></i></span><span class="cnt">${done}/${Wd.levels.length}</span>`;
+    b.innerHTML=`<span class="op ltr">${Wd.op}</span>${fr?`<span class="gd" style="position:absolute">${GUARD[Wd.gd]}</span>`:''}${open?'':`<span class="lk">${SPR.lock}</span>`}<span class="ico">${Wd.icon()}</span><span class="nm">${Wd.name}</span><span class="bar"><i style="width:${done/Wd.levels.length*100}%"></i></span>`;
     b.onclick=()=>{if(!open){b.classList.remove('shake');void b.offsetWidth;b.classList.add('shake');sfx.no();return;}showWorld(Wd);};grid.appendChild(b);});
   m.appendChild(grid);
   m.appendChild(h('div','statline',`<span>${ICON.cal}<b>${save.days.length}</b> יְמֵי אִמּוּן</span><span>${SPR.flame}<b>${dayStreak()}</b> בִּרְצִיפוּת</span><span>${ICON.grid.replace('currentColor','#3a8fc4')}<bdi dir="ltr"><b>${masteredCount()}</b>/100</bdi></span>${save.rq.length?`<span>טָעֻיּוֹת לְתַרְגֵּל: <b>${save.rq.length}</b></span>`:''}<span id="saveNote"></span>`));
@@ -3190,7 +3186,7 @@ svg.tl{width:60px;height:60px;display:block}
 .thi .thsg{max-width:60px}.thi .ths svg{width:44px;height:44px}.thi .thsg.n2 .ths svg,.thi .thsg.n3 .ths svg{width:24px;height:24px}.thi .ths.s0 svg{width:22px;height:22px}.thi .ths.s2 svg{width:56px;height:56px}
 .thi .thsg.n2 .ths.s2 svg,.thi .thsg.n3 .ths.s2 svg{width:28px;height:28px}
 .chb.thc{height:auto;min-height:92px;min-width:92px;padding:8px}
-.chb.picb .thsg.n1 .ths svg{width:76px;height:76px}.chb.picb .thsg{max-width:150px}
+.chb.picb .thsg.n1 .ths svg{width:76px;height:76px}.chb.picb .thsg.n1 .ths.s0 svg{width:38px;height:38px}.chb.picb .thsg.n1 .ths.s2 svg{width:84px;height:84px}.chb.picb .thsg{max-width:150px}
 .chb.thc svg.tl{width:64px;height:64px}
 .chb.tx .tht{font-size:inherit}
 .thw{font-family:var(--read);font-size:38px;font-weight:900;padding:2px 18px;background:#fff;box-shadow:inset 0 0 0 2px rgba(0,0,0,.1)}
@@ -3225,7 +3221,7 @@ svg.tl{width:60px;height:60px;display:block}
 @media (max-width:760px){
   .thi{width:48px;height:48px}.thi svg.tl{width:42px;height:42px}.thmat.n2,.thmat.n3{gap:4px}.thmat.n2{grid-template-columns:repeat(2,58px)}.thmat.n3{grid-template-columns:repeat(3,58px)}.thmat .thi{width:58px;height:58px}
   .thser{gap:5px}.thn{font-size:22px}.tht{font-size:22px}.thana.w .tht{font-size:22px}.thana.w .thi{min-width:72px}
-  .chb.thc{min-height:74px;min-width:74px}.chb.picb .thsg.n1 .ths svg{width:60px;height:60px}.chb.thc svg.tl{width:52px;height:52px}
+  .chb.thc{min-height:74px;min-width:74px}.chb.picb .thsg.n1 .ths svg{width:60px;height:60px}.chb.picb .thsg.n1 .ths.s0 svg{width:30px;height:30px}.chb.picb .thsg.n1 .ths.s2 svg{width:66px;height:66px}.chb.thc svg.tl{width:52px;height:52px}
   .thw{font-size:28px}.sent2{font-size:21px}.thp{font-size:20px}.thp.nk{font-size:21px}.rcqq{font-size:21px}
   .throw{font-size:26px}.throw .ths svg{width:30px;height:30px}
   .thsw{grid-template-columns:1fr}.thday summary{grid-template-columns:58px 50px 1fr 44px;font-size:14px}}
@@ -7118,7 +7114,7 @@ function runMate(back){const cz=ST();const lv=cz.mate===2?2:1;const set=lv===1?P
 /* ---------- 6. a small game against a very gentle computer ---------- */
 function botMove(p){const ms=legal(p);const caps=ms.filter(m=>m.cap);const pool=caps.length?caps:ms;const m=pick(pool);return m.pr?Object.assign({},m,{pr:m.pc==='p'?'q':'Q'}):m;}
 function runGame(back){O.setScreen('sTal','valley',back);T.hudT('מְשַׂחֲקִים!');const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq cz');s.appendChild(wrap);
-  let p=fromFEN(START),last=null,lock=false,over=false;const msg=h('div','lcap czmsg','אַתָּה הַלָּבָן. גַּע בִּכְלִי, וְאַחַר כָּךְ בַּמִּשְׁבֶּצֶת.');say(msg.textContent);O.say(T.spk?T.spk(msg.textContent):msg.textContent);
+  let p=fromFEN(START),last=null,lock=false,over=false;const msg=h('div','lcap czmsg','אַתָּה הַלְּבָנִים. הָזֵז כְּלִי, כְּמוֹ הַחֵץ!');say(msg.textContent);O.say(T.spk?T.spk(msg.textContent):msg.textContent);
   const el=boardEl(null);wrap.append(msg,el);const arrow=hintArrow(el,sqOf('e2'),sqOf('e4'));
   const end=res=>{over=true;lock=true;CUR=null;const st=res==='win'?3:res==='draw'?2:1;const g=res==='win'?10:3;O.addGems(g);T.record('chess-play',st);
     setTimeout(()=>T.result({title:res==='win'?'מָט! נִצַּחְתָּ!':res==='draw'?'תֵּיקוּ!':'הַמַּחְשֵׁב נִצֵּחַ הַפַּעַם.',sub:res==='lose'?'נְשַׂחֵק שׁוּב?':'',stars:st,gems:g,back,again:()=>runGame(back)}),D(900));};
@@ -8582,7 +8578,8 @@ const spr=(v,o)=>Object.assign({t:'spr',v,n:1,z:1,fl:0,up:0},o);
 const TRN={s:'הַצּוּרָה',c:'הַצֶּבַע',n:'הַכַּמּוּת',z:'הַגֹּדֶל',r:'הַכִּוּוּן'};
 function genAna(lv){
   if(lv===1){const tk=pk(Object.keys(TR));const t=TR[tk];const pool=t.only||OBJ1;const [o1,o2]=shuf(pool);const A=spr(o1,t.b),Bx=spr(o1,Object.assign({},t.b,t.f)),C=spr(o2,t.b),ans=spr(o2,Object.assign({},t.b,t.f));
-    const other=pk(Object.keys(TR).filter(k=>k!==tk&&(!TR[k].only||TR[k].only.includes(o2))));const wrong=spr(o2,Object.assign({},TR[other].b,TR[other].f));
+    /* the wrong option must look clearly different (#7): "two"/"three" get the other count, never a slightly bigger one */
+    const other=tk==='big'?pk(['two','three']):tk==='two'?'three':'two';const wrong=spr(o2,Object.assign({},TR[other].b,TR[other].f));
     const ds=[C,okey(wrong)===okey(C)||okey(wrong)===okey(ans)?spr(o1,t.b):wrong];
     return mk('ana',1,{kind:'analogy',a:A,b:Bx,c:C,ans,ds,text:'כְּמוֹ בַּזּוּג הָרִאשׁוֹן — מָה חָסֵר?',rule:t.r+'. אוֹתוֹ דָּבָר בַּזּוּג הַשֵּׁנִי.',key:'p'+o1+o2+tk});}
   const pic=lv===2||(lv===3&&rnd()<.3)||(lv===5&&rnd()<.2);
