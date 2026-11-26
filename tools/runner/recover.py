@@ -15,7 +15,11 @@ TASK = "Oren recover"
 CONTROL = ("orchestrator", "inbox", "inspector")    # the 3 Claude sessions on the PC, tabs of 'oren' in this order
 INBOX_PROMPT = ("You are the INBOX of the Oren game multi-agent system (repo igalgerman/oren_study). Read CLAUDE.md and FLOW.md. "
                 "The owner talks to you: a new idea -> /idea, a clear task -> /task, a bug -> /bug, a status question -> /status. "
-                "Write every new issue the way docs/agents/skills/writing-for-agents.md says. Propose each new issue's model label (docs/agents/models.md). Do nothing else; wait for the owner.")
+                "Write every new issue the way docs/agents/skills/writing-for-agents.md says. Propose each new issue's model label (docs/agents/models.md). "
+                "Run the mattpocock-skills:triage steps on every new issue (#29): duplicate check per CLAUDE.md, labels per docs/agents/triage-labels.md, "
+                "P-level, an Acceptance list, one lane label, Blocked by lines. Do nothing else; wait for the owner.")
+TRIAGE_STEPS = ("Run the mattpocock-skills:triage steps on every new ticket (#29): duplicate check per CLAUDE.md ('One backlog, no duplicates'), "
+                "labels per docs/agents/triage-labels.md, a P-level, an Acceptance list, one lane label (core/pack/review), 'Blocked by: #n' lines.")
 ORCH_PROMPT = "Read ORCHESTRATOR.md and continue as the orchestrator. Open the Oren lanes panel (/lanes)."
 INSPECTOR_PROMPT = "You are the INSPECTOR of the Oren game multi-agent system. Read C:/work/Oren_study/INSPECTOR_HANDOFF.md first and follow it."
 

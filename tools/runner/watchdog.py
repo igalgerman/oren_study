@@ -183,10 +183,11 @@ def check_intake(ts):
     i = pick_intake([{**x, "labels": [l["name"] for l in x["labels"]]} for x in json.loads(out)], ts)
     if not i: return
     n, name = i["number"], f"intake-{i['number']}"
+    import recover
     prompt = (f"/grill-me issue #{n} (gh issue view {n} --repo {R.CFG['repo']} --comments), then /to-tickets for what comes out of it, "
               f"then close #{n} with links to the new tickets. Every ticket gets an '## Acceptance' section before ready-for-agent: 3-7 checkable points "
               f"+ the tests that prove them, and 'Out of scope' (#186). If #{n} is only waiting because it has no Acceptance section, "
-              f"skip the grilling: write that section into #{n}'s body.")
+              f"skip the grilling: write that section into #{n}'s body. " + recover.TRIAGE_STEPS)
     cmd = [R.HC, "run", "--bg", "--outlive-parent", *R.space_args(), "--name", name, "--cwd", R.CFG.get("main_checkout", str(R.ROOT)),
            "--label", f"issue={n}", "--label", "role=intake", shutil.which("claude") or "claude", R.argv_prompt(name, prompt)]
     rc, out = R.run(cmd, timeout=60)

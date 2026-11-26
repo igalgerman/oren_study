@@ -2082,6 +2082,8 @@ def close_windows(n):
     """After a successful issue: close its worker/reviewer windows (kept open when BLOCKED, so the owner can look)."""
     if not USE_HERDR: return
     for t in (f"issue-{n}", f"issue-{n}-fix", f"issue-{n}-resolve1", f"issue-{n}-resolve2", f"review-{n}", f"review-{n}-2", f"review-{n}-3", f"issue-{n}-fix2"):
+        addr = hc_json("get", t, "--json").get("address", "")     # #26: settle the tab so it leaves Herdr's active lists
+        if addr and Path(HERDR_APP).exists(): run([HERDR_APP, "do", "tab.settle", "--terminal", addr], timeout=30)
         hc("kill", t, timeout=30); hc("rm", t, timeout=30)
 
 def resolve_pr(n, k):

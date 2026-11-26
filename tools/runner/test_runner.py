@@ -1359,8 +1359,8 @@ _p = r.remote_resolve_prompt(7, ["a.js"], "claude/x")
 assert "claude/x" in _p and "a.js" in _p and "RESULT: DONE" in _p and "C:/" not in _p and "worktree" not in _p
 assert "gh run view" in r.remote_resolve_prompt(7, ["tests"], "lane/7", ci=True)
 import inspect as _insp
-_src = _insp.getsource(r.process_locked)
-assert "remote_task(" in _src and "remote_resolve_prompt(" in _src, "a cloud lane's resolve must not start a local agent"
+_psrc = _insp.getsource(r.process_locked)
+assert "remote_task(" in _psrc and "remote_resolve_prompt(" in _psrc, "a cloud lane's resolve must not start a local agent"
 print("ok #289 cloud resolve in the flow")
 
 # the pass hands cloud picks to the ONE poller (queue + one `lanes` window), local picks still get their own run-<n>
@@ -1404,3 +1404,27 @@ assert r.cloud_job(7, "review", "", pr_for=lambda n: (None, None), start=None) =
 _orch = (r.ROOT / "ORCHESTRATOR.md").read_text(encoding="utf-8")
 assert "--cloud-review" in _orch and "--cloud-fix" in _orch and "read-only lookups" in _orch
 print("ok #289 orchestrator reviews/fixes in the cloud")
+
+# 26 Nov (#26): an ended issue's worker/reviewer tabs are settled with herdr-app tab.settle (once per tab), running issues are left alone
+_saved = {k: getattr(r, k) for k in ("hc", "hc_json", "run", "USE_HERDR", "HERDR_APP")}
+try:
+    _app = os.path.join(tempfile.mkdtemp(prefix="herdr-app-"), "herdr-app.exe"); open(_app, "w").close()
+    _live = {"issue-5": "t:5w", "review-5": "t:5r", "issue-6": "t:6w"}       # #6 is still running
+    _runs, _hcs = [], []
+    r.USE_HERDR, r.HERDR_APP = True, _app
+    r.hc = lambda *a, **k: (_hcs.append(a), (0, ""))[1]
+    r.hc_json = lambda *a: {"address": _live[a[1]]} if a[:1] == ("get",) and a[1] in _live else {}
+    r.run = lambda cmd, **k: (_runs.append(cmd), (0, ""))[1]
+    r.close_windows(5)
+    _settled = [c[c.index("--terminal") + 1] for c in _runs if c[:3] == [_app, "do", "tab.settle"]]
+    assert sorted(_settled) == ["t:5r", "t:5w"], _runs                       # once per tab of the ended issue
+    assert "t:6w" not in _settled                                            # never a running issue's tab
+    assert ("kill", "issue-5") in [a[:2] for a in _hcs]                      # windows still closed as before
+    _runs.clear(); r.USE_HERDR = False; r.close_windows(5); assert _runs == []   # no herdr: nothing
+finally:
+    for k, v in _saved.items(): setattr(r, k, v)
+_cw = _src.split("def close_windows", 1)[1].split("\ndef ", 1)[0]
+assert "tab.settle" in _cw
+_pl = _src.split("def process_locked", 1)[1].split("def close_windows", 1)[0]
+assert _pl.count("close_windows(n)") >= 2 and "close_windows" not in _pl.split("except Parked", 1)[1].split("except", 1)[0]   # DONE + Ended settle; parked keeps tabs
+print("ok #26 ended issue tabs settled")
