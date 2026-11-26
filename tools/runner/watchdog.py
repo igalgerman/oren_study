@@ -13,9 +13,9 @@ Every minute it checks, deterministically:
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
   4b. orchestrator / inbox / inspector terminal finished (#140)                -> removed by address and started again (recover.py commands)
 It never answers questions or presses keys in other windows; it only tells the orchestrator and starts the runner.
-Usage: python watchdog.py [--once]
+Usage: python watchdog.py [--once | --lock | --alarms-once]
 """
-import calendar, hashlib, importlib, json, re, shutil, subprocess, sys, time, threading
+import argparse, calendar, hashlib, importlib, json, re, shutil, subprocess, sys, time, threading
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -318,23 +318,52 @@ def alarm_tick():
         if t in new: _alarm["sent"][k] = now
     tell("IDLE ALARM (watchdog): " + " · ".join(new))
 
+RELOAD = ("remote", "owner_q", "freeze", "stats", "recover")   # #229: reloaded on change, before runner.py (observer/ai_observer keep in-memory guards: not reloaded)
+
+def parse_args(argv):
+    """#229: unknown flags (and --help) end here, before the loop."""
+    p = argparse.ArgumentParser(prog="watchdog.py", description="Oren runner watchdog: checks windows, lanes and alarms every minute.")
+    p.add_argument("--once", action="store_true", help="one pass, then exit")
+    p.add_argument("--lock", action="store_true", help="who holds the merge lock, then exit")
+    p.add_argument("--alarms-once", action="store_true", help="print idle/stuck alarms, then exit")
+    p.add_argument("--dry-run", action="store_true", help=argparse.SUPPRESS)
+    return p.parse_args(argv)
+
 def main():
-    if "--lock" in sys.argv:                 # #181: who holds the merge lock, why, for how long
+    a = parse_args(sys.argv[1:])
+    if a.lock:                 # #181: who holds the merge lock, why, for how long
         sys.stdout.reconfigure(encoding="utf-8")
         _, info, alive = lock_state()
         if not info: print("merge lock: free"); return
         pid, note, since = info
         print(f"merge lock: held by {note or 'unknown step'} (pid {pid}, {'alive' if alive else 'DEAD'}) for {int((time.time() - since) / 60)} min")
         w = green_waiting(); print("green PRs waiting: " + (", ".join(f"#{n}" for n in w) if w else "none")); return
-    if "--alarms-once" in sys.argv:          # #117: one command: is anything idle or stuck?
+    if a.alarms_once:          # #117: one command: is anything idle or stuck?
         sys.stdout.reconfigure(encoding="utf-8")
         al = alarms_once()
         print("could not read GitHub" if al is None else "\n".join(t for _, t in al) or "nothing idle or stuck"); return
+    try: lock = R.FileLock("watchdog", note="watchdog loop").__enter__()   # #229: one live loop only
+    except R.Blocked:
+        print(f"watchdog already running (pid {(R.FileLock('watchdog').info() or ('?',))[0]}); not starting a second loop", file=sys.stderr); sys.exit(1)
+    try: loop(a.once)
+    finally: lock.__exit__()
+
+def _mtime(name):
+    try: return (HERE / f"{name}.py").stat().st_mtime
+    except OSError: return None
+
+def loop(once):
     log("watchdog started")
     W, me = sys.modules[__name__], Path(__file__).resolve()
     stamp, wstamp = (HERE / "runner.py").stat().st_mtime, me.stat().st_mtime
+    mods = {n: _mtime(n) for n in RELOAD}
     while True:
         try:
+            for n in RELOAD:                  # #229: remote.py & co changed: reload them first, so runner.py and the ticks use the new code
+                t = _mtime(n)
+                if t != mods[n]:
+                    mods[n] = t
+                    if n in sys.modules: importlib.reload(sys.modules[n]); log(f"reloaded {n}.py")
             m = (HERE / "runner.py").stat().st_mtime
             if m != stamp:                    # runner.py changed: pick up the new select()/park logic without restarting this window
                 stamp = m; importlib.reload(R); log("reloaded runner.py")
@@ -345,7 +374,7 @@ def main():
             W.tick()
         except Exception as e:
             log(f"error: {e!r}")
-        if "--once" in sys.argv: return
+        if once: return
         time.sleep(EVERY)
 
 def tick():

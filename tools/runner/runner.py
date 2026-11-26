@@ -10,7 +10,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import remote
 ROOT = HERE.parent.parent                      # repo checkout (tools/runner/../..)
-RUNS = HERE / ".runs"
+RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # #229: tests point this at a temp dir
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
 REPO, REMOTE, BRANCH, MODEL = CFG["repo"], CFG["remote"], CFG["branch"], CFG["model"]
 BASH = CFG["bash"]

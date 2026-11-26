@@ -1,4 +1,5 @@
 """Owner lane: the watchdog opens ONE intake-<n> window for the oldest needs-triage/needs-info issue. Run: python3 tools/runner/test_intake.py"""
+import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 import os, sys
 sys.argv.append("--dry-run"); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import watchdog as W

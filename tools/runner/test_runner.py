@@ -1,4 +1,5 @@
 # Unit test for the selection logic: python tools/runner/test_runner.py
+import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 import sys; sys.argv.append("--dry-run")
 import runner as r
 def I(n, labels, t=None): return {"number": n, "labels": labels, "createdAt": t or f"2026-01-{n:02d}"}

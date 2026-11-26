@@ -1,4 +1,5 @@
 # Unit test for remote.py with a fake CLI: python tools/runner/test_remote.py
+import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 import json
 import remote as r
 
