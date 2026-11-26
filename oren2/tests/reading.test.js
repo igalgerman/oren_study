@@ -96,5 +96,78 @@ const STUB = () => {
   await p.locator('#sPar .pchip', { hasText: 'אוטומטי' }).click(); await L.sleep(200);
   ok('parent back to automatic', await p.evaluate(() => window.__rd.mode() === 'auto'));
   ok('no JS errors', !errs.length, errs.slice(0, 3).join(' | '));
+  await stories(b);
   L.finish('reading', res); await b.close();
 })();
+
+/* ---------- #355 stories: buttons never cover the text, story <-> questions, read first / listen later, day log ---------- */
+async function stories(b) {
+  const open = async vp => { const ctx = await b.newContext(vp); await ctx.addInitScript(() => { window.__fast = true; window.__noFamily = true; });
+    const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message)); await p.goto(L.URL); await p.evaluate(() => localStorage.clear()); await p.reload(); await L.noCoach(p);
+    await p.evaluate(() => { const O = window.OREN, T = window.TAL; O.save.story.intro = 1; T.S().prof = { an: 'cat', col: '#3a8fc4', love: 'art' }; O.persist(); }); return { ctx, p, errs }; };
+  /* story k of the bank at a forced story level (null = the real level) */
+  const run = (p, k, lv) => p.evaluate(([k, lv]) => { const R = window.READBANK2; R.levelHook = lv ? () => lv : null; window.__rb2run.story(() => {}, k); }, [k, lv]);
+  const vis = async p => { await L.sleep(150); return p.evaluate(() => { const pg = [...document.querySelectorAll('#sTal .story')].pop(); const rd = [...document.querySelectorAll('#sTal .strd')].pop();
+    const rdb = pg.querySelector('.sl .rdb'); return { line: !!rdb && rdb.offsetParent !== null, all: !!rd && !rd.hidden && rd.offsetParent !== null }; }); };
+  const toQ = p => p.evaluate(() => document.querySelector('#sTal .stgo').click());
+  const wrongTap = p => p.evaluate(() => { const q = window.__quiz; const bs = [...q.wrap.querySelectorAll('.chs .chb')]; const w = bs.find((x, k) => k !== q.ans); w.click(); return bs.indexOf(w); });
+  // 1. buttons under the last line, never over the text, before and after scrolling (laptop and phone)
+  for (const [nm, vp] of [['1366x768', { viewport: { width: 1366, height: 768 } }], ['390x844', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }]]) {
+    const { ctx, p, errs } = await open(vp);
+    const k = await p.evaluate(() => { const S = window.READBANK2.stories; return S.reduce((m, s, i) => s.s.length > S[m].s.length ? i : m, 0); });
+    await run(p, k, 1); await p.waitForFunction(() => { const r = document.querySelector('#sTal .strd'); return r && !r.hidden; });
+    const overlap = () => p.evaluate(() => { const bs = [...document.querySelectorAll('#sTal .strow .bigbtn')].filter(x => !x.hidden).map(x => x.getBoundingClientRect());
+      const ls = [...document.querySelectorAll('#sTal .sl')].map(x => x.getBoundingClientRect());
+      const hit = bs.some(a => ls.some(l => a.left < l.right && a.right > l.left && a.top < l.bottom && a.bottom > l.top));
+      return { hit, nb: bs.length, below: bs.every(a => a.top >= ls[ls.length - 1].bottom - 1) }; });
+    const o1 = await overlap();
+    await p.evaluate(() => { const s = document.querySelector('#sTal'); s.scrollTop = s.scrollHeight / 2; window.scrollTo(0, document.body.scrollHeight / 2); }); await L.sleep(100); const o2 = await overlap();
+    await p.evaluate(() => { const s = document.querySelector('#sTal'); s.scrollTop = s.scrollHeight; window.scrollTo(0, document.body.scrollHeight); }); await L.sleep(100); const o3 = await overlap();
+    ok(`stories ${nm}: the buttons cover no story line, before and after scrolling`, [o1, o2, o3].every(o => !o.hit && o.nb === 2 && o.below), JSON.stringify([o1, o2, o3]));
+    ok(`stories ${nm}: no JS errors`, !errs.length, errs.slice(0, 3).join(' | ')); await ctx.close();
+  }
+  const { ctx, p, errs } = await open(L.VIEWPORT);
+  // 2. story -> question 1 -> story -> back to question 1: same question, the wrong answer stays marked
+  await run(p, 0, 1); await toQ(p);
+  const q0 = await p.evaluate(() => ({ i: window.__quiz.i, t: document.querySelector('#sTal .tqc').textContent }));
+  const wi = await wrongTap(p);
+  ok('question screen: one "📖 to the story" button', await p.evaluate(() => { const b = document.querySelectorAll('#sTal .qside'); return b.length === 1 && /לַסִּפּוּר/.test(b[0].textContent); }));
+  await p.evaluate(() => document.querySelector('#sTal .qside').click());
+  const pk = await p.evaluate(() => ({ story: !!document.querySelector('#sTal .stpeek .story .sl'), qHidden: window.__quiz.wrap.hidden, rd: !!document.querySelector('#sTal .stpeek .strd'), back: [...document.querySelectorAll('#sTal .stpeek .stback')].map(x => x.textContent.trim()) }));
+  ok('📖 opens the story (text + read to me) with one button back to the question', pk.story && pk.qHidden && pk.rd && pk.back.length === 1 && /לַשְּׁאֵלָה/.test(pk.back[0]), JSON.stringify(pk));
+  await p.evaluate(() => document.querySelector('#sTal .stback').click());
+  const q1 = await p.evaluate(wi => ({ i: window.__quiz.i, t: document.querySelector('#sTal .tqc').textContent, shown: !window.__quiz.wrap.hidden, peek: !!document.querySelector('.stpeek'),
+    bad: window.__quiz.wrap.querySelectorAll('.chs .chb')[wi].classList.contains('bad') && window.__quiz.wrap.querySelectorAll('.chs .chb')[wi].disabled }), wi);
+  ok('back to question 1: same question, the answers kept', q1.i === 0 && q0.i === 0 && q1.t === q0.t && q1.shown && !q1.peek && q1.bad, JSON.stringify({ q0, q1 }));
+  // 3. read first, listen later: the 3 bands of the one table
+  const H = await p.evaluate(() => window.TAL.READ_HELP.map(x => [x.band, x.to, x.line, x.all]));
+  ok('one table of read-aloud help: low / mid / top', H.length === 3 && H.map(x => x[0]).join() === 'low,mid,top', JSON.stringify(H));
+  const fast = s => Math.ceil(s * 1000 / 15) + 200;   /* D(): __fast runs the clock 15x */
+  const band = async (lv, wait) => { await run(p, 0, lv); const a = await vis(p); await L.sleep(wait); const b2 = await vis(p);
+    await run(p, 0, lv); await toQ(p); await wrongTap(p); await p.evaluate(() => document.querySelector('#sTal .qside').click()); const c = await vis(p); return [a, b2, c]; };
+  const say = await (async () => { await run(p, 0, 1); return p.evaluate(() => ({ now: window.OREN.sayNow, fr: window.FRIEND.last })); })();
+  ok('story opens with the friend: "first we try to read alone!"', /לבד/.test((say.now || '').replace(/[֑-ׇ]/g, '')) && /קוֹדֶם נְנַסֶּה לִקְרֹא לְבַד/.test(say.fr), JSON.stringify(say));
+  let r = await band(1, fast(10));
+  ok('low level: per-line 🔊 at once, "read to me" only after ~10 s', r[0].line && !r[0].all && r[1].line && r[1].all, JSON.stringify(r));
+  r = await band(3, fast(25));
+  ok('middle level: both hidden, both after ~25 s', !r[0].line && !r[0].all && r[1].line && r[1].all, JSON.stringify(r));
+  ok('middle level: both at once after a wrong answer', r[2].line && r[2].all, JSON.stringify(r));
+  r = await band(5, fast(25));
+  ok('top level: no read to me at all; the per-line 🔊 only after a wrong answer', !r[0].line && !r[0].all && !r[1].line && !r[1].all && r[2].line && !r[2].all, JSON.stringify(r));
+  // 4. day log: read alone / listened, the level and the goal; only stories read alone move the level up
+  const finish = () => p.evaluate(async () => { for (let k = 0; k < 3; k++) { const q = window.__quiz; q.wrap.querySelector('.chs').children[q.ans].click(); await new Promise(r => setTimeout(r, 250)); } });
+  const lv1 = await p.evaluate(() => window.READBANK2.stories.filter(s => s.lv === 1).map(s => s.id));
+  await p.evaluate(() => { const T = window.TAL; T.S().tl = {}; window.OREN.realSave.alog = {}; });
+  for (const k of lv1.slice(0, 2)) { await run(p, k, null); await p.evaluate(() => document.querySelector('#sTal .strd').click()); await toQ(p); await finish(); }
+  const lvL = await p.evaluate(() => window.READBANK2.level('story'));
+  for (const k of lv1.slice(2, 4)) { await run(p, k, null); await toQ(p); await finish(); }
+  const lvA = await p.evaluate(() => window.READBANK2.level('story'));
+  ok('listened stories keep the level; stories read alone move it up', lvL === 1 && lvA === 2, `${lvL} → ${lvA}`);
+  const lg = await p.evaluate(() => { const O = window.OREN; return (O.realSave.alog[O.today()].e || []).filter(e => e[1] === 'story-new' && e[6] === 'c').map(e => e[7]); });
+  ok('day log: each story line has its goal, level and read alone / listened', lg.length === 4 && lg.every(x => x && x.t && x.g && x.lv === 1) && lg.map(x => x.r).join() === 'l,l,a,a', JSON.stringify(lg));
+  await p.evaluate(() => window.TAL.parentPanel('day')); await L.sleep(300);
+  const rows = await p.evaluate(() => [...document.querySelectorAll('.dllog .dlrow.dl-c')].map(x => x.textContent));
+  ok('parent day log shows the story name, its goal, read alone / listened and the level', rows.length === 4 && rows.every(t => /🎯/.test(t) && /רמה 1/.test(t)) && rows.filter(t => /קרא לבד/.test(t)).length === 2 && rows.filter(t => /האזין/.test(t)).length === 2, JSON.stringify(rows));
+  ok('stories: no JS errors', !errs.length, errs.slice(0, 3).join(' | '));
+  await ctx.close();
+}

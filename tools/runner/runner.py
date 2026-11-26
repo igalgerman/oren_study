@@ -8,7 +8,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import remote, ghcache, ghauth
+import remote, ghcache, ghauth, pcload   # pcload: #293 PC load watch
 ROOT = HERE.parent.parent                      # repo checkout (tools/runner/../..)
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # #229: tests point this at a temp dir
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -731,6 +731,14 @@ def record_refusal(n, error, now=None):
             f.write(time.strftime("%Y-%m-%d %H:%M:%S ", time.localtime(now)) + msg + chr(10))
         tell_orchestrator(msg)
     return due
+
+def local_lanes_now(is_alarmed, local=None):
+    """#293: while the PC load watch is alarmed the runner starts no new LOCAL work."""
+    return 0 if is_alarmed else (LOCAL_LANES if local is None else local)
+
+def refusal_pauses(error, runs=None, now=None):
+    """#293 (14:52): a cloud start that failed with no output while the PC is alarmed was the PC: it sets no cloud pause."""
+    return not pcload.pc_not_cloud(error, pcload.alarmed(runs or RUNS, now))
 
 def local_lane_free(n):
     """#137: is a local lane free for #n (other in-progress issues running locally < local_lanes)? Any gh error -> False."""
@@ -1796,8 +1804,8 @@ def process_locked(issue, where="local"):
                 remote_question(res)
                 out = res
             except Refused as e:                         # #137: local lane free -> run here; else give the issue back, it waits
-                record_refusal(n, str(e))
-                if not local_lane_free(n):
+                if refusal_pauses(str(e)): record_refusal(n, str(e))   # #293: not when the PC was the cause
+                if pcload.alarmed(RUNS) or not local_lane_free(n):      # #293: no new local work while the PC is overloaded
                     stat(n, lane, "waiting", why="cloud start refused")
                     set_labels(n, remove=["in-progress"])
                     return f"WAITING: cloud start refused ({str(e)[:200]}), no local lane free"
@@ -2120,8 +2128,9 @@ def run_pass():
     rbusy = remote_busy(busy)                            # #277: a run waiting for a core slot holds no cloud lane
     gv = governor_pass(rbusy)                     # #239: remote lane count from the 5h usage
     remote_lanes = lanes_now(gv["lanes"], refusal_state(), time.time())   # #137: no cloud starts for 1 h after a refusal
-    chosen = stop_filter([c for c in select(issues, LOCAL_LANES + remote_lanes, MAX_CORE, EXPRESS, core_held()) if not FileLock(f"issue-{c['number']}").held_by_other()], gv)   # #269: express still starts on stop
-    wmap = {c["number"]: w for c, w in assign_where(chosen, sum(where_of(b) != "remote" for b in busy), rbusy, LOCAL_LANES, remote_lanes)}
+    local_lanes = local_lanes_now(pcload.alarmed(RUNS))   # #293: PC overloaded -> no new local work
+    chosen = stop_filter([c for c in select(issues, local_lanes + remote_lanes, MAX_CORE, EXPRESS, core_held()) if not FileLock(f"issue-{c['number']}").held_by_other()], gv)   # #269: express still starts on stop
+    wmap = {c["number"]: w for c, w in assign_where(chosen, sum(where_of(b) != "remote" for b in busy), rbusy, local_lanes, remote_lanes)}
     chosen = [c for c in chosen if c["number"] in wmap]
     if not DRY: chosen = open_pr_resumes(chosen, resume_lookup)     # #295: an issue with an open PR resumes; never a second worker
     cutoff = CFG["stuck_hours"] * 3600
