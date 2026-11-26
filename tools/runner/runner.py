@@ -968,18 +968,24 @@ def run(cmd, cwd=None, env=None, input=None, log=None, timeout=None):
     e["PATH"] = CFG["extra_path"].replace("/c/", "C:/", 1) + os.pathsep + e["PATH"]
     cap = ghcache.tick_cap(); timeout = tick_timeout(timeout)
     is_gh = bool(cmd) and str(cmd[0]) == "gh"
+    orig = dict(e); orig.pop(ghauth.OWNER, None)
     ghauth.apply(cmd, e)                                 # #363: gh runs as the GitHub App (own rate limits); claude/git keep the owner login
-    def raw():
+    alt_env = orig if is_gh and e.get("GH_TOKEN") and e.get("GH_TOKEN") != orig.get("GH_TOKEN") else None   # #469: same call as the owner
+    def raw(env_=e):
         if cap and is_gh and ghcache._TICK.gh_down: return 124, "skipped: gh timed out earlier in this watchdog tick"
+        left = ghcache.quick_left() if is_gh else None   # #469: owner questions: every gh wait ends within quick()'s budget
+        if left is not None and left < 1: return 124, "skipped: no time left for GitHub (quick budget spent)"
+        to = min(timeout or left, left) if left is not None else timeout
         try:
-            p = subprocess.run(cmd, cwd=cwd, env=e, input=input, capture_output=True, text=True,
-                               encoding="utf-8", errors="replace", timeout=timeout, creationflags=no_window())
+            p = subprocess.run(cmd, cwd=cwd, env=env_, input=input, capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", timeout=to, creationflags=no_window())
         except subprocess.TimeoutExpired:
-            if not cap: raise
-            if is_gh: ghcache._TICK.gh_down = True
-            return 124, f"timed out after {timeout} s: {' '.join(map(str, cmd))[:120]}"
+            if not cap and left is None: raise
+            if is_gh and cap: ghcache._TICK.gh_down = True
+            return 124, f"timed out after {to:.0f} s: {' '.join(map(str, cmd))[:120]}"
         return p.returncode, redact((p.stdout or "") + (p.stderr or ""))
-    rc, out = ghcache.call(list(map(str, cmd)), raw)     # #329: gh reads from the shared cache, rate limits retried
+    rc, out = ghcache.call(list(map(str, cmd)), raw,     # #329: gh reads from the shared cache, rate limits retried
+                           alt=(lambda: raw(alt_env)) if alt_env is not None else None, who="app" if alt_env is not None else "owner")   # #469: app limited -> owner at once
     if log:
         with open(log, "a", encoding="utf-8") as f:
             f.write(f"\n$ {' '.join(map(str, cmd))[:300]}\n{out}\n[exit {rc}]\n")

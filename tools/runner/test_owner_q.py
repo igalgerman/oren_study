@@ -118,3 +118,28 @@ OQ.answers_tick(told.append, gh=g); assert told == [], told
 cs.append({"body": "כן, הוספתי", "url": "u", "reactionGroups": []})                      # a real owner reply (no marker)
 OQ.answers_tick(told.append, gh=g); assert len(told) == 1 and "כן, הוספתי" in told[0] and "Cloudflare" not in told[0].split("Open questions:")[0], told
 print("ok owner_q #211 own posts are not answers")
+# #469: GitHub limited for BOTH identities -> a question post returns within 10 s (no 60 s sleeps) and is never lost:
+# it is queued and the watchdog's answers_tick posts it once GitHub answers again
+import ghcache as GC, ghauth
+class _P:
+    def __init__(self, rc, out): self.returncode, self.stdout, self.stderr = rc, out, ""
+clk, slept = [0.0], []
+real = (R.subprocess.run, ghauth.token, GC._clock, GC.time.sleep, OQ.GH)
+R.subprocess.run = lambda cmd, **k: _P(1, "GraphQL: API rate limit already exceeded for installation ID 186191764")
+ghauth.token = lambda *a, **k: "ghs_app"
+GC._clock = lambda: clk[0]
+GC.time.sleep = lambda s: (slept.append(s), clk.__setitem__(0, clk[0] + s))
+OQ.GH = R.gh
+try:
+    assert OQ.post("issue-77", "QUESTION: כחול או ירוק?") is None
+    assert sum(slept) <= 10, slept
+    slept.clear()
+    assert OQ.main(["ask", "#78", "צבע?"]) == 0, "ask: queued, not an error"
+finally:
+    R.subprocess.run, ghauth.token, GC._clock, GC.time.sleep, OQ.GH = real
+    GC.LIMITED.unlink(missing_ok=True)
+assert sum(slept) <= 10, slept
+assert [p["window"] for p in OQ._state().get("pending", [])] == ["issue-77", "#78"], OQ._state()
+OQ.answers_tick(told.append, gh=g)
+assert not OQ._state().get("pending") and any("כחול או ירוק?" in c["body"] for c in cs) and any("צבע?" in c["body"] for c in cs), "posted later"
+print("ok owner_q #469 a limited GitHub never blocks a question > 10 s, and it is posted later")

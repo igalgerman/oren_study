@@ -232,4 +232,68 @@ W.R.gh = lambda *a, **k: (0, json.dumps(cached))
 try: assert W.green_waiting() == [1], "merge-lock alarm lists the cached green PR"
 finally: W.R.gh = real_gh
 print("ok cached statusCheckRollup is green for watchdog checks")
+# ---------- #469: two identities (app / owner), switch on a rate limit, never a long wait for owner questions ----------
+G.LIMITED.unlink(missing_ok=True)
+clk = [1000.0]; G._clock = lambda: clk[0]
+def fsleep(s): slept.append(s); clk[0] += s
+def ident(name, answers):
+    got = []
+    def f(): got.append(1); return answers.pop(0) if answers else (0, name)
+    f.got = got; return f
+LIM = (1, "GraphQL: API rate limit already exceeded for installation ID 186191764")
+slept.clear()
+app, own = ident("app", [LIM]), ident("owner", [])
+rc, out = G.call(["gh", "issue", "view", "123", "--json", "body"], app, sleep=fsleep, alt=own)
+assert (rc, out) == (0, "owner") and slept == [] and len(app.got) == 1 and len(own.got) == 1, (rc, out, slept)
+assert "switched to owner" in (G.RUNS / "ghauth.log").read_text(encoding="utf-8")
+app2, own2 = ident("app", []), ident("owner", [])
+assert G.call(["gh", "issue", "view", "124", "--json", "body"], app2, sleep=fsleep, alt=own2) == (0, "owner") and not app2.got, \
+    "the next READ starts on the other identity while the app is limited"
+w_app, w_own = ident("app", []), ident("owner", [])
+assert G.call(["gh", "issue", "comment", "5", "--body", "x"], w_app, sleep=fsleep, alt=w_own) == (0, "owner") and not w_app.got, "a write leaves the app only while it is limited"
+G.LIMITED.unlink()
+w_app, w_own = ident("app", []), ident("owner", [])
+assert G.call(["gh", "issue", "comment", "5", "--body", "x"], w_app, sleep=fsleep, alt=w_own) == (0, "app") and not w_own.got, "writes keep the app"
+print("ok #469 app limited -> owner used at once, no 60 s sleep")
+G.LIMITED.unlink(missing_ok=True); slept.clear()
+app, own = ident("app", [LIM, (0, "app")]), ident("owner", [(1, "You have exceeded a secondary rate limit")])
+assert G.call(["gh", "issue", "view", "125", "--json", "body"], app, sleep=fsleep, alt=own) == (0, "app")
+assert slept == [G.BOTH_WAIT] and G.BOTH_WAIT <= 15, slept
+print("ok #469 both limited -> short wait, then retry")
+G.LIMITED.unlink(missing_ok=True); slept.clear()
+app, own = ident("app", [LIM] * 50), ident("owner", [LIM] * 50)
+with G.quick(10):
+    rc, out = G.call(["gh", "issue", "comment", "193", "--body", "q"], app, sleep=fsleep, alt=own)
+assert rc != 0 and sum(slept) <= 10, slept
+slept.clear(); one = ident("app", [LIM] * 50)
+with G.quick(10): G.call(["gh", "issue", "view", "126", "--json", "body"], one, sleep=fsleep)
+assert sum(slept) <= 10, "one identity (no App) is bounded too"
+assert G.quick_left() is None, "outside quick(): no deadline"
+print("ok #469 quick(10): never more than 10 s of waiting")
+# caller per call + dashboard: both budgets, calls per identity, alarm at the first secondary-limit hit
+lines = [l.split() for l in G.CALLS.read_text(encoding="utf-8").splitlines() if l.strip()]
+assert all(len(l) >= 3 for l in lines[-3:]) and lines[-1][1] in ("app", "owner"), lines[-3:]
+G.CALLS.write_text("".join(f"{t} {w} {c}\n" for t, w, c in [(NOW, "app", "watchdog:api"), (NOW + 1, "app", "watchdog:api"), (NOW + 2, "owner", "owner_q:issue"),
+                                                                 (NOW + 61, "app", "remote:pr")]), encoding="utf-8")
+assert G.calls_per_min(now=NOW + 30) == 3 and G.calls_by(now=NOW + 30) == {"app": 2, "owner": 1}
+rep = G.top_report(NOW - 1, NOW + 120)
+assert rep.splitlines()[0].endswith("3  app 2 watchdog:api · owner 1 owner_q:issue") and "remote:pr" in rep.splitlines()[1], rep
+G.LIMITED.unlink(missing_ok=True)
+G.mark_limited("app", "You have exceeded a secondary rate limit", now=NOW + 5)
+line = G.status_line({"ts": NOW, "rate": {"graphql": [4000, 5000]}, "rate_owner": {"graphql": [3000, 5000]}}, 3, now=NOW + 20, by={"app": 2, "owner": 1})
+assert "calls/min (app 2 · owner 1)" in line and "ALARM app hit the secondary rate limit" in line, line
+assert "ALARM app hit" not in G.status_line({"ts": NOW + 4000, "rate": {}}, 0, now=NOW + 4000), "the alarm ends an hour after the last hit"
+print("ok #469 caller log, per-minute report, dashboard alarm")
+# runner.run: the App token first; on its limit the same command runs as the owner (no GH_TOKEN)
+G.LIMITED.unlink(missing_ok=True)
+toks = []
+def sub_lim(cmd, **k):
+    toks.append(k["env"].get("GH_TOKEN"))
+    return P(1, LIM[1]) if k["env"].get("GH_TOKEN") == "ghs_app" else P(0, "owner ok")
+ghauth.token = lambda *a, **k: "ghs_app"; RN.subprocess.run = sub_lim; G.time.sleep = lambda s: (_ for _ in ()).throw(AssertionError("slept"))
+try: rc, out = RN.run(["gh", "issue", "view", "127", "--json", "body"])
+finally: RN.subprocess.run, ghauth.token, G.time.sleep = real_sub, real_tok, real_sleep
+assert (rc, out) == (0, "owner ok") and toks[0] == "ghs_app" and toks[1] != "ghs_app", toks
+G.LIMITED.unlink(missing_ok=True); G._clock = time.monotonic
+print("ok #469 runner.run switches to the owner login on the app's limit")
 print("ALL ghcache tests passed")

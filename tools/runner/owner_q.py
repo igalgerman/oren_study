@@ -13,6 +13,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 import runner as R
+import ghcache
 
 TITLE = "Questions for the owner"
 OWNER = R.REPO.split("/")[0]
@@ -20,6 +21,7 @@ STATE = R.RUNS / "owner_q.json"
 GH = R.gh             # tests swap in a fake gh
 KEY_RE = re.compile(r"<!-- owner-q:([0-9a-f]{12}) -->")
 MARK = "<!-- owner_q -->"  # #211: every post of this tool (same GitHub account as the owner) -> never counted as his answer
+QUICK_S = 10        # #469: an owner question never waits longer than this on GitHub (a limit -> other identity, else queued)
 OPT_RE = re.compile(r"^\s*[❯>›]?\s*(\d+[.)]\s+\S.*)$")
 
 def key_of(window, question):
@@ -103,7 +105,20 @@ def comments(n, gh=None):
     except ValueError: return None
 
 def post(window, question, tail="", gh=None):
-    """Post the question once per window+question. -> comment url when posted now, '' when already there, None when gh failed (retry later)."""
+    """Post the question once per window+question. -> comment url when posted now, '' when already there, None when gh failed:
+    then it is queued (state 'pending') and answers_tick posts it later (#469: never lost, never more than QUICK_S s on GitHub)."""
+    with ghcache.quick(QUICK_S):
+        r = _post(window, question, tail, gh)
+    s = _state(); pend = [p for p in s.get("pending", []) if (p["window"], p["question"]) != (window, question)]
+    if r is None: pend.append({"window": window, "question": question, "tail": tail[-1500:]})
+    if pend != s.get("pending", []): s["pending"] = pend[-50:]; _save(s)
+    return r
+
+def flush_pending(gh=None):
+    """#469: post the questions that could not be posted earlier (GitHub limited); each stays queued until it is posted."""
+    for p in list(_state().get("pending", [])): post(p["window"], p["question"], p.get("tail", ""), gh)
+
+def _post(window, question, tail="", gh=None):
     gh = gh or GH
     key = key_of(window, question or tail[-600:])
     s = _state()
@@ -121,14 +136,16 @@ def post(window, question, tail="", gh=None):
 
 def open_list(gh=None):
     gh = gh or GH
-    n = find_issue(gh)
-    cs = comments(n, gh) if n else None
+    with ghcache.quick(QUICK_S):
+        n = find_issue(gh)
+        cs = comments(n, gh) if n else None
     return None if cs is None else [{**q, "issue": n} for q in open_questions(cs)]
 
 def mark_answered(key, answer="", gh=None):
     gh = gh or GH
-    n = find_issue(gh)
-    return bool(n) and gh("issue", "comment", str(n), "--body", f"ANSWERED owner-q:{key} {answer}".strip() + "\n" + MARK)[0] == 0
+    with ghcache.quick(QUICK_S):
+        n = find_issue(gh)
+        return bool(n) and gh("issue", "comment", str(n), "--body", f"ANSWERED owner-q:{key} {answer}".strip() + "\n" + MARK)[0] == 0
 
 def new_answers(cs, seen):
     """Pure: comments after the first `seen` without the tool's marks (MARK, question key, ANSWERED line) = the owner's replies."""
@@ -138,8 +155,10 @@ def new_answers(cs, seen):
 def answers_tick(tell, gh=None):
     """Watchdog: the owner replied in the questions issue -> tell the orchestrator (reply + open questions) so it relays the answer."""
     gh = gh or GH
-    n = find_issue(gh)
-    cs = comments(n, gh) if n else None
+    flush_pending(gh)
+    with ghcache.quick(QUICK_S):
+        n = find_issue(gh)
+        cs = comments(n, gh) if n else None
     if cs is None: return
     s = _state(); seen = s.get("seen", len(cs))
     new = new_answers(cs, seen)
@@ -154,7 +173,7 @@ def main(argv):
     sys.stdout.reconfigure(encoding="utf-8")
     if len(argv) == 3 and argv[0] == "ask":
         url = post(argv[1], "QUESTION: " + re.sub(r"^QUESTION:\s*", "", argv[2]))
-        print(url or ("already posted" if url == "" else "could not post (gh)")); return 0 if url is not None else 1
+        print(url or ("already posted" if url == "" else "GitHub is busy: queued, the watchdog posts it within a minute or two")); return 0
     if argv == ["open"]:
         qs = open_list()
         if qs is None: print("could not read GitHub (gh)"); return 1
