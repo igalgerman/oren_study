@@ -144,6 +144,7 @@ svg.px{shape-rendering:crispEdges;display:block}
 
 /* STORY dialog */
 .dlg{position:absolute;inset:0;z-index:7;display:flex;align-items:flex-end;justify-content:center;padding:20px var(--gut-r) 50px var(--gut);background:rgba(20,25,40,.45);animation:fadein .3s}
+body:has(#dlg:not([hidden])) .hud{z-index:8}/* #356: back/home stay visible above a story dialog */
 .dbox{position:relative;display:flex;align-items:flex-end;gap:18px;width:min(900px,100%);background:var(--paper);padding:18px 22px;box-shadow:0 0 0 6px var(--ink),0 12px 0 6px rgba(0,0,0,.25)}
 .dbox .who{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px}
 .dbox .who .sp svg{width:110px}
@@ -1133,7 +1134,8 @@ function mergeIn(o){if(!o||typeof o!=='object')return;
   for(const [k,v] of Object.entries(o.tl||{})){save.tl=save.tl||{};const c=save.tl[k]||{s:0,n:0};save.tl[k]={s:Math.max(c.s|0,v.s|0),n:Math.max(c.n|0,v.n|0),b:Math.max(c.b|0,v.b|0)};}
   for(const m of ['code','wr','m2','cz'])for(const [k,v] of Object.entries(o[m]||{})){save[m]=save[m]||{};save[m][k]=Math.max(save[m][k]|0,v|0);}
   if(o.en2&&window.ENGLISH2)window.ENGLISH2.merge(save,o);
-  if(window.THINK){if(o.th)save.th=window.THINK.mergeTh(save.th,o.th);if(o.alog){save.alog=window.THINK.mergeLog(save.alog,o.alog);if(window.DAYLOG)window.DAYLOG.merge(save,o);}}
+  if(window.THINK){if(o.th)save.th=window.THINK.mergeTh(save.th,o.th);if(o.alog)save.alog=window.THINK.mergeLog(save.alog,o.alog);}
+  if(window.DAYLOG&&(o.alog||o.now)){save.alog=save.alog||{};window.DAYLOG.merge(save,o);}/* the heartbeat (save.now) comes even without a day log (#352) */
   for(const [k,v] of Object.entries(o.time||{})){save.time=save.time||{};save.time[k]=Math.max(save.time[k]|0,v|0);}
   for(const [k,v] of Object.entries(o.st||{})){save.st=save.st||{};const c=save.st[k]||{a:0,o:0};save.st[k]={a:Math.max(c.a|0,v.a|0),o:Math.max(c.o|0,v.o|0)};}
   if(o.set&&(+o.setT||0)>(+save.setT||0)){save.set=o.set;save.setT=o.setT;lastSetJ=JSON.stringify(save.set);}
@@ -1493,7 +1495,7 @@ function addGems(n,fromEl){save.gems=(save.gems|0)+n;
 const app=$('#app');let backTo=null,curWorld=null;
 const wipeEl=$('#wipe');wipeEl.innerHTML='<i></i>'.repeat(70);
 function wipe(){if(window.__fast||RM())return;sfx.whoosh();wipeEl.hidden=false;[...wipeEl.children].forEach((c,i)=>{const r=i/10|0,col=i%10;c.style.animation='none';void c.offsetWidth;c.style.animation='';c.style.animationDelay=((r+col)*22)+'ms';});clearTimeout(wipe.t);wipe.t=setTimeout(()=>wipeEl.hidden=true,720);}
-function setScreen(id,w,back){hush();if(window.HELP)HELP.stop();document.body.classList.toggle('inpar',id==='sPar');document.body.classList.remove('act');window.__noAuto=0;/* leaving a screen stops any reading aloud; the new screen may speak right after */['sStart','sHome','sMap','sWorld','sLearn','sPlay','sKing','sStudio','sTeach','sTable','sFinal','sTal','sPar'].forEach(s=>$('#'+s).hidden=s!==id);$('#hud').hidden=id==='sStart';$('#ov').hidden=true;
+function setScreen(id,w,back){hush();if(window.HELP)HELP.stop();document.body.classList.toggle('inpar',id==='sPar');document.body.classList.remove('act');window.__noAuto=0;/* leaving a screen stops any reading aloud; the new screen may speak right after */['sStart','sHome','sMap','sWorld','sLearn','sPlay','sKing','sStudio','sTeach','sTable','sFinal','sTal','sPar'].forEach(s=>$('#'+s).hidden=s!==id);$('#hud').hidden=id==='sStart';$('#ov').hidden=true;{const dl=$('#dlg');if(!dl.hidden){dl.hidden=true;dl.innerHTML='';}}/* #356: a story dialog belongs to the screen it was opened on */
   if(app.dataset.w!==(w||'meadow')){app.dataset.w=w||'meadow';bgW=app.dataset.w;paintBG(performance.now());}setTheme(THEME_OF[app.dataset.w]||'map');
   backTo=back||null;$('#btnBack').style.visibility=back?'visible':'hidden';$('#btnBack').innerHTML=back===showMap?ICON.home:ICON.back;$('#screens').scrollTop=0;play=null;stopSpeed();updateGems();wipe();emit('screen',id,back);}
 $('#btnSay').innerHTML=ICON.say;$('#btnMusic').innerHTML=ICON.music;$('#icoStart').innerHTML=ICON.play;
@@ -1507,6 +1509,7 @@ $('#btnBack').onclick=()=>{hush();backTo&&backTo();};
 (()=>{let armed=false;const arm=()=>{if(armed)return;try{history.pushState({oren:1},'');armed=true;}catch(e){}};/* browsers skip entries added without a tap, so (re)arm on taps */
   arm();addEventListener('pointerdown',()=>{if(!armed||!(history.state&&history.state.oren))armed=false,arm();},true);addEventListener('keydown',arm,true);
   addEventListener('popstate',()=>{armed=false;arm();const t=document.querySelector('.tour');if(t&&t._end){t._end();return;}
+    const x=!$('#ov').hidden&&$('#ov .tpx');if(x){x.click();return;}/* #356: a popup with ✕ closes first, the screen stays */
     if(!$('#ov').hidden&&!backTo){$('#ov').hidden=true;return;}if(backTo){hush();backTo();}});})();
 /* a button in a pop-up card (close, continue, reply) stops the reading first; its own new speech still plays */
 $('#ov').addEventListener('click',e=>{if(e.target.closest&&e.target.closest('button'))hush();},true);
@@ -2535,9 +2538,13 @@ body.pplay .dlg,body.pplay .overlay{padding-bottom:78px}
 .chb.picb{height:auto;min-height:112px;min-width:112px;padding:10px}
 .chb.picb .pic svg{width:84px;height:84px}
 .chs{row-gap:16px}
-/* stories: compact lines, buttons always reachable */
+/* stories: compact lines; the buttons sit in normal flow under the last line, never over the text (#355) */
 .story{margin:0 12px}.sl{margin:0;padding:4px 8px;line-height:1.75}
-.story+.btnrow{position:sticky;bottom:10px;z-index:4;background:rgba(255,255,255,.92);padding:8px 14px;box-shadow:0 4px 0 rgba(0,0,0,.18)}
+.story+.btnrow{margin:6px 0 4px}
+/* read first, listen later (#355): the per-line 🔊 waits for its time */
+.story.noline .sl .rdb{display:none}.story.noline .sl{cursor:default}
+.stpeek{display:flex;flex-direction:column;align-items:center;gap:10px;width:100%}
+.tq .qside{margin:14px auto 0;display:flex}
 #sTal,#sHome{padding-bottom:72px}
 /* top bar on phones: buttons keep their size, title shrinks */
 .hud .ibtn{flex-shrink:0}
@@ -3326,7 +3333,7 @@ svg.tl{width:60px;height:60px;display:block}
 .hlp-syl span.go{color:#c0392b}
 .hlp-syl i{font-style:normal;color:#8e6fd1;font-size:40px}
 /* overlay cards (worked example, call a parent, explain to me) */
-.hlpc{width:min(640px,calc(100vw - 32px));max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);overflow:auto;direction:rtl}
+.hlpc{position:relative;width:min(640px,calc(100vw - 32px));max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);overflow:auto;direction:rtl}
 .hlpc h2{font-size:26px;line-height:1.35;text-align:center;margin:0}
 .hlp-h{display:flex;align-items:center;gap:10px;justify-content:center}
 .hlp-intro{font-family:var(--read,serif);font-size:22px;line-height:1.5;text-align:center;background:#fff;padding:8px 12px;box-shadow:0 3px 0 rgba(0,0,0,.1)}
@@ -3380,6 +3387,8 @@ svg.tl{width:60px;height:60px;display:block}
 .dlnow.on{background:#e3f6e3;font-weight:700}
 .dlrow .dli{display:inline-block;width:1.2em;text-align:center}
 .dlrow.dl-q,.dlrow.dl-s{opacity:.75}
+.pnow .dlnow{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.pnow .dlnow .pchip{margin:0}
+.dlrow .dlgoal{font-size:.85em;opacity:.8;white-space:nowrap}
 
 /* AGAIN (#39): the home button and the list of big tiles by day */
 .againbtn{display:flex;align-items:center;gap:10px;font-size:22px;font-weight:900;padding:10px 22px;background:#fff;border-bottom:6px solid #3a8fc4;box-shadow:0 5px 0 rgba(0,0,0,.2)}
@@ -3477,14 +3486,14 @@ function quiz(o){const qs=[],seen=new Set();let t=0;while(qs.length<o.n&&t++<400
   const render=()=>{const q=qs[i];tries=0;lock=false;hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||plainHe(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
     wrap.innerHTML='';const card=h('div','prq tqc',q.pr);if(q.play){const pb=h('button','hintbtn',ICON.say+`<span>${q.playLbl||'הַשְׁמַע'}</span>`);pb.onclick=q.play;card.appendChild(pb);}
     wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});const row=h('div','chs'+(q.ltr?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
-    const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');if(q.auto&&q.play)setTimeout(()=>{if(qs[i]===q)q.play();},D(350));};
+    const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');if(o.side){const sb=h('button','bigbtn plain sm qside',o.side.lbl);sb.onclick=()=>o.side.open(wrap);wrap.appendChild(sb);}if(q.auto&&q.play)setTimeout(()=>{if(qs[i]===q)q.play();},D(350));};
   const resolve=(q)=>{const ex=wrap.querySelector('.hintbox');if(q.explain){ex.hidden=false;ex.innerHTML=`<div class="cap">${q.explain}</div>`;}if(q.reveal)q.reveal(wrap.querySelector('.tqc'));};
   function pickA(k,b){if(lock||b.disabled)return;const q=qs[i];if(!tries){O.emit('tq',o.id,k===q.ans);if(q.bank&&window.LEARN)window.LEARN.seen(q.bank,q.key,k===q.ans,false);}
     if(k===q.ans){if(window.TAL.rdA)window.TAL.rdA(q,tries,b);lock=true;if(window.FRIEND)window.FRIEND.onCorrect({tries});b.classList.add('ok');sfx.ok(i);const g=tries?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);resolve(q);setTimeout(next,D(q.explain||q.reveal?2300:1000));return;}
-    tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();const fin=tries>=2||q.opts.length<=2;if(window.FRIEND)window.FRIEND.onWrong({final:fin});
+    tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();if(o.onWrong)o.onWrong();const fin=tries>=2||q.opts.length<=2;if(window.FRIEND)window.FRIEND.onWrong({final:fin});
     if(fin){lock=true;const c=wrap.querySelector('.chs').children[q.ans];c.classList.add('show');resolve(q);setTimeout(next,D(2600));}}
   function next(){if(!wrap.isConnected)return;i++;if(i>=qs.length){KEY=null;finishAct(o.id,err,qs.length,gems,o.back,()=>quiz(o),o.doneTitle);}else render();}
-  KEY=e=>{if(/^[1-9]$/.test(e.key)){const b=wrap.querySelector('.chs')&&wrap.querySelector('.chs').children[+e.key-1];if(b)b.click();}};
+  KEY=e=>{if(wrap.hidden)return;if(/^[1-9]$/.test(e.key)){const b=wrap.querySelector('.chs')&&wrap.querySelector('.chs').children[+e.key-1];if(b)b.click();}};
   window.__quiz={get ans(){return qs[i]&&qs[i].ans;},get i(){return i;},get wrap(){return wrap;}};
   render();}
 
@@ -3558,7 +3567,7 @@ O.on('kingdomScene',sc=>{if(!window.TAL_noHome&&!sc.querySelector('.kmine')){con
 let lastAct=Date.now(),session=0;
 ['pointerdown','keydown'].forEach(ev=>addEventListener(ev,()=>{lastAct=Date.now();},true));
 /* every tick is saved (and so sent to the family save): the phone shows the full play time (#41) */
-function timeTick(){if(document.hidden||Date.now()-lastAct>60000||$('#hud').hidden)return;const s=S();const d=today();s.time[d]=(s.time[d]|0)+15;session+=15;O.persist();}
+function timeTick(){if(document.hidden||Date.now()-lastAct>60000||$('#hud').hidden)return;const s=S();const d=today();s.time[d]=(s.time[d]|0)+15;session+=15;if(window.DAYLOG&&window.DAYLOG.beat)window.DAYLOG.beat();O.persist();}
 O.timeTick=timeTick;setInterval(timeTick,15000);
 const breakTime=()=>window.HEALTH&&window.HEALTH.breakNow();
 
@@ -3582,7 +3591,7 @@ const first=w=>w.w.replace(/[֑-ׇ]/g,'')[0];
 const others=(w,n,f)=>shuffle(WORDS.filter(x=>x!==w&&(!f||f(x)))).slice(0,n);
 const sayEn=t=>O.sayLang(t,'en');
 /* sentences */
-const SENT=[['הֶחָתוּל יָשֵׁן עַל הַכִּסֵּא.','מִי יָשֵׁן?','cat',['dog','bird']],['הַכֶּלֶב רָץ אַחֲרֵי הַכַּדּוּר.','אַחֲרֵי מָה הַכֶּלֶב רָץ?','ball',['apple','car']],
+const SENT=[['הֶחָתוּל יָשֵׁן עַל הַכִּיסֵּא.','מִי יָשֵׁן?','cat',['dog','bird']],['הַכֶּלֶב רָץ אַחֲרֵי הַכַּדּוּר.','אַחֲרֵי מָה הַכֶּלֶב רָץ?','ball',['apple','car']],
  ['הַצִּפּוֹר עָפָה אֶל הָעֵץ.','לְאָן עָפָה הַצִּפּוֹר?','tree',['hut','boat']],['אוֹרֶן אוֹכֵל תַּפּוּחַ אָדֹם.','מָה אוֹרֶן אוֹכֵל?','apple',['cake','egg']],
  ['בַּלַּיְלָה רוֹאִים אֶת הַיָּרֵחַ.','מָה רוֹאִים בַּלַּיְלָה?','moon',['sun','rainbow']],['הַדָּג שׂוֹחֶה בַּיָּם.','מִי שׂוֹחֶה?','fish',['sheep','dragon']],
  ['אַבָּא קָנָה עוּגָה לְיוֹם הַהֻלֶּדֶת.','מָה אַבָּא קָנָה?','cake',['shoe','key']],['הַסִּירָה שָׁטָה עַל הַמַּיִם.','מָה שָׁט עַל הַמַּיִם?','boat',['car','ball']],
@@ -3645,25 +3654,55 @@ building({id:'world',name:'הָעוֹלָם וְיִשְׂרָאֵל',color:'#4f
   {id:'world-il',name:'הָאָרֶץ שֶׁלָּנוּ',icon:()=>flag('il'),run:back=>quiz({id:'world-il',title:'הָאָרֶץ שֶׁלָּנוּ',bg:'valley',back,n:7,gen:()=>{const [q,a,ds]=pick(ISR);const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}})}]});
 /* Bedtime stories */
 const STORIES=[
- {t:'הַחֲתוּלָה וְהַכַּדּוּר הָאָדֹם',spr:['cat','ball'],s:['לְנוֹעָה יֵשׁ חֲתוּלָה קְטַנָּה בְּשֵׁם מִיצִי.','מִיצִי אוֹהֶבֶת לְשַׂחֵק בְּכַדּוּר אָדֹם.','יוֹם אֶחָד הַכַּדּוּר הִתְגַּלְגֵּל מִתַּחַת לַמִּטָּה.','מִיצִי חִפְּשָׂה וְחִפְּשָׂה, אֲבָל לֹא מָצְאָה.','נוֹעָה הֵבִיאָה פָּנָס וְהֵאִירָה מִתַּחַת לַמִּטָּה.','הִנֵּה הַכַּדּוּר! מִיצִי קָפְצָה מִשִּׂמְחָה.'],
-  q:[['אֵיזֶה צֶבַע הַכַּדּוּר?','אָדֹם',['כָּחֹל','יָרֹק']],['מָה עָזַר לְנוֹעָה לִמְצֹא אֶת הַכַּדּוּר?','פָּנָס',['מַפְתֵּחַ','סֵפֶר']]]},
- {t:'הַזֶּרַע שֶׁל אוֹרֶן',spr:['flower','sun'],s:['אוֹרֶן שָׁתַל זֶרַע קָטָן בְּעָצִיץ.','כָּל בֹּקֶר הוּא הִשְׁקָה אוֹתוֹ בְּמַיִם.','הוּא שָׂם אֶת הָעָצִיץ לְיַד הַחַלּוֹן, בַּשֶּׁמֶשׁ.','אַחֲרֵי שָׁבוּעַ יָצָא נֶבֶט יָרֹק.','אַחֲרֵי חֹדֶשׁ פָּרַח פֶּרַח צָהֹב וְיָפֶה.','אוֹרֶן הָיָה גֵּאֶה מְאוֹד.'],
-  q:[['מָה עָזַר לַזֶּרַע לִגְדֹּל?','מַיִם וְשֶׁמֶשׁ',['חֹשֶׁךְ','מוּזִיקָה']],['אֵיזֶה צֶבַע הָיָה הַפֶּרַח?','צָהֹב',['אָדֹם','סָגֹל']]]},
- {t:'הַדְּרָקוֹן שֶׁפָּחַד מֵהַחֹשֶׁךְ',spr:['dragon','moon'],s:['נִיצוֹץ הָיָה דְּרָקוֹן קָטָן וְאַמִּיץ.','הוּא לֹא פָּחַד מִשּׁוּם דָּבָר, חוּץ מֵהַחֹשֶׁךְ.','בַּלַּיְלָה הוּא לֹא הִצְלִיחַ לְהֵרָדֵם.','פִּיקְסֶל הֶחָתוּל אָמַר: "בּוֹא נִסְתַּכֵּל עַל הַשָּׁמַיִם."','הֵם יָצְאוּ הַחוּצָה, וְהַשָּׁמַיִם הָיוּ מְלֵאִים כּוֹכָבִים נוֹצְצִים.','מֵאָז נִיצוֹץ אוֹהֵב אֶת הַלַּיְלָה.'],
-  q:[['מִמָּה פָּחַד נִיצוֹץ?','מֵהַחֹשֶׁךְ',['מִכְּלָבִים','מִמַּיִם']],['מָה הֵם רָאוּ בַּשָּׁמַיִם?','כּוֹכָבִים',['שֶׁמֶשׁ','גֶּשֶׁם']]]},
- {t:'יוֹם הַהֻלֶּדֶת שֶׁל סַבְתָּא',spr:['cake','heart'],s:['הַיּוֹם יוֹם הַהֻלֶּדֶת שֶׁל סַבְתָּא.','אוֹרֶן וְאַבָּא אָפוּ עוּגַת שׁוֹקוֹלָד.','אוֹרֶן צִיֵּר לְסַבְתָּא צִיּוּר שֶׁל לֵב גָּדוֹל.','כָּל הַמִּשְׁפָּחָה שָׁרָה לָהּ שִׁיר.','סַבְתָּא כִּבְּתָה אֶת הַנֵּרוֹת וְחִיְּכָה.','הִיא אָמְרָה: "זוֹ הַמַּתָּנָה הֲכִי יָפָה!"'],
-  q:[['אֵיזוֹ עוּגָה הֵם אָפוּ?','שׁוֹקוֹלָד',['גְּבִינָה','תַּפּוּחִים']],['מָה צִיֵּר אוֹרֶן?','לֵב',['סִירָה','כּוֹכָב']]]},
- {t:'הַסִּירָה שֶׁל דָּנִי',spr:['boat','cloud'],s:['דָּנִי בָּנָה סִירָה מִנְּיָר.','הוּא שָׂם אוֹתָהּ בַּשְּׁלוּלִית שֶׁלְּיַד הַבַּיִת.','רוּחַ נָשְׁבָה, וְהַסִּירָה שָׁטָה מַהֵר.','פִּתְאוֹם הִתְחִיל גֶּשֶׁם, וְהַנְּיָר נִהְיָה רָטֹב.','דָּנִי הֵבִין: בַּפַּעַם הַבָּאָה הוּא יִבְנֶה סִירָה מֵעֵץ!'],
-  q:[['מִמָּה הָיְתָה הַסִּירָה?','מִנְּיָר',['מֵעֵץ','מִבַּרְזֶל']],['מָה קָרָה כְּשֶׁהִתְחִיל גֶּשֶׁם?','הַנְּיָר נִהְיָה רָטֹב',['הַסִּירָה עָפָה','הַשֶּׁמֶשׁ זָרְחָה']]]},
- {t:'חָכָם הַיַּנְשׁוּף סוֹפֵר כּוֹכָבִים',spr:['owl','star'],s:['בַּיַּעַר גָּר יַנְשׁוּף חָכָם.','כָּל לַיְלָה הוּא סוֹפֵר אֶת הַכּוֹכָבִים.','בַּלַּיְלָה הָרִאשׁוֹן הוּא סָפַר עֲשָׂרָה כּוֹכָבִים.','בַּלַּיְלָה הַשֵּׁנִי הוּא סָפַר עוֹד חֲמִשָּׁה.','חָכָם חִיֵּךְ: "חֶשְׁבּוֹן זֶה כֵּיף!"'],
-  q:[['כַּמָּה כּוֹכָבִים הוּא סָפַר בְּסַךְ הַכֹּל?','15',['10','5']],['אֵיפֹה גָּר הַיַּנְשׁוּף?','בַּיַּעַר',['בַּיָּם','בָּעִיר']]]}];
-function readStory(k,back){const st=STORIES[k];O.setScreen('sTal','final',back);T.hudT('סִפּוּר');O.sayNow='קְרָא אֶת הַסִּפּוּר, וְאַחַר כָּךְ עוֹנִים עַל שְׁאֵלוֹת.';const s=$('#sTal');s.innerHTML='';
-  const page=h('div','story');page.innerHTML=`<div class="sth"><span>${ALLSPR(st.spr[0])}</span><h2>${st.t}</h2><span>${ALLSPR(st.spr[1])}</span></div>`+st.s.map((x,i)=>`<p class="sl" data-i="${i}">${x}</p>`).join('');s.appendChild(page);
-  const row=h('div','btnrow');const rd=h('button','bigbtn blue sm',ICON.say+'<span>הַקְרֵא לִי</span>');const go=h('button','bigbtn',ICON.play+'<span>לַשְּׁאֵלוֹת</span>');row.append(rd,go);s.appendChild(row);
-  const mark=i=>{page.querySelectorAll('.sl').forEach(p=>p.classList.toggle('cur',+p.dataset.i===i));};
-  page.querySelectorAll('.sl').forEach(p=>p.onclick=()=>{mark(+p.dataset.i);if(T.readEl)T.readEl(p);else O.say(T.spk(p.textContent));});
-  rd.onclick=()=>{if(T.readSeq){T.readSeq([...page.querySelectorAll('.sl')],mark);return;}let i=0;const nx=()=>{if(i>=st.s.length||!page.isConnected)return;mark(i);O.say(st.s[i]);i++;setTimeout(nx,3200);};nx();};/* the game voice, never the browser voice directly (#36) */
-  go.onclick=()=>{O.hush();let qi=0;quiz({id:'story-'+k,title:st.t,bg:'final',back:()=>openStories(back),n:st.q.length,gen:()=>{const [q,a,ds]=st.q[qi++];const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}});};}
+ {t:'הַחֲתוּלָה וְהַכַּדּוּר הָאָדֹם',spr:['cat','ball'],gk:'sci',goal:'כדי לראות צריך אור',s:['לְנוֹעָה יֵשׁ חֲתוּלָה קְטַנָּה בְּשֵׁם מִיצִי.','מִיצִי אוֹהֶבֶת לְשַׂחֵק בְּכַדּוּר אָדֹם.','יוֹם אֶחָד הַכַּדּוּר הִתְגַּלְגֵּל מִתַּחַת לַמִּטָּה.','מִתַּחַת לַמִּטָּה הָיָה חֹשֶׁךְ, וּמִיצִי לֹא מָצְאָה אוֹתוֹ.','נוֹעָה הֵבִיאָה פָּנָס, וְהָאוֹר הֵאִיר מִתַּחַת לַמִּטָּה.','עִם אוֹר רוֹאִים! הִנֵּה הַכַּדּוּר! מִיצִי קָפְצָה מִשִּׂמְחָה.'],
+  q:[['אֵיזֶה צֶבַע הַכַּדּוּר?','אָדֹם',['כָּחֹל','יָרֹק']],['מָה עָזַר לְנוֹעָה לִמְצֹא אֶת הַכַּדּוּר?','פָּנָס',['מַפְתֵּחַ','סֵפֶר']],['לָמָּה הַפָּנָס עָזַר?','כִּי צָרִיךְ אוֹר כְּדֵי לִרְאוֹת',['כִּי הַפָּנָס כָּבֵד','כִּי הַפָּנָס עוֹשֶׂה רַעַשׁ']]],les:2},
+ {t:'הַזֶּרַע שֶׁל אוֹרֶן',spr:['flower','sun'],gk:'sci',goal:'צמח צריך מים ואור',s:['אוֹרֶן שָׁתַל זֶרַע קָטָן בְּעָצִיץ.','כָּל בֹּקֶר הוּא הִשְׁקָה אוֹתוֹ בְּמַיִם.','הוּא שָׂם אֶת הָעָצִיץ לְיַד הַחַלּוֹן, בַּשֶּׁמֶשׁ, כִּי צֶמַח צָרִיךְ אוֹר.','אַחֲרֵי שָׁבוּעַ יָצָא נֶבֶט יָרֹק.','אַחֲרֵי חֹדֶשׁ פָּרַח פֶּרַח צָהֹב וְיָפֶה.','אוֹרֶן הָיָה גֵּאֶה מְאוֹד.'],
+  q:[['אֵיזֶה צֶבַע הָיָה הַפֶּרַח?','צָהֹב',['אָדֹם','סָגֹל']],['מָה יָצָא מֵהַזֶּרַע אַחֲרֵי שָׁבוּעַ?','נֶבֶט יָרֹק',['תַּפּוּחַ','אֶבֶן']],['מָה צָרִיךְ צֶמַח כְּדֵי לִגְדֹּל?','מַיִם וְאוֹר שֶׁמֶשׁ',['חֹשֶׁךְ וְשֶׁקֶט','מוּזִיקָה וְעוּגָה']]],les:2},
+ {t:'הַדְּרָקוֹן שֶׁפָּחַד מֵהַחֹשֶׁךְ',spr:['dragon','moon'],gk:'sci',goal:'למה רואים כוכבים רק בלילה',s:['נִיצוֹץ הָיָה דְּרָקוֹן קָטָן וְאַמִּיץ.','הוּא לֹא פָּחַד מִשּׁוּם דָּבָר, חוּץ מֵהַחֹשֶׁךְ.','פִּיקְסֶל הֶחָתוּל אָמַר: "בּוֹא נִסְתַּכֵּל עַל הַשָּׁמַיִם."','הֵם יָצְאוּ הַחוּצָה, וְהַשָּׁמַיִם הָיוּ מְלֵאִים כּוֹכָבִים נוֹצְצִים.','פִּיקְסֶל אָמַר: "הַכּוֹכָבִים שָׁם גַּם בַּיּוֹם, אֲבָל אוֹר הַשֶּׁמֶשׁ חָזָק מְאוֹד, וְלָכֵן לֹא רוֹאִים אוֹתָם."','"רַק בַּחֹשֶׁךְ רוֹאִים כּוֹכָבִים!" אָמַר נִיצוֹץ. מֵאָז הוּא אוֹהֵב אֶת הַלַּיְלָה.'],
+  q:[['מִמָּה פָּחַד נִיצוֹץ?','מֵהַחֹשֶׁךְ',['מִכְּלָבִים','מִמַּיִם']],['מָה הֵם רָאוּ בַּשָּׁמַיִם?','כּוֹכָבִים',['שֶׁמֶשׁ','גֶּשֶׁם']],['לָמָּה לֹא רוֹאִים כּוֹכָבִים בַּיּוֹם?','כִּי אוֹר הַשֶּׁמֶשׁ חָזָק מְאוֹד',['כִּי הַכּוֹכָבִים יְשֵׁנִים','כִּי הַכּוֹכָבִים נוֹפְלִים']]],les:2},
+ {t:'יוֹם הַהֻלֶּדֶת שֶׁל סַבְתָּא',spr:['cake','heart'],gk:'math',goal:'ספירה בעשרות: 7 נרות של 10 שנים = 70',s:['הַיּוֹם יוֹם הַהֻלֶּדֶת שֶׁל סַבְתָּא. הִיא בַּת שִׁבְעִים!','אוֹרֶן וְאַבָּא אָפוּ עוּגַת שׁוֹקוֹלָד.','עַל הָעוּגָה הֵם שָׂמוּ שִׁבְעָה נֵרוֹת: נֵר אֶחָד לְכָל עֶשֶׂר שָׁנִים.','אוֹרֶן סָפַר בַּעֲשָׂרוֹת: עֶשֶׂר, עֶשְׂרִים, שְׁלוֹשִׁים, אַרְבָּעִים, חֲמִשִּׁים, שִׁשִּׁים, שִׁבְעִים!','כָּל הַמִּשְׁפָּחָה שָׁרָה לָהּ שִׁיר, וְסַבְתָּא כִּבְּתָה אֶת הַנֵּרוֹת.','הִיא חִבְּקָה אֶת אוֹרֶן וְאָמְרָה: "אַתָּה יוֹדֵעַ לִסְפֹּר בַּעֲשָׂרוֹת!"'],
+  q:[['אֵיזוֹ עוּגָה הֵם אָפוּ?','שׁוֹקוֹלָד',['גְּבִינָה','תַּפּוּחִים']],['כַּמָּה נֵרוֹת הָיוּ עַל הָעוּגָה?','7',['70','10']],['כָּל נֵר הוּא עֶשֶׂר שָׁנִים. לְסָבָא יֵשׁ שִׁשָּׁה נֵרוֹת. בֶּן כַּמָּה סָבָא?','60',['6','16']]],les:2},
+ {t:'הַסִּירָה שֶׁל דָּנִי',spr:['boat','cloud'],gk:'sci',goal:'נייר סופג מים ונהיה רך, עץ צף ונשאר חזק',s:['דָּנִי בָּנָה סִירָה מִנְּיָר.','הוּא שָׂם אוֹתָהּ בַּשְּׁלוּלִית שֶׁלְּיַד הַבַּיִת.','רוּחַ נָשְׁבָה, וְהַסִּירָה שָׁטָה מַהֵר.','פִּתְאוֹם הִתְחִיל גֶּשֶׁם. הַנְּיָר סָפַג מַיִם, נִהְיָה רַךְ וְשָׁקַע.','דָּנִי הֵבִין: נְיָר סוֹפֵג מַיִם, אֲבָל עֵץ צָף וְנִשְׁאָר חָזָק.','בַּפַּעַם הַבָּאָה הוּא יִבְנֶה סִירָה מֵעֵץ!'],
+  q:[['מִמָּה הָיְתָה הַסִּירָה?','מִנְּיָר',['מֵעֵץ','מִבַּרְזֶל']],['מָה קָרָה כְּשֶׁהִתְחִיל גֶּשֶׁם?','הַנְּיָר סָפַג מַיִם',['הַסִּירָה עָפָה','הַשֶּׁמֶשׁ זָרְחָה']],['לָמָּה כְּדַאי לִבְנוֹת סִירָה מֵעֵץ?','כִּי עֵץ צָף וְלֹא נִהְיָה רַךְ בַּמַּיִם',['כִּי עֵץ יָפֶה יוֹתֵר','כִּי עֵץ שָׁט גַּם בְּלִי מַיִם']]],les:2},
+ {t:'חָכָם הַיַּנְשׁוּף סוֹפֵר כּוֹכָבִים',spr:['owl','star'],gk:'math',goal:'חיבור: 10 ועוד 5 הם 15',s:['בַּיַּעַר גָּר יַנְשׁוּף חָכָם.','בַּיּוֹם הוּא יָשֵׁן, וּבַלַּיְלָה הוּא עֵר וְסוֹפֵר אֶת הַכּוֹכָבִים.','בַּלַּיְלָה הָרִאשׁוֹן הוּא סָפַר עֲשָׂרָה כּוֹכָבִים.','בַּלַּיְלָה הַשֵּׁנִי הוּא סָפַר עוֹד חֲמִשָּׁה.','"עֲשָׂרָה וְעוֹד חֲמִשָּׁה, כַּמָּה זֶה בְּיַחַד?" שָׁאַל חָכָם.','חָכָם חִיֵּךְ: "חֶשְׁבּוֹן זֶה כֵּיף!"'],
+  q:[['אֵיפֹה גָּר הַיַּנְשׁוּף?','בַּיַּעַר',['בַּיָּם','בָּעִיר']],['כַּמָּה כּוֹכָבִים הוּא סָפַר בַּלַּיְלָה הָרִאשׁוֹן?','10',['5','15']],['כַּמָּה כּוֹכָבִים הוּא סָפַר בְּסַךְ הַכֹּל?','15',['10','5']]],les:2}];
+/* ---------- a story screen (#355): the bedtime stories here and the story bank (read-bank2.js) ----------
+   Read first, listen later: the read-aloud help follows Oren's story level (READBANK2.level('story'), 1-5).
+   line / all = seconds until the per-line 🔊 / the whole-story "read to me" show (null = never); wrong = what a wrong answer shows at once.
+   Every question has one "📖 to the story" button; the story opens over the question (its state is kept) with one button back. */
+const READ_HELP=[{band:'low',to:2,line:0,all:10,wrong:['line','all']},{band:'mid',to:4,line:25,all:25,wrong:['line','all']},{band:'top',to:5,line:null,all:null,wrong:['line']}];
+const helpOf=lv=>READ_HELP.find(b=>lv<=b.to)||READ_HELP[READ_HELP.length-1];
+const storyLv=()=>{try{const R=window.READBANK2;return R&&R.level?R.level('story')|0||1:1;}catch(e){return 1;}};
+let SS=null;   /* the story being played: {id, t0, lv, help, wrong, heard, log} */
+/* a story he listened to (whole or a line) is marked: only stories read alone move the story level up (read-bank2.js) */
+O.on('tlDone',id=>{if(SS&&SS.id===id){const c=T.S().tl[id];if(c){c.l=SS.heard?1:0;O.persist();}}});
+function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), title (html), name (quiz title), tp (plain title), goal, spr:[html,html], lines:[html], q:[{pr, say, a, ds}], back, qback} */
+  const lv=storyLv(),help=helpOf(lv);const ss=SS={id:o.id,t0:Date.now(),lv,help,wrong:false,heard:false,log:{t:o.tp,g:o.goal||'',lv,r:'a'}};
+  if(window.DAYLOG&&DAYLOG.note)DAYLOG.note(o.act,ss.log);
+  const shows=k=>(ss.wrong&&help.wrong.includes(k))||(help[k]!=null&&Date.now()-ss.t0>=D(help[k]*1000));
+  const heard=()=>{ss.heard=true;ss.log.r='l';};
+  /* the story and, under its last line (normal flow, never over the text), one row: "read to me" (when allowed) and one forward button */
+  function page(box,fwd){const pg=h('div','story');pg.innerHTML=`<div class="sth"><span>${o.spr[0]}</span><h2>${o.title}</h2><span>${o.spr[1]}</span></div>`+o.lines.map((x,i)=>`<p class="sl" data-i="${i}">${x}</p>`).join('');box.appendChild(pg);
+    const row=h('div','btnrow strow');const rd=h('button','bigbtn blue sm strd',ICON.say+'<span>הַקְרֵא לִי</span>');row.append(rd,fwd);box.appendChild(row);
+    const mark=i=>pg.querySelectorAll('.sl').forEach(p=>p.classList.toggle('cur',+p.dataset.i===i));
+    pg.addEventListener('click',e=>{if(e.target.closest('.rdb'))heard();},true);
+    pg.querySelectorAll('.sl').forEach(p=>p.onclick=()=>{if(pg.classList.contains('noline'))return;heard();mark(+p.dataset.i);if(T.readEl)T.readEl(p);else O.say(T.spk(p.textContent));});
+    rd.onclick=()=>{heard();const els=[...pg.querySelectorAll('.sl')];if(T.readSeq){T.readSeq(els,mark);return;}let i=0;const nx=()=>{if(i>=els.length||!pg.isConnected)return;mark(i);O.say(T.spk(els[i].textContent));i++;setTimeout(nx,3200);};nx();};/* the game voice, never the browser voice directly (#36) */
+    const upd=()=>{if(!pg.isConnected)return;pg.classList.toggle('noline',!shows('line'));rd.hidden=!shows('all');};
+    upd();[help.line,help.all].forEach(sec=>{if(sec==null)return;const left=D(sec*1000)-(Date.now()-ss.t0);if(left>0)setTimeout(upd,left+30);});
+    return pg;}
+  const peek=wrap=>{const s=wrap.parentNode,say0=O.sayNow;O.hush();wrap.hidden=true;const box=h('div','stpeek');s.appendChild(box);O.sayNow='';
+    const bk=h('button','bigbtn stback',ICON.play+'<span>לַשְּׁאֵלָה</span>');bk.onclick=()=>{T.readStop&&T.readStop();box.remove();wrap.hidden=false;O.sayNow=say0;};
+    page(box,bk);s.scrollTop=0;};
+  const questions=()=>{O.hush();T.readStop&&T.readStop();quiz({id:o.id,title:o.name,bg:'final',back:o.qback||o.back,n:o.q.length,
+    gen:i=>{const q=o.q[i];/* the index, not a counter: "again" restarts at 0 (#350) */const opts=shuffle([q.a,...q.ds]);return {pr:`<div class="sent">${q.pr}</div>`,opts,ans:opts.indexOf(q.a),cls:'tx',say:q.say,key:q.pr};},
+    onWrong:()=>{ss.wrong=true;},side:{lbl:'📖 <span>לַסִּפּוּר</span>',open:peek}});};
+  O.setScreen('sTal','final',o.back);T.hudT('סִפּוּר');const s=$('#sTal');s.innerHTML='';
+  const go=h('button','bigbtn stgo',ICON.play+'<span>לַשְּׁאֵלוֹת</span>');go.onclick=questions;page(s,go);
+  if(window.FRIEND&&FRIEND.readFirst){O.sayNow=T.spk(FRIEND.READFIRST);FRIEND.readFirst();}else O.sayNow='קְרָא אֶת הַסִּפּוּר, וְאַחַר כָּךְ עוֹנִים עַל שְׁאֵלוֹת.';}
+T.storyScreen=storyScreen;T.READ_HELP=READ_HELP;T.helpOf=helpOf;window.__story={get ss(){return SS;}};
+function readStory(k,back){const st=STORIES[k];storyScreen({act:'story-'+k,id:'story-'+k,title:st.t,name:st.t,tp:T.plainHe(st.t),goal:st.goal,spr:st.spr.map(x=>ALLSPR(x)),lines:st.s,
+  q:st.q.map(([pr,a,ds])=>({pr,a,ds})),back,qback:()=>openStories(back)});}
 function openStories(back){O.setScreen('sTal','final',back);T.hudT('סִפּוּרֵי עֶרֶב');const s=$('#sTal');s.innerHTML='';s.appendChild(h('div','whead',`<span class="gd">${X.moon}</span><h1>סִפּוּרֵי עֶרֶב</h1>`));
   const g=h('div','acts');STORIES.forEach((st,k)=>{const n=(T.S().tl['story-'+k]||{}).s|0;const c=h('button','actc',`<span class="ai">${ALLSPR(st.spr[0])}</span><span class="an">${st.t}</span><span class="st">${[0,1,2].map(j=>j<n?SPR.star:SPR.starOff).join('')}</span>`);c.onclick=()=>readStory(k,()=>openStories(back));g.appendChild(c);});s.appendChild(g);}
 T.STORIES=STORIES;T.readStory=readStory;
@@ -3796,8 +3835,8 @@ function plant(back){let day=1,stage=0,water=false,sun=true;O.setScreen('sTal','
     info.innerHTML=stage>=4?'הַצֶּמַח פָּרַח! 🌷':water?'הָאֲדָמָה רְטֻבָּה':'הָאֲדָמָה יְבֵשָׁה';sb.classList.toggle('plain',!sun);};
   wb.onclick=()=>{water=true;sfx.pop(2);draw();};sb.onclick=()=>{sun=!sun;sfx.pop(3);draw();};
   nb2.onclick=()=>{day++;if(water&&sun){stage=Math.min(4,stage+1);sfx.ok(stage);}else{sfx.no();info.innerHTML=!water?'הַצֶּמַח צָמֵא! צָרִיךְ מַיִם.':'בְּלִי שֶׁמֶשׁ הַצֶּמַח לֹא גָּדֵל.';}water=false;draw();if(!water&&!(stage>=4))setTimeout(()=>{if(stage<4)info.innerHTML=info.innerHTML;},0);
-    if(stage>=4){nb2.disabled=true;setTimeout(()=>{if(!view.isConnected)return;const Q=[['מָה צָרִיךְ צֶמַח כְּדֵי לִגְדֹּל?','מַיִם וְאוֹר',['רַק חֹשֶׁךְ','מוּזִיקָה']],['מָה קוֹרֶה לְצֶמַח בְּלִי מַיִם?','הוּא נוֹבֵל',['הוּא גָּדֵל מַהֵר','הוּא עָף']],['מֵאַיִן הַצֶּמַח מְקַבֵּל אוֹר?','מֵהַשֶּׁמֶשׁ',['מֵהָאֲדָמָה','מֵהַגֶּשֶׁם']]];let k=0;
-      quiz({id:'sci-plant',title:'מָה צָרִיךְ צֶמַח?',bg:'forest',back,n:3,gen:()=>{const [q,a,ds]=Q[k++];const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}});},D(1400));}};
+    if(stage>=4){nb2.disabled=true;setTimeout(()=>{if(!view.isConnected)return;const Q=[['מָה צָרִיךְ צֶמַח כְּדֵי לִגְדֹּל?','מַיִם וְאוֹר',['רַק חֹשֶׁךְ','מוּזִיקָה']],['מָה קוֹרֶה לְצֶמַח בְּלִי מַיִם?','הוּא נוֹבֵל',['הוּא גָּדֵל מַהֵר','הוּא עָף']],['מֵאַיִן הַצֶּמַח מְקַבֵּל אוֹר?','מֵהַשֶּׁמֶשׁ',['מֵהָאֲדָמָה','מֵהַגֶּשֶׁם']]];
+      quiz({id:'sci-plant',title:'מָה צָרִיךְ צֶמַח?',bg:'forest',back,n:3,gen:i=>{const [q,a,ds]=Q[i];const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}});},D(1400));}};
   draw();window.__plant={water:()=>wb.click(),next:()=>nb2.click(),get stage(){return stage;}};}
 /* circuit */
 function circuit(back){let wire=false,sw=false;O.setScreen('sTal','city',back);T.hudT('מַעְגָּל חַשְׁמַלִּי');O.sayNow='סִגְרוּ אֶת הַמַּעְגָּל כְּדֵי שֶׁהַנּוּרָה תִּדָּלֵק.';const s=$('#sTal');s.innerHTML='';
@@ -3807,8 +3846,8 @@ function circuit(back){let wire=false,sw=false;O.setScreen('sTal','city',back);T
     <path d="M200 30 H280 V90" stroke="#e4572e" stroke-width="6" fill="none"/><circle cx="280" cy="110" r="22" fill="${on?'#ffe27a':'#e8eef2'}" stroke="#23303b" stroke-width="3"/>${on?'<circle cx="280" cy="110" r="38" fill="#ffe27a" opacity=".35"/>':''}<rect x="270" y="130" width="20" height="14" fill="#9aa1a8"/>
     <path d="M280 144 V175 H200" stroke="#3a8fc4" stroke-width="6" fill="none"/><line x1="200" y1="175" x2="${sw?140:150}" y2="${sw?175:150}" stroke="#23303b" stroke-width="6" stroke-linecap="round"/><circle cx="200" cy="175" r="6" fill="#23303b"/><circle cx="140" cy="175" r="6" fill="#23303b"/>
     <path d="M140 175 H40 V140" stroke="#3a8fc4" stroke-width="6" fill="none"/></svg>`;info.innerHTML=on?'💡 הַנּוּרָה דּוֹלֶקֶת! הַמַּעְגָּל סָגוּר.':!wire?'חָסֵר חוּט בַּמַּעְגָּל':'הַמֶּתֶג פָּתוּחַ';
-    if(on){sfx.ok(2);row.querySelectorAll('button').forEach(b=>b.disabled=true);setTimeout(()=>{if(!v.isConnected)return;const Q=[['מָתַי הַנּוּרָה דּוֹלֶקֶת?','כְּשֶׁהַמַּעְגָּל סָגוּר',['כְּשֶׁיֵּשׁ פֶּתַח בַּחוּט','כְּשֶׁאֵין סוֹלְלָה']],['מָה נוֹתֵן אֶת הַחַשְׁמַל?','הַסּוֹלְלָה',['הַנּוּרָה','הַמֶּתֶג']],['מָה עוֹשֶׂה הַמֶּתֶג?','פּוֹתֵחַ וְסוֹגֵר אֶת הַמַּעְגָּל',['מְחַמֵּם אֶת הַחֶדֶר','מַשְׁמִיעַ מוּזִיקָה']]];let k=0;
-      quiz({id:'sci-circ',title:'מַעְגָּל חַשְׁמַלִּי',bg:'city',back,n:3,gen:()=>{const [q,a,ds]=Q[k++];const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}});},D(1600));}};
+    if(on){sfx.ok(2);row.querySelectorAll('button').forEach(b=>b.disabled=true);setTimeout(()=>{if(!v.isConnected)return;const Q=[['מָתַי הַנּוּרָה דּוֹלֶקֶת?','כְּשֶׁהַמַּעְגָּל סָגוּר',['כְּשֶׁיֵּשׁ פֶּתַח בַּחוּט','כְּשֶׁאֵין סוֹלְלָה']],['מָה נוֹתֵן אֶת הַחַשְׁמַל?','הַסּוֹלְלָה',['הַנּוּרָה','הַמֶּתֶג']],['מָה עוֹשֶׂה הַמֶּתֶג?','פּוֹתֵחַ וְסוֹגֵר אֶת הַמַּעְגָּל',['מְחַמֵּם אֶת הַחֶדֶר','מַשְׁמִיעַ מוּזִיקָה']]];
+      quiz({id:'sci-circ',title:'מַעְגָּל חַשְׁמַלִּי',bg:'city',back,n:3,gen:i=>{const [q,a,ds]=Q[i];const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}});},D(1600));}};
   wb.onclick=()=>{wire=!wire;sfx.pop(2);draw();};sb.onclick=()=>{sw=!sw;sfx.key();draw();};draw();}
 /* ice-water-steam */
 function states(back){let temp=1;O.setScreen('sTal','mount',back);T.hudT('קֶרַח, מַיִם וְאֵדִים');O.sayNow='גְּרֹר אֶת הָעִגּוּל כְּדֵי לְקָרֵר אוֹ לְחַמֵּם.';const s=$('#sTal');s.innerHTML='';
@@ -3816,8 +3855,8 @@ function states(back){let temp=1;O.setScreen('sTal','mount',back);T.hudT('קֶר
   const lab=h('div','lcap');const go=h('button','bigbtn',ICON.play+'<span>לַשְּׁאֵלוֹת</span>');const rw=h('div','trw');rw.append(h('span','tre','❄️'),rng,h('span','tre','🔥'));go.hidden=true;const hint=h('div','lcap dnh','👆 גְּרֹר אֶת הָעִגּוּל ↔ לְקַר וּלְחַם');const seen=new Set([1]);s.append(v,rw,hint,lab,go);
   const draw=()=>{temp=+rng.value;v.innerHTML=temp===0?'<div class="ice">🧊</div>':temp===1?'<div class="wat">💧💧💧</div>':'<div class="steam">♨️</div>';lab.innerHTML=['קַר מְאוֹד: הַמַּיִם קוֹפְאִים לְקֶרַח','חַמִּים: מַיִם נוֹזְלִים','חַם מְאוֹד: הַמַּיִם רוֹתְחִים וְהוֹפְכִים לְאֵדִים'][temp];};
   rng.oninput=()=>{draw();sfx.pop(temp+1);seen.add(temp);if(seen.size>=3){go.hidden=false;hint.hidden=true;}};draw();
-  go.onclick=()=>{const Q=[['מָה קוֹרֶה לְקֶרַח בַּשֶּׁמֶשׁ?','הוּא נָמֵס לְמַיִם',['הוּא נִהְיֶה אֶבֶן','הוּא נִהְיֶה גָּדוֹל']],['מָה קוֹרֶה לְמַיִם בַּמַּקְפִּיא?','הֵם קוֹפְאִים לְקֶרַח',['הֵם רוֹתְחִים','הֵם נֶעֱלָמִים']],['מָה יוֹצֵא מִקֻּמְקוּם רוֹתֵחַ?','אֵדִים',['קֶרַח','חוֹל']],['קֶרַח, מַיִם וְאֵדִים הֵם...','אוֹתוֹ חֹמֶר',['שְׁלוֹשָׁה דְּבָרִים שׁוֹנִים לְגַמְרֵי','סוּגִים שֶׁל אֶבֶן']]];let k=0;
-    quiz({id:'sci-states',title:'קֶרַח, מַיִם וְאֵדִים',bg:'mount',back,n:4,gen:()=>{const [q,a,ds]=Q[k++];const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}});};}
+  go.onclick=()=>{const Q=[['מָה קוֹרֶה לְקֶרַח בַּשֶּׁמֶשׁ?','הוּא נָמֵס לְמַיִם',['הוּא נִהְיֶה אֶבֶן','הוּא נִהְיֶה גָּדוֹל']],['מָה קוֹרֶה לְמַיִם בַּמַּקְפִּיא?','הֵם קוֹפְאִים לְקֶרַח',['הֵם רוֹתְחִים','הֵם נֶעֱלָמִים']],['מָה יוֹצֵא מִקֻּמְקוּם רוֹתֵחַ?','אֵדִים',['קֶרַח','חוֹל']],['קֶרַח, מַיִם וְאֵדִים הֵם...','אוֹתוֹ חֹמֶר',['שְׁלוֹשָׁה דְּבָרִים שׁוֹנִים לְגַמְרֵי','סוּגִים שֶׁל אֶבֶן']]];
+    quiz({id:'sci-states',title:'קֶרַח, מַיִם וְאֵדִים',bg:'mount',back,n:4,gen:i=>{const [q,a,ds]=Q[i];const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}});};}
 /* day & night */
 function dayNight(back){O.setScreen('sTal','final',back);T.hudT('יוֹם וְלַיְלָה');O.sayNow='גְּרֹר אֶת הָעִגּוּל וְסוֹבֵב אֶת כַּדּוּר הָאָרֶץ.';const s=$('#sTal');s.innerHTML='';let ang=0;
   const v=h('div','dnv');const lab=h('div','lcap');const rng=h('input','trng');rng.type='range';rng.min=0;rng.max=359;rng.value=0;rng.id='earthR';rng.setAttribute('aria-label','סיבוב');const go=h('button','bigbtn',ICON.play+'<span>לַשְּׁאֵלוֹת</span>');go.hidden=true;const hint=h('div','lcap dnh','👆 גְּרֹר אֶת הָעִגּוּל ↔ וְסוֹבֵב אֶת כַּדּוּר הָאָרֶץ');s.append(v,rng,hint,lab,go);
@@ -3825,8 +3864,8 @@ function dayNight(back){O.setScreen('sTal','final',back);T.hudT('יוֹם וְל
     <circle cx="220" cy="90" r="60" fill="#3a8fc4"/><path d="M220 30 A60 60 0 0 1 220 150 Z" fill="rgba(10,15,40,.55)"/><g transform="rotate(${-ang} 220 90)"><rect x="152" y="80" width="14" height="14" fill="#e4572e"/><path d="M150 80 L159 70 L168 80Z" fill="#94613a"/></g></svg>`;
     lab.innerHTML=day?'☀️ בַּבַּיִת שֶׁל אוֹרֶן עַכְשָׁו יוֹם':'🌙 בַּבַּיִת שֶׁל אוֹרֶן עַכְשָׁו לַיְלָה';};
   rng.oninput=()=>{draw();if(Math.cos(ang*Math.PI/180)<0){go.hidden=false;hint.hidden=true;}};draw();
-  go.onclick=()=>{const Q=[['לָמָּה יֵשׁ יוֹם וְלַיְלָה?','כַּדּוּר הָאָרֶץ מִסְתּוֹבֵב',['הַשֶּׁמֶשׁ הוֹלֶכֶת לִישֹׁן','הָעֲנָנִים מַסְתִּירִים']],['כְּשֶׁאֶצְלֵנוּ יוֹם, בַּצַּד הַשֵּׁנִי שֶׁל כַּדּוּר הָאָרֶץ...','לַיְלָה',['גַּם יוֹם','שֶׁלֶג']],['מָה מֵאִיר לָנוּ בַּיּוֹם?','הַשֶּׁמֶשׁ',['הַיָּרֵחַ','הַכּוֹכָבִים']]];let k=0;
-    quiz({id:'sci-day',title:'יוֹם וְלַיְלָה',bg:'final',back,n:3,gen:()=>{const [q,a,ds]=Q[k++];const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}});};}
+  go.onclick=()=>{const Q=[['לָמָּה יֵשׁ יוֹם וְלַיְלָה?','כַּדּוּר הָאָרֶץ מִסְתּוֹבֵב',['הַשֶּׁמֶשׁ הוֹלֶכֶת לִישֹׁן','הָעֲנָנִים מַסְתִּירִים']],['כְּשֶׁאֶצְלֵנוּ יוֹם, בַּצַּד הַשֵּׁנִי שֶׁל כַּדּוּר הָאָרֶץ...','לַיְלָה',['גַּם יוֹם','שֶׁלֶג']],['מָה מֵאִיר לָנוּ בַּיּוֹם?','הַשֶּׁמֶשׁ',['הַיָּרֵחַ','הַכּוֹכָבִים']]];
+    quiz({id:'sci-day',title:'יוֹם וְלַיְלָה',bg:'final',back,n:3,gen:i=>{const [q,a,ds]=Q[i];const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}});};}
 const bodyFig=(x,y)=>`<div class="bodyf">${O.AV()}<span class="arrow" style="left:${x}%;top:${y}%"></span></div>`;
 building({id:'lab',name:'הַמַּעְבָּדָה',color:'#3cb371',bg:'mount',icon:()=>X.flask,blurb:'נִסּוּיִים קְטַנִּים: מְנַחֲשִׁים, בּוֹדְקִים וְלוֹמְדִים.',acts:[
   {id:'sci-float',name:'צָף אוֹ שׁוֹקֵעַ?',icon:()=>X.boat,run:back=>quiz({id:'sci-float',title:'צָף אוֹ שׁוֹקֵעַ?',bg:'sea',back,n:8,gen:()=>{const [n,k,f,g]=pick(FLOAT);const fm=g==='f';return {pr:`${tank(k)}<div class="qq">${n}: ${fm?'תָּצוּף אוֹ תִּשְׁקַע?':'יָצוּף אוֹ יִשְׁקַע?'}</div>`,opts:fm?['תָּצוּף','תִּשְׁקַע']:['יָצוּף','יִשְׁקַע'],ans:f?0:1,cls:'tx',key:n,reveal:el=>{const it=el.querySelector('#itm');if(it)it.classList.add(f?'floats':'sinks');sfx.plank();},explain:`${n} ${f?(fm?'צָפָה':'צָף'):(fm?'שׁוֹקַעַת':'שׁוֹקֵעַ')}!`};}})},
@@ -4352,7 +4391,7 @@ const exitParent=()=>{parentOn=false;O.showMap();};
 function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(dl&&!dl.hidden)dl.hidden=true;if(!parentOn)return login(()=>panel(tab));
   if(tab&&GROUP[tab]){openSec=tab;curTab=GROUP[tab];}else if(tab){curTab=tab;if(tab!=='more')openSec=null;}
   const sy=$('#screens').scrollTop;O.setScreen('sPar','valley',exitParent);O.hud('<div class="chip">לוח הורים</div>');const s=$('#sPar');s.innerHTML='';
-  s.appendChild(h('div','whead',`<h1>לוח הורים</h1>`));const tb=h('div','ptabs');TABS.forEach(([id,n])=>{const b=h('button','ptab'+(id===curTab?' on':''),n);b.onclick=()=>{openSec=null;panel(id);};tb.appendChild(b);});s.appendChild(tb);
+  s.appendChild(h('div','whead',`<h1>לוח הורים</h1>`));const nb=h('div','pnow');s.appendChild(nb);nowTop(nb);const tb=h('div','ptabs');TABS.forEach(([id,n])=>{const b=h('button','ptab'+(id===curTab?' on':''),n);b.onclick=()=>{openSec=null;panel(id);};tb.appendChild(b);});s.appendChild(tb);
   const body=h('div','pbody');s.appendChild(body);
   if(curTab==='sum')sumTab(body);
   else if(curTab==='day'){timeTab(body);if(window.HEALTH)window.HEALTH.panel(body,sec,()=>panel('day'),'today');planTab(body);if(window.DAYLOG)window.DAYLOG.panel(body,sec);if(window.LEARN)window.LEARN.parentPanel(body,sec,()=>panel('day'));if(window.KNOW)window.KNOW.panel(body,sec,()=>panel('day'));}
@@ -4361,10 +4400,13 @@ function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(
   const out=h('div','btnrow');const bb=h('button','bigbtn plain sm',ICON.home+'<span>יציאה מלוח ההורים</span>');bb.onclick=exitParent;out.appendChild(bb);s.appendChild(out);window.__par=curTab;parLiveOn();
   if(GROUP[tab]&&openSec)setTimeout(()=>{const o=s.querySelector('details[open]');if(o&&tab===openSec&&curTab==='more')o.scrollIntoView({block:'start'});else $('#screens').scrollTop=sy;},0);}
 T.parentPanel=t=>{parentOn=true;panel(t);};
+/* #352: the top line of every tab: "playing now · N min (from HH:MM)" + one stop button, or "last played" */
+function nowTop(el){const DL=window.DAYLOG;el.innerHTML=DL?DL.nowLine():'';const left=T.limLeft();if(!DL||!DL.playing()||(left&&left.min<=0))return;
+  const b=h('button','pchip bad','⏹ לעצור עכשיו');b.onclick=()=>{stopNow();sfx.ok&&sfx.ok(1);nowTop(el);};el.firstChild?el.firstChild.appendChild(b):el.appendChild(b);}
 /* while the parent panel is open: pull the family save every 20s so "playing now" and the log follow Oren from another house */
 let parLive=0;
 function parLiveOn(){if(parLive)return;parLive=setInterval(()=>{if(!parentOn||$('#sPar').hidden){clearInterval(parLive);parLive=0;return;}
-  Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(window.DAYLOG)window.DAYLOG.refresh();});},window.__parPull||20000);}
+  Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(window.DAYLOG)window.DAYLOG.refresh();document.querySelectorAll('#sPar .pnow').forEach(nowTop);});},window.__parPull||20000);}
 const sec=(box,t,html)=>{const d=h('section','psec',`<h3>${t}</h3>`);if(html)d.insertAdjacentHTML('beforeend',html);box.appendChild(d);return d;};
 /* --- summary --- */
 /* problems in the last 14 days: one short line, details only on tap */
@@ -4381,7 +4423,7 @@ function sumTab(box){const s0=T.S(),sv=O.save;
   box.appendChild(h('div','psum',`<div class="psl">⏱️ היום: <b>${usedMin()} דק׳</b> משחק</div><div class="psl">🔥 רצף: <b>${st0===1?'יום אחד':st0+' ימים'}</b></div><div class="psl">🎯 היום: ${done.length?done.join(' · '):DL?'עוד לא סיים פעילות':doneN()+' פעילויות'}</div>`));
   issues(box);
   const det=document.createElement('details');det.className='pdet';det.innerHTML='<summary>📈 פירוט מלא</summary>';const dbox=h('div','pdin');det.appendChild(dbox);box.appendChild(det);box=dbox;
-  if(DL)DL.nowBox(box);if(window.LEARN){const rl=window.LEARN.runwayLine();if(rl)box.appendChild(h('div','pnote',rl));}if(T.thinkSummary)T.thinkSummary(box,sec);
+  if(window.LEARN){const rl=window.LEARN.runwayLine();if(rl)box.appendChild(h('div','pnote',rl));}if(T.thinkSummary)T.thinkSummary(box,sec);
   const acc=sv.ans?Math.round((sv.ok|0)/sv.ans*100):0;const totT=Object.values(s0.time).reduce((a,v)=>a+(v|0),0);const talSt=Object.values(s0.tl).reduce((a,c)=>a+(c.s|0),0);
   sec(box,'במבט אחד',`<div class="ptiles">
     <div><b>${new Set([...(sv.days||[]),...Object.keys(s0.time).filter(k=>(s0.time[k]|0)>=60)]).size}</b><span>ימי משחק</span></div><div><b>${O.dayStreak()}</b><span>רצף ימים</span></div>
@@ -4453,13 +4495,15 @@ O.on('tlDone',()=>{tEnd=Date.now();cntUp();});O.on('levelDone',()=>{tEnd=Date.no
 function cntUp(){if(O.isParentPlay)return;const s=T.S();s.cnt=s.cnt||{};const d=O.today();s.cnt[d]=(s.cnt[d]|0)+1;const ks=Object.keys(s.cnt).sort();ks.slice(0,Math.max(0,ks.length-30)).forEach(k=>delete s.cnt[k]);}
 const todayL=()=>{const l=LIM();return l.today&&l.today.d===O.today()?l.today:null;};
 /* today's limit: {min} or {n} or null */
-function limNow(){const t=todayL(),l=LIM();if(t){if(t.none)return null;if(t.min)return {min:t.min};}return l.daily?{min:l.daily|0}:null;}
+function limNow(){const t=todayL(),l=LIM();if(t){if(t.none)return null;if(t.min!=null)return {min:t.min|0};}return l.daily?{min:l.daily|0}:null;}
 function limitToday(){const x=limNow();return x&&x.min?x.min:0;}
 /* what is left: {min:m}, or null without a limit */
 T.limLeft=()=>{const x=limNow();if(!x)return null;return {min:Math.max(0,x.min-usedMin())};};
 T.timeLeft=()=>{const x=T.limLeft();return x&&x.min!=null?x.min:null;};
 /* more minutes for today, on top of what is left */
 const pnow=()=>{O.persist();O.famNow&&O.famNow();};
+/* "he has 0 more minutes" (#132): his device shows the gentle stop screen on its next sync */
+function stopNow(){LIM().today={d:O.today(),min:usedMin()};pnow();}
 function grant(v){const l=LIM(),x=limNow();const base=x&&x.min&&x.min>usedMin()?x.min:usedMin();l.today={d:O.today(),min:base+v};pnow();}
 const pdOpen={};/* which "more" sections stay open when the panel redraws */
 const pdet=(box,key,title)=>{const d=document.createElement('details');d.className='pdet';d.innerHTML=`<summary>${title}</summary>`;const inner=h('div','pdin');d.appendChild(inner);if(pdOpen[key])d.open=true;d.addEventListener('toggle',()=>{pdOpen[key]=d.open;});box.appendChild(d);return inner;};
@@ -4472,7 +4516,7 @@ function timeTab(box){const l=LIM(),x=limNow(),left=T.limLeft(),t=todayL();
   const more=pdet(ts,'tmore','עוד אפשרויות');
   const pr=h('div','popt','<span>יֵשׁ לוֹ עוֹד:</span>');[20,30,45,60].forEach(v=>mk(pr,v+' דק׳',()=>{l.today={d:O.today(),min:usedMin()+v};pnow();},left&&left.min===v));
   mk(pr,'ללא הגבלה',()=>{l.today={d:O.today(),none:1};pnow();},t&&t.none);if(t)mk(pr,'↺ כמו כל יום',()=>{l.today=null;pnow();});
-  mk(pr,'⏹ לסיים עכשיו',()=>{l.today={d:O.today(),min:Math.max(1,usedMin())};pnow();}).classList.add('bad');more.appendChild(pr);
+  mk(pr,'⏹ לסיים עכשיו',stopNow).classList.add('bad');more.appendChild(pr);
   const ds=sec(pdet(box,'tdaily','🗓️ הגבלה קבועה לכל יום'),'הגבלה קבועה לכל יום','<div class="pnote">נספר רק זמן פעיל. אורן רואה למעלה כמה נשאר. בסוף הזמן — מסך "נתראה מחר"; אם אורן באמצע פעילות, הוא מסיים אותה (עד 5 דקות). שינוי מהטלפון שלכם מגיע למכשיר של אורן תוך כדקה.</div>');
   const dr=h('div','popt','<span>דקות ביום:</span>');[[0,'ללא'],[20,'20'],[30,'30'],[45,'45'],[60,'60'],[90,'90']].forEach(([v,n])=>{const b=h('button','pchip'+((l.daily|0)===v?' on':''),n);b.onclick=()=>{l.daily=v;O.persist();panel('time');};dr.appendChild(b);});ds.appendChild(dr);
   const br=h('div','popt','<span>לא לשחק אחרי:</span>');[[0,'ללא'],[18,'18:00'],[19,'19:00'],[20,'20:00'],[21,'21:00']].forEach(([v,n])=>{const b=h('button','pchip'+((l.bed|0)===v?' on':''),n);b.onclick=()=>{l.bed=v;O.persist();panel('time');};br.appendChild(b);});ds.appendChild(br);
@@ -4866,32 +4910,37 @@ function frame(id,title){const gm=G(id);O.setScreen('sTal','final',()=>{if(cur)c
     score:v=>{top.querySelector('.sc b').textContent=v;},time:t=>{top.querySelector('.tm').textContent=t;}};}
 function countdown(F,go){const c=h('div','cdown');F.field.appendChild(c);let n=3;const tick=()=>{if(!c.isConnected)return;if(n>0){c.textContent=n;c.classList.remove('pop');void c.offsetWidth;c.classList.add('pop');sfx.blip?sfx.blip():sfx.pop(1);n--;setTimeout(tick,D(650));}
   else{c.textContent='קָדִימָה!';c.classList.remove('pop');void c.offsetWidth;c.classList.add('pop');sfx.ok(2);setTimeout(()=>{c.remove();go();},D(550));}};tick();}
-function finish(id,score,stars,extra){if(cur){cur.stop();cur=null;}T.setKey(null);const a=A();const best=a.best[id]|0;const rec=score>best;if(rec)a.best[id]=score;
+function finish(id,score,stars,extra){if(cur){cur.stop();cur=null;}T.setKey(null);const a=A();const best=a.best[id]|0;const rec=score>best;if(rec)a.best[id]=score;adapt(id,stars);
   a.plays=(a.plays|0)+1;T.record('arc-'+id,stars,{b:score});
   T.result({title:rec&&best?'שִׂיא חָדָשׁ! 🏆':'כָּל הַכָּבוֹד!',sub:`נְקֻדּוֹת: ${score}${extra||''}`,stars,gems:0,back:()=>openArcade(),again:()=>start(id)});}
-const lvl=id=>{const b=A().best[id]|0;return b;};
+/* #351 difficulty: a level 0..CAP per game (not the record). 3 stars -> one step up, 1 star -> one step down; wider numbers (1-20) only after 3 good rounds in a row */
+const CAP=4;
+const tune=id=>{const a=A(),l=Math.max(0,Math.min(CAP,(a.lv||{})[id]|0)),w=((a.gr||{})[id]|0)>=3;
+  return {lv:l,wide:w,max:w?20:10,line:w?50:l>=2?20:10,sp:[.035*(1+l*.08),.056*(1+l*.08)],spawn:950-l*40,stay:2400-l*150,gap:1100-l*60,meter:.055*(1+l*.1),zone:34-l*2,rivalT:60000-l*3500};};
+const adapt=(id,stars)=>{const a=A();a.lv=a.lv||{};a.gr=a.gr||{};const l=tune(id).lv;
+  if(stars>=3){a.lv[id]=Math.min(CAP,l+1);a.gr[id]=(a.gr[id]|0)+1;}else{a.gr[id]=0;if(stars<=1)a.lv[id]=Math.max(0,l-1);}};
 const COLS=[['#ff4b5c','אֲדֻמִּים'],['#3d8bff','כְּחֻלִּים'],['#ffd23f','צְהֻבִּים'],['#3cd070','יְרֻקִּים']];
 /* ---------- a. balloons ---------- */
-function balloon(){const F=frame('balloon','פּוֹצֵץ כַּמָּה שֶׁיּוֹתֵר בַּלּוֹנִים!');let score=0,alive=true,end=0,last=0,spawn=0,list=[],phase=0,want=null,pops=0;const best=lvl('balloon');
+function balloon(){const F=frame('balloon','פּוֹצֵץ כַּמָּה שֶׁיּוֹתֵר בַּלּוֹנִים!');let score=0,alive=true,end=0,last=0,spawn=0,list=[],phase=0,want=null,pops=0;const t=tune('balloon');
   const H=()=>F.field.clientHeight||400;
   const rule=()=>{if(phase===0){want=null;F.rule('🎈 פּוֹצֵץ כַּמָּה שֶׁיּוֹתֵר בַּלּוֹנִים!','פּוֹצֵץ כַּמָּה שֶׁיּוֹתֵר בַּלּוֹנִים!');}
     else if(phase===1){want={k:'c',v:pick(COLS)};F.rule(`פּוֹצֵץ רַק בַּלּוֹנִים <span class="cw" style="color:${want.v[0]}">${want.v[1]}</span>!`,'פּוֹצֵץ רַק בַּלּוֹנִים '+want.v[1]);}
     else{want={k:'even'};F.rule('פּוֹצֵץ רַק בַּלּוֹנִים עִם מִסְפָּר <b>זוּגִי</b>! (2, 4, 6...)','פּוֹצֵץ רַק בַּלּוֹנִים עִם מִסְפָּר זוּגִי');}};
   const good=b=>!want||(want.k==='c'?b.col===want.v[0]:b.num%2===0);
-  const mk=()=>{const col=pick(COLS)[0];const num=rand(1,20);const el=h('button','bal',phase===2?`<b>${num}</b>`:'');el.style.setProperty('--bc',col);el.style.left=rand(4,84)+'%';el.setAttribute('aria-label','בלון');
-    const o={el,col,num,y:H()+10,sp:(.045+Math.random()*.03)*(1+Math.min(score,25)*.02)};el.onpointerdown=e=>{e.preventDefault();hit(o);};F.field.appendChild(el);list.push(o);};
+  const mk=()=>{const col=pick(COLS)[0];const num=rand(1,t.max);const el=h('button','bal',phase===2?`<b>${num}</b>`:'');el.style.setProperty('--bc',col);el.style.left=rand(4,84)+'%';el.setAttribute('aria-label','בלון');
+    const o={el,col,num,y:H()+10,sp:t.sp[0]+Math.random()*(t.sp[1]-t.sp[0])};el.onpointerdown=e=>{e.preventDefault();hit(o);};F.field.appendChild(el);list.push(o);};
   function hit(o){if(!alive||o.dead)return;o.dead=true;o.el.classList.add('boom');setTimeout(()=>o.el.remove(),D(260));list=list.filter(x=>x!==o);
-    if(good(o)){score++;pops++;F.score(score);sfx.pop(score%8);O.floatText(o.el,'+1');if(phase===0&&pops>=(best>=8?5:8)){phase=1;pops=0;rule();}else if(phase===1&&pops>=6&&best>=12){phase=2;pops=0;rule();}}
+    if(good(o)){score++;pops++;F.score(score);sfx.pop(score%8);O.floatText(o.el,'+1');if(phase===0&&pops>=8){phase=1;pops=0;rule();}else if(phase===1&&pops>=6&&t.wide){phase=2;pops=0;rule();}}
     else{sfx.no();o.el.classList.add('bad');}}
-  const loop=now=>{if(!alive||!F.field.isConnected){alive=false;return;}const dt=Math.min(50,now-last);last=now;spawn-=dt;if(spawn<=0){mk();spawn=D(phase?650:800);}
+  const loop=now=>{if(!alive||!F.field.isConnected){alive=false;return;}const dt=Math.min(50,now-last);last=now;spawn-=dt;if(spawn<=0){mk();spawn=D(t.spawn);}
     list.forEach(o=>{o.y-=o.sp*dt;o.el.style.top=o.y+'px';});list.filter(o=>o.y<-90).forEach(o=>{o.el.remove();});list=list.filter(o=>o.y>=-90);
     const left=Math.max(0,Math.ceil((end-now)/1000));F.time('⏱️ '+left);if(now>=end){done();return;}requestAnimationFrame(loop);};
   function done(){if(!alive)return;alive=false;const st=score>=20?3:score>=12?2:1;finish('balloon',score,st);}
   cur={stop:()=>{alive=false;},finish:(sc)=>{if(sc!=null){score=sc;}done();},hit:()=>{const o=list.find(good);if(o)hit(o);else{score++;F.score(score);}},get score(){return score;}};
   rule();countdown(F,()=>{last=performance.now();end=last+D(45000);requestAnimationFrame(loop);});}
 /* ---------- b. whack-a-mole ---------- */
-function mole(){const F=frame('mole');let score=0,alive=true,end=0,tmr=0;const best=lvl('mole');const R=best>=8?20:10;
-  const kind=best>=5&&Math.random()<.4?'even':'eq';const T0=rand(5,R===20?15:9);
+function mole(){const F=frame('mole');let score=0,alive=true,end=0,tmr=0;const t=tune('mole');const R=t.max;
+  const kind=t.lv>=3&&Math.random()<.4?'even':'eq';const T0=rand(5,R===20?15:9);
   const mkEx=goodOne=>{if(kind==='even'){let n=rand(1,R);if(goodOne!==(n%2===0))n+=1;return {t:String(n),ok:n%2===0};}
     let v=goodOne?T0:pick([...Array(R+1).keys()].filter(x=>x!==T0));const plus=v>=2&&(Math.random()<.6||v+1>R);let a,b,t;if(plus){a=rand(1,v-1);b=v-a;t=`${a}+${b}`;}else{b=rand(1,Math.min(9,R-v)||1);a=v+b;t=`${a}−${b}`;}return {t,ok:v===T0};};
   if(kind==='even')F.rule('🔨 הַכֵּה רַק בְּמִסְפָּרִים <b>זוּגִיִּים</b>! (2, 4, 6...)','הַכֵּה רַק בְּמִסְפָּרִים זוּגִיִּים');
@@ -4901,8 +4950,8 @@ function mole(){const F=frame('mole');let score=0,alive=true,end=0,tmr=0;const b
   F.field.appendChild(g);F.field.classList.add('mf');
   const state=Array(9).fill(null);
   function pop(){if(!alive||!g.isConnected)return;const free=[...Array(9).keys()].filter(i=>!state[i]);if(free.length){const i=pick(free);const ex=mkEx(Math.random()<.6);state[i]=ex;holes[i].querySelector('.tag').textContent=ex.t;holes[i].classList.add('up');
-      const stay=D(Math.max(1100,2000-score*40));setTimeout(()=>{if(state[i]===ex){state[i]=null;holes[i].classList.remove('up');}},stay);}
-    tmr=setTimeout(pop,D(Math.max(450,900-score*20)));}
+      const stay=D(t.stay);setTimeout(()=>{if(state[i]===ex){state[i]=null;holes[i].classList.remove('up');}},stay);}
+    tmr=setTimeout(pop,D(t.gap));}
   function whack(i){const ex=state[i];if(!alive||!ex)return;state[i]=null;const hl=holes[i];hl.classList.remove('up');
     if(ex.ok){score++;F.score(score);sfx.hit?sfx.hit():sfx.pop(4);hl.classList.add('bonk');setTimeout(()=>hl.classList.remove('bonk'),D(300));O.floatText(hl,'+1');}else{sfx.no();hl.classList.add('wrong');setTimeout(()=>hl.classList.remove('wrong'),D(500));}}
   const tick=()=>{if(!alive||!g.isConnected){alive=false;return;}const left=Math.max(0,Math.ceil((end-performance.now())/1000));F.time('⏱️ '+left);if(left<=0)return done();setTimeout(tick,250);};
@@ -4910,17 +4959,17 @@ function mole(){const F=frame('mole');let score=0,alive=true,end=0,tmr=0;const b
   T.setKey(e=>{const n=+e.key;if(n>=1&&n<=9)whack([6,7,8,3,4,5,0,1,2][n-1]);});
   cur={stop:()=>{alive=false;clearTimeout(tmr);},finish:(sc)=>{if(sc!=null)score=sc;done();},hit:()=>{const i=state.findIndex(x=>x&&x.ok);if(i>=0)whack(i);else{score++;F.score(score);}},get score(){return score;}};
   countdown(F,()=>{end=performance.now()+D(45000);pop();tick();});}
-function qGen(best){const t=best>=6?pick(['+','-','x']):pick(['+','+','-']);let a,b,ans,txt;
-  if(t==='x'){a=pick([2,5,10]);b=rand(1,5);ans=a*b;txt=`${b} × ${a}`;}else if(t==='-'){a=rand(5,18);b=rand(1,Math.min(9,a));ans=a-b;txt=`${a} − ${b}`;}else{a=rand(1,10);b=rand(1,10);ans=a+b;txt=`${a} + ${b}`;}return {txt,ans};}
+function qGen(g){const w=g.wide;const t=w&&g.lv>=2?pick(['+','-','x']):pick(['+','+','-']);let a,b,ans,txt;
+  if(t==='x'){a=pick([2,5,10]);b=rand(1,5);ans=a*b;txt=`${b} × ${a}`;}else if(t==='-'){a=w?rand(5,18):rand(3,10);b=rand(1,Math.min(9,a));ans=a-b;txt=`${a} − ${b}`;}else{a=w?rand(1,10):rand(1,9);b=w?rand(1,10):rand(1,10-a);ans=a+b;txt=`${a} + ${b}`;}return {txt,ans};}
 /* ---------- d. frog on the number line ---------- */
-function frog(){const F=frame('frog');const best=lvl('frog');const MAX=best>=10?50:20;const JUMPS=MAX>20?[1,2,5,10]:[1,2,5];const R=5;let r=0,pos=0,tgt=0,used=0,tk=0,busy=false;
+function frog(){const F=frame('frog');const MAX=tune('frog').line;const JUMPS=MAX>20?[1,2,5,10]:[1,2,5];const R=5;let r=0,pos=0,tgt=0,used=0,tk=0,busy=false;
   F.field.classList.add('ff');const line=h('div','nline');const fr=h('div','frogp','🐸');const lily=h('div','lily','🪷');line.append(lily,fr);
   for(let i=0;i<=MAX;i++){const t=h('i','tk'+(i%5===0?' big':''),(MAX<=20||i%5===0)?`<b>${i}</b>`:'');t.style.left=(i/MAX*100)+'%';line.appendChild(t);}
   const pad=h('div','jumps');JUMPS.forEach(j=>{const b=h('button','jb',`+${j}`);b.onclick=()=>jump(j);pad.appendChild(b);});const bk=h('button','jb back','−1');bk.onclick=()=>jump(-1);pad.appendChild(bk);
   const info=h('div','jinfo');F.field.append(line,info,pad);
   const opt=n=>{let c=0;for(const j of [...JUMPS].reverse()){c+=Math.floor(n/j);n%=j;}return c;};
   const put=(el,v)=>{el.style.left=(v/MAX*100)+'%';};
-  const round=()=>{pos=0;used=0;tgt=rand(MAX>20?12:6,MAX);put(fr,0);put(lily,tgt);F.rule(`🐸 עֲזֹר לַצְּפַרְדֵּעַ לִנְחֹת עַל <span class="big">${tgt}</span>`,'עֲזֹר לַצְּפַרְדֵּעַ לִנְחֹת עַל '+tgt);
+  const round=()=>{pos=0;used=0;tgt=rand(MAX>20?12:MAX>10?6:4,MAX);put(fr,0);put(lily,tgt);F.rule(`🐸 עֲזֹר לַצְּפַרְדֵּעַ לִנְחֹת עַל <span class="big">${tgt}</span>`,'עֲזֹר לַצְּפַרְדֵּעַ לִנְחֹת עַל '+tgt);
     info.innerHTML=`קְפִיצוֹת: <b>0</b>`;F.time(`🐸 ${r+1}/${R}`);F.score(tk);};
   function jump(j){if(busy)return;const np=Math.max(0,Math.min(MAX,pos+j));if(np===pos)return;pos=np;used++;put(fr,pos);fr.classList.remove('hop');void fr.offsetWidth;fr.classList.add('hop');sfx.jump?sfx.jump():sfx.pop(3);
     info.innerHTML=`קְפִיצוֹת: <b>${used}</b>`;
@@ -4937,12 +4986,12 @@ function answers(q,onPick){const opts=new Set([q.ans]);let g=0;while(opts.size<3
   T.setKey(e=>{const n=+e.key;if(n>=1&&n<=3&&row.isConnected)row.children[n-1].click();});return row;}
 const sayQ=t=>t.replace('×',' כָּפוּל ').replace('−',' פָּחוֹת ').replace('+',' וְעוֹד ');
 /* ---------- b. soccer: kick to the corner with the right answer ---------- */
-function soccer(){const F=frame('soccer');const best=lvl('soccer');const N=8;let k=0,goals=0,busy=false,q=null,right=-1;
+function soccer(){const F=frame('soccer');const cfg=tune('soccer');const N=8;let k=0,goals=0,busy=false,q=null,right=-1;
   F.field.classList.add('pitch');
   const goal=h('div','goal','<div class="net"></div>');const corners=[0,1,2].map(i=>{const c=h('button','corner','');c.onclick=()=>kick(i);goal.appendChild(c);return c;});
   const keeper=h('div','keeper','<i class="kh"></i><i class="kb"></i><i class="kl l"></i><i class="kl r"></i><span class="gl l">🧤</span><span class="gl r">🧤</span>');goal.appendChild(keeper);
   const ball=h('div','sball','⚽');const msg=h('div','kmsg','');F.field.append(goal,ball,msg);
-  const round=()=>{busy=false;q=qGen(best);const opts=new Set([q.ans]);while(opts.size<3){const v=q.ans+pick([-3,-2,-1,1,2,3]);if(v>=0)opts.add(v);}const arr=shuffle([...opts]);right=arr.indexOf(q.ans);
+  const round=()=>{busy=false;q=qGen(cfg);const opts=new Set([q.ans]);while(opts.size<3){const v=q.ans+pick([-3,-2,-1,1,2,3]);if(v>=0)opts.add(v);}const arr=shuffle([...opts]);right=arr.indexOf(q.ans);
     corners.forEach((c,i)=>{c.textContent=arr[i];c.className='corner';});keeper.className='keeper';ball.className='sball';msg.textContent='';
     F.rule(`⚽ בְּעַט לַפִּנָּה עִם הַתְּשׁוּבָה: <span class="big ltr">${q.txt} = ?</span>`,'בְּעַט לַפִּנָּה עִם הַתְּשׁוּבָה. '+sayQ(q.txt));F.time(`⚽ ${k+1}/${N}`);};
   function kick(i){if(busy)return;busy=true;const ok=i===right;ball.className='sball to'+i;sfx.whoosh?sfx.whoosh():sfx.pop(2);
@@ -4955,17 +5004,17 @@ function soccer(){const F=frame('soccer');const best=lvl('soccer');const N=8;let
   cur={stop:()=>{busy=true;},finish:sc=>{if(sc!=null)goals=sc;done();},hit:()=>kick(right),get score(){return goals;}};
   round();}
 /* ---------- c. basketball: answer, then time the shot ---------- */
-function basket(){const F=frame('basket');const best=lvl('basket');const N=8;let k=0,made=0,q=null,phase='q',meter=0,dir=1,last=0,alive=true;const zone=Math.max(22,34-best);
+function basket(){const F=frame('basket');const cfg=tune('basket');const N=8;let k=0,made=0,q=null,phase='q',meter=0,dir=1,last=0,alive=true;const zone=cfg.zone;
   F.field.classList.add('court');
   const hoop=h('div','hoop','<div class="board"><i></i></div><div class="rim"></div><div class="netb"></div>');const ball=h('div','bball','🏀');
   const bar=h('div','pbar3',`<i class="zone" style="left:${50-zone/2}%;width:${zone}%"></i><i class="cur"></i>`);const shoot=h('button','bigbtn gold shoot','🏀 <span>זְרֹק!</span>');
   const area=h('div','barea');const msg=h('div','kmsg','');F.field.append(hoop,ball,msg,area);
-  const ask=()=>{phase='q';q=qGen(best);area.innerHTML='';ball.className='bball';msg.textContent='';
+  const ask=()=>{phase='q';q=qGen(cfg);area.innerHTML='';ball.className='bball';msg.textContent='';
     F.rule(`🏀 עֲנֵה נָכוֹן וּתְקַבֵּל זְרִיקָה: <span class="big ltr">${q.txt} = ?</span>`,'עֲנֵה נָכוֹן וּתְקַבֵּל זְרִיקָה. '+sayQ(q.txt));F.time(`🏀 ${k+1}/${N}`);
     area.appendChild(answers(q,(ok,b,row)=>{if(phase!=='q')return;if(ok){b.classList.add('ok');sfx.ok(k);setTimeout(()=>{if(alive)aim();},D(350));}else{b.classList.add('bad');b.disabled=true;sfx.no();phase='x';
       setTimeout(()=>{row.querySelectorAll('.ab').forEach(x=>{if(+x.textContent===q.ans)x.classList.add('ok');});msg.textContent='הַתְּשׁוּבָה: '+q.ans;setTimeout(next,D(1300));},D(300));}}));};
   const aim=()=>{phase='aim';area.innerHTML='';area.append(bar,shoot);F.rule('👆 לְחַץ "זְרֹק!" כְּשֶׁהַפַּס בַּיָּרֹק!','לְחַץ זְרֹק כְּשֶׁהַפַּס בַּיָּרֹק');meter=0;dir=1;last=performance.now();T.setKey(e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();throwIt();}});requestAnimationFrame(swing);};
-  const swing=now=>{if(!alive||phase!=='aim'||!bar.isConnected)return;const dt=now-last;last=now;meter+=dir*dt*.09*(1+best*.02);if(meter>=100){meter=100;dir=-1;}if(meter<=0){meter=0;dir=1;}bar.querySelector('.cur').style.left=meter+'%';requestAnimationFrame(swing);};
+  const swing=now=>{if(!alive||phase!=='aim'||!bar.isConnected)return;const dt=now-last;last=now;meter+=dir*dt*cfg.meter;if(meter>=100){meter=100;dir=-1;}if(meter<=0){meter=0;dir=1;}bar.querySelector('.cur').style.left=meter+'%';requestAnimationFrame(swing);};
   shoot.onclick=()=>throwIt();
   function throwIt(force){if(phase!=='aim')return;phase='fly';const ok=force||Math.abs(meter-50)<=zone/2;ball.className='bball '+(ok?'swish':'miss');sfx.whoosh?sfx.whoosh():sfx.pop(2);
     setTimeout(()=>{if(!hoop.isConnected)return;if(ok){made++;F.score(made);msg.textContent='סַל! 🎉';msg.className='kmsg win';hoop.classList.add('shake');sfx.win();setTimeout(()=>hoop.classList.remove('shake'),D(500));}else{msg.textContent='כִּמְעַט! 💪';msg.className='kmsg';sfx.no();}setTimeout(next,D(1000));},D(650));}
@@ -4974,12 +5023,12 @@ function basket(){const F=frame('basket');const best=lvl('basket');const N=8;let
   cur={stop:()=>{alive=false;},finish:sc=>{if(sc!=null)made=sc;done();},hit:()=>{if(phase==='q'){const b=[...area.querySelectorAll('.ab')].find(x=>+x.textContent===q.ans);if(b)b.click();}else if(phase==='aim')throwIt(true);},get phase(){return phase;},get score(){return made;}};
   ask();}
 /* ---------- d. swim race: each right answer is a stroke ---------- */
-function swim(){const F=frame('swim');const best=lvl('swim');const N=10;let you=0,rival=0,ok=0,q=null,alive=true,last=0;const rivalT=Math.max(28000,48000-best*1500);
+function swim(){const F=frame('swim');const cfg=tune('swim');const N=10;let you=0,rival=0,ok=0,q=null,alive=true,last=0;const rivalT=cfg.rivalT;
   F.field.classList.add('pool');
   const lanes=h('div','lanes',`<div class="lane"><span class="who">אַתָּה</span><span class="swr me">🏊</span><span class="fin">🏁</span></div><div class="lane"><span class="who">דּוֹלְפִין</span><span class="swr rv">🐬</span><span class="fin">🏁</span></div>`);
   const me=lanes.querySelector('.me'),rv=lanes.querySelector('.rv');const area=h('div','barea');F.field.append(lanes,area);
   const put=()=>{me.style.right=`calc(76px + ${you/N} * (100% - 140px))`;rv.style.right=`calc(76px + ${rival} * (100% - 140px))`;};
-  const ask=()=>{q=qGen(best);area.innerHTML='';F.rule(`🏊 עֲנֵה מַהֵר כְּדֵי לִשְׂחוֹת: <span class="big ltr">${q.txt} = ?</span>`,'עֲנֵה מַהֵר כְּדֵי לִשְׂחוֹת. '+sayQ(q.txt));
+  const ask=()=>{q=qGen(cfg);area.innerHTML='';F.rule(`🏊 עֲנֵה מַהֵר כְּדֵי לִשְׂחוֹת: <span class="big ltr">${q.txt} = ?</span>`,'עֲנֵה מַהֵר כְּדֵי לִשְׂחוֹת. '+sayQ(q.txt));
     area.appendChild(answers(q,(good,b)=>{if(!alive)return;if(good){you++;ok++;F.score(ok);b.classList.add('ok');me.classList.remove('stroke');void me.offsetWidth;me.classList.add('stroke');sfx.pop(4);put();if(you>=N)return end(true);setTimeout(()=>{if(alive)ask();},D(250));}
       else{b.classList.add('bad');b.disabled=true;sfx.no();}}));};
   const loop=now=>{if(!alive||!lanes.isConnected){alive=false;return;}const dt=Math.min(50,now-last);last=now;rival=Math.min(1,rival+dt/D(rivalT));put();F.time(rival>you/N?'🐬 מוֹבִיל':'🏊 מוֹבִיל');if(rival>=1)return end(false);requestAnimationFrame(loop);};
@@ -4990,7 +5039,7 @@ function swim(){const F=frame('swim');const best=lvl('swim');const N=10;let you=
 const RUN={balloon,soccer,basket,swim,mole,frog};
 function start(id){T.setKey(null);RUN[id]();}
 window.TAL_arcade=openArcade;T.arcade=openArcade;
-window.__arc={open:openArcade,start,get cur(){return cur;},finish:sc=>cur&&cur.finish(sc),hit:()=>cur&&cur.hit(),state:()=>A()};
+window.__arc={open:openArcade,start,get cur(){return cur;},finish:sc=>cur&&cur.finish(sc),hit:()=>cur&&cur.hit(),state:()=>A(),tune,q:id=>qGen(tune(id))};
 })();
 
 /* ===== READING: "קוֹדֶם אַתָּה, אַחַר כָּךְ אֲנִי" =====
@@ -5358,6 +5407,8 @@ FR.onCorrect=ctx=>{ctx=ctx||{};if(!FR.shown()&&onAct())FR.mount();const fixed=(c
   return talk(t,ctx);};
 FR.onWrong=ctx=>{ctx=ctx||{};if(!FR.shown()&&onAct())FR.mount();streak=0;missed=!ctx.final;anim('sad');if(ctx.final)missed=false;return talk(draw(ctx.final?SHOWN:WRONG),ctx);};
 FR.reset=()=>{streak=0;missed=false;};
+/* a story opens: try to read alone first (#355). Bubble only: the screen's own instruction (sayNow) says it */
+const READFIRST='קוֹדֶם נְנַסֶּה לִקְרֹא לְבַד!';FR.READFIRST=READFIRST;FR.readFirst=()=>talk(READFIRST,{quiet:1,ms:4000});
 
 /* ---------- a picture that stands for a word: say the word ---------- */
 let lead='';                                   /* a story line waiting to be said before the next instruction */
@@ -5413,7 +5464,7 @@ O.on('screen',id=>{FR.reset();
   else FR.unmount();});
 O.on('levelDone',()=>setTimeout(FR.stepCheck,D(600)));
 
-FR.speakList=()=>[DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
+FR.speakList=()=>[READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
   ...[...Object.values(STORY),STORY0].flatMap(([a,b])=>[a,FIRST+' '+a,LAST+' '+a,b,b+' '+ALL])];
 FR._cur=()=>cur;FR._lines={ok:OK,streak:[...Object.values(STREAK),STREAK_MORE],effort:EFFORT,wrong:WRONG,shown:SHOWN};
 window.FRIEND=FR;window.PATHBAR=PATHBAR;
@@ -5712,42 +5763,36 @@ const finNote=l=>{const f=FINALS.find(x=>x[0]===l);return f?`<div class="gp-fin"
 
 /* ===================== 8. MORE BEDTIME STORIES (why? / what happened first?) ===================== */
 const STORIES=[
- {t:'הַגֶּשֶׁם הָרִאשׁוֹן',spr:['cloud','flower'],s:['בַּבֹּקֶר הַשָּׁמַיִם הָיוּ אֲפֹרִים.','מָיָה רָאֲתָה עָנָן גָּדוֹל וְשָׁחֹר.','הִיא לָקְחָה מִטְרִיָּה וְיָצְאָה לַגַּן.','פִּתְאוֹם יָרַד גֶּשֶׁם רִאשׁוֹן.','הַפְּרָחִים בַּגַּן שָׂמְחוּ וְשָׁתוּ מַיִם.','מָיָה קָפְצָה בַּשְּׁלוּלִיּוֹת וְצָחֲקָה.'],
-  q:[['מָה לָקְחָה מָיָה כְּשֶׁיָּצְאָה?','מִטְרִיָּה',['כּוֹבַע','כַּדּוּר']],['לָמָּה הַפְּרָחִים שָׂמְחוּ?','כִּי הֵם קִבְּלוּ מַיִם',['כִּי הָיְתָה שֶׁמֶשׁ','כִּי מָיָה שָׁרָה לָהֶם']],['מָה קָרָה רִאשׁוֹן?','מָיָה רָאֲתָה עָנָן',['מָיָה קָפְצָה בַּשְּׁלוּלִיּוֹת','הַפְּרָחִים שָׁתוּ מַיִם']]]},
- {t:'הַגּוּר שֶׁל גִּיל',spr:['dog','heart'],s:['לְגִיל יֵשׁ גּוּר קָטָן בְּשֵׁם בּוּבִּי.','יוֹם אֶחָד בּוּבִּי בָּרַח מֵהֶחָצֵר.','גִּיל חִפֵּשׂ אוֹתוֹ בְּכָל הָרְחוֹב.','הוּא שָׁמַע נְבִיחָה קְטַנָּה מֵאֲחוֹרֵי הַשִּׂיחַ.','בּוּבִּי יָשַׁב שָׁם, כִּי הוּא פָּחַד מֵרַעַשׁ שֶׁל מְכוֹנִית.','גִּיל חִבֵּק אוֹתוֹ וְהֵבִיא אוֹתוֹ הַבַּיְתָה.'],
-  q:[['אֵיךְ קוֹרְאִים לַגּוּר?','בּוּבִּי',['שׁוֹקוֹ','רֶקְס']],['לָמָּה בּוּבִּי הִתְחַבֵּא מֵאֲחוֹרֵי הַשִּׂיחַ?','כִּי הוּא פָּחַד מֵרַעַשׁ',['כִּי הוּא רָצָה לִישֹׁן','כִּי הוּא חִפֵּשׂ עֶצֶם']],['מָה קָרָה רִאשׁוֹן?','בּוּבִּי בָּרַח',['גִּיל שָׁמַע נְבִיחָה','גִּיל חִבֵּק אֶת בּוּבִּי']]]},
- {t:'הַמִּגְדָּל שֶׁל יוֹנִי',spr:['tower','puzzle'],s:['יוֹנִי בָּנָה מִגְדָּל גָּבוֹהַּ מִקֻּבִּיּוֹת.','הוּא שָׂם קֻבִּיָּה עַל קֻבִּיָּה, לְאַט לְאַט.','אָחִיו הַקָּטָן רָץ וְנָגַע בַּמִּגְדָּל.','הַמִּגְדָּל נָפַל, וְכָל הַקֻּבִּיּוֹת הִתְפַּזְּרוּ.','יוֹנִי כָּעַס, אֲבָל אַחַר כָּךְ הוּא חִיֵּךְ.','"בּוֹא נִבְנֶה מִגְדָּל חָדָשׁ בְּיַחַד!" הוּא אָמַר.'],
-  q:[['מִמָּה בָּנָה יוֹנִי אֶת הַמִּגְדָּל?','מִקֻּבִּיּוֹת',['מֵחוֹל','מִנְּיָר']],['לָמָּה הַמִּגְדָּל נָפַל?','כִּי הָאָח הַקָּטָן נָגַע בּוֹ',['כִּי הָיְתָה רוּחַ','כִּי יוֹנִי קָפַץ']],['מָה קָרָה רִאשׁוֹן?','יוֹנִי בָּנָה מִגְדָּל',['הַמִּגְדָּל נָפַל','יוֹנִי חִיֵּךְ']]]},
- {t:'הַצִּפּוֹר הַקְּטַנָּה',spr:['bird','tree'],s:['בְּקֵן עַל הָעֵץ גָּרָה צִפּוֹר קְטַנָּה.','כָּל הַצִּפֳּרִים עָפוּ, אֲבָל הִיא פָּחֲדָה.','אִמָּא שֶׁלָּהּ אָמְרָה: "תְּנַסִּי, אֲנִי כָּאן."','הַצִּפּוֹר פָּתְחָה כְּנָפַיִם וְקָפְצָה.','הִיא עָפָה עַד הָעֵץ הַשֵּׁנִי!','מֵאָז הִיא עָפָה כָּל יוֹם.'],
-  q:[['אֵיפֹה גָּרָה הַצִּפּוֹר?','בְּקֵן עַל הָעֵץ',['בַּבַּיִת','בַּיָּם']],['לָמָּה הַצִּפּוֹר לֹא עָפָה בַּהַתְחָלָה?','כִּי הִיא פָּחֲדָה',['כִּי הִיא הָיְתָה רְעֵבָה','כִּי יָרַד גֶּשֶׁם']],['מָה קָרָה רִאשׁוֹן?','אִמָּא אָמְרָה לָהּ לְנַסּוֹת',['הַצִּפּוֹר עָפָה עַד הָעֵץ הַשֵּׁנִי','הַצִּפּוֹר עָפָה כָּל יוֹם']]]},
- {t:'הַפָּנָס שֶׁל סַבָּא',spr:['lantern','moon'],s:['בַּלַּיְלָה הַחַשְׁמַל בַּבַּיִת כָּבָה.','הָיָה חֹשֶׁךְ גָּמוּר, וְתָמָר לֹא רָאֲתָה כְּלוּם.','סַבָּא הוֹצִיא פָּנָס יָשָׁן מֵהָאָרוֹן.','הוּא הִדְלִיק אוֹתוֹ, וְהַחֶדֶר הִתְמַלֵּא בְּאוֹר.','תָּמָר וְסַבָּא שִׂחֲקוּ בִּצְלָלִים עַל הַקִּיר.','כְּשֶׁהַחַשְׁמַל חָזַר, תָּמָר אָמְרָה: "חֲבָל!"'],
-  q:[['מָה סַבָּא הוֹצִיא מֵהָאָרוֹן?','פָּנָס',['סֵפֶר','שְׂמִיכָה']],['לָמָּה הָיָה חֹשֶׁךְ בַּבַּיִת?','כִּי הַחַשְׁמַל כָּבָה',['כִּי הָיָה עָנָן','כִּי תָּמָר יָשְׁנָה']],['מָה קָרָה רִאשׁוֹן?','הַחַשְׁמַל כָּבָה',['סַבָּא הִדְלִיק פָּנָס','הַחַשְׁמַל חָזַר']]]},
- {t:'הַדָּג הַזָּהֹב',spr:['fish','wave'],s:['בַּיָּם הַכָּחֹל שָׂחָה דָּג קָטָן וְזָהֹב.','הוּא רָצָה לִרְאוֹת מָה יֵשׁ מֵעַל הַמַּיִם.','הוּא קָפַץ גָּבוֹהַּ וְרָאָה סִירָה לְבָנָה.','עַל הַסִּירָה יָשַׁב יֶלֶד וְנוֹפֵף לוֹ.','הַדָּג חָזַר לַמַּיִם וְסִפֵּר לַחֲבֵרִים שֶׁלּוֹ.'],
-  q:[['אֵיזֶה צֶבַע הָיָה הַדָּג?','זָהֹב',['אָדֹם','יָרֹק']],['לָמָּה הַדָּג קָפַץ?','כִּי הוּא רָצָה לִרְאוֹת מָה יֵשׁ מֵעַל הַמַּיִם',['כִּי הוּא פָּחַד','כִּי הוּא הָיָה עָיֵף']],['מָה קָרָה רִאשׁוֹן?','הַדָּג קָפַץ',['הַדָּג חָזַר לַמַּיִם','הַדָּג סִפֵּר לַחֲבֵרִים']]]},
- {t:'הָעוּגָה שֶׁנִּשְׂרְפָה',spr:['cake','flame'],s:['אַבָּא וְשִׁירָה אָפוּ עוּגָה לְשַׁבָּת.','הֵם שָׂמוּ אוֹתָהּ בַּתַּנּוּר וְהָלְכוּ לְשַׂחֵק.','אַחֲרֵי זְמַן מָה, שִׁירָה הֵרִיחָה רֵיחַ שֶׁל שְׂרֵפָה.','הֵם רָצוּ לַמִּטְבָּח, אֲבָל הָעוּגָה כְּבָר הָיְתָה שְׁחֹרָה.','"בַּפַּעַם הַבָּאָה נָשִׂים שָׁעוֹן," אָמַר אַבָּא.','הֵם אָפוּ עוּגָה חֲדָשָׁה, וְהַפַּעַם הִיא יָצְאָה טְעִימָה.'],
-  q:[['אֵיפֹה שָׂמוּ אֶת הָעוּגָה?','בַּתַּנּוּר',['בַּמְּקָרֵר','בָּאָרוֹן']],['לָמָּה הָעוּגָה נִשְׂרְפָה?','כִּי הֵם שָׁכְחוּ אוֹתָהּ בַּתַּנּוּר',['כִּי הִיא נָפְלָה','כִּי שָׂמוּ בָּהּ מֶלַח']],['מָה קָרָה רִאשׁוֹן?','שִׁירָה הֵרִיחָה שְׂרֵפָה',['הֵם אָפוּ עוּגָה חֲדָשָׁה','אַבָּא אָמַר שֶׁיָּשִׂימוּ שָׁעוֹן']]]},
- {t:'הַכִּבְשָׂה שֶׁהָלְכָה לְאִבּוּד',spr:['sheep','mount'],s:['בַּשָּׂדֶה הָיוּ עֶשֶׂר כְּבָשִׂים לְבָנוֹת.','בָּעֶרֶב הָרוֹעֶה סָפַר אוֹתָן, וְהָיוּ רַק תֵּשַׁע.','כִּבְשָׂה אַחַת טִפְּסָה עַל הָהָר וְלֹא יָדְעָה אֵיךְ לָרֶדֶת.','הַכֶּלֶב שֶׁל הָרוֹעֶה רָץ וּמָצָא אוֹתָהּ.','הוּא הוֹבִיל אוֹתָהּ בַּשְּׁבִיל בַּחֲזָרָה לָעֵדֶר.'],
-  q:[['כַּמָּה כְּבָשִׂים סָפַר הָרוֹעֶה בָּעֶרֶב?','9',['10','8']],['לָמָּה הַכִּבְשָׂה לֹא חָזְרָה?','כִּי הִיא לֹא יָדְעָה אֵיךְ לָרֶדֶת מֵהָהָר',['כִּי הִיא יָשְׁנָה','כִּי הִיא כָּעֲסָה']],['מָה קָרָה רִאשׁוֹן?','הָרוֹעֶה סָפַר אֶת הַכְּבָשִׂים',['הַכֶּלֶב מָצָא אֶת הַכִּבְשָׂה','הַכִּבְשָׂה חָזְרָה לָעֵדֶר']]]},
- {t:'הַמְּכוֹנִית הָאֲדֻמָּה',spr:['car','star'],s:['לְאָדָם יֵשׁ מְכוֹנִית צַעֲצוּעַ אֲדֻמָּה.','הוּא לָקַח אוֹתָהּ לַגַּן כְּדֵי לְשַׂחֵק עִם חֲבֵרִים.','רוֹנִי רָצָה לְשַׂחֵק בָּהּ גַּם.','בַּהַתְחָלָה אָדָם לֹא רָצָה לְהַשְׁאִיל.','אַחַר כָּךְ הֵם בָּנוּ כְּבִישׁ מֵחוֹל, וְשִׂחֲקוּ בְּתוֹרוֹת.','"כָּכָה הַרְבֵּה יוֹתֵר כֵּיף!" אָמַר אָדָם.'],
+ {t:'הַגֶּשֶׁם הָרִאשׁוֹן',spr:['cloud','flower'],gk:'sci',goal:'גשם יורד מהעננים, וצמחים צריכים מים כדי לגדול',les:1,s:['בַּבֹּקֶר הַשָּׁמַיִם הָיוּ אֲפֹרִים.','מָיָה רָאֲתָה עָנָן גָּדוֹל וְשָׁחֹר, מָלֵא טִפּוֹת מַיִם.','הִיא לָקְחָה מִטְרִיָּה וְיָצְאָה לַגַּן.','פִּתְאוֹם יָרַד מֵהֶעָנָן גֶּשֶׁם רִאשׁוֹן.','הַפְּרָחִים שָׂמְחוּ, כִּי צְמָחִים צְרִיכִים מַיִם כְּדֵי לִגְדֹּל.','מָיָה קָפְצָה בַּשְּׁלוּלִיּוֹת וְצָחֲקָה.'],
+  q:[['מֵאַיִן יָרַד הַגֶּשֶׁם?','מֵהֶעָנָן',['מֵהַשֶּׁמֶשׁ','מֵהָעֵץ']],['לָמָּה הַגֶּשֶׁם טוֹב לַפְּרָחִים?','כִּי צְמָחִים צְרִיכִים מַיִם כְּדֵי לִגְדֹּל',['כִּי הַגֶּשֶׁם קַר','כִּי מָיָה קָפְצָה בַּשְּׁלוּלִיּוֹת']],['מָה קָרָה רִאשׁוֹן?','מָיָה רָאֲתָה עָנָן',['מָיָה קָפְצָה בַּשְּׁלוּלִיּוֹת','הַפְּרָחִים שָׁתוּ מַיִם']]]},
+ {t:'הַגּוּר שֶׁל גִּיל',spr:['dog','heart'],gk:'sci',goal:'כלבים שומעים טוב מאיתנו, ורעש חזק מפחיד אותם',les:1,s:['לְגִיל יֵשׁ גּוּר קָטָן בְּשֵׁם בּוּבִּי.','יוֹם אֶחָד בּוּבִּי בָּרַח מֵהֶחָצֵר.','גִּיל חִפֵּשׂ אוֹתוֹ בְּכָל הָרְחוֹב.','הוּא שָׁמַע נְבִיחָה קְטַנָּה, וּמָצָא אֶת בּוּבִּי מֵאֲחוֹרֵי הַשִּׂיחַ.','בּוּבִּי רָעַד, כִּי רַעַשׁ חָזָק שֶׁל מְכוֹנִית הִפְחִיד אוֹתוֹ.','בַּבַּיִת אִמָּא הִסְבִּירָה: "כְּלָבִים שׁוֹמְעִים הַרְבֵּה יוֹתֵר טוֹב מֵאִתָּנוּ."'],
+  q:[['אֵיךְ קוֹרְאִים לַגּוּר?','בּוּבִּי',['שׁוֹקוֹ','רֶקְס']],['לָמָּה רַעַשׁ שֶׁל מְכוֹנִית מַפְחִיד כְּלָבִים?','כִּי כְּלָבִים שׁוֹמְעִים טוֹב מְאוֹד',['כִּי כְּלָבִים לֹא שׁוֹמְעִים','כִּי כְּלָבִים אוֹהֲבִים מְכוֹנִיּוֹת']],['מָה קָרָה רִאשׁוֹן?','בּוּבִּי בָּרַח',['גִּיל שָׁמַע נְבִיחָה','אִמָּא הִסְבִּירָה עַל כְּלָבִים']]]},
+ {t:'הַמִּגְדָּל שֶׁל יוֹנִי',spr:['tower','puzzle'],gk:'value',goal:'כשמשהו נהרס, נרגעים ומנסים שוב',les:1,s:['יוֹנִי בָּנָה מִגְדָּל גָּבוֹהַּ מִקֻּבִּיּוֹת.','הוּא שָׂם קֻבִּיָּה עַל קֻבִּיָּה, לְאַט לְאַט.','אָחִיו הַקָּטָן רָץ וְנָגַע בַּמִּגְדָּל.','הַמִּגְדָּל נָפַל, וְכָל הַקֻּבִּיּוֹת הִתְפַּזְּרוּ.','יוֹנִי כָּעַס, אֲבָל הוּא נָשַׁם עָמֹק וְנִרְגַּע.','"לֹא נוֹרָא, אֶפְשָׁר לְנַסּוֹת שׁוּב! בּוֹא נִבְנֶה בְּיַחַד," הוּא אָמַר.'],
+  q:[['לָמָּה הַמִּגְדָּל נָפַל?','כִּי הָאָח הַקָּטָן נָגַע בּוֹ',['כִּי הָיְתָה רוּחַ','כִּי יוֹנִי קָפַץ']],['מָה לָמַדְנוּ מִיּוֹנִי?','כְּשֶׁמַּשֶּׁהוּ נֶהֱרָס, נִרְגָּעִים וּמְנַסִּים שׁוּב',['כְּשֶׁמַּשֶּׁהוּ נֶהֱרָס, צוֹעֲקִים','לֹא בּוֹנִים אַף פַּעַם']],['מָה קָרָה רִאשׁוֹן?','יוֹנִי בָּנָה מִגְדָּל',['הַמִּגְדָּל נָפַל','יוֹנִי חִיֵּךְ']]]},
+ {t:'הַצִּפּוֹר הַקְּטַנָּה',spr:['bird','tree'],gk:'value',goal:'גם כשמפחדים, אפשר לנסות',les:0,s:['בְּקֵן עַל הָעֵץ גָּרָה צִפּוֹר קְטַנָּה.','כָּל הַצִּפֳּרִים עָפוּ, אֲבָל הִיא פָּחֲדָה.','אִמָּא שֶׁלָּהּ אָמְרָה: "תְּנַסִּי, אֲנִי כָּאן."','הַצִּפּוֹר פָּתְחָה כְּנָפַיִם וְקָפְצָה.','הִיא עָפָה עַד הָעֵץ הַשֵּׁנִי!','מֵאָז הִיא עָפָה כָּל יוֹם.'],
+  q:[['מָה לָמַדְנוּ מֵהַצִּפּוֹר?','גַּם כְּשֶׁמְּפַחֲדִים, אֶפְשָׁר לְנַסּוֹת',['שֶׁצָּרִיךְ תָּמִיד לְהִשָּׁאֵר בַּקֵּן','שֶׁצִּפֳּרִים לֹא עָפוֹת']],['לָמָּה הַצִּפּוֹר לֹא עָפָה בַּהַתְחָלָה?','כִּי הִיא פָּחֲדָה',['כִּי הִיא הָיְתָה רְעֵבָה','כִּי יָרַד גֶּשֶׁם']],['מָה קָרָה רִאשׁוֹן?','אִמָּא אָמְרָה לָהּ לְנַסּוֹת',['הַצִּפּוֹר עָפָה עַד הָעֵץ הַשֵּׁנִי','הַצִּפּוֹר עָפָה כָּל יוֹם']]]},
+ {t:'הַפָּנָס שֶׁל סַבָּא',spr:['lantern','moon'],gk:'sci',goal:'צל נוצר כשמשהו עוצר את האור',les:1,s:['בַּלַּיְלָה הַחַשְׁמַל בַּבַּיִת כָּבָה.','הָיָה חֹשֶׁךְ גָּמוּר, וְתָמָר לֹא רָאֲתָה כְּלוּם.','סַבָּא הוֹצִיא פָּנָס יָשָׁן מֵהָאָרוֹן.','הוּא הִדְלִיק אוֹתוֹ, וְהַחֶדֶר הִתְמַלֵּא בְּאוֹר.','תָּמָר שָׂמָה יָד מוּל הַפָּנָס, וְעַל הַקִּיר הוֹפִיעַ צֵל.','סַבָּא הִסְבִּיר: "הַיָּד עוֹצֶרֶת אֶת הָאוֹר, וְכָכָה נוֹצָר צֵל."'],
+  q:[['לָמָּה הָיָה חֹשֶׁךְ בַּבַּיִת?','כִּי הַחַשְׁמַל כָּבָה',['כִּי הָיָה עָנָן','כִּי תָּמָר יָשְׁנָה']],['לָמָּה הוֹפִיעַ צֵל עַל הַקִּיר?','כִּי הַיָּד עָצְרָה אֶת הָאוֹר',['כִּי הַחַשְׁמַל חָזַר','כִּי הַקִּיר הָיָה שָׁחֹר']],['מָה קָרָה רִאשׁוֹן?','הַחַשְׁמַל כָּבָה',['סַבָּא הִדְלִיק פָּנָס','הוֹפִיעַ צֵל עַל הַקִּיר']]]},
+ {t:'הַדָּג הַזָּהֹב',spr:['fish','wave'],gk:'sci',goal:'דג נושם בזימים, רק בתוך המים',les:1,s:['בַּיָּם הַכָּחֹל שָׂחָה דָּג קָטָן וְזָהֹב.','הוּא רָצָה לִרְאוֹת מָה יֵשׁ מֵעַל הַמַּיִם.','הוּא קָפַץ גָּבוֹהַּ וְרָאָה סִירָה לְבָנָה.','אֲבָל מִיָּד הוּא חָזַר לַמַּיִם, כִּי דָּג נוֹשֵׁם רַק בְּתוֹךְ הַמַּיִם.','לַדָּג יֵשׁ זִימִים, וְאִתָּם הוּא נוֹשֵׁם בַּמַּיִם, כְּמוֹ שֶׁאֲנַחְנוּ נוֹשְׁמִים אֲוִיר.'],
+  q:[['אֵיזֶה צֶבַע הָיָה הַדָּג?','זָהֹב',['אָדֹם','יָרֹק']],['לָמָּה הַדָּג חָזַר מַהֵר לַמַּיִם?','כִּי דָּג נוֹשֵׁם רַק בְּתוֹךְ הַמַּיִם',['כִּי הוּא רָאָה כָּרִישׁ','כִּי הַסִּירָה הָיְתָה רוֹעֶשֶׁת']],['מָה קָרָה רִאשׁוֹן?','הַדָּג רָצָה לִרְאוֹת מָה יֵשׁ לְמַעְלָה',['הַדָּג קָפַץ גָּבוֹהַּ','הַדָּג חָזַר לַמַּיִם']]]},
+ {t:'הָעוּגָה שֶׁנִּשְׂרְפָה',spr:['cake','flame'],gk:'value',goal:'מטעות לומדים: בפעם הבאה שמים שעון',les:0,s:['אַבָּא וְשִׁירָה אָפוּ עוּגָה לְשַׁבָּת.','הֵם שָׂמוּ אוֹתָהּ בַּתַּנּוּר וְהָלְכוּ לְשַׂחֵק.','אַחֲרֵי זְמַן מָה, שִׁירָה הֵרִיחָה רֵיחַ שֶׁל שְׂרֵפָה.','הֵם רָצוּ לַמִּטְבָּח, אֲבָל הָעוּגָה כְּבָר הָיְתָה שְׁחֹרָה.','"טָעִינוּ, וְלָמַדְנוּ: בַּפַּעַם הַבָּאָה נָשִׂים שָׁעוֹן," אָמַר אַבָּא.','הֵם אָפוּ עוּגָה חֲדָשָׁה, וְהַפַּעַם הִיא יָצְאָה טְעִימָה.'],
+  q:[['מָה לָמְדוּ אַבָּא וְשִׁירָה מֵהַטָּעוּת?','לָשִׂים שָׁעוֹן, כְּדֵי לֹא לִשְׁכֹּחַ אֶת הָעוּגָה',['לֹא לֶאֱפוֹת אַף פַּעַם','לָשִׂים אֶת הָעוּגָה בַּמְּקָרֵר']],['לָמָּה הָעוּגָה נִשְׂרְפָה?','כִּי הֵם שָׁכְחוּ אוֹתָהּ בַּתַּנּוּר',['כִּי הִיא נָפְלָה','כִּי שָׂמוּ בָּהּ מֶלַח']],['מָה קָרָה רִאשׁוֹן?','שִׁירָה הֵרִיחָה שְׂרֵפָה',['הֵם אָפוּ עוּגָה חֲדָשָׁה','אַבָּא אָמַר שֶׁיָּשִׂימוּ שָׁעוֹן']]]},
+ {t:'הַכִּבְשָׂה שֶׁהָלְכָה לְאִבּוּד',spr:['sheep','mount'],gk:'math',goal:'סופרים כדי לדעת מה חסר: 10 פחות 9 זה 1',les:0,s:['בַּשָּׂדֶה הָיוּ עֶשֶׂר כְּבָשִׂים לְבָנוֹת.','בָּעֶרֶב הָרוֹעֶה סָפַר אוֹתָן, וְהָיוּ רַק תֵּשַׁע. חָסְרָה אַחַת!','כִּבְשָׂה אַחַת טִפְּסָה עַל הָהָר וְלֹא יָדְעָה אֵיךְ לָרֶדֶת.','הַכֶּלֶב שֶׁל הָרוֹעֶה רָץ וּמָצָא אוֹתָהּ.','הוּא הוֹבִיל אוֹתָהּ בַּשְּׁבִיל בַּחֲזָרָה לָעֵדֶר.'],
+  q:[['הָיוּ עֶשֶׂר כְּבָשִׂים, וְהָרוֹעֶה סָפַר תֵּשַׁע. כַּמָּה כְּבָשִׂים חָסְרוּ?','1',['9','10']],['לָמָּה הַכִּבְשָׂה לֹא חָזְרָה?','כִּי הִיא לֹא יָדְעָה אֵיךְ לָרֶדֶת מֵהָהָר',['כִּי הִיא יָשְׁנָה','כִּי הִיא כָּעֲסָה']],['מָה קָרָה רִאשׁוֹן?','הָרוֹעֶה סָפַר אֶת הַכְּבָשִׂים',['הַכֶּלֶב מָצָא אֶת הַכִּבְשָׂה','הַכִּבְשָׂה חָזְרָה לָעֵדֶר']]]},
+ {t:'הַמְּכוֹנִית הָאֲדֻמָּה',spr:['car','star'],gk:'value',goal:'לשתף ולשחק בתורות זה כיף יותר',les:1,s:['לְאָדָם יֵשׁ מְכוֹנִית צַעֲצוּעַ אֲדֻמָּה.','הוּא לָקַח אוֹתָהּ לַגַּן כְּדֵי לְשַׂחֵק עִם חֲבֵרִים.','רוֹנִי רָצָה לְשַׂחֵק בָּהּ גַּם.','בַּהַתְחָלָה אָדָם לֹא רָצָה לְהַשְׁאִיל.','אַחַר כָּךְ הֵם בָּנוּ כְּבִישׁ מֵחוֹל, וְשִׂחֲקוּ בְּתוֹרוֹת.','"כָּכָה הַרְבֵּה יוֹתֵר כֵּיף!" אָמַר אָדָם.'],
   q:[['אֵיזֶה צֶבַע הַמְּכוֹנִית?','אֲדֻמָּה',['כְּחֻלָּה','צְהֻבָּה']],['לָמָּה בַּסּוֹף הָיָה יוֹתֵר כֵּיף?','כִּי הֵם שִׂחֲקוּ יַחַד בְּתוֹרוֹת',['כִּי אָדָם שִׂחֵק לְבַד','כִּי הַמְּכוֹנִית נִשְׁבְּרָה']],['מָה קָרָה רִאשׁוֹן?','אָדָם לֹא רָצָה לְהַשְׁאִיל',['הֵם בָּנוּ כְּבִישׁ מֵחוֹל','הֵם שִׂחֲקוּ בְּתוֹרוֹת']]]},
- {t:'שֶׁלֶג בַּחֶרְמוֹן',spr:['mount','cloud'],s:['בַּחֹרֶף נָסְעָה הַמִּשְׁפָּחָה לַחֶרְמוֹן.','עַל הָהָר הָיָה שֶׁלֶג לָבָן וְקַר.','נוֹגָה לָבְשָׁה מְעִיל, כְּפָפוֹת וְכוֹבַע.','הִיא בָּנְתָה אִישׁ שֶׁלֶג עִם אַף מִגֶּזֶר.','בַּסּוֹף כֻּלָּם שָׁתוּ שׁוֹקוֹ חַם.'],
-  q:[['מִמָּה הָיָה הָאַף שֶׁל אִישׁ הַשֶּׁלֶג?','מִגֶּזֶר',['מֵאֶבֶן','מִתַּפּוּחַ']],['לָמָּה נוֹגָה לָבְשָׁה מְעִיל וּכְפָפוֹת?','כִּי בַּחוּץ הָיָה קַר',['כִּי הָיָה חַם','כִּי הִיא הָלְכָה לַיָּם']],['מָה קָרָה רִאשׁוֹן?','הַמִּשְׁפָּחָה נָסְעָה לַחֶרְמוֹן',['נוֹגָה בָּנְתָה אִישׁ שֶׁלֶג','כֻּלָּם שָׁתוּ שׁוֹקוֹ']]]},
- {t:'הַקֶּשֶׁת בַּשָּׁמַיִם',spr:['rainbow','sun'],s:['אַחֲרֵי הַגֶּשֶׁם יָצְאָה הַשֶּׁמֶשׁ.','אִיתַי הִסְתַּכֵּל מֵהַחַלּוֹן וְרָאָה קֶשֶׁת.','הוּא סָפַר אֶת הַצְּבָעִים: אָדֹם, כָּתֹם, צָהֹב, יָרֹק, כָּחֹל וְסָגֹל.','אַבָּא הִסְבִּיר: "קֶשֶׁת יֵשׁ כְּשֶׁיֵּשׁ גַּם שֶׁמֶשׁ וְגַם טִפּוֹת מַיִם."','אִיתַי צִיֵּר אֶת הַקֶּשֶׁת בַּמַּחְבֶּרֶת.'],
-  q:[['כַּמָּה צְבָעִים סָפַר אִיתַי?','6',['3','10']],['לָמָּה הוֹפִיעָה קֶשֶׁת?','כִּי הָיוּ גַּם שֶׁמֶשׁ וְגַם טִפּוֹת מַיִם',['כִּי הָיָה לַיְלָה','כִּי אִיתַי צִיֵּר אוֹתָהּ']],['מָה קָרָה רִאשׁוֹן?','יָרַד גֶּשֶׁם',['אִיתַי רָאָה קֶשֶׁת','אִיתַי צִיֵּר בַּמַּחְבֶּרֶת']]]},
- {t:'הָאֶבֶן הַנּוֹצֶצֶת',spr:['crystal','lantern'],s:['לִיאוֹר וְאַבָּא טִיְּלוּ לְיַד מְעָרָה.','בִּפְנִים הָיָה חָשׁוּךְ, אָז הֵם הִדְלִיקוּ פָּנָס.','עַל הַקִּיר נָצְצָה אֶבֶן כְּחֻלָּה.','"זֶה יַהֲלוֹם?" שָׁאַל לִיאוֹר.','אַבָּא צָחַק: "זֶה גָּבִישׁ. בַּטֶּבַע יֵשׁ הַרְבֵּה אֲבָנִים יָפוֹת."','הֵם צִלְּמוּ אֶת הָאֶבֶן, וְהִשְׁאִירוּ אוֹתָהּ בַּמָּקוֹם.'],
-  q:[['אֵיזֶה צֶבַע הָיְתָה הָאֶבֶן?','כְּחֻלָּה',['אֲדֻמָּה','לְבָנָה']],['לָמָּה הֵם הִדְלִיקוּ פָּנָס?','כִּי בַּמְּעָרָה הָיָה חָשׁוּךְ',['כִּי הָיָה קַר','כִּי הֵם חִפְּשׂוּ אֶת אַבָּא']],['מָה קָרָה רִאשׁוֹן?','הֵם הִדְלִיקוּ פָּנָס',['הֵם רָאוּ אֶבֶן כְּחֻלָּה','הֵם צִלְּמוּ אֶת הָאֶבֶן']]]},
- {t:'הַמַּגְלֵשָׁה בַּגַּן',spr:['star','heart'],s:['בַּגַּן הָיְתָה מַגְלֵשָׁה גְּבוֹהָה.','הַרְבֵּה יְלָדִים עָמְדוּ בַּתּוֹר.','יַלְדָּה קְטַנָּה בָּכְתָה, כִּי הִיא לֹא הִגִּיעָה לַמַּדְרֵגָה.','עִידוֹ עָזַר לָהּ לְטַפֵּס, וְהִיא גָּלְשָׁה וְצָחֲקָה.','הַגַּנֶּנֶת אָמְרָה: "עִידוֹ, אַתָּה חָבֵר טוֹב!"'],
-  q:[['מִי עָזַר לַיַּלְדָּה?','עִידוֹ',['הַגַּנֶּנֶת','אַבָּא']],['לָמָּה הַיַּלְדָּה בָּכְתָה?','כִּי הִיא לֹא הִגִּיעָה לַמַּדְרֵגָה',['כִּי הִיא נָפְלָה','כִּי הִיא רָצְתָה הַבַּיְתָה']],['מָה קָרָה רִאשׁוֹן?','הַיַּלְדָּה בָּכְתָה',['הַיַּלְדָּה גָּלְשָׁה','הַגַּנֶּנֶת דִּבְּרָה עִם עִידוֹ']]]},
- {t:'צְבִיקָה הַצָּב לֹא מְוַתֵּר',spr:['turtle','flower'],s:['צְבִיקָה הַצָּב הָלַךְ לְאַט לְאַט אֶל הַבְּרֵכָה.','הָאַרְנָב רָץ מַהֵר וְצָחַק עָלָיו.','בַּדֶּרֶךְ הָאַרְנָב עָצַר לֶאֱכֹל, וְנִרְדַּם מִתַּחַת לָעֵץ.','צְבִיקָה הִמְשִׁיךְ לָלֶכֶת, צַעַד אַחֲרֵי צַעַד.','כְּשֶׁהָאַרְנָב הִתְעוֹרֵר, צְבִיקָה כְּבָר שָׂחָה בַּבְּרֵכָה.'],
-  q:[['לְאָן הָלַךְ צְבִיקָה?','אֶל הַבְּרֵכָה',['אֶל הַיָּם','אֶל הָהָר']],['לָמָּה הָאַרְנָב לֹא הִגִּיעַ רִאשׁוֹן?','כִּי הוּא נִרְדַּם בַּדֶּרֶךְ',['כִּי הוּא הָלַךְ לְאַט','כִּי הוּא פָּחַד מִמַּיִם']],['מָה קָרָה רִאשׁוֹן?','הָאַרְנָב צָחַק עַל צְבִיקָה',['הָאַרְנָב נִרְדַּם','הָאַרְנָב הִתְעוֹרֵר']]]}];
-/* a "why?" or "what happened first?" question for each of the 6 older stories (by index) */
-const STORY_Q={
- 0:[['לָמָּה מִיצִי לֹא מָצְאָה אֶת הַכַּדּוּר?','כִּי הוּא הָיָה מִתַּחַת לַמִּטָּה, בַּחֹשֶׁךְ',['כִּי הַכַּדּוּר הָיָה בַּגַּן','כִּי מִיצִי יָשְׁנָה']],['מָה קָרָה רִאשׁוֹן?','הַכַּדּוּר הִתְגַּלְגֵּל מִתַּחַת לַמִּטָּה',['נוֹעָה הֵבִיאָה פָּנָס','מִיצִי קָפְצָה מִשִּׂמְחָה']]],
- 1:[['לָמָּה אוֹרֶן הָיָה גֵּאֶה?','כִּי הַפֶּרַח שֶׁלּוֹ גָּדַל',['כִּי הוּא קִבֵּל מַתָּנָה','כִּי הוּא נִצַּח בְּמִשְׂחָק']],['מָה קָרָה רִאשׁוֹן?','אוֹרֶן שָׁתַל זֶרַע',['יָצָא נֶבֶט יָרֹק','פָּרַח פֶּרַח צָהֹב']]],
- 2:[['לָמָּה נִיצוֹץ לֹא הִצְלִיחַ לְהֵרָדֵם?','כִּי הוּא פָּחַד מֵהַחֹשֶׁךְ',['כִּי הוּא הָיָה רָעֵב','כִּי הָיָה רַעַשׁ']]],
- 3:[['לָמָּה סַבְתָּא חִיְּכָה?','כִּי הִיא שָׂמְחָה מֵהַמַּתָּנוֹת',['כִּי הָעוּגָה נָפְלָה','כִּי הָיָה גֶּשֶׁם']]],
- 4:[['לָמָּה דָּנִי רוֹצֶה לִבְנוֹת סִירָה מֵעֵץ?','כִּי נְיָר נִרְטָב בַּגֶּשֶׁם',['כִּי עֵץ יוֹתֵר יָפֶה','כִּי אֵין לוֹ נְיָר']]],
- 5:[['מָה קָרָה רִאשׁוֹן?','חָכָם סָפַר עֲשָׂרָה כּוֹכָבִים',['חָכָם סָפַר עוֹד חֲמִשָּׁה','חָכָם חִיֵּךְ']]]};
+ {t:'שֶׁלֶג בַּחֶרְמוֹן',spr:['mount','cloud'],gk:'sci',goal:'שלג הוא מים קפואים, ובחום הוא נמס',les:0,s:['בַּחֹרֶף נָסְעָה הַמִּשְׁפָּחָה לַחֶרְמוֹן.','עַל הָהָר הָיָה קַר מְאוֹד, וּמֵהֶעֲנָנִים יָרַד שֶׁלֶג לָבָן.','נוֹגָה לָבְשָׁה מְעִיל, כְּפָפוֹת וְכוֹבַע.','הִיא בָּנְתָה אִישׁ שֶׁלֶג עִם אַף מִגֶּזֶר.','בַּבַּיִת הַחַם, הַשֶּׁלֶג עַל הַכְּפָפוֹת נָמֵס וְנִהְיָה מַיִם, כִּי שֶׁלֶג הוּא מַיִם קְפוּאִים.'],
+  q:[['לָמָּה הַשֶּׁלֶג נָמֵס בַּבַּיִת?','כִּי בַּבַּיִת חַם, וְשֶׁלֶג בְּחֹם נִהְיָה מַיִם',['כִּי בַּבַּיִת קַר','כִּי נוֹגָה אָכְלָה אוֹתוֹ']],['לָמָּה נוֹגָה לָבְשָׁה מְעִיל וּכְפָפוֹת?','כִּי בַּחוּץ הָיָה קַר',['כִּי הָיָה חַם','כִּי הִיא הָלְכָה לַיָּם']],['מָה קָרָה רִאשׁוֹן?','הַמִּשְׁפָּחָה נָסְעָה לַחֶרְמוֹן',['נוֹגָה בָּנְתָה אִישׁ שֶׁלֶג','הַשֶּׁלֶג נָמֵס']]]},
+ {t:'הַקֶּשֶׁת בַּשָּׁמַיִם',spr:['rainbow','sun'],gk:'sci',goal:'קשת נוצרת משמש וטיפות מים, ויש בה 7 צבעים',les:1,s:['אַחֲרֵי הַגֶּשֶׁם יָצְאָה הַשֶּׁמֶשׁ.','אִיתַי הִסְתַּכֵּל מֵהַחַלּוֹן וְרָאָה קֶשֶׁת.','הוּא סָפַר שִׁשָּׁה צְבָעִים: אָדֹם, כָּתֹם, צָהֹב, יָרֹק, כָּחֹל וְסָגֹל.','אַבָּא אָמַר: "יֵשׁ עוֹד אֶחָד, כָּחֹל כֵּהֶה, בֵּין הַכָּחֹל לַסָּגֹל. בְּיַחַד שִׁבְעָה!"','"קֶשֶׁת נוֹצֶרֶת כְּשֶׁהַשֶּׁמֶשׁ מְאִירָה עַל טִפּוֹת מַיִם," הִסְבִּיר אַבָּא.'],
+  q:[['כַּמָּה צְבָעִים יֵשׁ בַּקֶּשֶׁת?','7',['3','10']],['לָמָּה הוֹפִיעָה קֶשֶׁת?','כִּי הַשֶּׁמֶשׁ הֵאִירָה עַל טִפּוֹת מַיִם',['כִּי הָיָה לַיְלָה','כִּי הָיָה קַר']],['מָה קָרָה רִאשׁוֹן?','יָרַד גֶּשֶׁם',['אִיתַי רָאָה קֶשֶׁת','אַבָּא הִסְבִּיר עַל הַקֶּשֶׁת']]]},
+ {t:'הָאֶבֶן הַנּוֹצֶצֶת',spr:['crystal','lantern'],gk:'word',goal:'מילה חדשה: גביש, אבן נוצצת שנוצרת בטבע',les:0,s:['לִיאוֹר וְאַבָּא טִיְּלוּ לְיַד מְעָרָה.','בִּפְנִים הָיָה חָשׁוּךְ, אָז הֵם הִדְלִיקוּ פָּנָס.','עַל הַקִּיר נָצְצָה אֶבֶן כְּחֻלָּה.','"זֶה יַהֲלוֹם?" שָׁאַל לִיאוֹר.','אַבָּא צָחַק: "זֶה גָּבִישׁ, אֶבֶן נוֹצֶצֶת שֶׁנּוֹצְרָה בַּטֶּבַע."','הֵם צִלְּמוּ אֶת הָאֶבֶן, וְהִשְׁאִירוּ אוֹתָהּ בַּמָּקוֹם.'],
+  q:[['מָה זֶה גָּבִישׁ?','אֶבֶן נוֹצֶצֶת מֵהַטֶּבַע',['סוּג שֶׁל פָּנָס','חַיָּה שֶׁגָּרָה בַּמְּעָרָה']],['לָמָּה הֵם הִדְלִיקוּ פָּנָס?','כִּי בַּמְּעָרָה הָיָה חָשׁוּךְ',['כִּי הָיָה קַר','כִּי הֵם חִפְּשׂוּ אֶת אַבָּא']],['מָה קָרָה רִאשׁוֹן?','הֵם הִדְלִיקוּ פָּנָס',['הֵם רָאוּ אֶבֶן כְּחֻלָּה','הֵם צִלְּמוּ אֶת הָאֶבֶן']]]},
+ {t:'הַמַּגְלֵשָׁה בַּגַּן',spr:['star','heart'],gk:'value',goal:'כשמישהו מתקשה, עוזרים לו',les:0,s:['בַּגַּן הָיְתָה מַגְלֵשָׁה גְּבוֹהָה.','הַרְבֵּה יְלָדִים עָמְדוּ בַּתּוֹר.','יַלְדָּה קְטַנָּה בָּכְתָה, כִּי הִיא לֹא הִגִּיעָה לַמַּדְרֵגָה.','עִידוֹ עָזַר לָהּ לְטַפֵּס, וְהִיא גָּלְשָׁה וְצָחֲקָה.','הַגַּנֶּנֶת אָמְרָה: "עִידוֹ, אַתָּה חָבֵר טוֹב!"'],
+  q:[['לָמָּה הַגַּנֶּנֶת אָמְרָה שֶׁעִידוֹ חָבֵר טוֹב?','כִּי הוּא עָזַר לְמִישֶׁהִי שֶׁהִתְקַשְּׁתָה',['כִּי הוּא גָּלַשׁ הֲכִי מַהֵר','כִּי הוּא עָמַד רִאשׁוֹן בַּתּוֹר']],['לָמָּה הַיַּלְדָּה בָּכְתָה?','כִּי הִיא לֹא הִגִּיעָה לַמַּדְרֵגָה',['כִּי הִיא נָפְלָה','כִּי הִיא רָצְתָה הַבַּיְתָה']],['מָה קָרָה רִאשׁוֹן?','הַיַּלְדָּה בָּכְתָה',['הַיַּלְדָּה גָּלְשָׁה','הַגַּנֶּנֶת דִּבְּרָה עִם עִידוֹ']]]},
+ {t:'צְבִיקָה הַצָּב לֹא מְוַתֵּר',spr:['turtle','flower'],gk:'value',goal:'מי שממשיך ולא מוותר, מגיע',les:0,s:['צְבִיקָה הַצָּב הָלַךְ לְאַט לְאַט אֶל הַבְּרֵכָה.','הָאַרְנָב רָץ מַהֵר וְצָחַק עָלָיו.','בַּדֶּרֶךְ הָאַרְנָב עָצַר לֶאֱכֹל, וְנִרְדַּם מִתַּחַת לָעֵץ.','צְבִיקָה הִמְשִׁיךְ לָלֶכֶת, צַעַד אַחֲרֵי צַעַד.','כְּשֶׁהָאַרְנָב הִתְעוֹרֵר, צְבִיקָה כְּבָר שָׂחָה בַּבְּרֵכָה.'],
+  q:[['מָה לָמַדְנוּ מִצְּבִיקָה?','מִי שֶׁמַּמְשִׁיךְ וְלֹא מְוַתֵּר, מַגִּיעַ',['שֶׁצָּרִיךְ רַק לָרוּץ מַהֵר','שֶׁכְּדַאי לִישֹׁן בַּדֶּרֶךְ']],['לָמָּה הָאַרְנָב לֹא הִגִּיעַ רִאשׁוֹן?','כִּי הוּא נִרְדַּם בַּדֶּרֶךְ',['כִּי הוּא הָלַךְ לְאַט','כִּי הוּא פָּחַד מִמַּיִם']],['מָה קָרָה רִאשׁוֹן?','הָאַרְנָב צָחַק עַל צְבִיקָה',['הָאַרְנָב נִרְדַּם','הָאַרְנָב הִתְעוֹרֵר']]]}];
+/* extra questions for the 6 older stories (by index): none since #355 — each now has its own 3 questions, the last about the lesson (2-3 per story) */
+const STORY_Q={};
 
 /* ---------- names for the parents' skills view (no nikud) ---------- */
 const SKILLS={'read-nik':'סולם הניקוד: הברות ומילים','nik-1':'ניקוד: קמץ ופתח (אַ)','nik-2':'ניקוד: חיריק (אִי)','nik-3':'ניקוד: חולם (אוֹ)','nik-4':'ניקוד: שורוק וקובוץ (אוּ)','nik-5':'ניקוד: צירי וסגול (אֶ)','nik-6':'ניקוד: שווא',
@@ -6269,216 +6314,257 @@ const S_RAW=[
 [6,'אוֹרֶן עָזַר לְחָבֵר שֶׁנָּפַל, וְהַמּוֹרָה אָמְרָה לוֹ תּוֹדָה.','אורן עזר לחבר שנפל, והמורה אמרה לו תודה.','לְמִי עָזַר אוֹרֶן?','למי עזר אורן?','לְחָבֵר שֶׁנָּפַל',['לַמּוֹרָה','לְאָחִיו']]];
 const sentences=S_RAW.map(([lv,t,p,q,qp,a,ds],id)=>({id,lv,t,p,q,qp,a,ds}));
 
-/* ---------- 3. STORIES: {lv, t, tp, spr, s (vocalized sentences), p (plain, word-aligned), q: [[kind, question, question plain, answer, [distractors]]]}
-   kinds: lit (what the text says) · seq (what happened first) · inf (why / what can we learn) ---------- */
+/* ---------- 3. STORIES: {lv, t, tp, spr, s (vocalized sentences), p (plain, word-aligned), gk, goal, q: [[kind, question, question plain, answer, [distractors]]]}
+   every story teaches one thing (#355): g = [goalKind, goalText] → gk: sci (science / nature fact) · math (math in a real situation) · value (honesty, trying again, kindness...) · word (a new word and its meaning); goal = parent text, no nikud
+   question kinds (2-3 per story, at least one les): lit (what the text says) · seq (what happened first) · inf (why, from the text) · les (what we learned / why — tied to the goal) ---------- */
 const FIRST='מָה קָרָה קֹדֶם?',FIRSTP='מה קרה קודם?';
-const ST=(lv,t,tp,spr,s,p,q)=>({lv,t,tp,spr,s,p,q:q.map(x=>x[0]==='seq'?['seq',FIRST,FIRSTP,x[1],x[2]]:x)});
+const ST=(lv,t,tp,spr,s,p,q,g)=>({lv,t,tp,spr,s,p,gk:g&&g[0],goal:g&&g[1],q:q.map(x=>x[0]==='seq'?['seq',FIRST,FIRSTP,x[1],x[2]]:x)});
 const stories=[
 /* level 1: 4 sentences */
 ST(1,'הַכַּדּוּר שֶׁל אוֹרֶן','הכדור של אורן',['ball','🥅'],
- ['אוֹרֶן קִבֵּל כַּדּוּר חָדָשׁ.','הוּא בָּעַט בַּכַּדּוּר בֶּחָצֵר.','הַכַּדּוּר עָף לַשַּׁעַר.','גּוֹל! אוֹרֶן שָׂמַח מְאוֹד.'],
- ['אורן קיבל כדור חדש.','הוא בעט בכדור בחצר.','הכדור עף לשער.','גול! אורן שמח מאוד.'],
- [['lit','מָה קִבֵּל אוֹרֶן?','מה קיבל אורן?','כַּדּוּר חָדָשׁ',['אוֹפַנַּיִם','סֵפֶר']],['seq','אוֹרֶן קִבֵּל כַּדּוּר',['הַכַּדּוּר עָף לַשַּׁעַר','אוֹרֶן שָׂמַח']],
-  ['inf','לָמָּה אוֹרֶן שָׂמַח?','למה אורן שמח?','כִּי הוּא הִבְקִיעַ גּוֹל',['כִּי יָרַד גֶּשֶׁם','כִּי הַכַּדּוּר נִקְרַע']]]),
+ ['אוֹרֶן בָּעַט שָׁלֹשׁ פְּעָמִים לַשַּׁעַר.','בַּפַּעַם הָרִאשׁוֹנָה הַכַּדּוּר עָף מֵעַל הַשַּׁעַר.','אַחַר כָּךְ הַכַּדּוּר נִכְנַס פַּעֲמַיִם.','אוֹרֶן סָפַר: "שָׁלֹשׁ פָּחוֹת אַחַת, שְׁנֵי גּוֹלִים!"'],
+ ['אורן בעט שלוש פעמים לשער.','בפעם הראשונה הכדור עף מעל השער.','אחר כך הכדור נכנס פעמיים.','אורן ספר: "שלוש פחות אחת, שני גולים!"'],
+ [['lit','כַּמָּה פְּעָמִים בָּעַט אוֹרֶן?','כמה פעמים בעט אורן?','שָׁלֹשׁ',['שְׁתַּיִם','חָמֵשׁ']],['seq','הַכַּדּוּר עָף מֵעַל הַשַּׁעַר',['הַכַּדּוּר נִכְנַס פַּעֲמַיִם','אוֹרֶן סָפַר גּוֹלִים']],
+  ['les','לָמָּה הָיוּ רַק שְׁנֵי גּוֹלִים?','למה היו רק שני גולים?','כִּי פַּעַם אַחַת הַכַּדּוּר לֹא נִכְנַס',['כִּי אוֹרֶן בָּעַט רַק פַּעַם אַחַת','כִּי הַכַּדּוּר נִקְרַע']]],
+ ['math','חיסור: 3 בעיטות פחות החטאה אחת = 2 גולים']),
 ST(1,'הַדָּג וְהַבּוּעוֹת','הדג והבועות',['fish','🫧'],
- ['בַּיָּם גָּר דָּג קָטָן.','הַדָּג עָשָׂה בּוּעוֹת.','הַבּוּעוֹת עָלוּ לְמַעְלָה.','הַדָּג צָחַק: "בּוּעוֹת זֶה כֵּיף!"'],
- ['בים גר דג קטן.','הדג עשה בועות.','הבועות עלו למעלה.','הדג צחק: "בועות זה כיף!"'],
- [['lit','אֵיפֹה גָּר הַדָּג?','איפה גר הדג?','בַּיָּם',['בָּעֵץ','בַּבַּיִת']],['seq','הַדָּג עָשָׂה בּוּעוֹת',['הַבּוּעוֹת עָלוּ לְמַעְלָה','הַדָּג צָחַק']],
-  ['inf','אֵיךְ הַדָּג הִרְגִּישׁ?','איך הדג הרגיש?','שָׂמֵחַ',['עָצוּב','כּוֹעֵס']]]),
+ ['בַּיָּם גָּר דָּג קָטָן.','הַדָּג פָּתַח פֶּה, וְיָצְאָה בּוּעָה.','הַבּוּעָה עָלְתָה וְהִתְפּוֹצְצָה לְמַעְלָה.','בְּתוֹךְ בּוּעָה יֵשׁ אֲוִיר, וַאֲוִיר קַל מִמַּיִם.'],
+ ['בים גר דג קטן.','הדג פתח פה, ויצאה בועה.','הבועה עלתה והתפוצצה למעלה.','בתוך בועה יש אוויר, ואוויר קל ממים.'],
+ [['lit','אֵיפֹה גָּר הַדָּג?','איפה גר הדג?','בַּיָּם',['בָּעֵץ','בַּבַּיִת']],['seq','הַדָּג פָּתַח פֶּה',['הַבּוּעָה עָלְתָה','הַבּוּעָה הִתְפּוֹצְצָה']],
+  ['les','לָמָּה הַבּוּעָה עָלְתָה לְמַעְלָה?','למה הבועה עלתה למעלה?','כִּי אֲוִיר קַל מִמַּיִם',['כִּי הַדָּג דָּחַף אוֹתָהּ','כִּי הַבּוּעָה רָצְתָה לָעוּף']]],
+ ['sci','בועת אוויר עולה במים, כי אוויר קל ממים']),
 ST(1,'סַבָּא וְהַפְּסַנְתֵּר','סבא והפסנתר',['🎹','note'],
- ['לְסַבָּא יֵשׁ פְּסַנְתֵּר גָּדוֹל.','סַבָּא נִגֵּן שִׁיר לְאוֹרֶן.','אוֹרֶן שָׁר אֶת הַשִּׁיר.','סַבְתָּא מָחֲאָה כַּפַּיִם.'],
- ['לסבא יש פסנתר גדול.','סבא ניגן שיר לאורן.','אורן שר את השיר.','סבתא מחאה כפיים.'],
- [['lit','מָה יֵשׁ לְסַבָּא?','מה יש לסבא?','פְּסַנְתֵּר',['גִּיטָרָה','תֹּף']],['seq','סַבָּא נִגֵּן שִׁיר',['אוֹרֶן שָׁר','סַבְתָּא מָחֲאָה כַּפַּיִם']],
-  ['inf','לָמָּה סַבְתָּא מָחֲאָה כַּפַּיִם?','למה סבתא מחאה כפיים?','כִּי הִיא אָהֲבָה אֶת הַשִּׁיר',['כִּי הָיָה לָהּ קַר','כִּי הִיא רָצְתָה לִישֹׁן']]]),
+ ['לְסַבָּא יֵשׁ פְּסַנְתֵּר גָּדוֹל.','סַבָּא נִגֵּן בְּצַד שְׂמֹאל, וְהַצְּלִיל הָיָה נָמוּךְ: בּוֹם!','אוֹרֶן נִגֵּן בְּצַד יָמִין, וְהַצְּלִיל הָיָה גָּבוֹהַּ: טִין!','סַבָּא אָמַר: "שְׂמֹאל נָמוּךְ, יָמִין גָּבוֹהַּ."'],
+ ['לסבא יש פסנתר גדול.','סבא ניגן בצד שמאל, והצליל היה נמוך: בום!','אורן ניגן בצד ימין, והצליל היה גבוה: טין!','סבא אמר: "שמאל נמוך, ימין גבוה."'],
+ [['lit','מָה יֵשׁ לְסַבָּא?','מה יש לסבא?','פְּסַנְתֵּר',['גִּיטָרָה','תֹּף']],['seq','סַבָּא נִגֵּן בְּצַד שְׂמֹאל',['אוֹרֶן נִגֵּן בְּצַד יָמִין','סַבָּא אָמַר "יָמִין גָּבוֹהַּ"']],
+  ['les','אֵיפֹה הַצְּלִילִים הַגְּבוֹהִים בַּפְּסַנְתֵּר?','איפה הצלילים הגבוהים בפסנתר?','בְּצַד יָמִין',['בְּצַד שְׂמֹאל','מִתַּחַת לַפְּסַנְתֵּר']]],
+ ['sci','בפסנתר: בצד ימין צלילים גבוהים, בצד שמאל נמוכים']),
 ST(1,'הַחֲתוּלָה עַל הַגַּג','החתולה על הגג',['cat','🪜'],
- ['הַחֲתוּלָה מִיקָה עָלְתָה עַל הַגַּג.','הִיא פָּחֲדָה לָרֶדֶת.','אַבָּא הֵבִיא סֻלָּם.','מִיקָה יָרְדָה בַּסֻּלָּם, לְאַט לְאַט.'],
- ['החתולה מיקה עלתה על הגג.','היא פחדה לרדת.','אבא הביא סולם.','מיקה ירדה בסולם, לאט לאט.'],
+ ['הַחֲתוּלָה מִיקָה עָלְתָה עַל הַגַּג.','לַחֲתוּלִים קַל לַעֲלוֹת, אֲבָל קָשֶׁה לָרֶדֶת.','אַבָּא הֵבִיא סֻלָּם.','מִיקָה יָרְדָה בַּסֻּלָּם, לְאַט לְאַט.'],
+ ['החתולה מיקה עלתה על הגג.','לחתולים קל לעלות, אבל קשה לרדת.','אבא הביא סולם.','מיקה ירדה בסולם, לאט לאט.'],
  [['lit','מָה הֵבִיא אַבָּא?','מה הביא אבא?','סֻלָּם',['כַּדּוּר','חָלָב']],['seq','מִיקָה עָלְתָה עַל הַגַּג',['אַבָּא הֵבִיא סֻלָּם','מִיקָה יָרְדָה']],
-  ['inf','לָמָּה אַבָּא הֵבִיא סֻלָּם?','למה אבא הביא סולם?','כְּדֵי לַעֲזֹר לְמִיקָה לָרֶדֶת',['כְּדֵי לְתַקֵּן אֶת הַגַּג','כְּדֵי לִקְטֹף תַּפּוּחִים']]]),
+  ['les','לָמָּה מִיקָה לֹא יָרְדָה לְבַד?','למה מיקה לא ירדה לבד?','כִּי לַחֲתוּלִים קָשֶׁה לָרֶדֶת',['כִּי הִיא רָצְתָה לִישֹׁן','כִּי הִיא רָאֲתָה צִפּוֹר']]],
+ ['sci','לחתולים קל לטפס למעלה וקשה לרדת למטה']),
 ST(1,'הַחַלְלִית מֵהַקַּרְטוֹן','החללית מהקרטון',['🚀','star'],
- ['אוֹרֶן מָצָא קַרְטוֹן גָּדוֹל.','הוּא צִיֵּר עָלָיו חַלּוֹן וְכוֹכָבִים.','עַכְשָׁו זוֹ חַלְלִית!','אוֹרֶן יָשַׁב בִּפְנִים וְסָפַר: "שָׁלֹשׁ, שְׁתַּיִם, אַחַת... הַמְרָאָה!"'],
- ['אורן מצא קרטון גדול.','הוא צייר עליו חלון וכוכבים.','עכשיו זו חללית!','אורן ישב בפנים וספר: "שלוש, שתיים, אחת... המראה!"'],
+ ['אוֹרֶן מָצָא קַרְטוֹן גָּדוֹל.','הוּא צִיֵּר עָלָיו חַלּוֹן וְכוֹכָבִים.','עַכְשָׁו זוֹ חַלְלִית!','אוֹרֶן יָשַׁב בִּפְנִים וְסָפַר אָחוֹרָה: "שָׁלֹשׁ, שְׁתַּיִם, אַחַת... הַמְרָאָה!"'],
+ ['אורן מצא קרטון גדול.','הוא צייר עליו חלון וכוכבים.','עכשיו זו חללית!','אורן ישב בפנים וספר אחורה: "שלוש, שתיים, אחת... המראה!"'],
  [['lit','מָה מָצָא אוֹרֶן?','מה מצא אורן?','קַרְטוֹן גָּדוֹל',['כַּדּוּר','סֵפֶר']],['seq','אוֹרֶן מָצָא קַרְטוֹן',['אוֹרֶן צִיֵּר כּוֹכָבִים','אוֹרֶן יָשַׁב בִּפְנִים']],
-  ['inf','לָמָּה אוֹרֶן סָפַר "שָׁלֹשׁ, שְׁתַּיִם, אַחַת"?','למה אורן ספר "שלוש, שתיים, אחת"?','כִּי הַחַלְלִית מַמְרִיאָה',['כִּי הוּא לָמַד חֶשְׁבּוֹן','כִּי הוּא הָלַךְ לִישֹׁן']]]),
+  ['les','אֵיךְ סוֹפְרִים אָחוֹרָה?','איך סופרים אחורה?','מֵהַמִּסְפָּר הַגָּדוֹל לַקָּטָן',['מֵהַמִּסְפָּר הַקָּטָן לַגָּדוֹל','בְּלִי מִסְפָּרִים']]],
+ ['math','ספירה לאחור: 3, 2, 1 — מהמספר הגדול לקטן']),
 ST(1,'פִּלְפֵּל וְהַשְּׁלוּלִית','פלפל והשלולית',['dog','🌧️'],
- ['יָרַד גֶּשֶׁם, וְהָיְתָה שְׁלוּלִית בֶּחָצֵר.','הַגּוּר פִּלְפֵּל קָפַץ לַשְּׁלוּלִית.','הוּא נִהְיָה רָטֹב וּמְלֻכְלָךְ.','נוֹעָה רָחֲצָה אוֹתוֹ בְּמַיִם חַמִּים.'],
- ['ירד גשם, והייתה שלולית בחצר.','הגור פלפל קפץ לשלולית.','הוא נהיה רטוב ומלוכלך.','נועה רחצה אותו במים חמים.'],
- [['lit','לְאָן קָפַץ הַגּוּר?','לאן קפץ הגור?','לַשְּׁלוּלִית',['לַבְּרֵכָה','לַמִּטָּה']],['seq','יָרַד גֶּשֶׁם',['הַגּוּר קָפַץ','נוֹעָה רָחֲצָה אֶת הַגּוּר']],
-  ['inf','לָמָּה נוֹעָה רָחֲצָה אֶת הַגּוּר?','למה נועה רחצה את הגור?','כִּי הוּא הָיָה מְלֻכְלָךְ',['כִּי הוּא הָיָה רָעֵב','כִּי הוּא הָיָה עָיֵף']]]),
+ ['יָרַד גֶּשֶׁם, וְהָיְתָה שְׁלוּלִית בֶּחָצֵר.','הַגּוּר פִּלְפֵּל קָפַץ לַשְּׁלוּלִית.','הַשֶּׁמֶשׁ חִמְּמָה אֶת הַמַּיִם, וְהֵם עָלוּ לָאֲוִיר.','פִּלְפֵּל חִפֵּשׂ, אֲבָל הַשְּׁלוּלִית נֶעֶלְמָה.'],
+ ['ירד גשם, והייתה שלולית בחצר.','הגור פלפל קפץ לשלולית.','השמש חיממה את המים, והם עלו לאוויר.','פלפל חיפש, אבל השלולית נעלמה.'],
+ [['lit','לְאָן קָפַץ הַגּוּר?','לאן קפץ הגור?','לַשְּׁלוּלִית',['לַבְּרֵכָה','לַמִּטָּה']],['seq','יָרַד גֶּשֶׁם',['הַשֶּׁמֶשׁ חִמְּמָה אֶת הַמַּיִם','הַשְּׁלוּלִית נֶעֶלְמָה']],
+  ['les','לְאָן הָלְכוּ הַמַּיִם שֶׁל הַשְּׁלוּלִית?','לאן הלכו המים של השלולית?','הֵם עָלוּ לָאֲוִיר',['פִּלְפֵּל שָׁתָה אוֹתָם','הֵם זָרְמוּ לַיָּם']]],
+ ['sci','השמש מחממת את המים והם עולים לאוויר (התאדות)']),
 ST(1,'אַרְמוֹן בַּחוֹל','ארמון בחול',['🏖️','wave'],
  ['אוֹרֶן וְאַבָּא הָלְכוּ לַחוֹף.','הֵם בָּנוּ אַרְמוֹן מֵחוֹל רָטֹב.','גַּל גָּדוֹל הִגִּיעַ וְהָרַס אֶת הָאַרְמוֹן.','אוֹרֶן צָחַק: "נִבְנֶה אַרְמוֹן חָדָשׁ, רָחוֹק מֵהַמַּיִם!"'],
  ['אורן ואבא הלכו לחוף.','הם בנו ארמון מחול רטוב.','גל גדול הגיע והרס את הארמון.','אורן צחק: "נבנה ארמון חדש, רחוק מהמים!"'],
  [['lit','מִמָּה בָּנוּ אֶת הָאַרְמוֹן?','ממה בנו את הארמון?','מֵחוֹל',['מִקֻּבִּיּוֹת','מִקַּרְטוֹן']],['seq','הֵם בָּנוּ אַרְמוֹן',['גַּל הָרַס אֶת הָאַרְמוֹן','אוֹרֶן צָחַק']],
-  ['inf','לָמָּה הָאַרְמוֹן הֶחָדָשׁ יִהְיֶה רָחוֹק מֵהַמַּיִם?','למה הארמון החדש יהיה רחוק מהמים?','כְּדֵי שֶׁהַגַּלִּים לֹא יַהַרְסוּ אוֹתוֹ',['כְּדֵי שֶׁיִּהְיֶה חַם','כְּדֵי לִרְאוֹת דָּגִים']]]),
+  ['les','לָמָּה הָאַרְמוֹן הֶחָדָשׁ יִהְיֶה רָחוֹק מֵהַמַּיִם?','למה הארמון החדש יהיה רחוק מהמים?','כְּדֵי שֶׁהַגַּלִּים לֹא יַהַרְסוּ אוֹתוֹ',['כְּדֵי שֶׁיִּהְיֶה חַם','כְּדֵי לִרְאוֹת דָּגִים']]],
+ ['value','לומדים מטעות: בונים שוב, רחוק מהגלים']),
 ST(1,'הַסַּל הָרִאשׁוֹן','הסל הראשון',['🏀','🧺'],
  ['דָּנִי זָרַק כַּדּוּר לַסַּל, וְהַכַּדּוּר נָפַל.','הוּא זָרַק שׁוּב, וְשׁוּב לֹא הִצְלִיחַ.','אַבָּא אָמַר: "תִּסְתַּכֵּל עַל הַסַּל וְתִזְרֹק."','דָּנִי זָרַק, וְהַכַּדּוּר נִכְנַס!'],
  ['דני זרק כדור לסל, והכדור נפל.','הוא זרק שוב, ושוב לא הצליח.','אבא אמר: "תסתכל על הסל ותזרוק."','דני זרק, והכדור נכנס!'],
  [['lit','לְאָן זָרַק דָּנִי אֶת הַכַּדּוּר?','לאן זרק דני את הכדור?','לַסַּל',['לַשַּׁעַר','לַבְּרֵכָה']],['seq','הַכַּדּוּר נָפַל',['אַבָּא נָתַן עֵצָה','הַכַּדּוּר נִכְנַס']],
-  ['inf','מָה עָזַר לְדָנִי לְהַצְלִיחַ?','מה עזר לדני להצליח?','הָעֵצָה שֶׁל אַבָּא',['כַּדּוּר חָדָשׁ','סַל נָמוּךְ']]]),
+  ['les','מָה עָזַר לְדָנִי לְהַצְלִיחַ?','מה עזר לדני להצליח?','הָעֵצָה שֶׁל אַבָּא',['כַּדּוּר חָדָשׁ','סַל נָמוּךְ']]],
+ ['value','מנסים שוב ומקשיבים לעצה']),
 /* level 2: 5 sentences */
 ST(2,'שִׁעוּר שְׂחִיָּה','שיעור שחייה',['🏊','wave'],
- ['הַיּוֹם אוֹרֶן הָלַךְ לְשִׁעוּר שְׂחִיָּה.','בַּהַתְחָלָה הַמַּיִם הָיוּ קָרִים.','הַמְּאַמֶּנֶת נָתְנָה לוֹ קֶרֶשׁ צָף.','אוֹרֶן בָּעַט בָּרַגְלַיִם וְשָׂחָה עַד הַקָּצֶה.','"מָחָר אֲנִי רוֹצֶה לָבוֹא שׁוּב!" הוּא אָמַר.'],
- ['היום אורן הלך לשיעור שחייה.','בהתחלה המים היו קרים.','המאמנת נתנה לו קרש צף.','אורן בעט ברגליים ושחה עד הקצה.','"מחר אני רוצה לבוא שוב!" הוא אמר.'],
- [['lit','מָה נָתְנָה הַמְּאַמֶּנֶת לְאוֹרֶן?','מה נתנה המאמנת לאורן?','קֶרֶשׁ צָף',['כַּדּוּר','מַגֶּבֶת']],['seq','הַמַּיִם הָיוּ קָרִים',['אוֹרֶן שָׂחָה עַד הַקָּצֶה','אוֹרֶן אָמַר שֶׁהוּא רוֹצֶה לָבוֹא שׁוּב']],
-  ['inf','אֵיךְ אוֹרֶן הִרְגִּישׁ בַּסּוֹף?','איך אורן הרגיש בסוף?','הוּא נֶהֱנָה',['הוּא פָּחַד','הוּא כָּעַס']]]),
+ ['הַיּוֹם אוֹרֶן הָלַךְ לְשִׁעוּר שְׂחִיָּה.','בַּהַתְחָלָה הַמַּיִם הָיוּ קָרִים, וְאוֹרֶן רָצָה לָצֵאת.','הַמְּאַמֶּנֶת נָתְנָה לוֹ קֶרֶשׁ צָף.','אוֹרֶן בָּעַט בָּרַגְלַיִם וְשָׂחָה עַד הַקָּצֶה.','"בַּהַתְחָלָה קָשֶׁה, וְאַחַר כָּךְ כֵּיף!" הוּא אָמַר.'],
+ ['היום אורן הלך לשיעור שחייה.','בהתחלה המים היו קרים, ואורן רצה לצאת.','המאמנת נתנה לו קרש צף.','אורן בעט ברגליים ושחה עד הקצה.','"בהתחלה קשה, ואחר כך כיף!" הוא אמר.'],
+ [['lit','מָה נָתְנָה הַמְּאַמֶּנֶת לְאוֹרֶן?','מה נתנה המאמנת לאורן?','קֶרֶשׁ צָף',['כַּדּוּר','מַגֶּבֶת']],['seq','הַמַּיִם הָיוּ קָרִים',['אוֹרֶן שָׂחָה עַד הַקָּצֶה','אוֹרֶן אָמַר שֶׁזֶּה כֵּיף']],
+  ['les','מָה אוֹרֶן לָמַד בַּשִּׁעוּר?','מה אורן למד בשיעור?','שֶׁבַּהַתְחָלָה קָשֶׁה, וְאַחַר כָּךְ כֵּיף',['שֶׁהַמַּיִם תָּמִיד חַמִּים','שֶׁאָסוּר לִבְעֹט בָּרַגְלַיִם']]],
+ ['value','דבר חדש קשה בהתחלה, ואחר כך נהיה קל וכיף']),
 ST(2,'הָרוֹבּוֹט שֶׁל נוֹעָה','הרובוט של נועה',['bot','cork'],
- ['נוֹעָה בָּנְתָה רוֹבּוֹט מִקֻּפְסָאוֹת.','לָרוֹבּוֹט הָיוּ עֵינַיִם מִפְּקָקִים.','הַיָּדַיִם הָיוּ מִגְּלִילֵי נְיָר.','נוֹעָה קָרְאָה לוֹ "בִּיפּ".','עַכְשָׁו בִּיפּ שׁוֹמֵר עַל הַחֶדֶר שֶׁלָּהּ.'],
- ['נועה בנתה רובוט מקופסאות.','לרובוט היו עיניים מפקקים.','הידיים היו מגלילי נייר.','נועה קראה לו "ביפ".','עכשיו ביפ שומר על החדר שלה.'],
- [['lit','מִמָּה הָיוּ הָעֵינַיִם שֶׁל הָרוֹבּוֹט?','ממה היו העיניים של הרובוט?','מִפְּקָקִים',['מִכַּפְתּוֹרִים','מִנְּיָר']],['seq','נוֹעָה בָּנְתָה רוֹבּוֹט',['נוֹעָה קָרְאָה לוֹ בִּיפּ','בִּיפּ שׁוֹמֵר עַל הַחֶדֶר']],
-  ['inf','מָה נוֹעָה אוֹהֶבֶת לַעֲשׂוֹת?','מה נועה אוהבת לעשות?','לִבְנוֹת דְּבָרִים',['לִשְׂחוֹת','לִישֹׁן']]]),
-ST(2,'הָאַרְנָב שֶׁל הַגַּן','הארנב של הגן',['🐰','🥕'],
- ['בַּגַּן שֶׁל אוֹרֶן יֵשׁ אַרְנָב לָבָן.','כָּל יוֹם יֶלֶד אַחֵר מַאֲכִיל אוֹתוֹ.','הַיּוֹם הַתּוֹר שֶׁל אוֹרֶן.','הוּא הֵבִיא לָאַרְנָב חַסָּה וְגֶזֶר.','הָאַרְנָב אָכַל הַכֹּל וְקָפַץ מִשִּׂמְחָה.'],
- ['בגן של אורן יש ארנב לבן.','כל יום ילד אחר מאכיל אותו.','היום התור של אורן.','הוא הביא לארנב חסה וגזר.','הארנב אכל הכול וקפץ משמחה.'],
- [['lit','מָה הֵבִיא אוֹרֶן לָאַרְנָב?','מה הביא אורן לארנב?','חַסָּה וְגֶזֶר',['לֶחֶם וּגְבִינָה','עוּגָה']],['seq','אוֹרֶן הֵבִיא אֹכֶל',['הָאַרְנָב אָכַל','הָאַרְנָב קָפַץ']],
-  ['inf','לָמָּה הָאַרְנָב קָפַץ?','למה הארנב קפץ?','כִּי הוּא שָׂמַח',['כִּי הוּא פָּחַד','כִּי הָיָה לוֹ קַר']]]),
+ ['נוֹעָה לֹא זָרְקָה לַפַּח קֻפְסָאוֹת וּפְקָקִים.','הִיא בָּנְתָה מֵהֶם רוֹבּוֹט.','לָרוֹבּוֹט הָיוּ עֵינַיִם מִפְּקָקִים וְיָדַיִם מִגְּלִילֵי נְיָר.','נוֹעָה קָרְאָה לוֹ "בִּיפּ".','"גַּם מִמָּה שֶׁזּוֹרְקִים אֶפְשָׁר לִבְנוֹת!" הִיא אָמְרָה.'],
+ ['נועה לא זרקה לפח קופסאות ופקקים.','היא בנתה מהם רובוט.','לרובוט היו עיניים מפקקים וידיים מגלילי נייר.','נועה קראה לו "ביפ".','"גם ממה שזורקים אפשר לבנות!" היא אמרה.'],
+ [['lit','מִמָּה הָיוּ הָעֵינַיִם שֶׁל הָרוֹבּוֹט?','ממה היו העיניים של הרובוט?','מִפְּקָקִים',['מִכַּפְתּוֹרִים','מִנְּיָר']],['seq','נוֹעָה לֹא זָרְקָה אֶת הַקֻּפְסָאוֹת',['נוֹעָה בָּנְתָה רוֹבּוֹט','נוֹעָה קָרְאָה לוֹ בִּיפּ']],
+  ['les','מָה נוֹעָה לִמְּדָה אוֹתָנוּ?','מה נועה לימדה אותנו?','שֶׁאֶפְשָׁר לִבְנוֹת מִמָּה שֶׁזּוֹרְקִים',['שֶׁצָּרִיךְ לִקְנוֹת רוֹבּוֹט','שֶׁקֻּפְסָאוֹת זוֹרְקִים לַפַּח']]],
+ ['value','שימוש חוזר: בונים דברים חדשים ממה שזורקים']),
+ST(2,'הָאַרְנָב שֶׁל הַגַּן','הארנב של הגן',['🐰','🌾'],
+ ['בַּגַּן שֶׁל אוֹרֶן יֵשׁ אַרְנָב לָבָן.','הַיּוֹם אוֹרֶן הֵבִיא לָאַרְנָב עֵשֶׂב יָבֵשׁ.','הָאַרְנָב לָעַס וְלָעַס בְּלִי הַפְסָקָה.','הַגַּנֶּנֶת אָמְרָה: "לָאַרְנָב יֵשׁ שִׁנַּיִם שֶׁגְּדֵלוֹת כָּל הַזְּמַן."','"כְּשֶׁהוּא לוֹעֵס, הַשִּׁנַּיִם לֹא נִהְיוֹת אֲרֻכּוֹת מִדַּי."'],
+ ['בגן של אורן יש ארנב לבן.','היום אורן הביא לארנב עשב יבש.','הארנב לעס ולעס בלי הפסקה.','הגננת אמרה: "לארנב יש שיניים שגדלות כל הזמן."','"כשהוא לועס, השיניים לא נהיות ארוכות מדי."'],
+ [['lit','מָה הֵבִיא אוֹרֶן לָאַרְנָב?','מה הביא אורן לארנב?','עֵשֶׂב יָבֵשׁ',['לֶחֶם וּגְבִינָה','עוּגָה']],['seq','אוֹרֶן הֵבִיא עֵשֶׂב',['הָאַרְנָב לָעַס','הַגַּנֶּנֶת דִּבְּרָה עַל הַשִּׁנַּיִם']],
+  ['les','לָמָּה טוֹב שֶׁהָאַרְנָב לוֹעֵס הַרְבֵּה?','למה טוב שהארנב לועס הרבה?','כְּדֵי שֶׁהַשִּׁנַּיִם לֹא יִהְיוּ אֲרֻכּוֹת מִדַּי',['כְּדֵי שֶׁיִּהְיֶה לוֹ חַם','כְּדֵי לִקְפֹּץ גָּבוֹהַּ']]],
+ ['sci','לארנב שיניים שגדלות כל הזמן; לעיסת עשב שוחקת אותן']),
 ST(2,'תִּזְמֹרֶת בַּמִּטְבָּח','תזמורת במטבח',['🥁','🥄'],
- ['אוֹרֶן וְאָחִיו מָצְאוּ סִירִים בַּמִּטְבָּח.','אוֹרֶן תּוֹפֵף עַל סִיר בְּכַף.','הָאָח הַקָּטָן דָּפַק בִּשְׁנֵי מִכְסִים.','הָיָה רַעַשׁ גָּדוֹל, אֲבָל גַּם הַרְבֵּה צְחוֹק.','אִמָּא אָמְרָה: "יֵשׁ לָנוּ תִּזְמֹרֶת בַּבַּיִת!"'],
- ['אורן ואחיו מצאו סירים במטבח.','אורן תופף על סיר בכף.','האח הקטן דפק בשני מכסים.','היה רעש גדול, אבל גם הרבה צחוק.','אמא אמרה: "יש לנו תזמורת בבית!"'],
+ ['אוֹרֶן וְאָחִיו מָצְאוּ סִירִים בַּמִּטְבָּח.','אוֹרֶן תּוֹפֵף עַל סִיר בְּכַף.','הָאָח הַקָּטָן דָּפַק בִּשְׁנֵי מִכְסִים.','הָיָה רַעַשׁ גָּדוֹל, אֲבָל גַּם הַרְבֵּה צְחוֹק.','אִמָּא אָמְרָה: "כְּשֶׁמְּנַגְּנִים יַחַד, זוֹ תִּזְמֹרֶת!"'],
+ ['אורן ואחיו מצאו סירים במטבח.','אורן תופף על סיר בכף.','האח הקטן דפק בשני מכסים.','היה רעש גדול, אבל גם הרבה צחוק.','אמא אמרה: "כשמנגנים יחד, זו תזמורת!"'],
  [['lit','בַּמֶּה תּוֹפֵף אוֹרֶן?','במה תופף אורן?','בְּכַף',['בְּעִפָּרוֹן','בְּמַזְלֵג']],['seq','הֵם מָצְאוּ סִירִים',['אוֹרֶן תּוֹפֵף','אִמָּא אָמְרָה שֶׁיֵּשׁ תִּזְמֹרֶת']],
-  ['inf','לָמָּה אִמָּא אָמְרָה "תִּזְמֹרֶת"?','למה אמא אמרה "תזמורת"?','כִּי הֵם נִגְּנוּ יַחַד',['כִּי הֵם שָׁרוּ בַּגַּן','כִּי הֵם בִּשְּׁלוּ אֹכֶל']]]),
+  ['les','מָה זֹאת תִּזְמֹרֶת?','מה זאת תזמורת?','כַּמָּה נַגָּנִים שֶׁמְּנַגְּנִים יַחַד',['סִיר גָּדוֹל בַּמִּטְבָּח','יֶלֶד אֶחָד שֶׁשָּׁר']]],
+ ['word','תזמורת = כמה נגנים שמנגנים יחד']),
 ST(2,'פַּס שֶׁל אוֹר','פס של אור',['star','moon'],
- ['בַּלַּיְלָה אוֹרֶן וְאַבָּא שָׁכְבוּ עַל הַדֶּשֶׁא.','הֵם הִסְתַּכְּלוּ עַל הַכּוֹכָבִים.','פִּתְאוֹם עָבַר בַּשָּׁמַיִם פַּס שֶׁל אוֹר.','"זֶה מֵטֵאוֹר!" אָמַר אַבָּא.','אוֹרֶן לָחַשׁ מִשְׁאָלָה, וְלֹא סִפֵּר לְאַף אֶחָד.'],
- ['בלילה אורן ואבא שכבו על הדשא.','הם הסתכלו על הכוכבים.','פתאום עבר בשמיים פס של אור.','"זה מטאור!" אמר אבא.','אורן לחש משאלה, ולא סיפר לאף אחד.'],
- [['lit','אֵיפֹה שָׁכְבוּ אוֹרֶן וְאַבָּא?','איפה שכבו אורן ואבא?','עַל הַדֶּשֶׁא',['עַל הַמִּטָּה','עַל הַחוֹל']],['seq','הֵם הִסְתַּכְּלוּ עַל הַכּוֹכָבִים',['עָבַר פַּס שֶׁל אוֹר','אוֹרֶן לָחַשׁ מִשְׁאָלָה']],
-  ['inf','לָמָּה אוֹרֶן לֹא סִפֵּר אֶת הַמִּשְׁאָלָה?','למה אורן לא סיפר את המשאלה?','כִּי הִיא סוֹד שֶׁלּוֹ',['כִּי הוּא שָׁכַח אוֹתָהּ','כִּי אַבָּא יָשַׁן']]]),
+ ['בַּלַּיְלָה אוֹרֶן וְאַבָּא שָׁכְבוּ עַל הַדֶּשֶׁא.','הֵם הִסְתַּכְּלוּ עַל הַכּוֹכָבִים.','פִּתְאוֹם עָבַר בַּשָּׁמַיִם פַּס שֶׁל אוֹר.','"זֶה מֵטֵאוֹר," אָמַר אַבָּא, "אֶבֶן קְטַנָּה מֵהֶחָלָל שֶׁנִּשְׂרֶפֶת בָּאֲוִיר."','אוֹרֶן אָמַר: "חָשַׁבְתִּי שֶׁזֶּה כּוֹכָב נוֹפֵל!"'],
+ ['בלילה אורן ואבא שכבו על הדשא.','הם הסתכלו על הכוכבים.','פתאום עבר בשמיים פס של אור.','"זה מטאור," אמר אבא, "אבן קטנה מהחלל שנשרפת באוויר."','אורן אמר: "חשבתי שזה כוכב נופל!"'],
+ [['lit','אֵיפֹה שָׁכְבוּ אוֹרֶן וְאַבָּא?','איפה שכבו אורן ואבא?','עַל הַדֶּשֶׁא',['עַל הַמִּטָּה','עַל הַחוֹל']],['seq','הֵם הִסְתַּכְּלוּ עַל הַכּוֹכָבִים',['עָבַר פַּס שֶׁל אוֹר','אַבָּא אָמַר "מֵטֵאוֹר"']],
+  ['les','מָה הָיָה הַפַּס שֶׁל הָאוֹר?','מה היה הפס של האור?','אֶבֶן מֵהֶחָלָל שֶׁנִּשְׂרְפָה',['כּוֹכָב שֶׁנָּפַל','פָּנָס שֶׁל אַבָּא']]],
+ ['sci','מטאור = אבן קטנה מהחלל שנשרפת באוויר ומאירה (לא כוכב)']),
 ST(2,'הַפִּיל וְהָעַכְבָּר','הפיל והעכבר',['🐘','🐭'],
  ['פִּיל גָּדוֹל הָלַךְ בַּיַּעַר.','הוּא רָאָה עַכְבָּר קָטָן שֶׁבּוֹכֶה.','"הָאֱגוֹז שֶׁלִּי נָפַל לַבּוֹר," אָמַר הָעַכְבָּר.','הַפִּיל הוֹרִיד אֶת הַחֶדֶק וְהוֹצִיא אֶת הָאֱגוֹז.','הָעַכְבָּר אָמַר: "תּוֹדָה, חָבֵר גָּדוֹל!"'],
  ['פיל גדול הלך ביער.','הוא ראה עכבר קטן שבוכה.','"האגוז שלי נפל לבור," אמר העכבר.','הפיל הוריד את החדק והוציא את האגוז.','העכבר אמר: "תודה, חבר גדול!"'],
  [['lit','מָה נָפַל לַבּוֹר?','מה נפל לבור?','אֱגוֹז',['גְּבִינָה','כַּדּוּר']],['seq','הָעַכְבָּר בָּכָה',['הַפִּיל הוֹצִיא אֶת הָאֱגוֹז','הָעַכְבָּר אָמַר תּוֹדָה']],
-  ['inf','לָמָּה הַפִּיל הִצְלִיחַ לַעֲזֹר?','למה הפיל הצליח לעזור?','כִּי יֵשׁ לוֹ חֶדֶק אָרֹךְ',['כִּי הוּא קָטָן','כִּי הוּא יוֹדֵעַ לָעוּף']]]),
+  ['les','לָמָּה הַפִּיל הִצְלִיחַ לַעֲזֹר?','למה הפיל הצליח לעזור?','כִּי יֵשׁ לוֹ חֶדֶק אָרֹךְ',['כִּי הוּא קָטָן','כִּי הוּא יוֹדֵעַ לָעוּף']]],
+ ['sci','הפיל משתמש בחדק כמו ביד: מרים ותופס']),
 ST(2,'מִבְצָר שֶׁל שְׂמִיכוֹת','מבצר של שמיכות',['🏰','lantern'],
  ['בַּחוּץ יָרַד גֶּשֶׁם חָזָק.','אוֹרֶן וְאַבָּא לֹא יָכְלוּ לָצֵאת לְשַׂחֵק.','הֵם בָּנוּ מִבְצָר מִכִּסְאוֹת וּשְׂמִיכוֹת.','בִּפְנִים הֵם קָרְאוּ סִפּוּרִים עִם פָּנָס.','אוֹרֶן אָמַר: "יוֹם גֶּשֶׁם הוּא יוֹם מְצֻיָּן!"'],
  ['בחוץ ירד גשם חזק.','אורן ואבא לא יכלו לצאת לשחק.','הם בנו מבצר מכיסאות ושמיכות.','בפנים הם קראו סיפורים עם פנס.','אורן אמר: "יום גשם הוא יום מצוין!"'],
  [['lit','מִמָּה בָּנוּ אֶת הַמִּבְצָר?','ממה בנו את המבצר?','מִכִּסְאוֹת וּשְׂמִיכוֹת',['מֵחוֹל','מִקֻּבִּיּוֹת']],['seq','הֵם בָּנוּ מִבְצָר',['הֵם קָרְאוּ סִפּוּרִים','אוֹרֶן אָמַר שֶׁהַיּוֹם מְצֻיָּן']],
-  ['inf','לָמָּה הֵם שִׂחֲקוּ בַּבַּיִת?','למה הם שיחקו בבית?','כִּי בַּחוּץ יָרַד גֶּשֶׁם',['כִּי הָיָה לַיְלָה','כִּי אַבָּא הָיָה חוֹלֶה']]]),
+  ['les','מָה אוֹרֶן גִּלָּה בְּיוֹם הַגֶּשֶׁם?','מה אורן גילה ביום הגשם?','שֶׁגַּם בַּבַּיִת אֶפְשָׁר לֵהָנוֹת',['שֶׁגֶּשֶׁם תָּמִיד מְשַׁעֲמֵם','שֶׁאָסוּר לִקְרֹא עִם פָּנָס']]],
+ ['value','כשאי אפשר לצאת, ממציאים משחק בבית']),
 ST(2,'מְסִירָה לְחָבֵר','מסירה לחבר',['⚽','🥅'],
  ['בַּהַפְסָקָה הַיְּלָדִים שִׂחֲקוּ כַּדּוּרֶגֶל.','אוֹרֶן רָץ עִם הַכַּדּוּר לְבַד.','שְׁלוֹשָׁה יְלָדִים עָמְדוּ מוּלוֹ, וְהוּא לֹא עָבַר.','אָז הוּא מָסַר לְעוֹמֶר, וְעוֹמֶר הִבְקִיעַ.','אוֹרֶן הֵבִין: בְּיַחַד קַל יוֹתֵר.'],
  ['בהפסקה הילדים שיחקו כדורגל.','אורן רץ עם הכדור לבד.','שלושה ילדים עמדו מולו, והוא לא עבר.','אז הוא מסר לעומר, ועומר הבקיע.','אורן הבין: ביחד קל יותר.'],
  [['lit','לְמִי מָסַר אוֹרֶן?','למי מסר אורן?','לְעוֹמֶר',['לְדָנִי','לַמּוֹרֶה']],['seq','אוֹרֶן רָץ לְבַד',['אוֹרֶן מָסַר לְעוֹמֶר','עוֹמֶר הִבְקִיעַ']],
-  ['inf','מָה אוֹרֶן לָמַד?','מה אורן למד?','שֶׁבְּיַחַד קַל יוֹתֵר',['שֶׁצָּרִיךְ לָרוּץ לְבַד','שֶׁכַּדּוּרֶגֶל מְשַׁעֲמֵם']]]),
+  ['les','מָה אוֹרֶן לָמַד?','מה אורן למד?','שֶׁבְּיַחַד קַל יוֹתֵר',['שֶׁצָּרִיךְ לָרוּץ לְבַד','שֶׁכַּדּוּרֶגֶל מְשַׁעֲמֵם']]],
+ ['value','ביחד קל יותר: מוסרים לחבר']),
 /* level 3: 6 sentences */
 ST(3,'שִׁיר לְאָחוֹת קְטַנָּה','שיר לאחות קטנה',['🎹','👶'],
  ['לְאוֹרֶן יֵשׁ אָחוֹת קְטַנָּה בְּשֵׁם לִיָּה.','לִיָּה בָּכְתָה, וְאַף אֶחָד לֹא הִצְלִיחַ לְהַרְגִּיעַ אוֹתָהּ.','אוֹרֶן יָשַׁב לְיַד הַפְּסַנְתֵּר.','הוּא נִגֵּן שִׁיר שָׁקֵט וְאִטִּי.','לִיָּה הִפְסִיקָה לִבְכּוֹת וְהִקְשִׁיבָה.','אַחֲרֵי רֶגַע הִיא נִרְדְּמָה.'],
  ['לאורן יש אחות קטנה בשם ליה.','ליה בכתה, ואף אחד לא הצליח להרגיע אותה.','אורן ישב ליד הפסנתר.','הוא ניגן שיר שקט ואיטי.','ליה הפסיקה לבכות והקשיבה.','אחרי רגע היא נרדמה.'],
  [['lit','לְיַד מָה יָשַׁב אוֹרֶן?','ליד מה ישב אורן?','לְיַד הַפְּסַנְתֵּר',['לְיַד הַחַלּוֹן','לְיַד הַמִּטָּה']],['seq','לִיָּה בָּכְתָה',['אוֹרֶן נִגֵּן שִׁיר','לִיָּה נִרְדְּמָה']],
-  ['inf','לָמָּה לִיָּה נִרְדְּמָה?','למה ליה נרדמה?','כִּי הַשִּׁיר הָיָה שָׁקֵט וְנָעִים',['כִּי הִיא אָכְלָה','כִּי הָיָה רַעַשׁ']]]),
+  ['les','לָמָּה לִיָּה נִרְדְּמָה?','למה ליה נרדמה?','כִּי הַשִּׁיר הָיָה שָׁקֵט וְנָעִים',['כִּי הִיא אָכְלָה','כִּי הָיָה רַעַשׁ']]],
+ ['value','דואגים לאחות קטנה: שיר שקט מרגיע']),
 ST(3,'אַחֲרֵי הַהֶפְסֵד','אחרי ההפסד',['🏀','🏆'],
  ['הַקְּבוּצָה שֶׁל אוֹרֶן שִׂחֲקָה כַּדּוּרְסַל.','הֵם נִסּוּ מְאוֹד, אֲבָל הִפְסִידוּ.','אוֹרֶן הָיָה עָצוּב וְלֹא רָצָה לְדַבֵּר.','הַמְּאַמֵּן אָמַר: "הַיּוֹם לְמַדְתֶּם מָה צָרִיךְ לְשַׁפֵּר."','בַּשָּׁבוּעַ שֶׁאַחֲרֵי, הֵם הִתְאַמְּנוּ עַל מְסִירוֹת.','בַּמִּשְׂחָק הַבָּא הֵם נִצְּחוּ!'],
  ['הקבוצה של אורן שיחקה כדורסל.','הם ניסו מאוד, אבל הפסידו.','אורן היה עצוב ולא רצה לדבר.','המאמן אמר: "היום למדתם מה צריך לשפר."','בשבוע שאחרי, הם התאמנו על מסירות.','במשחק הבא הם ניצחו!'],
  [['lit','עַל מָה הִתְאַמְּנוּ?','על מה התאמנו?','עַל מְסִירוֹת',['עַל רִיצָה','עַל שְׂחִיָּה']],['seq','הֵם הִפְסִידוּ',['הֵם הִתְאַמְּנוּ','הֵם נִצְּחוּ']],
-  ['inf','לָמָּה הֵם נִצְּחוּ בַּמִּשְׂחָק הַבָּא?','למה הם ניצחו במשחק הבא?','כִּי הֵם הִתְאַמְּנוּ',['כִּי הַקְּבוּצָה הָאַחֶרֶת לֹא בָּאָה','כִּי הָיָה לָהֶם כַּדּוּר חָדָשׁ']]]),
+  ['les','לָמָּה הֵם נִצְּחוּ בַּמִּשְׂחָק הַבָּא?','למה הם ניצחו במשחק הבא?','כִּי הֵם הִתְאַמְּנוּ',['כִּי הַקְּבוּצָה הָאַחֶרֶת לֹא בָּאָה','כִּי הָיָה לָהֶם כַּדּוּר חָדָשׁ']]],
+ ['value','מהפסד לומדים מה לשפר, ומתאמנים']),
 ST(3,'הַקְּפִיצָה לַמַּיִם','הקפיצה למים',['🏊','wave'],
  ['בַּבְּרֵכָה הָיְתָה מַקְפֵּצָה גְּבוֹהָה.','כָּל הַיְּלָדִים קָפְצוּ, אֲבָל תָּמָר פָּחֲדָה.','הִיא עָמְדָה לְמַעְלָה וְהִסְתַּכְּלָה לְמַטָּה.','אַבָּא שֶׁלָּהּ שָׂחָה לְמַטָּה וְאָמַר: "אֲנִי פֹּה."','תָּמָר סָפְרָה עַד שָׁלֹשׁ וְקָפְצָה.','כְּשֶׁהִיא יָצְאָה מֵהַמַּיִם, הִיא צָעֲקָה: "עוֹד פַּעַם!"'],
  ['בבריכה הייתה מקפצה גבוהה.','כל הילדים קפצו, אבל תמר פחדה.','היא עמדה למעלה והסתכלה למטה.','אבא שלה שחה למטה ואמר: "אני פה."','תמר ספרה עד שלוש וקפצה.','כשהיא יצאה מהמים, היא צעקה: "עוד פעם!"'],
  [['lit','עַד כַּמָּה סָפְרָה תָּמָר?','עד כמה ספרה תמר?','עַד שָׁלֹשׁ',['עַד עֶשֶׂר','עַד חָמֵשׁ']],['seq','תָּמָר פָּחֲדָה',['תָּמָר קָפְצָה','תָּמָר צָעֲקָה "עוֹד פַּעַם"']],
-  ['inf','מָה עָזַר לְתָמָר לִקְפֹּץ?','מה עזר לתמר לקפוץ?','אַבָּא שֶׁחִכָּה לָהּ בַּמַּיִם',['הַמַּיִם הַחַמִּים','כּוֹבַע חָדָשׁ']]]),
+  ['les','מָה עָזַר לְתָמָר לִקְפֹּץ?','מה עזר לתמר לקפוץ?','אַבָּא שֶׁחִכָּה לָהּ בַּמַּיִם',['הַמַּיִם הַחַמִּים','כּוֹבַע חָדָשׁ']]],
+ ['value','אומץ: מפחדים, ובכל זאת מנסים']),
 ST(3,'גֶּשֶׁר לַמְּכוֹנִיּוֹת','גשר למכוניות',['🌉','car'],
  ['לְאוֹרֶן יֵשׁ הַרְבֵּה מְכוֹנִיּוֹת קְטַנּוֹת.','הוּא רָצָה שֶׁהֵן יַעַבְרוּ מֵעַל "נָהָר" שֶׁל שָׁטִיחַ כָּחֹל.','קֹדֶם הוּא בָּנָה גֶּשֶׁר מִנְּיָר, אֲבָל הַגֶּשֶׁר נִקְרַע.','אַחַר כָּךְ הוּא בָּנָה גֶּשֶׁר מִסְּפָרִים וְקֶרֶשׁ.','הַמְּכוֹנִיּוֹת עָבְרוּ עַל הַגֶּשֶׁר, אַחַת אַחֲרֵי הַשְּׁנִיָּה.','אוֹרֶן אָמַר: "אֲנִי מְהַנְדֵּס!"'],
  ['לאורן יש הרבה מכוניות קטנות.','הוא רצה שהן יעברו מעל "נהר" של שטיח כחול.','קודם הוא בנה גשר מנייר, אבל הגשר נקרע.','אחר כך הוא בנה גשר מספרים וקרש.','המכוניות עברו על הגשר, אחת אחרי השנייה.','אורן אמר: "אני מהנדס!"'],
  [['lit','מִמָּה הָיָה הַגֶּשֶׁר הָרִאשׁוֹן?','ממה היה הגשר הראשון?','מִנְּיָר',['מִסְּפָרִים','מִקֻּבִּיּוֹת']],['seq','הַגֶּשֶׁר מִנְּיָר נִקְרַע',['אוֹרֶן בָּנָה גֶּשֶׁר מִסְּפָרִים','הַמְּכוֹנִיּוֹת עָבְרוּ']],
-  ['inf','לָמָּה הַגֶּשֶׁר הַשֵּׁנִי הָיָה טוֹב יוֹתֵר?','למה הגשר השני היה טוב יותר?','כִּי הוּא הָיָה חָזָק יוֹתֵר',['כִּי הוּא הָיָה כָּחֹל','כִּי הוּא הָיָה קָטָן']]]),
+  ['les','לָמָּה הַגֶּשֶׁר הַשֵּׁנִי הָיָה טוֹב יוֹתֵר?','למה הגשר השני היה טוב יותר?','כִּי הוּא הָיָה חָזָק יוֹתֵר',['כִּי הוּא הָיָה כָּחֹל','כִּי הוּא הָיָה קָטָן']]],
+ ['sci','גשר צריך חומר חזק: נייר נקרע, קרש מחזיק']),
 ST(3,'חֲבֵרִים לֹא רְגִילִים','חברים לא רגילים',['dog','cat'],
  ['בַּבַּיִת שֶׁל אָבִיב גָּרִים כֶּלֶב וַחֲתוּלָה.','בַּהַתְחָלָה הֵם לֹא אָהֲבוּ זֶה אֶת זֶה.','הַכֶּלֶב נָבַח, וְהַחֲתוּלָה בָּרְחָה.','לַיְלָה אֶחָד הָיָה קַר מְאוֹד.','בַּבֹּקֶר אָבִיב מָצָא אוֹתָם יְשֵׁנִים יַחַד עַל הַשָּׁטִיחַ.','מֵאָז הֵם חֲבֵרִים.'],
  ['בבית של אביב גרים כלב וחתולה.','בהתחלה הם לא אהבו זה את זה.','הכלב נבח, והחתולה ברחה.','לילה אחד היה קר מאוד.','בבוקר אביב מצא אותם ישנים יחד על השטיח.','מאז הם חברים.'],
  [['lit','אֵיפֹה יָשְׁנוּ הַכֶּלֶב וְהַחֲתוּלָה?','איפה ישנו הכלב והחתולה?','עַל הַשָּׁטִיחַ',['עַל הַמִּטָּה','בַּחוּץ']],['seq','הַחֲתוּלָה בָּרְחָה מֵהַכֶּלֶב',['הֵם יָשְׁנוּ יַחַד','הֵם נִהְיוּ חֲבֵרִים']],
-  ['inf','לָמָּה הֵם יָשְׁנוּ יַחַד?','למה הם ישנו יחד?','כִּי הָיָה קַר, וְיַחַד חַם יוֹתֵר',['כִּי הָיָה רַעַשׁ','כִּי הֵם הָיוּ רְעֵבִים']]]),
+  ['les','לָמָּה הֵם יָשְׁנוּ יַחַד?','למה הם ישנו יחד?','כִּי הָיָה קַר, וְיַחַד חַם יוֹתֵר',['כִּי הָיָה רַעַשׁ','כִּי הֵם הָיוּ רְעֵבִים']]],
+ ['sci','כשקר, חיות נצמדות זו לזו כדי לשמור על חום']),
 ST(3,'בּוֹרוֹת עַל הַיָּרֵחַ','בורות על הירח',['moon','🔭'],
- ['בַּלַּיְלָה אַבָּא הוֹצִיא טֶלֶסְקוֹפּ לַמִּרְפֶּסֶת.','אוֹרֶן הִסְתַּכֵּל בּוֹ עַל הַיָּרֵחַ.','הוּא רָאָה עִגּוּלִים גְּדוֹלִים וּקְטַנִּים.','"אֵלֶּה מַכְתְּשִׁים," אָמַר אַבָּא, "בּוֹרוֹת עַל הַיָּרֵחַ."','אוֹרֶן אָמַר: "כְּשֶׁאֶגְדַּל, אֲנִי אֶקְפֹּץ בְּתוֹךְ בּוֹר כָּזֶה!"','אַבָּא צָחַק וְנָתַן לוֹ חִבּוּק.'],
- ['בלילה אבא הוציא טלסקופ למרפסת.','אורן הסתכל בו על הירח.','הוא ראה עיגולים גדולים וקטנים.','"אלה מכתשים," אמר אבא, "בורות על הירח."','אורן אמר: "כשאגדל, אני אקפוץ בתוך בור כזה!"','אבא צחק ונתן לו חיבוק.'],
- [['lit','עַל מָה הִסְתַּכֵּל אוֹרֶן?','על מה הסתכל אורן?','עַל הַיָּרֵחַ',['עַל הַשֶּׁמֶשׁ','עַל הַיָּם']],['seq','אַבָּא הוֹצִיא טֶלֶסְקוֹפּ',['אוֹרֶן רָאָה עִגּוּלִים','אַבָּא צָחַק']],
-  ['inf','מָה אוֹרֶן רוֹצֶה לַעֲשׂוֹת כְּשֶׁיִּגְדַּל?','מה אורן רוצה לעשות כשיגדל?','לִקְפֹּץ בְּתוֹךְ בּוֹר',['לִבְנוֹת טֶלֶסְקוֹפּ','לִשְׁתֹּל פְּרָחִים']]]),
+ ['בַּלַּיְלָה אַבָּא הוֹצִיא טֶלֶסְקוֹפּ לַמִּרְפֶּסֶת.','אוֹרֶן הִסְתַּכֵּל בּוֹ עַל הַיָּרֵחַ.','הוּא רָאָה עִגּוּלִים גְּדוֹלִים וּקְטַנִּים.','"אֵלֶּה מַכְתְּשִׁים," אָמַר אַבָּא, "בּוֹרוֹת עַל הַיָּרֵחַ."','אַבָּא הִסְבִּיר: "אֲבָנִים מֵהֶחָלָל נָפְלוּ עַל הַיָּרֵחַ וְעָשׂוּ בּוֹרוֹת."','אוֹרֶן אָמַר: "כְּשֶׁאֶגְדַּל, אֲנִי אֶקְפֹּץ בְּתוֹךְ בּוֹר כָּזֶה!"'],
+ ['בלילה אבא הוציא טלסקופ למרפסת.','אורן הסתכל בו על הירח.','הוא ראה עיגולים גדולים וקטנים.','"אלה מכתשים," אמר אבא, "בורות על הירח."','אבא הסביר: "אבנים מהחלל נפלו על הירח ועשו בורות."','אורן אמר: "כשאגדל, אני אקפוץ בתוך בור כזה!"'],
+ [['lit','עַל מָה הִסְתַּכֵּל אוֹרֶן?','על מה הסתכל אורן?','עַל הַיָּרֵחַ',['עַל הַשֶּׁמֶשׁ','עַל הַיָּם']],['seq','אַבָּא הוֹצִיא טֶלֶסְקוֹפּ',['אוֹרֶן רָאָה עִגּוּלִים','אַבָּא הִסְבִּיר עַל הָאֲבָנִים']],
+  ['les','אֵיךְ נִהְיוּ הַבּוֹרוֹת עַל הַיָּרֵחַ?','איך נהיו הבורות על הירח?','אֲבָנִים מֵהֶחָלָל נָפְלוּ עָלָיו',['אֲנָשִׁים חָפְרוּ אוֹתָם','גֶּשֶׁם עָשָׂה אוֹתָם']]],
+ ['sci','מכתש = בור על הירח, שנוצר מאבן שנפלה מהחלל']),
 ST(3,'הַהַפְתָּעָה בְּסוֹף הַשְּׁבִיל','ההפתעה בסוף השביל',['tree','💧'],
  ['בְּשַׁבָּת הַמִּשְׁפָּחָה נָסְעָה לְטַיֵּל.','הֵם הָלְכוּ בִּשְׁבִיל אָרֹךְ בֵּין עֵצִים.','אוֹרֶן הִתְעַיֵּף וְרָצָה לַחֲזֹר.','אִמָּא אָמְרָה: "עוֹד קְצָת, וְתִרְאֶה הַפְתָּעָה."','בְּסוֹף הַשְּׁבִיל הָיָה מַעְיָן עִם מַיִם קָרִים.','כֻּלָּם נִכְנְסוּ לַמַּיִם וְצָחֲקוּ.'],
  ['בשבת המשפחה נסעה לטייל.','הם הלכו בשביל ארוך בין עצים.','אורן התעייף ורצה לחזור.','אמא אמרה: "עוד קצת, ותראה הפתעה."','בסוף השביל היה מעיין עם מים קרים.','כולם נכנסו למים וצחקו.'],
  [['lit','מָה הָיָה בְּסוֹף הַשְּׁבִיל?','מה היה בסוף השביל?','מַעְיָן',['חֲנוּת','גַּן שַׁעֲשׁוּעִים']],['seq','אוֹרֶן הִתְעַיֵּף',['הֵם מָצְאוּ מַעְיָן','כֻּלָּם נִכְנְסוּ לַמַּיִם']],
-  ['inf','לָמָּה כֻּלָּם צָחֲקוּ?','למה כולם צחקו?','כִּי הֵם שָׂמְחוּ וְנֶהֱנוּ',['כִּי אוֹרֶן נָפַל','כִּי הָיָה גֶּשֶׁם']]]),
+  ['les','מָה לָמַד אוֹרֶן בַּטִּיּוּל?','מה למד אורן בטיול?','שֶׁכְּדַאי לְהַמְשִׁיךְ עוֹד קְצָת',['שֶׁכְּדַאי לַחֲזֹר כְּשֶׁעֲיֵפִים','שֶׁאֵין מַיִם בַּטֶּבַע']]],
+ ['value','כדאי להתאמץ עוד קצת: בסוף מחכה הפתעה']),
 ST(3,'פִּיתוֹת עִם סַבְתָּא','פיתות עם סבתא',['🫓','👵'],
- ['סַבְתָּא לִמְּדָה אֶת אוֹרֶן לְהָכִין פִּיתוֹת.','קֹדֶם הֵם עָרְבוּ קֶמַח, מַיִם וּמֶלַח.','אַחַר כָּךְ אוֹרֶן לָשׁ אֶת הַבָּצֵק בַּיָּדַיִם.','הֵם חִכּוּ שָׁעָה שֶׁהַבָּצֵק יִתְפַּח.','סַבְתָּא אָפְתָה אֶת הַפִּיתוֹת בַּתַּנּוּר.','הַבַּיִת הִתְמַלֵּא בְּרֵיחַ טוֹב.'],
- ['סבתא לימדה את אורן להכין פיתות.','קודם הם ערבו קמח, מים ומלח.','אחר כך אורן לש את הבצק בידיים.','הם חיכו שעה שהבצק יתפח.','סבתא אפתה את הפיתות בתנור.','הבית התמלא בריח טוב.'],
+ ['סַבְתָּא לִמְּדָה אֶת אוֹרֶן לְהָכִין פִּיתוֹת.','קֹדֶם הֵם עָרְבוּ קֶמַח, מַיִם, מֶלַח וּשְׁמָרִים.','אַחַר כָּךְ אוֹרֶן לָשׁ אֶת הַבָּצֵק בַּיָּדַיִם.','הֵם חִכּוּ שָׁעָה, וּבִזְכוּת הַשְּׁמָרִים הַבָּצֵק תָּפַח.','סַבְתָּא אָפְתָה אֶת הַפִּיתוֹת בַּתַּנּוּר.','הַבַּיִת הִתְמַלֵּא בְּרֵיחַ טוֹב.'],
+ ['סבתא לימדה את אורן להכין פיתות.','קודם הם ערבו קמח, מים, מלח ושמרים.','אחר כך אורן לש את הבצק בידיים.','הם חיכו שעה, ובזכות השמרים הבצק תפח.','סבתא אפתה את הפיתות בתנור.','הבית התמלא בריח טוב.'],
  [['lit','מָה עָשָׂה אוֹרֶן עִם הַבָּצֵק?','מה עשה אורן עם הבצק?','לָשׁ אוֹתוֹ בַּיָּדַיִם',['זָרַק אוֹתוֹ','צִיֵּר עָלָיו']],['seq','הֵם עָרְבוּ קֶמַח וּמַיִם',['סַבְתָּא אָפְתָה','הַבַּיִת הִתְמַלֵּא בְּרֵיחַ']],
-  ['inf','לָמָּה הַבַּיִת הִתְמַלֵּא בְּרֵיחַ טוֹב?','למה הבית התמלא בריח טוב?','כִּי הַפִּיתוֹת נֶאֱפוּ בַּתַּנּוּר',['כִּי פָּתְחוּ חַלּוֹן','כִּי הָיוּ פְּרָחִים']]]),
+  ['les','מָה עָזַר לַבָּצֵק לִתְפֹּחַ?','מה עזר לבצק לתפוח?','הַשְּׁמָרִים',['הַמֶּלַח','הַיָּדַיִם שֶׁל אוֹרֶן']]],
+ ['word','שמרים = מה שגורם לבצק לתפוח']),
 /* level 4: 7-8 sentences */
 ST(4,'מִשְׂחָק בַּגֶּשֶׁם','משחק בגשם',['⚽','🌧️'],
  ['בְּיוֹם שִׁשִּׁי הָיָה מִשְׂחַק כַּדּוּרֶגֶל חָשׁוּב.','בַּבֹּקֶר הִתְחִיל לָרֶדֶת גֶּשֶׁם.','אוֹרֶן חָשַׁב שֶׁהַמִּשְׂחָק יִתְבַּטֵּל.','אֲבָל הַמְּאַמֵּן אָמַר: "מְשַׂחֲקִים גַּם בַּגֶּשֶׁם!"','הַמִּגְרָשׁ הָיָה רָטֹב, וְהַכַּדּוּר הֶחְלִיק.','אוֹרֶן נָפַל לַבֹּץ, קָם, וְהִמְשִׁיךְ לָרוּץ.','בַּסּוֹף הוּא מָסַר לְחָבֵר, וְהֶחָבֵר הִבְקִיעַ.','כֻּלָּם חָזְרוּ הַבַּיְתָה רְטֻבִּים, מְלֻכְלָכִים וּשְׂמֵחִים.'],
  ['ביום שישי היה משחק כדורגל חשוב.','בבוקר התחיל לרדת גשם.','אורן חשב שהמשחק יתבטל.','אבל המאמן אמר: "משחקים גם בגשם!"','המגרש היה רטוב, והכדור החליק.','אורן נפל לבוץ, קם, והמשיך לרוץ.','בסוף הוא מסר לחבר, והחבר הבקיע.','כולם חזרו הביתה רטובים, מלוכלכים ושמחים.'],
  [['lit','מָה אָמַר הַמְּאַמֵּן?','מה אמר המאמן?','מְשַׂחֲקִים גַּם בַּגֶּשֶׁם',['הַמִּשְׂחָק מִתְבַּטֵּל','כֻּלָּם הַבַּיְתָה']],['seq','אוֹרֶן נָפַל לַבֹּץ',['הֶחָבֵר הִבְקִיעַ','כֻּלָּם חָזְרוּ הַבַּיְתָה']],
-  ['inf','מָה אֶפְשָׁר לִלְמֹד עַל אוֹרֶן?','מה אפשר ללמוד על אורן?','שֶׁהוּא לֹא מְוַתֵּר',['שֶׁהוּא פּוֹחֵד מִגֶּשֶׁם','שֶׁהוּא לֹא אוֹהֵב כַּדּוּרֶגֶל']]]),
+  ['les','מָה אֶפְשָׁר לִלְמֹד עַל אוֹרֶן?','מה אפשר ללמוד על אורן?','שֶׁהוּא לֹא מְוַתֵּר',['שֶׁהוּא פּוֹחֵד מִגֶּשֶׁם','שֶׁהוּא לֹא אוֹהֵב כַּדּוּרֶגֶל']]],
+ ['value','לא מוותרים: נופלים, קמים וממשיכים']),
 ST(4,'הַשִּׁיר הַקָּשֶׁה','השיר הקשה',['🎹','note'],
  ['הַמּוֹרָה לִפְסַנְתֵּר נָתְנָה לְאוֹרֶן שִׁיר חָדָשׁ.','הַשִּׁיר הָיָה קָשֶׁה, וְאוֹרֶן טָעָה שׁוּב וָשׁוּב.','הוּא כָּעַס וְרָצָה לְהַפְסִיק.','אַבָּא אָמַר: "נְנַגֵּן רַק אֶת הַשּׁוּרָה הָרִאשׁוֹנָה."','כָּל יוֹם אוֹרֶן לָמַד עוֹד שׁוּרָה אַחַת.','אַחֲרֵי שָׁבוּעַ הוּא נִגֵּן אֶת כָּל הַשִּׁיר בְּלִי טָעוּת.','הַמּוֹרָה אָמְרָה: "רוֹאִים שֶׁהִתְאַמַּנְתָּ!"'],
  ['המורה לפסנתר נתנה לאורן שיר חדש.','השיר היה קשה, ואורן טעה שוב ושוב.','הוא כעס ורצה להפסיק.','אבא אמר: "ננגן רק את השורה הראשונה."','כל יום אורן למד עוד שורה אחת.','אחרי שבוע הוא ניגן את כל השיר בלי טעות.','המורה אמרה: "רואים שהתאמנת!"'],
  [['lit','כַּמָּה זְמַן לָקַח לְאוֹרֶן לִלְמֹד אֶת הַשִּׁיר?','כמה זמן לקח לאורן ללמוד את השיר?','שָׁבוּעַ',['יוֹם אֶחָד','שָׁנָה']],['seq','אוֹרֶן כָּעַס',['אוֹרֶן נִגֵּן בְּלִי טָעוּת','הַמּוֹרָה אָמְרָה שֶׁהוּא הִתְאַמֵּן']],
-  ['inf','מָה עָזַר לְאוֹרֶן?','מה עזר לאורן?','לִלְמֹד קְצָת כָּל יוֹם',['לְנַגֵּן מַהֵר','לְהַפְסִיק לְנַגֵּן']]]),
+  ['les','מָה עָזַר לְאוֹרֶן?','מה עזר לאורן?','לִלְמֹד קְצָת כָּל יוֹם',['לְנַגֵּן מַהֵר','לְהַפְסִיק לְנַגֵּן']]],
+ ['value','דבר קשה לומדים קצת כל יום']),
 ST(4,'הַחֲלוֹם שֶׁל אוֹרֶן','החלום של אורן',['🧑‍🚀','🚀'],
- ['בַּלַּיְלָה אוֹרֶן חָלַם שֶׁהוּא אַסְטְרוֹנָאוּט.','הוּא לָבַשׁ חֲלִיפָה לְבָנָה וְעָלָה לַחַלְלִית.','הַחַלְלִית טָסָה לְמַעְלָה, מֵעַל הָעֲנָנִים.','בֶּחָלָל אוֹרֶן רִחֵף כְּמוֹ בַּלּוֹן.','מֵהַחַלּוֹן הוּא רָאָה אֶת כַּדּוּר הָאָרֶץ, כָּחֹל וְיָרֹק.','פִּתְאוֹם שָׁמַע קוֹל: "אוֹרֶן, בֹּקֶר טוֹב!"','זֹאת הָיְתָה אִמָּא, וְהוּא הָיָה בַּמִּטָּה שֶׁלּוֹ.'],
- ['בלילה אורן חלם שהוא אסטרונאוט.','הוא לבש חליפה לבנה ועלה לחללית.','החללית טסה למעלה, מעל העננים.','בחלל אורן ריחף כמו בלון.','מהחלון הוא ראה את כדור הארץ, כחול וירוק.','פתאום שמע קול: "אורן, בוקר טוב!"','זאת הייתה אמא, והוא היה במיטה שלו.'],
- [['lit','בְּאֵיזֶה צְבָעִים רָאָה אוֹרֶן אֶת כַּדּוּר הָאָרֶץ?','באיזה צבעים ראה אורן את כדור הארץ?','כָּחֹל וְיָרֹק',['אָדֹם וְצָהֹב','שָׁחֹר וְלָבָן']],['seq','אוֹרֶן לָבַשׁ חֲלִיפָה',['אוֹרֶן רִחֵף בֶּחָלָל','אִמָּא אָמְרָה בֹּקֶר טוֹב']],
-  ['inf','הַאִם אוֹרֶן בֶּאֱמֶת טָס לֶחָלָל?','האם אורן באמת טס לחלל?','לֹא, זֶה הָיָה חֲלוֹם',['כֵּן, עִם אַבָּא','כֵּן, בְּמָטוֹס']]]),
+ ['בַּלַּיְלָה אוֹרֶן חָלַם שֶׁהוּא אַסְטְרוֹנָאוּט.','הוּא לָבַשׁ חֲלִיפָה לְבָנָה וְעָלָה לַחַלְלִית.','הַחַלְלִית טָסָה לְמַעְלָה, מֵעַל הָעֲנָנִים.','בֶּחָלָל אוֹרֶן רִחֵף כְּמוֹ בַּלּוֹן.','מֵהַחַלּוֹן הוּא רָאָה אֶת כַּדּוּר הָאָרֶץ כָּחֹל, כִּי רֻבּוֹ מְכֻסֶּה בְּמַיִם.','פִּתְאוֹם שָׁמַע קוֹל: "אוֹרֶן, בֹּקֶר טוֹב!"','זֹאת הָיְתָה אִמָּא, וְהוּא הָיָה בַּמִּטָּה שֶׁלּוֹ.'],
+ ['בלילה אורן חלם שהוא אסטרונאוט.','הוא לבש חליפה לבנה ועלה לחללית.','החללית טסה למעלה, מעל העננים.','בחלל אורן ריחף כמו בלון.','מהחלון הוא ראה את כדור הארץ כחול, כי רובו מכוסה במים.','פתאום שמע קול: "אורן, בוקר טוב!"','זאת הייתה אמא, והוא היה במיטה שלו.'],
+ [['lit','אֵיךְ רִחֵף אוֹרֶן בֶּחָלָל?','איך ריחף אורן בחלל?','כְּמוֹ בַּלּוֹן',['כְּמוֹ דָּג','כְּמוֹ אֶבֶן']],['seq','אוֹרֶן לָבַשׁ חֲלִיפָה',['אוֹרֶן רִחֵף בֶּחָלָל','אִמָּא אָמְרָה בֹּקֶר טוֹב']],
+  ['les','לָמָּה כַּדּוּר הָאָרֶץ נִרְאֶה כָּחֹל?','למה כדור הארץ נראה כחול?','כִּי רֻבּוֹ מְכֻסֶּה בְּמַיִם',['כִּי צָבְעוּ אוֹתוֹ','כִּי הַחַלּוֹן כָּחֹל']]],
+ ['sci','מהחלל כדור הארץ נראה כחול, כי רובו מכוסה במים']),
 ST(4,'הַקֵּן בַּמִּרְפֶּסֶת','הקן במרפסת',['🕊️','egg'],
  ['יוֹם אֶחָד נוֹעָה רָאֲתָה יוֹנָה בַּמִּרְפֶּסֶת.','הַיּוֹנָה הֵבִיאָה עוֹד וָעוֹד זְרָדִים בַּמַּקּוֹר.','הִיא בָּנְתָה קֵן בְּתוֹךְ עָצִיץ יָשָׁן.','אַחֲרֵי כַּמָּה יָמִים הָיוּ בַּקֵּן שְׁתֵּי בֵּיצִים לְבָנוֹת.','נוֹעָה לֹא נָגְעָה, רַק הִסְתַּכְּלָה מֵהַחַלּוֹן.','יוֹם אֶחָד שָׁמְעָה צִיּוּץ קָטָן.','מֵהַבֵּיצִים יָצְאוּ שְׁנֵי גּוֹזָלִים!'],
  ['יום אחד נועה ראתה יונה במרפסת.','היונה הביאה עוד ועוד זרדים במקור.','היא בנתה קן בתוך עציץ ישן.','אחרי כמה ימים היו בקן שתי ביצים לבנות.','נועה לא נגעה, רק הסתכלה מהחלון.','יום אחד שמעה ציוץ קטן.','מהביצים יצאו שני גוזלים!'],
  [['lit','אֵיפֹה בָּנְתָה הַיּוֹנָה אֶת הַקֵּן?','איפה בנתה היונה את הקן?','בְּתוֹךְ עָצִיץ',['עַל עֵץ','עַל הַגַּג']],['seq','הַיּוֹנָה הֵבִיאָה זְרָדִים',['הָיוּ בַּקֵּן בֵּיצִים','יָצְאוּ גּוֹזָלִים']],
-  ['inf','לָמָּה נוֹעָה לֹא נָגְעָה בַּקֵּן?','למה נועה לא נגעה בקן?','כְּדֵי לֹא לְהַפְחִיד אֶת הַיּוֹנָה',['כִּי הַקֵּן הָיָה גָּבוֹהַּ','כִּי הִיא יָשְׁנָה']]]),
+  ['les','לָמָּה נוֹעָה לֹא נָגְעָה בַּקֵּן?','למה נועה לא נגעה בקן?','כְּדֵי לֹא לְהַפְחִיד אֶת הַיּוֹנָה',['כִּי הַקֵּן הָיָה גָּבוֹהַּ','כִּי הִיא יָשְׁנָה']]],
+ ['value','לא נוגעים בקן, כדי לא להפחיד את הציפור']),
 ST(4,'הַכַּדּוּר אֵצֶל הַשָּׁכֵן','הכדור אצל השכן',['ball','🚪'],
  ['אוֹרֶן בָּעַט חָזָק, וְהַכַּדּוּר עָף מֵעַל הַגָּדֵר.','הַכַּדּוּר נָפַל בֶּחָצֵר שֶׁל הַשָּׁכֵן, מַר כֹּהֵן.','אוֹרֶן פָּחַד לְבַקֵּשׁ אוֹתוֹ בַּחֲזָרָה.','אִמָּא אָמְרָה: "בּוֹא נֵלֵךְ יַחַד וְנִשְׁאַל יָפֶה."','הֵם דָּפְקוּ בַּדֶּלֶת, וּמַר כֹּהֵן פָּתַח.','הוּא חִיֵּךְ וְנָתַן לְאוֹרֶן אֶת הַכַּדּוּר.','"גַּם אֲנִי שִׂחַקְתִּי כַּדּוּרֶגֶל כְּשֶׁהָיִיתִי יֶלֶד," הוּא אָמַר.'],
  ['אורן בעט חזק, והכדור עף מעל הגדר.','הכדור נפל בחצר של השכן, מר כהן.','אורן פחד לבקש אותו בחזרה.','אמא אמרה: "בוא נלך יחד ונשאל יפה."','הם דפקו בדלת, ומר כהן פתח.','הוא חייך ונתן לאורן את הכדור.','"גם אני שיחקתי כדורגל כשהייתי ילד," הוא אמר.'],
  [['lit','אֵיפֹה נָפַל הַכַּדּוּר?','איפה נפל הכדור?','בֶּחָצֵר שֶׁל הַשָּׁכֵן',['בַּכְּבִישׁ','בַּבְּרֵכָה']],['seq','אוֹרֶן פָּחַד לְבַקֵּשׁ',['מַר כֹּהֵן פָּתַח אֶת הַדֶּלֶת','מַר כֹּהֵן נָתַן אֶת הַכַּדּוּר']],
-  ['inf','לָמָּה מַר כֹּהֵן חִיֵּךְ?','למה מר כהן חייך?','כִּי גַּם הוּא אָהַב כַּדּוּרֶגֶל כְּשֶׁהָיָה יֶלֶד',['כִּי הַכַּדּוּר שָׁבַר חַלּוֹן','כִּי הוּא רָצָה אֶת הַכַּדּוּר']]]),
+  ['les','מָה עָזַר לְאוֹרֶן לְקַבֵּל אֶת הַכַּדּוּר?','מה עזר לאורן לקבל את הכדור?','הוּא הָלַךְ עִם אִמָּא וְשָׁאַל יָפֶה',['הוּא טִפֵּס עַל הַגָּדֵר','הוּא בָּכָה חָזָק']]],
+ ['value','כשמפחדים לבקש, הולכים יחד ושואלים יפה']),
 ST(4,'הִילָה לוֹמֶדֶת לִשְׂחוֹת','הילה לומדת לשחות',['🏊','🫧'],
  ['הִילָה הָיְתָה בַּת חָמֵשׁ, וְעוֹד לֹא יָדְעָה לִשְׂחוֹת.','אָחִיהָ הַגָּדוֹל, אוֹרֶן, הִבְטִיחַ לַעֲזֹר לָהּ.','הוּא הֶרְאָה לָהּ אֵיךְ לָשִׂים אֶת הַפָּנִים בַּמַּיִם וּלְהוֹצִיא בּוּעוֹת.','אַחַר כָּךְ הוּא הֶחֱזִיק לָהּ אֶת הַיָּדַיִם, וְהִיא בָּעֲטָה בָּרַגְלַיִם.','יוֹם אֶחָד הוּא עָזַב לְאַט אֶת הַיָּדַיִם.','הִילָה שָׂחֲתָה לְבַד שְׁלוֹשָׁה מֶטְרִים!','"אַתָּה הַמְּאַמֵּן הֲכִי טוֹב!" הִיא צָעֲקָה.'],
  ['הילה הייתה בת חמש, ועוד לא ידעה לשחות.','אחיה הגדול, אורן, הבטיח לעזור לה.','הוא הראה לה איך לשים את הפנים במים ולהוציא בועות.','אחר כך הוא החזיק לה את הידיים, והיא בעטה ברגליים.','יום אחד הוא עזב לאט את הידיים.','הילה שחתה לבד שלושה מטרים!','"אתה המאמן הכי טוב!" היא צעקה.'],
  [['lit','כַּמָּה מֶטְרִים שָׂחֲתָה הִילָה לְבַד?','כמה מטרים שחתה הילה לבד?','שְׁלוֹשָׁה',['חֲמִשָּׁה','עֲשָׂרָה']],['seq','הִילָה הוֹצִיאָה בּוּעוֹת בַּמַּיִם',['אוֹרֶן עָזַב אֶת הַיָּדַיִם','הִילָה שָׂחֲתָה לְבַד']],
-  ['inf','לָמָּה הִילָה אָמְרָה שֶׁאוֹרֶן הַמְּאַמֵּן הֲכִי טוֹב?','למה הילה אמרה שאורן המאמן הכי טוב?','כִּי הוּא לִמֵּד אוֹתָהּ לִשְׂחוֹת',['כִּי הוּא קָנָה לָהּ מַתָּנָה','כִּי הוּא שׂוֹחֶה מַהֵר']]]),
+  ['les','אֵיךְ אוֹרֶן לִמֵּד אֶת הִילָה לִשְׂחוֹת?','איך אורן לימד את הילה לשחות?','צַעַד אַחַר צַעַד',['הוּא זָרַק אוֹתָהּ לַמַּיִם','הוּא שָׂחָה בִּמְקוֹמָהּ']]],
+ ['value','לומדים דבר חדש צעד אחר צעד']),
 ST(4,'בַּיִת עַל הָעֵץ','בית על העץ',['tree','🔨'],
  ['בֶּחָצֵר שֶׁל סַבָּא יֵשׁ עֵץ גָּדוֹל וְחָזָק.','סַבָּא וְאוֹרֶן הֶחְלִיטוּ לִבְנוֹת עָלָיו בַּיִת.','קֹדֶם הֵם צִיְּרוּ אֶת הַבַּיִת עַל דַּף.','אַחַר כָּךְ הֵם מָדְדוּ קְרָשִׁים וְנִסְּרוּ אוֹתָם.','סַבָּא דָּפַק מַסְמְרִים, וְאוֹרֶן הֶחֱזִיק אֶת הַקְּרָשִׁים.','בַּסּוֹף הֵם תָּלוּ סֻלָּם שֶׁל חֲבָלִים.','בָּעֶרֶב אוֹרֶן אָכַל אֲרוּחַת עֶרֶב בַּבַּיִת הֶחָדָשׁ שֶׁעַל הָעֵץ.'],
  ['בחצר של סבא יש עץ גדול וחזק.','סבא ואורן החליטו לבנות עליו בית.','קודם הם ציירו את הבית על דף.','אחר כך הם מדדו קרשים וניסרו אותם.','סבא דפק מסמרים, ואורן החזיק את הקרשים.','בסוף הם תלו סולם של חבלים.','בערב אורן אכל ארוחת ערב בבית החדש שעל העץ.'],
  [['lit','מָה תָּלוּ בַּסּוֹף?','מה תלו בסוף?','סֻלָּם שֶׁל חֲבָלִים',['פָּנָס','דֶּגֶל']],['seq','הֵם צִיְּרוּ אֶת הַבַּיִת עַל דַּף',['הֵם נִסְּרוּ קְרָשִׁים','הֵם תָּלוּ סֻלָּם']],
-  ['inf','לָמָּה הֵם צִיְּרוּ קֹדֶם עַל דַּף?','למה הם ציירו קודם על דף?','כְּדֵי לְתַכְנֵן אֶת הַבַּיִת',['כִּי הָיָה גֶּשֶׁם','כִּי לֹא הָיוּ לָהֶם קְרָשִׁים']]]),
+  ['les','לָמָּה הֵם צִיְּרוּ קֹדֶם עַל דַּף?','למה הם ציירו קודם על דף?','כְּדֵי לְתַכְנֵן אֶת הַבַּיִת',['כִּי הָיָה גֶּשֶׁם','כִּי לֹא הָיוּ לָהֶם קְרָשִׁים']]],
+ ['math','מתכננים ומודדים לפני שבונים']),
 ST(4,'יֶלֶד חָדָשׁ בַּכִּתָּה','ילד חדש בכיתה',['🦕','bookS'],
  ['בַּבֹּקֶר הִגִּיעַ לַכִּתָּה יֶלֶד חָדָשׁ בְּשֵׁם נָדָב.','נָדָב יָשַׁב לְבַד וְלֹא דִּבֵּר עִם אַף אֶחָד.','בַּהַפְסָקָה אוֹרֶן רָאָה שֶׁנָּדָב מַחֲזִיק סֵפֶר עַל דִּינוֹזָאוּרִים.','"גַּם אֲנִי אוֹהֵב דִּינוֹזָאוּרִים!" אָמַר אוֹרֶן.','הֵם יָשְׁבוּ יַחַד וְדִפְדְּפוּ בַּסֵּפֶר.','בַּהַפְסָקָה הַבָּאָה נָדָב כְּבָר שִׂחֵק עִם כָּל הַיְּלָדִים.'],
  ['בבוקר הגיע לכיתה ילד חדש בשם נדב.','נדב ישב לבד ולא דיבר עם אף אחד.','בהפסקה אורן ראה שנדב מחזיק ספר על דינוזאורים.','"גם אני אוהב דינוזאורים!" אמר אורן.','הם ישבו יחד ודפדפו בספר.','בהפסקה הבאה נדב כבר שיחק עם כל הילדים.'],
  [['lit','עַל מָה הָיָה הַסֵּפֶר שֶׁל נָדָב?','על מה היה הספר של נדב?','עַל דִּינוֹזָאוּרִים',['עַל כַּדּוּרֶגֶל','עַל חַיּוֹת יָם']],['seq','נָדָב יָשַׁב לְבַד',['הֵם דִּפְדְּפוּ בַּסֵּפֶר','נָדָב שִׂחֵק עִם כָּל הַיְּלָדִים']],
-  ['inf','לָמָּה נָדָב יָשַׁב לְבַד בַּהַתְחָלָה?','למה נדב ישב לבד בהתחלה?','כִּי הוּא עוֹד לֹא הִכִּיר אַף אֶחָד',['כִּי הוּא כָּעַס','כִּי הוּא הָיָה חוֹלֶה']]]),
+  ['les','מָה עָזַר לְנָדָב לְהַרְגִּישׁ טוֹב?','מה עזר לנדב להרגיש טוב?','אוֹרֶן פָּנָה אֵלָיו וְדִבֵּר אִתּוֹ',['הַמּוֹרָה נָתְנָה לוֹ סֵפֶר','הוּא יָשַׁב לְבַד']]],
+ ['value','לילד חדש עוזרים כשפונים אליו ומוצאים משהו משותף']),
 /* level 5: 8-9 sentences */
 ST(5,'טוּרְנִיר הַכַּדּוּרְסַל','טורניר הכדורסל',['🏀','🏆'],
  ['בְּבֵית הַסֵּפֶר הָיָה טוּרְנִיר כַּדּוּרְסַל.','הַכִּתָּה שֶׁל אוֹרֶן הִגִּיעָה לַגְּמָר.','בְּאֶמְצַע הַמִּשְׂחָק הֵם הָיוּ בְּפִגּוּר שֶׁל שֵׁשׁ נְקֻדּוֹת.','הַמְּאַמֶּנֶת קָרְאָה לָהֶם לְהַפְסָקָה.','הִיא אָמְרָה: "אַל תִּזְרְקוּ מֵרָחוֹק. תִּמְסְרוּ זֶה לָזֶה."','הַיְּלָדִים חָזְרוּ לַמִּגְרָשׁ וּמָסְרוּ הַרְבֵּה.','אוֹרֶן קָלַע שְׁנֵי סַלִּים, וְרוֹנִי קָלְעָה עוֹד שְׁלוֹשָׁה.','בַּשְּׁנִיָּה הָאַחֲרוֹנָה הַכִּתָּה שֶׁלָּהֶם עָבְרָה לְהוֹבָלָה.','הֵם זָכוּ בַּגָּבִיעַ וְהֵרִימוּ אוֹתוֹ יַחַד.'],
  ['בבית הספר היה טורניר כדורסל.','הכיתה של אורן הגיעה לגמר.','באמצע המשחק הם היו בפיגור של שש נקודות.','המאמנת קראה להם להפסקה.','היא אמרה: "אל תזרקו מרחוק. תמסרו זה לזה."','הילדים חזרו למגרש ומסרו הרבה.','אורן קלע שני סלים, ורוני קלעה עוד שלושה.','בשנייה האחרונה הכיתה שלהם עברה להובלה.','הם זכו בגביע והרימו אותו יחד.'],
  [['lit','מָה אָמְרָה הַמְּאַמֶּנֶת לַעֲשׂוֹת?','מה אמרה המאמנת לעשות?','לִמְסֹר זֶה לָזֶה',['לִזְרֹק מֵרָחוֹק','לָרוּץ מַהֵר יוֹתֵר']],['seq','הֵם הָיוּ בְּפִגּוּר',['אוֹרֶן קָלַע שְׁנֵי סַלִּים','הֵם הֵרִימוּ אֶת הַגָּבִיעַ']],
-  ['inf','לָמָּה הַכִּתָּה נִצְּחָה בַּסּוֹף?','למה הכיתה ניצחה בסוף?','כִּי הֵם שִׂחֲקוּ יַחַד וּמָסְרוּ',['כִּי הֵם הָיוּ גְּבוֹהִים','כִּי הַמִּשְׂחָק נִגְמַר מֻקְדָּם']]]),
+  ['les','לָמָּה הַכִּתָּה נִצְּחָה בַּסּוֹף?','למה הכיתה ניצחה בסוף?','כִּי הֵם שִׂחֲקוּ יַחַד וּמָסְרוּ',['כִּי הֵם הָיוּ גְּבוֹהִים','כִּי הַמִּשְׂחָק נִגְמַר מֻקְדָּם']]],
+ ['value','בקבוצה מנצחים כשמוסרים זה לזה']),
 ST(5,'הָרוֹבּוֹט שֶׁמְּסַדֵּר','הרובוט שמסדר',['bot','🧸'],
  ['הַחֶדֶר שֶׁל אוֹרֶן הָיָה מְבֻלְגָּן מְאוֹד.','צַעֲצוּעִים הָיוּ עַל הָרִצְפָּה, וּבְגָדִים עַל הַכִּסֵּא.','אוֹרֶן חָשַׁב: "אֶבְנֶה רוֹבּוֹט שֶׁיְּסַדֵּר בִּשְׁבִילִי!"','הוּא בָּנָה רוֹבּוֹט מִקֻּבִּיּוֹת וְקָרָא לוֹ "סַדְרָן".','אֲבָל סַדְרָן לֹא זָז, כִּי הוּא הָיָה רַק קֻבִּיּוֹת.','אוֹרֶן צָחַק וְהִתְחִיל לְסַדֵּר לְבַד.','הוּא שָׂם כָּל צַעֲצוּעַ בַּקֻּפְסָה שֶׁלּוֹ.','אַחֲרֵי עֶשֶׂר דַּקּוֹת הַחֶדֶר הָיָה מְסֻדָּר.','אוֹרֶן אָמַר לְסַדְרָן: "בְּסוֹף אֲנִי הָרוֹבּוֹט הֲכִי טוֹב!"'],
  ['החדר של אורן היה מבולגן מאוד.','צעצועים היו על הרצפה, ובגדים על הכיסא.','אורן חשב: "אבנה רובוט שיסדר בשבילי!"','הוא בנה רובוט מקוביות וקרא לו "סדרן".','אבל סדרן לא זז, כי הוא היה רק קוביות.','אורן צחק והתחיל לסדר לבד.','הוא שם כל צעצוע בקופסה שלו.','אחרי עשר דקות החדר היה מסודר.','אורן אמר לסדרן: "בסוף אני הרובוט הכי טוב!"'],
  [['lit','אֵיךְ קָרָא אוֹרֶן לָרוֹבּוֹט?','איך קרא אורן לרובוט?','סַדְרָן',['בִּיפּ','רוֹבִּי']],['seq','אוֹרֶן בָּנָה רוֹבּוֹט',['אוֹרֶן הִתְחִיל לְסַדֵּר','הַחֶדֶר הָיָה מְסֻדָּר']],
-  ['inf','לָמָּה אוֹרֶן אָמַר שֶׁהוּא "הָרוֹבּוֹט הֲכִי טוֹב"?','למה אורן אמר שהוא "הרובוט הכי טוב"?','כִּי הוּא סִדֵּר אֶת הַחֶדֶר בְּעַצְמוֹ',['כִּי הוּא בָּנָה רוֹבּוֹט גָּדוֹל','כִּי הוּא הָלַךְ לִישֹׁן']]]),
+  ['les','לָמָּה אוֹרֶן אָמַר שֶׁהוּא "הָרוֹבּוֹט הֲכִי טוֹב"?','למה אורן אמר שהוא "הרובוט הכי טוב"?','כִּי הוּא סִדֵּר אֶת הַחֶדֶר בְּעַצְמוֹ',['כִּי הוּא בָּנָה רוֹבּוֹט גָּדוֹל','כִּי הוּא הָלַךְ לִישֹׁן']]],
+ ['value','אחריות: מסדרים את החדר בעצמנו']),
 ST(5,'הַדּוֹלְפִין בָּרֶשֶׁת','הדולפין ברשת',['🐬','wave'],
  ['בַּבֹּקֶר אוֹרֶן וְאַבָּא הָלְכוּ לְטַיֵּל עַל שְׂפַת הַיָּם.','פִּתְאוֹם הֵם רָאוּ דּוֹלְפִין קָטָן לְיַד הַחוֹף.','הַדּוֹלְפִין הִסְתַּבֵּךְ בְּרֶשֶׁת דַּיָּגִים יְשָׁנָה.','אַבָּא אָמַר: "אָסוּר לָנוּ לִמְשֹׁךְ אוֹתוֹ. צָרִיךְ לִקְרֹא לְעֶזְרָה."','הוּא הִתְקַשֵּׁר לְמַצִּילִים.','אַחֲרֵי זְמַן קָצָר הִגִּיעוּ שְׁנֵי מַצִּילִים בְּסִירָה.','הֵם חָתְכוּ אֶת הָרֶשֶׁת בִּזְהִירוּת.','הַדּוֹלְפִין שָׂחָה לַמַּיִם הָעֲמֻקִּים וְקָפַץ גָּבוֹהַּ.','אוֹרֶן אָמַר: "זֹאת הָיְתָה הַתּוֹדָה שֶׁלּוֹ!"'],
  ['בבוקר אורן ואבא הלכו לטייל על שפת הים.','פתאום הם ראו דולפין קטן ליד החוף.','הדולפין הסתבך ברשת דייגים ישנה.','אבא אמר: "אסור לנו למשוך אותו. צריך לקרוא לעזרה."','הוא התקשר למצילים.','אחרי זמן קצר הגיעו שני מצילים בסירה.','הם חתכו את הרשת בזהירות.','הדולפין שחה למים העמוקים וקפץ גבוה.','אורן אמר: "זאת הייתה התודה שלו!"'],
  [['lit','בַּמֶּה הִסְתַּבֵּךְ הַדּוֹלְפִין?','במה הסתבך הדולפין?','בְּרֶשֶׁת',['בְּחֶבֶל','בִּשְׂמִיכָה']],['seq','אַבָּא הִתְקַשֵּׁר לְמַצִּילִים',['הַמַּצִּילִים חָתְכוּ אֶת הָרֶשֶׁת','הַדּוֹלְפִין קָפַץ']],
-  ['inf','לָמָּה אַבָּא לֹא מָשַׁךְ אֶת הַדּוֹלְפִין בְּעַצְמוֹ?','למה אבא לא משך את הדולפין בעצמו?','כְּדֵי לֹא לִפְגֹּעַ בּוֹ',['כִּי הוּא פָּחַד מִמַּיִם','כִּי הוּא רָצָה לָלֶכֶת הַבַּיְתָה']]]),
+  ['les','לָמָּה אַבָּא לֹא מָשַׁךְ אֶת הַדּוֹלְפִין בְּעַצְמוֹ?','למה אבא לא משך את הדולפין בעצמו?','כְּדֵי לֹא לִפְגֹּעַ בּוֹ',['כִּי הוּא פָּחַד מִמַּיִם','כִּי הוּא רָצָה לָלֶכֶת הַבַּיְתָה']]],
+ ['value','חיה שנתקעה: לא מושכים, קוראים לעזרה']),
 ST(5,'הַתִּזְמֹרֶת שֶׁל הַכִּתָּה','התזמורת של הכיתה',['🥁','🎸'],
  ['הַכִּתָּה שֶׁל אוֹרֶן הֵכִינָה הוֹפָעָה לַהוֹרִים.','כָּל יֶלֶד קִבֵּל כְּלִי נְגִינָה.','נוֹעָה קִבְּלָה חָלִיל, אִיתַי קִבֵּל גִּיטָרָה, וְאוֹרֶן קִבֵּל תֹּף.','הַמּוֹרָה אָמְרָה: "הַתֹּף שׁוֹמֵר עַל הַקֶּצֶב שֶׁל כֻּלָּם."','בַּהוֹפָעָה אוֹרֶן הִתְרַגֵּשׁ וְתוֹפֵף מַהֵר מִדַּי.','כָּל הַתִּזְמֹרֶת הִתְבַּלְבְּלָה.','אוֹרֶן נָשַׁם עָמֹק וְהִקְשִׁיב לַגִּיטָרָה.','הוּא חָזַר לְתוֹפֵף לְאַט, וְכֻלָּם נִגְּנוּ שׁוּב יַחַד.','בַּסּוֹף הַהוֹרִים מָחֲאוּ כַּפַּיִם חָזָק.'],
  ['הכיתה של אורן הכינה הופעה להורים.','כל ילד קיבל כלי נגינה.','נועה קיבלה חליל, איתי קיבל גיטרה, ואורן קיבל תוף.','המורה אמרה: "התוף שומר על הקצב של כולם."','בהופעה אורן התרגש ותופף מהר מדי.','כל התזמורת התבלבלה.','אורן נשם עמוק והקשיב לגיטרה.','הוא חזר לתופף לאט, וכולם ניגנו שוב יחד.','בסוף ההורים מחאו כפיים חזק.'],
  [['lit','אֵיזֶה כְּלִי קִבֵּל אוֹרֶן?','איזה כלי קיבל אורן?','תֹּף',['חָלִיל','גִּיטָרָה']],['seq','אוֹרֶן תּוֹפֵף מַהֵר מִדַּי',['אוֹרֶן הִקְשִׁיב לַגִּיטָרָה','הַהוֹרִים מָחֲאוּ כַּפַּיִם']],
-  ['inf','לָמָּה כָּל הַתִּזְמֹרֶת הִתְבַּלְבְּלָה?','למה כל התזמורת התבלבלה?','כִּי הַתֹּף הָיָה מָהִיר מִדַּי',['כִּי הֶחָלִיל נִשְׁבַּר','כִּי הַהוֹרִים דִּבְּרוּ']]]),
+  ['les','לָמָּה כָּל הַתִּזְמֹרֶת הִתְבַּלְבְּלָה?','למה כל התזמורת התבלבלה?','כִּי הַתֹּף הָיָה מָהִיר מִדַּי',['כִּי הֶחָלִיל נִשְׁבַּר','כִּי הַהוֹרִים דִּבְּרוּ']]],
+ ['word','קצב = כמה מהר מנגנים יחד; התוף שומר עליו']),
 ST(5,'הַיָּרֵחַ מִשְׁתַּנֶּה','הירח משתנה',['moon','📓'],
- ['כָּל עֶרֶב אוֹרֶן הִסְתַּכֵּל עַל הַיָּרֵחַ מֵהַחַלּוֹן.','בַּהַתְחָלָה הַיָּרֵחַ הָיָה דַּק, כְּמוֹ בָּנָנָה.','בְּכָל לַיְלָה הוּא נִרְאָה קְצָת יוֹתֵר גָּדוֹל.','אַחֲרֵי שָׁבוּעַ הוּא הָיָה חֲצִי עִגּוּל.','אַחֲרֵי עוֹד שָׁבוּעַ הוּא הָיָה עִגּוּל שָׁלֵם וּמֵאִיר.','אוֹרֶן שָׁאַל אֶת אַבָּא: "הַיָּרֵחַ גָּדֵל?"','אַבָּא הִסְבִּיר: "הַיָּרֵחַ לֹא גָּדֵל. כָּל לַיְלָה אֲנַחְנוּ רוֹאִים חֵלֶק אַחֵר שֶׁלּוֹ."','אוֹרֶן צִיֵּר בַּמַּחְבֶּרֶת אֶת כָּל הַצּוּרוֹת שֶׁל הַיָּרֵחַ.'],
- ['כל ערב אורן הסתכל על הירח מהחלון.','בהתחלה הירח היה דק, כמו בננה.','בכל לילה הוא נראה קצת יותר גדול.','אחרי שבוע הוא היה חצי עיגול.','אחרי עוד שבוע הוא היה עיגול שלם ומאיר.','אורן שאל את אבא: "הירח גדל?"','אבא הסביר: "הירח לא גדל. כל לילה אנחנו רואים חלק אחר שלו."','אורן צייר במחברת את כל הצורות של הירח.'],
+ ['כָּל עֶרֶב אוֹרֶן הִסְתַּכֵּל עַל הַיָּרֵחַ מֵהַחַלּוֹן.','בַּהַתְחָלָה הַיָּרֵחַ הָיָה דַּק, כְּמוֹ בָּנָנָה.','בְּכָל לַיְלָה הוּא נִרְאָה קְצָת יוֹתֵר גָּדוֹל.','אַחֲרֵי שָׁבוּעַ הוּא הָיָה חֲצִי עִגּוּל.','אַחֲרֵי עוֹד שָׁבוּעַ הוּא הָיָה עִגּוּל שָׁלֵם וּבָהִיר.','אוֹרֶן שָׁאַל אֶת אַבָּא: "הַיָּרֵחַ גָּדֵל?"','אַבָּא הִסְבִּיר: "הַיָּרֵחַ לֹא גָּדֵל. הַשֶּׁמֶשׁ מְאִירָה עָלָיו, וְכָל לַיְלָה אֲנַחְנוּ רוֹאִים חֵלֶק אַחֵר מֵהָאוֹר."','אוֹרֶן צִיֵּר בַּמַּחְבֶּרֶת אֶת כָּל הַצּוּרוֹת שֶׁל הַיָּרֵחַ.'],
+ ['כל ערב אורן הסתכל על הירח מהחלון.','בהתחלה הירח היה דק, כמו בננה.','בכל לילה הוא נראה קצת יותר גדול.','אחרי שבוע הוא היה חצי עיגול.','אחרי עוד שבוע הוא היה עיגול שלם ובהיר.','אורן שאל את אבא: "הירח גדל?"','אבא הסביר: "הירח לא גדל. השמש מאירה עליו, וכל לילה אנחנו רואים חלק אחר מהאור."','אורן צייר במחברת את כל הצורות של הירח.'],
  [['lit','לְמָה דָּמָה הַיָּרֵחַ בַּהַתְחָלָה?','למה דמה הירח בהתחלה?','לְבָנָנָה',['לְכַדּוּר','לְכוֹכָב']],['seq','הַיָּרֵחַ הָיָה חֲצִי עִגּוּל',['הַיָּרֵחַ הָיָה עִגּוּל שָׁלֵם','אוֹרֶן שָׁאַל אֶת אַבָּא']],
-  ['inf','הַאִם הַיָּרֵחַ בֶּאֱמֶת גָּדֵל?','האם הירח באמת גדל?','לֹא, רַק רוֹאִים חֵלֶק אַחֵר שֶׁלּוֹ',['כֵּן, כָּל לַיְלָה','כֵּן, כְּשֶׁיֵּשׁ גֶּשֶׁם']]]),
+  ['les','הַאִם הַיָּרֵחַ בֶּאֱמֶת גָּדֵל?','האם הירח באמת גדל?','לֹא, רַק רוֹאִים חֵלֶק אַחֵר שֶׁלּוֹ',['כֵּן, כָּל לַיְלָה','כֵּן, כְּשֶׁיֵּשׁ גֶּשֶׁם']]],
+ ['sci','למה הירח משנה צורה: השמש מאירה אותו, ורואים כל לילה חלק אחר']),
 ST(5,'הָעֲפִיפוֹן הַקָּרוּעַ','העפיפון הקרוע',['🪁','star'],
  ['לְאוֹרֶן הָיָה עֲפִיפוֹן אָדֹם עִם זָנָב אָרֹךְ.','בְּיוֹם עִם רוּחַ חֲזָקָה הוּא הֵעִיף אוֹתוֹ בַּפַּארְק.','פִּתְאוֹם הָעֲפִיפוֹן נִתְקַע בְּעֵץ וְנִקְרַע.','אוֹרֶן הָיָה עָצוּב, וְחָשַׁב שֶׁאֵין מָה לַעֲשׂוֹת.','בַּבַּיִת סַבָּא אָמַר: "בּוֹא נְתַקֵּן אוֹתוֹ יַחַד."','הֵם הִדְבִּיקוּ אֶת הַקֶּרַע בִּנְיַר דֶּבֶק.','אוֹרֶן צִיֵּר עַל הַמָּקוֹם הַמְּתֻקָּן כּוֹכָב צָהֹב.','בַּשַּׁבָּת הַבָּאָה הָעֲפִיפוֹן עָף שׁוּב, יָפֶה מִתָּמִיד.'],
  ['לאורן היה עפיפון אדום עם זנב ארוך.','ביום עם רוח חזקה הוא העיף אותו בפארק.','פתאום העפיפון נתקע בעץ ונקרע.','אורן היה עצוב, וחשב שאין מה לעשות.','בבית סבא אמר: "בוא נתקן אותו יחד."','הם הדביקו את הקרע בנייר דבק.','אורן צייר על המקום המתוקן כוכב צהוב.','בשבת הבאה העפיפון עף שוב, יפה מתמיד.'],
  [['lit','אֵיזֶה צֶבַע הָיָה הָעֲפִיפוֹן?','איזה צבע היה העפיפון?','אָדֹם',['כָּחֹל','יָרֹק']],['seq','הָעֲפִיפוֹן נִתְקַע בְּעֵץ',['הֵם הִדְבִּיקוּ אֶת הַקֶּרַע','אוֹרֶן צִיֵּר כּוֹכָב']],
-  ['inf','מָה לָמַד אוֹרֶן מִסַּבָּא?','מה למד אורן מסבא?','שֶׁאֶפְשָׁר לְתַקֵּן דְּבָרִים שֶׁנִּשְׁבָּרִים',['שֶׁעֲפִיפוֹנִים מְסֻכָּנִים','שֶׁצָּרִיךְ לִקְנוֹת חָדָשׁ']]]),
+  ['les','מָה לָמַד אוֹרֶן מִסַּבָּא?','מה למד אורן מסבא?','שֶׁאֶפְשָׁר לְתַקֵּן דְּבָרִים שֶׁנִּשְׁבָּרִים',['שֶׁעֲפִיפוֹנִים מְסֻכָּנִים','שֶׁצָּרִיךְ לִקְנוֹת חָדָשׁ']]],
+ ['value','דבר שנשבר אפשר לתקן, לא חייבים לזרוק']),
 ST(5,'אוֹרֶן מְלַמֵּד אֶת סַבָּא','אורן מלמד את סבא',['📱','👴'],
  ['סַבָּא רָצָה לִשְׁלֹחַ תְּמוּנָה לַדּוֹדָה שֶׁגָּרָה רָחוֹק.','אֲבָל הוּא לֹא יָדַע אֵיךְ עוֹשִׂים אֶת זֶה בַּטֶּלֶפוֹן.','אוֹרֶן אָמַר: "סַבָּא, אֲנִי אֲלַמֵּד אוֹתְךָ!"','הוּא הֶרְאָה לְסַבָּא אֵיפֹה לוֹחֲצִים כְּדֵי לְצַלֵּם.','אַחַר כָּךְ הוּא הֶרְאָה לוֹ אֵיךְ בּוֹחֲרִים תְּמוּנָה וְשׁוֹלְחִים.','סַבָּא טָעָה פַּעַם אַחַת, וְאוֹרֶן אָמַר: "זֶה בְּסֵדֶר, מְנַסִּים שׁוּב."','בַּפַּעַם הַשְּׁנִיָּה סַבָּא הִצְלִיחַ.','הַדּוֹדָה שָׁלְחָה לֵב אָדֹם בַּחֲזָרָה.','סַבָּא אָמַר: "עַכְשָׁו אַתָּה הַמּוֹרֶה שֶׁלִּי!"'],
  ['סבא רצה לשלוח תמונה לדודה שגרה רחוק.','אבל הוא לא ידע איך עושים את זה בטלפון.','אורן אמר: "סבא, אני אלמד אותך!"','הוא הראה לסבא איפה לוחצים כדי לצלם.','אחר כך הוא הראה לו איך בוחרים תמונה ושולחים.','סבא טעה פעם אחת, ואורן אמר: "זה בסדר, מנסים שוב."','בפעם השנייה סבא הצליח.','הדודה שלחה לב אדום בחזרה.','סבא אמר: "עכשיו אתה המורה שלי!"'],
  [['lit','לְמִי סַבָּא רָצָה לִשְׁלֹחַ תְּמוּנָה?','למי סבא רצה לשלוח תמונה?','לַדּוֹדָה',['לָרוֹפֵא','לַשָּׁכֵן']],['seq','סַבָּא טָעָה',['סַבָּא הִצְלִיחַ','הַדּוֹדָה שָׁלְחָה לֵב']],
-  ['inf','לָמָּה סַבָּא קָרָא לְאוֹרֶן "הַמּוֹרֶה שֶׁלִּי"?','למה סבא קרא לאורן "המורה שלי"?','כִּי אוֹרֶן לִמֵּד אוֹתוֹ',['כִּי אוֹרֶן גָּדוֹל','כִּי אוֹרֶן הוֹלֵךְ לְבֵית סֵפֶר']]]),
+  ['les','מָה עָזַר לְסַבָּא לְהַצְלִיחַ?','מה עזר לסבא להצליח?','הוּא נִסָּה שׁוּב אַחֲרֵי הַטָּעוּת',['הוּא קָנָה טֶלֶפוֹן חָדָשׁ','הַדּוֹדָה בָּאָה לַעֲזֹר']]],
+ ['value','טועים? מנסים שוב. גם מבוגרים לומדים']),
 ST(5,'לַיְלָה בָּאֹהֶל','לילה באוהל',['⛺','lantern'],
- ['בְּחֻפְשַׁת הַקַּיִץ הַמִּשְׁפָּחָה יָצְאָה לָלוּן בְּאֹהֶל.','אוֹרֶן עָזַר לְאַבָּא לִמְתֹּחַ אֶת הַחֲבָלִים שֶׁל הָאֹהֶל.','אִמָּא הִדְלִיקָה פָּנָס, וְכֻלָּם אָכְלוּ כְּרִיכִים.','כְּשֶׁהֶחְשִׁיךְ, הִתְחִילוּ לְהִשָּׁמַע קוֹלוֹת מוּזָרִים.','אוֹרֶן שָׁאַל בְּשֶׁקֶט: "מִי עוֹשֶׂה אֶת הָרַעַשׁ הַזֶּה?"','אַבָּא חִיֵּךְ: "אֵלֶּה צְרָצָרִים. הֵם שָׁרִים בַּלַּיְלָה."','אוֹרֶן הִקְשִׁיב, וְהָרַעַשׁ נִשְׁמַע לוֹ פִּתְאוֹם כְּמוֹ שִׁיר.','הוּא נִרְדַּם מְחַיֵּךְ, בְּתוֹךְ שַׂק הַשֵּׁנָה.'],
- ['בחופשת הקיץ המשפחה יצאה ללון באוהל.','אורן עזר לאבא למתוח את החבלים של האוהל.','אמא הדליקה פנס, וכולם אכלו כריכים.','כשהחשיך, התחילו להישמע קולות מוזרים.','אורן שאל בשקט: "מי עושה את הרעש הזה?"','אבא חייך: "אלה צרצרים. הם שרים בלילה."','אורן הקשיב, והרעש נשמע לו פתאום כמו שיר.','הוא נרדם מחייך, בתוך שק השינה.'],
+ ['בְּחֻפְשַׁת הַקַּיִץ הַמִּשְׁפָּחָה יָצְאָה לָלוּן בְּאֹהֶל.','אוֹרֶן עָזַר לְאַבָּא לִמְתֹּחַ אֶת הַחֲבָלִים שֶׁל הָאֹהֶל.','אִמָּא הִדְלִיקָה פָּנָס, וְכֻלָּם אָכְלוּ כְּרִיכִים.','כְּשֶׁהֶחְשִׁיךְ, הִתְחִילוּ לְהִשָּׁמַע קוֹלוֹת מוּזָרִים.','אוֹרֶן שָׁאַל בְּשֶׁקֶט: "מִי עוֹשֶׂה אֶת הָרַעַשׁ הַזֶּה?"','אַבָּא חִיֵּךְ: "אֵלֶּה צְרָצָרִים. הֵם מְשַׁפְשְׁפִים כְּנָפַיִם, וְכָךְ הֵם שָׁרִים."','אוֹרֶן הִקְשִׁיב, וְהָרַעַשׁ נִשְׁמַע לוֹ פִּתְאוֹם כְּמוֹ שִׁיר.','הוּא נִרְדַּם מְחַיֵּךְ, בְּתוֹךְ שַׂק הַשֵּׁנָה.'],
+ ['בחופשת הקיץ המשפחה יצאה ללון באוהל.','אורן עזר לאבא למתוח את החבלים של האוהל.','אמא הדליקה פנס, וכולם אכלו כריכים.','כשהחשיך, התחילו להישמע קולות מוזרים.','אורן שאל בשקט: "מי עושה את הרעש הזה?"','אבא חייך: "אלה צרצרים. הם משפשפים כנפיים, וכך הם שרים."','אורן הקשיב, והרעש נשמע לו פתאום כמו שיר.','הוא נרדם מחייך, בתוך שק השינה.'],
  [['lit','מִי עָשָׂה אֶת הָרַעַשׁ?','מי עשה את הרעש?','צְרָצָרִים',['צְפַרְדְּעִים','כְּלָבִים']],['seq','אוֹרֶן עָזַר לִמְתֹּחַ חֲבָלִים',['אִמָּא הִדְלִיקָה פָּנָס','אוֹרֶן נִרְדַּם']],
-  ['inf','לָמָּה אוֹרֶן נִרְדַּם מְחַיֵּךְ?','למה אורן נרדם מחייך?','כִּי הוּא כְּבָר לֹא פָּחַד',['כִּי הוּא אָכַל עוּגָה','כִּי הָיָה לוֹ חַם']]])];
+  ['les','אֵיךְ הַצְּרָצָרִים עוֹשִׂים אֶת הַקּוֹל?','איך הצרצרים עושים את הקול?','מְשַׁפְשְׁפִים כְּנָפַיִם',['פּוֹתְחִים אֶת הַפֶּה','דּוֹפְקִים עַל עֵצִים']]],
+ ['sci','צרצרים משמיעים קול כשהם משפשפים את הכנפיים'])];
 stories.forEach((s,i)=>{s.id=i;});
 
 /* ---------- 4. WRITING ---------- */
@@ -6585,7 +6671,7 @@ return R;})();
 (()=>{'use strict';const R=window.READBANK2;
 R.register=function(){const O=window.OREN,T=window.TAL;if(!O||!T||!T.BUILD||R._reg)return false;R._reg=true;
 const {h,$,pick,shuffle,ICON,SPR}=O;const sfx=O.sfx,D=O.D;const UI=R.UI;
-const TL=id=>(T.S().tl[id]||{});const st=id=>TL(id).s|0;const nn=id=>TL(id).n|0;
+const TL=id=>(T.S().tl[id]||{});const st=id=>TL(id).s|0;const nn=id=>TL(id).n|0;const alone=id=>!TL(id).l;
 const say=t=>O.say&&O.say(T.spk(t));
 const nk=(t,p,q)=>T.nikudText?T.nikudText(t,p,q):t;
 const pic=(k,big)=>k?`<span class="pic">${R.isSpr(k)?T.ALLSPR(k):`<span style="font-size:${big?96:60}px;line-height:1.15">${k}</span>`}</span>`:'';
@@ -6595,7 +6681,7 @@ const WORD_ACTS=['first','pw','wp','build'];
 const pass1=id=>st(id)>=3||(st(id)>=2&&nn(id)>=2);
 const passed={word:L=>WORD_ACTS.filter(a=>st(`rb2-${a}-${L}`)>=2).length>=2||WORD_ACTS.some(a=>st(`rb2-${a}-${L}`)>=3&&nn(`rb2-${a}-${L}`)>=2),
   sent:L=>pass1('rb2-sent-'+L),mix:L=>pass1('rb2-mix-'+L),
-  story:L=>R.stories.filter(s=>s.lv===L&&st('rb2-st-'+s.id)>=2).length>=2,
+  story:L=>R.stories.filter(s=>s.lv===L&&st('rb2-st-'+s.id)>=2&&alone('rb2-st-'+s.id)).length>=2,   /* read alone (not listened to, #355) */
   paper:L=>R.writing.paper.filter(p=>p.lv===L&&st('rb2-pp-'+p.id)).length>=2};
 const MAX={word:7,sent:6,story:5,mix:7,paper:7};
 function level(sk){if(typeof R.levelHook==='function'){const v=R.levelHook(sk);if(v)return Math.max(1,Math.min(MAX[sk],v|0));}
@@ -6651,14 +6737,10 @@ function sent(back){const L=level('sent');T.quiz({id:'rb2-sent-'+L,title:'קוֹ
 function nextStory(){const L=level('story');const at=R.stories.filter(x=>x.lv===L);
   if(window.LEARN){try{const r=LEARN.pickItem('rb-story',at.map(x=>({k:x.t,lv:x.lv})),{lv:L});const it=r&&at.find(x=>x.t===r.item.k);if(it)return it;}catch(e){}}
   return at.find(x=>st('rb2-st-'+x.id)<2)||pick(at);}
-function story(back,k){const sto=k!=null?R.stories[k]:nextStory();if(window.LEARN)try{LEARN.seen('rb-story',sto.t,true,false);}catch(e){}O.setScreen('sTal','final',back);T.hudT('סִפּוּר');O.sayNow='קְרָא אֶת הַסִּפּוּר, וְאַחַר כָּךְ עוֹנִים עַל שְׁאֵלוֹת.';const s=$('#sTal');s.innerHTML='';
-  const page=h('div','story');page.innerHTML=`<div class="sth"><span>${pic(sto.spr[0])}</span><h2>${nk(sto.t,sto.tp)}</h2><span>${pic(sto.spr[1])}</span></div>`+sto.s.map((x,i)=>`<p class="sl" data-i="${i}">${nk(x,sto.p[i])}</p>`).join('');s.appendChild(page);
-  const row=h('div','btnrow');const rd=h('button','bigbtn blue sm',ICON.say+`<span>${UI.storyRead}</span>`);const go=h('button','bigbtn',ICON.play+`<span>${UI.storyQ}</span>`);row.append(rd,go);s.appendChild(row);
-  const mark=i=>page.querySelectorAll('.sl').forEach(p=>p.classList.toggle('cur',+p.dataset.i===i));
-  page.querySelectorAll('.sl').forEach(p=>p.onclick=()=>{mark(+p.dataset.i);if(T.readEl)T.readEl(p);else say(sto.s[+p.dataset.i]);});
-  rd.onclick=()=>{if(T.readSeq){T.readSeq([...page.querySelectorAll('.sl')],mark);return;}let i=0;const nx=()=>{if(i>=sto.s.length||!page.isConnected)return;mark(i);say(sto.s[i]);i++;setTimeout(nx,D(3200));};nx();};
-  go.onclick=()=>{O.hush&&O.hush();T.readStop&&T.readStop();let qi=0;T.quiz({id:'rb2-st-'+sto.id,title:sto.t,bg:'final',back,n:sto.q.length,gen:()=>{const [,q,qp,a,ds]=sto.q[qi++];const opts=shuffle([a,...ds]);
-    return {pr:`<div class="sent">${nk(q,qp,1)}</div>`,opts,ans:opts.indexOf(a),cls:'tx',say:T.spk(q),key:q};}});};}
+function story(back,k){const sto=k!=null?R.stories[k]:nextStory();if(window.LEARN)try{LEARN.seen('rb-story',sto.t,true,false);}catch(e){}
+  /* the shared story screen (talents.js, #355): read first, listen later; 📖 back to the story from every question */
+  T.storyScreen({act:'story-new',id:'rb2-st-'+sto.id,title:nk(sto.t,sto.tp),name:sto.t,tp:sto.tp,goal:sto.goal,spr:sto.spr.map(x=>pic(x)),lines:sto.s.map((x,i)=>nk(x,sto.p[i])),
+    q:sto.q.map(([,q,qp,a,ds])=>({pr:nk(q,qp,1),say:T.spk(q),a,ds})),back});}
 
 /* ---- writing: a mixed graded session (copy, dictation, missing letter, sentence order) ---- */
 function mixPlan(L){const ws=R.writing;const P=[];const add=(kind,arr)=>{const it=lvPick(arr,L);if(it)P.push([kind,it]);};
@@ -8264,121 +8346,121 @@ const RC=[
  ['מִי חַי בַּיָּם?','מי חי בים?','@whale',['@sheep','@owl']],
  ['מָה נָכוֹן עַל הַלִּוְיָתָן?','מה נכון על הלווייתן?','הוּא גָּדוֹל מְאוֹד',['הוּא קָטָן מְאוֹד','הוּא חַי עַל עֵץ']]]},
 /* level 3 — a short paragraph: details, order, a first "why" */
-{lv:3,t:'הַיּוֹם יוֹם הַהֻלֶּדֶת שֶׁל מָאיָה. הִיא בַּת שֶׁבַע. אַבָּא קָנָה לָהּ אוֹפַנַּיִם כְּחֻלִּים. מָאיָה רָכְבָה עֲלֵיהֶם בַּגִּנָּה עַד הָעֶרֶב.',
- p:'היום יום ההולדת של מאיה. היא בת שבע. אבא קנה לה אופניים כחולים. מאיה רכבה עליהם בגינה עד הערב.',q:[
+{lv:3,gk:'value',goal:'מנסים שוב אחרי נפילה',les:2,t:'הַיּוֹם יוֹם הַהֻלֶּדֶת שֶׁל מָאיָה. הִיא בַּת שֶׁבַע. אַבָּא קָנָה לָהּ אוֹפַנַּיִם כְּחֻלִּים. מָאיָה נָפְלָה פַּעַם וְעוֹד פַּעַם, אֲבָל קָמָה וְנִסְּתָה שׁוּב. בָּעֶרֶב הִיא כְּבָר רָכְבָה לְבַד.',
+ p:'היום יום ההולדת של מאיה. היא בת שבע. אבא קנה לה אופניים כחולים. מאיה נפלה פעם ועוד פעם, אבל קמה וניסתה שוב. בערב היא כבר רכבה לבד.',q:[
  ['בַּת כַּמָּה מָאיָה?','בת כמה מאיה?','7',['6','8']],
  ['מָה אַבָּא קָנָה לְמָאיָה?','מה אבא קנה למאיה?','אוֹפַנַּיִם',['כַּדּוּר','סֵפֶר']],
- ['אֵיךְ מָאיָה הִרְגִּישָׁה, כַּנִּרְאֶה?','איך מאיה הרגישה, כנראה?','שְׂמֵחָה',['עֲצוּבָה','כּוֹעֶסֶת']]]},
-{lv:3,t:'דָּנִי שָׁתַל זֶרַע בְּעָצִיץ. כָּל יוֹם הוּא הִשְׁקָה אוֹתוֹ בְּמַיִם. אַחֲרֵי שָׁבוּעַ יָצָא נֶבֶט קָטָן. אַחֲרֵי חֹדֶשׁ גָּדַל פֶּרַח צָהֹב.',
- p:'דני שתל זרע בעציץ. כל יום הוא השקה אותו במים. אחרי שבוע יצא נבט קטן. אחרי חודש גדל פרח צהוב.',q:[
+ ['מָה עָזַר לְמָאיָה לִלְמֹד לִרְכֹּב?','מה עזר למאיה ללמוד לרכוב?','הִיא נִסְּתָה שׁוּב וָשׁוּב',['הִיא לֹא נָפְלָה אַף פַּעַם','אַבָּא רָכַב בִּמְקוֹמָהּ']]]},
+{lv:3,gk:'sci',goal:'צמח צריך מים ואור',les:2,t:'דָּנִי שָׁתַל זֶרַע בְּעָצִיץ. כָּל יוֹם הוּא הִשְׁקָה אוֹתוֹ בְּמַיִם וְשָׂם אוֹתוֹ בַּשֶּׁמֶשׁ. אַחֲרֵי שָׁבוּעַ יָצָא נֶבֶט קָטָן. אַחֲרֵי חֹדֶשׁ גָּדַל פֶּרַח צָהֹב.',
+ p:'דני שתל זרע בעציץ. כל יום הוא השקה אותו במים ושם אותו בשמש. אחרי שבוע יצא נבט קטן. אחרי חודש גדל פרח צהוב.',q:[
  ['מָה קָרָה רִאשׁוֹן?','מה קרה ראשון?','דָּנִי שָׁתַל זֶרַע',['גָּדַל פֶּרַח','יָצָא נֶבֶט']],
- ['מָה דָּנִי עָשָׂה כָּל יוֹם?','מה דני עשה כל יום?','הִשְׁקָה אֶת הָעָצִיץ',['קָטַף פְּרָחִים','קָנָה עָצִיץ']],
- ['אֵיזֶה צֶבַע הַפֶּרַח?','איזה צבע הפרח?','צָהֹב',['אָדֹם','כָּחֹל']]]},
-{lv:3,t:'בַּחֹרֶף יוֹרֵד גֶּשֶׁם, וְיֵשׁ שְׁלוּלִיּוֹת. רוֹן נוֹעֵל מַגָּפַיִם וְקוֹפֵץ בַּשְּׁלוּלִיּוֹת. הוּא נֶהֱנֶה מְאוֹד. הַגַּרְבַּיִם שֶׁלּוֹ נִשְׁאָרוֹת יְבֵשׁוֹת.',
- p:'בחורף יורד גשם, ויש שלוליות. רון נועל מגפיים וקופץ בשלוליות. הוא נהנה מאוד. הגרביים שלו נשארות יבשות.',q:[
+ ['אֵיזֶה צֶבַע הַפֶּרַח?','איזה צבע הפרח?','צָהֹב',['אָדֹם','כָּחֹל']],
+ ['מָה צָרִיךְ הַזֶּרַע כְּדֵי לִגְדֹּל?','מה צריך הזרע כדי לגדול?','מַיִם וְשֶׁמֶשׁ',['חֹשֶׁךְ','רַעַשׁ']]]},
+{lv:3,gk:'sci',goal:'מגפיים לא נותנים למים להיכנס',les:1,t:'בַּחֹרֶף יוֹרֵד גֶּשֶׁם, וְיֵשׁ שְׁלוּלִיּוֹת. רוֹן נוֹעֵל מַגָּפַיִם וְקוֹפֵץ בַּשְּׁלוּלִיּוֹת. הוּא נֶהֱנֶה מְאוֹד. הַמַּגָּפַיִם לֹא נוֹתְנִים לַמַּיִם לְהִכָּנֵס, וְהַגַּרְבַּיִם שֶׁלּוֹ נִשְׁאָרוֹת יְבֵשׁוֹת.',
+ p:'בחורף יורד גשם, ויש שלוליות. רון נועל מגפיים וקופץ בשלוליות. הוא נהנה מאוד. המגפיים לא נותנים למים להיכנס, והגרביים שלו נשארות יבשות.',q:[
  ['מָה רוֹן נוֹעֵל?','מה רון נועל?','מַגָּפַיִם',['סַנְדָּלִים','נַעֲלֵי בַּיִת']],
  ['לָמָּה הַגַּרְבַּיִם שֶׁל רוֹן יְבֵשׁוֹת?','למה הגרביים של רון יבשות?','כִּי הוּא נוֹעֵל מַגָּפַיִם',['כִּי לֹא יָרַד גֶּשֶׁם','כִּי הוּא לֹא קָפַץ']],
  ['בְּאֵיזוֹ עוֹנָה זֶה קוֹרֶה?','באיזו עונה זה קורה?','בַּחֹרֶף',['בַּקַּיִץ','בָּאָבִיב']]]},
-{lv:3,t:'לִימוֹר מָצְאָה גּוּר חֲתוּלִים לְיַד הַבַּיִת. הוּא הָיָה רָעֵב וְיִלֵּל. לִימוֹר הֵבִיאָה לוֹ קְעָרָה עִם חָלָב. הַגּוּר שָׁתָה, וְאָז נִרְדַּם עַל הַשָּׁטִיחַ.',
- p:'לימור מצאה גור חתולים ליד הבית. הוא היה רעב ויילל. לימור הביאה לו קערה עם חלב. הגור שתה, ואז נרדם על השטיח.',q:[
- ['מָה קָרָה אַחֲרֵי שֶׁהַגּוּר שָׁתָה?','מה קרה אחרי שהגור שתה?','הוּא נִרְדַּם',['הוּא יִלֵּל','לִימוֹר מָצְאָה אוֹתוֹ']],
+{lv:3,gk:'sci',goal:'חלב לא טוב לחתולים: נותנים מים ואוכל לחתולים',les:2,t:'לִימוֹר מָצְאָה גּוּר חֲתוּלִים לְיַד הַבַּיִת. הוּא הָיָה רָעֵב וְיִלֵּל. לִימוֹר הֵבִיאָה לוֹ מַיִם וְאֹכֶל לַחֲתוּלִים, כִּי חָלָב לֹא טוֹב לַחֲתוּלִים. הַגּוּר אָכַל, וְאָז נִרְדַּם עַל הַשָּׁטִיחַ.',
+ p:'לימור מצאה גור חתולים ליד הבית. הוא היה רעב ויילל. לימור הביאה לו מים ואוכל לחתולים, כי חלב לא טוב לחתולים. הגור אכל, ואז נרדם על השטיח.',q:[
+ ['מָה קָרָה אַחֲרֵי שֶׁהַגּוּר אָכַל?','מה קרה אחרי שהגור אכל?','הוּא נִרְדַּם',['הוּא יִלֵּל','לִימוֹר מָצְאָה אוֹתוֹ']],
  ['לָמָּה הַגּוּר יִלֵּל?','למה הגור יילל?','כִּי הוּא הָיָה רָעֵב',['כִּי הוּא הָיָה עָיֵף','כִּי הוּא פָּחַד מִכֶּלֶב']],
- ['מָה לִימוֹר הֵבִיאָה לַגּוּר?','מה לימור הביאה לגור?','חָלָב',['מַיִם','עוּגָה']]]},
-{lv:3,t:'בַּכִּתָּה שֶׁל אִתַּי יֵשׁ אַקְוַרְיוּם. בָּאַקְוַרְיוּם שׂוֹחִים שְׁלוֹשָׁה דָּגִים כְּתֻמִּים. כָּל בֹּקֶר יֶלֶד אַחֵר נוֹתֵן לָהֶם אֹכֶל. הַיּוֹם זֶה הַתּוֹר שֶׁל אִתַּי.',
- p:'בכיתה של איתי יש אקווריום. באקווריום שוחים שלושה דגים כתומים. כל בוקר ילד אחר נותן להם אוכל. היום זה התור של איתי.',q:[
+ ['לָמָּה לִימוֹר לֹא נָתְנָה לַגּוּר חָלָב?','למה לימור לא נתנה לגור חלב?','כִּי חָלָב לֹא טוֹב לַחֲתוּלִים',['כִּי לֹא הָיָה חָלָב','כִּי הַגּוּר לֹא הָיָה רָעֵב']]]},
+{lv:3,gk:'sci',goal:'מאכילים דגים במעט: אוכל שנשאר מלכלך את המים',les:2,t:'בַּכִּתָּה שֶׁל אִתַּי יֵשׁ אַקְוַרְיוּם. בָּאַקְוַרְיוּם שׂוֹחִים שְׁלוֹשָׁה דָּגִים כְּתֻמִּים. כָּל בֹּקֶר יֶלֶד אַחֵר נוֹתֵן לָהֶם קְצָת אֹכֶל, כִּי אֹכֶל שֶׁנִּשְׁאָר מְלַכְלֵךְ אֶת הַמַּיִם. הַיּוֹם זֶה הַתּוֹר שֶׁל אִתַּי.',
+ p:'בכיתה של איתי יש אקווריום. באקווריום שוחים שלושה דגים כתומים. כל בוקר ילד אחר נותן להם קצת אוכל, כי אוכל שנשאר מלכלך את המים. היום זה התור של איתי.',q:[
  ['כַּמָּה דָּגִים יֵשׁ בָּאַקְוַרְיוּם?','כמה דגים יש באקווריום?','3',['2','5']],
  ['מִי נוֹתֵן לַדָּגִים אֹכֶל הַיּוֹם?','מי נותן לדגים אוכל היום?','אִתַּי',['הַמּוֹרָה','אַבָּא שֶׁל אִתַּי']],
- ['אֵיפֹה הָאַקְוַרְיוּם?','איפה האקווריום?','בַּכִּתָּה',['בַּבַּיִת שֶׁל אִתַּי','בַּגִּנָּה']]]},
-{lv:3,t:'שִׁירָה וְסָבְתָא הָלְכוּ לַשּׁוּק. הֵן קָנוּ תַּפּוּחִים, בָּנָנוֹת וְתוּתִים. בַּבַּיִת הֵן חָתְכוּ אֶת הַפֵּרוֹת וְהֵכִינוּ סָלַט פֵּרוֹת. הַסָּלָט הָיָה מָתוֹק וְטָעִים.',
- p:'שירה וסבתא הלכו לשוק. הן קנו תפוחים, בננות ותותים. בבית הן חתכו את הפירות והכינו סלט פירות. הסלט היה מתוק וטעים.',q:[
+ ['לָמָּה נוֹתְנִים לַדָּגִים רַק קְצָת אֹכֶל?','למה נותנים לדגים רק קצת אוכל?','כִּי אֹכֶל שֶׁנִּשְׁאָר מְלַכְלֵךְ אֶת הַמַּיִם',['כִּי הַדָּגִים לֹא רְעֵבִים','כִּי אֵין הַרְבֵּה אֹכֶל']]]},
+{lv:3,gk:'sci',goal:'בתפוח הזרעים בפנים, בתות מבחוץ',les:2,t:'שִׁירָה וְסָבְתָא הָלְכוּ לַשּׁוּק. הֵן קָנוּ תַּפּוּחִים, בָּנָנוֹת וְתוּתִים. בַּבַּיִת הֵן חָתְכוּ אֶת הַפֵּרוֹת וְהֵכִינוּ סָלַט פֵּרוֹת. בַּתַּפּוּחַ הַזְּרָעִים בִּפְנִים, וּבַתּוּת הֵם מִבַּחוּץ.',
+ p:'שירה וסבתא הלכו לשוק. הן קנו תפוחים, בננות ותותים. בבית הן חתכו את הפירות והכינו סלט פירות. בתפוח הזרעים בפנים, ובתות הם מבחוץ.',q:[
  ['לְאָן הָלְכוּ שִׁירָה וְסָבְתָא?','לאן הלכו שירה וסבתא?','לַשּׁוּק',['לַיָּם','לַגַּן']],
- ['מָה הֵן הֵכִינוּ?','מה הן הכינו?','סָלַט פֵּרוֹת',['עוּגָה','מָרָק']],
- ['אֵיזֶה פְּרִי הֵן לֹא קָנוּ?','איזה פרי הן לא קנו?','אֲגָסִים',['תּוּתִים','בָּנָנוֹת']]]},
-{lv:3,t:'הַנְּמָלָה עוֹבֶדֶת קָשֶׁה כָּל הַקַּיִץ. הִיא אוֹסֶפֶת גַּרְגְּרִים וּמְבִיאָה אוֹתָם לַקֵּן. כְּשֶׁמַּגִּיעַ הַחֹרֶף, יֵשׁ לָהּ הַרְבֵּה אֹכֶל.',
+ ['אֵיזֶה פְּרִי הֵן לֹא קָנוּ?','איזה פרי הן לא קנו?','אֲגָסִים',['תּוּתִים','בָּנָנוֹת']],
+ ['אֵיפֹה הַזְּרָעִים שֶׁל הַתּוּת?','איפה הזרעים של התות?','מִבַּחוּץ',['בִּפְנִים','אֵין לַתּוּת זְרָעִים']]]},
+{lv:3,gk:'sci',goal:'נמלים אוגרות אוכל בקיץ לחורף',les:1,t:'הַנְּמָלָה עוֹבֶדֶת קָשֶׁה כָּל הַקַּיִץ. הִיא אוֹסֶפֶת גַּרְגְּרִים וּמְבִיאָה אוֹתָם לַקֵּן. כְּשֶׁמַּגִּיעַ הַחֹרֶף, יֵשׁ לָהּ הַרְבֵּה אֹכֶל.',
  p:'הנמלה עובדת קשה כל הקיץ. היא אוספת גרגרים ומביאה אותם לקן. כשמגיע החורף, יש לה הרבה אוכל.',q:[
  ['מָה הַנְּמָלָה אוֹסֶפֶת?','מה הנמלה אוספת?','גַּרְגְּרִים',['עָלִים','אֲבָנִים']],
  ['לָמָּה הִיא אוֹסֶפֶת אֹכֶל בַּקַּיִץ?','למה היא אוספת אוכל בקיץ?','כְּדֵי שֶׁיִּהְיֶה לָהּ אֹכֶל בַּחֹרֶף',['כִּי הִיא מְשַׂחֶקֶת','כְּדֵי לִבְנוֹת קֵן']],
  ['מָתַי הַנְּמָלָה עוֹבֶדֶת קָשֶׁה?','מתי הנמלה עובדת קשה?','בַּקַּיִץ',['בַּחֹרֶף','בַּלַּיְלָה']]]},
-{lv:3,t:'עוֹמֶר בָּנָה מִגְדָּל מִקֻּבִּיּוֹת. הַמִּגְדָּל הָיָה גָּבוֹהַּ מְאוֹד. הֶחָתוּל קָפַץ עַל הַשֻּׁלְחָן, וְהַמִּגְדָּל נָפַל. עוֹמֶר צָחַק וּבָנָה מִגְדָּל חָדָשׁ.',
- p:'עומר בנה מגדל מקוביות. המגדל היה גבוה מאוד. החתול קפץ על השולחן, והמגדל נפל. עומר צחק ובנה מגדל חדש.',q:[
+{lv:3,gk:'value',goal:'לא מתייאשים: כשמשהו נופל, בונים שוב',les:2,t:'עוֹמֶר בָּנָה מִגְדָּל מִקֻּבִּיּוֹת. הַמִּגְדָּל הָיָה גָּבוֹהַּ מְאוֹד. הֶחָתוּל קָפַץ עַל הַשֻּׁלְחָן, וְהַמִּגְדָּל נָפַל. עוֹמֶר לֹא כָּעַס. הוּא צָחַק וּבָנָה מִגְדָּל חָדָשׁ.',
+ p:'עומר בנה מגדל מקוביות. המגדל היה גבוה מאוד. החתול קפץ על השולחן, והמגדל נפל. עומר לא כעס. הוא צחק ובנה מגדל חדש.',q:[
  ['מִמָּה עוֹמֶר בָּנָה אֶת הַמִּגְדָּל?','ממה עומר בנה את המגדל?','מִקֻּבִּיּוֹת',['מֵחוֹל','מִקְּלָפִים']],
  ['לָמָּה הַמִּגְדָּל נָפַל?','למה המגדל נפל?','הֶחָתוּל קָפַץ עַל הַשֻּׁלְחָן',['עוֹמֶר הִפִּיל אוֹתוֹ','הָיְתָה רוּחַ חֲזָקָה']],
- ['מָה עוֹמֶר עָשָׂה בַּסּוֹף?','מה עומר עשה בסוף?','בָּנָה מִגְדָּל חָדָשׁ',['בָּכָה','הָלַךְ לִישֹׁן']]]},
+ ['מָה אֶפְשָׁר לִלְמֹד מֵעוֹמֶר?','מה אפשר ללמוד מעומר?','כְּשֶׁמַּשֶּׁהוּ נוֹפֵל, בּוֹנִים שׁוּב',['כְּשֶׁמַּשֶּׁהוּ נוֹפֵל, בּוֹכִים','לֹא בּוֹנִים יוֹתֵר מִגְדָּלִים']]]},
 /* level 4 — a short story: why, feelings, main idea */
-{lv:4,t:'בְּיוֹם שִׁשִּׁי בַּבֹּקֶר יָצְאוּ תָּמָר וְאַבָּא לְטִיּוּל בַּיַּעַר. הֵם לָקְחוּ תִּיק עִם מַיִם, כְּרִיכִים וּמַפָּה. בַּדֶּרֶךְ הֵם רָאוּ צְבִי קוֹפֵץ בֵּין הָעֵצִים. בַּצָּהֳרַיִם הֵם יָשְׁבוּ לְיַד נַחַל וְאָכְלוּ. פִּתְאוֹם תָּמָר שָׂמָה לֵב שֶׁהַמַּפָּה נֶעֶלְמָה. אַבָּא חִיֵּךְ וְאָמַר: "אֲנִי זוֹכֵר אֶת הַדֶּרֶךְ." הֵם חָזְרוּ הַבַּיְתָה בְּשָׁלוֹם.',
- p:'ביום שישי בבוקר יצאו תמר ואבא לטיול ביער. הם לקחו תיק עם מים, כריכים ומפה. בדרך הם ראו צבי קופץ בין העצים. בצהריים הם ישבו ליד נחל ואכלו. פתאום תמר שמה לב שהמפה נעלמה. אבא חייך ואמר: "אני זוכר את הדרך." הם חזרו הביתה בשלום.',q:[
+{lv:4,gk:'word',goal:'סימן דרך: דבר שרואים בדרך ועוזר לזכור אותה',les:3,t:'בְּיוֹם שִׁשִּׁי בַּבֹּקֶר יָצְאוּ תָּמָר וְאַבָּא לְטִיּוּל בַּיַּעַר. הֵם לָקְחוּ תִּיק עִם מַיִם, כְּרִיכִים וּמַפָּה. בַּדֶּרֶךְ הֵם רָאוּ צְבִי קוֹפֵץ לְיַד סֶלַע גָּדוֹל. בַּצָּהֳרַיִם הֵם יָשְׁבוּ לְיַד נַחַל וְאָכְלוּ. פִּתְאוֹם תָּמָר שָׂמָה לֵב שֶׁהַמַּפָּה נֶעֶלְמָה. אַבָּא חִיֵּךְ וְאָמַר: "בַּדֶּרֶךְ שַׂמְתִּי לֵב לְסִימָנִים: הַסֶּלַע הַגָּדוֹל וְהַנַּחַל. הֵם יַרְאוּ לָנוּ אֶת הַדֶּרֶךְ." הֵם חָזְרוּ הַבַּיְתָה בְּשָׁלוֹם.',
+ p:'ביום שישי בבוקר יצאו תמר ואבא לטיול ביער. הם לקחו תיק עם מים, כריכים ומפה. בדרך הם ראו צבי קופץ ליד סלע גדול. בצהריים הם ישבו ליד נחל ואכלו. פתאום תמר שמה לב שהמפה נעלמה. אבא חייך ואמר: "בדרך שמתי לב לסימנים: הסלע הגדול והנחל. הם יראו לנו את הדרך." הם חזרו הביתה בשלום.',q:[
  ['מָתַי יָצְאוּ לַטִּיּוּל?','מתי יצאו לטיול?','בְּיוֹם שִׁשִּׁי',['בְּיוֹם רִאשׁוֹן','בְּשַׁבָּת','בַּלַּיְלָה']],
  ['אֵיזוֹ חַיָּה הֵם רָאוּ?','איזו חיה הם ראו?','צְבִי',['שׁוּעָל','אַרְנָב','סוּס']],
- ['אֵיךְ הֵם מָצְאוּ אֶת הַדֶּרֶךְ הַבַּיְתָה?','איך הם מצאו את הדרך הביתה?','אַבָּא זָכַר אֶת הַדֶּרֶךְ',['הֵם מָצְאוּ אֶת הַמַּפָּה','הַצְּבִי הֶרְאָה לָהֶם','הֵם שָׁאֲלוּ אִישׁ']],
- ['עַל מָה הַסִּפּוּר?','על מה הסיפור?','טִיּוּל שֶׁל תָּמָר וְאַבָּא',['צְבִי שֶׁהָלַךְ לְאִבּוּד','יוֹם בְּבֵית הַסֵּפֶר','אֵיךְ מְצַיְּרִים מַפָּה']]]},
-{lv:4,t:'יוֹאָב רָצָה מְאוֹד כֶּלֶב. הוּא בִּקֵּשׁ מֵאִמָּא כָּל יוֹם. אִמָּא אָמְרָה: "כֶּלֶב צָרִיךְ טִיּוּל, אֹכֶל וּמַיִם כָּל יוֹם." יוֹאָב הִבְטִיחַ לִדְאֹג לוֹ. בְּיוֹם הַהֻלֶּדֶת שֶׁלּוֹ הוּא קִבֵּל גּוּר חוּם וְקָטָן. הוּא קָרָא לוֹ שׁוֹקוֹ. מֵאָז, כָּל בֹּקֶר, יוֹאָב יוֹצֵא אִתּוֹ לְטִיּוּל.',
+ ['אֵיפֹה הֵם אָכְלוּ?','איפה הם אכלו?','לְיַד הַנַּחַל',['לְיַד הַסֶּלַע','בַּבַּיִת','בַּמְּכוֹנִית']],
+ ['מָה עָזַר לְאַבָּא לִזְכֹּר אֶת הַדֶּרֶךְ?','מה עזר לאבא לזכור את הדרך?','סִימָנִים בַּדֶּרֶךְ: הַסֶּלַע וְהַנַּחַל',['הַמַּפָּה','הַצְּבִי הֶרְאָה לָהֶם','הֵם שָׁאֲלוּ אִישׁ']]]},
+{lv:4,gk:'value',goal:'לשמור על הבטחה ולדאוג לחיה',les:3,t:'יוֹאָב רָצָה מְאוֹד כֶּלֶב. הוּא בִּקֵּשׁ מֵאִמָּא כָּל יוֹם. אִמָּא אָמְרָה: "כֶּלֶב צָרִיךְ טִיּוּל, אֹכֶל וּמַיִם כָּל יוֹם." יוֹאָב הִבְטִיחַ לִדְאֹג לוֹ. בְּיוֹם הַהֻלֶּדֶת שֶׁלּוֹ הוּא קִבֵּל גּוּר חוּם וְקָטָן. הוּא קָרָא לוֹ שׁוֹקוֹ. מֵאָז, כָּל בֹּקֶר, יוֹאָב יוֹצֵא אִתּוֹ לְטִיּוּל.',
  p:'יואב רצה מאוד כלב. הוא ביקש מאמא כל יום. אמא אמרה: "כלב צריך טיול, אוכל ומים כל יום." יואב הבטיח לדאוג לו. ביום ההולדת שלו הוא קיבל גור חום וקטן. הוא קרא לו שוקו. מאז, כל בוקר, יואב יוצא איתו לטיול.',q:[
  ['מָה יוֹאָב רָצָה?','מה יואב רצה?','כֶּלֶב',['חָתוּל','אוֹפַנַּיִם','דָּג']],
  ['מָתַי יוֹאָב קִבֵּל אֶת הַגּוּר?','מתי יואב קיבל את הגור?','בְּיוֹם הַהֻלֶּדֶת שֶׁלּוֹ',['בְּחַג','בְּסוֹף הַשָּׁנָה','בְּיוֹם רִאשׁוֹן']],
  ['לָמָּה, כַּנִּרְאֶה, קָרְאוּ לַגּוּר שׁוֹקוֹ?','למה, כנראה, קראו לגור שוקו?','כִּי הוּא חוּם',['כִּי הוּא קָטָן','כִּי הוּא רָעֵב','כִּי הוּא נוֹבֵחַ']],
  ['הַאִם יוֹאָב שׁוֹמֵר עַל הַהַבְטָחָה?','האם יואב שומר על ההבטחה?','כֵּן, הוּא יוֹצֵא אִתּוֹ כָּל בֹּקֶר',['לֹא, אִמָּא יוֹצֵאת אִתּוֹ','לֹא, הוּא שָׁכַח אוֹתוֹ','לֹא, הוּא נָתַן אוֹתוֹ לְחָבֵר']]]},
-{lv:4,t:'בַּגִּנָּה שֶׁל סָבָא יֵשׁ עֵץ לִימוֹן גָּדוֹל. בַּחֹרֶף הָעֵץ מָלֵא לִימוֹנִים צְהֻבִּים. סָבָא וְנוֹי קוֹטְפִים אוֹתָם יַחַד. מֵהַלִּימוֹנִים הֵם מְכִינִים לִימוֹנָדָה. נוֹי מוֹסִיף סֻכָּר, כִּי הַלִּימוֹן לְבַד חָמוּץ מְאוֹד. אֶת הַלִּימוֹנָדָה הֵם שׁוֹתִים בַּמִּרְפֶּסֶת.',
- p:'בגינה של סבא יש עץ לימון גדול. בחורף העץ מלא לימונים צהובים. סבא ונוי קוטפים אותם יחד. מהלימונים הם מכינים לימונדה. נוי מוסיף סוכר, כי הלימון לבד חמוץ מאוד. את הלימונדה הם שותים במרפסת.',q:[
+{lv:4,gk:'sci',goal:'הלשון מרגישה טעמים: מתוק, חמוץ, מלוח ומר',les:3,t:'בַּגִּנָּה שֶׁל סָבָא יֵשׁ עֵץ לִימוֹן גָּדוֹל. בַּחֹרֶף הָעֵץ מָלֵא לִימוֹנִים צְהֻבִּים. סָבָא וְנוֹי קוֹטְפִים אוֹתָם יַחַד. מֵהַלִּימוֹנִים הֵם מְכִינִים לִימוֹנָדָה. נוֹי מוֹסִיף סֻכָּר, כִּי הַלִּימוֹן לְבַד חָמוּץ מְאוֹד. סָבָא מַסְבִּיר: "הַלָּשׁוֹן מַרְגִּישָׁה טְעָמִים: מָתוֹק, חָמוּץ, מָלוּחַ וּמַר." אֶת הַלִּימוֹנָדָה הֵם שׁוֹתִים בַּמִּרְפֶּסֶת.',
+ p:'בגינה של סבא יש עץ לימון גדול. בחורף העץ מלא לימונים צהובים. סבא ונוי קוטפים אותם יחד. מהלימונים הם מכינים לימונדה. נוי מוסיף סוכר, כי הלימון לבד חמוץ מאוד. סבא מסביר: "הלשון מרגישה טעמים: מתוק, חמוץ, מלוח ומר." את הלימונדה הם שותים במרפסת.',q:[
  ['אֵיזֶה עֵץ יֵשׁ בַּגִּנָּה שֶׁל סָבָא?','איזה עץ יש בגינה של סבא?','עֵץ לִימוֹן',['עֵץ תַּפּוּז','עֵץ תַּפּוּחַ','עֵץ תְּאֵנָה']],
  ['לָמָּה נוֹי מוֹסִיף סֻכָּר?','למה נוי מוסיף סוכר?','כִּי הַלִּימוֹן חָמוּץ',['כִּי סָבָא בִּקֵּשׁ','כִּי הַלִּימוֹן מָתוֹק','כִּי הוּא אוֹהֵב לְבַשֵּׁל']],
  ['מָה הֵם עוֹשִׂים קֹדֶם?','מה הם עושים קודם?','קוֹטְפִים לִימוֹנִים',['מוֹסִיפִים סֻכָּר','שׁוֹתִים בַּמִּרְפֶּסֶת','מְכִינִים לִימוֹנָדָה']],
- ['עַל מָה הַסִּפּוּר?','על מה הסיפור?','סָבָא וְנוֹי מְכִינִים לִימוֹנָדָה',['עֵץ שֶׁנָּפַל בַּחֹרֶף','נוֹי לוֹמֵד לְבַשֵּׁל מָרָק','חֲנוּת שֶׁל לִימוֹנִים']]]},
-{lv:4,t:'בְּבֵית הַסֵּפֶר הָיָה יוֹם סְפּוֹרְט. עִידוֹ רָץ בַּמֵּרוֹץ, וּבָאֶמְצַע הוּא מָעַד וְנָפַל. הַבֶּרֶךְ שֶׁלּוֹ כָּאֲבָה קְצָת. הֶחָבֵר שֶׁלּוֹ, אָדָם, עָצַר וְעָזַר לוֹ לָקוּם. הֵם סִיְּמוּ אֶת הַמֵּרוֹץ יַחַד, אַחֲרוֹנִים. כָּל הַיְּלָדִים מָחֲאוּ לָהֶם כַּפַּיִם.',
+ ['מָה הַלָּשׁוֹן מַרְגִּישָׁה?','מה הלשון מרגישה?','טְעָמִים',['צְבָעִים','קוֹלוֹת','אוֹתִיּוֹת']]]},
+{lv:4,gk:'value',goal:'לעזור לחבר חשוב יותר מלנצח',les:2,t:'בְּבֵית הַסֵּפֶר הָיָה יוֹם סְפּוֹרְט. עִידוֹ רָץ בַּמֵּרוֹץ, וּבָאֶמְצַע הוּא מָעַד וְנָפַל. הַבֶּרֶךְ שֶׁלּוֹ כָּאֲבָה קְצָת. הֶחָבֵר שֶׁלּוֹ, אָדָם, עָצַר וְעָזַר לוֹ לָקוּם. הֵם סִיְּמוּ אֶת הַמֵּרוֹץ יַחַד, אַחֲרוֹנִים. כָּל הַיְּלָדִים מָחֲאוּ לָהֶם כַּפַּיִם.',
  p:'בבית הספר היה יום ספורט. עידו רץ במרוץ, ובאמצע הוא מעד ונפל. הברך שלו כאבה קצת. החבר שלו, אדם, עצר ועזר לו לקום. הם סיימו את המרוץ יחד, אחרונים. כל הילדים מחאו להם כפיים.',q:[
  ['מָה קָרָה לְעִידוֹ בַּמֵּרוֹץ?','מה קרה לעידו במרוץ?','הוּא נָפַל',['הוּא נִצַּח','הוּא אִחֵר','הוּא אִבֵּד נַעַל']],
  ['מִי עָזַר לְעִידוֹ?','מי עזר לעידו?','אָדָם',['הַמּוֹרֶה','אַבָּא','אַף אֶחָד']],
  ['לָמָּה כֻּלָּם מָחֲאוּ לָהֶם כַּפַּיִם?','למה כולם מחאו להם כפיים?','כִּי אָדָם עָזַר לְחָבֵר',['כִּי הֵם נִצְּחוּ','כִּי הֵם רָצוּ הֲכִי מַהֵר','כִּי נִגְמַר הַיּוֹם']],
  ['עַל מָה הַסִּפּוּר?','על מה הסיפור?','חָבֵר שֶׁעוֹזֵר',['אֵיךְ מְנַצְּחִים בְּמֵרוֹץ','נַעֲלֵי סְפּוֹרְט חֲדָשׁוֹת','שִׁעוּר חֶשְׁבּוֹן']]]},
-{lv:4,t:'בַּלַּיְלָה רוֹנִי הִתְעוֹרְרָה מֵרַעַשׁ מוּזָר: טַק, טַק, טַק. הִיא פָּחֲדָה קְצָת וְהִדְלִיקָה פָּנָס. הִיא הָלְכָה לְאַט אֶל הַחַלּוֹן. בַּחוּץ נָשְׁבָה רוּחַ חֲזָקָה, וְעָנָף שֶׁל עֵץ דָּפַק עַל הַזְּכוּכִית. רוֹנִי חִיְּכָה, חָזְרָה לַמִּטָּה וְנִרְדְּמָה.',
- p:'בלילה רוני התעוררה מרעש מוזר: טק, טק, טק. היא פחדה קצת והדליקה פנס. היא הלכה לאט אל החלון. בחוץ נשבה רוח חזקה, וענף של עץ דפק על הזכוכית. רוני חייכה, חזרה למיטה ונרדמה.',q:[
+{lv:4,gk:'value',goal:'אומץ: בודקים מה מפחיד, ולרוב יש הסבר פשוט',les:3,t:'בַּלַּיְלָה רוֹנִי הִתְעוֹרְרָה מֵרַעַשׁ מוּזָר: טַק, טַק, טַק. הִיא פָּחֲדָה קְצָת וְהִדְלִיקָה פָּנָס. הִיא הָלְכָה לְאַט אֶל הַחַלּוֹן. בַּחוּץ נָשְׁבָה רוּחַ חֲזָקָה, וְעָנָף שֶׁל עֵץ דָּפַק עַל הַזְּכוּכִית. רוֹנִי חִיְּכָה: "בָּדַקְתִּי, וְזֶה רַק עָנָף." הִיא חָזְרָה לַמִּטָּה וְנִרְדְּמָה.',
+ p:'בלילה רוני התעוררה מרעש מוזר: טק, טק, טק. היא פחדה קצת והדליקה פנס. היא הלכה לאט אל החלון. בחוץ נשבה רוח חזקה, וענף של עץ דפק על הזכוכית. רוני חייכה: "בדקתי, וזה רק ענף." היא חזרה למיטה ונרדמה.',q:[
  ['מָה עָשָׂה אֶת הָרַעַשׁ?','מה עשה את הרעש?','עָנָף שֶׁדָּפַק עַל הַחַלּוֹן',['מִישֶׁהוּ שֶׁדָּפַק בַּדֶּלֶת','גֶּשֶׁם עַל הַגַּג','חָתוּל בַּמִּטְבָּח']],
  ['מָה רוֹנִי הִדְלִיקָה?','מה רוני הדליקה?','פָּנָס',['נֵר','טֶלֶוִיזְיָה','מַחְשֵׁב']],
  ['מָה רוֹנִי עָשְׂתָה אַחֲרֵי שֶׁהִדְלִיקָה פָּנָס?','מה רוני עשתה אחרי שהדליקה פנס?','הָלְכָה אֶל הַחַלּוֹן',['נִרְדְּמָה','הִתְעוֹרְרָה','קָרְאָה לְאִמָּא']],
- ['אֵיךְ רוֹנִי הִרְגִּישָׁה בַּסּוֹף?','איך רוני הרגישה בסוף?','רְגוּעָה',['מְפַחֶדֶת','כּוֹעֶסֶת','רְעֵבָה']]]},
-{lv:4,t:'בַּסִּפְרִיָּה מָצָא אוֹרֶן סֵפֶר עַל הֶחָלָל. בַּסֵּפֶר הָיוּ תְּמוּנוֹת שֶׁל כּוֹכָבִים וְשֶׁל יְרֵחִים. אוֹרֶן לָמַד שֶׁהַשֶּׁמֶשׁ הִיא כּוֹכָב. בָּעֶרֶב הוּא יָצָא עִם אַבָּא לַמִּרְפֶּסֶת. הֵם הִסְתַּכְּלוּ עַל הַיָּרֵחַ וְסָפְרוּ כּוֹכָבִים. אוֹרֶן אָמַר: "כְּשֶׁאֶגְדַּל, אֶטּוּס לֶחָלָל!"',
- p:'בספרייה מצא אורן ספר על החלל. בספר היו תמונות של כוכבים ושל ירחים. אורן למד שהשמש היא כוכב. בערב הוא יצא עם אבא למרפסת. הם הסתכלו על הירח וספרו כוכבים. אורן אמר: "כשאגדל, אטוס לחלל!"',q:[
+ ['מָה רוֹנִי לָמְדָה?','מה רוני למדה?','כְּדַאי לִבְדֹּק מָה עוֹשֶׂה אֶת הָרַעַשׁ',['צָרִיךְ לִבְרֹחַ מִכָּל רַעַשׁ','אָסוּר לְהַדְלִיק פָּנָס','רוּחַ הִיא מִפְלֶצֶת']]]},
+{lv:4,gk:'sci',goal:'השמש היא כוכב, הכי קרוב אלינו',les:3,t:'בַּסִּפְרִיָּה מָצָא אוֹרֶן סֵפֶר עַל הֶחָלָל. בַּסֵּפֶר הָיוּ תְּמוּנוֹת שֶׁל כּוֹכָבִים וְשֶׁל יְרֵחִים. אוֹרֶן לָמַד שֶׁהַשֶּׁמֶשׁ הִיא כּוֹכָב. הִיא נִרְאֵית גְּדוֹלָה כִּי הִיא הַכּוֹכָב הֲכִי קָרוֹב אֵלֵינוּ. בָּעֶרֶב הוּא יָצָא עִם אַבָּא לַמִּרְפֶּסֶת. הֵם הִסְתַּכְּלוּ עַל הַיָּרֵחַ וְסָפְרוּ כּוֹכָבִים. אוֹרֶן אָמַר: "כְּשֶׁאֶגְדַּל, אֶטּוּס לֶחָלָל!"',
+ p:'בספרייה מצא אורן ספר על החלל. בספר היו תמונות של כוכבים ושל ירחים. אורן למד שהשמש היא כוכב. היא נראית גדולה כי היא הכוכב הכי קרוב אלינו. בערב הוא יצא עם אבא למרפסת. הם הסתכלו על הירח וספרו כוכבים. אורן אמר: "כשאגדל, אטוס לחלל!"',q:[
  ['עַל מָה הָיָה הַסֵּפֶר?','על מה היה הספר?','עַל הֶחָלָל',['עַל חַיּוֹת','עַל הַיָּם','עַל מְכוֹנִיּוֹת']],
  ['מָה אוֹרֶן לָמַד?','מה אורן למד?','שֶׁהַשֶּׁמֶשׁ הִיא כּוֹכָב',['שֶׁהַיָּרֵחַ הוּא כּוֹכָב','שֶׁהַשֶּׁמֶשׁ קְטַנָּה','שֶׁאֵין כּוֹכָבִים']],
  ['מָה אוֹרֶן רוֹצֶה לַעֲשׂוֹת כְּשֶׁיִּגְדַּל?','מה אורן רוצה לעשות כשיגדל?','לָטוּס לֶחָלָל',['לִכְתֹּב סְפָרִים','לִבְנוֹת מִרְפֶּסֶת','לִסְפֹּר כְּבָשִׂים']],
- ['מָתַי יָצְאוּ לַמִּרְפֶּסֶת?','מתי יצאו למרפסת?','בָּעֶרֶב',['בַּבֹּקֶר','בַּצָּהֳרַיִם','בְּשַׁבָּת']]]},
-{lv:4,t:'כָּל שָׁנָה הַחֲסִידוֹת עָפוֹת מֵאֵירוֹפָּה לְאַפְרִיקָה. בַּסְּתָו הֵן עוֹבְרוֹת מֵעַל יִשְׂרָאֵל. בַּדֶּרֶךְ הֵן נָחוֹת בַּשָּׂדוֹת וְאוֹכְלוֹת. בָּאָבִיב הֵן חוֹזְרוֹת לְאֵירוֹפָּה. אֲנָשִׁים רַבִּים יוֹצְאִים לִרְאוֹת אוֹתָן עָפוֹת בִּלְהָקוֹת גְּדוֹלוֹת.',
- p:'כל שנה החסידות עפות מאירופה לאפריקה. בסתיו הן עוברות מעל ישראל. בדרך הן נחות בשדות ואוכלות. באביב הן חוזרות לאירופה. אנשים רבים יוצאים לראות אותן עפות בלהקות גדולות.',q:[
+ ['לָמָּה הַשֶּׁמֶשׁ נִרְאֵית גְּדוֹלָה?','למה השמש נראית גדולה?','כִּי הִיא הַכּוֹכָב הֲכִי קָרוֹב אֵלֵינוּ',['כִּי הִיא הַכּוֹכָב הֲכִי קָטָן','כִּי הִיא עֲשׂוּיָה מִזָּהָב','כִּי הִיא קְרוֹבָה לַיָּרֵחַ']]]},
+{lv:4,gk:'sci',goal:'למה ציפורים נודדות: בחורף אין להן מספיק אוכל',les:3,t:'כָּל שָׁנָה הַחֲסִידוֹת עָפוֹת מֵאֵירוֹפָּה לְאַפְרִיקָה, כִּי בַּחֹרֶף קַר בְּאֵירוֹפָּה וְאֵין שָׁם מַסְפִּיק אֹכֶל. בַּסְּתָו הֵן עוֹבְרוֹת מֵעַל יִשְׂרָאֵל. בַּדֶּרֶךְ הֵן נָחוֹת בַּשָּׂדוֹת וְאוֹכְלוֹת. בָּאָבִיב הֵן חוֹזְרוֹת לְאֵירוֹפָּה. אֲנָשִׁים רַבִּים יוֹצְאִים לִרְאוֹת אוֹתָן עָפוֹת בִּלְהָקוֹת גְּדוֹלוֹת.',
+ p:'כל שנה החסידות עפות מאירופה לאפריקה, כי בחורף קר באירופה ואין שם מספיק אוכל. בסתיו הן עוברות מעל ישראל. בדרך הן נחות בשדות ואוכלות. באביב הן חוזרות לאירופה. אנשים רבים יוצאים לראות אותן עפות בלהקות גדולות.',q:[
  ['לְאָן עָפוֹת הַחֲסִידוֹת בַּסְּתָו?','לאן עפות החסידות בסתיו?','לְאַפְרִיקָה',['לְאֵירוֹפָּה','לַיָּם','לֶהָרִים']],
  ['מָה הֵן עוֹשׂוֹת בַּשָּׂדוֹת?','מה הן עושות בשדות?','נָחוֹת וְאוֹכְלוֹת',['בּוֹנוֹת קֵן','מְשַׂחֲקוֹת בַּבֹּץ','יְשֵׁנוֹת כָּל הַחֹרֶף']],
  ['מָתַי הַחֲסִידוֹת חוֹזְרוֹת לְאֵירוֹפָּה?','מתי החסידות חוזרות לאירופה?','בָּאָבִיב',['בַּקַּיִץ','בַּחֹרֶף','בַּסְּתָו']],
- ['עַל מָה הַקֶּטַע?','על מה הקטע?','הַמַּסָּע שֶׁל הַחֲסִידוֹת',['אֵיךְ בּוֹנִים קֵן','חַיּוֹת בַּיָּם','מֶזֶג הָאֲוִיר בְּאַפְרִיקָה']]]},
+ ['לָמָּה הַחֲסִידוֹת עָפוֹת לְאַפְרִיקָה?','למה החסידות עפות לאפריקה?','כִּי בַּחֹרֶף אֵין לָהֶן מַסְפִּיק אֹכֶל בְּאֵירוֹפָּה',['כִּי הֵן אוֹהֲבוֹת לָטוּס','כִּי בְּאַפְרִיקָה יוֹרֵד שֶׁלֶג','כִּי הֵן רוֹצוֹת לִרְאוֹת אֲנָשִׁים']]]},
 /* level 5 — a longer story: order, why, lesson */
-{lv:5,t:'יַלְדֵי כִּתָּה ב׳ הֶחְלִיטוּ לְגַדֵּל גִּנַּת יְרָקוֹת בֶּחָצֵר. קֹדֶם הֵם נִקּוּ אֶת הָאֲדָמָה מֵאֲבָנִים. אַחַר כָּךְ הֵם שָׁתְלוּ חַסָּה, גֶּזֶר וּמְלָפְפוֹנִים. כָּל יוֹם שְׁנֵי יְלָדִים הִשְׁקוּ אֶת הַגִּנָּה. בְּשָׁבוּעַ אֶחָד הָיָה חַם מְאוֹד, וְהַיְּלָדִים שָׁכְחוּ לְהַשְׁקוֹת. הַחַסָּה הִתְחִילָה לִנְבֹּל. הַמּוֹרָה הִצִּיעָה לִתְלוֹת לוּחַ תּוֹרָנוּת עַל הַדֶּלֶת. מֵאָז אַף אֶחָד לֹא שָׁכַח, וּבְסוֹף הַשָּׁנָה כָּל הַכִּתָּה אָכְלָה סָלָט מֵהַגִּנָּה.',
- p:'ילדי כיתה ב׳ החליטו לגדל גינת ירקות בחצר. קודם הם ניקו את האדמה מאבנים. אחר כך הם שתלו חסה, גזר ומלפפונים. כל יום שני ילדים השקו את הגינה. בשבוע אחד היה חם מאוד, והילדים שכחו להשקות. החסה התחילה לנבול. המורה הציעה לתלות לוח תורנות על הדלת. מאז אף אחד לא שכח, ובסוף השנה כל הכיתה אכלה סלט מהגינה.',q:[
+{lv:5,gk:'sci',goal:'צמח בלי מים נובל ומתייבש',les:1,t:'יַלְדֵי כִּתָּה ב׳ הֶחְלִיטוּ לְגַדֵּל גִּנַּת יְרָקוֹת בֶּחָצֵר. קֹדֶם הֵם נִקּוּ אֶת הָאֲדָמָה מֵאֲבָנִים. אַחַר כָּךְ הֵם שָׁתְלוּ חַסָּה, גֶּזֶר וּמְלָפְפוֹנִים. כָּל יוֹם שְׁנֵי יְלָדִים הִשְׁקוּ אֶת הַגִּנָּה. בְּשָׁבוּעַ אֶחָד הָיָה חַם מְאוֹד, וְהַיְּלָדִים שָׁכְחוּ לְהַשְׁקוֹת. הַחַסָּה הִתְחִילָה לִנְבֹּל, כִּי צֶמַח בְּלִי מַיִם מִתְיַבֵּשׁ. הַמּוֹרָה הִצִּיעָה לִתְלוֹת לוּחַ תּוֹרָנוּת עַל הַדֶּלֶת. מֵאָז אַף אֶחָד לֹא שָׁכַח, וּבְסוֹף הַשָּׁנָה כָּל הַכִּתָּה אָכְלָה סָלָט מֵהַגִּנָּה.',
+ p:'ילדי כיתה ב׳ החליטו לגדל גינת ירקות בחצר. קודם הם ניקו את האדמה מאבנים. אחר כך הם שתלו חסה, גזר ומלפפונים. כל יום שני ילדים השקו את הגינה. בשבוע אחד היה חם מאוד, והילדים שכחו להשקות. החסה התחילה לנבול, כי צמח בלי מים מתייבש. המורה הציעה לתלות לוח תורנות על הדלת. מאז אף אחד לא שכח, ובסוף השנה כל הכיתה אכלה סלט מהגינה.',q:[
  ['מָה עָשׂוּ הַיְּלָדִים קֹדֶם?','מה עשו הילדים קודם?','נִקּוּ אֶת הָאֲדָמָה מֵאֲבָנִים',['שָׁתְלוּ גֶּזֶר','הִשְׁקוּ אֶת הַגִּנָּה','אָכְלוּ סָלָט']],
  ['לָמָּה הַחַסָּה הִתְחִילָה לִנְבֹּל?','למה החסה התחילה לנבול?','כִּי שָׁכְחוּ לְהַשְׁקוֹת',['כִּי הָיָה קַר מְאוֹד','כִּי הַיְּלָדִים קָטְפוּ אוֹתָהּ','כִּי הָיוּ בָּהּ חֲרָקִים']],
  ['בְּמָה עָזַר לוּחַ הַתּוֹרָנוּת?','במה עזר לוח התורנות?','כֻּלָּם זָכְרוּ מָתַי לְהַשְׁקוֹת',['שָׁתְלוּ יוֹתֵר יְרָקוֹת','הַדֶּלֶת הָיְתָה יָפָה יוֹתֵר','סָפְרוּ אֶת הַיְּלָדִים']],
  ['עַל מָה הַסִּפּוּר?','על מה הסיפור?','כִּתָּה שֶׁמְּגַדֶּלֶת גִּנָּה יַחַד',['אֵיךְ מְכִינִים סָלָט','יוֹם חַם בְּמִיֻחָד','מוֹרָה שֶׁכָּעֲסָה']]]},
-{lv:5,t:'אַרְנָבוֹן קָטָן גָּר בִּמְאוּרָה מִתַּחַת לְעֵץ אַלּוֹן. כָּל עֶרֶב, כְּשֶׁהַשֶּׁמֶשׁ שָׁקְעָה, הוּא נִכְנַס מַהֵר פְּנִימָה, כִּי פָּחַד מֵהַחֹשֶׁךְ. לַיְלָה אֶחָד הוּא רָאָה אוֹר קָטָן מְהַבְהֵב לְיַד הַפֶּתַח. הוּא הֵצִיץ הַחוּצָה וְרָאָה עֲשָׂרוֹת גַּחֲלִילִיּוֹת זוֹהֲרוֹת בֵּין הָעֲשָׂבִים. "הַחֹשֶׁךְ מָלֵא אוֹרוֹת קְטַנִּים!" הוּא אָמַר בְּהַפְתָּעָה. מֵאָז, בְּכָל עֶרֶב, הָאַרְנָבוֹן יוֹשֵׁב רֶגַע בַּפֶּתַח וּמְחַפֵּשׂ אֶת הָאוֹרוֹת.',
+{lv:5,gk:'value',goal:'כשמסתכלים טוב, הפחד קטן',les:3,t:'אַרְנָבוֹן קָטָן גָּר בִּמְאוּרָה מִתַּחַת לְעֵץ אַלּוֹן. כָּל עֶרֶב, כְּשֶׁהַשֶּׁמֶשׁ שָׁקְעָה, הוּא נִכְנַס מַהֵר פְּנִימָה, כִּי פָּחַד מֵהַחֹשֶׁךְ. לַיְלָה אֶחָד הוּא רָאָה אוֹר קָטָן מְהַבְהֵב לְיַד הַפֶּתַח. הוּא הֵצִיץ הַחוּצָה וְרָאָה עֲשָׂרוֹת גַּחֲלִילִיּוֹת זוֹהֲרוֹת בֵּין הָעֲשָׂבִים. "הַחֹשֶׁךְ מָלֵא אוֹרוֹת קְטַנִּים!" הוּא אָמַר בְּהַפְתָּעָה. מֵאָז, בְּכָל עֶרֶב, הָאַרְנָבוֹן יוֹשֵׁב רֶגַע בַּפֶּתַח וּמְחַפֵּשׂ אֶת הָאוֹרוֹת.',
  p:'ארנבון קטן גר במאורה מתחת לעץ אלון. כל ערב, כשהשמש שקעה, הוא נכנס מהר פנימה, כי פחד מהחושך. לילה אחד הוא ראה אור קטן מהבהב ליד הפתח. הוא הציץ החוצה וראה עשרות גחליליות זוהרות בין העשבים. "החושך מלא אורות קטנים!" הוא אמר בהפתעה. מאז, בכל ערב, הארנבון יושב רגע בפתח ומחפש את האורות.',q:[
  ['מִמָּה פָּחַד הָאַרְנָבוֹן?','ממה פחד הארנבון?','מֵהַחֹשֶׁךְ',['מֵהַשּׁוּעָל','מֵהַגֶּשֶׁם','מֵהָעֵץ']],
  ['מָה הָאַרְנָבוֹן רָאָה בַּחוּץ?','מה הארנבון ראה בחוץ?','גַּחֲלִילִיּוֹת',['כּוֹכָבִים','פָּנָס','יָרֵחַ']],
  ['אֵיךְ הִשְׁתַּנָּה הָאַרְנָבוֹן?','איך השתנה הארנבון?','הוּא פָּחוֹת מְפַחֵד מֵהַחֹשֶׁךְ',['הוּא מְפַחֵד יוֹתֵר','הוּא עָבַר לְבַיִת אַחֵר','הוּא יָשֵׁן כָּל הַיּוֹם']],
  ['מָה אֶפְשָׁר לִלְמֹד מֵהַסִּפּוּר?','מה אפשר ללמוד מהסיפור?','כְּשֶׁמִּסְתַּכְּלִים טוֹב, הַפַּחַד קָטֵן',['אַרְנָבִים אוֹהֲבִים גֶּזֶר','צָרִיךְ לִישֹׁן מֻקְדָּם','בַּלַּיְלָה אָסוּר לָצֵאת']]]},
-{lv:5,t:'אֵלָה רָצְתָה לָתֵת לְאִמָּא מַתָּנָה לְיוֹם הַהֻלֶּדֶת, אֲבָל לֹא הָיָה לָהּ כֶּסֶף. הִיא חָשְׁבָה וְחָשְׁבָה, וּפִתְאוֹם הָיָה לָהּ רַעְיוֹן. הִיא אָסְפָה צְדָפִים עַל שְׂפַת הַיָּם, צָבְעָה אוֹתָם וְהִדְבִּיקָה אוֹתָם עַל מִסְגֶּרֶת. בְּתוֹךְ הַמִּסְגֶּרֶת הִיא שָׂמָה צִיּוּר שֶׁל כָּל הַמִּשְׁפָּחָה. כְּשֶׁאִמָּא פָּתְחָה אֶת הַמַּתָּנָה, הָיוּ לָהּ דְּמָעוֹת בָּעֵינַיִם. הִיא חִבְּקָה אֶת אֵלָה חָזָק וְאָמְרָה: "זֹאת הַמַּתָּנָה הֲכִי יָפָה שֶׁקִּבַּלְתִּי."',
+{lv:5,gk:'value',goal:'מתנה מהלב שווה יותר מכסף',les:3,t:'אֵלָה רָצְתָה לָתֵת לְאִמָּא מַתָּנָה לְיוֹם הַהֻלֶּדֶת, אֲבָל לֹא הָיָה לָהּ כֶּסֶף. הִיא חָשְׁבָה וְחָשְׁבָה, וּפִתְאוֹם הָיָה לָהּ רַעְיוֹן. הִיא אָסְפָה צְדָפִים עַל שְׂפַת הַיָּם, צָבְעָה אוֹתָם וְהִדְבִּיקָה אוֹתָם עַל מִסְגֶּרֶת. בְּתוֹךְ הַמִּסְגֶּרֶת הִיא שָׂמָה צִיּוּר שֶׁל כָּל הַמִּשְׁפָּחָה. כְּשֶׁאִמָּא פָּתְחָה אֶת הַמַּתָּנָה, הָיוּ לָהּ דְּמָעוֹת בָּעֵינַיִם. הִיא חִבְּקָה אֶת אֵלָה חָזָק וְאָמְרָה: "זֹאת הַמַּתָּנָה הֲכִי יָפָה שֶׁקִּבַּלְתִּי."',
  p:'אלה רצתה לתת לאמא מתנה ליום ההולדת, אבל לא היה לה כסף. היא חשבה וחשבה, ופתאום היה לה רעיון. היא אספה צדפים על שפת הים, צבעה אותם והדביקה אותם על מסגרת. בתוך המסגרת היא שמה ציור של כל המשפחה. כשאמא פתחה את המתנה, היו לה דמעות בעיניים. היא חיבקה את אלה חזק ואמרה: "זאת המתנה הכי יפה שקיבלתי."',q:[
  ['מָה הָיְתָה הַבְּעָיָה שֶׁל אֵלָה?','מה הייתה הבעיה של אלה?','לֹא הָיָה לָהּ כֶּסֶף',['הִיא שָׁכְחָה אֶת יוֹם הַהֻלֶּדֶת','הִיא הָיְתָה חוֹלָה','אִמָּא לֹא הָיְתָה בַּבַּיִת']],
  ['מָה אֵלָה עָשְׂתָה אַחֲרֵי שֶׁאָסְפָה צְדָפִים?','מה אלה עשתה אחרי שאספה צדפים?','צָבְעָה אוֹתָם',['נָתְנָה אֶת הַמַּתָּנָה','חָשְׁבָה עַל רַעְיוֹן','הָלְכָה לַחֲנוּת']],
  ['לָמָּה הָיוּ לְאִמָּא דְּמָעוֹת בָּעֵינַיִם?','למה היו לאמא דמעות בעיניים?','הִיא הִתְרַגְּשָׁה מֵהַמַּתָּנָה',['הַמַּתָּנָה לֹא מָצְאָה חֵן בְּעֵינֶיהָ','הָיָה לָהּ קַר','הִיא נִפְגְּעָה']],
  ['מָה אֶפְשָׁר לִלְמֹד מֵהַסִּפּוּר?','מה אפשר ללמוד מהסיפור?','מַתָּנָה מֵהַלֵּב שָׁוָה יוֹתֵר מִכֶּסֶף',['צְדָפִים הֵם הֲכִי יָפִים','צָרִיךְ לַחְסֹךְ כֶּסֶף','אָסוּר לִבְכּוֹת']]]},
-{lv:5,t:'הַדְּבוֹרִים חַיּוֹת יַחַד בְּכַוֶּרֶת. בְּכָל כַּוֶּרֶת יֵשׁ מַלְכָּה אַחַת וְהַרְבֵּה דְּבוֹרִים פּוֹעֲלוֹת. הַפּוֹעֲלוֹת עָפוֹת מִפֶּרַח לְפֶרַח וְאוֹסְפוֹת צוּף. מֵהַצּוּף הֵן מְכִינוֹת דְּבַשׁ. כְּשֶׁדְּבוֹרָה מוֹצֵאת שָׂדֶה מָלֵא פְּרָחִים, הִיא חוֹזֶרֶת לַכַּוֶּרֶת וְרוֹקֶדֶת. הָרִקּוּד מְסַפֵּר לַדְּבוֹרִים הָאֲחֵרוֹת לְאָן לָעוּף.',
+{lv:5,gk:'sci',goal:'דבורים מכינות דבש מצוף ומספרות בריקוד איפה הפרחים',les:2,t:'הַדְּבוֹרִים חַיּוֹת יַחַד בְּכַוֶּרֶת. בְּכָל כַּוֶּרֶת יֵשׁ מַלְכָּה אַחַת וְהַרְבֵּה דְּבוֹרִים פּוֹעֲלוֹת. הַפּוֹעֲלוֹת עָפוֹת מִפֶּרַח לְפֶרַח וְאוֹסְפוֹת צוּף. מֵהַצּוּף הֵן מְכִינוֹת דְּבַשׁ. כְּשֶׁדְּבוֹרָה מוֹצֵאת שָׂדֶה מָלֵא פְּרָחִים, הִיא חוֹזֶרֶת לַכַּוֶּרֶת וְרוֹקֶדֶת. הָרִקּוּד מְסַפֵּר לַדְּבוֹרִים הָאֲחֵרוֹת לְאָן לָעוּף.',
  p:'הדבורים חיות יחד בכוורת. בכל כוורת יש מלכה אחת והרבה דבורים פועלות. הפועלות עפות מפרח לפרח ואוספות צוף. מהצוף הן מכינות דבש. כשדבורה מוצאת שדה מלא פרחים, היא חוזרת לכוורת ורוקדת. הריקוד מספר לדבורים האחרות לאן לעוף.',q:[
  ['אֵיפֹה חַיּוֹת הַדְּבוֹרִים?','איפה חיות הדבורים?','בְּכַוֶּרֶת',['בָּאֲדָמָה','בַּמַּיִם','בִּמְעָרָה']],
  ['מִמָּה הַדְּבוֹרִים מְכִינוֹת דְּבַשׁ?','ממה הדבורים מכינות דבש?','מִצּוּף',['מִמַּיִם','מֵעָלִים','מִסֻּכָּר']],
  ['לָמָּה הַדְּבוֹרָה רוֹקֶדֶת?','למה הדבורה רוקדת?','כְּדֵי לְהַרְאוֹת אֵיפֹה הַפְּרָחִים',['כִּי הִיא שְׂמֵחָה','כְּדֵי לְהִתְחַמֵּם','כִּי הַמַּלְכָּה עֲיֵפָה']],
  ['עַל מָה הַקֶּטַע?','על מה הקטע?','אֵיךְ דְּבוֹרִים עוֹבְדוֹת יַחַד',['אֵיךְ פְּרָחִים גְּדֵלִים','מַלְכָּה שֶׁהָלְכָה לְאִבּוּד','דְּבַשׁ בַּמִּטְבָּח']]]},
-{lv:5,t:'בַּכְּפָר הָיָה גֶּשֶׁר קָטָן מֵעַל הַנַּחַל. אַחֲרֵי סוּפָה גְּדוֹלָה הַגֶּשֶׁר נִשְׁבַּר, וְהַיְּלָדִים לֹא יָכְלוּ לְהַגִּיעַ לְבֵית הַסֵּפֶר שֶׁבַּצַּד הַשֵּׁנִי. כָּל אַנְשֵׁי הַכְּפָר נֶאֶסְפוּ. הַנַּגָּר הֵבִיא קְרָשִׁים, הָאוֹפֶה הֵבִיא לֶחֶם לָעוֹבְדִים, וְהַיְּלָדִים הֶעֱבִירוּ מַסְמְרִים. אַחֲרֵי יוֹמַיִם עָמַד שָׁם גֶּשֶׁר חָדָשׁ וְחָזָק. עַל הַגֶּשֶׁר תָּלוּ שֶׁלֶט: "בָּנִינוּ יַחַד."',
+{lv:5,gk:'value',goal:'יחד מצליחים יותר: כל אחד תורם משהו',les:3,t:'בַּכְּפָר הָיָה גֶּשֶׁר קָטָן מֵעַל הַנַּחַל. אַחֲרֵי סוּפָה גְּדוֹלָה הַגֶּשֶׁר נִשְׁבַּר, וְהַיְּלָדִים לֹא יָכְלוּ לְהַגִּיעַ לְבֵית הַסֵּפֶר שֶׁבַּצַּד הַשֵּׁנִי. כָּל אַנְשֵׁי הַכְּפָר נֶאֶסְפוּ. הַנַּגָּר הֵבִיא קְרָשִׁים, הָאוֹפֶה הֵבִיא לֶחֶם לָעוֹבְדִים, וְהַיְּלָדִים הֶעֱבִירוּ מַסְמְרִים. אַחֲרֵי יוֹמַיִם עָמַד שָׁם גֶּשֶׁר חָדָשׁ וְחָזָק. עַל הַגֶּשֶׁר תָּלוּ שֶׁלֶט: "בָּנִינוּ יַחַד."',
  p:'בכפר היה גשר קטן מעל הנחל. אחרי סופה גדולה הגשר נשבר, והילדים לא יכלו להגיע לבית הספר שבצד השני. כל אנשי הכפר נאספו. הנגר הביא קרשים, האופה הביא לחם לעובדים, והילדים העבירו מסמרים. אחרי יומיים עמד שם גשר חדש וחזק. על הגשר תלו שלט: "בנינו יחד."',q:[
  ['לָמָּה הַגֶּשֶׁר נִשְׁבַּר?','למה הגשר נשבר?','בִּגְלַל סוּפָה',['כִּי מְכוֹנִית נָסְעָה עָלָיו','כִּי הַיְּלָדִים קָפְצוּ עָלָיו','כִּי הַנַּגָּר פֵּרֵק אוֹתוֹ']],
  ['מָה עָשׂוּ הַיְּלָדִים?','מה עשו הילדים?','הֶעֱבִירוּ מַסְמְרִים',['הֵבִיאוּ לֶחֶם','הֵבִיאוּ קְרָשִׁים','נִשְׁאֲרוּ בַּבַּיִת']],
  ['מָה רָצוּ לְהַגִּיד בַּשֶּׁלֶט?','מה רצו להגיד בשלט?','שֶׁכֻּלָּם עָזְרוּ לִבְנוֹת',['שֶׁהַגֶּשֶׁר יָשָׁן','שֶׁאָסוּר לַעֲבֹר','שֶׁהַנַּגָּר בָּנָה לְבַד']],
  ['מָה אֶפְשָׁר לִלְמֹד מֵהַסִּפּוּר?','מה אפשר ללמוד מהסיפור?','יַחַד מַצְלִיחִים יוֹתֵר',['סוּפוֹת הֵן מַפְחִידוֹת','אֵיךְ אוֹפִים לֶחֶם','צָרִיךְ לָגוּר לְיַד נַחַל']]]},
-{lv:5,t:'גַּיְא הִתְאַמֵּן חֹדֶשׁ שָׁלֵם עַל שִׁיר בַּפְּסַנְתֵּר. בְּיוֹם הַהוֹפָעָה הַיָּדַיִם שֶׁלּוֹ רָעֲדוּ, וְהַלֵּב דָּפַק מַהֵר. הַמּוֹרָה לְמוּזִיקָה לָחֲשָׁה לוֹ: "תִּנְשֹׁם עָמֹק שָׁלֹשׁ פְּעָמִים, וְתַחְשֹׁב רַק עַל הַתָּו הָרִאשׁוֹן." גַּיְא נָשַׁם, הִתְיַשֵּׁב וְהִתְחִיל לְנַגֵּן. בְּאֶמְצַע הַשִּׁיר הוּא טָעָה בְּתָו אֶחָד, אֲבָל הִמְשִׁיךְ לְנַגֵּן. בַּסּוֹף כֻּלָּם מָחֲאוּ כַּפַּיִם, וְגַיְא חִיֵּךְ חִיּוּךְ גָּדוֹל.',
+{lv:5,gk:'value',goal:'אחרי טעות ממשיכים; נשימה עמוקה מרגיעה',les:3,t:'גַּיְא הִתְאַמֵּן חֹדֶשׁ שָׁלֵם עַל שִׁיר בַּפְּסַנְתֵּר. בְּיוֹם הַהוֹפָעָה הַיָּדַיִם שֶׁלּוֹ רָעֲדוּ, וְהַלֵּב דָּפַק מַהֵר. הַמּוֹרָה לְמוּזִיקָה לָחֲשָׁה לוֹ: "תִּנְשֹׁם עָמֹק שָׁלֹשׁ פְּעָמִים, וְתַחְשֹׁב רַק עַל הַתָּו הָרִאשׁוֹן." גַּיְא נָשַׁם, הִתְיַשֵּׁב וְהִתְחִיל לְנַגֵּן. בְּאֶמְצַע הַשִּׁיר הוּא טָעָה בְּתָו אֶחָד, אֲבָל הִמְשִׁיךְ לְנַגֵּן. בַּסּוֹף כֻּלָּם מָחֲאוּ כַּפַּיִם, וְגַיְא חִיֵּךְ חִיּוּךְ גָּדוֹל.',
  p:'גיא התאמן חודש שלם על שיר בפסנתר. ביום ההופעה הידיים שלו רעדו, והלב דפק מהר. המורה למוזיקה לחשה לו: "תנשום עמוק שלוש פעמים, ותחשוב רק על התו הראשון." גיא נשם, התיישב והתחיל לנגן. באמצע השיר הוא טעה בתו אחד, אבל המשיך לנגן. בסוף כולם מחאו כפיים, וגיא חייך חיוך גדול.',q:[
  ['עַל מָה גַּיְא הִתְאַמֵּן?','על מה גיא התאמן?','שִׁיר בַּפְּסַנְתֵּר',['רִקּוּד','שִׁיר בַּגִּיטָרָה','הַצָּגָה']],
  ['לָמָּה הַיָּדַיִם שֶׁל גַּיְא רָעֲדוּ?','למה הידיים של גיא רעדו?','כִּי הוּא הִתְרַגֵּשׁ',['כִּי הָיָה לוֹ קַר','כִּי הוּא הָיָה רָעֵב','כִּי הַפְּסַנְתֵּר הָיָה כָּבֵד']],
@@ -8947,7 +9029,7 @@ T.thinkSummary=(box,sec)=>{const L=skillList().filter(x=>x.n>=6);
     :'<div class="pnote">יופיע אחרי כמה ימי משחק (צריך לפחות 6 תשובות בנושא).</div>');sk.classList.add('thsum');
   /* the last 7 days, one line each, tap for details */
   const s0=S(),days=C.lastDays(7),log=O.save.alog||{};const dn=d=>{const t=C.lastDays(2);return d===t[0]?'היום':d===t[1]?'אתמול':'יום '+'אבגדהוש'[new Date(d+'T12:00').getDay()]+'׳';};
-  const actName=k=>k.startsWith('w:')?plain((O.WORLDS.find(w=>'w:'+w.id===k)||{name:'חשבון'}).name):T.ACT[k]?plain(T.ACT[k].name):k;
+  const actName=k=>k.startsWith('arc-')?'ארקייד':k.startsWith('w:')?plain((O.WORLDS.find(w=>'w:'+w.id===k)||{name:'חשבון'}).name):T.ACT[k]?plain(T.ACT[k].name):k;
   const rows=days.map(d=>{const L=log[d]||{a:{},s:0,k:{}},m=Math.round((s0.time[d]|0)/60);const acts=Object.entries(L.a||{}).sort((a,b)=>b[1]-a[1]);
     if(!m&&!acts.length)return `<div class="thday off"><span>${dn(d)}</span><span>לא שיחק</span></div>`;
     const [a,o]=C.sumK(O.save,[d]);const ks=Object.entries(L.k||{}).filter(([k])=>k!=='nk');
@@ -8956,8 +9038,10 @@ T.thinkSummary=(box,sec)=>{const L=skillList().filter(x=>x.n>=6);
   const w1=C.lastDays(14).slice(0,7),w2=C.lastDays(14).slice(7);const mins=w1.map(d=>(s0.time[d]|0)/60),played=mins.filter(m=>m>=1).length;const avg=played?Math.round(mins.reduce((a,b)=>a+b,0)/played):0;
   const [a1,o1]=C.sumK(O.save,w1),[a2,o2]=C.sumK(O.save,w2);
   /* compact: one line for today, the week behind one tap */
-  const t0=days[0],L0=log[t0]||{a:{}},m0=Math.round((s0.time[t0]|0)/60),a0=Object.keys(L0.a||{});
-  sec(box,'היום',`<div class="pnote">${m0} דק׳${a0.length?' · '+a0.slice(0,3).map(actName).join(', '):' · עוד לא שיחק'}${L0.s?' · ⭐ '+L0.s:''}</div>
+  /* #352: "hasn't played yet" only with no minutes and no play today (the arcade counts too) */
+  const t0=days[0],L0=log[t0]||{a:{}},m0=Math.round((s0.time[t0]|0)/60),a0=[...new Set(Object.keys(L0.a||{}).map(actName))];
+  const nt=+((O.realSave||O.save).now||{}).t||0,playedT=nt&&new Date(nt).toDateString()===new Date().toDateString();
+  sec(box,'היום',`<div class="pnote">${m0} דק׳${a0.length?' · '+a0.slice(0,3).join(', '):m0||playedT?'':' · עוד לא שיחק'}${L0.s?' · ⭐ '+L0.s:''}</div>
     <details class="pdet"><summary>📅 7 ימים אחרונים</summary><div class="pdin">${rows}<div class="pnote thavg">ממוצע ${avg} דק׳ ביום משחק · דיוק השבוע ${a1?pct(o1/a1):'—'}${a2?` (שבוע קודם ${pct(o2/a2)})`:''}</div></div></details>`);};
 /* inside "full details": every skill in one table */
 T.thinkSkills=(box,sec,BAR)=>{const L=skillList().filter(x=>x.n||x.k==='nk'&&(TH().nk|0));if(!L.length)return;
@@ -9998,6 +10082,8 @@ function openOv(html,cls){const o=ov();if(!o)return null;o.hidden=false;o.innerH
 function closeOv(){const o=ov();if(o&&ovOwn&&o.querySelector('.hlpc')){o.hidden=true;o.innerHTML='';}ovOwn=false;}
 const ovOpen=()=>{const o=ov(),dl=document.getElementById('dlg');return (o&&!o.hidden)||(dl&&!dl.hidden);};
 const btn=(cls,html,f)=>{const b=document.createElement('button');b.className=cls;b.innerHTML=html;b.onclick=f;return b;};
+/* #356: every help popup can be closed (✕ in the corner; the phone back gesture presses it too) */
+const xBtn=(card,f)=>{const x=btn('tpx','✕',f);x.setAttribute('aria-label','סגור');card.appendChild(x);};
 
 function arm(){if(!S)return;clearTimeout(S.idleT);const ms=+((((O().save||{}).set||{}).helpIdle)||0)*1000||cfg.idle;
   S.idleT=setTimeout(()=>{if(!S)return;if(S.ctx.mount&&!S.ctx.mount.isConnected)return stop();if(document.hidden||ovOpen()||S.busy)return arm();onIdle();},ms);}
@@ -10030,10 +10116,11 @@ function example(){const st=S;const d2=simData(st);if(!d2)return parents();st.d2
   const card=openOv(`<div class="hlp-h"><span class="hlp-f">${pet()}</span><h2>${title}</h2></div>${e.intro?`<div class="hlp-intro">${e.intro}</div>`:''}${v&&(v.svg||v.html)?`<div class="hlp-v">${v.svg||v.html||''}</div>`:''}<ol class="hlp-steps"></ol>`,'hlp-ex');
   if(!card){st.busy=false;return parents();}
   const vv=card.querySelector('.hlp-v');if(vv){play(vv);vv.onclick=()=>play(vv);}
+  const go=()=>{clearTimeout(st.exT);closeOv();st.busy=false;try{O().hush&&O().hush();}catch(e){}step(4);};xBtn(card,go);
   const ol=card.querySelector('.hlp-steps');say(title+'. '+(e.intro?strip(e.intro):''));
   let i=0;const next=()=>{if(S!==st||!card.isConnected)return;if(i<e.steps.length){const li=document.createElement('li');li.innerHTML=e.steps[i];ol.appendChild(li);say(e.steps[i]);i++;
       st.exT=setTimeout(next,D(Math.max(2400,strip(e.steps[i-1]).length*85)));return;}
-    const row=el('btnrow');row.appendChild(btn('bigbtn hlp-go','<span>עַכְשָׁו תּוֹרִי!</span>',()=>{closeOv();st.busy=false;try{O().hush&&O().hush();}catch(e){}step(4);}));card.appendChild(row);};
+    const row=el('btnrow');row.appendChild(btn('bigbtn hlp-go','<span>עַכְשָׁו תּוֹרִי!</span>',go));card.appendChild(row);};
   st.exT=setTimeout(next,D(e.intro?3200:1800));}
 function solo(){const st=S;const q3=st.ctx.present?simHostQ(st,st.d2?keyOf(st.d2):null):null;
   if(!q3){st.phase='after';hidePanel();arm();return;}
@@ -10041,11 +10128,11 @@ function solo(){const st=S;const q3=st.ctx.present?simHostQ(st,st.d2?keyOf(st.d2
 function parents(){const st=S;if(!st)return;st.busy=true;clearTimeout(st.idleT);hidePanel();const ex=st.ex,d=st.d;
   const show=ex.show?ex.show(d):'',showHTML=st.q&&st.q.k==='ch'?`<div class="hlp-intro">${st.q.pr}</div>`:show?(/[א-ת]/.test(show)?`<div class="hlp-intro">${show}</div>`:`<div class="hlp-q">${E(esc(show))}</div>`):'';
   const card=openOv(`<div class="hlp-f big bob">${pet()}</div><h2>בּוֹא נִקְרָא לְאַבָּא אוֹ לְאִמָּא, נִפְתֹּר יַחַד</h2>${showHTML}${ex.tip?`<div class="hlp-tip">להורה: ${esc(ex.tip(d))}</div>`:''}`,'hlp-par-call');
-  if(!card)return;const row=el('btnrow');row.appendChild(btn('bigbtn','<span>פָּתַרְנוּ יַחַד!</span>',()=>{closeOv();const c=st.ctx;if(S===st){S.busy=false;stop();}if(c.done)c.done('parents');}));card.appendChild(row);
+  if(!card)return;xBtn(card,()=>{closeOv();if(S===st){S.busy=false;stop();}});const row=el('btnrow');row.appendChild(btn('bigbtn','<span>פָּתַרְנוּ יַחַד!</span>',()=>{closeOv();const c=st.ctx;if(S===st){S.busy=false;stop();}if(c.done)c.done('parents');}));card.appendChild(row);
   say('בּוֹא נִקְרָא לְאַבָּא אוֹ לְאִמָּא, נִפְתֹּר יַחַד');try{O().sfx&&O().sfx.star&&O().sfx.star(0);}catch(e){}}
 function teach(st){const ex=st.ex;if(!ex.teach)return false;const opts=shuffle(ex.teach(st.d));
   const eq=st.d.l!=null&&st.d.op?E(eqFull(st.d)):'';const card=openOv(`<div class="hlp-h"><span class="hlp-f">${pet()}</span><h2>תַּסְבִּיר לִי, אֵיךְ עָשִׂיתָ?</h2></div>${eq?`<div class="hlp-q">${eq}</div>`:''}<div class="hlp-opts"></div>`,'hlp-tb');
-  if(!card)return false;const box=card.querySelector('.hlp-opts');DB().tday=today();persist();
+  if(!card)return false;xBtn(card,closeOv);const box=card.querySelector('.hlp-opts');DB().tday=today();persist();
   const done=pick_=>{const db=DB();db.tb.push({d:today(),type:st.d.type,ex:plain(ex.show?ex.show(st.d):''),pick:plain(pick_)});db.tb=db.tb.slice(-30);persist();
     box.innerHTML=`<div class="hlp-thanks">אֵיזֶה הֶסְבֵּר יָפֶה!</div>`;card.querySelector('.hlp-aloud')&&card.querySelector('.hlp-aloud').remove();say('אֵיזֶה הֶסְבֵּר יָפֶה!');try{O().sfx.ok(3);}catch(e){}setTimeout(closeOv,D(1500));};
   opts.forEach(o=>box.appendChild(btn('chb tx hlp-opt',`<span>${o}</span>`,()=>done(o))));
@@ -10137,7 +10224,8 @@ TP.grid=grid;TP.nudge=nudge;
 /* ===== DAY LOG: everything Oren did, for the parent (also from another house, in real time through the family save) =====
    save.alog[day].e = [[min, id, stars, ok, n, helped, o], ...]   min = minutes after midnight when it started,
      ok/n = right on the first try / questions, o: 'c' done · 'q' left in the middle · 'x' opened and closed at once (only for Oren's "again" list) · 's' a path step he did not reach · 'b' stopped for a break
-   save.now = {id, t}  the activity being played and the last moment something happened (ms) — "playing now" for the parent.
+   save.now = {id, t, s}  the activity being played, the last moment something happened (ms; also each active play tick, the heartbeat) and when this play
+     session started (s; a new session after 3+ min without a heartbeat) — "playing now · N min (from HH:MM)" for the parent (#352).
    Detailed entries are kept for 14 days (think.js keeps the day counts for 35). Parent text has no nikud. */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;
 const DL=window.DAYLOG={};
@@ -10155,14 +10243,20 @@ DL.add=add;
 
 /* ---------- the activity being played ---------- */
 let cur=null;
-const now=t=>{if(O.isParentPlay)return;S().now={id:cur?cur.id:null,t:t||Date.now()};};
+const GAP=3*60000;
+const mark=id=>{if(O.isParentPlay)return;const t=Date.now(),p=S().now;S().now={id,t,s:p&&p.s&&t-(+p.t||0)<GAP?p.s:t};};
+const now=()=>mark(cur?cur.id:null);
+/* the heartbeat: every active play tick (talents.js timeTick, which saves anyway) — never from the parent panel */
+DL.beat=()=>{const par=document.querySelector('#sPar');if(par&&!par.hidden)return;mark(cur&&!cur.end?cur.id:null);};
 function begin(id){if(O.isParentPlay)return;if(cur&&!cur.end)end(cur.brk?'b':'q');cur={id,t:Date.now(),d:day(),ok:0,n:0,help:0};now();}
 function end(o,st){const c=cur;if(!c||c.end)return;c.end=1;if(o!=='c'&&!c.n&&Date.now()-c.t<15000)o='x';   /* opened and closed at once: 'x' — kept for Oren's "again" list, not shown to the parent */
-  add(c.d,[minOf(c.t),c.id,st|0,c.ok,c.n,c.help,o]);now();cur=null;O.persist();}
+  add(c.d,[minOf(c.t),c.id,st|0,c.ok,c.n,c.help,o].concat(c.x?[c.x]:[]));now();cur=null;O.persist();}
 DL.begin=begin;DL.end=end;DL.cur=()=>cur;
+/* a story adds its details to its line (#355): x = {t: title, g: goal, lv: story level, r: 'a' read alone · 'l' listened}; the object is filled in while he plays */
+DL.note=(id,x)=>{if(O.isParentPlay)return;if(!cur||cur.end||cur.id!==id||cur.x)begin(id);cur.x=x;};
 /* a round that ends again and again ("again"): each finish is its own line */
 function done(id,st){if(O.isParentPlay)return;if(cur&&cur.id===id&&!cur.end){end('c',st);return;}if(cur&&!cur.end)end('q');
-  const t=Date.now();add(day(),[minOf(t),id,st|0,0,0,0,'c']);S().now={id:null,t};O.persist();}
+  const t=Date.now();add(day(),[minOf(t),id,st|0,0,0,0,'c']);mark(null);O.persist();}
 O.on('tlDone',(id,st)=>done(id,st!=null?st:((T.S().tl[id]||{}).s|0)));
 O.on('levelDone',(lv,st)=>{if(lv&&lv.id)done('lv:'+lv.id,st);});
 O.on('tq',(id,ok)=>{if(cur&&!cur.end){cur.n++;if(ok)cur.ok++;now();}});
@@ -10189,12 +10283,16 @@ DL.nameOf=id=>{if(id==='math')return 'מסע החשבון';
   const a=T.ACT[id];return a?plain(a.name):id;};
 DL.domOf=id=>{if(id==='math'||/^lv:/.test(id))return 'חשבון';const a=T.ACT[id];if(!a||!a.b)return '';const g=(T.GROUPS||[]).find(x=>x.ids.includes(a.b.id));return g?GN()[g.id]:plain(a.b.name);};
 const ICO={c:'✓',q:'✗',s:'⏭',b:'⏸'},WHY={c:'',q:'יצא באמצע',s:'לא הגיע',b:'הפסקה'};
-DL.rows=d=>{const L=((O.realSave.alog||{})[d]||{}).e||[];return L.filter(e=>e[6]!=='x').sort((a,b)=>a[0]-b[0]);};
-DL.rowHTML=e=>{const [m,id,st,ok,n,hp,o]=e;const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`${ok}/${n} נכון בניסיון ראשון`:'',hp?`עזרה ×${hp}`:'',WHY[o]].filter(Boolean).join(' · ');
-  return `<div class="prow dlrow dl-${o}"><span class="pn"><b class="dli">${ICO[o]||''}</b> ${o==='s'?'':hhmm(m)+' · '}${DL.nameOf(id)} <small>${DL.domOf(id)}</small></span><span class="pc">${res}</span></div>`;};
+/* a bank story's own quiz line (rb2-st-N) repeats its 'story-new' line: not shown */
+DL.rows=d=>{const L=((O.realSave.alog||{})[d]||{}).e||[];return L.filter(e=>e[6]!=='x'&&!/^rb2-st-/.test(e[1])).sort((a,b)=>a[0]-b[0]);};
+DL.rowHTML=e=>{const [m,id,st,ok,n,hp,o,x]=e;const sx=x&&typeof x==='object'?x:null;
+  const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`${ok}/${n} נכון בניסיון ראשון`:'',hp?`עזרה ×${hp}`:'',sx?(sx.r==='l'?'האזין להקראה':'קרא לבד')+' · רמה '+(sx.lv|0):'',WHY[o]].filter(Boolean).join(' · ');
+  const name=sx?`${plain(sx.t)}${sx.g?` <span class="dlgoal">🎯 ${plain(sx.g)}</span>`:''}`:DL.nameOf(id);
+  return `<div class="prow dlrow dl-${o}"><span class="pn"><b class="dli">${ICO[o]||''}</b> ${o==='s'?'':hhmm(m)+' · '}${name} <small>${DL.domOf(id)}</small></span><span class="pc">${res}</span></div>`;};
 /* the top line of the summary: playing now / last played */
-DL.nowLine=()=>{const nw=O.realSave.now;if(!nw||!nw.t)return '';const ago=Date.now()-nw.t;const nm=nw.id?DL.nameOf(nw.id):'';
-  if(ago<3*60000)return `<div class="dlnow on">🟢 אורן משחק עכשיו${nm?': '+nm:''} · ${ago<60000?'עכשיו':'לפני '+Math.round(ago/60000)+' דק׳'}</div>`;
+DL.playing=()=>{const nw=O.realSave.now;return !!(nw&&nw.t&&Date.now()-nw.t<GAP);};
+DL.nowLine=()=>{const nw=O.realSave.now;if(!nw||!nw.t)return '';
+  if(DL.playing()){const s=+nw.s||nw.t,d=new Date(s);return `<div class="dlnow on">🟢 משחק עכשיו · ${Math.max(0,Math.round((Date.now()-s)/60000))} דק׳ (מ-${pad(d.getHours())}:${pad(d.getMinutes())})</div>`;}
   const d=new Date(nw.t),t0=new Date();const same=d.toDateString()===t0.toDateString();const y=new Date(t0);y.setDate(t0.getDate()-1);
   const when=same?'היום':d.toDateString()===y.toDateString()?'אתמול':pad(d.getDate())+'.'+pad(d.getMonth()+1);
   return `<div class="dlnow">שיחק לאחרונה: ${when} ${pad(d.getHours())}:${pad(d.getMinutes())}</div>`;};
@@ -10206,14 +10304,12 @@ DL.merge=(save,o)=>{for(const d in o.alog||{}){const src=(o.alog[d]||{}).e;if(!A
   if(o.now&&(+o.now.t||0)>(+(save.now||{}).t||0))save.now=o.now;trim();};
 /* parent panel, day tab: "playing now" and what he did today and yesterday, one line each. Tap a day to see its lines. */
 const rowsHTML=d=>{const r=DL.rows(d);return r.length?r.map(DL.rowHTML).join(''):'<div class="pnote">עוד לא שיחק</div>';};
-DL.panel=(box,sec)=>{const s=sec(box,'מה אורן עשה','<div class="dlnowbox">'+DL.nowLine()+'</div>');
+DL.panel=(box,sec)=>{const s=sec(box,'מה אורן עשה','');
   const ds=[0,1].map(i=>{const x=new Date();x.setDate(x.getDate()-i);return x;});
   ds.forEach((x,i)=>{const d=x.getFullYear()+'-'+pad(x.getMonth()+1)+'-'+pad(x.getDate());const det=document.createElement('details');det.className='pdet';if(i===0)det.open=true;
     det.innerHTML=`<summary>${i?'אתמול':'היום'}</summary><div class="pdin dllog" data-d="${d}">${rowsHTML(d)}</div>`;s.appendChild(det);});return s;};
-/* top line of the summary tab */
-DL.nowBox=box=>{const d=document.createElement('div');d.className='dlnowbox';d.innerHTML=DL.nowLine();box.appendChild(d);};
 /* redraw the live parts (called after each family pull while the parent panel is open) */
-DL.refresh=()=>{document.querySelectorAll('.dlnowbox').forEach(e=>{e.innerHTML=DL.nowLine();});document.querySelectorAll('.dllog[data-d]').forEach(e=>{e.innerHTML=rowsHTML(e.dataset.d);});};
+DL.refresh=()=>{document.querySelectorAll('.dllog[data-d]').forEach(e=>{e.innerHTML=rowsHTML(e.dataset.d);});};
 })();
 
 /* ===== AGAIN (#39): one big button on home → one list of big tiles: what Oren did and what he closed by mistake.

@@ -1,4 +1,4 @@
-"""#220 question windows with fakes: one window per question, no duplicates, max 3, closed after the answer, 2 h reminder, answer relayed.
+"""#220/#368/#390 owner questions with fakes: page + phone push together (through an idle inbox/orchestrator), no duplicates, max 3, 2 h reminder, push result logged, answer relayed.
 Run: python3 tools/runner/test_qwin.py"""
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
@@ -12,11 +12,10 @@ import qwin as QW
 tmp = Path(tempfile.mkdtemp())
 OQ.STATE, QW.STATE, QW.DIR = tmp / "owner_q.json", tmp / "qwin.json", tmp / "questions"
 QW.log = lambda m: None
-QW.space_args = lambda: ["--label", "herdr.space=ctl"]
 
 class FakeHerdr:
     """hc + herdr-app pin: terminals by name."""
-    def __init__(self): self.t, self.calls, self.pins, self.sent = {}, [], [], []
+    def __init__(self): self.t, self.calls, self.pins, self.sent, self.status, self.screen = {}, [], [], [], {}, {}
     def hc(self, *a, **kw):
         self.calls.append(a)
         if a[0] == "run":
@@ -26,11 +25,12 @@ class FakeHerdr:
         if a[0] == "kill": (a[1] in self.t) and self.t[a[1]].update(state="done"); return 0, ""
         if a[0] == "rm": self.t.pop(a[1], None); return 0, ""
         if a[0] == "send": self.sent.append((a[1], a[2])); return 0, ""
+        if a[0] == "read": return 0, self.screen.get(a[1], "")
         return 0, ""
     def run(self, cmd, **kw):
         if "terminal.pin" in cmd: self.pins.append((cmd[cmd.index("--terminal") + 1], cmd[-1]))
         return 0, ""
-    def ts(self): return list(self.t.values()) + [{"name": "orchestrator", "state": "live"}]
+    def ts(self): return list(self.t.values()) + [{"name": n, "state": "live", "status": self.status.get(n, "idle")} for n in ("orchestrator", "inbox")]
 
 h = FakeHerdr()
 QW._hc, QW._run, QW._herdr_ok = h.hc, h.run, lambda: True
@@ -52,7 +52,9 @@ sp = FakeSpawn()
 QW._spawn, QW._kill = sp.spawn, sp.kill
 asked = lambda: [Path(c[c.index(QW.ASK) + 1]).stem for c in sp.cmds]
 
-# #368 deterministic: the first tick writes the question page file and starts ask.py itself - no window yet
+# #368/#390: the first tick writes the question page AND sends the phone push at the same moment (owner 26 Nov 20:15),
+# through the long-lived idle inbox session (a freshly opened window is 'active' for Claude Code: push skipped)
+h.status = {"inbox": "idle", "orchestrator": "idle"}
 QW.tick(h.ts(), now=1000)
 assert asked() == ["k1", "k2", "k3"], sp.cmds                                         # at most 3 at once, oldest first
 c = sp.cmds[2]
@@ -60,60 +62,56 @@ assert c[0] == sys.executable and c[c.index(QW.ASK) + 2:] == ["--timeout-min", "
 d3 = json.loads((QW.DIR / "k3.json").read_text(encoding="utf-8"))
 assert d3["questions"][0]["text"] == "שאלה 3?" and d3["questions"][0]["id"] == "a", d3
 assert d3["questions"][0].get("free") or d3["questions"][0].get("other"), d3
-assert not win() and not any(a[0] == "run" for a in h.calls)                          # phone window only after 2 min
 assert QW.load()["k3"]["pid"] == 4003
-# the page URL is read from ask.py's stderr log and recorded
+assert not any(a[0] == "run" for a in h.calls), h.calls                               # #390: no question window is opened any more
+pushes = [s for s in h.sent if "PushNotification" in s[1]]
+assert [s[0] for s in pushes] == ["inbox", "orchestrator"], pushes                    # one push per idle session per tick
+for s in pushes: assert "\n" not in s[1] and "\r" not in s[1], s                       # one line (#390)
+m = pushes[0][1]
+assert "owner-q:k1" in m and "שאלה 1?" in m and "qwin.py answer k1" in m and "PUSH-RESULT" in m, m
+assert QW.load()["k1"]["via"] == "inbox" and QW.load()["k2"]["via"] == "orchestrator" and not QW.load()["k3"].get("via")
+# a busy session gets nothing; k3 waits for the next tick with an idle session
+h.status = {"inbox": "working", "orchestrator": "working"}; h.sent.clear()
 (QW.DIR / "k3.log").write_text("http://127.0.0.1:5555/\n", encoding="utf-8")
 QW.tick(h.ts(), now=1060)
 assert QW.load()["k3"]["page"] == "http://127.0.0.1:5555/" and len(sp.cmds) == 3
-assert not win()
+assert not [s for s in h.sent if "PushNotification" in s[1]], h.sent
+h.status = {"inbox": "done", "orchestrator": "working"}
+QW.tick(h.ts(), now=1120)
+assert [s[0] for s in h.sent if "owner-q:k3" in s[1]] == ["inbox"] and QW.load()["k3"]["via"] == "inbox", h.sent
+QW.tick(h.ts(), now=1180); assert sum("owner-q:k3" in s[1] for s in h.sent) == 1        # pushed once
 # options in the question text -> radio buttons (recommended first), still with 'other'
 d = QW.page_data({"key": "x", "text": "איזה צבע? 1) ירוק (מומלץ) 2) כחול"})["questions"][0]
 assert d["text"] == "איזה צבע?" and d["options"] == ["ירוק (מומלץ)", "כחול"] and d["other"], d
-
-# 2 min without an answer: ONE phone window per question (haiku + Remote Control) whose only job is the push
-QW.tick(h.ts(), now=1120)
-assert win() == ["question-1", "question-2", "question-3"], win()
-assert sum(a[0] == "run" for a in h.calls) == 3, h.calls
-argv = h.t["question-3"]["argv"]
-assert argv[argv.index("--model") + 1] == "haiku" and argv[argv.index("--remote-control") + 1] == "oren-question-3"
-assert "herdr.space=ctl" in argv and "role=question" in argv
-# #281: claude starts through Git Bash like the worker windows (hc cannot start claude.CMD directly)
-assert R.BASH in argv and argv[argv.index(R.BASH) + 1] == "-c" and argv.index(R.BASH) < argv.index("--model"), argv
-assert argv[argv.index(R.BASH) + 3] == "_" and argv[argv.index(R.BASH) + 4] == R.CFG["extra_path"], argv
-assert "\n" not in argv[-1] and "prompts/question-3.md" in argv[-1], argv[-1]   # #390: cmd.exe cuts argv at a newline
-p = (R.RUNS / "prompts" / "question-3.md").read_text(encoding="utf-8")
-assert "PushNotification" in p and "qwin.py answer k3" in p and "שאלה 3?" in p, p
-assert "ask.py" not in p and "TaskStop" not in p                                       # the page is python's job now
-assert not re.search(r"#\d", p.replace("שאלה 3?", "")), p                              # #368: no issue refs (it read #220 last time)
-assert QW.push_text({"text": "איזה צבע? 1) ירוק 2) כחול"}) in QW.prompt({"key": "z", "text": "איזה צבע? 1) ירוק 2) כחול"}, "question-9")
 assert "1. ירוק" in QW.push_text({"text": "איזה צבע? 1) ירוק 2) כחול"})
-assert not [x for x in h.pins if x[1] == "true"], h.pins                         # #390: never pinned (pinned = 'active', push suppressed)
-# #310: the owner is never asked inside the terminal (AskUserQuestion shows reversed Hebrew there): tool removed + prompt says so
-assert argv[argv.index("--disallowedTools") + 1] == "AskUserQuestion" and argv.index("--disallowedTools") < argv.index("--"), argv
-assert "never" in p.lower() and "AskUserQuestion" in p, p
-QW.tick(h.ts(), now=1180); assert sum(a[0] == "run" for a in h.calls) == 3      # still one window each
+pm = QW.push_message({"key": "z", "text": "איזה צבע? 1) ירוק 2) כחול"})
+assert "\n" not in pm and "1. ירוק" in pm and "2. כחול" in pm and "AskUserQuestion" in pm, pm   # never asked in the terminal (#310)
+assert not re.search(r"#\d", pm.replace("#390", "")), pm                               # #368: no issue refs to go reading
 # a second question of the same issue waits for the first one
 assert QW.plan([qs[0], {**qs[0], "key": "k1b"}], [], {}, 0)[0] == [qs[0]]
-# question 1 answered (elsewhere): ask.py stopped, window unpinned + closed, the oldest waiting (#4) gets its page
+# question 1 answered (elsewhere): ask.py stopped, the oldest waiting (#4) gets its page and its push
+h.status = {"inbox": "idle", "orchestrator": "idle"}
 opened.pop(0)
 QW.tick(h.ts(), now=1300)
 assert 4001 in sp.killed and asked()[-1] == "k4", (sp.killed, asked())
-assert win() == ["question-2", "question-3"], win()
-assert any(x[1] == "false" for x in h.pins) and "question-1" not in h.t
+assert "k1" not in QW.load() and QW.load()["k4"]["via"] in ("inbox", "orchestrator")
 QW.tick(h.ts(), now=1360); assert len(sp.cmds) == 4                             # the orchestrator question still waits (3 open)
-QW.tick(h.ts(), now=1420); assert win() == ["question-2", "question-3", "question-4"], win()
-# 2 h unanswered: one reminder, the window stays
+# 2 h unanswered: one reminder through the same session, when it is idle
+h.sent.clear()
 QW.tick(h.ts(), now=1000 + 7200); QW.tick(h.ts(), now=1000 + 7300)
 rem = [s for s in h.sent if s[1].startswith("WATCHDOG REMINDER")]
-assert sorted(s[0] for s in rem) == ["question-2", "question-3"], rem               # question-4 came later: not yet
-assert "question-2" in win()
-# a question that already had a window never gets a second one (window gone, question still open)
-h.t["question-2"]["state"] = "done"
-QW.tick(h.ts(), now=9000)
-assert sum(a[0] == "run" and a[a.index("--name") + 1] == "question-2" for a in h.calls) == 1
+assert sorted((s[0], re.search(r"owner-q:(\w+)", s[1])[1]) for s in rem) == [("inbox", "k3"), ("orchestrator", "k2")], rem
+assert all("PushNotification" in s[1] and "\n" not in s[1] for s in rem), rem
 assert asked().count("k2") == 1
-print("ok qwin page + phone window")
+# #280 stuck.py's later re-push goes to the session that sent the first push (no question window any more)
+import stuck as SK
+SK.R.hc = lambda *a, **kw: (h.sent.append((a[1], a[2])), (0, ""))[1]
+h.sent.clear()
+assert SK.push({"key": "k3", "text": "שאלה 3?"}, "WATCHDOG REMINDER: 4 hours.") and h.sent[0][0] == "inbox", h.sent
+assert "owner-q:k3" in h.sent[0][1] and "\n" not in h.sent[0][1], h.sent
+assert not SK.push({"key": "nope", "text": "?"}, "x")                                # never pushed: the caller tells the orchestrator
+SK.R.hc = R.hc
+print("ok qwin page + phone push together")
 
 # ---- answer relayed: issue + questions issue + orchestrator; a cloud worker gets it in its session ----
 gh_calls, marked, remote_sent = [], [], []
@@ -122,26 +120,24 @@ OQ.mark_answered = lambda key, answer="", gh=None: (marked.append((key, answer))
 QW._send_remote = lambda s, t: (remote_sent.append((s, t)), {"ok": True})[1]
 h.sent.clear()
 d = QW.answer("k3", "ירוק")
-assert d == {"issue": True, "answered": True, "remote": True, "stopped": True, "closed": True}, d
+assert d == {"issue": True, "answered": True, "remote": True, "stopped": True}, d
 assert 4003 in sp.killed                                                             # the chat won: ask.py (the page) is stopped
 assert any(a[:3] == ("issue", "comment", "3") and "ירוק" in a[-1] for a in gh_calls), gh_calls
 assert marked == [("k3", "ירוק")]
 assert remote_sent and remote_sent[0][0] == "session_01ABC" and "ירוק" in remote_sent[0][1]
 assert any(s[0] == "orchestrator" and "ירוק" in s[1] for s in h.sent), h.sent
-# #310: the window closes itself once the answer is recorded (unpinned + killed)
-assert ("kill", "question-3") in [a[:2] for a in h.calls] and h.t.get("question-3", {}).get("state") != "live", h.t.get("question-3")
 # a local window's answer: the orchestrator relays it (no remote send)
 remote_sent.clear(); h.sent.clear()
 QW.answer("k2", "1")
 assert not remote_sent and any(s[0] == "orchestrator" and "review-2" in s[1] for s in h.sent)
 print("ok qwin answer relayed")
 
-# #368: the page answered: tick reads <key>.answers.json itself and relays it (no LLM); the phone window closes
+# #368: the page answered: tick reads <key>.answers.json itself and relays it (no LLM)
 marked.clear(); h.sent.clear(); n_kill = len(sp.killed)
 (QW.DIR / "k4.answers.json").write_text(json.dumps({"answers": {"a": "כחול"}}, ensure_ascii=False), encoding="utf-8")
 QW.tick(h.ts(), now=9100)
 assert marked == [("k4", "כחול")], marked
-assert h.t.get("question-4", {}).get("state") != "live" and len(sp.killed) == n_kill, h.t.get("question-4")
+assert len(sp.killed) == n_kill
 assert any(s[0] == "orchestrator" and "כחול" in s[1] for s in h.sent), h.sent
 QW.tick(h.ts(), now=9160); assert marked == [("k4", "כחול")]                          # relayed once
 print("ok qwin page answer read by python")
@@ -162,36 +158,51 @@ assert any(s[0] == "orchestrator" and "resume" in s[1] for s in h.sent), h.sent
 (R.RUNS / "3" / "where").unlink()
 print("ok qwin runner-managed cloud answer")
 
-# #281: a window that cannot open is not retried silently every minute: after 2 failures the orchestrator is told ONCE
-# to send the phone push itself (question text + link); no more retries for that question
-h2 = FakeHerdr()
-def failing_hc(*a, **kw):
-    if a[0] == "run": h2.calls.append(a); return 1, "spawn_failed cannot start C:\\...\\claude.CMD"
-    return h2.hc(*a, **kw)
-QW._hc, QW._run = failing_hc, h2.run
-QW.STATE, QW.FAILS = tmp / "qwin2.json", tmp / "qwin2_fails.json"
-opened[:] = [{"key": "f1", "window": "#9", "source": "issue-9", "text": "צבע כפתור?", "url": "https://github.com/x/issues/193#c1"}]
-for k in range(5): QW.tick(h2.ts(), now=20000 + 60 * k)
-assert sum(a[0] == "run" for a in h2.calls) == 2, h2.calls                          # tried twice, then stopped
-told = [s for s in h2.sent if s[0] == "orchestrator"]
-assert len(told) == 1, told
-assert "PushNotification" in told[0][1] and "צבע כפתור?" in told[0][1] and "issues/193#c1" in told[0][1] and "question-9" in told[0][1], told
-# answered later: the state entry goes, nothing else is sent
-opened.clear(); QW.tick(h2.ts(), now=30000)
-assert QW.load() == {} and len([s for s in h2.sent if s[0] == "orchestrator"]) == 1
-print("ok qwin open failure -> one push via the orchestrator")
+# #390: the push's result is checked on the pushing session's screen and logged once: Claude Code's 'Not sent' (or the
+# session's own PUSH-RESULT line) -> watchdog.log says so (second channel: Telegram, #440, once set up); ok -> logged too
+logged = []
+QW.log = logged.append
+h4 = FakeHerdr(); QW._hc, QW._run = h4.hc, h4.run
+st = {"n1": {"name": "question-1", "since": 0, "via": "inbox", "pushed": 0},
+      "n2": {"name": "question-2", "since": 0, "via": "orchestrator", "pushed": 0},
+      "n3": {"name": "question-3", "since": 0, "via": "inbox", "pushed": 0}}
+h4.screen = {"inbox": "old: PushNotification Not sent because you're active\n> PHONE PUSH (owner-q:n1, #390) ...\n"
+                      "PushNotification\n  Not sent because you're active in this terminal.\nPUSH-RESULT n1 failed active\n"
+                      "> PHONE PUSH (owner-q:n3, #390) ...\nPushNotification\nPUSH-RESULT n3 ok\n",
+             "orchestrator": "> PHONE PUSH (owner-q:n2, #390) ... write PUSH-RESULT <key> ok or PUSH-RESULT <key> failed <reason>\n"}
+QW.check_pushes(st, now=60); QW.check_pushes(st, now=120)
+assert st["n1"]["not_sent"] and not st["n3"].get("not_sent") and st["n3"]["push_ok"], st
+assert len([l for l in logged if "n1" in l or "question-1" in l]) == 1 and "#440" in logged[0] and "not sent" in logged[0].lower(), logged
+assert any("question-3" in l and "sent" in l for l in logged), logged
+assert not st["n2"].get("not_sent") and not st["n2"].get("push_ok")                 # its own request text is not a result
+QW.check_pushes(st, now=QW.RESULT_S + 10)                                            # no result line in 10 min: said once
+assert st["n2"]["no_result"] and sum("question-2" in l for l in logged) == 1, logged
+QW.check_pushes(st, now=QW.RESULT_S + 70); assert sum("question-2" in l for l in logged) == 1
+print("ok qwin push result logged")
 
-# #310: the watchdog closes leftover question windows (no open question of its own, e.g. answered in the terminal)
+# #390: no idle session for 10 min -> logged once (the page still has the question); then the push goes when one is idle
+logged.clear()
+h5 = FakeHerdr(); h5.status = {"inbox": "working", "orchestrator": "blocked"}; QW._hc, QW._run = h5.hc, h5.run
+QW.STATE = tmp / "qwin5.json"
+opened[:] = [{"key": "w1", "window": "#9", "source": "issue-9", "text": "צבע כפתור?", "url": "u"}]
+for k in range(12): QW.tick(h5.ts(), now=20000 + 60 * k)
+assert not h5.sent and sum("no idle session" in l for l in logged) == 1, (h5.sent, logged)
+h5.status["inbox"] = "idle"; QW.tick(h5.ts(), now=21000)
+assert [s[0] for s in h5.sent] == ["inbox"] and "צבע כפתור?" in h5.sent[0][1], h5.sent
+QW.log = lambda m: None
+print("ok qwin waits for an idle session")
+
+# #390: question windows are no longer used: every live question-* window (old ones too) is unpinned and closed
 h3 = FakeHerdr()
 QW._hc, QW._run = h3.hc, h3.run
-QW.STATE, QW.FAILS = tmp / "qwin3.json", tmp / "qwin3_fails.json"
+QW.STATE = tmp / "qwin3.json"
 h3.t["question-cb326d"] = {"name": "question-cb326d", "state": "live", "address": "wx"}
 h3.t["question-7"] = {"name": "question-7", "state": "live", "address": "wy"}
-QW.save({"k7": {"name": "question-7", "since": 40000}})
+QW.save({"k7": {"name": "question-7", "since": 40000, "via": "inbox"}})
 opened[:] = [{"key": "k7", "window": "#7", "source": "issue-7", "text": "?", "url": "u"}]
 QW.tick(h3.ts(), now=40060)
-assert "question-cb326d" not in h3.t and ("wx", "false") in h3.pins, h3.t          # leftover: unpinned + gone
-assert h3.t["question-7"]["state"] == "live"                                         # its question is still open: stays
+assert "question-cb326d" not in h3.t and ("wx", "false") in h3.pins and "question-7" not in h3.t, h3.t
+assert "k7" in QW.load()                                                             # its question is still open
 print("ok qwin leftovers closed")
 
 # #368 real process: the real _spawn starts the real ask.py (no browser), the URL is read from its log,

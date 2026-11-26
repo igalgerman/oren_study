@@ -418,6 +418,8 @@ function openOv(html,cls){const o=ov();if(!o)return null;o.hidden=false;o.innerH
 function closeOv(){const o=ov();if(o&&ovOwn&&o.querySelector('.hlpc')){o.hidden=true;o.innerHTML='';}ovOwn=false;}
 const ovOpen=()=>{const o=ov(),dl=document.getElementById('dlg');return (o&&!o.hidden)||(dl&&!dl.hidden);};
 const btn=(cls,html,f)=>{const b=document.createElement('button');b.className=cls;b.innerHTML=html;b.onclick=f;return b;};
+/* #356: every help popup can be closed (✕ in the corner; the phone back gesture presses it too) */
+const xBtn=(card,f)=>{const x=btn('tpx','✕',f);x.setAttribute('aria-label','סגור');card.appendChild(x);};
 
 function arm(){if(!S)return;clearTimeout(S.idleT);const ms=+((((O().save||{}).set||{}).helpIdle)||0)*1000||cfg.idle;
   S.idleT=setTimeout(()=>{if(!S)return;if(S.ctx.mount&&!S.ctx.mount.isConnected)return stop();if(document.hidden||ovOpen()||S.busy)return arm();onIdle();},ms);}
@@ -450,10 +452,11 @@ function example(){const st=S;const d2=simData(st);if(!d2)return parents();st.d2
   const card=openOv(`<div class="hlp-h"><span class="hlp-f">${pet()}</span><h2>${title}</h2></div>${e.intro?`<div class="hlp-intro">${e.intro}</div>`:''}${v&&(v.svg||v.html)?`<div class="hlp-v">${v.svg||v.html||''}</div>`:''}<ol class="hlp-steps"></ol>`,'hlp-ex');
   if(!card){st.busy=false;return parents();}
   const vv=card.querySelector('.hlp-v');if(vv){play(vv);vv.onclick=()=>play(vv);}
+  const go=()=>{clearTimeout(st.exT);closeOv();st.busy=false;try{O().hush&&O().hush();}catch(e){}step(4);};xBtn(card,go);
   const ol=card.querySelector('.hlp-steps');say(title+'. '+(e.intro?strip(e.intro):''));
   let i=0;const next=()=>{if(S!==st||!card.isConnected)return;if(i<e.steps.length){const li=document.createElement('li');li.innerHTML=e.steps[i];ol.appendChild(li);say(e.steps[i]);i++;
       st.exT=setTimeout(next,D(Math.max(2400,strip(e.steps[i-1]).length*85)));return;}
-    const row=el('btnrow');row.appendChild(btn('bigbtn hlp-go','<span>עַכְשָׁו תּוֹרִי!</span>',()=>{closeOv();st.busy=false;try{O().hush&&O().hush();}catch(e){}step(4);}));card.appendChild(row);};
+    const row=el('btnrow');row.appendChild(btn('bigbtn hlp-go','<span>עַכְשָׁו תּוֹרִי!</span>',go));card.appendChild(row);};
   st.exT=setTimeout(next,D(e.intro?3200:1800));}
 function solo(){const st=S;const q3=st.ctx.present?simHostQ(st,st.d2?keyOf(st.d2):null):null;
   if(!q3){st.phase='after';hidePanel();arm();return;}
@@ -461,11 +464,11 @@ function solo(){const st=S;const q3=st.ctx.present?simHostQ(st,st.d2?keyOf(st.d2
 function parents(){const st=S;if(!st)return;st.busy=true;clearTimeout(st.idleT);hidePanel();const ex=st.ex,d=st.d;
   const show=ex.show?ex.show(d):'',showHTML=st.q&&st.q.k==='ch'?`<div class="hlp-intro">${st.q.pr}</div>`:show?(/[א-ת]/.test(show)?`<div class="hlp-intro">${show}</div>`:`<div class="hlp-q">${E(esc(show))}</div>`):'';
   const card=openOv(`<div class="hlp-f big bob">${pet()}</div><h2>בּוֹא נִקְרָא לְאַבָּא אוֹ לְאִמָּא, נִפְתֹּר יַחַד</h2>${showHTML}${ex.tip?`<div class="hlp-tip">להורה: ${esc(ex.tip(d))}</div>`:''}`,'hlp-par-call');
-  if(!card)return;const row=el('btnrow');row.appendChild(btn('bigbtn','<span>פָּתַרְנוּ יַחַד!</span>',()=>{closeOv();const c=st.ctx;if(S===st){S.busy=false;stop();}if(c.done)c.done('parents');}));card.appendChild(row);
+  if(!card)return;xBtn(card,()=>{closeOv();if(S===st){S.busy=false;stop();}});const row=el('btnrow');row.appendChild(btn('bigbtn','<span>פָּתַרְנוּ יַחַד!</span>',()=>{closeOv();const c=st.ctx;if(S===st){S.busy=false;stop();}if(c.done)c.done('parents');}));card.appendChild(row);
   say('בּוֹא נִקְרָא לְאַבָּא אוֹ לְאִמָּא, נִפְתֹּר יַחַד');try{O().sfx&&O().sfx.star&&O().sfx.star(0);}catch(e){}}
 function teach(st){const ex=st.ex;if(!ex.teach)return false;const opts=shuffle(ex.teach(st.d));
   const eq=st.d.l!=null&&st.d.op?E(eqFull(st.d)):'';const card=openOv(`<div class="hlp-h"><span class="hlp-f">${pet()}</span><h2>תַּסְבִּיר לִי, אֵיךְ עָשִׂיתָ?</h2></div>${eq?`<div class="hlp-q">${eq}</div>`:''}<div class="hlp-opts"></div>`,'hlp-tb');
-  if(!card)return false;const box=card.querySelector('.hlp-opts');DB().tday=today();persist();
+  if(!card)return false;xBtn(card,closeOv);const box=card.querySelector('.hlp-opts');DB().tday=today();persist();
   const done=pick_=>{const db=DB();db.tb.push({d:today(),type:st.d.type,ex:plain(ex.show?ex.show(st.d):''),pick:plain(pick_)});db.tb=db.tb.slice(-30);persist();
     box.innerHTML=`<div class="hlp-thanks">אֵיזֶה הֶסְבֵּר יָפֶה!</div>`;card.querySelector('.hlp-aloud')&&card.querySelector('.hlp-aloud').remove();say('אֵיזֶה הֶסְבֵּר יָפֶה!');try{O().sfx.ok(3);}catch(e){}setTimeout(closeOv,D(1500));};
   opts.forEach(o=>box.appendChild(btn('chb tx hlp-opt',`<span>${o}</span>`,()=>done(o))));
