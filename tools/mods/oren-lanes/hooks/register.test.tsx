@@ -173,3 +173,14 @@ test('no express issue: no ⚡ line', () => {
   const v = view([], [], [], [])
   expect(v.lanes.some(l => l.startsWith('⚡'))).toBe(false)
 })
+
+test('model label shows in up next and lanes, e.g. [P1·opus]', () => {
+  const lab = (...n: string[]) => n.map(name => ({ name }))
+  const v = view([
+    { number: 1, title: 'ui', labels: lab('ready-for-agent', 'P1', 'model:opus') },
+    { number: 2, title: 'plain', labels: lab('ready-for-agent', 'P2') },
+    { number: 3, title: 'busy', labels: lab('in-progress', 'P1', 'model:fable') },
+  ], [], [], [])
+  expect(v.next).toEqual(['[P1·opus] #1 ui  (ready)', '[P2] #2 plain  (ready)'])
+  expect(v.lanes[0]).toBe('1. #3 running [fable] · busy')
+})

@@ -180,12 +180,15 @@ export function statsLines(text: string, nowSec: number): string[] {
   ]
 }
 
+/** #65: the model:<x> label (haiku|sonnet|opus|fable), '' when there is none (= default sonnet). */
+function modelOf(l: Set<string>): string { return ['haiku', 'sonnet', 'opus', 'fable'].reverse().find(m => l.has(`model:${m}`)) ?? '' }
+
 /** One line per lane (3): what runs in it, or WHY it is free. */
 export function laneReasons(open: Issue[], wins: Win[], max = 3): string[] {
   const lab = (i: Issue) => new Set((i.labels ?? []).map(x => x.name))
   const openNums = new Set(open.map(i => i.number))
   const running = open.filter(i => lab(i).has('in-progress'))
-  const rows = running.map((i, k) => `${k + 1}. #${i.number} running · ${i.title}`)
+  const rows = running.map((i, k) => { const m = modelOf(lab(i)); return `${k + 1}. #${i.number} running${m ? ` [${m}]` : ''} · ${i.title}` })
   if (rows.length >= max) return rows.slice(0, max)
   const coreBusy = running.some(i => lab(i).has('core'))
   const ready = open.filter(i => { const l = lab(i); return l.has('ready-for-agent') && !l.has('in-progress') && !l.has('blocked')
@@ -236,7 +239,7 @@ export function view(open: Issue[], closed: Issue[], wins: Win[], prBranches: st
   const orch = orchNums.length ? [`orchestrator handling: ${orchNums.join(' ')}`] : []
   const next = open.filter(i => lab(i).has('ready-for-agent') && !lab(i).has('in-progress') && !lab(i).has('blocked'))
     .sort((a, b) => (+!exp(a) - +!exp(b)) || (+!lab(a).has('bug') - +!lab(b).has('bug')) || prio(a) - prio(b) || a.number - b.number)
-    .map(i => { const w = parseBlockers(i.body).filter(b => b !== i.number && openNums.has(b)); return `${exp(i) ? '⚡ ' : ''}[P${prio(i)}] #${i.number} ${short(i.title)}${w.length ? '  (after #' + w.join(', #') + ')' : '  (ready)'}` })
+    .map(i => { const w = parseBlockers(i.body).filter(b => b !== i.number && openNums.has(b)); return `${exp(i) ? '⚡ ' : ''}[P${prio(i)}${modelOf(lab(i)) ? '·' + modelOf(lab(i)) : ''}] #${i.number} ${short(i.title)}${w.length ? '  (after #' + w.join(', #') + ')' : '  (ready)'}` })
   const done = closed.slice(0, 3).map(i => lab(i).has('needs-triage') ? `→ #${i.number} ${short(i.title)} (split into tasks)` : `✓ #${i.number} ${short(i.title)}`)
   return { lanes, you, orch, next, done }
 }
