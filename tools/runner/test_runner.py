@@ -431,8 +431,8 @@ calls = []
 def fake_start(n, task, cwd): calls.append(("start", n, task)); return {"ok": True, "session": "session_x", "url": "https://claude.ai/code/session_x"}
 res = r.remote_worker(7, "pack", False, fake_start, lambda: {"state": "done", "line": "RESULT: DONE https://p", "pr": {"number": 3}}, lambda s: None, lambda: 0, 60, 30)
 assert res == "RESULT: DONE https://p" and calls[0][0] == "start" and calls[0][1] == 7 and "lane/7" in calls[0][2]
-res = r.remote_worker(7, "pack", False, lambda n, t, cwd: {"ok": False, "error": "403"}, lambda: {"state": "working"}, lambda s: None, lambda: 0, 60, 30)
-assert res.startswith("RESULT: STUCK") and "403" in res
+try: r.remote_worker(7, "pack", False, lambda n, t, cwd: {"ok": False, "error": "403"}, lambda: {"state": "working"}, lambda s: None, lambda: 0, 60, 30); assert False, "no Refused"
+except r.Refused as e: assert "403" in str(e)                       # #137: a refused start is not STUCK: the caller falls back / waits
 res = r.remote_worker(7, "pack", False, fake_start, lambda: {"state": "question", "line": "QUESTION: x?"}, lambda s: None, lambda: 0, 60, 30)
 assert res == "QUESTION: x?"
 kept = []
@@ -495,7 +495,7 @@ print("ok pregen outside the merge lock")
 assert r.needs_branch_update("CONFLICTING") and not r.needs_branch_update("MERGEABLE") and not r.needs_branch_update("UNKNOWN") and not r.needs_branch_update("")
 _src = (r.HERE / "runner.py").read_text(encoding="utf-8")
 _ci = _src.split("def ci_integrate", 1)[1].split("def find_pr_merged", 1)[0]
-assert "needs_branch_update" in _ci and 'FileLock("integrate"' in _ci.split("def merge():", 1)[1]
+assert "needs_branch_update" in _ci and "FileLock" not in _ci          # #185: no lock for merging (GitHub merges); deploy keeps its lock
 _ib = _src.split("def integrate():", 1)[1].split("rounds = [0]", 1)[0]
 assert _ib.index("kind[\"ci\"] = rc == 6") < _ib.index("FileLock(\"integrate\"")   # CI path takes no lock; only the fallback does
 print("ok #166 merge on green, lock only around gh pr merge")
@@ -570,6 +570,64 @@ assert W.orch_decision("done", [213], _st, _n + 31 * 60) == "escalate"
 _st["escalated"] = _n + 31 * 60
 assert W.orch_decision("done", [213], _st, _n + 40 * 60) == "nudge"              # no second escalation within 2 h
 print("ok watch the checker")
+# #185: GitHub auto-merge after PASS. mark() = `gh pr merge --auto --squash` (or a direct merge when GitHub says 'clean status');
+# state() = merged|conflict|open from `gh pr view`. The runner only waits for MERGED, then deploys.
+assert r.auto_refused_clean("GraphQL: Pull request Pull request is in clean status (enablePullRequestAutoMerge)")
+assert not r.auto_refused_clean("auto-merge enabled") and not r.auto_refused_clean("")
+assert r.pr_state('{"state":"MERGED","mergeable":"UNKNOWN"}') == "merged"
+assert r.pr_state('{"state":"OPEN","mergeable":"CONFLICTING"}') == "conflict"
+assert r.pr_state('{"state":"OPEN","mergeable":"MERGEABLE"}') == "open" and r.pr_state("not json") == "open"
+def _am(seq, states, mark_res="auto", merge_ok=True, **kw):
+    it, st, log = iter(seq), iter(states), []
+    out = r.ci_merge(lambda: next(it), lambda: log.append("rerun"), lambda: log.append("merge") or merge_ok, lambda s: log.append("sleep"),
+                     mark=lambda: log.append("mark") or mark_res, state=lambda: next(st), **kw)
+    return out, log
+assert _am([_ck("pending")], ["merged"]) == (("merged",), ["mark"])                          # GitHub merged it itself: no runner merge
+assert _am([_ck("pending"), _ck("pass")], ["open", "merged"]) == (("merged",), ["mark", "sleep"])
+assert _am([], [], mark_res="merged") == (("merged",), ["mark"])                              # 'clean status' -> direct merge inside mark
+assert _am([], [], mark_res="conflict")[0] == ("conflict",)
+assert _am([_ck("pending")], ["conflict"])[0] == ("conflict",)                                # main moved while waiting -> resolve path
+assert _am([_ck("fail"), _ck("fail")], ["open", "open"])[0] == ("red", ["c0"])                # red after one rerun: back to the worker
+assert _am([_ck("pass")] * 9, ["open"] * 9, grace=2)[1] == ["mark", "sleep", "sleep", "merge"] # auto set but GitHub idle: direct merge after a grace
+assert _am([_ck("pass")], ["open"], mark_res=False)[1] == ["mark", "merge"]                   # mark failed: merge on green (old way)
+assert _am([_ck("pending")] * 99, ["open"] * 99, timeout_s=60, poll_s=30)[0] == ("timeout",)
+# order: --auto only after the review passed; a FIX verdict disables it; no lock around merging; failure disables auto
+_src = (r.HERE / "runner.py").read_text(encoding="utf-8")
+_ci = _src.split("def ci_integrate", 1)[1].split("def find_pr_merged", 1)[0]
+assert '"--auto"' in _ci and "auto_refused_clean" in _ci and "disable_auto(pr, log)" in _ci and "FileLock" not in _ci
+_proc = _src.split("verdict = \"\"; red = \"\"", 1)[1]
+assert _proc.index('stat(n, lane, "review_pass")') < _proc.index("ci_integrate(")
+_fix = _proc.split('stat(n, lane, "review_fix")', 1)[0].rsplit("if kind != \"fix\":", 1)[1]
+assert "disable_auto(pr, log)" in _fix
+assert '"--auto"' not in _src.split("def ci_integrate", 1)[0]                                 # nothing marks a PR before the review
+print("ok #185 auto-merge after PASS")
+assert r.merge_refusal('{"isDraft":false,"labels":[{"name":"core"}]}') == "" and r.merge_refusal('{"isDraft":true,"labels":[]}') == "PR is a draft"
+assert "no-automerge" in r.merge_refusal('{"isDraft":false,"labels":[{"name":"no-automerge"}]}') and "blocked" in r.merge_refusal('{"isDraft":false,"labels":[{"name":"x"},{"name":"blocked"}]}')
+assert r.merge_refusal("not json")                                                           # unreadable state: refuse
+def _ci_int(pr_json, auto_rc=(0, "ok"), sha="abc123"):
+    calls = []
+    def g(*a, **k):
+        calls.append(a)
+        if a[:2] == ("pr", "view"):
+            return (0, pr_json) if "isDraft,labels" in a else (0, "MERGEABLE") if "mergeable" in a else (0, '{"state":"OPEN","mergeable":"MERGEABLE"}')
+        if a[:2] == ("pr", "checks"): return 0, '[{"name":"tests","bucket":"pass"}]'
+        if a[:2] == ("pr", "merge") and "--auto" in a: return auto_rc
+        return 0, ""
+    saved = r.gh, r.run, r.remote.pr_for, r.time.sleep
+    r.gh, r.run, r.remote.pr_for, r.time.sleep = g, (lambda *a, **k: (0, "")), (lambda n, run=None, state="open": (251, "claude/x")), (lambda s: None)
+    try: res = r.ci_integrate(185, "wt", None, None, sha)
+    finally: r.gh, r.run, r.remote.pr_for, r.time.sleep = saved
+    return res, calls
+_ok = '{"isDraft":false,"labels":[]}'
+_res, _c = _ci_int(_ok)
+assert _res[0] == 0 and ("pr", "merge", "251", "--auto", "--squash", "--match-head-commit", "abc123") in [tuple(x[:7]) for x in _c]
+_res, _c = _ci_int(_ok, auto_rc=(1, "Pull request is in clean status"))                        # clean status -> direct merge, still tied to the head
+assert _res[0] == 0 and any(x[:4] == ("pr", "merge", "251", "--squash") and x[4:6] == ("--match-head-commit", "abc123") for x in _c)
+for _bad in ('{"isDraft":true,"labels":[]}', '{"isDraft":false,"labels":[{"name":"no-automerge"}]}', '{"isDraft":false,"labels":[{"name":"blocked"}]}'):
+    _res, _c = _ci_int(_bad)
+    assert _res[0] == 7 and not any("--auto" in x or "--squash" in x for x in _c) and ("pr", "merge", "251", "--disable-auto") in [tuple(x[:4]) for x in _c], _res
+assert _ci_int(_ok, sha="")[0][0] == 7                                                        # no reviewed sha: never merge
+print("ok #185 head-tied merge + draft/label guard")
 
 # #246: the runner finds a cloud worker's claude/* PR and uses its branch wherever lane/<n> was hard-coded
 import json as _js
@@ -702,8 +760,31 @@ def _fr246(cmd, **kw):
 assert r.issue_over(7, _S0, run_=_fr246)
 assert not r.issue_over(7, "2026-11-26T14:00:00Z", run_=_fr246)         # merged before this run started
 print("ok run ends when its issue is closed or PR merged (#234)")
+# #250: one pass at a time; a failed spawn gives in-progress back only when no run-<n> is live, never on name_taken
+assert r.may_give_back(7, "boom", []) is True
+assert r.may_give_back(7, "error: name_taken run-7", []) is False
+assert r.may_give_back(7, "boom", [{"name": "run-7", "state": "live"}]) is False
+assert r.may_give_back(7, "boom", [{"name": "run-7", "state": "exited"}, {"name": "run-70", "state": "live"}]) is True
+_lab2 = []
+_saved = {k: getattr(r, k) for k in ("set_labels", "set_where")}
+r.set_labels = lambda n, add=(), remove=(): _lab2.append((n, tuple(add), tuple(remove))); r.set_where = lambda *a: None
+try:
+    _res2 = r.start_chosen([{"number": 5}, {"number": 6}, {"number": 8}], {5: "remote", 6: "local", 8: "local"},
+                           spawn_=lambda a: (0, "") if a[0] == "5" else (1, "name_taken" if a[0] == "6" else "boom"),
+                           terms_=lambda: [])
+finally:
+    for k, v in _saved.items(): setattr(r, k, v)
+assert _res2 == [(5, "started"), (6, "not started (run already live)"), (8, "not started (hc run failed)")], _res2
+assert (6, (), ("in-progress",)) not in _lab2 and (8, (), ("in-progress",)) in _lab2, _lab2
+# the pass lock: a second pass exits at once while the first holds it
+_ran = []
+with r.FileLock("pass"):
+    assert r.one_pass(lambda: _ran.append(1) or 0) == 0 and _ran == []
+assert r.one_pass(lambda: _ran.append(1) or 0) == 0 and _ran == [1]
+assert not (r.RUNS / "pass.lock").exists()
+print("ok one pass at a time (#250)")
 
-# #186: no '## Acceptance' section -> the runner refuses the issue (needs-info, back to triage, orchestrator told)
+# #186: no '## Acceptance' section -> the runner refuses the issue (stays ready, one batched inbox line per hour)
 assert r.has_acceptance("Goal\n\n## Acceptance\n- [ ] a\n")
 assert r.has_acceptance("### Acceptance (3 points)\n- a")
 assert not r.has_acceptance("see the acceptance list") and not r.has_acceptance("") and not r.has_acceptance(None)
@@ -731,7 +812,83 @@ for _w in (r.worker_prompt(7, "pack"), r.remote_worker_prompt(7, "pack")):
     assert "## Acceptance" in _w and "Out of scope" in _w, _w
 for _v in (r.review_prompt(7, 9), r.remote_review_prompt(7, 9)):
     assert "missed Acceptance point" in _v and "PASS-NOTES" in _v, _v
+# gate(): shared by the pass and the watchdog idle alarm; hc raising must not crash ask_acceptance
+_g, _gr = r.gate(_qa)
+assert nums(_gr) == [2] and "ready-for-agent" not in _g[1]["labels"] and nums(r.select(_g, 3)) == [1]
+def _boom(*a, **k): raise FileNotFoundError("hc")
+_saved = {k: getattr(r, k) for k in ("hc", "USE_HERDR", "RUNS")}
+r.hc = _boom; r.USE_HERDR = True; r.RUNS = Path(_tf.mkdtemp())
+try:
+    assert r.ask_acceptance([_qa[1]], now=10000) is False and not (r.RUNS / "acceptance_ask.txt").exists()
+finally:
+    for k, v in _saved.items(): setattr(r, k, v)
+import json, watchdog as _W
+_saved_gh = _W.R.gh; _W.R.gh = lambda *a, **k: (0, json.dumps([{"number": 2, "labels": [{"name": R}], "createdAt": "2", "updatedAt": "2", "title": "t", "body": "no section"}]) if a[0] == "issue" else "[]")
+_W._alarm["free_since"] = None
+try:
+    _W.alarms_once(now=1000.0)
+    assert _W._alarm["free_since"] is None, "refused issue must not count as startable work"
+finally:
+    _W.R.gh = _saved_gh
 print("ok acceptance (#186)")
+# #137: cloud start refused -> local lane if free, else wait; one note per hour; dead session -> retry once, then STUCK
+_t = [0]
+def _clk(): return _t[0]
+def _sl(x): _t[0] += x
+_starts, _notes = [], []
+def _st2(n, task, cwd): _starts.append(task); return {"ok": True, "session": f"s{len(_starts)}", "url": f"u{len(_starts)}"}
+_seq = iter([{"state": "working"}] * 3 + [{"state": "done", "line": "RESULT: DONE p"}])
+_res = r.remote_worker(7, "pack", False, _st2, lambda: next(_seq), _sl, _clk, 60, 30, comment=_notes.append)
+assert _res == "RESULT: DONE p" and len(_starts) == 2 and len(_notes) == 1 and "u1" in _notes[0] and "retry" in _notes[0].lower(), (_res, _notes)
+assert "continue" in _starts[1] and "continue" not in _starts[0]          # the retry continues pushed work on lane/7
+assert not any(l.startswith(("RESULT:", "QUESTION:", "Runner: started (")) for l in _notes[0].splitlines())   # never read as a marker / a new run
+_starts.clear(); _notes.clear(); _t[0] = 0
+_res = r.remote_worker(7, "pack", False, _st2, lambda: {"state": "working"}, _sl, _clk, 60, 30, comment=_notes.append)
+assert _res.startswith("RESULT: STUCK") and "twice" in _res and "u1" in _res and "u2" in _res and len(_starts) == 2 and len(_notes) == 1, _res
+# pause + note throttle (pure)
+assert not r.remote_paused({}, 10_000) and r.remote_paused({"at": 10_000}, 10_000 + 3599) and not r.remote_paused({"at": 10_000}, 10_000 + 3600)
+assert r.note_due({}, 5) and not r.note_due({"noted": 100}, 100 + 3599) and r.note_due({"noted": 100}, 100 + 3600)
+assert r.lanes_now(4, {"at": 100}, 200) == 0 and r.lanes_now(4, {"at": 100}, 100 + 3600) == 4 and r.lanes_now(4, {}, 5) == 4
+# record_refusal: state file + one orchestrator note and one watchdog.log line per hour, however many starts fail
+import tempfile as _tf, pathlib as _pl
+_saved = {k: getattr(r, k) for k in ("RUNS", "tell_orchestrator")}
+r.RUNS = _pl.Path(_tf.mkdtemp(prefix="runs137-")); _told = []; r.tell_orchestrator = _told.append
+try:
+    assert r.record_refusal(7, "Error: usage limit", now=1000) is True
+    assert r.record_refusal(8, "Error: usage limit", now=1100) is False          # second refusal within the hour: no new note
+    assert r.remote_paused(r.refusal_state(), 1200)
+    assert r.record_refusal(9, "Error: x", now=1000 + 3600) is True
+    _wl = (r.RUNS / "watchdog.log").read_text(encoding="utf-8").splitlines()
+    assert len(_told) == 2 and len(_wl) == 2 and "#7" in _told[0] and "usage limit" in _wl[0], (_told, _wl)
+finally:
+    for k, v in _saved.items(): setattr(r, k, v)
+# process_locked: refused start, no local lane free -> WAITING (in-progress dropped, not blocked); local lane free -> runs locally
+_saved = {k: getattr(r, k) for k in ("gh", "run", "set_labels", "stat", "remove_worktree", "close_windows", "block", "issue_over",
+                                       "set_where", "record_refusal", "local_lane_free", "agent")}
+_saved_remote = r.remote.start
+_lab, _did, _wh = [], [], []
+r.gh = lambda *a, **k: (_did.append(("gh",) + a), (0, ""))[1]; r.run = lambda *a, **k: (0, ""); r.stat = lambda *a, **k: None
+r.set_where = lambda n, w: _wh.append(w); r.set_labels = lambda n, add=(), remove=(): _lab.append((tuple(add), tuple(remove)))
+r.remove_worktree = lambda *a, **k: None; r.close_windows = lambda n: None
+r.block = lambda *a, **k: _did.append("block"); r.issue_over = lambda n, since: False
+r.record_refusal = lambda n, err, now=None: _did.append(("refused", err)) or True
+r.remote.start = lambda *a: {"ok": False, "error": "Error: Cloud session create failed: limit"}
+r.agent = lambda *a, **k: (_did.append("agent"), ("out", "RESULT: STUCK test stop"))[1]
+try:
+    r.local_lane_free = lambda n: False
+    _res = r.process_locked({"number": 7, "labels": ["pack"]}, "remote")
+    assert _res.startswith("WAITING") and "block" not in _did and "agent" not in _did and ("refused", "Error: Cloud session create failed: limit") in _did, (_res, _did)
+    assert _lab[-1] == ((), ("in-progress",)), _lab
+    _did.clear(); _wh.clear()
+    r.local_lane_free = lambda n: True
+    _res = r.process_locked({"number": 7, "labels": ["pack"]}, "remote")
+    assert "agent" in _did and _wh[-1] == "local", (_res, _did, _wh)       # ran in the local lane (agent stub then stops it)
+    assert any(c[0] == "gh" and "comment" in c and any("locally" in str(x) for x in c) for c in _did if isinstance(c, tuple))
+finally:
+    for k, v in _saved.items(): setattr(r, k, v)
+    r.remote.start = _saved_remote
+if r.LOCAL_LANES == 0: assert r.local_lane_free(7) is False              # 0 local lanes (config now): never free, no gh call
+print("ok cloud fallback (#137)")
 # #248: watchdog backstop: reap run windows of closed issues, escalate stuck runs
 import json
 _rt = [{"name": f"run-{n}", "state": "live", "address": f"a{n}"} for n in (1, 2, 3, 4)] + [{"name": "run-pass-9", "state": "live", "address": "ap"}, {"name": "run-5", "state": "finished", "address": "a5"}]

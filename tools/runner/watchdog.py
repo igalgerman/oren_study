@@ -139,8 +139,8 @@ def check_intake(ts):
     n, name = i["number"], f"intake-{i['number']}"
     prompt = (f"/grill-me issue #{n} (gh issue view {n} --repo {R.CFG['repo']} --comments), then /to-tickets for what comes out of it, "
               f"then close #{n} with links to the new tickets. Every ticket gets an '## Acceptance' section before ready-for-agent: 3-7 checkable points "
-              f"+ the tests that prove them, and 'Out of scope' (#186). If the runner sent #{n} back only because it has no Acceptance section, "
-              f"skip the grilling: write that section into #{n}'s body, remove needs-info and add ready-for-agent.")
+              f"+ the tests that prove them, and 'Out of scope' (#186). If #{n} is only waiting because it has no Acceptance section, "
+              f"skip the grilling: write that section into #{n}'s body.")
     cmd = [R.HC, "run", "--bg", "--outlive-parent", *R.space_args(), "--name", name, "--cwd", R.CFG.get("main_checkout", str(R.ROOT)),
            "--label", f"issue={n}", "--label", "role=intake", shutil.which("claude") or "claude", prompt]
     rc, out = R.run(cmd, timeout=60)
@@ -301,6 +301,7 @@ def alarms_once(now=None):
     rc2, out2 = R.gh("pr", "list", "--state", "open", "--json", "number,title,updatedAt")
     if rc or rc2: return None
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
+    issues, _ = R.gate(issues)                      # #186: issues the runner refuses are not startable work
     running = sum("in-progress" in i["labels"] for i in issues)
     free = running < R.total_lanes() and bool(R.select(issues, R.total_lanes()))
     if not free: _alarm["free_since"] = None

@@ -880,7 +880,7 @@ function sent(back){const L=level('sent');T.quiz({id:'rb2-sent-'+L,title:'קוֹ
 function nextStory(){const L=level('story');const at=R.stories.filter(x=>x.lv===L);
   if(window.LEARN){try{const r=LEARN.pickItem('rb-story',at.map(x=>({k:x.t,lv:x.lv})),{lv:L});const it=r&&at.find(x=>x.t===r.item.k);if(it)return it;}catch(e){}}
   return at.find(x=>st('rb2-st-'+x.id)<2)||pick(at);}
-function story(back,k){const sto=k!=null?R.stories[k]:nextStory();if(window.LEARN)try{LEARN.seen('rb-story',sto.t,true,false);}catch(e){}O.setScreen('sTal','final',back);T.hudT('סִפּוּר');const s=$('#sTal');s.innerHTML='';
+function story(back,k){const sto=k!=null?R.stories[k]:nextStory();if(window.LEARN)try{LEARN.seen('rb-story',sto.t,true,false);}catch(e){}O.setScreen('sTal','final',back);T.hudT('סִפּוּר');O.sayNow='קְרָא אֶת הַסִּפּוּר, וְאַחַר כָּךְ עוֹנִים עַל שְׁאֵלוֹת.';const s=$('#sTal');s.innerHTML='';
   const page=h('div','story');page.innerHTML=`<div class="sth"><span>${pic(sto.spr[0])}</span><h2>${nk(sto.t,sto.tp)}</h2><span>${pic(sto.spr[1])}</span></div>`+sto.s.map((x,i)=>`<p class="sl" data-i="${i}">${nk(x,sto.p[i])}</p>`).join('');s.appendChild(page);
   const row=h('div','btnrow');const rd=h('button','bigbtn blue sm',ICON.say+`<span>${UI.storyRead}</span>`);const go=h('button','bigbtn',ICON.play+`<span>${UI.storyQ}</span>`);row.append(rd,go);s.appendChild(row);
   const mark=i=>page.querySelectorAll('.sl').forEach(p=>p.classList.toggle('cur',+p.dataset.i===i));
