@@ -1,6 +1,7 @@
 """Trend watcher (#155): patterns over the last 24 h that no single snapshot shows. Deterministic, no LLM.
 Hourly from the watchdog (trends.tick()); also: python3 tools/runner/trends.py --text (prints, acts on nothing).
-- the same BLOCKED reason >= REPEAT times -> one 'Repeated runner failure: <reason>' issue (comment if it exists; <= NEW_PER_DAY new a day)
+- the same BLOCKED reason on >= REPEAT issues in REPEAT_HOURS -> ONE 'Repeated runner failure: <reason>' issue (#302: searched open AND closed first:
+  open -> comment, closed -> reopen + comment, none -> create; each reason at most once per REPEAT_HOURS; <= NEW_PER_DAY new a day)
 - runner finish rate, review fix rate, open issues without a P-level -> orchestrator alarm (each at most once per ALARM_HOURS)"""
 import json, re, sys, time
 from pathlib import Path
@@ -10,7 +11,7 @@ sys.path.insert(0, str(HERE))
 import runner as R
 import stats as S
 
-REPEAT, NEW_PER_DAY, ALARM_HOURS, EVERY_MIN = 3, 2, 6, 60
+REPEAT, REPEAT_HOURS, NEW_PER_DAY, ALARM_HOURS, EVERY_MIN = 3, 6, 5, 6, 60
 MIN_STARTS, FINISH_MIN, MIN_REVIEWS, FIX_MAX, NOPRIO_MAX = 5, 0.5, 5, 0.4, 5
 TITLE = "Repeated runner failure: "
 STATE = R.RUNS / "trends.state.json"
@@ -35,7 +36,7 @@ def findings(log_text, events, open_issues, now):
     """Pure -> {'repeats': {key: [issue numbers]}, 'alarms': [(key, text)], 'summary': str}."""
     since = now - 86400
     rep = {}
-    for n, k in blocked_lines(log_text, since):
+    for n, k in blocked_lines(log_text, now - REPEAT_HOURS * 3600):
         if n not in rep.setdefault(k, []): rep[k].append(n)          # distinct issues: one issue retried is not a pattern
     repeats = {k: ns for k, ns in rep.items() if len(ns) >= REPEAT}
     ev = [e for e in events if e.get("ts", 0) >= since]
@@ -51,30 +52,33 @@ def findings(log_text, events, open_issues, now):
     if len(noprio) > NOPRIO_MAX:
         alarms.append(("noprio", f"{len(noprio)} open issues have no P-level (#{', #'.join(map(str, noprio[:8]))}{' …' if len(noprio) > 8 else ''})"))
     summary = (f"24h: started {len(starts)}, merged by runner {len(merged)}, reviews {passes} pass / {fixes} fix, "
-               f"blocked {sum(len(v) for v in rep.values())}" + (", repeated: " + "; ".join(f"{k} x{len(v)}" for k, v in repeats.items()) if repeats else ""))
+               f"blocked in {REPEAT_HOURS} h {sum(len(v) for v in rep.values())}" + (", repeated: " + "; ".join(f"{k} x{len(v)}" for k, v in repeats.items()) if repeats else ""))
     return {"repeats": repeats, "alarms": alarms, "summary": summary}
 
 def _load():
     try: return json.loads(STATE.read_text(encoding="utf-8"))
     except Exception: return {"last": 0, "alarm": {}, "new": []}
 
+def body(k, ns):
+    return (f"Trend watcher (#155, #302): '{k}' blocked {len(ns)} issues in the last {REPEAT_HOURS} h: #{', #'.join(map(str, ns))}. "
+            "A failure that repeats is real: find the cause, fix it once.")
+
 def act(f, now, st, gh, tell, existing):
-    """Side effects with limits. existing = {title: issue number} of open 'Repeated runner failure' issues."""
+    """Side effects with limits. existing = {title: (number, 'OPEN'|'CLOSED')} of 'Repeated runner failure' issues, open and closed (#302)."""
     st["new"] = [t for t in st.get("new", []) if t > now - 86400]
-    if "seen" not in st:                                                  # first run: baseline, old (already fixed) causes are not reopened
-        st["seen"] = {k: len(ns) for k, ns in f["repeats"].items()}
-        if f["repeats"]: tell("TREND (baseline, no action): " + "; ".join(f"{k} x{len(ns)}" for k, ns in f["repeats"].items()))
+    filed = st.setdefault("filed", {})
     for k, ns in f["repeats"].items():
-        if len(ns) - st["seen"].get(k, 0) < (REPEAT if k in st["seen"] else 0): continue   # known pattern: act again only after REPEAT new issues
-        st["seen"][k] = len(ns)
+        if filed.get(k, 0) > now - REPEAT_HOURS * 3600: continue           # this failure was filed/commented in the last 6 h
         title = TITLE + k
-        body = f"Trend watcher (#155): '{k}' blocked {len(ns)} issues in the last 24 h: #{', #'.join(map(str, ns))}. A failure that repeats is real: find the cause, fix it once."
         if title in existing:
-            if st.setdefault("commented", {}).get(title, 0) < now - ALARM_HOURS * 3600:
-                gh("issue", "comment", str(existing[title]), "--body", body); st["commented"][title] = now
+            num, state = existing[title]
+            if state.upper() != "OPEN": gh("issue", "reopen", str(num))
+            gh("issue", "comment", str(num), "--body", body(k, ns)); filed[k] = now
+            tell(f"TREND: '{title}' again ({len(ns)} issues in {REPEAT_HOURS} h) -> #{num}")
         elif len(st["new"]) < NEW_PER_DAY:
-            gh("issue", "create", "--title", title, "--label", "bug,P1,core,needs-orchestrator", "--body", body)
-            st["new"].append(now); tell(f"TREND: new issue '{title}' ({len(ns)} times in 24 h)")
+            gh("issue", "create", "--title", title, "--label", "bug,P1,core,needs-orchestrator", "--body", body(k, ns))
+            st["new"].append(now); filed[k] = now
+            tell(f"TREND: new issue '{title}' ({len(ns)} issues in {REPEAT_HOURS} h)")
     due = [(k, t) for k, t in f["alarms"] if st.setdefault("alarm", {}).get(k, 0) < now - ALARM_HOURS * 3600]
     for k, _ in due: st["alarm"][k] = now
     if due: tell("TREND ALARM: " + " · ".join(t for _, t in due))
@@ -85,7 +89,11 @@ def gather(now):
     rc, out = R.gh("issue", "list", "--state", "open", "--limit", "300", "--json", "number,title,labels")
     if rc: return None, {}
     iss = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
-    existing = {i["title"]: i["number"] for i in iss if i["title"].startswith(TITLE)}
+    rc, out = R.gh("issue", "list", "--state", "all", "--search", f'in:title "{TITLE.strip(": ")}"', "--limit", "100", "--json", "number,title,state")
+    if rc: return None, {}                                                  # #302: search first, never file blind
+    existing = {}
+    for i in sorted(json.loads(out), key=lambda i: (i["state"] == "OPEN", i["number"])):   # an open one wins, else the newest closed
+        if i["title"].startswith(TITLE): existing[i["title"]] = (i["number"], i["state"])
     return findings(log, S.read_events(), [i for i in iss if not i["title"].startswith(TITLE)], now), existing
 
 def tick(tell, log):
