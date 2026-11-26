@@ -1,0 +1,3 @@
+# fixture budget file for tests/budget.test.sh
+default 60
+fixtures-budget-slow 1   # deliberately too small

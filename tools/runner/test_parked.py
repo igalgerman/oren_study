@@ -1,5 +1,6 @@
 """#282 parked issues: batch members, manual/later, polish lists, night report. Run: python3 tools/runner/test_parked.py"""
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")
+os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 import calendar, json, sys
 sys.argv.append("--dry-run")
 import parked as P

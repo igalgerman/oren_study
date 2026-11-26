@@ -1,5 +1,6 @@
 """#142 dashboard: pure model() and text(). Run: python3 tools/runner/test_dashboard.py"""
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
+os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 import calendar, re, sys, time
 sys.argv.append("--dry-run")
 import dashboard as D
@@ -155,6 +156,13 @@ m4 = D.model(ic4, prs, ev, now, "", cl4)
 assert m4["cloud_n"] == 1 and 13 not in [r["n"] for r in m4["running"]], (m4["cloud_n"], m4["running"])
 assert m4["lanes"] == f"local 1/{D.R.CFG.get('local_lanes', 3)} · cloud 1/{D.R.CFG.get('remote_lanes', 0)}", m4["lanes"]
 print("ok dashboard remote lanes")
+# #277: a remote run waiting for a core slot is listed as 'waiting for core slot', but is no busy cloud lane and not a local one
+cl7 = [{"n": 13, "title": "t13", "state": "waiting for core slot", "line": "", "last": "2026-11-26T07:50:00Z", "stale": False, "pr": "", "session": ""}]
+m7 = D.model(ic4, prs, ev, now, "", cl7)
+assert m7["cloud_n"] == 0 and 13 not in [r["n"] for r in m7["running"]], (m7["cloud_n"], m7["running"])
+assert "cloud #13 t13 — waiting for core slot" in D.text(m7) and "waiting for core slot" in D.page(m7)
+assert m7["lanes"] == f"local 1/{D.R.CFG.get('local_lanes', 3)} · cloud 0/{D.R.CFG.get('remote_lanes', 0)}", m7["lanes"]
+print("ok dashboard core wait (#277)")
 # #282: batch members count under their batch; manual and later have their own counts, not 'not triaged'
 pk = [I(40, "OPEN", ["ready-for-agent", "P2"], body="- [ ] #41  a\n- [ ] #42  b") | {"title": "Batch: x (#41, #42)"},
       I(41, "OPEN", ["P2"]), I(42, "OPEN", ["P2"]), I(43, "OPEN", ["manual"]), I(44, "OPEN", ["later"]), I(45, "OPEN", [])]

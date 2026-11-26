@@ -16,7 +16,10 @@ Every minute it checks, deterministically:
       later/manual 2 h+ with no owner question, run, PR or future date -> 'parked without owner question: #n' to the orchestrator; night report at retro_hour
   5d. #306 desks.py: keeps the two cloud sessions 'Oren inbox (cloud)' / 'Oren ask (cloud)' alive and every status_minutes
       writes the session links + dashboard.py --text into ONE pinned issue (edited in place, nothing committed)
+  5e. #187 once a week: tools/test_garden.py (test trim proposal: ONE issue 'Test trim proposal (week N)'; it never deletes a test)
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
+  7. #304: a network error (sync, or a tick that raised a network/timeout error) is retried next tick and only logged + told to the
+     orchestrator on the NET_ALARM-th in a row; nightly.prune_if_due removes .runs/<n> of issues closed > 24 h once a day
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
   4b. orchestrator / inbox / inspector terminal finished (#140)                -> removed by address and started again (recover.py commands)
 It never answers questions or presses keys in other windows; it only tells the orchestrator and starts the runner.
@@ -286,6 +289,7 @@ def nightly_tick():
     import nightly   # #219: not reloaded (that would reset its never-two guard)
     nightly.retro_if_due(tell, log)
     nightly.batch_tick(lambda t: R.hc("send", "inbox", t, timeout=30)[0], log)
+    nightly.prune_if_due(log)   # #304
     nightly.night_report_if_due(tell, log)   # #282
 
 def parked_tick():
@@ -296,14 +300,38 @@ def parked_tick():
 def desks_tick():
     import desks; desks.run_if_due(log)   # #306: cloud inbox + ask sessions, pinned links + live status (thread; its never-two lock survives a reload)
 
+# ---------- #304: network errors retry next tick, alarm only after NET_ALARM in a row ----------
+NET_ALARM = 3
+NET_RE = re.compile(r"could not resolve host|unable to access|failed to connect|connection (?:timed out|refused|reset)|"
+                    r"network is unreachable|temporary failure in name resolution|TimeoutExpired|timed out", re.I)
+_net = {}   # key -> network errors in a row
+
+def is_net_error(msg):
+    """Pure: True when a message looks like a passing network/timeout error."""
+    return bool(NET_RE.search(msg or ""))
+
+def net_streak(streaks, key, msg):
+    """(#304) -> (errors in a row, alarm now?). A network error counts up (alarm exactly at NET_ALARM); anything else resets."""
+    streaks[key] = streaks.get(key, 0) + 1 if is_net_error(msg) else 0
+    return streaks[key], streaks[key] == NET_ALARM
+
+def net_alarm(what, msg):
+    text = f"network error {NET_ALARM} in a row ({what}): {msg[:200]}"
+    log(text); tell("WATCHDOG: " + text)
+
 SYNC_MIN = int(R.CFG.get("sync_minutes", 3))
 _sync = {"last": 0.0, "msg": ""}
 
 def sync_tick():
-    """Every SYNC_MIN minutes fast-forward the main checkout; log changes of state only."""
+    """Every SYNC_MIN minutes fast-forward the main checkout; log changes of state only. Network errors: retried next tick (#304)."""
     if time.time() - _sync["last"] < SYNC_MIN * 60: return
     _sync["last"] = time.time()
     msg = R.sync_main()
+    k, alarm = net_streak(_net, "sync", msg)
+    if k:
+        _sync["last"] = 0.0
+        if alarm: net_alarm("sync", msg)
+        return
     if msg and msg != _sync["msg"]: log(msg)
     _sync["msg"] = msg
 
@@ -484,11 +512,14 @@ def loop(once):
                 W = reload_self(W); log("reloaded watchdog.py")
                 st, force = now, False        # only after a clean reload: a failed one is retried next tick
             W.tick()
+            _net["tick"] = 0
         except AttributeError as e:           # #300: new code calling an old module: log once, full reload next tick
             if repr(e) not in seen: seen.add(repr(e)); log(f"error: {e!r} (full reload)")
             force = True
         except Exception as e:
-            log(f"error: {e!r}")
+            k, alarm = net_streak(_net, "tick", repr(e))   # #304: a passing network/timeout error: quiet until NET_ALARM in a row
+            if alarm: net_alarm("tick", f"error: {e!r}")
+            elif not k: log(f"error: {e!r}")
         if once: return
         time.sleep(EVERY)
 
@@ -515,6 +546,7 @@ def tick():
     ai_observer_tick()
     nightly_tick()
     parked_tick()       # #282
+    garden_tick()       # #187
     desks_tick()
     sync_tick()
     alarm_tick()
@@ -732,6 +764,15 @@ def ghcache_tick(start=None):
         finally: _GH_BUSY.clear()
     (start or (lambda f: threading.Thread(target=f, daemon=True).start()))(work)
     return True
+
+def garden_tick():
+    """#187, once a week: the test gardener (its own process; it opens/updates ONE 'Test trim proposal' issue, never deletes a test)."""
+    if R.DRY: return
+    sys.path.insert(0, str(HERE.parent))
+    import test_garden
+    try:
+        if test_garden.run_if_due(R.RUNS / "garden.last"): log("test gardener started (weekly, #187)")
+    except OSError as e: log(f"test gardener could not start: {e!r} (next try in a week; run python3 tools/test_garden.py by hand)")
 
 def trends_tick():
     """#155: hourly patterns over 24 h (repeated BLOCKED reasons, finish/fix rates); reloaded so merged fixes apply."""

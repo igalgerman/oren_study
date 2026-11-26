@@ -14,6 +14,11 @@ node oren2/tests/arcade.test.js phone   # one suite; desktop|phone variant where
 ```
 
 Logs: `tests/.tmp/logs/<suite>.log`. Every suite prints `PASS …` / `FAIL …` lines and a final `RESULT <name> <pass> <fail>`.
+
+Time budget (#187): run.sh times every suite into `tests/.tmp/times.tsv` and FAILS a suite slower than its line in `tests/budget.txt`
+(default 60 s; a bigger budget needs a `# why`); hard timeout 120 s per suite; CI fails a shard over 8 min (`RUN_BUDGET=480`) and shows the
+times in the step summary. New test? Add it to an existing suite unless a new one is clearly needed, and give a new suite a budget line.
+The test gardener (`python3 tools/test_garden.py`, weekly from the watchdog) proposes trims in ONE issue 'Test trim proposal (week N)'; it never deletes a test.
 Needs Node and the `playwright` package with Chromium (no npm install inside the repo).
 
 ## Suites

@@ -1,5 +1,5 @@
 # Unit test for ghcache.py (#329: one GitHub reader + cache, retry on rate limit) with fakes: python tools/runner/test_ghcache.py
-import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
+import os, tempfile; os.environ["OREN_TEST"] = "1"; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 import json, time
 from pathlib import Path
 import ghcache as G
@@ -114,7 +114,7 @@ rc, out = ans("gh", "pr", "list", "--repo", R, "--state", "merged", "--json", "n
 assert json.loads(out) == [{"number": 19, "mergedAt": "2026-11-26T07:59:00Z"}]
 rc, out = ans("gh", "pr", "view", "20", "--repo", R, "--json", "comments")
 assert json.loads(out)["comments"][0]["body"] == "VERDICT: PASS"
-assert ans("gh", "pr", "list", "--state", "open", "--json", "number,statusCheckRollup") is None, "a field the cache lacks -> real gh"
+assert ans("gh", "pr", "list", "--state", "open", "--json", "number,reviewDecision") is None, "a field the cache lacks -> real gh"
 cc = G.load(); G._save({**cc, "prs_complete": False})                 # a repo with more PRs than the cache page
 assert ans("gh", "pr", "list", "--state", "all", "--limit", "500", "--json", "number") is None, "more than the cache holds -> real gh"
 G._save(cc)

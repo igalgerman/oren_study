@@ -1,5 +1,12 @@
 # Unit test for the selection logic: python tools/runner/test_runner.py
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
+os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
+import subprocess as _sp; _real_popen = _sp.Popen; _pregen_popens = []
+class _NoPregenPopen(_real_popen):                 # #325: fail if any test path launches the real node pregen.js
+    def __init__(self, args, *a, **k):
+        if "pregen.js" in " ".join(map(str, args if isinstance(args, (list, tuple)) else [args])): _pregen_popens.append(args); raise RuntimeError("test launched real pregen.js")
+        super().__init__(args, *a, **k)
+_sp.Popen = _NoPregenPopen
 import sys; sys.argv.append("--dry-run")
 import runner as r
 def I(n, labels, t=None): return {"number": n, "labels": labels, "createdAt": t or f"2026-01-{n:02d}"}
@@ -419,6 +426,8 @@ assert "LAST STEP (mandatory)" in p and p.rstrip().endswith("not finished until 
 # #219: Batch:/spec issues follow implement-spec (local and cloud prompts)
 assert "implement-spec.md" in r.remote_worker_prompt(7, "core") and "Batch:" in r.remote_worker_prompt(7, "core") and "spec" in r.worker_prompt(7, "core")
 assert "implement-spec.md" in r.worker_prompt(7, "core")
+for p in (r.worker_prompt(7, "pack"), r.remote_worker_prompt(7, "pack")):   # #187: new tests go into an existing suite, a new suite gets a budget line
+    assert "existing suite unless a new one is clearly needed" in p and "oren2/tests/budget.txt" in p
 assert "docs/agents/skills/diagnosing-bugs.md" in r.remote_worker_prompt(7, "core", bug=True) and "docs/agents/skills/diagnosing-bugs.md" in r.worker_prompt(7, "core", bug=True)
 import recover as _rc; assert "docs/agents/skills/writing-for-agents.md" in _rc.INBOX_PROMPT
 print("ok #219 skill docs")
@@ -502,11 +511,21 @@ print("ok #134 remote reviewer")
 # #175: voice pregen runs in the background AFTER the merge lock, one at a time, never blocking an issue
 import os as _os
 class _P:
-    def __init__(self, *a, **k): self.pid = _os.getpid(); _P.calls.append(a[0])
+    def __init__(self, *a, **k): self.pid = _os.getpid(); _P.calls.append(a[0]); _P.kw = k
 _P.calls = []
 r.RUNS.mkdir(exist_ok=True); (r.RUNS / "pregen.lock").unlink(missing_ok=True)
-_old = r.CFG.get("pregen"); r.CFG["pregen"] = True
+_old = r.CFG.get("pregen"); _oldci = r.CFG.get("deploy_in_ci")
+# #325: CI deploys + pregens, so the PC never does: 'off' unless deploy_in_ci = false AND pregen = true
+r.CFG["pregen"] = True; r.CFG.pop("deploy_in_ci", None); assert r.start_pregen(popen=_P) == "off" and _P.calls == []
+r.CFG["deploy_in_ci"] = True; assert r.start_pregen(popen=_P) == "off" and _P.calls == []
+r.CFG["deploy_in_ci"] = False
+# #325: under tests (OREN_TEST=1 or a temp RUNS) a real Popen is never used
+assert os.environ.get("OREN_TEST") == "1" and r.start_pregen() == "off (test)" and _pregen_popens == []
+os.environ.pop("OREN_TEST"); assert r.start_pregen() == "off (test)" and _pregen_popens == []   # RUNS is a temp dir
+os.environ["OREN_TEST"] = "1"
 assert r.start_pregen(popen=_P) == "started" and _P.calls == [r.pregen_cmd()]
+# #325: no visible console: CREATE_NO_WINDOW on Windows and never DETACHED_PROCESS (a detached node gives each child its own window)
+assert _P.kw["creationflags"] & 0x00000008 == 0 and (_P.kw["creationflags"] & 0x08000000) == (r.no_window() & 0x08000000)
 assert r.start_pregen(popen=_P) == "already running" and len(_P.calls) == 1      # lock holds our (live) pid
 (r.RUNS / "pregen.lock").unlink(missing_ok=True)
 r.CFG["pregen"] = False; assert r.start_pregen(popen=_P) == "off"
@@ -520,6 +539,8 @@ r.FileLock.held_by_other = _hb
 assert r.pregen_note("started") == "" and r.pregen_note("off") == "" and r.pregen_note("already running") == ""
 assert r.pregen_note("failed: x").startswith(" Note: voice pregen did not start (failed: x)")
 r.CFG["pregen"] = _old
+if _oldci is None: r.CFG.pop("deploy_in_ci", None)
+else: r.CFG["deploy_in_ci"] = _oldci
 # #301: no code path waits on pregen: pregen_cmd is only used by the detached Popen, and its result only becomes a note
 _src0 = (r.HERE / "runner.py").read_text(encoding="utf-8")
 assert _src0.count("pregen_cmd()") == 2 and "(popen or subprocess.Popen)(pregen_cmd()" in _src0
@@ -1079,6 +1100,32 @@ def _slow(cmd, **k): raise _sp.TimeoutExpired(cmd, 60)
 assert r.issue_over(5, 0, run_=_slow) is False
 print("ok issue_over timeout")
 
+_core = lambda n: I(n, [R, "core"])
+# #277: core runs that already hold a core slot count even without an in-progress label (max_core never exceeded);
+# the lane goes to a pack issue instead
+assert nums(r.select([_core(1), I(2, [R, "pack"])], 3, 3, core_held=3)) == [2]
+assert nums(r.select([_core(1), _core(2), I(3, [R, "pack"])], 3, 3, core_held=2)) == [1, 3]
+assert nums(r.select([I(1, ["in-progress", "core"]), _core(2), _core(3)], 4, 3, core_held=1)) == [2, 3]   # label and lock are the same run
+assert nums(r.select([_core(1), _e(2, ["core"])], 3, 1, 1, core_held=1)) == [2]                          # express rule unchanged
+# #277: a run waiting in core_slot() writes .runs/<n>/core_wait (with its pid) until it gets a slot; it is no busy cloud lane
+locks = [r.FileLock(f"core-{k}").__enter__() for k in range(r.MAX_CORE)]
+seen = []
+class _Stop(Exception): pass
+def _sleep(s):
+    seen.append(r.waiting_core(277))
+    if len(seen) > 1: raise _Stop()
+    for l in locks: l.__exit__()                                  # slots free up while it waits
+_real_sleep, r.time.sleep = r.time.sleep, _sleep
+try:
+    with r.core_slot(277): got = r.waiting_core(277)
+finally: r.time.sleep = _real_sleep
+assert seen == [True] and got is False and not r.waiting_core(277), (seen, got)
+r.set_where(278, "remote"); r.set_where(279, "remote"); r.set_where(280, "local")
+(r.RUNS / "279" / "core_wait").write_text(str(os.getpid()))
+assert r.waiting_core(279) and r.remote_busy([278, 279, 280]) == 1
+(r.RUNS / "279" / "core_wait").write_text("999999999")         # dead pid: stale marker, not waiting
+assert not r.waiting_core(279)
+print("ok core wait (#277)")
 # #302: block reasons name the real failure (not 'integrate.sh exit N'); ci_merge never falls back to the local integrate.sh
 assert r.integrate_failure(6, "CI RED\ntests") == "CI red: tests"
 assert r.integrate_failure(4, "no open PR for issue #12") == "merge step failed: no open PR for issue #12"
@@ -1107,3 +1154,5 @@ assert _ci_race("Pull request #104 was already merged", "MERGED")[0] == 0
 _res = _ci_race("GraphQL: Head branch was modified. Review and try the merge again.", "OPEN")
 assert _res[0] == 7 and "Head branch was modified" in _res[1], _res                     # the real gh text is in the reason
 print("ok #302 merge failures")
+assert _pregen_popens == [], _pregen_popens          # #325: no test path launched the real pregen.js
+print("ok #325 no real pregen under tests")

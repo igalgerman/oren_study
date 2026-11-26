@@ -108,7 +108,7 @@ _Q = ("query($o:String!,$r:String!,$oc:String,$cc:String,$wo:Boolean!,$wc:Boolea
       " closed:issues(states:CLOSED,first:100,after:$cc,orderBy:{field:UPDATED_AT,direction:DESC})@include(if:$wc){totalCount pageInfo{hasNextPage endCursor}"
       " nodes{number title url state createdAt updatedAt closedAt labels(first:30){nodes{name}}}}"
       " prs:pullRequests(first:100,orderBy:{field:UPDATED_AT,direction:DESC})@include(if:$full){nodes{number url title headRefName body state isDraft"
-      " mergedAt createdAt updatedAt closedAt labels(first:30){nodes{name}} commits(last:1){nodes{commit{committedDate}}} comments(last:50){nodes{body createdAt author{login}}}}}"
+      " mergedAt createdAt updatedAt closedAt labels(first:30){nodes{name}} mergeable autoMergeRequest{enabledAt} closingIssuesReferences(first:5){nodes{number}} commits(last:1){nodes{commit{committedDate statusCheckRollup{state}}}} comments(last:50){nodes{body createdAt author{login}}}}}"
       " openPrs:pullRequests(states:OPEN)@include(if:$full){totalCount}"
       " refs(refPrefix:\"refs/heads/lane/\",first:100,orderBy:{field:TAG_COMMIT_DATE,direction:DESC})@include(if:$full){pageInfo{hasNextPage} nodes{name target{... on Commit{committedDate}}}}"
       "}}")
@@ -118,7 +118,11 @@ def _flat(node):
     if isinstance(d.get("labels"), dict): d["labels"] = [{"name": l["name"]} for l in d["labels"].get("nodes") or []]
     if isinstance(d.get("comments"), dict): d["comments"] = d["comments"].get("nodes") or []
     if isinstance(d.get("commits"), dict):
-        d["commits"] = [{"committedDate": (c.get("commit") or {}).get("committedDate", "")} for c in d["commits"].get("nodes") or []]
+        nodes = d["commits"].get("nodes") or []
+        d["commits"] = [{"committedDate": (c.get("commit") or {}).get("committedDate", "")} for c in nodes]
+        st = ((nodes[-1].get("commit") or {}).get("statusCheckRollup") or {}).get("state") if nodes else None   # panel: CI red = FAILURE/ERROR
+        d["statusCheckRollup"] = [{"state": st}] if st else []
+    if isinstance(d.get("closingIssuesReferences"), dict): d["closingIssuesReferences"] = d["closingIssuesReferences"].get("nodes") or []
     return d
 
 def _query(run, full, open_cur=None, closed_cur=None, want_open=True, want_closed=True):

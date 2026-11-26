@@ -123,14 +123,15 @@ def gate(issues):
     refused = no_acceptance(issues)
     return [demote(i) if i in refused else i for i in issues], refused
 
-def select(issues, max_parallel, max_core=1, express_lanes=0):
+def select(issues, max_parallel, max_core=1, express_lanes=0, core_held=0):
     """issues: [{number, labels:[names], createdAt, body}] -> issues to start now (express first, then oldest).
     An issue waits while any issue in its 'Blocked by:' line is still open (= in this list).
     #72: label 'express' = owner-approved. It gets its own extra lane (express_lanes), starts before any other ready issue,
-    and an express core issue in that lane ignores max_core. When the express lane is busy it uses a normal slot."""
+    and an express core issue in that lane ignores max_core. When the express lane is busy it uses a normal slot.
+    #277: core_held = core runs holding or waiting for a core slot; a core run counts even when its label says otherwise."""
     open_nums = {i["number"] for i in issues}
     active = [i for i in issues if "in-progress" in i["labels"] and "manual" not in i["labels"]]   # #177: hand work (label manual) takes no lane
-    core_running = sum(lane_of(i["labels"]) == "core" for i in active)
+    core_running = max(core_held, sum(lane_of(i["labels"]) == "core" for i in active))
     exp_active = sum("express" in i["labels"] for i in active)
     exp_free = max(0, express_lanes - exp_active)
     slots = max_parallel - (len(active) - min(exp_active, express_lanes))
@@ -396,7 +397,8 @@ def assign_where(chosen, local_busy, remote_busy, local_lanes, remote_lanes):
         elif "express" in i.get("labels", []): out.append((i, "remote" if remote_lanes > 0 else "local"))   # #72: select() gave it the extra express slot: all lanes busy still starts it
     return out
 
-ACCEPT = ("Build exactly the issue's `## Acceptance` list (every point, with the tests it names) and nothing in its `Out of scope` (#186).")
+ACCEPT = ("Build exactly the issue's `## Acceptance` list (every point, with the tests it names) and nothing in its `Out of scope` (#186). "
+          "New tests: add the test to an existing suite unless a new one is clearly needed; give it a budget line in oren2/tests/budget.txt (#187).")
 SPEC = ("A 'Batch:' issue (title starts with Batch:) or an issue labelled 'spec': follow docs/agents/skills/implement-spec.md "
         "(one branch, sub-agents in parallel for independent parts, integrate, test once, one PR).\n")
 
@@ -1260,8 +1262,10 @@ def pregen_cmd():
 
 def start_pregen(log=None, popen=None):
     """#175: voice pregen in the background, OUTSIDE the merge lock (it can take 30 min); one at a time; never blocks an issue.
-    -> 'started' / 'already running' / 'off' / 'failed: ...'."""
-    if not CFG.get("pregen", False): return "off"
+    -> 'started' / 'already running' / 'off' / 'off (test)' / 'failed: ...'."""
+    if CFG.get("deploy_in_ci", True) or not CFG.get("pregen", False): return "off"   # #325: CI pregens after each deploy; the PC never does
+    if popen is None and (os.environ.get("OREN_TEST") == "1" or RUNS.resolve() != (HERE / ".runs").resolve()):
+        return "off (test)"                                  # #325: a test never launches the real node pregen.js
     try:                                                     # #301: nothing here may raise into process(): a failure is a note, never a block
         lock = FileLock("pregen")
         if lock.held_by_other(): return "already running"
@@ -1269,7 +1273,7 @@ def start_pregen(log=None, popen=None):
         RUNS.mkdir(exist_ok=True)
         out = open(RUNS / "pregen.log", "a", encoding="utf-8")
         out.write(f"\n=== pregen {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n"); out.flush()
-        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)   # #325: no DETACHED_PROCESS: a console-less node gives every child (Chrome) a visible window
         p = (popen or subprocess.Popen)(pregen_cmd(), cwd=str(MAIN_CHECKOUT), env=env, stdout=out, stderr=subprocess.STDOUT, creationflags=flags | no_window())
         lock.path.write_text(str(p.pid))                     # held while that process lives (FileLock checks the pid)
         if log: log_to(log, f"voice pregen started in the background (pid {p.pid}, .runs/pregen.log)")
@@ -1367,16 +1371,39 @@ def deploy_main(log):
 MAX_CORE = int(CFG.get("max_core", 1))
 EXPRESS = int(CFG.get("express_lanes", 0))
 
+def _wait_file(n): return RUNS / str(n) / "core_wait"
+
+def waiting_core(n):
+    """#277: True while issue n's run waits in core_slot() (.runs/<n>/core_wait holds its live pid)."""
+    return remote.waiting_core(n, RUNS)
+
+def core_held():
+    """#277: core runs now = held core slot locks + runs waiting for one."""
+    held = sum(FileLock(f"core-{k}").held_by_other() for k in range(MAX_CORE))
+    try: waiting = sum(waiting_core(d.name) for d in RUNS.iterdir() if d.is_dir())
+    except OSError: waiting = 0
+    return held + waiting
+
+def remote_busy(busy):
+    """#277: in-progress issues that really use a cloud lane (a run still waiting for a core slot does not)."""
+    return sum(where_of(b) == "remote" and not waiting_core(b) for b in busy)
+
 class core_slot:
-    """One of MAX_CORE core slot locks (cross-process)."""
+    """One of MAX_CORE core slot locks (cross-process). While it waits, .runs/<n>/core_wait says so (#277)."""
+    def __init__(self, n=None): self.n = n
     def __enter__(self):
-        while True:
-            for k in range(MAX_CORE):
-                try:
-                    self.lock = FileLock(f"core-{k}").__enter__(); return self
-                except Blocked:
-                    pass
-            time.sleep(20)
+        try:
+            while True:
+                for k in range(MAX_CORE):
+                    try:
+                        self.lock = FileLock(f"core-{k}").__enter__(); return self
+                    except Blocked:
+                        pass
+                if self.n is not None:
+                    _wait_file(self.n).parent.mkdir(parents=True, exist_ok=True); _wait_file(self.n).write_text(str(os.getpid()))
+                time.sleep(20)
+        finally:
+            if self.n is not None: _wait_file(self.n).unlink(missing_ok=True)
     def __exit__(self, *a):
         self.lock.__exit__()
 
@@ -1395,7 +1422,7 @@ def process(issue, where="local"):
     try:
         with FileLock(f"issue-{n}"):
             if lane_of(issue["labels"]) == "core":
-                with core_slot():                   # at most max_core core issues run; an extra one waits here, it does not fail
+                with core_slot(n):                   # at most max_core core issues run; an extra one waits here, it does not fail
                     return process_locked(issue, where)
             return process_locked(issue, where)
     except Blocked:
@@ -1745,11 +1772,11 @@ def run_pass():
         for m, step in auto_resume(issues, resume_lookup, set_labels, lambda k, b: gh("issue", "comment", str(k), "--body", b), tell_orchestrator):
             log_line(f"{now()} #{m}: auto-resume at {step}")
     busy = [i["number"] for i in issues if "in-progress" in i["labels"]]
-    remote_busy = sum(where_of(b) == "remote" for b in busy)
-    gv = governor_pass(remote_busy)                     # #239: remote lane count from the 5h usage
+    rbusy = remote_busy(busy)                            # #277: a run waiting for a core slot holds no cloud lane
+    gv = governor_pass(rbusy)                     # #239: remote lane count from the 5h usage
     remote_lanes = lanes_now(gv["lanes"], refusal_state(), time.time())   # #137: no cloud starts for 1 h after a refusal
-    chosen = stop_filter([c for c in select(issues, LOCAL_LANES + remote_lanes, MAX_CORE, EXPRESS) if not FileLock(f"issue-{c['number']}").held_by_other()], gv)   # #269: express still starts on stop
-    wmap = {c["number"]: w for c, w in assign_where(chosen, len(busy) - remote_busy, remote_busy, LOCAL_LANES, remote_lanes)}
+    chosen = stop_filter([c for c in select(issues, LOCAL_LANES + remote_lanes, MAX_CORE, EXPRESS, core_held()) if not FileLock(f"issue-{c['number']}").held_by_other()], gv)   # #269: express still starts on stop
+    wmap = {c["number"]: w for c, w in assign_where(chosen, sum(where_of(b) != "remote" for b in busy), rbusy, LOCAL_LANES, remote_lanes)}
     chosen = [c for c in chosen if c["number"] in wmap]
     if not DRY: chosen = open_pr_resumes(chosen, resume_lookup)     # #295: an issue with an open PR resumes; never a second worker
     cutoff = CFG["stuck_hours"] * 3600
