@@ -6,7 +6,7 @@ not again within 6 h), and posts a finding for the OWNER in the 'Questions for t
 The AI observer never edits, merges, labels or comments by itself.
 #289: `ai_observer_where = "cloud"` (default): the check runs as an hourly CLOUD scheduled task (docs/agents/cloud-tasks.md, the
 subscription, no claude on the PC). It posts its lines as a comment on the open issue labelled `ai-observer` ('AI observer (cloud)');
-the watchdog only relays the newest comment (gh lastComment) when unseen, through the same path (.last file, 6 h repeat filter, orchestrator, #193).
+the watchdog only relays the newest comment (REST `gh api .../comments?since=`) when unseen, through the same path (.last file, 6 h repeat filter, orchestrator, #193).
 Silent for SILENT_H h -> one note to the orchestrator. "local" = the old headless run on the PC.
 Usage: python tools/runner/ai_observer.py   (one local run now, prints the findings)
 """
@@ -154,25 +154,34 @@ def _epoch(iso):
     try: return calendar.timegm(time.strptime((iso or "")[:19], "%Y-%m-%dT%H:%M:%S"))
     except ValueError: return 0
 
-def relay(tell, log, now, gh=None):
-    """#289: the cloud task's newest unseen comment on the ai-observer issue -> report(). Every RELAY_MIN; a gh error does nothing."""
+def relay(tell, log, now, gh=None, api=None):
+    """#289: the cloud task's newest unseen comment on the ai-observer issue -> report(). Every RELAY_MIN; a gh error does nothing.
+    Round 2 of #485: GraphQL `--json comments` stops at the first 100 and gh has no `lastComment` field, so the comments come from
+    REST: `gh api .../issues/<n>/comments?since=<cloud_seen>` (R.gh adds --repo, which `gh api` has no flag for -> R.run)."""
     st = load_state()
     if now - st.get("relay_at", 0) < RELAY_MIN * 60: return None
     st["relay_at"] = now; save_state(st)
-    # review of #485: `--json comments` is GraphQL comments(first: 100) (an hourly task fills that in ~4 days); lastComment = the newest one
-    rc, out = (gh or R.gh)("issue", "list", "--state", "open", "--label", CLOUD_LABEL, "--limit", "5", "--json", "number,title,lastComment")
+    rc, out = (gh or R.gh)("issue", "list", "--state", "open", "--label", CLOUD_LABEL, "--limit", "5", "--json", "number")
     try: issues = json.loads(out) if rc == 0 else None
     except ValueError: issues = None
     if issues is None: return None
-    comments = sorted((i["lastComment"] for i in issues if i.get("lastComment")), key=lambda c: c.get("createdAt", ""))
+    seen = st.get("cloud_seen", "") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 24 * 3600))  # first run: the last day
+    comments = []
+    for i in issues:
+        rc, out = (api or R.run)(["gh", "api", f"repos/{R.REPO}/issues/{i['number']}/comments?since={seen}&per_page=100"])
+        try: page = json.loads(out) if rc == 0 else None
+        except ValueError: page = None
+        if not isinstance(page, list): return None
+        comments += [c for c in page if isinstance(c, dict)]
+    comments.sort(key=lambda c: c.get("created_at") or "")
     readable = [c for c in comments if parse(c.get("body")) is not None]
     last = readable[-1] if readable else None
     st = load_state()
-    if last and last.get("createdAt", "") > st.get("cloud_seen", ""):
-        st["cloud_seen"] = last["createdAt"]; save_state(st)
+    if last and (last.get("created_at") or "") > st.get("cloud_seen", ""):
+        st["cloud_seen"] = last["created_at"]; save_state(st)
         found = report(True, last.get("body"), tell, log, now, head="AI OBSERVER (hourly cloud task, read-only):")
         st = load_state()
-    newest = _epoch(last.get("createdAt")) if last else 0
+    newest = max(_epoch(last.get("created_at")) if last else 0, _epoch(st.get("cloud_seen")))
     st.setdefault("relay_since", now); save_state(st)             # the first relay is no 'silent' alarm
     if now - max(newest, st.get("silent_told", 0), st["relay_since"]) >= SILENT_H * 3600:
         st["silent_told"] = now; save_state(st)
@@ -181,13 +190,13 @@ def relay(tell, log, now, gh=None):
         log("ai observer (cloud): silent")
     return last
 
-def run_if_due(tell, log, minutes=None, now=None, where=None, gh=None):
+def run_if_due(tell, log, minutes=None, now=None, where=None, gh=None, api=None):
     """Watchdog hook, every tick. Starts a background run when due; never two at once; ai_observer_minutes = 0 = off. -> started?
     #289: where = cloud (config ai_observer_where): no local run, only relay() of the cloud task's comment."""
     minutes = int(R.CFG.get("ai_observer_minutes", 60)) if minutes is None else minutes
     now = now or time.time()
     if (where or R.CFG.get("ai_observer_where", "cloud")) == "cloud":
-        if minutes > 0: relay(tell, log, now, gh)
+        if minutes > 0: relay(tell, log, now, gh, api)
         return False
     if minutes <= 0 or _running["v"]: return False
     st = load_state()
