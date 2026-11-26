@@ -62,6 +62,39 @@ const { chromium } = require('playwright');
     ok('crash record keeps the first stack line (file:line:col)', / @ oopsCrash \S*:\d+:\d+$/.test(m || '') && !/file:\/\//.test(m || ''), m);
     await ctx.close();
   }
+  // #350 root cause: "שׁוּב" (again) on a finished story/science quiz re-ran the quiz with a question counter already past the end
+  // -> `const [q,a,ds]=Q[k++]` on undefined -> "undefined is not iterable". Again must start the same questions from the first one.
+  {
+    const ctx = await b.newContext(L.VIEWPORT);
+    await ctx.addInitScript(() => { try { localStorage.clear(); } catch (e) {} window.__fast = true; });
+    const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
+    await p.goto(L.URL); await L.noCoach(p);
+    const toQuiz = {
+      'story-1': () => document.querySelector('#sTal .btnrow .bigbtn:last-child').click(),
+      'story-new': () => document.querySelector('#sTal .btnrow .bigbtn:last-child').click(),
+      'sci-day': () => { const r = document.querySelector('#earthR'); r.value = 180; r.oninput(); document.querySelector('#sTal > .bigbtn').click(); },
+      'sci-states': () => { const g = [...document.querySelectorAll('#sTal .bigbtn')].pop(); g.hidden = false; g.click(); },
+      'sci-plant': () => { for (let d = 0; d < 4; d++) { window.__plant.water(); window.__plant.next(); } },
+      'sci-circ': () => document.querySelectorAll('#sTal .btnrow button').forEach(x => x.click()),
+    };
+    for (const id of Object.keys(toQuiz)) {
+      const n0 = errs.length;
+      await p.evaluate(([id, f]) => { document.querySelector('#ov').hidden = true; window.TAL.ACT[id].run(() => {}); (0, eval)('(' + f + ')')(); }, [id, toQuiz[id].toString()]);
+      await p.waitForFunction(() => window.__quiz && window.__quiz.wrap.isConnected && document.querySelector('#sTal .tq .chb'), null, { timeout: 5000 }).catch(() => {});
+      const first = await p.evaluate(() => document.querySelector('#sTal .tq .prq') && document.querySelector('#sTal .tq .prq').textContent);
+      // answer every question right until the result card with "again" shows
+      for (let k = 0; k < 12; k++) {
+        if (await p.evaluate(() => !document.querySelector('#ov').hidden)) break;
+        await p.evaluate(() => { const q = window.__quiz, b = q && q.wrap.querySelectorAll('.chs .chb')[q.ans]; if (b && !b.disabled) b.click(); });
+        await L.sleep(400);
+      }
+      const again = p.locator('#ov .btnrow .bigbtn.plain');
+      const hasAgain = await again.count() === 1; if (hasAgain) await again.click(); await L.sleep(150);
+      const r = await p.evaluate(() => ({ i: window.__quiz && window.__quiz.i, q: document.querySelector('#sTal .tq .prq') && document.querySelector('#sTal .tq .prq').textContent }));
+      ok(`${id}: "again" after the last question restarts at question 1, no crash`, hasAgain && first && r.i === 0 && !!r.q && errs.length === n0, JSON.stringify({ hasAgain, first: !!first, r: { i: r.i, q: !!r.q }, errs: errs.slice(n0) }));
+    }
+    await ctx.close();
+  }
   // journey map (#7): no cage and no "0/49" count on the world cards; one progress bar per card that grows with the stars
   {
     const ctx = await b.newContext(L.VIEWPORT);

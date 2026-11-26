@@ -886,7 +886,7 @@ function story(back,k){const sto=k!=null?R.stories[k]:nextStory();if(window.LEAR
   const mark=i=>page.querySelectorAll('.sl').forEach(p=>p.classList.toggle('cur',+p.dataset.i===i));
   page.querySelectorAll('.sl').forEach(p=>p.onclick=()=>{mark(+p.dataset.i);if(T.readEl)T.readEl(p);else say(sto.s[+p.dataset.i]);});
   rd.onclick=()=>{if(T.readSeq){T.readSeq([...page.querySelectorAll('.sl')],mark);return;}let i=0;const nx=()=>{if(i>=sto.s.length||!page.isConnected)return;mark(i);say(sto.s[i]);i++;setTimeout(nx,D(3200));};nx();};
-  go.onclick=()=>{O.hush&&O.hush();T.readStop&&T.readStop();let qi=0;T.quiz({id:'rb2-st-'+sto.id,title:sto.t,bg:'final',back,n:sto.q.length,gen:()=>{const [,q,qp,a,ds]=sto.q[qi++];const opts=shuffle([a,...ds]);
+  go.onclick=()=>{O.hush&&O.hush();T.readStop&&T.readStop();T.quiz({id:'rb2-st-'+sto.id,title:sto.t,bg:'final',back,n:sto.q.length,gen:i=>{const [,q,qp,a,ds]=sto.q[i];const opts=shuffle([a,...ds]);
     return {pr:`<div class="sent">${nk(q,qp,1)}</div>`,opts,ans:opts.indexOf(a),cls:'tx',say:T.spk(q),key:q};}});};}
 
 /* ---- writing: a mixed graded session (copy, dictation, missing letter, sentence order) ---- */
