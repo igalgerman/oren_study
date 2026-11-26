@@ -221,6 +221,8 @@ def text(m):
     lines.append("Last deploy: " + (f"{hhmm(d['ts'])} {'ok' if d.get('ok') else 'FAILED'}" if d else "no record yet") + f" · runner deploys 24 h: {tr['deploys_ok']} ok, {tr['deploys_fail']} failed")
     if tr["stuck"]: lines.append("Top stuck reasons (24 h): " + "; ".join(f"{k} ({len(v)})" for k, v in tr["stuck"][:3]))
     lines.append("Lanes: " + m["lanes"])
+    sl = m.get("stuck_lanes") or []     # #248: runs unchanged past stuck_hours and still stuck 30 min after the alarm
+    if sl: lines.append(f"STUCK LANES: {len(sl)} (" + ", ".join(f"run-{n}" for n in sl) + ")")
     for c in m["cloud"]:
         lines.append(f"  cloud #{c['n']} {c['title'][:40]} — {c['state']} · last {hhmm(epoch(c['last'])) if epoch(c['last']) else '-'}"
                      + (" · STALE" if c["stale"] else "") + (f" · {c['pr']}" if c["pr"] else "") + (f" · {c['session']}" if c["session"] else ""))
@@ -621,6 +623,8 @@ def gather():
     m["ov"] = oversight(w, wmt, rmt, ol, omt, now)
     import owner_q
     m["questions"] = owner_q.open_list() or []            # #193
+    try: m["stuck_lanes"] = json.loads((R.RUNS / "stuck_lanes.json").read_text(encoding="utf-8"))   # #248 (written by the watchdog)
+    except Exception: m["stuck_lanes"] = []
     return m
 
 def ai_tick(log=print):

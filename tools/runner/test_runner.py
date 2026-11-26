@@ -622,3 +622,34 @@ finally:
 assert _res.startswith("DONE") and "block" not in _did and "wt" in _did and "win" in _did, (_res, _did)
 assert _lab[-1] == ((), ("in-progress",)), _lab
 print("ok run ends when its issue is closed or PR merged (#234)")
+
+# #248: watchdog backstop: reap run windows of closed issues, escalate stuck runs
+import json
+_rt = [{"name": f"run-{n}", "state": "live", "address": f"a{n}"} for n in (1, 2, 3, 4)] + [{"name": "run-pass-9", "state": "live", "address": "ap"}, {"name": "run-5", "state": "finished", "address": "a5"}]
+_cs = {1: 1000.0, 2: 1000.0 + 590, 3: 1000.0, 5: 1000.0}                       # 1 old, 2 inside grace, 3 lock holder, 4 open, 5 finished window
+assert W.reap_runs(_rt, _cs, 1000.0 + 600, lock_holder=3) == [("a1", 1)], W.reap_runs(_rt, _cs, 1600.0, 3)
+assert W.reap_runs(_rt, {1: 1000.0}, 1000.0 + 599, None) == []                   # inside grace -> keep
+assert W.lock_holder_issue((7, "#3 CI merge", 0)) == 3 and W.lock_holder_issue(None) is None
+_calls, _said = [], []
+_hc = lambda *a, **k: _calls.append(("hc",) + a) or (0, "")
+_gh = lambda *a, **k: _calls.append(("gh",) + a) or (0, json.dumps([{"number": 1, "state": "CLOSED"}, {"number": 4, "state": "OPEN"}]))
+W.closed_seen.clear()
+assert W.reap_tick(_rt, now=5000.0, gh=_gh, hc=_hc, say=_said.append, holder=None) == []          # first sight: grace starts
+assert W.reap_tick(_rt, now=5000.0 + 601, gh=_gh, hc=_hc, say=_said.append, holder=None) == [("a1", 1)]
+assert ("hc", "kill", "a1") in [c[:3] for c in _calls] and ("gh", "issue", "edit", "1", "--remove-label", "in-progress") in _calls and len(_said) == 1
+_calls.clear(); W.closed_seen.clear()
+assert W.reap_tick(_rt, now=9e9, gh=lambda *a, **k: (1, "boom"), hc=_hc, say=_said.append, holder=None) == [] and not _calls   # gh error -> keep
+print("ok reap closed runs (#248)")
+_sr = [{"name": "run-8", "state": "live"}, {"name": "run-9", "state": "live"}]
+_stt = {}
+al, lanes = W.stuck_runs(_sr, {8: 0.0, 9: 7000.0}, 7300.0, 2, _stt)               # 8 silent 2.03 h, 9 fresh
+assert [n for n, _ in al] == [8] and lanes == [], (al, lanes)
+al, lanes = W.stuck_runs(_sr, {8: 0.0, 9: 7000.0}, 7300.0 + 1700, 2, _stt)        # < 30 min later: nothing
+assert al == [] and lanes == []
+al, lanes = W.stuck_runs(_sr, {8: 0.0, 9: 7000.0}, 7300.0 + 1800, 2, _stt)        # 30 min: again, counted
+assert [n for n, _ in al] == [8] and lanes == [8], (al, lanes)
+al, lanes = W.stuck_runs(_sr, {8: 0.0, 9: 16000.0}, 7300.0 + 9000, 2, _stt)        # only once
+assert al == [] and lanes == [8]
+al, lanes = W.stuck_runs(_sr, {8: 7300.0 + 9000, 9: 16000.0}, 7300.0 + 9001, 2, _stt)   # it moved: cleared
+assert al == [] and lanes == []
+print("ok stuck escalation (#248)")

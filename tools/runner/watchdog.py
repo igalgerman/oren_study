@@ -390,6 +390,8 @@ def tick():
     all_ts = R.hc_json("ls", "--all", "--json").get("terminals", []) or ts
     check_control(all_ts)
     cleanup(all_ts)
+    reap_tick(ts)       # #248
+    stuck_tick(ts)
     observer_tick()
     ai_observer_tick()
     sync_tick()
@@ -398,6 +400,80 @@ def tick():
     ai_tick()
     lock_tick()
     orch_idle_tick()
+
+# ---------- #248: backstop: a lane is never held for a closed issue or a silent run ----------
+REAP_GRACE_MIN, STUCK_AGAIN_MIN = 10, 30
+closed_seen = {}   # issue number -> first time seen CLOSED (grace for the deploy)
+_stuck = {}        # run number -> {"m": dir mtime at the first alarm, "at": alarm time, "again": reported twice}
+
+def lock_holder_issue(info):
+    """Issue number in the merge lock note ('#12 CI merge'), or None."""
+    m = re.match(r"#(\d+)", (info[1] if info else "") or "")
+    return int(m.group(1)) if m else None
+
+def reap_runs(ts, closed_since, now, lock_holder, grace_min=REAP_GRACE_MIN):
+    """Pure (#248): -> [(address, n)] of LIVE run-<n> windows whose issue was seen CLOSED for >= grace_min and that do not hold the merge lock.
+    closed_since = {issue: first time seen closed}."""
+    out = []
+    for t in ts:
+        m = re.match(r"^run-(\d+)$", t.get("name") or "")
+        if not m or t.get("state") != "live" or not t.get("address"): continue
+        n = int(m.group(1))
+        if n == lock_holder or n not in closed_since: continue
+        if now - closed_since[n] >= grace_min * 60: out.append((t["address"], n))
+    return out
+
+def reap_tick(ts, now=None, gh=None, hc=None, say=None, holder=None):
+    """Kill (by ADDRESS) run windows of issues closed for the grace time; drop in-progress. A gh error reaps nothing."""
+    now, gh, hc, say = now or time.time(), gh or R.gh, hc or R.hc, say or tell
+    rc, out = gh("issue", "list", "--state", "all", "--limit", "300", "--json", "number,state")
+    if rc: return []
+    try: closed = {i["number"] for i in json.loads(out) if i["state"] == "CLOSED"}
+    except (ValueError, KeyError, TypeError): return []
+    for n in closed: closed_seen.setdefault(n, now)
+    for n in [n for n in closed_seen if n not in closed]: closed_seen.pop(n)
+    if holder is None: holder = lock_holder_issue(lock_state()[1])
+    done = []
+    for addr, n in reap_runs(ts, closed_seen, now, holder):
+        hc("kill", addr, timeout=30)
+        gh("issue", "edit", str(n), "--remove-label", "in-progress")
+        log(f"#248 reaped run-{n} ({addr}): issue #{n} closed for {int((now - closed_seen[n]) / 60)}+ min, lane freed")
+        say(f"WATCHDOG (#248): closed run-{n} (issue #{n} is closed, the lane was held for nothing)")
+        done.append((addr, n))
+    return done
+
+def run_mtime(n):
+    """Newest change in .runs/<n> (the dir and its files); None when there is no such dir."""
+    d = R.RUNS / str(n)
+    try: return max([d.stat().st_mtime] + [f.stat().st_mtime for f in d.iterdir()])
+    except OSError: return None
+
+def stuck_runs(ts, mtimes, now, stuck_hours, st):
+    """Pure (#248): -> (alarms [(n, text)], stuck_lanes [n]). First alarm when .runs/<n> is unchanged for stuck_hours; if it is STILL
+    unchanged STUCK_AGAIN_MIN later: reported again once, and counted as a stuck lane (until it moves or the window is gone)."""
+    live = {int(m.group(1)) for t in ts if t.get("state") == "live" for m in [re.match(r"^run-(\d+)$", t.get("name") or "")] if m}
+    for n in [n for n in st if n not in live]: st.pop(n)
+    alarms = []
+    for n in sorted(live):
+        mt = mtimes.get(n)
+        if mt is None or now - mt < stuck_hours * 3600: st.pop(n, None); continue
+        s = st.get(n)
+        if not s or s["m"] != mt:
+            st[n] = {"m": mt, "at": now, "again": False}
+            alarms.append((n, f"run-{n} has not changed for {(now - mt) / 3600:.1f} h (stuck_hours {stuck_hours:g})"))
+        elif not s["again"] and now - s["at"] >= STUCK_AGAIN_MIN * 60:
+            s["again"] = True
+            alarms.append((n, f"run-{n} is STILL stuck {int((now - s['at']) / 60)} min after the first alarm: counted as a stuck lane"))
+    return alarms, sorted(n for n, s in st.items() if s["again"])
+
+def stuck_tick(ts, now=None):
+    now = now or time.time()
+    nums = [int(m.group(1)) for t in ts if t.get("state") == "live" for m in [re.match(r"^run-(\d+)$", t.get("name") or "")] if m]
+    alarms, lanes = stuck_runs(ts, {n: run_mtime(n) for n in nums}, now, float(R.CFG.get("stuck_hours", 2)), _stuck)
+    for n, text in alarms: log("#248 " + text)
+    if alarms: tell("STUCK RUN (watchdog #248): " + " · ".join(t for _, t in alarms))
+    try: (R.RUNS / "stuck_lanes.json").write_text(json.dumps(lanes), encoding="utf-8")
+    except OSError: pass
 
 # ---------- #181: merge lock watch ----------
 LOCK_WARN_MIN, LOCK_REPEAT_MIN = 20, 30
