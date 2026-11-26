@@ -7,6 +7,8 @@ Backlog = GitHub issues. Owner guide: `HOWTO.md`. Main session: `ORCHESTRATOR.md
 idea → `/grill-me` → `/to-tickets` → issue (backlog) → runner → worker → reviewer → merge to main → all tests → deploy → issue closed.
 Everything after the issue is automatic (`tools/runner`). Up to 3 issues at once, at most TWO `core` issues. If merging into main conflicts, the runner has the worker merge main in and retries (2 rounds, then the issue is parked).
 
+Priority: label `P0` (urgent) / `P1` / `P2` (normal, default) / `P3` (low) orders the queue: bugs first, then P0→P3, then oldest.
+
 ## If you are a WORKER (window `issue-<n>`, in worktree `wt-<n>`, branch `lane/<n>`)
 Do the WHOLE job yourself, then report. Nobody merges for you by hand.
 1. Read CLAUDE.md, this file, and the issue (`gh issue view <n> --repo igalgerman/oren_study --comments`). Do only that issue.
@@ -38,3 +40,6 @@ Known: `worker` suite fails only on Windows (ESM c:\ path); `reading`/`activitie
 Every `observer_minutes` the watchdog starts a fresh read-only Claude (`tools/runner/observer_prompt.md`) that audits labels, PRs, lanes, duplicates and closed issues, and tells the orchestrator `OBSERVER found: ...`. Result in `tools/runner/.runs/observer.last` (panel bottom line).
 
 Questions to the owner: in Hebrew, through tools/ask/ask.py (browser page), one round at a time; never ask in the terminal when the owner prefers Hebrew.
+
+## CI (GitHub Actions, #73)
+`.github/workflows/tests.yml` runs all suites on every PR to main and every push to main: 6 parallel shards (`SUITES_SHARD=i/6 tests/run.sh`, a failed suite is retried alone once) and one summary job `tests`. **A PR is mergeable when the `tests` check is green.** No secrets in CI; deploy stays local.

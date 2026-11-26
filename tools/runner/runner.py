@@ -36,6 +36,13 @@ def lane_of(labels):
             return l
     return "core"
 
+def priority_of(labels):
+    """0-3 from a P0..P3 label; P2 (normal) when missing."""
+    for n in range(4):
+        if f"P{n}" in labels:
+            return n
+    return 2
+
 def blockers(body):
     """Issue numbers in 'Blocked by: #1, #2' lines."""
     out = []
@@ -55,7 +62,7 @@ def select(issues, max_parallel, max_core=1):
              and "in-progress" not in i["labels"] and "blocked" not in i["labels"]
              and not any(b in open_nums for b in blockers(i.get("body")))]
     chosen = []
-    for i in sorted(ready, key=lambda i: ("bug" not in i["labels"], i["createdAt"])):   # bugs first
+    for i in sorted(ready, key=lambda i: ("bug" not in i["labels"], priority_of(i["labels"]), i["createdAt"])):   # bugs first, then P0..P3, then oldest
         if slots <= 0:
             break
         if lane_of(i["labels"]) == "core":
@@ -126,6 +133,11 @@ def pending_question(text):
 def waiting_now(status, screen):
     """True when the window waits for a person: a permission/trust menu (blocked) or a finished turn ending in QUESTION:."""
     return status == "blocked" or (status in ("done", "idle") and bool(pending_question(screen)))
+
+def is_stale_window(status, screen):
+    """A live window found when an agent starts is from an earlier run, so if its turn already finished (done/idle) its marker is old news.
+    Only windows still working, blocked, or waiting for an answer are re-attached."""
+    return status in ("done", "idle") and not pending_question(screen)
 
 def should_park(since, now, minutes):
     """since = when the window started waiting (epoch) or None. Park (give the lane back) after `minutes` of waiting."""
@@ -291,6 +303,10 @@ def agent(name, prompt, cwd, tools, log, marker, n, role):
     if not USE_HERDR:
         out = claude_hidden(prompt, cwd, tools, log)
         return out, last_line(out, marker)
+    if live(name):
+        info0 = hc_json("get", name, "--json"); screen0 = hc("read", name, "--lines", "400")[1]
+        if is_stale_window(info0.get("status"), screen0):      # finished before this run: its old verdict/result must not be reused
+            hc("kill", name, timeout=30); hc("rm", name, timeout=30)
     if not live(name):
         # bash wrapper only puts the python3 shim on PATH; the prompt goes after `--` ("--allowedTools" is variadic)
         cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), "--label", f"issue={n}", "--label", f"role={role}", *space_args(), *parent_args(),

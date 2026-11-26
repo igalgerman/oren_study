@@ -103,21 +103,29 @@ def check_lanes(ts):
     rc, out = R.run(cmd, timeout=60)
     log(f"free lane + ready issue -> started {name} (rc {rc})")
 
-def leftovers(ts, closed, blocked):
-    """Pure: names of finished windows to close. ts = hc terminals (name, state, status, marker True/False),
-    closed = closed issue numbers, blocked = issue numbers labelled blocked (parked: keep their windows for the owner)."""
+FINISHED_RE = re.compile(r"^(run|issue|review|intake)-|^watchdog|^flowtest")
+IDLE_MIN = 15      # a live issue/review/intake window done/idle this long, with no live run-<n>, only holds RAM
+quiet_since = {}   # live window name -> first time seen done/idle
+
+def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset()):
+    """Pure: names of windows to close. ts = hc terminals (name, state, status, marker True/False),
+    closed = closed issue numbers, blocked = issue numbers labelled blocked (parked: keep their windows for the owner),
+    human = issue numbers labelled ready-for-human (owner may look), stale = live window names done/idle for IDLE_MIN+."""
     live = {t["name"] for t in ts if t.get("state") == "live"}
+    live_run = {int(m.group(1)) for x in live for m in [re.match(r"^run-(\d+)(-\w+)?$", x)] if m}
     out = []
     for t in ts:
         name = t.get("name") or ""
+        if t.get("state") != "live" and FINISHED_RE.match(name):            # any finished terminal: remove it (by address)
+            if name not in live and name not in out: out.append(name)
+            continue
         m = re.match(r"^(issue|review|run|intake)-(\d+)(-fix|-2)?$", name)
         if not m: continue
         n, role, suffix = int(m.group(2)), m.group(1), m.group(3) or ""
-        if t.get("state") != "live":                                       # finished terminal: remove it (by address)
-            if name not in live: out.append(name)
-            continue
+        if t.get("state") != "live": continue
         if n in blocked: continue                                           # parked: the owner looks at it later
         if n in closed: out.append(name); continue                          # issue done: everything for it goes
+        if role != "run" and name in stale and n not in live_run and n not in human: out.append(name); continue
         if role in ("run", "intake") or t.get("status") not in ("done", "idle") or not t.get("marker"): continue
         # a worker/reviewer that printed its RESULT/VERDICT and was superseded by the next step's window
         later = {"issue": [f"review-{n}", f"review-{n}-2", f"issue-{n}-fix"] if not suffix else [f"review-{n}-2"],
@@ -131,14 +139,19 @@ def cleanup(ts):
     iss = json.loads(out)
     closed = {i["number"] for i in iss if i["state"] == "CLOSED"}
     blocked = {i["number"] for i in iss if any(l["name"] == "blocked" for l in i["labels"])}
-    rows = []
+    human = {i["number"] for i in iss if any(l["name"] == "ready-for-human" for l in i["labels"])}
+    rows, now, stale = [], time.time(), set()
     for t in ts:
         name = t.get("name") or ""
-        if not re.match(r"^(issue|review|run|intake)-\d+", name): continue
+        if not FINISHED_RE.match(name): continue
+        if t.get("state") == "live" and t.get("status") in ("done", "idle"):
+            if now - quiet_since.setdefault(name, now) >= IDLE_MIN * 60: stale.add(name)
+        else: quiet_since.pop(name, None)
+        if t.get("state") == "live" and not re.match(r"^(issue|review|run|intake)-\d+", name): continue   # never touch live watchdog etc.
         mk = "VERDICT:" if name.startswith("review-") else "RESULT:"
         marker = t.get("state") == "live" and t.get("status") in ("done", "idle") and bool(R.find_marker(screen_tail(name, 40), mk))
         rows.append({**t, "name": name, "marker": marker})
-    for name in leftovers(rows, closed, blocked):
+    for name in leftovers(rows, closed, blocked, human, stale):
         # act on the ADDRESS of the matching row, never the bare name: a finished terminal can share its
         # name with a new live one, and `hc kill <name>` would hit the live one.
         for t in rows:
