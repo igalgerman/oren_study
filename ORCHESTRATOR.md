@@ -38,6 +38,12 @@ idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → r
    watch it (`hc read run-2`, `hc read issue-2`), fix the runner if it breaks, one line per issue to the owner.
 2. Keep the queue moving: #4 → #5 → #6 → #7 → #8; #9 after #7. #11 needs grilling with the owner (`/idea`).
 
+## Rotation: hand off when your context is large (#28)
+Trigger: your context is large (auto-compaction is near, or you re-read things you already knew). Then, at a quiet moment:
+1. Run `mattpocock-skills:handoff` (`docs/agents/skills/handoff.md`) and write its result into THIS file: replace `## State at handoff` (date it) and `## Next` (short, numbered). Point to issues/PRs, don't copy them.
+2. Start a fresh orchestrator and stop: `/exit`. The fresh one comes from `tools/orchestrator.cmd` (`recover.py --open` starts the `orchestrator` tab when it is missing, prompt "Read ORCHESTRATOR.md and continue"); the watchdog runs the same command by itself for a finished orchestrator tab (4b), so the owner double-clicks `tools/orchestrator.cmd` only when the watchdog is down.
+3. Don't start new work between step 1 and `/exit`.
+
 ## Phone (Remote Control) and push notifications (owner, 26 Nov)
 - tools/orchestrator.cmd starts you with `--remote-control "oren-orchestrator"`: the owner can see and answer you from his phone.
 - Use the PushNotification tool ONLY when the owner must act: a review PURPLE question, a P0 problem (main red, deploy failed, live site or family saves broken), the PC restart test (#141), or a decision only he can make. One line, under 200 characters, what to do first. Never for routine progress.

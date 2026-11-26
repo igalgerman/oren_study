@@ -77,6 +77,7 @@ const SHOTS=process.env.GAPS_SHOTS;                 /* folder for screenshots */
        if((c.ask==='sides'||c.ask==='corners')&&+right!==SIDES[c.target])bad.push(tag+' sides');if(c.ask==='sqrect'&&c.ts[q.ans]!=='sq')bad.push(tag+' sqrect');}
      if(c.t==='ruler'){if(parseInt(right.replace(/<[^>]+>/g,''))!==c.e-c.s)bad.push(tag+' ruler');if(c.e>10||c.s<0||c.e-c.s<2)bad.push(tag+' ruler range');}
      if(c.t==='long'&&c.Ls[q.ans]!==(c.ask==='long'?Math.max(...c.Ls):Math.min(...c.Ls)))bad.push(tag+' long');
+     if(c.t==='long'&&c.ask==='short'&&/רָחוֹק/.test(q.h1+q.h2))bad.push(tag+' shortest-pencil hint points to the longest');
      if(c.t==='bal'&&q.ans!==(c.ask==='heavy'?c.hv:1-c.hv))bad.push(tag+' bal');
      if(c.t==='bal3'&&c.idx[q.ans]!==(c.ask==='heavy'?0:2))bad.push(tag+' bal3');}
    return {bad:[...new Set(bad)].slice(0,12),cnt,units:Object.keys(GX.units)};});
