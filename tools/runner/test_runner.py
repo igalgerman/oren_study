@@ -570,3 +570,27 @@ assert W.orch_decision("done", [213], _st, _n + 31 * 60) == "escalate"
 _st["escalated"] = _n + 31 * 60
 assert W.orch_decision("done", [213], _st, _n + 40 * 60) == "nudge"              # no second escalation within 2 h
 print("ok watch the checker")
+
+# #246: the runner finds a cloud worker's claude/* PR and uses its branch wherever lane/<n> was hard-coded
+import json as _js
+_CL = "claude/github-issue-236-u7l8gj"
+def _fake_run(cmd, cwd=None, env=None, input=None, log=None, timeout=None):
+    line = " ".join(map(str, cmd))
+    if "--head lane/236" in line: return 0, "[]"
+    if "issue view 236" in line: return 0, _js.dumps({"comments": [{"body": "Runner: started (pack lane, remote)"}, {"body": "RESULT: DONE https://github.com/igalgerman/oren_study/pull/243"}]})
+    if "pr view 243" in line: return 0, _js.dumps({"number": 243, "headRefName": _CL, "state": "OPEN"})
+    return 0, "[]"
+_run0 = r.run; r.run = _fake_run
+try:
+    assert r.find_pr(236) == 243 and r.branch_of(236) == _CL and r.find_pr_merged(236) is False
+finally:
+    r.run = _run0
+for _p in (r.ci_fix_prompt(236, ["tests"], _CL), r.resolve_prompt(236, ["a.js"], _CL), r.remote_fix_prompt(236, "FIX x", _CL)):
+    assert _CL in _p and "lane/236" not in _p, _p
+assert "lane/7" in r.ci_fix_prompt(7, []) and "lane/7" in r.resolve_prompt(7, []) and "lane/7" in r.remote_fix_prompt(7, "x")   # default: lane/<n>
+_src = (r.HERE / "runner.py").read_text(encoding="utf-8")
+_ci = _src.split("def ci_integrate", 1)[1].split("def find_pr_merged", 1)[0]
+assert 'f"lane/{n}"' not in _ci and "f\"{REMOTE}/lane/{n}\"" not in _ci, "ci_integrate uses the PR's head branch"
+_pl = _src.split("def process_locked", 1)[1].split("def close_windows", 1)[0]
+assert '"tools/integrate.sh", f"lane/{n}"' not in _pl and "no open PR for lane/%d" not in _pl
+print("ok #246 claude/* PR heads")
