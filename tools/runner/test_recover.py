@@ -119,6 +119,32 @@ lines = rc.open_oren(deps)
 assert [s for s, _ in log["start"]] == ["inbox", "inspector", "watchdog"]
 assert any("'oren' not found" in l for l in lines) and any("'oren-workers' not found" in l for l in lines), lines
 
+# #331: a control role is present when ANY live terminal matches it by name, by '--remote-control oren-<role>' in its foreground argv,
+# or by its tab ('where' ending in '/ <role>'); a hand-started inspector (name null) is never started twice
+by_argv = {"name": None, "state": "live", "address": "t:9", "foreground": {"argv": ["claude", "--model", "opus", "--remote-control", "oren-inspector", "x"]}}
+by_argv2 = {"name": None, "state": "live", "address": "t:8", "argv": ["claude", "--remote-control", "oren-inbox"]}
+by_tab = {"name": None, "state": "live", "address": "t:7", "where": "Oren control / orchestrator"}
+assert rc.control_role(by_argv) == "inspector" and rc.control_role(by_argv2) == "inbox" and rc.control_role(by_tab) == "orchestrator"
+assert rc.control_role(T("inbox", "live", "t:1")) == "inbox" and rc.control_role({"name": None, "where": "Oren workers / issue-5"}) is None
+assert rc.live_roles([by_argv, dict(by_tab, state="finished")]) == {"inspector"}
+deps, log = mk_open([by_argv, by_argv2, by_tab, T("watchdog", "live", "t:1")])
+assert rc.open_oren(deps) == [] and log["start"] == [], log
+with tempfile.TemporaryDirectory() as d:
+    deps, log = mk(d, [by_argv, by_tab, T("inbox", "live", "t:2"), T("watchdog", "live", "t:3")], [])
+    rc.recover(deps)
+    assert log["start"] == [], log["start"]
+# the watchdog's restart check: a finished 'inspector' with a live hand-started twin (name null) is left alone
+assert rc.finished_control([T("inspector", "finished", "t:4"), by_argv]) == []
+
+# #331: spaces 'oren' / 'oren-workers' not made yet -> the old 'Oren control' / 'Oren workers' spaces are used, never new ones
+old = {"Oren control": "c0", "Oren workers": "w0"}
+assert rc.pick_space(old, "oren") == "c0" and rc.pick_space(old, "oren-workers") == "w0"
+assert rc.pick_space({"oren": "c1", **old}, "oren") == "c1" and rc.pick_space({}, "oren") == ""
+deps, log = mk_open([], sp=old)
+lines = rc.open_oren(deps)
+assert log["start"][:3] == [("orchestrator", "c0"), ("inbox", "c0"), ("inspector", "c0")], log["start"]
+assert not any("not found" in l for l in lines), lines
+
 cmd = (Path(__file__).resolve().parents[1] / "orchestrator.cmd").read_text(encoding="utf-8")
 assert "recover.py\" --open" in cmd and "attach orchestrator" in cmd, cmd
 assert "--name watchdog" not in cmd and "--name orchestrator" not in cmd   # started by open_oren (one place), not twice

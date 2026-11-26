@@ -284,6 +284,8 @@ assert r.space_args() == ["--label", "herdr.space=s2"]; assert len(_ran) == 1
 r.space_args(); assert len(_ran) == 1                                                       # cached
 r.run = _mock_run(_json.dumps({"spaces": [{"id": "s1", "name": "other"}]})); r._SPACE = None
 assert r.space_args() == []                                                                   # no such space: no label
+r.run = _mock_run(_json.dumps({"spaces": [{"id": "s1", "name": "other"}, {"id": "s3", "name": "Oren workers"}]})); r._SPACE = None
+assert r.space_args() == ["--label", "herdr.space=s3"]                                        # #331: 'oren-workers' not made yet -> old 'Oren workers'
 r.run = _mock_run("not json"); r._SPACE = None
 assert r.space_args() == []                                                                   # bad output: no label, no crash
 r.run = _orig_run16; r._SPACE = None

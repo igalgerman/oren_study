@@ -879,8 +879,9 @@ def space_args():
         _SPACE = ""
         try:
             rc, out = run([HERDR_APP, "ls"], timeout=30)
-            for sp in json.loads(out).get("spaces", []):
-                if sp.get("name") == CFG.get("herdr_space", "oren-workers"): _SPACE = sp["id"]
+            import recover                            # #331: falls back to the old 'Oren workers' space, never makes a new one
+            _SPACE = recover.pick_space({sp.get("name"): sp.get("id") for sp in json.loads(out).get("spaces", [])},
+                                        CFG.get("herdr_space", "oren-workers"))
         except Exception:
             pass
     return ["--label", f"herdr.space={_SPACE}"] if _SPACE else []

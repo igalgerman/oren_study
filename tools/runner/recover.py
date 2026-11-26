@@ -32,6 +32,32 @@ def hc_run_args(name, cwd, argv, space_id=""):
     return ["run", "--bg", "--no-parent", "--outlive-parent", "--name", name, "--cwd", cwd,
             *(["--label", f"herdr.space={space_id}"] if space_id else []), *argv]
 
+SPACE_FALLBACK = {"oren": "Oren control", "oren-workers": "Oren workers"}   # #331: until the owner renames the spaces
+
+def pick_space(sp, want):
+    """Id of space `want` in {name: id}, else of its old name (SPACE_FALLBACK); never creates one. -> id or ''."""
+    return sp.get(want) or sp.get(SPACE_FALLBACK.get(want, ""), "") or ""
+
+def _argv(t):
+    fg = t.get("foreground") if isinstance(t.get("foreground"), dict) else {}
+    a = fg.get("argv") or t.get("foreground_argv") or t.get("argv") or []
+    return a.split() if isinstance(a, str) else [str(x) for x in a]
+
+def control_role(t):
+    """#331: the control role (orchestrator/inbox/inspector) a terminal is, matched by name, by '--remote-control oren-<role>' in its
+    foreground argv, or by its tab ('where' ending in '/ <role>'). A hand-started session has no name. -> role or None"""
+    if t.get("name") in CONTROL: return t["name"]
+    a = _argv(t)
+    for i, x in enumerate(a[:-1]):
+        if x == "--remote-control" and a[i + 1].startswith("oren-") and a[i + 1][5:] in CONTROL: return a[i + 1][5:]
+    tab = str(t.get("where") or "").rsplit("/", 1)
+    if len(tab) == 2 and tab[1].strip() in CONTROL: return tab[1].strip()
+    return None
+
+def live_roles(ts):
+    """Control roles that have at least one live terminal."""
+    return {r for t in ts if t.get("state") == "live" and (r := control_role(t))}
+
 def finished(ts):
     """Addresses of terminals whose program ended (a restart leaves them as 'finished')."""
     return [t["address"] for t in ts if t.get("state") != "live" and t.get("address")]
@@ -39,7 +65,7 @@ def finished(ts):
 def finished_control(ts):
     """Watchdog check: control windows (CONTROL + watchdog is not here: it is the one checking) that are finished and have no live twin.
     -> [(name, address)]"""
-    live = {t.get("name") for t in ts if t.get("state") == "live"}
+    live = live_roles(ts)
     return [(t["name"], t["address"]) for t in ts
             if t.get("name") in CONTROL and t.get("state") != "live" and t.get("address") and t["name"] not in live]
 
@@ -66,10 +92,11 @@ def dead_runs(issues, live_names, lock_held):
 def start_tabs(d, lines):
     """The 3 tabs of the main space (control_space, 'oren'), in order, when missing. -> names of live terminals."""
     sp = d["spaces"]()
-    ctl = sp.get(d["control_space"], "")
+    ctl = pick_space(sp, d["control_space"])
     for s in (d["control_space"], d["worker_space"]):
-        if s not in sp: lines.append(f"space '{s}' not found in Herdr: its windows open in the default space")
-    live = {t.get("name") for t in d["terminals"]() if t.get("state") == "live"}
+        if not pick_space(sp, s): lines.append(f"space '{s}' not found in Herdr: its windows open in the default space")
+    ts = d["terminals"]()
+    live = {t.get("name") for t in ts if t.get("state") == "live"} | live_roles(ts)
     for name in CONTROL:
         if name in live: continue
         rc = d["start"](name, ctl)
@@ -156,7 +183,7 @@ def spaces(R):
 
 def start_control(R, name, space_id=None):
     """Start orchestrator / inbox / inspector (in 'oren') or the watchdog. Used by recover and by the watchdog's restart check."""
-    if space_id is None: space_id = spaces(R).get(control_space(R), "") if name in CONTROL else ""
+    if space_id is None: space_id = pick_space(spaces(R), control_space(R)) if name in CONTROL else ""
     mc = R.CFG.get("main_checkout", str(R.ROOT))
     cwd, argv = control_argv(name, mc, Path(mc) / "tools" / "mods" / "oren-lanes", shutil.which("claude") or "claude",
                              sys.executable, R.HERE / "watchdog.py")
