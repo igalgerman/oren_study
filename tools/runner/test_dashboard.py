@@ -117,6 +117,9 @@ pg3 = D.page(m3)
 assert "Cloud lanes" in pg3 and '<a href="https://github.com/x/y/pull/201">PR</a>' in pg3 and ">session</a>" in pg3 and "STALE" in pg3
 assert "Cloud lanes" not in D.page(m)
 print("ok dashboard cloud")
+m3["governor"] = "governor: 6 lanes (5h 40% -> ~89% at 19:00)"
+assert "Lanes: " in D.text(m3) and "· governor: 6 lanes (5h 40% -> ~89% at 19:00)" in D.text(m3) and "governor: 6 lanes" in D.page(m3)
+print("ok dashboard governor")
 # #236: an in-progress issue running remote without the cloud label is a cloud lane (a remote.cloud() row), not local
 ic4 = issues + [I(13, "OPEN", ["in-progress", "P0"])]
 cl4 = [{"n": 13, "title": "t13", "state": "working", "line": "", "last": "2026-11-26T07:50:00Z", "stale": False, "pr": "", "session": ""}]
