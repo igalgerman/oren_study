@@ -216,6 +216,19 @@ def run(cmd, cwd=None, env=None, input=None, log=None, timeout=None):
             f.write(f"\n$ {' '.join(map(str, cmd))[:300]}\n{out}\n[exit {p.returncode}]\n")
     return p.returncode, out
 
+def remove_worktree(wt, log=None):
+    """Remove a lane worktree. oren2/node_modules is a JUNCTION to the real modules: take the junction off alone first
+    (rmdir, never /s, never rmtree: that would delete the real modules), then remove the worktree and any leftover folder (#82)."""
+    wt = Path(wt)
+    nm = wt / "oren2" / "node_modules"
+    if os.path.isjunction(nm):
+        run(["cmd", "/c", "rmdir", str(nm)])
+    elif nm.is_symlink():
+        nm.unlink()
+    run(["git", "worktree", "remove", "--force", str(wt)], cwd=ROOT, log=log)
+    if wt.exists() and not (wt / ".git").exists():       # half-made worktree (no checkout): leftovers only, safe now the junction is gone
+        shutil.rmtree(wt, ignore_errors=True)
+
 def gh(*args, **kw):
     return run(["gh", *args, "--repo", REPO], **kw)
 
@@ -574,7 +587,7 @@ def process_locked(issue):
             pass                                             # parked earlier: re-attach to its windows and worktree, change nothing
         else:
             if (wt.exists() or run(["git", "rev-parse", "--verify", f"lane/{n}"], cwd=ROOT)[0] == 0) and not pushed:   # leftovers of an unfinished try
-                run(["git", "worktree", "remove", "--force", str(wt)], cwd=ROOT, log=log)
+                remove_worktree(wt, log)
                 run(["git", "branch", "-D", f"lane/{n}"], cwd=ROOT, log=log)
             if not wt.exists():                              # lane.sh continues from origin/lane/<n> when pushed work exists (never deleted)
                 rc, _ = run([BASH, "tools/lane.sh", str(n), BRANCH], cwd=ROOT, env={"REMOTE": REMOTE}, log=log)
@@ -643,7 +656,7 @@ def process_locked(issue):
             dep = deploy_main(log) if CFG.get("ci_merge", True) and find_pr_merged(n) else deploy_text(log)
         gh("issue", "close", str(n), "--comment", f"Merged to {BRANCH}, tests green, {dep}.")
         set_labels(n, remove=["in-progress"])
-        run(["git", "worktree", "remove", "--force", str(wt)], cwd=ROOT, log=log)
+        remove_worktree(wt, log)
         close_windows(n)
         stat(n, lane, "deployed")
         return f"DONE {dep}"

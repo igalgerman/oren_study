@@ -196,6 +196,17 @@ assert W.needs_you_line("issue-16", "QUESTION: a or b?", "tail") == "NEEDS YOU: 
 assert W.needs_you_line("review-7", "", "x\nlast line") == "NEEDS YOU: #7 (waiting for an answer) last line"
 assert W.needs_you_line("intake", "QUESTION: ok?", "") == "NEEDS YOU: intake ok?"
 print("ok herdr-leftovers")
+# remove_worktree: the node_modules junction goes alone, the real modules survive; a half-made worktree is cleaned (#82)
+import tempfile, subprocess, os
+from pathlib import Path as _P
+_t = _P(tempfile.mkdtemp()); _real = _t / "real_modules"; _real.mkdir(); (_real / "keep.txt").write_text("x")
+_wt = _t / "wt-x"; (_wt / "oren2").mkdir(parents=True)
+subprocess.run(["cmd", "/c", "mklink", "/J", str(_wt / "oren2" / "node_modules"), str(_real)], capture_output=True, check=True)
+assert os.path.isjunction(_wt / "oren2" / "node_modules")
+r.remove_worktree(_wt)
+assert not _wt.exists() and (_real / "keep.txt").exists()
+import shutil; shutil.rmtree(_t, ignore_errors=True)
+print("ok remove-worktree")
 
 # CI merge decisions (#74)
 def _ck(*b): return [{"name": f"c{i}", "bucket": x} for i, x in enumerate(b)]
