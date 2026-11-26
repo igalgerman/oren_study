@@ -40,12 +40,13 @@ const firstOpen=(d,id)=>d.t.findIndex((x,n)=>x===id&&!d.done[n]);
 function planOp(d,c,log){const keep=()=>{if(!d.po)d.po={t:d.t.slice()};};
   if(c.k==='drop'){const j=firstOpen(d,c.a);if(j<0)return;keep();d.t.splice(j,1);d.done.splice(j,1);log&&log(c.a,{k:'drop',at:j});}
   else if(c.k==='off'){const js=d.t.map((x,n)=>!d.done[n]&&topOf(x)===c.a?n:-1).filter(n=>n>=0);if(!js.length)return;keep();
-    js.reverse().forEach(j=>{const id=d.t[j];d.t.splice(j,1);d.done.splice(j,1);log&&log(id,{k:'off',at:j});});}
+    d.tm=d.tm||[];js.reverse().forEach(j=>{const id=d.t[j];d.t.splice(j,1);d.done.splice(j,1);d.tm.unshift(id);log&&log(id,{k:'off',at:j});});}   /* tm: they come back tomorrow (dailyEnsure) */
   else if(c.k==='up'||c.k==='down'){const j=firstOpen(d,c.a);if(j<0)return;let n=j;do{n+=c.k==='up'?-1:1;}while(n>=0&&n<d.t.length&&d.done[n]);
     if(!open(d,n))return;keep();[d.t[j],d.t[n]]=[d.t[n],d.t[j]];}
   else if(c.k==='add'){if(!c.a)return;keep();d.t.push(c.a);d.done.push(0);d.claimed=0;}
   else if(c.k==='reset'){if(!d.po)return;const t=[],dn=[];d.t.forEach((x,n)=>{if(d.done[n]){t.push(x);dn.push(d.done[n]);}});
-    const left=d.po.t.slice();t.forEach(x=>{const k=left.indexOf(x);if(k>=0)left.splice(k,1);});left.forEach(x=>{t.push(x);dn.push(0);});d.t=t;d.done=dn;delete d.po;}}
+    const left=d.po.t.slice();t.forEach(x=>{const k=left.indexOf(x);if(k>=0)left.splice(k,1);});left.forEach(x=>{t.push(x);dn.push(0);});d.t=t;d.done=dn;delete d.po;
+    if(d.tm)d.tm=d.tm.filter(x=>!d.t.includes(x));}}
 P.planOp=planOp;
 
 /* ---------- Oren's device ---------- */
@@ -70,7 +71,7 @@ function run(c){const s=O.save;
     const d=T.dailyEnsure();rows.slice().sort((a,b)=>a[7].at-b[7].at).forEach(e=>{const x=e[7];
       if(x.k==='drop'||x.k==='off'){const j=Math.min(Math.max(0,x.at|0),d.t.length);d.t.splice(j,0,e[1]);d.done.splice(j,0,0);}
       else if(x.k==='know'){if(x.lid){s.pkx=s.pkx||{};s.pkx[x.lid]=Date.now();}else if(x.sk&&window.LEARN)window.LEARN.setLevel(x.sk,x.l0);}});
-    s.pcU=s.pcU||{};s.pcU[c.a]=Date.now();return;}
+    if(d.tm)d.tm=d.tm.filter(x=>!d.t.includes(x));s.pcU=s.pcU||{};s.pcU[c.a]=Date.now();return;}
   const d=T.dailyEnsure();
   if(c.k==='reset'){/* the skipped missions come back, so their skip lines go */s.pcU=s.pcU||{};cmds().forEach(x=>{if((x.k==='drop'||x.k==='off')&&isDone(x))s.pcU[x.i]=Date.now();});}
   planOp(d,c,(id,x)=>logP(c,id,x));}

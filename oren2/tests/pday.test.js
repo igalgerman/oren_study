@@ -78,6 +78,10 @@ const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout:
   { await syncB(); const row = B.locator('#sPar .pdplan', { hasText: await B.evaluate(id => window.TAL.stepName(id), ids.e) }); await row.click(); await row.locator('button', { hasText: 'לא היום' }).click(); await sleep(300); await pull();
     const k = await kidPlan(); const topic = await A.evaluate(id => window.PDAY.topOf(id), ids.e);
     ok('"לא היום": all missions of that topic leave today on his device', !(await A.evaluate((k, t) => k.some(x => window.PDAY.topOf(x) === t), [k, topic])) && k.length === 3, JSON.stringify(k)); }
+  { /* ... and come back tomorrow: a copy of today's path is moved one day back, the next day's path is built from it, then today is restored */
+    const nd = await A.evaluate(() => { const T = window.TAL, O = window.OREN, keep = JSON.stringify(T.S().daily); T.S().daily.d = '2000-01-01';
+      const d = T.dailyEnsure(); const r = { d: d.d === O.today(), next: d.t.concat(d.cr || []) }; T.S().daily = JSON.parse(keep); O.persist(); return r; });
+    ok('"לא היום": the topic\'s missions come back in tomorrow\'s path', nd.d && nd.next.includes(ids.e), JSON.stringify(nd)); }
   // back to the regular plan
   { await syncB(); await B.locator('#sPar .bigbtn', { hasText: 'חזרה לתוכנית הרגילה' }).click(); await sleep(300); await pull(); const k = await kidPlan();
     ok('"חזרה לתוכנית הרגילה": the regular plan is back on his device', JSON.stringify(k) === JSON.stringify(['math', ids.r, ids.e, ids.c]), JSON.stringify(k)); }

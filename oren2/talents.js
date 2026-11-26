@@ -156,7 +156,7 @@ const dailyPool=()=>Object.keys(ACT).filter(id=>bState(ACT[id].b)==='on'&&!actOf
 /* the day's path: t = steps ('math', an activity id, 'tog:<k>' together, 'rw:<k>' real-world), ch = how it was formed (a domain Oren chose, or 'plan').
    No path until Oren answers "what do you feel like today?" (or the parent's template builds it). cr = real-world missions waiting for the path. */
 function dailyEnsure(){const s=S();if(s.daily&&s.daily.d===today()){const d=s.daily,pool=dailyPool();d.cr=d.cr||[];for(let i=0;i<d.t.length;i++)if(d.t[i]!=='math'&&!/:/.test(d.t[i])&&!d.done[i]&&!pool.includes(d.t[i])){const alt=pool.filter(x=>!d.t.includes(x));if(alt.length)d.t[i]=fitPick(d.t.slice(0,i),alt);}return d;}
-  const prev=s.daily;const cr=prev?[...(prev.cr||[]),...prev.t.filter((x,i)=>/^rw:/.test(x)&&!prev.done[i])]:[];
+  const prev=s.daily;const cr=prev?[...(prev.cr||[]),...prev.t.filter((x,i)=>/^rw:/.test(x)&&!prev.done[i]),...(prev.tm||[]).filter(x=>x==='math'||ACT[x])]:[];   /* #359: tm = missions of a topic the parent put off to tomorrow */
   const plan=S().set.plan;let t=[];
   if(plan&&plan.length){const used=new Set();t=plan.map(sp=>{if(sp==='math')return 'math';if(String(sp).startsWith('act:')){const aid=sp.slice(4);if(ACT[aid]&&dailyPool().includes(aid)&&!used.has(aid)){used.add(aid);return aid;}sp='any';}const pool=dailyPool().filter(id=>!used.has(id)&&(sp==='any'||ACT[id].b.id===sp));const id=pool.length?fitPick([...used],pool):pick(dailyPool().filter(x=>!used.has(x)));used.add(id);return id||'math';}).concat(cr);}
   s.daily={d:today(),t,done:t.map(()=>0),claimed:0,ch:t.length?'plan':0,cr:t.length?[]:cr};O.persist();return s.daily;}
@@ -1263,7 +1263,6 @@ function setTab(box){const st=SET();
 
 /* ===== HOME: one clear place to start · "what do you feel like today?" · today's path · together time · home button ===== */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;const {h,$,ICON,SPR,pick,shuffle}=O;const {X,ACT,ALLSPR}=T;const sfx=O.sfx,D=O.D;
-T.nextLevel=()=>nextLevel();
 function nextLevel(){const off=(T.S().set.offW)||{};for(const w of O.WORLDS){if(off[w.id])continue;for(const lv of w.levels){if(!O.stars(lv.id)&&!O.known(lv.id)&&O.unlocked(lv))return lv;}}return null;}
 T.nextLevel=nextLevel;
 const dayNum=()=>{const [y,m,d]=O.today().split('-').map(Number);return Math.floor(Date.UTC(y,m-1,d)/864e5);};
