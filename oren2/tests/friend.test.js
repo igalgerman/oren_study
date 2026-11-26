@@ -38,7 +38,7 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
     return [...document.querySelectorAll('#screens .chb, #screens .tqc, #screens .bigbtn')].some(x => { const r = x.getBoundingClientRect(); return r.width && a.left < r.right && a.right > r.left && a.top < r.bottom && a.bottom > r.top; }); });
   ok('friend does not cover the question or the answers', !await overlap());
   // right answer: a spoken line; wrong: a gentle line; fixed: effort praise
-  const pickAns = async right => { await sleep(450); return p.evaluate(r => { const q = window.__quiz, ch = q.wrap.querySelector('.chs').children; const k = r ? q.ans : [...ch].findIndex((x, j) => j !== q.ans && !x.disabled); ch[k].click(); }, right); };   /* #436: taps in the first 400 ms of a new question are ignored */
+  const pickAns = async right => { await p.waitForFunction(() => !(window.OREN.tapTooSoon && window.OREN.tapTooSoon()), null, { polling: 50 }); return p.evaluate(r => { const q = window.__quiz, ch = q.wrap.querySelector('.chs').children; const k = r ? q.ans : [...ch].findIndex((x, j) => j !== q.ans && !x.disabled); ch[k].click(); }, right); };   /* #436: taps in the first 400 ms of a new question are ignored */
   const OKL = await p.evaluate(() => window.FRIEND._lines);
   s = await said(() => pickAns(true), 300);
   let last = await p.evaluate(() => window.FRIEND.last);

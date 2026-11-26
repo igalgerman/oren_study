@@ -70,14 +70,14 @@ const STUB = () => {
   // 5. answering correctly without hearing counts as "solo" and moves him up a level
   await p.evaluate(() => { const T = window.TAL; T.S().set.rdMode = 'auto'; T.S().rd = { lvl: 1, solo: 24 }; T.ACT['read-sent'].run(() => {}); });
   await p.waitForSelector('.tqc .qq .rdb');
-  await L.sleep(450); await p.evaluate(() => { const q = window.__quiz; q.wrap.querySelector('.chs').children[q.ans].click(); });   /* #436: taps in the first 400 ms of a new question are ignored */
+  await p.waitForFunction(() => !(window.OREN.tapTooSoon && window.OREN.tapTooSoon()), null, { polling: 50 }); await p.evaluate(() => { const q = window.__quiz; q.wrap.querySelector('.chs').children[q.ans].click(); });   /* #436: taps in the first 400 ms of a new question are ignored */
   const rd = await p.evaluate(() => window.TAL.S().rd);
   ok('solo answer counted, level goes up 1 → 2', rd.solo === 25 && rd.lvl === 2, JSON.stringify(rd));
   // after hearing the question, a correct answer is not solo
   await p.evaluate(() => { window.TAL.ACT['read-sent'].run(() => {}); });
   await p.waitForSelector('.tqc .qq .rdb');
   await p.evaluate(() => document.querySelector('.tqc .qq .rdb').click()); await L.sleep(100);
-  await L.sleep(450); await p.evaluate(() => { const q = window.__quiz; q.wrap.querySelector('.chs').children[q.ans].click(); });   /* #436: taps in the first 400 ms of a new question are ignored */
+  await p.waitForFunction(() => !(window.OREN.tapTooSoon && window.OREN.tapTooSoon()), null, { polling: 50 }); await p.evaluate(() => { const q = window.__quiz; q.wrap.querySelector('.chs').children[q.ans].click(); });   /* #436: taps in the first 400 ms of a new question are ignored */
   ok('heard first → not solo', await p.evaluate(() => window.TAL.S().rd.solo === 25));
   // 6. stories: 🔊 on every line; "read to me" reads line by line
   await p.evaluate(() => window.TAL.ACT['story-0'].run(() => {}));
