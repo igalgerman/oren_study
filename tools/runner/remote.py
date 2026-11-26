@@ -133,8 +133,8 @@ def status(n, run=sh, since=None, now=None):
 PR_URL = re.compile(r"/pull/(\d+)")
 
 def fixes(body, n):
-    """#246: the PR body says Fixes/Closes/Resolves #n (not #n0)."""
-    return bool(re.search(rf"\b(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?)\s+#{n}(?!\d)", body or "", re.I))
+    """#246: the PR body says Fixes/Closes/Resolves #n (not #n0); #453: or Refs #n (a PR that must not close its issue)."""
+    return bool(re.search(rf"\b(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?|refs?)\s+#{n}(?!\d)", body or "", re.I))
 
 def _json(rc, out, default):
     try: return json.loads(out) if rc == 0 and out.strip() else default
