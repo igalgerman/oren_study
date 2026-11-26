@@ -34,8 +34,7 @@ On PASS (config `ci_merge = true`, #74): the runner merges main into the lane (c
 | `pack` | only inside one pack file + its own test | yes |
 | `review` | read-only check, report as an issue comment | yes |
 
-Line endings: `.gitattributes` forces LF (`* text=auto eol=lf`). Workers write files with LF (Python: `open(p, "w", newline="
-")`); when merging main into a lane use `git merge -X renormalize origin/main`.
+Line endings: `.gitattributes` forces LF (`* text=auto eol=lf`). Workers write files with LF (Python: `open(p, "w", newline="\n")`); when merging main into a lane use `git merge -X renormalize origin/main`.
 
 Known: `worker` suite fails only on Windows (ESM c:\ path); `reading`/`activities`/`time-missions` can be flaky under load — rerun alone once.
 
