@@ -38,6 +38,7 @@ document.getElementById('f').addEventListener('submit',async e=>{
  const r=await fetch('/answer',{method:'POST',body:JSON.stringify(out)});
  if(r.ok)document.querySelector('main').innerHTML='<div class="card q">תודה! אפשר לסגור את הלשונית.</div>';
 });
+document.querySelectorAll('.card').forEach(c=>['input','change'].forEach(ev=>c.addEventListener(ev,()=>c.classList.remove('bad'))));
 document.querySelectorAll('input.t[data-single]').forEach(t=>t.addEventListener('input',()=>{
  if(t.value)t.closest('.card').querySelectorAll('input.o').forEach(i=>i.checked=false);}));
 """
