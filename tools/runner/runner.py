@@ -135,13 +135,15 @@ def failed_checks(checks):
 def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_reruns=1, stamp=None, max_stale=10):
     """Pure decision loop (#74): wait for the PR checks, then merge. Red -> rerun the failed jobs once (flaky), still red -> send back to the worker.
     stamp() = run id/status/attempt of the latest run: after a rerun, red is ignored until it changes (the old failed run is still shown for a while).
-    Returns ('merged',) | ('red', [names]) | ('timeout',) | ('merge-failed',)."""
+    merge() -> True | False | 'conflict' (#160: main moved after green CI -> the caller resolves and retries).
+    Returns ('merged',) | ('red', [names]) | ('timeout',) | ('conflict',) | ('merge-failed',)."""
     waited, reruns, old, stale = 0, 0, None, 0
     while True:
         checks = get_checks()
         v = ci_verdict(checks)
         if v == "green":
-            return ("merged",) if merge() else ("merge-failed",)
+            m = merge()
+            return ("merged",) if m is True else ("conflict",) if m == "conflict" else ("merge-failed",)
         if v == "red":
             if reruns and stamp and old is not None and stamp() == old and stale < max_stale:
                 stale += 1; sleep(poll_s); waited += poll_s; continue      # still the old failed run: not judged yet
@@ -152,6 +154,11 @@ def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_rer
         if waited >= timeout_s:
             return ("timeout",)
         sleep(poll_s); waited += poll_s
+
+def merge_conflict(text):
+    """Pure (#160): does a failed `gh pr merge` output mean 'main moved, PR now conflicts'?"""
+    t = (text or "").lower()
+    return "conflict" in t or "not mergeable" in t or "cannot be cleanly created" in t
 
 def deploy_needed(deployed_sha, main_sha):
     """Pure (#74): batching. PRs merged one after another are deployed ONCE: the first deploy after the last merge covers all of them."""
@@ -569,10 +576,13 @@ def ci_integrate(n, wt, log):
     def rerun():
         rid = run(["gh", "run", "list", "--repo", REPO, "--branch", f"lane/{n}", "--limit", "1", "--json", "databaseId", "-q", ".[0].databaseId"], log=log)[1].strip()
         if rid.isdigit(): run(["gh", "run", "rerun", rid, "--failed", "--repo", REPO], log=log)
-    def merge(): return gh("pr", "merge", str(pr), "--squash", log=log)[0] == 0
+    def merge():
+        rc_, o_ = gh("pr", "merge", str(pr), "--squash", log=log)
+        return True if rc_ == 0 else ("conflict" if merge_conflict(o_) else False)
     res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp)
     if res[0] == "merged": return 0, "merged PR #%d" % pr
     if res[0] == "red": return 6, "CI RED\n" + "\n".join(res[1])
+    if res[0] == "conflict": return 2, "CONFLICT: main moved after green CI (gh pr merge reports merge conflicts)"
     return 7, "CI " + ("timed out" if res[0] == "timeout" else "green but `gh pr merge` failed")
 
 def find_pr_merged(n):
