@@ -252,11 +252,37 @@ def run_once(tell=print, log=print, now=None):
 
 RELAY_MIN, MISSING_H = 10, 2
 
+FALLBACK_MARK = "<!-- fallback #525 -->"   # #525: the first line of a retro issue made by the runner's fallback run (not the trigger)
+FALLBACK_PROMPT = ("Follow docs/agents/cloud-tasks.md, section Nightly retro, in igalgerman/oren_study, for the date {date} (use this "
+                   "date, not today's, for the title and the day). This is the runner's fallback run (#525: the scheduled task does "
+                   f"not run): make the first line of the issue body exactly {FALLBACK_MARK}")
+LAUNCH = None   # remote.launch; tests swap in a fake
+
+def retro_start(hour, now):
+    """Pure-ish: epoch of the latest retro_hour:00 (local) at or before now. #525: retro_hour 23 + MISSING_H = 01:00 the next day."""
+    lt = time.localtime(now)
+    t = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, hour, 0, 0, 0, 0, -1))
+    if t > now: t = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday - 1, hour, 0, 0, 0, 0, -1))
+    return t
+
+def retro_fallback(date, log):
+    """#525: start the retro prompt for `date` as a cloud job (remote.launch: returns at once, takes no runner lane). -> started?"""
+    if LAUNCH: launch = LAUNCH
+    else:
+        import remote; launch = remote.launch
+    r = launch(0, FALLBACK_PROMPT.format(date=date), R.CFG.get("main_checkout", str(R.ROOT)), name="cloud-retro", model=MODEL, desk=True)
+    ok = bool((r or {}).get("ok"))
+    log(f"nightly retro (cloud): fallback cloud run for {date} " + ("started" if ok else "could not start: " + str((r or {}).get("error", ""))[:150]))
+    return ok
+
 def cloud_retro(tell, log, hour, now):
-    """#289: the cloud task's 'Daily retro <date>' issue -> the inspector + orchestrator handoffs, once a day. -> handled?"""
-    lt = time.localtime(now); date = time.strftime("%Y-%m-%d", lt)
+    """#289: the cloud task's 'Daily retro <date>' issue -> the inspector + orchestrator handoffs, once a day. -> handled?
+    #525: the retro day is the one of the latest retro_hour (so 01:00 still looks for yesterday's issue); none MISSING_H h after
+    retro_hour -> note + (until a trigger-made retro issue is seen, state 'proven') the retro prompt as a cloud job, once a day."""
+    if hour <= 0: return False
+    start = retro_start(hour, now); date = time.strftime("%Y-%m-%d", time.localtime(start))
     st = load_state()
-    if hour <= 0 or lt.tm_hour < hour or st.get("retro_day") == date or now - st.get("relay_at", 0) < RELAY_MIN * 60: return False
+    if st.get("retro_day") == date or now - st.get("relay_at", 0) < RELAY_MIN * 60: return False
     st["relay_at"] = now; save_state(st)
     title = f"Daily retro {date}"
     rc, out = gh("issue", "list", "--state", "all", "--search", f'"{title}" in:title', "--json", "number,title,body,url")
@@ -264,12 +290,16 @@ def cloud_retro(tell, log, hour, now):
     except ValueError: found = None
     res = parse(found.get("body")) if found else None
     if res is None:
-        if lt.tm_hour >= hour + MISSING_H and st.get("missing_day") != date:
+        if now - start >= MISSING_H * 3600 and st.get("missing_day") != date:
             st["missing_day"] = date; save_state(st)
-            tell(f"NIGHTLY RETRO: no '{title}' issue from the cloud scheduled task by {hour + MISSING_H}:00. Check the scheduled task (docs/agents/cloud-tasks.md).")
+            tell(f"NIGHTLY RETRO: no '{title}' issue from the cloud scheduled task by {(hour + MISSING_H) % 24}:00. Check the scheduled task (docs/agents/cloud-tasks.md).")
+        if now - start >= MISSING_H * 3600 and not st.get("proven") and st.get("fallback_day") != date and retro_fallback(date, log):
+            st = load_state(); st["fallback_day"] = date; save_state(st)
         return False
     props, insp, orch = res
-    st = load_state(); st["retro_day"] = date; save_state(st)
+    st = load_state(); st["retro_day"] = date
+    if FALLBACK_MARK not in (found.get("body") or ""): st["proven"] = True
+    save_state(st)
     if insp: write_inspector_handoff(insp, log)
     pr = orchestrator_handoff_pr(orch, date, log) if orch else None
     tell(f"NIGHTLY RETRO {date} (cloud task): {len(props)} proposal(s) in {found.get('url') or '#' + str(found.get('number'))}"
