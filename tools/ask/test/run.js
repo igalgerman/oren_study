@@ -10,7 +10,11 @@ const py='C:\\Users\\97254\\miniforge3\\python.exe';
  await pg.click('button');
  console.log('highlighted cards (expect 2):',await pg.locator('.card.bad').count());
  await pg.click('text=מבחן קצר במשחק');
- await pg.click('text=חיבור');await pg.click('text=שעון');
+ const n1=await pg.locator('.card.bad').count();console.log('after answering one card (expect 1):',n1);
+ await pg.click('text=חיבור');
+ const n0=await pg.locator('.card.bad').count();console.log('after answering both (expect 0):',n0);
+ await pg.click('text=שעון');
+ if(n1!==1||n0!==0){console.log('FAIL');p.kill();await b.close();process.exit(1);}
  await pg.fill('textarea','הערה בעברית');
  await pg.screenshot({path:'C:/work/Oren_study/shots/ask/ask-phone.png',fullPage:true});
  const exited=new Promise(r=>p.on('exit',r));
