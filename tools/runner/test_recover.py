@@ -65,12 +65,12 @@ with tempfile.TemporaryDirectory() as d:
     assert log["order"][0] == "herdr"
     assert log["rm"] == ["t:1", "t:2", "t:3"]
     assert log["start"] == [("orchestrator", "c1"), ("inbox", "c1"), ("inspector", "c1"), ("watchdog", "")], log["start"]
-    assert r["restarted"] == [5, 6] and log["relabel"] == [5, 6] and log["reset"] == [5, 6]
+    assert r["restarted"] == [5] and log["relabel"] == [5] and log["reset"] == [5]   # #6 is remote: its cloud session runs on, never reset
     o = log["order"]; assert o.index("unfreeze") < o.index("relabel 5") and o[-1] == "start watchdog", o
     assert not (Path(d) / "frozen").exists() and (Path(d) / "freeze.recovered.json").exists()
     assert len(log["comment"]) == 1 and len(log["tell"]) == 1
     c = log["comment"][0]
-    assert "#5 (local)" in c and "merge reset" in c and "#6 (remote)" in c and "1 stale lock" in c and "removed 3 finished" in c, c
+    assert "#5 (local)" in c and "merge reset" in c and "#6 (remote): left alone" in c and "1 stale lock" in c and "removed 3 finished" in c, c
 
 # everything already running: nothing started twice, live runner untouched
 with tempfile.TemporaryDirectory() as d:

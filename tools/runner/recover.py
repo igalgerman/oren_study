@@ -91,7 +91,11 @@ def recover(d):
         lines.append("GitHub not reachable: no issue was reset (run tools/recover.cmd again)")
     else:
         d["unfreeze"]()                               # a runner started while frozen exits at once
+        cloud = {i["number"] for i in issues if "cloud" in i["labels"]}
         for n in dead_runs(issues, live, d["lock_held"]):
+            if n in cloud or d["where"](n) == "remote":     # the cloud session may still be running: a reset would start a duplicate worker
+                lines.append(f"#{n} (remote): left alone, its cloud session runs on without this PC (check: python tools/runner/remote.py status {n})")
+                continue
             note = d["reset_merge"](n)
             d["relabel"](n)
             restarted.append(n)
