@@ -1031,11 +1031,19 @@ def remote_review_prompt(n, pr, round1=""):
             "file in your scratch dir). The runner reads ONLY that comment: put the verdict on its own line starting with VERDICT: (no backticks). "
             + review_colours(round1))
 
+REVIEW_START_RETRY_S = (60, 300)                   # #322: waits before the 2nd and 3rd cloud reviewer start
+
 def remote_review(n, pr, round1, start, get_verdict, sleep, clock, timeout_s=3600, poll_s=60, ended=None):
     """#134: the reviewer as a cloud session; get_verdict() = remote.review_status of this round. -> (comment, VERDICT line) like agent(); '' line = none."""
-    s = start(n, remote_review_prompt(n, pr, round1), CFG.get("main_checkout", "."))
+    task = remote_review_prompt(n, pr, round1)
+    s = start(n, task, CFG.get("main_checkout", "."))
+    for wait in REVIEW_START_RETRY_S:              # #322: a transient start failure (timeout) is retried, never a local reviewer
+        if s.get("ok"): break
+        sleep(wait)
+        s = start(n, task, CFG.get("main_checkout", "."))
     if not s.get("ok"):
-        return f"remote review start failed: {s.get('error', '?')}", ""
+        return (f"remote review start failed after {len(REVIEW_START_RETRY_S) + 1} tries: {s.get('error', '?')}; "
+                "the orchestrator reviews the PR"), ""
     st = wait_remote(get_verdict, sleep, clock, timeout_s, poll_s, ended)
     if st["state"] == "ended": raise Ended("cloud review")
     if st["state"] == "timeout":
