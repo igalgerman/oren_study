@@ -4,7 +4,7 @@
   python tools/runner/remote.py status <n>             -> JSON {state: working|done|stuck|question, line, pr}
   (runner only) review_status(pr, since)               -> {state: working|done, line: last VERDICT line of a PR comment, body} (#134)
   python tools/runner/remote.py send <session> "<text>" -> JSON {ok, error}
-  python tools/runner/remote.py cloud                  -> JSON list, one per open issue labelled cloud (#136):
+  python tools/runner/remote.py cloud                  -> JSON list, one per open issue labelled cloud (#136) or in-progress with a remote run (#236):
       {n, title, state, line, last, stale, pr, session}  last = ISO UTC of the newest comment/commit
 
 start needs a TTY (`claude --cloud` refuses piped output), so it runs inside a herdr terminal.
@@ -21,6 +21,7 @@ BASH = CFG.get("bash", "bash")
 REPO = CFG.get("repo", "igalgerman/oren_study")
 CLAUDE = shutil.which("claude") or "claude"
 TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
+RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # same as runner.py: .runs/<n>/where says local|remote
 
 def sh(cmd, env=None):
     p = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -73,10 +74,19 @@ def state_from(comments, pr):
             return {"state": state, "line": line, "pr": pr}
     return {"state": "working", "line": "", "pr": pr}
 
+STARTED = "Runner: started ("
+
+def current_run(comments):
+    """#236: only the comments from the latest 'Runner: started' comment on (a reopened issue's earlier RESULT is not this run's)."""
+    k = max((i for i, c in enumerate(comments) if (c.get("body") or "").startswith(STARTED)), default=0)
+    return comments[k:]
+
 def status(n, run=sh, since=None):
-    """since = ISO UTC time (#133): only comments created at or after it count, so an earlier run's RESULT line is ignored."""
+    """since = ISO UTC time (#133): only comments created at or after it count, so an earlier run's RESULT line is ignored.
+    Without since (CLI) the latest 'Runner: started' comment marks the run start (#236)."""
     rc, out = run(["gh", "issue", "view", str(n), "--repo", REPO, "--json", "comments"])
-    comments = [c.get("body", "") for c in json.loads(out).get("comments", []) if not since or c.get("createdAt", "") >= since] if rc == 0 else []
+    comments = [c.get("body", "") for c in current_run(json.loads(out).get("comments", []))
+                if not since or c.get("createdAt", "") >= since] if rc == 0 else []
     rc, out = run(["gh", "pr", "list", "--repo", REPO, "--head", f"lane/{n}", "--state", "all",
                    "--json", "number,url,isDraft"])
     prs = json.loads(out) if rc == 0 and out.strip() else []
@@ -109,7 +119,7 @@ def cloud_lane(issue, pr, commit_iso, now):
     """Pure (#136): one cloud lane row from the issue (gh JSON with comments), its lane PR (or None) and the last commit time."""
     comments = issue.get("comments") or []
     bodies = [c.get("body", "") for c in comments]
-    st = state_from(bodies, pr)
+    st = state_from([c.get("body", "") for c in current_run(comments)], pr)    # #236: only this run's RESULT counts
     sess = next((m[0] for b in reversed(bodies) for m in [SESSION.search(b or "")] if m), "")
     times = [t for t in [*(c.get("createdAt", "") for c in comments), commit_iso or ""] if t]
     last = max(times) if times else issue.get("createdAt", "")
@@ -122,13 +132,23 @@ def _epoch(iso):
     try: return calendar.timegm(time.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S"))
     except ValueError: return 0
 
+def where(n):
+    try: return (RUNS / str(n) / "where").read_text().strip()
+    except OSError: return ""
+
 def cloud(run=sh, now=None):
-    """All open issues labelled cloud (until #133's config lands this label marks cloud work)."""
+    """All open issues labelled cloud, plus in-progress ones whose run is remote (.runs/<n>/where, #236)."""
     import time
     now = time.time() if now is None else now
-    rc, out = run(["gh", "issue", "list", "--repo", REPO, "--state", "open", "--label", "cloud", "--limit", "50",
-                   "--json", "number,title,createdAt,comments"])
-    issues = json.loads(out) if rc == 0 and out.strip() else []
+    def listed(label):
+        rc, out = run(["gh", "issue", "list", "--repo", REPO, "--state", "open", "--label", label, "--limit", "50",
+                       "--json", "number,title,createdAt,comments"])
+        try: return json.loads(out) if rc == 0 and out.strip() else []
+        except ValueError: return []
+    issues = {i["number"]: i for i in listed("cloud")}
+    for i in listed("in-progress"):
+        if i["number"] not in issues and where(i["number"]) == "remote": issues[i["number"]] = i
+    issues = list(issues.values())
     rc, out = run(["gh", "pr", "list", "--repo", REPO, "--state", "all", "--limit", "200", "--json", "number,url,headRefName,commits"])
     prs = {p["headRefName"]: p for p in (json.loads(out) if rc == 0 and out.strip() else [])}
     rows = []

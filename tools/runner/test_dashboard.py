@@ -117,3 +117,10 @@ pg3 = D.page(m3)
 assert "Cloud lanes" in pg3 and '<a href="https://github.com/x/y/pull/201">PR</a>' in pg3 and ">session</a>" in pg3 and "STALE" in pg3
 assert "Cloud lanes" not in D.page(m)
 print("ok dashboard cloud")
+# #236: an in-progress issue running remote without the cloud label is a cloud lane (a remote.cloud() row), not local
+ic4 = issues + [I(13, "OPEN", ["in-progress", "P0"])]
+cl4 = [{"n": 13, "title": "t13", "state": "working", "line": "", "last": "2026-11-26T07:50:00Z", "stale": False, "pr": "", "session": ""}]
+m4 = D.model(ic4, prs, ev, now, "", cl4)
+assert m4["cloud_n"] == 1 and 13 not in [r["n"] for r in m4["running"]], (m4["cloud_n"], m4["running"])
+assert m4["lanes"] == f"local 1/{D.R.CFG.get('local_lanes', 3)} · cloud 1/{D.R.CFG.get('remote_lanes', 0)}", m4["lanes"]
+print("ok dashboard remote lanes")
