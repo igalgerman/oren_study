@@ -7,6 +7,7 @@ The WHOLE recovery after a restart (planned freeze #139, or a crash), in order:
   5. every open in-progress issue (local or cloud) whose runner is dead: a half-done merge in its worktree is reset to the pushed branch,
      in-progress is removed (ready-for-agent kept/added) so the runner restarts it; .runs/frozen is removed first
   6. starts the watchdog when missing (it starts the runner passes), then reports in ONE issue comment (recover_issue) and to the orchestrator
+Also (#27, also with --open): herdr's sound setting from sounds.py (blocked and done sound different).
 Usage: python recover.py [--install | --open]   (--open = tools/orchestrator.cmd, #25: steps 1-4 + watchdog only)"""
 import json, os, shutil, sys, time
 from pathlib import Path
@@ -212,7 +213,10 @@ def main():
         print(out.strip())
         print(f"installed: '{TASK}' runs tools\\recover.cmd at logon" if rc == 0 else "install failed: run tools\\recover.cmd --install once as administrator")
         return rc
-    import freeze, subprocess
+    import freeze, subprocess, sounds
+    try:                                              # #27: blocked = double beep, done = soft chime (herdr [ui.sound])
+        if sounds.apply(): print("herdr sounds set:", sounds.config_path()); R.hc("server", "reload-config", timeout=30)
+    except Exception as e: print("herdr sounds not set:", e)
     def terminals(): return R.with_lanes(R.hc_json("ls", "--all", "--json").get("terminals", []))   # #289: + the poller's cloud lanes
     def herdr_up(): return R.hc("ls", "--json", timeout=30)[0] == 0 and bool(spaces(R))
     def start_herdr():
