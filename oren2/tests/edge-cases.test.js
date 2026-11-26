@@ -68,4 +68,19 @@ async function finishLevel(p,maxMs=60000){const t0=Date.now();while(Date.now()-t
     for(let i=0;i<30;i++)s.tc.push({op:'+',a:12,b:30,ans:42,tx:O.storyFor('+',O.HEROES[1],'תַּפּוּחִים',12,30),d:'2026-11-25',solved:0});for(let x=0;x<12;x++)for(let y=0;y<4;y++)s.k[x+','+y]='rainbow';
     for(let i=0;i<400;i++)s.days.push('2027-01-'+i);return JSON.stringify(s).length;});
   ok('cloud document stays under 256 KiB at full progress',r<200000,(r/1024).toFixed(1)+' KiB');await p.context().close();}
+ // 8. #436: a tap in the first 400 ms of a new question is ignored: a double tap from the last question cannot answer the next one.
+ // Fake clock: the page's Date.now is frozen at window.__t, the test moves it by hand.
+ {const p=await page(b,{},()=>{try{localStorage.clear()}catch(e){}});
+  await p.evaluate(()=>{const O=window.__oren4;O.save.story.intro=1;O.save.story['add-in']=1;O.save.seen['add-0']=1;window.__t=Date.now();Date.now=()=>window.__t;});
+  const at=ms=>p.evaluate(ms=>{window.__t=window.__q0+ms;},ms);
+  const tap=()=>p.locator('#qa .chs button').nth(1).click({force:true});   // the wrong answer for 8 (even)
+  const s=()=>p.evaluate(()=>{const P=window.__oren4.play;return {i:P.i,tries:P.tries,lock:P.lock,bad:document.querySelectorAll('#qa .chs button.bad').length};});
+  await p.evaluate(()=>{const O=window.__oren4;const lv=O.WORLDS[0].levels.find(l=>l.u.id==='num-eo'&&l.type==='learn');window.__q0=window.__t;
+    O.playLevel(lv,[{k:'ch',pr:'<div class="big">8</div>',opts:['זוּגִי','אִי-זוּגִי'],ans:0,h1:'x',h2:'y',ltr:false,cls:'tx',chk:{t:'eo',n:8}}]);});await sleep(900);
+  await at(100);await tap();const a1=await s();                     // 100 ms after the question appeared: ignored
+  await at(399);await tap();const a2=await s();                     // still inside 400 ms: ignored
+  await at(450);await tap();const a3=await s();                     // 450 ms: the tap counts (wrong answer)
+  ok('#436 taps in the first 400 ms of a new question are ignored (not wrong)',a1.tries===0&&!a1.bad&&a2.tries===0&&!a2.bad&&a2.i===0,JSON.stringify([a1,a2]));
+  ok('#436 a tap after 400 ms counts',a3.tries===1&&a3.bad===1,JSON.stringify(a3));
+  ok('#436 no errors',!p.errs.length,p.errs.join('; '));await p.context().close();}
  await b.close();L.finish('edge-cases',results);})();
