@@ -292,6 +292,20 @@ const path = require('path');
     ok('stats: browser share in percent', Math.abs(t0.browserPct - 5.9) < 0.05, JSON.stringify(t0.browserPct));
     const sh = await f('/api/tts/stats'); const html = await sh.text();
     ok('stats page for the parent (html)', sh.status === 200 && /text\/html/.test(sh.headers.get('content-type')) && html.includes(d) && html.includes('no-audio') && html.includes('5.9%')); }
+  // #86 voicecheck: the parent's pick on a follow-up (word#1xx) is applied to the whole word even when this machine's
+  // queue does not hold it (state from another machine); a 'none is right' that was already followed up is not asked again
+  { const vc = require(path.join(L.ROOT, 'cf', 'tools', 'voicecheck.js')), R = [{ w: 'שארית', want: 'שְׁאֵרִית', vars: ['שארית'] }];
+    const a = vc.voteScope('שארית#101', { v: 'שאי-רית', at: 2 }, [], R, {});
+    ok('voicecheck: follow-up pick without a local queue entry is the word\'s pick', a.w === 'שארית' && a.global === true && !a.ask, JSON.stringify(a));
+    const q = [{ id: 'שארית', w: 'שארית', s: 'בלי שארית', want: 'שְׁאֵרִית', vars: ['שארית'], global: true }];
+    const b = vc.voteScope('שארית', { v: '', half: ['שאירית'], note: 'מוזר', at: 1 }, q, R, { 'שארית#101': { v: 'שאי-רית', at: 2 } });
+    ok('voicecheck: a followed-up "none is right" is not asked again', b.ask === false, JSON.stringify(b));
+    const c = vc.voteScope('עשרת#100', { v: '', half: ['עסרת'], note: 'האחדות פה לא נכון', at: 3 }, [], [{ w: 'עשרת', vars: [] }], {});
+    ok('voicecheck: a follow-up the queue does not know is never asked again', c.ask === false, JSON.stringify(c));
+    const d = vc.voteScope('רבע', { v: '', half: [], note: 'לא נכון', at: 1 }, [{ id: 'רבע', w: 'רבע', s: 'רבע', vars: ['רבע'], global: true }], [], {});
+    ok('voicecheck: a new "none is right" with a note still gets new variants', d.ask === true && d.global === true, JSON.stringify(d));
+    const t = require('fs').readFileSync(path.join(L.ROOT, 'talents.js'), 'utf8');
+    ok('the sentence with ישן writes כיסא in full (#86)', t.includes("'הֶחָתוּל יָשֵׁן עַל הַכִּיסֵּא.'") && !t.includes("'הֶחָתוּל יָשֵׁן עַל הַכִּסֵּא.'")); }
   globalThis.fetch = realFetch;
   L.finish('worker', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT worker 0 1'); process.exitCode = 1; });

@@ -18,7 +18,8 @@
            node oren2/cf/tools/voicecheck.js --again   check every sentence again
    Env: SITE, PER_MIN (default 8), WRITES (KV writes this script may use a day, default 250)                    */
 const path = require('path'), fs = require('fs'), os = require('os');
-if (process.env.HTTPS_PROXY && !process.env.NODE_USE_ENV_PROXY) {   // Node's fetch reads the proxy only with this flag
+const MAIN = require.main === module;   // required by tests: only the functions, no run
+if (MAIN && process.env.HTTPS_PROXY && !process.env.NODE_USE_ENV_PROXY) {   // Node's fetch reads the proxy only with this flag
   const c = require('child_process').spawn(process.execPath, process.argv.slice(1), { stdio: 'inherit', env: { ...process.env, NODE_USE_ENV_PROXY: '1', NODE_NO_WARNINGS: '1' } });
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => c.kill(sig));
   c.on('exit', code => process.exit(code == null ? 1 : code)); return;
@@ -159,6 +160,17 @@ const has = (t, w) => tokens(t).includes(w);
 const rec = t => { const k = id({ t, v: VOICE, r: RATE }); return S.items[k] || (S.items[k] = { t, v: VOICE, r: RATE, n: S.nik[t] || t }); };
 function markFix(t, w, v) { const o = rec(t); o.note = (o.st === 'fix' && o.note ? o.note + ', ' : 'תוקן: ') + w + ' → ' + v; o.st = 'fix'; o.pend = (o.pend || []).filter(p => p.word !== w); }
 
+/* which entry a vote answers, for the whole word (global) or one sentence, and whether its note gets new variants (ask).
+   A follow-up (word#1xx) missing from this machine's queue (the state lives on the machine that made it) takes the scope
+   of its word; it is never asked again from here. A 'none is right' that already has a follow-up is not asked again (#86). */
+function voteScope(k, vo, queue, risky, votes) {
+  const w = k.split('#')[0], q = queue.find(x => x.id === k);
+  if (!q && /#1\d\d$/.test(k)) { const b = queue.find(x => x.id === w) || risky.find(r => r.w === w && !r.s && r.ctx !== true);
+    return { q: b ? { ...b, id: k } : null, w, global: !!b, ask: false }; }
+  const followed = Object.keys(votes || {}).some(x => x.startsWith(w + '#1') && /#1\d\d$/.test(x) && ((votes[x] || {}).at || 0) >= (vo.at || 0) && x !== k);
+  return { q, w, global: q && 'global' in q ? q.global : !k.includes('#'), ask: !!q && !followed && ((vo.half || []).length > 0 || !!vo.note) };
+}
+
 /* the parent's choices: word → that spelling in the dictionary, for every prefixed form, all its sentences made again;
    word#n → that sentence only; '' → none of the variants is right */
 async function applyVotes() {
@@ -166,8 +178,8 @@ async function applyVotes() {
   for (const [k, raw] of Object.entries(j.votes || {})) {
     const vo = typeof raw === 'string' ? { v: raw, half: [], note: '' } : raw, v = vo.v, sig = String(vo.at || v);
     if (k in S.applied && S.applied[k] === sig) continue;
-    const q = (S.queue || []).find(x => x.id === k), w = k.split('#')[0], global = q && 'global' in q ? q.global : !k.includes('#');
-    if (!v && q && ((vo.half || []).length || vo.note)) {          // half right / a comment: new respellings that follow it
+    const { q, w, global, ask } = voteScope(k, vo, [...(S.queue || []), ...(j.choose || [])], RISKY, j.votes);
+    if (!v && ask) {          // half right / a comment: new respellings that follow it
       const r = await gemini('/api/tts/respell', { w, s: q.s, want: q.want, tried: q.vars, half: vo.half, note: vo.note });
       const fresh = (Array.isArray(r) ? r : []).map(x => String(x).trim()).filter(x => /^[\u05D0-\u05EA'\-]{1,40}$/.test(x) && !q.vars.includes(x));
       const own = tokens(vo.note || '').map(plain).filter(x => x !== w && x[0] === w[0] && Math.abs(x.length - w.length) <= 2);   // a spelling he wrote himself comes first
@@ -175,8 +187,8 @@ async function applyVotes() {
       S.retry = S.retry || []; const nid = w + '#' + (100 + S.retry.length);
       if (vars.length) S.retry.push({ id: nid, w, s: q.s, want: q.want, vars, global, t: q.t, forms: q.forms, hint: vo.note || 'חצי נכון: ' + vo.half.join(', ') });
       S.applied[k] = sig; log(`choice ${k}: half/comment "${vo.note}" → new variants ${vars.join(', ')}`); save(); continue; }
-    if (v === w) { S.applied[k] = sig; if (q) { const o = rec(q.t || q.s); if (!o.st) o.st = 'ok'; } log(`choice ${k}: as it is`); save(); continue; }   // the plain one is right
-    if (!v) { S.applied[k] = sig; if (q) { const o = rec(q.t || q.s); o.st = 'bad'; o.note = w + ': אף גרסה לא נשמעה נכון — צריך לבדוק'; } log(`choice ${k}: none is right`); save(); continue; }
+    if (v === w) { S.applied[k] = sig; if (q && (q.t || q.s)) { const o = rec(q.t || q.s); if (!o.st) o.st = 'ok'; } log(`choice ${k}: as it is`); save(); continue; }   // the plain one is right
+    if (!v) { S.applied[k] = sig; if (q && (q.t || q.s)) { const o = rec(q.t || q.s); o.st = 'bad'; o.note = w + ': אף גרסה לא נשמעה נכון — צריך לבדוק'; } log(`choice ${k}: none is right`); save(); continue; }
     if (S.writes + 3 > WRITES) { log('write budget for today used up; the other choices are applied next run'); break; }
     if (!global) { if (!q) continue; const r = await fix(q.t || q.s, {}, { [w]: v }); if (r) { S.applied[k] = sig; markFix(q.t || q.s, w, v); log(`choice ${k} → ${v}: ${r.sent}`); } save(); continue; }
     const forms = { [w]: v }; for (const [f, fv] of Object.entries((q && q.forms) || {})) forms[f] = fv;   // only forms listed by hand: מפתח is not מ+פתח
@@ -249,7 +261,8 @@ async function check(it) {
   return { st: 'bad', n: want, note: note + ' — לבחירה בדף ההאזנה', pend: d.map(x => ({ word: x.word, want: x.want })) };
 }
 
-(async () => {
+if (!MAIN) module.exports = { voteScope, variants, diff };
+else (async () => {
   try { SAID = JSON.parse(fs.readFileSync(path.join(PRE, 'said.json'), 'utf8')).map(item).filter(x => x.t); } catch (e) { log('no said.json — run pregen.js --collect first'); return; }
   let made = {}; try { made = JSON.parse(fs.readFileSync(path.join(PRE, 'state.json'), 'utf8')).done || {}; } catch (e) {}
   DICT = (await call('/api/tts/fix')).j || {};
