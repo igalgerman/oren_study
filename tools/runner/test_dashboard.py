@@ -147,6 +147,20 @@ assert md["last_deploy"]["ok"] is True and md["truth"]["deploys_ok"] == 1 and md
 assert D.merge_deploys(ev, de, ci=True) == [e for e in ev if e["event"] != "deploy"] + de      # old runner deploy records are dropped
 assert D.merge_deploys(ev, de, ci=False) == ev
 print("ok dashboard ci deploys")
+# #400: the deploy workflow's pregen job posts a 'voice-missing' commit status; a non-zero count is shown, never as a failure
+vs = [{"context": "tests", "state": "success", "description": "green"},
+      {"context": "voice-missing", "state": "success", "description": "22 of 3400 kid sentences have no recording yet"}]
+assert D.voice_missing(vs) == {"n": 22, "text": "22 of 3400 kid sentences have no recording yet"}, D.voice_missing(vs)
+assert D.voice_missing([{"context": "tests", "description": "x"}]) is None and D.voice_missing([]) is None
+mv = D.model(issues, prs, ev, now); mv["voice"] = D.voice_missing(vs)
+assert "Voice: 22 of 3400 kid sentences have no recording yet (first 20 in the deploy log)" in D.text(mv)
+hc = D._health_card(mv)
+assert "Voice recordings" in hc and "22 of 3400 kid sentences" in hc and "MISSING" in hc
+mv0 = D.model(issues, prs, ev, now); mv0["voice"] = D.voice_missing([{"context": "voice-missing", "description": "0 of 3400 kid sentences have no recording yet"}])
+assert "Voice:" not in D.text(mv0) and "no recording yet" not in D._health_card(mv0)
+bad = lambda h: re.search(r"(\d+) of \d+ checks need", h)
+assert (bad(hc).group(1) if bad(hc) else "0") == (bad(D._health_card(mv0)).group(1) if bad(D._health_card(mv0)) else "0")   # not a failure
+print("ok dashboard voice missing (#400)")
 m3["governor"] = "governor: 6 lanes (5h 40% -> ~89% at 19:00)"
 assert "Lanes: " in D.text(m3) and "· governor: 6 lanes (5h 40% -> ~89% at 19:00)" in D.text(m3) and "governor: 6 lanes" in D.page(m3)
 m3["governor"] = "governor: 4 lanes · efficiency 1.00 merged/10% (last 0.75) · wasted 1 (last 3)"   # #245

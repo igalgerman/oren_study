@@ -393,6 +393,13 @@ r.deploy_text = lambda log: "not deployed: no token"
 assert r.deploy_main(None) == "not deployed: no token" and not (_t / "deployed.sha").exists()
 r.deploy_text = lambda log: "deployed ok https://x"
 assert r.deploy_main(None).startswith("deployed") and (_t / "deployed.sha").read_text() == "abc123"
+# #503: deploy_main never rebuilds + pushes to main (that push lost races -> BLOCKED); PRs carry the build, CI checks it
+_cmds = []
+r.run = lambda cmd, **kw: (_cmds.append(cmd), (1, "") if "diff" in cmd else (0, "def456" + chr(10)))[1]
+(_t / "deployed.sha").unlink()
+r.deploy_main(None)
+assert not any("push" in c for c in _cmds), _cmds
+assert not any("build_talents.py" in c for c in _cmds), _cmds
 r.run, r.INTEG, r.RUNS, r.deploy_text = _o
 # CI timeout / failed merge (rc 7) -> blocked with the real reason, no resolve round
 _n = {"r": 0}

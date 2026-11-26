@@ -118,6 +118,10 @@ jobs:
     if: needs.deploy.outputs.deployed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read
+      statuses: write             # #400: the voice-missing commit status (the runner dashboard reads it)
     concurrency:
       group: pregen-main
       cancel-in-progress: false   # a newer deploy never cancels a running pregen (it is resumable): one at a time, the newest waits
@@ -147,6 +151,17 @@ jobs:
           restore-keys: pregen-state-
       - name: Voice pregen
         run: node oren2/cf/tools/pregen.js
+      - name: Voice missing report
+        # #400: read-only; count + first 20 kid sentences with no recording yet (log + job summary). A count is not a failure.
+        if: always()
+        id: voicemiss
+        run: node oren2/cf/tools/voicemissing.js
+      - name: Post voice-missing status (dashboard)
+        if: always() && steps.voicemiss.outputs.text != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TEXT: ${{ steps.voicemiss.outputs.text }}
+        run: gh api "repos/${{ github.repository }}/statuses/${{ needs.plan.outputs.sha }}" -f state=success -f context=voice-missing -f description="$TEXT" >/dev/null || echo "could not post the voice-missing status"
       - name: Save pregen state
         if: always()
         uses: actions/cache/save@v4

@@ -76,6 +76,10 @@ H.broken = set()
 wf = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".github", "workflows", "deploy.yml"), encoding="utf-8").read()
 assert "deploy_ci.py smoke \"${{ steps.report.outputs.url }}\" https://oren-game.pages.dev" in wf, "smoke must check the deployment URL and production"
 assert "needs.deploy.result == 'failure'" in wf and '"Deploy failed"' in wf and "--label P0" in wf
+# #400: after pregen, the read-only missing-voice report runs (also when pregen failed) and its line becomes the dashboard's status
+pg = wf.split("\n  pregen:")[1]
+assert pg.index("node oren2/cf/tools/pregen.js") < pg.index("node oren2/cf/tools/voicemissing.js") and "context=voice-missing" in pg and "statuses: write" in pg
+assert "state=success" in pg and "state=failure" not in pg                     # a missing count is never a failure
 srv.shutdown()
 print("ok main")
 

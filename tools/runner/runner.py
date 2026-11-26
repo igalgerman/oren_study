@@ -355,7 +355,7 @@ def remote_resolve_prompt(n, files, br=None, ci=False):
             f": run `git merge -X renormalize {REMOTE}/{BRANCH}`, resolve the conflicts keeping BOTH sides' intent, run `python3 build_talents.py` (in oren2/)")
     return (f"You are an unattended resolve worker for GitHub issue #{n} in repo {REPO}. Read CLAUDE.md and FLOW.md. "
             f"`git fetch {REMOTE} {br} {BRANCH} && git checkout {br}` (the PR's branch). Then {what}. Run the tests you touched, commit "
-            f"(not the built oren2/index.html or oren2/cf/public/index.html) and `git push {REMOTE} {br}` (no new PR). Never force-push, never rewrite {BRANCH}, never push to {BRANCH}. "
+            f"(after `python3 build_talents.py` in oren2/, WITH the rebuilt oren2/index.html and oren2/cf/public/index.html (CI is red when they differ from a fresh build, #503)) and `git push {REMOTE} {br}` (no new PR). Never force-push, never rewrite {BRANCH}, never push to {BRANCH}. "
             "You have no terminal the owner can see: report ONLY through an issue comment, that line on its own line. "
             f"LAST STEP (mandatory): `gh issue comment {n} --repo {REPO} --body \"RESULT: DONE <PR url>\"` (or `RESULT: STUCK <why>`).")
 
@@ -622,7 +622,7 @@ def remote_worker_prompt(n, lane, bug=False, retry=False):
         base += (f"An earlier cloud session for this issue ended without a RESULT comment: if lane/{n} exists on GitHub, "
                  f"continue from it (`git fetch {REMOTE} lane/{n}` and check it out) instead of starting over.\n")
     return base + (f"Work on branch lane/{n} (create it from {BRANCH}). Follow the worker rules in FLOW.md: run the tests you touched, commit "
-                   f"(not the built oren2/index.html or oren2/cf/public/index.html), `git push -u {REMOTE} lane/{n}`, and open a PR to {BRANCH} "
+                   f"(after `python3 build_talents.py` in oren2/, WITH the rebuilt oren2/index.html and oren2/cf/public/index.html (CI is red when they differ from a fresh build, #503)), `git push -u {REMOTE} lane/{n}`, and open a PR to {BRANCH} "
                    f"with `gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Fixes #{n}` (if you may only push claude/* branches, use your claude/* branch instead; the runner finds the PR by `Fixes #{n}`). Never deploy, never force-push, never push to {BRANCH}.\n"
                    f"You have no terminal the owner can see, so report ONLY through an issue comment (that line on its own line): "
                    f"if blocked post `RESULT: STUCK <why>`; if you need the owner post `QUESTION: <short question, with options>` and stop.\n"
@@ -1380,8 +1380,8 @@ def worker_prompt(n, lane, review_text=None, bug=False):
         base += ("This is a BUG: follow docs/agents/skills/diagnosing-bugs.md, then tdd: reproduce it with a failing test (add it to the relevant suite in oren2/tests/), then fix it so the test passes; "
                  "say the root cause in the PR body.\n")
     steps = ("Steps: 1) implement; 2) python3 build_talents.py (in oren2/, PATH already has python3); " + PC_TESTS + "3) for each changed screen take screenshots (skip them when no oren2/ file changed) at phone 390x844 and desktop 1366x768 into "
-             f"C:/work/Oren_study/shots/{n}/ and LOOK at them (simple, one main action, Hebrew with nikud); 4) commit (do NOT commit oren2/index.html "
-             f"or oren2/cf/public/index.html, node_modules, package*.json, tests/.tmp); 5) `git push -u {REMOTE} lane/{n}`; 6) open a PR to {BRANCH} with "
+             f"C:/work/Oren_study/shots/{n}/ and LOOK at them (simple, one main action, Hebrew with nikud); 4) commit, WITH the rebuilt oren2/index.html "
+             f"and oren2/cf/public/index.html (CI is red when they differ from a fresh build, #503; not node_modules, package*.json, tests/.tmp); 5) `git push -u {REMOTE} lane/{n}`; 6) open a PR to {BRANCH} with "
              f"`gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Closes #{n}` (use the mattpocock-skills:pr skill to write the PR body; skip if a PR already exists). "
              "Never deploy, never force-push. If blocked or the issue is unclear, stop and say why. "
              "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
@@ -1771,17 +1771,14 @@ def find_pr_merged(n):
     return remote.pr_for(n, run=run, state="merged")[0] is not None     # #246: lane/<n> or claude/* head
 
 def deploy_main(log):
-    """After CI merges (#74): bring the integrate checkout to main, rebuild, commit the built files if changed, deploy ONCE (skipped when this sha is already deployed)."""
+    """After CI merges (#74): bring the integrate checkout to main, deploy ONCE (skipped when this sha is already deployed).
+    #503: no rebuild + push to main here (that push raced other merges and ended runs BLOCKED): each PR carries its rebuilt
+    index.html files and CI (tools/ci/buildcheck.py) is red when they differ from a fresh build; deploy.sh builds from sources."""
     run(["git", "fetch", "-q", REMOTE], cwd=ROOT, log=log)
     if not (INTEG / ".git").exists():
         run(["git", "worktree", "prune"], cwd=ROOT); run(["git", "worktree", "add", "-B", "integrate", str(INTEG), f"{REMOTE}/{BRANCH}"], cwd=ROOT, log=log)
     run(["git", "merge", "--abort"], cwd=INTEG); run(["git", "reset", "-q", "--hard"], cwd=INTEG)
     run(["git", "checkout", "-q", "-B", "integrate", f"{REMOTE}/{BRANCH}"], cwd=INTEG, log=log)
-    if run([sys.executable, "build_talents.py"], cwd=INTEG / "oren2", log=log)[0]: raise Blocked("build failed after CI merge")
-    run(["git", "add", "oren2/index.html", "oren2/cf/public/index.html"], cwd=INTEG)
-    if run(["git", "diff", "--cached", "--quiet"], cwd=INTEG)[0]:
-        run(["git", "commit", "-qm", "Rebuild index.html\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"], cwd=INTEG, log=log)
-        if run(["git", "push", "-q", REMOTE, f"HEAD:{BRANCH}"], cwd=INTEG, log=log)[0]: raise Blocked("push of rebuilt index.html failed")
     sha = run(["git", "rev-parse", "HEAD"], cwd=INTEG)[1].strip()
     mark = RUNS / "deployed.sha"                               # only used when deploy_in_ci = false (#192)
     if not deploy_needed(mark.read_text().strip() if mark.exists() else "", sha):
