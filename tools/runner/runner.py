@@ -582,6 +582,7 @@ def ci_integrate(n, wt, log):
     res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp)
     if res[0] == "merged": return 0, "merged PR #%d" % pr
     if res[0] == "red": return 6, "CI RED\n" + "\n".join(res[1])
+    if res[0] == "conflict": return 2, "CONFLICT: main moved after green CI (gh pr merge reports merge conflicts)"
     return 7, "CI " + ("timed out" if res[0] == "timeout" else "green but `gh pr merge` failed")
 
 def find_pr_merged(n):
