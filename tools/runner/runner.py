@@ -760,7 +760,27 @@ def log_line(line):
     with open(RUNS / "runner.log", "a", encoding="utf-8") as f: f.write(line + chr(10))
     print(line)
 
+def do_freeze():
+    """#139: `--freeze` stops new work and parks running issues at a safe point; `--unfreeze` lets work start again."""
+    import freeze
+    if "--unfreeze" in sys.argv:
+        freeze.unfreeze(RUNS); print("unfrozen: runner and watchdog start work again"); return 0
+    def windows():
+        rc, out = hc("ls", "--json", timeout=30)
+        try: return json.loads(out.strip().splitlines()[-1]).get("terminals", [])
+        except Exception: return []
+    def remote(n):
+        try: return json.loads((RUNS / str(n) / "remote.json").read_text(encoding="utf-8")).get("session", "")
+        except Exception: return ""
+    res = freeze.freeze(RUNS, windows, lambda w, m: hc("send", w, m, timeout=30), lambda w: hc("read", w, "--lines", "60", timeout=30)[1],
+                        find_pr, lambda n, b: gh("issue", "comment", str(n), "--body", b), remote, time.sleep, time.time)
+    print(res["message"]); return 0 if not res["open"] else 1
+
 def main():
+    if "--freeze" in sys.argv or "--unfreeze" in sys.argv: return do_freeze()
+    import freeze
+    if freeze.is_frozen(RUNS) and not DRY:
+        print("frozen: nothing new starts (tools/runner/runner.py --unfreeze to continue)"); return 0
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     if USE_HERDR and not TERM:        # started from run.cmd / a shell: re-launch inside a herdr terminal and return at once
         return launch_self()
