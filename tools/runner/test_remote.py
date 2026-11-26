@@ -1,4 +1,5 @@
 # Unit test for remote.py with a fake CLI: python tools/runner/test_remote.py
+import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 import json
 import remote as r
 
@@ -99,3 +100,87 @@ f = Fake(("issue list", 0, json.dumps([iss])), ("pr list", 0, "[]"), ("branches/
 assert r.cloud(run=f, now=NOW)[0]["last"] == "2026-11-26T11:55:00Z"                       # no PR yet: the lane branch's last commit
 assert r.cloud(run=Fake(("issue list", 1, "error")), now=NOW) == []
 print("ok cloud")
+
+# #236: a reopened issue: RESULT lines from before the latest "Runner: started" comment belong to the earlier run
+old_run = [c("RESULT: DONE https://github.com/x/y/pull/197", "2026-11-26T10:00:00Z"),
+           c("Runner: started (core lane, remote, worker sonnet, reviewer sonnet).", "2026-11-26T13:16:00Z")]
+assert [x["body"] for x in r.current_run(old_run)] == [old_run[1]["body"]]
+assert r.current_run([c("RESULT: DONE", "2026-11-26T10:00:00Z")]) == [c("RESULT: DONE", "2026-11-26T10:00:00Z")]   # no runner comment: all count
+f = Fake(("issue view", 0, json.dumps({"comments": old_run})), ("pr list", 0, json.dumps([{"number": 197, "url": "u"}])))
+assert r.status(192, run=f)["state"] == "working"                                          # CLI status (no since): old RESULT ignored
+f = Fake(("issue view", 0, json.dumps({"comments": old_run + [c("RESULT: DONE new", "2026-11-26T14:00:00Z")]})), ("pr list", 0, "[]"))
+assert r.status(192, run=f)["state"] == "done"                                             # new RESULT after the start -> done
+assert r.status(192, run=f, since="2026-11-26T13:16:00Z")["state"] == "done"
+assert r.cloud_lane({**iss, "comments": old_run}, None, "", NOW)["state"] == "working"     # panel row too
+# #236: the cloud table/count also has in-progress issues whose run is remote (.runs/<n>/where), not only label cloud
+(r.RUNS / "208").mkdir(parents=True); (r.RUNS / "208" / "where").write_text("remote")
+(r.RUNS / "209").mkdir(parents=True); (r.RUNS / "209" / "where").write_text("local")
+inprog = [{"number": 208, "title": "t208", "createdAt": "2026-11-26T09:00:00Z", "comments": []},
+          {"number": 209, "title": "t209", "createdAt": "2026-11-26T09:00:00Z", "comments": []}]
+f = Fake(("label cloud", 0, json.dumps([iss])), ("label in-progress", 0, json.dumps(inprog + [iss])), ("pr list", 0, "[]"))
+assert [x["n"] for x in r.cloud(run=f, now=NOW)] == [140, 208]
+print("ok current run")
+
+# #246: a cloud worker may only push claude/* branches: pr_for(n) -> (number, headRefName)
+#   lane/<n> first, else the PR URL in this run's RESULT: DONE line, else an open PR whose body says Fixes/Closes #n
+CL = "claude/github-issue-236-u7l8gj"
+run236 = {"comments": [c("Runner: started (pack lane, remote)", "2026-11-26T13:00:00Z"),
+                       c("RESULT: DONE https://github.com/igalgerman/oren_study/pull/243", "2026-11-26T13:25:00Z")]}
+f = Fake(("--head lane/236", 0, json.dumps([{"number": 240, "headRefName": "lane/236"}])))
+assert r.pr_for(236, run=f) == (240, "lane/236")
+f = Fake(("--head lane/236", 0, "[]"), ("issue view", 0, json.dumps(run236)),
+         ("pr view 243", 0, json.dumps({"number": 243, "headRefName": CL, "state": "OPEN"})))
+assert r.pr_for(236, run=f) == (243, CL)
+assert r.pr_for(236, run=f, state="merged") == (None, None)                     # that PR is still open, not merged
+f = Fake(("--head lane/236", 0, "[]"), ("issue view", 0, json.dumps(run236)),
+         ("pr view 243", 0, json.dumps({"number": 243, "headRefName": CL, "state": "MERGED"})))
+assert r.pr_for(236, run=f, state="merged") == (243, CL)
+old = {"comments": [c("RESULT: DONE https://github.com/x/y/pull/197", "2026-11-26T10:00:00Z"), c("Runner: started (x)", "2026-11-26T13:00:00Z")]}
+f = Fake(("--head lane/236", 0, "[]"), ("issue view", 0, json.dumps(old)),
+         ("pr view 197", 0, json.dumps({"number": 197, "headRefName": "lane/197", "state": "OPEN"})),
+         ("pr list", 0, json.dumps([{"number": 250, "headRefName": "claude/x", "body": "Fixes #2366"},
+                                    {"number": 243, "headRefName": CL, "body": "Summary\n\nCloses #236\n"}])))
+assert r.pr_for(236, run=f) == (243, CL)                                         # an earlier run's URL is ignored; body Closes #236 (not #2366)
+f = Fake(("issue view", 0, json.dumps({"comments": []})), ("pr list", 0, "[]"))
+assert r.pr_for(236, run=f) == (None, None)
+assert r.pr_for(236, run=Fake(("gh", 1, "error"))) == (None, None)
+# status() and the cloud table find the claude/* PR too
+f = Fake(("--head lane/236", 0, "[]"), ("issue view", 0, json.dumps(run236)),
+         ("pr view 243", 0, json.dumps({"number": 243, "headRefName": CL, "state": "OPEN", "url": "https://github.com/igalgerman/oren_study/pull/243", "isDraft": False})))
+st = r.status(236, run=f)
+assert st["state"] == "done" and st["pr"]["number"] == 243, st
+f = Fake(("issue list", 0, json.dumps([iss])), ("pr list", 0, json.dumps([{**pr, "headRefName": "claude/abc", "body": "Fixes #140",
+         "commits": [{"committedDate": "2026-11-26T11:45:00Z"}]}])))
+assert [(x["n"], x["last"], x["pr"]) for x in r.cloud(run=f, now=NOW)] == [(140, "2026-11-26T11:45:00Z", pr["url"])]
+print("ok #246 pr_for")
+
+# #134: the cloud reviewer posts its verdict as a PR comment; the last VERDICT line (own line, not in backticks) wins
+assert r.verdict_from(["looks fine", "Review\n\nVERDICT: FIX no test for x\n\n---\n_Generated by Claude Code_"]) == \
+    ("VERDICT: FIX no test for x", "Review\n\nVERDICT: FIX no test for x\n\n---\n_Generated by Claude Code_")
+assert r.verdict_from(["VERDICT: FIX a", "VERDICT: PASS"])[0] == "VERDICT: PASS"
+assert r.verdict_from(["end with `VERDICT: PASS`", "no verdict"]) == ("", "")
+f = Fake(("pr view", 0, json.dumps({"comments": [{"body": "VERDICT: FIX old", "createdAt": "2026-11-26T08:00:00Z"},
+                                                 {"body": "VERDICT: PASS-NOTES a; b", "createdAt": "2026-11-26T09:30:00Z"}]})))
+st = r.review_status(201, run=f, since="2026-11-26T09:00:00Z")
+assert st == {"state": "done", "line": "VERDICT: PASS-NOTES a; b", "body": "VERDICT: PASS-NOTES a; b"}, st
+assert f.calls[0][0][:4] == ["gh", "pr", "view", "201"]
+assert r.review_status(201, run=f, since="2026-11-26T10:00:00Z")["state"] == "working"     # only comments of this round count
+assert r.review_status(201, run=Fake(("pr view", 1, "error")))["state"] == "working"
+print("ok review_status")
+
+# #135: the owner's answer to a cloud QUESTION, read from the issue comments
+Q = {"body": "QUESTION: red or green? 1. red 2. green"}
+PARK = {"body": "Parked (cloud): the cloud session waits for the owner."}
+assert r.answer_after_question([Q]) == ""                                                    # no answer yet
+assert r.answer_after_question([Q, PARK]) == ""                                              # runner/tool comments are no answer
+assert r.answer_after_question([Q, PARK, {"body": "green"}]) == "green"
+assert r.answer_after_question(["x", Q["body"], "2"]) == "2"                                 # plain bodies work too
+assert r.answer_after_question([Q, {"body": "OWNER ANSWER (question window, owner-q:abcdef012345): ירוק"}]) == "ירוק"
+assert r.answer_after_question([Q, {"body": "done\n\n---\n_Generated by [Claude Code](https://claude.ai/code)_"}]) == ""   # a Claude session's comment
+assert r.answer_after_question([Q, {"body": "<!-- owner_q --> x"}]) == ""
+assert r.answer_after_question([Q, {"body": "green"}, {"body": "RESULT: DONE https://p"}]) == ""   # the session went on: nothing waits
+assert r.answer_after_question([Q, {"body": "green"}, {"body": "Runner: started (pack lane, remote)"}]) == ""   # already used by a resumed run
+assert r.answer_after_question([{"body": "green"}, Q]) == ""                                 # a comment before the question is no answer
+assert r.answer_after_question([Q, {"body": "a"}, {"body": "QUESTION: b or c?"}, {"body": "c"}]) == "c"   # the last question counts
+assert r.answer_after_question([]) == ""
+print("ok answer_after_question")

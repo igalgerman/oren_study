@@ -1,4 +1,5 @@
 """#203 AI observer with a fake claude: output parsing, repeat filter, never two at once, off when 0. Run: python3 tools/runner/test_ai_observer.py"""
+import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 import json, subprocess, sys, tempfile, threading, time
 from pathlib import Path
 sys.argv.append("--dry-run")

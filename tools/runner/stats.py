@@ -1,8 +1,8 @@
 """Timing stats from .runs/stats.jsonl. `python stats.py` prints a short report."""
-import json, sys, time
+import json, os, sys, time
 from pathlib import Path
 
-LOG = Path(__file__).resolve().parent / ".runs" / "stats.jsonl"
+LOG = Path(os.environ.get("RUNNER_RUNS") or Path(__file__).resolve().parent / ".runs") / "stats.jsonl"   # #229
 
 def read_events(path=LOG):
     out = []

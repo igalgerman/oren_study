@@ -88,6 +88,7 @@ H.blocking=()=>!!document.querySelector('.hlock');
 /* an activity has ended once its result window was closed, the screen changed, or (no result window) after a moment */
 const endSeen=()=>{if(!pend||pend.ready)return;if(vis('#ov')||vis('#dlg'))pend.ov=1;else if(pend.ov||performance.now()-pend.at>2500)pend.ready=1;};
 H.check=()=>{endSeen();if(off()||H.blocking()||!safeBase())return;const r=day(),t=now();
+  if(remCheck(t))return;
   const open=MEALS.find(([k])=>r.meals[k]&&!r.meals[k].e);if(open)return showMeal(open[0]);
   const atEnd=!!pend&&!!pend.ready,menu=['sHome','sMap','sKing'].includes(scr()),notPlay=!vis('#sPlay');
   const m=mealDue();if(m&&(atEnd||menu||(notPlay&&t-mealAt(m,t)>5*60000)))return showMeal(m);
@@ -103,9 +104,8 @@ function close(){document.querySelectorAll('.hlock').forEach(e=>{clearInterval(e
 const after=()=>setTimeout(()=>{decorate();H.check();},300);
 addEventListener('keydown',e=>{if(!H.blocking()||(e.target.closest&&e.target.closest('#ov,.hlock')))return;e.stopPropagation();},true);
 const say=t=>setTimeout(()=>{if(H.blocking())O.say(T.spk(t));},400);
-const mmss=s=>Math.floor(s/60)+':'+pad(s%60);
-/* a countdown on the button; it turns on when the time is up */
-function wait(el,btn,until,label){const cd=el.querySelector('.hcd');const up=()=>{const left=Math.max(0,Math.ceil((until-now())/1000));btn.disabled=left>0;if(cd)cd.textContent=left?mmss(left):'';btn.classList.toggle('ready',!left);if(!left){if(!btn._r){btn._r=1;sfx.ok&&sfx.ok(1);}}};up();el._iv=setInterval(up,250);}
+/* no clock digits: the button fills up as the time passes, and turns on when the time is up */
+function wait(el,btn,until){const t0=now(),all=Math.max(1,until-t0);const up=()=>{const left=Math.max(0,until-now());btn.disabled=left>0;btn.style.setProperty('--p',Math.round(100-left/all*100)+'%');btn.classList.toggle('ready',!left);if(!left){if(!btn._r){btn._r=1;sfx.ok&&sfx.ok(1);}}};up();el._iv=setInterval(up,250);}
 
 const BRK={
  water:{e:'💧',t:'בּוֹא נִשְׁתֶּה מַיִם!',s:'שְׁתֵה כּוֹס מַיִם, וְאַחַר כָּךְ נַמְשִׁיךְ.',sec:30},
@@ -117,7 +117,7 @@ H.BRK=BRK;
 function showBreak(kind){const r=day(),en=enKinds();if(!kind){if(!en.length)return;const all=Object.values(T.S().health||{}).reduce((a,x)=>a+((x&&x.breaks)||[]).length,0);kind=en[all%en.length];}
   const v=kind==='move'?((r.breaks.filter(x=>x.k==='move').length+Math.floor(now()/864e5))%2?'stretch':'jump'):kind;const b=BRK[v];
   const rec={k:kind,t:hm(now())};r.breaks.push(rec);r.ba=r.on;O.persist();
-  const el=lock('hbrk '+(b.cls||''),`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">${b.e}</span></div><h2>${b.t}</h2><div class="sub">${b.s}</div>${v==='jump'?'<div class="hcnt">1</div>':''}<div class="hcd"></div>`);
+  const el=lock('hbrk '+(b.cls||''),`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">${b.e}</span></div><h2>${b.t}</h2><div class="sub">${b.s}</div>${v==='jump'?'<div class="hcnt">1</div>':''}`);
   const btn=h('button','bigbtn huge hback','<span>חָזַרְתִּי!</span>');el.firstChild.appendChild(btn);const t0=now();wait(el,btn,t0+b.sec*1000);
   if(v==='jump'){const c=el.querySelector('.hcnt');const iv=setInterval(()=>{if(!el.isConnected)return clearInterval(iv);c.textContent=Math.min(10,1+Math.floor((now()-t0)/2000));},500);}
   btn.onclick=()=>{if(btn.disabled)return;rec.ok=1;O.persist();sfx.win&&sfx.win();close();after();};
@@ -125,12 +125,35 @@ function showBreak(kind){const r=day(),en=enKinds();if(!kind){if(!en.length)retu
 H.showBreak=showBreak;
 
 function showMeal(k){const r=day(),t=now();const m=r.meals[k]=r.meals[k]||{s:t};O.persist();const nm=(MEALS.find(x=>x[0]===k)||[])[1]||'';
-  const el=lock('hmeal',`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">🍽️</span></div><h2>הִגִּיעַ זְמַן לֶאֱכֹל!</h2><div class="sub">${nm}. נַמְשִׁיךְ אַחֲרֵי הָאֹכֶל.</div><div class="hcd"></div>`);
+  const el=lock('hmeal',`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">🍽️</span></div><h2>הִגִּיעַ זְמַן לֶאֱכֹל!</h2><div class="sub">${nm}. נַמְשִׁיךְ אַחֲרֵי הָאֹכֶל.</div>`);
   const btn=h('button','bigbtn huge hback','<span>אָכַלְתִּי</span>');el.firstChild.appendChild(btn);wait(el,btn,m.s+H.MEAL_MIN*60000);
   const done=p=>{m.e=now();if(p)m.p=1;O.persist();close();after();};btn.onclick=()=>{if(!btn.disabled){sfx.win&&sfx.win();done();}};
   if(T.login){const pb=h('button','hpar','🔒 הורה');pb.onclick=()=>T.login(()=>done(1));el.firstChild.appendChild(pb);}
   if(O.musicStop)O.musicStop();say('הִגִּיעַ זְמַן לֶאֱכֹל! נַמְשִׁיךְ אַחֲרֵי הָאֹכֶל.');return el;}
 H.showMeal=showMeal;
+
+/* ---------- a reminder from the parent (#46): T.S().set.rem = {k:'toilet'|'water'|'eat', at, t, ok}
+   Synced like the other family settings. Shown when it is due, at the end of what Oren is doing (waits at most a minute), until "ok". */
+const REM={toilet:{e:'🚽',p:'🚽 שירותים',t:'הִגִּיעַ הַזְּמַן לָלֶכֶת לַשֵּׁרוּתִים!'},water:{e:'💧',p:'💧 לשתות מים',t:'הִגִּיעַ הַזְּמַן לִשְׁתּוֹת מַיִם!'},eat:{e:'🍽️',p:'🍽️ לאכול',t:'הִגִּיעַ הַזְּמַן לֶאֱכֹל!'}};
+const REM_BY='אַבָּא אוֹ אִמָּא מַזְכִּירִים:',REM_WAIT=60000,REM_OLD=2*3600e3;
+H.remTexts=()=>Object.values(REM).map(x=>REM_BY+' '+x.t);
+let remSince=null;
+const inAct=()=>vis('#sPlay')||(vis('#sTal')&&!!cur);
+function remCheck(t){const m=(T.S().set||{}).rem;if(!m||m.ok||!REM[m.k]||t<m.at||t-m.at>REM_OLD){remSince=null;return false;}
+  if(!remSince||remSince.t!==m.t)remSince={t:m.t,at:t};
+  if(inAct()&&!(pend&&pend.ready)&&t-remSince.at<REM_WAIT)return false;
+  showRem(m);return true;}
+function showRem(m){const x=REM[m.k];
+  const el=lock('hrem',`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">${x.e}</span></div><div class="sub">${REM_BY}</div><h2>${x.t}</h2>`);
+  const btn=h('button','bigbtn huge hback','<span>בְּסֵדֶר!</span>');el.firstChild.appendChild(btn);
+  btn.onclick=()=>{m.ok=1;O.persist();sfx.win&&sfx.win();close();after();};
+  sfx.star&&sfx.star(0);say(REM_BY+' '+x.t);return el;}
+let remWhen=0;
+function remPanel(box,sec,re){const m=(T.S().set||{}).rem;
+  const s=sec(box,'🔔 תזכורת לאורן','<div class="pnote">אורן יראה תמונה גדולה וישמע אותה בקול — בסוף מה שהוא עושה עכשיו (עד דקה המתנה).</div>');
+  if(m&&REM[m.k]&&now()-m.at<REM_OLD)s.appendChild(h('div','pstat',`${REM[m.k].p} · ${m.ok?'אורן ראה ✓':now()<m.at?'תופיע ב-'+hm(m.at):'ממתינה לסוף הפעילות'}`));
+  const w=h('div','popt','<span>מתי:</span>');[[0,'עכשיו'],[5,'5 דק׳'],[10,'10 דק׳'],[15,'15 דק׳'],[30,'30 דק׳']].forEach(([v,n])=>{const b=h('button','pchip'+(remWhen===v?' on':''),n);b.onclick=()=>{remWhen=v;re&&re();};w.appendChild(b);});s.appendChild(w);
+  const g=h('div','pbig');Object.entries(REM).forEach(([k,x])=>{const b=h('button','bigbtn sm','<span>'+x.p+'</span>');b.onclick=()=>{const t=now();T.S().set.rem={k,at:t+remWhen*60000,t};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);re&&re();};g.appendChild(b);});s.appendChild(g);}
 
 /* two big cards of other domains Oren did least today */
 function cards(ex){const r=day();return DOMS.filter(d=>d.id!==ex&&!H.resting(d.id)&&enabled(d.id)).map(d=>[d,(r.dom[d.id]|0)+Math.random()]).sort((a,b)=>a[1]-b[1]).slice(0,2).map(x=>x[0]);}
@@ -165,7 +188,7 @@ H.decorate=decorate;
 document.addEventListener('click',e=>{if(bypass||off())return;const el=e.target.closest&&e.target.closest('[data-hrest]');if(!el||el.closest('.hlock')||!H.resting(el.dataset.hrest))return;e.stopPropagation();e.preventDefault();sfx.pop&&sfx.pop(1);showRest(el.dataset.hrest,el);},true);
 
 /* ---------- parent panel (no nikud) ---------- */
-H.panel=(box,sec,re)=>{const c=cfg(),r=day();
+H.panel=(box,sec,re)=>{const c=cfg(),r=day();remPanel(box,sec,re);
   const s1=sec(box,'הפסקות, ארוחות והחלפת נושא','<div class="pnote">בסוף פעילות (אף פעם לא באמצע שאלה): כל כמה דקות פעילות — הפסקה של כחצי דקה עם החבר, בסבב: מים, שירותים, תנועה, מנוחת עיניים. בזמן ארוחה המשחק עוצר עד "אכלתי" (לפחות 10 דקות, או סיסמת הורה). אחרי הרבה זמן באותו תחום — החבר מציע תחום אחר, והתחום נח עד מחר.</div>');
   const tg=h('div','popt','<span>תזכורות:</span>');[['water','💧 מים'],['toilet','🚽 שירותים'],['move','🤸 תנועה'],['eyes','👀 עיניים'],['meal','🍽️ ארוחות']].forEach(([k,n])=>{const b=h('button','pchip'+(c.off[k]?'':' on'),n);b.onclick=()=>{H.setCfg('off',{[k]:c.off[k]?0:1});re&&re();};tg.appendChild(b);});s1.appendChild(tg);
   const iv=h('div','popt','<span>הפסקה כל:</span>');[15,20,30].forEach(v=>{const b=h('button','pchip'+(c.brk===v?' on':''),v+' דק׳');b.onclick=()=>{H.setCfg('brk',v);re&&re();};iv.appendChild(b);});s1.appendChild(iv);

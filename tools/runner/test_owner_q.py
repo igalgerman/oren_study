@@ -1,4 +1,5 @@
 """#193 owner questions: one post per window+question, from fake watchdog screens. Run: python3 tools/runner/test_owner_q.py"""
+import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 import json, re, sys, tempfile, time
 from pathlib import Path
 sys.argv.append("--dry-run")
@@ -8,6 +9,11 @@ import watchdog as W
 
 tmp = Path(tempfile.mkdtemp())
 OQ.STATE = tmp / "owner_q.json"
+_lt = time.localtime                   # #207: Windows rejects negative times; fail the same way on Linux
+def _win_localtime(t=None):
+    if t is not None and t < 0: raise OSError(22, "Invalid argument")
+    return _lt() if t is None else _lt(t)
+time.localtime = _win_localtime
 
 class FakeGH:
     """A fake `gh` with one repo: issues + comments in memory."""
@@ -43,7 +49,8 @@ W.tell = told.append
 W.pin = lambda t, on: None
 W.R.should_park = lambda *a: False
 ts = lambda: [{"name": n, "status": status[n], "state": "live"} for n in screens] + [{"name": "orchestrator", "state": "live"}]
-clock = [1000.0]
+clock = [time.time()]              # #207: a real time, so later time.localtime(now - days) stays positive
+start = clock[0]
 W.time.time = lambda: clock[0]
 for k in range(4):                     # four watchdog ticks, 60 s apart: the same screens
     W.check_windows(ts()); clock[0] += 60
@@ -56,7 +63,7 @@ by = {re.search(r"\*\*(#\d+)\*\*", c["body"])[1]: c["body"] for c in p}
 assert "לשנות את הצבע? (כחול / ירוק)" in by["#5"] and "QUESTION:" not in by["#5"]
 assert "שָׁלוֹם" in by["#7"] and "`review-7`" in by["#7"] and "#9" in by
 assert "- 1. Yes" in by["#6"] and "- 2. No, tell Claude" in by["#6"]   # a permission menu: its options are listed
-assert clock[0] - 1000 <= 240 and all(any(f"#{n}" in t or f"-{n}" in t for t in told) for n in (5, 7, 9, 6)), told
+assert clock[0] - start <= 240 and all(any(f"#{n}" in t or f"-{n}" in t for t in told) for n in (5, 7, 9, 6)), told
 assert all("NEW OWNER QUESTION" in t and "PushNotification" in t for t in told), told
 assert sum("issue-5" in t for t in told) == 1                  # the orchestrator is told once per question
 # blocked menu seen for under 90 s: nothing posted yet (the runner answers short menus at once)
@@ -99,3 +106,14 @@ m["questions"] = OQ.open_questions(cs); m["ov"] = D.oversight("", now, now, "", 
 assert "Needs you (question): #9 לכמה גילאים?" in D.text(m) and cs[2]["url"] in D.text(m), D.text(m)
 pg = D.page(m); assert "Needs you: open questions" in pg and "לכמה גילאים?" in pg and f'href="{cs[2]["url"]}"' in pg
 print("ok owner_q open/answered/dashboard")
+# #211: the tool posts under the owner's own account -> its posts carry a hidden marker and are never counted as his answer
+told.clear()
+assert OQ.post("orchestrator", "QUESTION: NEEDS YOU: add the Cloudflare token as a GitHub secret", gh=g)
+assert OQ.mark_answered(qs[2]["key"], "done", gh=g)
+assert all(OQ.MARK in c["body"] for c in cs[-2:]), cs[-2:]
+OQ.answers_tick(told.append, gh=g); assert told == [], told
+cs.append({"body": OQ.MARK + "\nNEEDS YOU (blocks deploys): a tool note without a key", "url": "u", "reactionGroups": []})
+OQ.answers_tick(told.append, gh=g); assert told == [], told
+cs.append({"body": "כן, הוספתי", "url": "u", "reactionGroups": []})                      # a real owner reply (no marker)
+OQ.answers_tick(told.append, gh=g); assert len(told) == 1 and "כן, הוספתי" in told[0] and "Cloudflare" not in told[0].split("Open questions:")[0], told
+print("ok owner_q #211 own posts are not answers")

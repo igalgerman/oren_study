@@ -2,6 +2,7 @@
 Every minute it checks, deterministically:
   1. a worker/reviewer/intake window waiting for an answer (status blocked)  -> tells the orchestrator (once per new screen; also a worker whose last line is QUESTION:)
      and posts the question in the pinned issue 'Questions for the owner' (owner_q.py, #193; once per window+question); an owner reply there -> tells the orchestrator
+  1b. every open owner question -> ONE pinned window question-<n> (qwin.py, #220): Hebrew page (tools/ask) + phone push, first answer wins, relayed
   2. a worker/reviewer that stopped without its RESULT:/VERDICT: line for 10 min -> tells the orchestrator
   3. free lanes + ready issues but no runner pass running                       -> starts a runner pass
   3b. a window waiting for the owner longer than park_minutes (the runner parks it itself; this is the fallback): issue gets blocked + ready-for-human, lane freed
@@ -14,9 +15,9 @@ Every minute it checks, deterministically:
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
   4b. orchestrator / inbox / inspector terminal finished (#140)                -> removed by address and started again (recover.py commands)
 It never answers questions or presses keys in other windows; it only tells the orchestrator and starts the runner.
-Usage: python watchdog.py [--once]
+Usage: python watchdog.py [--once | --lock | --alarms-once]
 """
-import calendar, hashlib, importlib, json, re, shutil, subprocess, sys, time, threading
+import argparse, calendar, hashlib, importlib, json, re, shutil, subprocess, sys, time, threading
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -88,8 +89,8 @@ def check_windows(ts):
                 what = f"asks: {q}" if q else "is waiting for an answer"
                 tell(f"{needs_you_line(name, q, tail)}{chr(10)}WATCHDOG: window {name} {what}. NEW OWNER QUESTION"
                      + (f" (posted: {url})" if url else " (in the 'Questions for the owner' issue)")
-                     + f": send a PushNotification with the question text, then relay his answer (hc send {name} \"..\" or the menu option he picks) "
-                     f"and mark it answered (owner_q.py answered <key>). Its screen ends with:{chr(10)}{tail}")
+                     + f": a pinned question window (question-<n>, #220) asks him on the Hebrew page and by PushNotification; do not push yourself. "
+                     f"When it tells you OWNER ANSWERED, relay the answer (hc send {name} \"..\" or the menu option he picks). Its screen ends with:{chr(10)}{tail}")
             m = re.match(r"(?:issue|review)-(\d+)", name)       # fallback for a runner that did not park by itself
             if m and R.should_park(since, now, R.PARK_MINUTES + 3) and R.park_issue(int(m[1]), name, tail, since):
                 log(f"parked #{m[1]} ({name} waiting since {time.strftime('%H:%M', time.localtime(since))})")
@@ -239,6 +240,12 @@ def check_control(ts):
         log(f"{name} had finished: restarted (rc {rc})")
         if rc == 0 and name != "orchestrator": tell(f"WATCHDOG: {name} had finished; restarted it")
 
+def qwin_tick(ts):
+    import qwin; importlib.reload(qwin); qwin.tick(ts)   # #220: one pinned question window per open owner question
+
+def resume_tick():
+    for n in R.resume_answered(): log(f"#{n}: owner answered the cloud question -> unparked, the next pass resumes its session (#135)")
+
 def observer_tick():
     import observer; observer.run_if_due()      # acting observer (observer.py)
 
@@ -321,23 +328,52 @@ def alarm_tick():
         if t in new: _alarm["sent"][k] = now
     tell("IDLE ALARM (watchdog): " + " · ".join(new))
 
+RELOAD = ("remote", "owner_q", "freeze", "stats", "recover")   # #229: reloaded on change, before runner.py (observer/ai_observer keep in-memory guards: not reloaded)
+
+def parse_args(argv):
+    """#229: unknown flags (and --help) end here, before the loop."""
+    p = argparse.ArgumentParser(prog="watchdog.py", description="Oren runner watchdog: checks windows, lanes and alarms every minute.")
+    p.add_argument("--once", action="store_true", help="one pass, then exit")
+    p.add_argument("--lock", action="store_true", help="who holds the merge lock, then exit")
+    p.add_argument("--alarms-once", action="store_true", help="print idle/stuck alarms, then exit")
+    p.add_argument("--dry-run", action="store_true", help=argparse.SUPPRESS)
+    return p.parse_args(argv)
+
 def main():
-    if "--lock" in sys.argv:                 # #181: who holds the merge lock, why, for how long
+    a = parse_args(sys.argv[1:])
+    if a.lock:                 # #181: who holds the merge lock, why, for how long
         sys.stdout.reconfigure(encoding="utf-8")
         _, info, alive = lock_state()
         if not info: print("merge lock: free"); return
         pid, note, since = info
         print(f"merge lock: held by {note or 'unknown step'} (pid {pid}, {'alive' if alive else 'DEAD'}) for {int((time.time() - since) / 60)} min")
         w = green_waiting(); print("green PRs waiting: " + (", ".join(f"#{n}" for n in w) if w else "none")); return
-    if "--alarms-once" in sys.argv:          # #117: one command: is anything idle or stuck?
+    if a.alarms_once:          # #117: one command: is anything idle or stuck?
         sys.stdout.reconfigure(encoding="utf-8")
         al = alarms_once()
         print("could not read GitHub" if al is None else "\n".join(t for _, t in al) or "nothing idle or stuck"); return
+    try: lock = R.FileLock("watchdog", note="watchdog loop").__enter__()   # #229: one live loop only
+    except R.Blocked:
+        print(f"watchdog already running (pid {(R.FileLock('watchdog').info() or ('?',))[0]}); not starting a second loop", file=sys.stderr); sys.exit(1)
+    try: loop(a.once)
+    finally: lock.__exit__()
+
+def _mtime(name):
+    try: return (HERE / f"{name}.py").stat().st_mtime
+    except OSError: return None
+
+def loop(once):
     log("watchdog started")
     W, me = sys.modules[__name__], Path(__file__).resolve()
     stamp, wstamp = (HERE / "runner.py").stat().st_mtime, me.stat().st_mtime
+    mods = {n: _mtime(n) for n in RELOAD}
     while True:
         try:
+            for n in RELOAD:                  # #229: remote.py & co changed: reload them first, so runner.py and the ticks use the new code
+                t = _mtime(n)
+                if t != mods[n]:
+                    mods[n] = t
+                    if n in sys.modules: importlib.reload(sys.modules[n]); log(f"reloaded {n}.py")
             m = (HERE / "runner.py").stat().st_mtime
             if m != stamp:                    # runner.py changed: pick up the new select()/park logic without restarting this window
                 stamp = m; importlib.reload(R); log("reloaded runner.py")
@@ -348,7 +384,7 @@ def main():
             W.tick()
         except Exception as e:
             log(f"error: {e!r}")
-        if "--once" in sys.argv: return
+        if once: return
         time.sleep(EVERY)
 
 def tick():
@@ -358,6 +394,8 @@ def tick():
     ts = windows()
     check_windows(ts)
     OQ.answers_tick(tell)
+    qwin_tick(ts)
+    resume_tick()
     check_lanes(ts)
     check_intake(ts)
     all_ts = R.hc_json("ls", "--all", "--json").get("terminals", []) or ts
@@ -371,6 +409,7 @@ def tick():
     trends_tick()
     ai_tick()
     lock_tick()
+    orch_idle_tick()
 
 # ---------- #181: merge lock watch ----------
 LOCK_WARN_MIN, LOCK_REPEAT_MIN = 20, 30
@@ -399,6 +438,57 @@ def green_waiting():
 def lock_state(now=None):
     lk = R.FileLock("integrate"); info = lk.info()
     return lk, info, (bool(info) and R.pid_alive(info[0]))
+
+# ---------- #225: watch the checker (an idle orchestrator while work waits) ----------
+ORCH_WAIT_MIN, ORCH_NUDGE_EVERY_MIN, ORCH_ESCALATE_MIN, ORCH_ESCALATE_EVERY_H = 10, 10, 30, 2
+OWNER_ISSUE = int(R.CFG.get("owner_questions_issue", 205))
+_orch = {"nudged": 0.0, "first": 0.0, "escalated": 0.0}
+
+def waiting_reviews(prs, now):
+    """Pure: open non-draft PRs, all checks green, no auto-merge yet, open >= ORCH_WAIT_MIN -> [numbers] (they wait for a review)."""
+    out = []
+    for p in prs:
+        if p.get("isDraft") or p.get("autoMergeRequest") is not None: continue
+        checks = p.get("statusCheckRollup") or []
+        if not checks or not all((c.get("conclusion") or c.get("status")) in ("SUCCESS", "SKIPPED", "NEUTRAL") for c in checks): continue
+        t = _age_min(p.get("updatedAt") or p.get("createdAt"), now)
+        if t >= ORCH_WAIT_MIN: out.append(p["number"])
+    return sorted(out)
+
+def orch_decision(state, waiting, st, now):
+    """Pure: -> 'reset' | 'nudge' | 'escalate' | None. state = orchestrator terminal state; st = _orch-like dict."""
+    idle = state in ("done", "idle", "blocked")
+    if not idle or not waiting: return "reset"
+    if st["first"] and now - st["first"] >= ORCH_ESCALATE_MIN * 60 and now - st["escalated"] >= ORCH_ESCALATE_EVERY_H * 3600:
+        return "escalate"
+    if now - st["nudged"] >= ORCH_NUDGE_EVERY_MIN * 60: return "nudge"
+    return None
+
+def orch_idle_tick(now=None):
+    now = now or time.time()
+    d = R.hc_json("get", "orchestrator", "--json") or {}
+    stt = d.get("status") or {}
+    state = stt.get("state") if isinstance(stt, dict) else stt
+    if not d or d.get("state") != "live": return                      # gone/finished: the #140 restart check handles it
+    rc, out = R.gh("pr", "list", "--state", "open", "--json", "number,isDraft,autoMergeRequest,statusCheckRollup,updatedAt,createdAt")
+    if rc: return
+    waiting = waiting_reviews(json.loads(out), now)
+    act = orch_decision(state, waiting, _orch, now)
+    if act == "reset":
+        _orch.update(nudged=0.0, first=0.0); return
+    if act == "nudge":
+        if not _orch["first"]: _orch["first"] = now
+        _orch["nudged"] = now
+        tell(f"WATCHDOG (#225): you are idle while PRs wait for review: #{', #'.join(map(str, waiting))}. Review them now "
+             f"(gh pr merge N --auto --squash after a PASS). Owner questions never stop your work.")
+    elif act == "escalate":
+        _orch["escalated"] = now
+        try: R.run([R.HERDR_APP, "do", "terminal.pin", json.dumps({"terminal": d.get("address"), "pinned": True})], timeout=30)
+        except Exception: pass
+        R.gh("issue", "comment", str(OWNER_ISSUE), "--body",
+             f"ESCALATION (watchdog #225): the orchestrator has been idle {int((now - _orch['first']) / 60)} min while PRs wait for review: "
+             f"#{', #'.join(map(str, waiting))}. It was nudged and did not move. Open the orchestrator window (pinned in herdr).")
+        log(f"orchestrator idle escalation: {waiting}")
 
 def lock_tick(now=None):
     now = now or time.time()

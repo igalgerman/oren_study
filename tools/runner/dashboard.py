@@ -102,7 +102,7 @@ def model(issues, prs, events, now, log_text="", cloud=()):
         elif n in last and e.get("event") in STEP: last[n]["event"] = e["event"]
     running = [{**r, "step": STEP.get(last.get(r["n"], {}).get("event"), "started by hand"),
                 "for_s": now - last[r["n"]]["start"] if r["n"] in last else None} for r in by_state["running"]]
-    cloud_n = {i["number"] for i in op if "cloud" in i["labels"]}
+    cloud_n = {i["number"] for i in op if "cloud" in i["labels"]} | {c["n"] for c in cloud if c["n"] in open_nums}   # #236: + remote runs
     running = [r for r in running if r["n"] not in cloud_n]          # #136: cloud lanes have their own table
     recent = sorted(((closed_at[i["number"]], i) for i in issues if i["state"] == "CLOSED" and closed_at.get(i["number"])),
                     key=lambda x: -x[0])[:10]
@@ -220,7 +220,7 @@ def text(m):
     d = m["last_deploy"]
     lines.append("Last deploy: " + (f"{hhmm(d['ts'])} {'ok' if d.get('ok') else 'FAILED'}" if d else "no record yet") + f" · runner deploys 24 h: {tr['deploys_ok']} ok, {tr['deploys_fail']} failed")
     if tr["stuck"]: lines.append("Top stuck reasons (24 h): " + "; ".join(f"{k} ({len(v)})" for k, v in tr["stuck"][:3]))
-    lines.append("Lanes: " + m["lanes"])
+    lines.append("Lanes: " + m["lanes"] + (" · " + m["governor"] if m.get("governor") else ""))
     for c in m["cloud"]:
         lines.append(f"  cloud #{c['n']} {c['title'][:40]} — {c['state']} · last {hhmm(epoch(c['last'])) if epoch(c['last']) else '-'}"
                      + (" · STALE" if c["stale"] else "") + (f" · {c['pr']}" if c["pr"] else "") + (f" · {c['session']}" if c["session"] else ""))
@@ -474,7 +474,7 @@ def page(m):
             f'<title>Oren game: status {hhmm(now)}</title><style>{CSS}</style></head><body><main>'
             f'<h1>Oren game: work status</h1><div class="sub">Updated {time.strftime("%a %d %b %H:%M", time.localtime(now))} (Israel time). '
             f'For fresh numbers run tools\\dashboard.cmd again.</div>'
-            f'{top}<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}</div>{qcard}{needs}{bottom}{timeline}{cloud}{_health_card(m)}{_ai_card(m)}'
+            f'{top}<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}{" · " + e(m["governor"]) if m.get("governor") else ""}</div>{qcard}{needs}{bottom}{timeline}{cloud}{_health_card(m)}{_ai_card(m)}'
             f'<h2 class="more">More details</h2><div class="sub">Everything else is here. Click a line to open it.</div>'
             f'{lists}{recent}{truth}{charts}{speed}{_ov_card(m)}{how}</main></body></html>')
 
@@ -612,6 +612,11 @@ def ai_load():
     try: return json.loads(AI_FILE.read_text(encoding="utf-8"))
     except Exception: return None
 
+def governor_line():
+    """#239: the runner's last governor line (.runs/governor.json), '' when missing."""
+    try: return json.loads((R.RUNS / "governor.json").read_text(encoding="utf-8")).get("text", "")
+    except Exception: return ""
+
 def gather():
     issues, prs = fetch()
     now = time.time()
@@ -621,6 +626,7 @@ def gather():
     m["ov"] = oversight(w, wmt, rmt, ol, omt, now)
     import owner_q
     m["questions"] = owner_q.open_list() or []            # #193
+    m["governor"] = governor_line()                         # #239
     return m
 
 def ai_tick(log=print):

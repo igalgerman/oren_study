@@ -3,7 +3,7 @@ import type { Register } from 'claude-code'
 
 import type { OrenLanesData } from '../types/index'
 import {
-  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, flowRows, laneReasons, view, statsLines, parseMaxCore, parseLocalLanes, parseRemoteLanes, cloudRows, isCloud,
+  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, usageJson, governorLine, flowRows, laneReasons, view, statsLines, parseMaxCore, parseLocalLanes, parseRemoteLanes, cloudRows, cloudCount,
 } from './lanes'
 import type { CloudLane, Issue, View, Win } from './lanes'
 
@@ -14,6 +14,8 @@ const LOG = 'C:/work/Oren_study/a/tools/runner/.runs/runner.log'
 const OBSERVER = 'C:/work/Oren_study/a/tools/runner/.runs/observer.last'
 const CONFIG = 'C:/work/Oren_study/a/tools/runner/config.toml'
 const STATS = 'C:/work/Oren_study/a/tools/runner/.runs/stats.jsonl'
+const USAGE = 'C:/work/Oren_study/a/tools/runner/.runs/usage.json'   // #239: read by the runner's usage governor
+const GOVERNOR = 'C:/work/Oren_study/a/tools/runner/.runs/governor.json'
 const PY = 'C:\\Users\\97254\\miniforge3\\python.exe'
 const REMOTE = 'C:/work/Oren_study/a/tools/runner/remote.py'
 const ROOT = /^c:[\\/]+work[\\/]+oren_study([\\/]|$)/i
@@ -78,10 +80,12 @@ export const register: Register = on => {
         let localMax = 3, remoteMax = 0
         try { const t = (await $.fs.read(CONFIG)) as string; maxCore = parseMaxCore(t); localMax = parseLocalLanes(t); remoteMax = parseRemoteLanes(t) } catch { /* defaults */ }
         let cloud: string[] = []
+        let lanesCloud: CloudLane[] = []
         try {   // #136: one row per cloud lane, state from tools/runner/remote.py
           const r = await $.process.run([PY, REMOTE, 'cloud'], { timeoutMs: 120000 })
           if (r.exitCode !== 0) throw new Error(`remote.py exit ${r.exitCode}`)
-          cloud = cloudRows(JSON.parse(r.stdout) as CloudLane[])
+          lanesCloud = JSON.parse(r.stdout) as CloudLane[]
+          cloud = cloudRows(lanesCloud)
         } catch (err) {
           errors.push(`cloud lanes unavailable: ${trunc(String(err), 60)}`)
         }
@@ -103,7 +107,14 @@ export const register: Register = on => {
             + (agentWork <= 1 ? ' · ⚠ almost no work for the lanes — add to the backlog (/idea, /task)' : '')
         } catch { /* flow is optional */ }
         let usage = ''
-        try { usage = usageText(((await $.session.usage()).rateLimits ?? []) as any) } catch { /* no reading */ }
+        try {
+          const limits = ((await $.session.usage()).rateLimits ?? []) as any
+          usage = usageText(limits)
+          const u = usageJson(limits, await $.clock.now())
+          if (u) await $.fs.write(USAGE, JSON.stringify(u))
+        } catch { /* no reading */ }
+        let governor = ''
+        try { governor = governorLine((await $.fs.read(GOVERNOR)) as string) } catch { /* no runner pass yet */ }
 
         const prev = (await $.state.get(LIVE)).value ?? []
         const hcOk = !errors.some(x => x.startsWith('windows'))
@@ -115,12 +126,12 @@ export const register: Register = on => {
         const prevData = await read($, dataAtom)
         const ghFailed = errors.some(x => x.startsWith('backlog'))
         const data: OrenLanesData = ghFailed && prevData ? {
-          ...prevData, windows, usage, stats, observer, lastLog, localMax, remoteMax,
+          ...prevData, windows, usage, governor, stats, observer, lastLog, localMax, remoteMax,
           errors: [`GitHub slow — showing data from ${new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(prevData.updatedAt))}`],
           updatedAt: prevData.updatedAt,
         } : {
-          windows, groups: groupIssues(issues), lastLog, errors, usage, flow, done, lanes: laneReasons(issues, windows, 3, maxCore), view: vw, stats, observer,
-          localMax, remoteMax, cloudCount: issues.filter(isCloud).length, cloud,
+          windows, groups: groupIssues(issues), lastLog, errors, usage, governor, flow, done, lanes: laneReasons(issues, windows, 3, maxCore), view: vw, stats, observer,
+          localMax, remoteMax, cloudCount: cloudCount(issues, lanesCloud), cloud,
           updatedAt: await $.clock.now(),
         }
         await update($, dataAtom, () => data)
@@ -162,6 +173,7 @@ export const register: Register = on => {
       <Box flexDirection="column">
         <Text bold>{trunc(summary || 'Backlog …', width)}</Text>
         {d.usage ? dim('Usage ' + d.usage) : null}
+        {d.governor ? dim(d.governor) : null}
         {(d.done ?? '').includes('⚠') ? <Text color="yellow">{trunc('⚠ Lanes running out of work — add to the backlog (/idea, /task)', width)}</Text> : null}
         {d.errors.map(dim)}
         {v && head('LANES')}

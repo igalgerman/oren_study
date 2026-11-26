@@ -106,6 +106,18 @@ const noNikud = s => String(s).replace(/<[^>]+>/g, ' ').split(/[\s\-–.,:;!?()"
   // free build is saved and comes back
   const fb = await p.evaluate(() => { const v = (window.TAL.S().e2 || {}).fb || ''; window.TAL.ACT['blk-free'].run(() => {}); return [v.length, v.split(',').length, document.querySelectorAll('#sTal .e2cell').length]; });
   ok(fb[1] === 30 && fb[0] > 29 && fb[0] < 200 && fb[2] > 30, 'free build saved small and redrawn ' + JSON.stringify(fb));
+  // map-flags (#209): every flag stays inside its card (intro card with 3 flags + each quiz card)
+  await p.evaluate(() => { document.querySelector('#ov').hidden = true; delete window.TAL.S().tl['map-flags']; window.TAL.ACT['map-flags'].run(() => window.TAL.openHub()); });
+  await sleep(150);
+  const flagOut = [];
+  const checkFlags = tag => p.evaluate(tag => [...document.querySelectorAll('#sTal .flagsvg')].flatMap(f => {
+    const c = f.closest('.tqc'), a = f.getBoundingClientRect(), r = c.getBoundingClientRect();
+    return a.left < r.left - 0.5 || a.right > r.right + 0.5 ? [`${tag}: flag ${Math.round(a.left)}..${Math.round(a.right)} card ${Math.round(r.left)}..${Math.round(r.right)}`] : [];
+  }), tag);
+  flagOut.push(...await checkFlags('intro'));
+  const nFlags = await p.evaluate(() => document.querySelectorAll('#sTal .e2card .flagsvg').length);
+  for (let s = 0; s < 80 && !(await ovOpen()); s++) { await p.evaluate(() => window.EXPLORE2.step()); await sleep(60); flagOut.push(...await checkFlags('step' + s)); }
+  ok(nFlags === 3 && !flagOut.length, `map-flags: every flag inside its card (${nFlags} intro flags) ` + flagOut.slice(0, 3).join(' | '));
   // the buildings open from the city
   await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.TAL.openBuilding(window.TAL.BUILD.find(b => b.id === 'sky')); });
   await sleep(150); await snap('building-sky');

@@ -85,7 +85,7 @@ function nikRound(r,back){const n=8;T.quiz({id:'nik-'+(r+1),title:RUNG[r].n,bg:'
 function nikIntro(r,back){O.setScreen('sTal','city',back);T.hudT('סֻלַּם הַנִּקּוּד');const R=RUNG[r];const s=$('#sTal');s.innerHTML='';
   const ex=shuffle(focusAt(r).filter(w=>w.s1)).slice(0,3);O.sayNow=R.n+'. כמו במילים: '+ex.map(w=>plainHe(w.w)).join(', ');
   const card=h('div','prq tqc gp-intro',`<div class="gp-new">חָדָשׁ!</div><div class="gp-sign">${R.ex}</div><div class="qq">${R.say}</div>`);
-  const row=h('div','gp-exs');ex.forEach(w=>{const e=h('span','gp-ex',`${pic(w)}<span>${hi(w)}</span>`);e.onclick=()=>sayW(w);row.appendChild(e);});card.appendChild(row);s.appendChild(card);
+  const row=h('div','gp-exs');ex.forEach(w=>row.appendChild(h('span','gp-ex',`${pic(w)}<span>${hi(w)}</span>`)));card.appendChild(row);s.appendChild(card);
   const br=h('div','btnrow');const go=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=()=>nikRound(r,back);br.appendChild(go);s.appendChild(br);
   setTimeout(()=>{if(card.isConnected)O.say(R.n+'. '+'כְּמוֹ בַּמִּלִּים: '+ex.map(w=>w.w).join(', '));},D(400));}
 function nikMenu(back){const me=()=>nikMenu(back);O.setScreen('sTal','city',back);T.hudT('סֻלַּם הַנִּקּוּד');const s=$('#sTal');s.innerHTML='';
@@ -218,7 +218,7 @@ const SKILLS={'read-nik':'סולם הניקוד: הברות ומילים','nik-1
 const ACTS={
  read:[{id:'read-nik',name:'סֻלַּם הַנִּקּוּד',icon:()=>'<span class="gp-ic">בָּ</span>',run:nikMenu},
   {id:'read-sound',name:'מָה שׁוֹמְעִים בַּהַתְחָלָה?',icon:()=>'<span style="font-size:34px">👂</span>',run:back=>sndRound(back)},
-  {id:'read-flu',name:'מֵרוֹץ מִלִּים',icon:()=>'<span style="font-size:34px">⏱️</span>',run:race}],
+  {id:'read-flu',name:'מֵרוֹץ מִלִּים',icon:()=>'<span style="font-size:34px">⏱️</span>',noMenu:true,run:race}],
  write:[{id:'write-spell',name:'כּוֹתְבִים מִלִּים',icon:()=>T.X.abc,run:back=>spell(back)}]};
 function addAct(bid,a){const b=T.BUILD.find(x=>x.id===bid);if(!b||T.ACT[a.id])return;b.acts.push(a);T.ACT[a.id]=a;a.b=b;}
 function register(){Object.entries(ACTS).forEach(([bid,as])=>as.forEach(a=>addAct(bid,a)));}
