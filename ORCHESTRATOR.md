@@ -24,6 +24,7 @@ idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → r
 - Bugs: same flow, label `bug`, no grilling, go first in the queue, worker writes a failing test first.
 - Clear tasks (already specified) skip grilling. Fuzzy ideas get `/grill-me` in the `intake` window, not in your context.
 - Deploy after every green merge (owner OK'd the flow). Never force-push. No secrets in chat.
+- Owner writes `approve #n` or `express #n`: add the label `express` to that issue at once (`gh issue edit n --repo igalgerman/oren_study --add-label express`) and answer in one line. Express issues get their own extra lane (`express_lanes` in config.toml), start first, and may exceed max_core (#72).
 - Open the intake window: `hc run --bg --name intake --cwd C:\work\Oren_study\a claude "/grill-me"`.
 
 ## State at handoff (25 Nov 2026)
