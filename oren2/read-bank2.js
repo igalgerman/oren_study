@@ -882,7 +882,10 @@ function speakList(){const out=new Set();const add=s=>{if(s)out.add(String(s).re
 const UI={first:'בְּאֵיזוֹ אוֹת מַתְחִילָה הַמִּלָּה?',pw:'אֵיזוֹ מִלָּה מַתְאִימָה לַתְּמוּנָה?',wp:'אֵיזוֹ תְּמוּנָה מַתְאִימָה לַמִּלָּה?',build:'לוֹחֲצִים עַל הַהֲבָרוֹת לְפִי הַסֵּדֶר, מִיָּמִין לִשְׂמֹאל',
  copy:'כְּתֹב אֶת הַמִּלָּה: לוֹחֲצִים עַל הָאוֹתִיּוֹת לְפִי הַסֵּדֶר',dict:'שׁוֹמְעִים אֶת הַמִּלָּה וְכוֹתְבִים אוֹתָהּ',miss:'אֵיזוֹ אוֹת חֲסֵרָה?',order:'סַדֵּר אֶת הַמִּלִּים לְמִשְׁפָּט',
  paperGo:'סִיַּמְתִּי לִכְתֹּב',paperChk:'בּוֹא נִבְדֹּק:',paperOk:'בָּדַקְתִּי',paperPar:'הַרְאֵה לְאַבָּא אוֹ לְאִמָּא',paperParOk:'אַבָּא אוֹ אִמָּא רָאוּ',paperEx:'דֻּגְמָאוֹת:',
- paperTake:'קַח דַּף וְעִפָּרוֹן',storyRead:'הַקְרֵא לִי',storyQ:'לַשְּׁאֵלוֹת',finHint:'בְּסוֹף מִלָּה כּוֹתְבִים אוֹת סוֹפִית',again:'נַסֵּה שׁוּב',heard:'אֵיזוֹ מִלָּה שָׁמַעְתָּ?'};
+ paperTake:'קַח דַּף וְעִפָּרוֹן',storyRead:'הַקְרֵא לִי',storyQ:'לַשְּׁאֵלוֹת',finHint:'בְּסוֹף מִלָּה כּוֹתְבִים אוֹת סוֹפִית',again:'נַסֵּה שׁוּב',heard:'אֵיזוֹ מִלָּה שָׁמַעְתָּ?',
+ /* #54 the help button on the tile screens */
+ hNextsyl:'הַהֲבָרָה הַבָּאָה',hNextlet:'הָאוֹת הַבָּאָה',hNextword:'הַמִּלָּה הַבָּאָה',
+ hBysyl:'הֲבָרָה אַחֲרֵי הֲבָרָה, מִיָּמִין לִשְׂמֹאל:',hBylet:'אוֹת אַחֲרֵי אוֹת, מִיָּמִין לִשְׂמֹאל:',hByword:'מִלָּה אַחֲרֵי מִלָּה, מִיָּמִין לִשְׂמֹאל:'};
 
 /* parent names of the activities (no nikud; read by the parents' content map) */
 const SKILLS={'read-first':'אות ראשונה: 300 מילים מדורגות לפי ניקוד (7 רמות)','read-pw':'מילה ותמונה: קריאת מילה מדורגת לפי ניקוד','read-wp':'תמונה למילה: קריאת מילה מדורגת לפי ניקוד',
@@ -955,23 +958,34 @@ function pw(back){const L=level('word');T.quiz({id:'rb2-pw-'+L,title:'אֵיזו
 function wp(back){const L=level('word');T.quiz({id:'rb2-wp-'+L,title:'אֵיזוֹ תְּמוּנָה?',bg:'city',back,n:8,gen:withAsked(()=>{const w=lvPick(withPic,L,null,'rb-word',wk);const ds=[];
   for(const x of shuffle(withPic)){if(ds.length>=3)break;if(x!==w&&x.pic!==w.pic&&!R.near(x,w)&&!ds.some(d=>R.near(d,x)))ds.push(x);}const opts=shuffle([w,...ds]);
   return {pr:`<div class="bigw">${w.w}</div><div class="qq">${UI.wp}</div>`,opts:opts.map(x=>pic(x.pic)),ans:opts.indexOf(w),cls:'picb',reveal:()=>say(w.w),key:w.w,bank:'rb-word'};})});}
-/* tap tiles in order (syllables, letters or words); calls done(errors) */
-function tiles(s,o,done){let k=0,err=0,miss=0;s.innerHTML='';const card=h('div','prq tqc',`${o.head||''}<div class="slots">${o.need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
+/* tap tiles in order (syllables, letters or words); calls done(errors, gems). o.unit = 'syl'|'let'|'word', o.whole = the word/sentence.
+   #54 one help button: tap 1 = the next tile glows, tap 2 = the whole answer with a short explanation (counts as a mistake, no gems). */
+function tiles(s,o,done){let k=0,err=0,miss=0,HB=null;s.innerHTML='';const card=h('div','prq tqc',`${o.head||''}<div class="slots">${o.need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
   if(o.play){const pb=h('button','hintbtn',ICON.say+'<span>הַשְׁמַע</span>');pb.onclick=o.play;card.appendChild(pb);}s.appendChild(card);
-  const row=h('div','chs');const fb=h('div','lcap','');
+  const row=h('div','chs');const fb=h('div','lcap','');const unit=o.unit||'let';
   shuffle(o.tiles.map((x,i)=>[x,i])).forEach(([x])=>{const b=h('button','chb tx'+(o.big?' big2':''),x);b.dataset.t=x;b.onclick=()=>tap(b);row.appendChild(b);});
   s.appendChild(row);s.appendChild(fb);if(o.tip)s.appendChild(h('div','lsent',o.tip));
+  const nextT=()=>k<o.need.length?[...row.children].find(y=>!y.disabled&&y.dataset.t===o.need[k]):null;
+  const fill=(j,x)=>{const sl=card.querySelectorAll('.slot2')[j];sl.textContent=x;sl.classList.add('on');};
+  const complete=g=>{sfx.ok(1);card.querySelector('.slots').classList.add('flash');if(g){O.addGems(g,card);O.floatText(card,'+'+g);}if(o.end)o.end(card);setTimeout(()=>{if(card.isConnected)done(err,g);},D(g?1400:4200));};
   function tap(b){if(b.disabled||k>=o.need.length)return;const x=b.dataset.t;
-    if(x===o.need[k]){const sl=card.querySelectorAll('.slot2')[k];sl.textContent=x;sl.classList.add('on');b.disabled=true;b.classList.add('ok');k++;miss=0;sfx.pop(k);fb.textContent='';row.querySelectorAll('.show').forEach(y=>y.classList.remove('show'));
-      if(k===o.need.length){sfx.ok(1);card.querySelector('.slots').classList.add('flash');O.addGems(2,card);O.floatText(card,'+2');if(o.end)o.end(card);setTimeout(()=>{if(card.isConnected)done(err);},D(1400));}}
-    else{err++;miss++;sfx.no();b.classList.remove('shake');void b.offsetWidth;b.classList.add('shake');
-      if(o.fin&&k===o.need.length-1&&R.FINAL[o.need[k]]===x)fb.innerHTML=`${UI.finHint}: <b>${o.need[k]}</b>`;
-      if(miss>=2){const t=[...row.children].find(y=>!y.disabled&&y.dataset.t===o.need[k]);if(t)t.classList.add('show');}}}
+    if(x===o.need[k]){fill(k,x);b.disabled=true;b.classList.add('ok');k++;miss=0;sfx.pop(k);fb.textContent='';row.querySelectorAll('.show').forEach(y=>y.classList.remove('show'));
+      if(k===o.need.length)complete(HB&&HB.step?1:2);}
+    else wrong(b);}
+  function wrong(b){err++;miss++;sfx.no();if(b){b.classList.remove('shake');void b.offsetWidth;b.classList.add('shake');}
+    if(o.fin&&k===o.need.length-1&&b&&R.FINAL[o.need[k]]===b.dataset.t)fb.innerHTML=`${UI.finHint}: <b>${o.need[k]}</b>`;
+    if(miss>=2){if(HB&&!HB.step)HB.offer();else{const t=nextT();if(t)t.classList.add('show');}}}
+  if(window.HELP&&HELP.button){HB=HELP.button(s,{before:fb,get ans(){const t=nextT();return t?[...row.children].indexOf(t):-1;},
+    clue:()=>{const t=nextT();if(!t)return '';t.classList.add('show');return `${UI['hNext'+unit]}: <b>${o.need[k]}</b>`;},
+    answer:()=>{if(k<o.need.length){err++;while(k<o.need.length){const t=nextT();if(t){t.disabled=true;t.classList.add('ok');}fill(k,o.need[k]);k++;}fb.textContent='';complete(0);}
+      const last=o.need[o.need.length-1],fin=o.fin&&R.FINAL[last]?`<div>${UI.finHint}: <b>${last}</b></div>`:'';
+      return `<div>${HELP.BT.ans}: <b class="hq-a">${o.whole||o.need.join(unit==='word'?' ':'')}</b></div><div class="hq-x">${UI['hBy'+unit]} ${o.need.join(' · ')}${fin}</div>`;}});
+    HB.wrong=()=>wrong(null);}
   window.__rb2={get need(){return o.need;},get k(){return k;},row};}
 function build(back){const L=level('word');const pool=[];for(let t=0;pool.length<6&&t<200;t++){const w=lvPick(W,L,x=>x.syl.length>1,'rb-word',wk);if(!pool.includes(w))pool.push(w);}
-  let i=0,err=0;O.setScreen('sTal','city',back);const s=$('#sTal');
+  let i=0,err=0,gems=0;O.setScreen('sTal','city',back);const s=$('#sTal');
   const run=()=>{const w=pool[i];T.hudT('בּוֹנִים מִלָּה',T.progressBar(i,pool.length));O.sayNow=T.spk(w.w);
-    tiles(s,{need:w.syl,tiles:w.syl,head:w.pic?pic(w.pic,1):'',play:()=>say(w.w),tip:UI.build,end:()=>say(w.w)},e=>{err+=e;if(window.LEARN)try{LEARN.seen('rb-word',w.w,!e,false);}catch(x){}i++;if(i<pool.length)run();else T.finishAct('rb2-build-'+L,err,pool.length,pool.length*2,back,()=>build(back));});
+    tiles(s,{need:w.syl,tiles:w.syl,unit:'syl',whole:w.w,head:w.pic?pic(w.pic,1):'',play:()=>say(w.w),tip:UI.build,end:()=>say(w.w)},(e,g)=>{err+=e;gems+=g|0;if(window.LEARN)try{LEARN.seen('rb-word',w.w,!e,false);}catch(x){}i++;if(i<pool.length)run();else T.finishAct('rb2-build-'+L,err,pool.length,gems,back,()=>build(back));});
     if(!w.pic)setTimeout(()=>say(w.w),D(300));};run();}
 function sent(back){const L=level('sent');T.quiz({id:'rb2-sent-'+L,title:'קוֹרְאִים מִשְׁפָּט',bg:'city',back,n:8,gen:()=>{const q=lvPick(R.sentences,L,null,'rb-sent',x=>x.t);const opts=shuffle([q.a,...q.ds]);
   return {pr:`<div class="sent">${nk(q.t,q.p)}</div><div class="qq">${nk(q.q,q.qp,1)}</div>`,opts:opts.map(ansHTML),ans:opts.indexOf(q.a),cls:q.a[0]==='@'?'picb':'tx',say:T.spk(q.q),key:q.t,bank:'rb-sent'};}});}
@@ -995,19 +1009,24 @@ function mixPlan(L){const ws=R.writing;const P=[];const add=(kind,arr)=>{const i
 const DIST='בגדזלמנרתפסקשצ'.split('');
 function extraLetters(need,n){const out=[];const last=need[need.length-1];if(R.FINAL[last]&&!need.includes(R.FINAL[last]))out.push(R.FINAL[last]);
   for(const c of shuffle(DIST)){if(out.length>=n)break;if(!need.some(x=>R.sameSound(x,c))&&!out.some(x=>R.sameSound(x,c)))out.push(c);}return out;}
-function mix(back){const L=level('mix');const plan=mixPlan(L);let i=0,err=0;O.setScreen('sTal','meadow',back);const s=$('#sTal');
-  const next=e=>{const [kind,it]=plan[i];if(kind!=='order'&&window.LEARN)try{LEARN.seen('rb-write',mixKey(kind,it),!e,false);}catch(x){}err+=e;i++;if(i<plan.length)run();else{T.setKey(null);T.finishAct('rb2-mix-'+L,err,plan.length*2,plan.length*2,back,()=>mix(back));}};
+function mix(back){const L=level('mix');const plan=mixPlan(L);let i=0,err=0,gems=0;O.setScreen('sTal','meadow',back);const s=$('#sTal');
+  const next=(e,g)=>{gems+=g|0;const [kind,it]=plan[i];if(kind!=='order'&&window.LEARN)try{LEARN.seen('rb-write',mixKey(kind,it),!e,false);}catch(x){}err+=e;i++;if(i<plan.length)run();else{T.setKey(null);T.finishAct('rb2-mix-'+L,err,plan.length*2,gems,back,()=>mix(back));}};
   const run=()=>{const [kind,it]=plan[i];T.hudT('כּוֹתְבִים',T.progressBar(i,plan.length));
-    if(kind==='copy'){O.sayNow=T.spk(it.w);tiles(s,{need:it.letters,tiles:[...it.letters,...extraLetters(it.letters,L<3?1:2)],head:`${pic(it.pic)}<div class="bigw">${it.w}</div>`,tip:UI.copy,big:1,fin:1,end:()=>say(it.w)},next);}
-    else if(kind==='dict'){O.sayNow=T.spk(it.w);tiles(s,{need:it.letters,tiles:[...it.letters,...extraLetters(it.letters,2)],head:`${pic(it.pic)}<div class="gp-ear" style="font-size:44px">👂</div>`,play:()=>say(it.w),tip:UI.dict,big:1,fin:1,
+    if(kind==='copy'){O.sayNow=T.spk(it.w);tiles(s,{need:it.letters,whole:it.w,tiles:[...it.letters,...extraLetters(it.letters,L<3?1:2)],head:`${pic(it.pic)}<div class="bigw">${it.w}</div>`,tip:UI.copy,big:1,fin:1,end:()=>say(it.w)},next);}
+    else if(kind==='dict'){O.sayNow=T.spk(it.w);tiles(s,{need:it.letters,whole:it.w,tiles:[...it.letters,...extraLetters(it.letters,2)],head:`${pic(it.pic)}<div class="gp-ear" style="font-size:44px">👂</div>`,play:()=>say(it.w),tip:UI.dict,big:1,fin:1,
       end:c=>{c.querySelector('.slots').outerHTML=`<div class="bigw">${it.w}</div>`;say(it.w);}},next);setTimeout(()=>{if(s.isConnected)say(it.w);},D(350));}
-    else if(kind==='order'){O.sayNow=T.spk(UI.order);tiles(s,{need:it.words,tiles:it.words,head:`<div class="qq">${UI.order}</div>`,end:()=>say(it.t)},next);}
+    else if(kind==='order'){O.sayNow=T.spk(UI.order);tiles(s,{need:it.words,tiles:it.words,unit:'word',whole:it.t,head:`<div class="qq">${UI.order}</div>`,end:()=>say(it.t)},next);}
     else{O.sayNow=T.spk(UI.miss);s.innerHTML='';let tries=0;const card=h('div','prq tqc',`${pic(it.pic)}<div class="bigw">${it.show}</div><div class="qq">${UI.miss}</div>`);
       const pb=h('button','hintbtn',ICON.say+'<span>הַשְׁמַע</span>');pb.onclick=()=>say(it.w);card.appendChild(pb);s.appendChild(card);
-      const row=h('div','chs');const fb=h('div','lcap','');shuffle(it.opts.slice()).forEach(c=>{const b=h('button','chb tx big2',c);b.onclick=()=>{if(b.disabled)return;
-        if(c===it.ans){b.classList.add('ok');sfx.ok(1);O.addGems(tries?1:2,b);card.querySelector('.bigw').textContent=it.w;say(it.w);[...row.children].forEach(x=>x.disabled=true);setTimeout(()=>{if(card.isConnected)next(tries);},D(1500));}
-        else{tries++;b.classList.add('bad');b.disabled=true;sfx.no();if(R.FINAL[it.ans]===c)fb.innerHTML=`${UI.finHint}: <b>${it.ans}</b>`;}};row.appendChild(b);});
-      s.appendChild(row);s.appendChild(fb);window.__rb2={miss:it,row};}};
+      const row=h('div','chs');const fb=h('div','lcap','');const ops=shuffle(it.opts.slice());let lock=false,HB=null;
+      const win=g=>{lock=true;card.querySelector('.bigw').textContent=it.w;say(it.w);[...row.children].forEach(x=>x.disabled=true);setTimeout(()=>{if(card.isConnected)next(tries,g);},D(g?1500:4200));};
+      ops.forEach(c=>{const b=h('button','chb tx big2',c);b.onclick=()=>{if(b.disabled||lock)return;
+        if(c===it.ans){b.classList.add('ok');sfx.ok(1);const g=tries||(HB&&HB.step)?1:2;O.addGems(g,b);O.floatText(b,'+'+g);win(g);}
+        else{tries++;b.classList.add('bad');b.disabled=true;sfx.no();if(R.FINAL[it.ans]===c)fb.innerHTML=`${UI.finHint}: <b>${it.ans}</b>`;if(tries>=2&&HB)HB.offer();}};row.appendChild(b);});
+      /* #54 one help button: tap 1 = two options go away, tap 2 = the letter and the whole word */
+      s.appendChild(row);s.appendChild(fb);
+      if(window.HELP&&HELP.mc)HB=HELP.mc(s,{row,ans:ops.indexOf(it.ans),before:fb,explain:`<span class="bigw">${it.w}</span>`+(R.FINAL[it.ans]?`<div>${UI.finHint}</div>`:''),reveal:()=>{if(lock)return;tries++;win(0);}});
+      window.__rb2={miss:it,row};}};
   run();}
 /* ---- writing on paper: the task, then a check screen ---- */
 function nextPaper(){const L=level('paper');const at=R.writing.paper.filter(p=>p.lv===L);return at.find(p=>!st('rb2-pp-'+p.id))||pick(at);}

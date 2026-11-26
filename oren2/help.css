@@ -62,3 +62,18 @@
   .hlp-lines{font-size:19px}
 }
 @media (prefers-reduced-motion:reduce){.hlp.in,.hlp-steps li,.hlp-pulse{animation:none}.hlp-svg [data-t]{transition:none}}
+/* #54 the help button: one per question (tap 1 clue, tap 2 answer + explanation) */
+.helpq{width:100%;max-width:740px;display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:6px;direction:rtl}
+.helpbtn{display:inline-flex;align-items:center;gap:10px;min-height:56px;padding:6px 22px 6px 14px;border:0;border-radius:999px;background:#ffcf4d;color:#23303b;font:inherit;font-weight:900;font-size:24px;box-shadow:0 5px 0 #c99a1d;cursor:pointer}
+.helpbtn:active{transform:translateY(3px);box-shadow:0 2px 0 #c99a1d}
+.helpbtn:disabled{opacity:.5;cursor:default}
+.helpbtn .hq-i{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:#fff;color:#8e6fd1;font-size:28px;font-weight:900}
+.helpq.offer .helpbtn{animation:hlpPulseB 1s ease-in-out 3}
+@keyframes hlpPulseB{50%{transform:scale(1.08);box-shadow:0 5px 0 #c99a1d,0 0 0 8px rgba(255,207,77,.45)}}
+.helpbox{width:100%;font-weight:800;font-size:22px;line-height:1.5;text-align:center;background:#fff8dc;padding:10px 14px;box-shadow:0 4px 0 rgba(0,0,0,.12),inset 0 0 0 3px #ffcf4d}
+.helpbox.in{animation:hlpIn .35s ease-out}
+.helpbox .hq-a{color:#2f8f46}.helpbox .hq-a svg{max-width:90px;height:auto;vertical-align:middle}
+.helpbox .hq-x{font-weight:700;font-size:20px;margin-top:4px}
+.chb.gone{opacity:.15!important;pointer-events:none}
+@media (max-width:760px){.helpbtn{font-size:20px;min-height:50px}.helpbtn .hq-i{width:32px;height:32px;font-size:24px}.helpbox{font-size:18px}.helpbox .hq-x{font-size:17px}}
+@media (prefers-reduced-motion:reduce){.helpq.offer .helpbtn,.helpbox.in{animation:none}}

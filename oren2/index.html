@@ -1949,7 +1949,7 @@ function showQ(){
     p.boxes.forEach((b,i)=>b.el.onclick=()=>{if(!b.done){p.bi=i;renderBoxes();}});renderBoxes();pad.hidden=false;}
   $('#sPlay .play').classList.toggle('nopad',pad.hidden);
   qa.style.animation='none';void qa.offsetWidth;qa.style.animation='fadein .35s';
-  $('#hint').hidden=true;$('#hint').innerHTML='';helpStart(q);
+  $('#hint').hidden=true;$('#hint').innerHTML='';helpStart(q);helpBtn(q);
   if(q.k==='col')colPrep(q,p.col);
   setBubble(q.k==='word'?'קְרָא וְחַשֵּׁב':q.k==='col'?'מַתְחִילִים מִיָּמִין':q.k==='rem'?'כַּמָּה, וּמָה הַשְּׁאֵרִית?':q.k==='ch'?'בְּחַר תְּשׁוּבָה':'כַּמָּה זֶה?');
   sayNow=qSpeech(q);hudPlay();}
@@ -1976,6 +1976,21 @@ function helpStart(q){const p=play;p.help=false;if(!window.HELP||p.mode==='speed
   p.help=!!HELP.start(q,{mount:$('#sPlay .left'),gen:p.lv.gen,unit:p.u&&p.u.id,topic:p.u&&p.u.name,
     present:q2=>{if(play!==p)return;p.qs.splice(p.i,1,q2);showQ();},
     done:()=>{if(play!==p)return;p.revealed=true;requeue();questionDone(false);p.i++;p.lock=true;if(p.i>=p.qs.length)finishLevel();else showQ();}});}
+/* #54 the help button (math): one per question. tap 1 = the small clue (hint level 1), tap 2 = the answer with the steps; offered by itself after 2 wrong */
+let HB=null;
+const ansText=q=>{const p=play;if(p.choice)return String(p.choice.opts[p.choice.ans]);if(q.k==='col')return String(q.res);return answersOf(q).join(' , ');};
+function showAns(){const p=play,ch=p.choice;if(ch){const b=ch.row.children[ch.ans];if(b)b.classList.add(ch.bub?'pop':'show');return;}
+  if(p.boxes)p.boxes.forEach(b=>{if(!b.done){b.el.className='ans show';b.el.textContent=b.ans;}});}
+function helpBtn(q){const p=play;HB=null;if(p.mode==='speed'||!window.HELP||!HELP.button)return;
+  HB=HELP.button($('#sPlay .left'),{before:$('#hint'),
+    clue:()=>{if(p.hint<1)p.hint=1;p.hints++;return q.k==='col'?colHint(q,p.col):hintHTML(q,1);},
+    answer:()=>{const a=`<div>הַתְּשׁוּבָה הִיא: <b class="hq-a ltr">${ansText(q)}</b></div>`,ex=q.k==='col'?'':`<div class="hq-x">${hintHTML(q,2)}</div>`;
+      if(!p.lock&&play===p&&p.qs[p.i]===q){p.hint=2;if(p.help&&window.HELP)HELP.stop();p.help=false;
+        if(q.k==='col'){const st=p.col;p.lock=true;p.revealed=true;while(st.c<st.R.length)colAdvance(q,st,st.R[st.c],true);renderCol(q,st);
+          setTimeout(()=>{if(play!==p||p.qs[p.i]!==q)return;requeue();questionDone(false);p.i++;if(p.i>=p.qs.length)finishLevel();else showQ();},D(4500));}
+        else revealAndNext(showAns,4500);}
+      return a+ex;}});}
+function helpAuto(){const p=play;if(HB&&!p.help&&p.tries>=2)HB.offer();}
 function showHint(manual){const p=play;if(!p||p.lock||p.mode==='speed')return;const q=p.qs[p.i];const hb=$('#hint');
   if(q.k==='col'){if(manual)p.hints++;track('help',{h:'hint'});hb.hidden=false;hb.innerHTML=colHint(q,p.col);setBubble('הִנֵּה רֶמֶז');return;}
   if(p.hint>=2)return;p.hint++;if(manual)p.hints++;track('help',{h:'hint',n:p.hint});hb.hidden=false;hb.innerHTML=hintHTML(q,p.hint);hb.style.animation='none';void hb.offsetWidth;hb.style.animation='fadein .35s';
@@ -2011,12 +2026,12 @@ function onWrong(el){const p=play;evAns(0,{tr:p.tries});p.tries++;p.errors++;p.s
   const c=$('#pet');if(c){c.classList.remove('hop','tilt');void c.offsetWidth;c.classList.add('tilt');}
   const g=$('#giant');if(g){g.classList.remove('hit','laugh');void g.offsetWidth;g.classList.add('laugh');}}
 function requeue(){const p=play,q=p.qs[p.i];if(!q||!q.k)return;if(!p.requeued.has(p.i)){p.qs.push(Object.assign({},q));p.requeued.add(p.qs.length-1);}}
-function revealAndNext(showFn){const p=play,q=p.qs[p.i];p.lock=true;p.revealed=true;
+function revealAndNext(showFn,ms){const p=play,q=p.qs[p.i];p.lock=true;p.revealed=true;
   setTimeout(()=>{if(play!==p)return;showFn();
     if(p.mode==='speed'){questionDone(false);p.i++;setTimeout(()=>{if(play!==p)return;nextSpeedQ();},D(900));return;}
     setBubble('הַתְּשׁוּבָה מְסֻמֶּנֶת בְּכָחֹל. נְנַסֶּה שׁוּב בַּסּוֹף.');requeue();questionDone(false);
-    if(p.hint<2&&q.k!=='col'){showHintForce(2);}
-    setTimeout(()=>{if(play!==p)return;p.i++;if(p.i>=p.qs.length)finishLevel();else showQ();},D(3200));},D(500));}
+    if(p.hint<2&&q.k!=='col'){if(HB&&HB.el.isConnected)HB.answer();else showHintForce(2);}
+    setTimeout(()=>{if(play!==p)return;p.i++;if(p.i>=p.qs.length)finishLevel();else showQ();},D(ms||3200));},D(500));}
 function choose(i,btn){const p=play;if(!p||p.lock||!p.choice||btn.disabled)return;const ch=p.choice;
   if(i===ch.ans){btn.classList.add(ch.bub?'pop':'ok');
     if(p.qs[p.i].k==='ch'&&p.qs[p.i].cls==='sym'){const sl=$('#qa .slot');if(sl){sl.textContent=ch.opts[i];sl.style.borderStyle='solid';}}
@@ -2024,20 +2039,20 @@ function choose(i,btn){const p=play;if(!p||p.lock||!p.choice||btn.disabled)retur
     return onCorrect();}
   btn.classList.add('bad');btn.disabled=true;onWrong(btn);
   if(p.mode==='speed'||(p.tries>=3&&!p.help)){return revealAndNext(()=>{const b=ch.row.children[ch.ans];if(b)b.classList.add(ch.bub?'pop':'show');setBubble('הַתְּשׁוּבָה: '+ch.opts[ch.ans]);});}
-  if(!window.FRIEND)setBubble('כִּמְעַט! נַסֵּה שׁוּב');if(p.hint<p.tries&&!p.help)showHint(false);}
+  if(!window.FRIEND)setBubble('כִּמְעַט! נַסֵּה שׁוּב');if(!p.help)helpAuto();}
 function submit(){const p=play;let allOk=true;
   p.boxes.forEach(b=>{if(b.done)return;if(parseInt(b.val,10)===b.ans){b.done=true;b.el.className='ans ok';b.el.textContent=b.ans;}else allOk=false;});
   if(allOk)return onCorrect();
   p.boxes.forEach(b=>{if(!b.done)b.el.className='ans bad';});onWrong($('#qa').querySelector('.eqcard,.wans'));
   if(p.mode==='speed'||(p.tries>=3&&!p.help)){return revealAndNext(()=>{p.boxes.forEach(b=>{if(!b.done){b.el.className='ans show';b.el.textContent=b.ans;}});});}
   setTimeout(()=>{if(play!==p)return;p.boxes.forEach(b=>{if(!b.done)b.val='';});p.bi=p.boxes.findIndex(b=>!b.done);renderBoxes();},D(600));
-  if(!window.FRIEND)setBubble('כִּמְעַט! נַסֵּה שׁוּב');if(p.hint<p.tries&&!p.help)showHint(false);}
+  if(!window.FRIEND)setBubble('כִּמְעַט! נַסֵּה שׁוּב');if(!p.help)helpAuto();}
 function showHintForce(level){const p=play,q=p.qs[p.i];const hb=$('#hint');hb.hidden=false;hb.innerHTML=hintHTML(q,level);p.hint=level;}
 function colType(d){const p=play,q=p.qs[p.i],st=p.col;if(st.c>=st.R.length)return;const cb=$('#cb'+st.c);
   if(d===st.R[st.c]){sfx.key();colAdvance(q,st,d,false);if(st.c>=st.R.length){renderCol(q,st);if(!st.anyWrong)p.tries=0;return onCorrect();}colPrep(q,st);if(!q.g)$('#hint').hidden=true;return;}
   st.ct++;st.anyWrong=true;p.tries=Math.max(p.tries,1);onWrong(cb);
   if(cb){cb.className='cb bad';cb.textContent=d;setTimeout(()=>{if(play===p&&p.col===st)renderCol(q,st);},D(500));}
-  const hb=$('#hint');hb.hidden=false;hb.innerHTML=colHint(q,st);
+  const hb=$('#hint');hb.hidden=false;hb.innerHTML=colHint(q,st);if(st.ct>=2&&HB)HB.offer();
   if(st.ct>=3){p.revealed=true;p.lock=true;colAdvance(q,st,st.R[st.c],true);setBubble('הַסִּפְרָה הִיא '+st.typed[st.c-1]);renderCol(q,st);
     setTimeout(()=>{if(play!==p||p.qs[p.i]!==q||p.col!==st)return;if(st.c>=st.R.length){requeue();questionDone(false);p.i++;if(p.i>=p.qs.length)finishLevel();else showQ();}else{p.lock=false;colPrep(q,st);}},D(900));}
   else setBubble('כִּמְעַט! הִסְתַּכֵּל עַל הָרֶמֶז');}
@@ -3444,6 +3459,21 @@ svg.tl{width:60px;height:60px;display:block}
   .hlp-lines{font-size:19px}
 }
 @media (prefers-reduced-motion:reduce){.hlp.in,.hlp-steps li,.hlp-pulse{animation:none}.hlp-svg [data-t]{transition:none}}
+/* #54 the help button: one per question (tap 1 clue, tap 2 answer + explanation) */
+.helpq{width:100%;max-width:740px;display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:6px;direction:rtl}
+.helpbtn{display:inline-flex;align-items:center;gap:10px;min-height:56px;padding:6px 22px 6px 14px;border:0;border-radius:999px;background:#ffcf4d;color:#23303b;font:inherit;font-weight:900;font-size:24px;box-shadow:0 5px 0 #c99a1d;cursor:pointer}
+.helpbtn:active{transform:translateY(3px);box-shadow:0 2px 0 #c99a1d}
+.helpbtn:disabled{opacity:.5;cursor:default}
+.helpbtn .hq-i{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:#fff;color:#8e6fd1;font-size:28px;font-weight:900}
+.helpq.offer .helpbtn{animation:hlpPulseB 1s ease-in-out 3}
+@keyframes hlpPulseB{50%{transform:scale(1.08);box-shadow:0 5px 0 #c99a1d,0 0 0 8px rgba(255,207,77,.45)}}
+.helpbox{width:100%;font-weight:800;font-size:22px;line-height:1.5;text-align:center;background:#fff8dc;padding:10px 14px;box-shadow:0 4px 0 rgba(0,0,0,.12),inset 0 0 0 3px #ffcf4d}
+.helpbox.in{animation:hlpIn .35s ease-out}
+.helpbox .hq-a{color:#2f8f46}.helpbox .hq-a svg{max-width:90px;height:auto;vertical-align:middle}
+.helpbox .hq-x{font-weight:700;font-size:20px;margin-top:4px}
+.chb.gone{opacity:.15!important;pointer-events:none}
+@media (max-width:760px){.helpbtn{font-size:20px;min-height:50px}.helpbtn .hq-i{width:32px;height:32px;font-size:24px}.helpbox{font-size:18px}.helpbox .hq-x{font-size:17px}}
+@media (prefers-reduced-motion:reduce){.helpq.offer .helpbtn,.helpbox.in{animation:none}}
 
 .tpc{text-align:center}
 .tpf{width:90px;margin:0 auto 6px}.tpf svg{width:100%;height:auto}
@@ -3579,17 +3609,19 @@ function quiz(o){const qs=[],seen=new Set();let t=0;const LN=window.LEARN,pb=o.p
   const gen=()=>{const q=o.gen(qs.length);if(!pb||q.bank||q.key==null)return q;const c=[q];for(let j=0;j<24;j++){const x=o.gen(qs.length);if(x.key!=null&&!c.some(y=>y.key===x.key))c.push(x);}
     try{const r=LN.pickItem(pb,c.filter(x=>!seen.has(x.key)).map(x=>({k:x.key})));const x=r&&c.find(y=>y.key===r.item.k);if(x)return Object.assign(x,{bank:pb});}catch(e){}return q;};
   while(qs.length<o.n&&t++<400){const q=gen();const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k))continue;seen.add(k);qs.push(q);}
-  let i=0,err=0,gems=0,lock=false,tries=0;O.setScreen('sTal',o.bg||'valley',o.back);
+  let i=0,err=0,gems=0,lock=false,tries=0,HB=null;O.setScreen('sTal',o.bg||'valley',o.back);
   const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq');s.appendChild(wrap);
   const render=()=>{const q=qs[i];tries=0;lock=false;if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||spoken(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
     wrap.innerHTML='';const card=h('div','prq tqc',q.pr);if(q.play){const pb=h('button','hintbtn',ICON.say+`<span>${q.playLbl||'הַשְׁמַע'}</span>`);pb.onclick=q.play;card.appendChild(pb);}
     wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});const row=h('div','chs'+(q.ltr?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>{if(!(O.tapTooSoon&&O.tapTooSoon()))pickA(k,b);};row.appendChild(b);});wrap.appendChild(row);
-    const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');if(o.side){const sb=h('button','bigbtn plain sm qside',o.side.lbl);sb.onclick=()=>o.side.open(wrap);wrap.appendChild(sb);}if(q.auto&&q.play)setTimeout(()=>{if(qs[i]===q)q.play();},D(350));};
+    const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');
+    /* #54 one help button: clue, then the answer with its explanation (the question ends like after two mistakes) */
+    HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,clue:q.clue,explain:q.explain,before:ex,reveal:()=>{if(lock)return;lock=true;err++;if(window.FRIEND)window.FRIEND.onWrong({final:true});if(q.reveal)q.reveal(wrap.querySelector('.tqc'));setTimeout(next,D(4200));}}):null;if(o.side){const sb=h('button','bigbtn plain sm qside',o.side.lbl);sb.onclick=()=>o.side.open(wrap);wrap.appendChild(sb);}if(q.auto&&q.play)setTimeout(()=>{if(qs[i]===q)q.play();},D(350));};
   const resolve=(q)=>{const ex=wrap.querySelector('.hintbox');if(q.explain){ex.hidden=false;ex.innerHTML=`<div class="cap">${q.explain}</div>`;}if(q.reveal)q.reveal(wrap.querySelector('.tqc'));};
   function pickA(k,b){if(lock||b.disabled)return;const q=qs[i];if(O.evAns)O.evAns(k===q.ans,{m:o.id,tr:tries,x:k});if(!tries){O.emit('tq',o.id,k===q.ans);if(q.bank&&window.LEARN)try{window.LEARN.seen(q.bank,q.bkey!=null?q.bkey:q.key,k===q.ans,false);}catch(e){}}
-    if(k===q.ans){if(window.TAL.rdA)window.TAL.rdA(q,tries,b);lock=true;if(window.FRIEND)window.FRIEND.onCorrect({tries});b.classList.add('ok');sfx.ok(i);const g=tries?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);resolve(q);setTimeout(next,D(q.explain||q.reveal?2300:1000));return;}
+    if(k===q.ans){if(window.TAL.rdA)window.TAL.rdA(q,tries,b);lock=true;if(window.FRIEND)window.FRIEND.onCorrect({tries});b.classList.add('ok');sfx.ok(i);const g=tries||(HB&&HB.step)?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);resolve(q);setTimeout(next,D(q.explain||q.reveal?2300:1000));return;}
     tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();if(o.onWrong)o.onWrong();const fin=tries>=2||q.opts.length<=2;if(window.FRIEND)window.FRIEND.onWrong({final:fin});
-    if(fin){lock=true;const c=wrap.querySelector('.chs').children[q.ans];c.classList.add('show');resolve(q);setTimeout(next,D(2600));}}
+    if(fin){lock=true;const c=wrap.querySelector('.chs').children[q.ans];c.classList.add('show');if(HB&&HB.el.isConnected){HB.answer();if(q.reveal)q.reveal(wrap.querySelector('.tqc'));}else resolve(q);setTimeout(next,D(HB?4200:2600));}}
   function next(){if(!wrap.isConnected)return;i++;if(i>=qs.length){KEY=null;if(o.end)try{o.end(err);}catch(e){}finishAct(o.id,err,qs.length,gems,o.back,()=>quiz(o),o.doneTitle);}else render();}
   KEY=e=>{if(wrap.hidden)return;if(/^[1-9]$/.test(e.key)){const b=wrap.querySelector('.chs')&&wrap.querySelector('.chs').children[+e.key-1];if(b)b.click();}};
   window.__quiz={get ans(){return qs[i]&&qs[i].ans;},get i(){return i;},get wrap(){return wrap;}};
@@ -3894,7 +3926,7 @@ function rhythm(back){const rounds=shuffle(PATS.slice()).slice(0,4);let r=0,tota
       t0=now+4*beat*1000*(window.__fast?1/15:1);
       p.forEach((b,i)=>setTimeout(()=>{const el=bar.querySelector(`[data-i="${i}"]`);if(el){el.classList.add('now');setTimeout(()=>el.classList.remove('now'),D(beat*900));}},D((4+i)*beat*1000)));
       setTimeout(()=>{msg.textContent='עַכְשָׁו!';},D(4*beat*1000));
-      setTimeout(()=>{running=false;const on=patOnsets(p).map(x=>t0+x*beat*1000*(window.__fast?1/15:1));const tol=window.__fast?60:170;let hit=0;const used=new Set();
+      setTimeout(()=>{if(!bar.isConnected)return;/* left the drum mid-round: its timers must not take the screen back */running=false;const on=patOnsets(p).map(x=>t0+x*beat*1000*(window.__fast?1/15:1));const tol=window.__fast?60:170;let hit=0;const used=new Set();
         on.forEach(o=>{const k=taps.findIndex((t,j)=>!used.has(j)&&Math.abs(t-o)<tol);if(k>=0){used.add(k);hit++;}});const extra=taps.length-used.size;const sc=Math.max(0,hit-extra);
         total+=on.length;good+=sc;msg.innerHTML=sc===on.length?'מְעֻלֶּה! בְּדִיּוּק בַּקֶּצֶב.':`פָּגַעְתָּ ב-${sc} מִתּוֹךְ ${on.length}`;if(sc===on.length)sfx.ok(r);else sfx.no();
         setTimeout(()=>{r++;if(r<rounds.length)run();else{T.setKey(null);const pc=good/total;const st=pc>=.85?3:pc>=.6?2:1;O.addGems(5+st*2);T.record('mus-rhythm',st);T.result({title:'מְתוֹפֵף אַלּוּף!',stars:st,gems:5+st*2,back,again:()=>rhythm(back)});}},D(1800));},D((4+4+.6)*beat*1000));};
@@ -5834,10 +5866,13 @@ function sndRound(back,L0){const L=L0||level('snd',3);T.quiz({id:'snd-'+L,title:
 
 /* ===================== 7. SPELLING: hear a word, build it from letters ===================== */
 const FINAL={'ך':'כ','ם':'מ','ן':'נ','ף':'פ','ץ':'צ'};
+/* #54 the help button texts on the spelling screen */
+const SPH={next:'הָאוֹת הַבָּאָה',by:'אוֹת אַחֲרֵי אוֹת, מִיָּמִין לִשְׂמֹאל:',fin:'בְּסוֹף מִלָּה כּוֹתְבִים אוֹת סוֹפִית'};
+window.HELP_TEXTS=(window.HELP_TEXTS||[]).concat(Object.values(SPH));
 const spLen=(w,L)=>{const n=w.plain.length;return L===1?n<=3:L===2?n===4:n>=5;};
 function spell(back,L0){const L=L0||level('spell',3);const pool=shuffle(WD.filter(w=>spLen(w,L))).slice(0,6);let i=0,err=0,gems=0,lets=0;
   O.setScreen('sTal','meadow',back);const s=$('#sTal');
-  const run=()=>{const w=pool[i];const need=[...w.plain];let k=0,miss=0;T.hudT('כּוֹתְבִים מִלִּים',T.progressBar(i,pool.length));O.sayNow=T.spk(w.w);s.innerHTML='';lets+=need.length;
+  const run=()=>{const w=pool[i];const need=[...w.plain];let k=0,miss=0,HB=null;T.hudT('כּוֹתְבִים מִלִּים',T.progressBar(i,pool.length));O.sayNow=T.spk(w.w);s.innerHTML='';lets+=need.length;
     const card=h('div','prq tqc gp-sp',`<div class="qq">שׁוֹמְעִים וְכוֹתְבִים</div>${pic(w)}<div class="slots">${need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
     const pb=h('button','hintbtn',ICON.say+'<span>הַשְׁמַע</span>');pb.onclick=()=>sayW(w);card.appendChild(pb);s.appendChild(card);
     const extra=[];const last=need[need.length-1];if(L>1&&FINAL[last]&&!need.includes(FINAL[last]))extra.push(FINAL[last]);
@@ -5847,12 +5882,22 @@ function spell(back,L0){const L=L0||level('spell',3);const pool=shuffle(WD.filte
     s.appendChild(row);s.appendChild(fb);
     function tap(b){if(b.disabled||k>=need.length)return;const c=b.dataset.c;
       if(c===need[k]){const sl=card.querySelectorAll('.slot2')[k];sl.textContent=c;sl.classList.add('on');b.disabled=true;b.classList.add('ok');k++;miss=0;sfx.pop(k);fb.textContent='';row.querySelectorAll('.show').forEach(x=>x.classList.remove('show'));
-        if(k===need.length){const g=2;gems+=g;O.addGems(g,card);sfx.ok(i);O.floatText(card,'+2');card.querySelector('.slots').outerHTML=`<div class="bigw gp-done">${w.w}</div>`;sayW(w);
-          setTimeout(()=>{if(!card.isConnected)return;i++;if(i<pool.length)run();else{T.setKey(null);T.finishAct('spell-'+L,err,lets,gems,back,()=>spell(back,L));}},D(1500));}}
-      else{err++;miss++;sfx.no();b.classList.remove('shake');void b.offsetWidth;b.classList.add('shake');
-        if(k===need.length-1&&FINAL[need[k]]===c)fb.innerHTML=`בְּסוֹף מִלָּה כּוֹתְבִים <b>${need[k]}</b> (אוֹת סוֹפִית)`;
-        if(miss>=2){const t=[...row.children].find(x=>!x.disabled&&x.dataset.c===need[k]);if(t)t.classList.add('show');}}}
-    T.setKey(e=>{const c=T.TYPE&&T.TYPE.keyOf(e);if(!c||c===' ')return;const b=[...row.children].find(x=>!x.disabled&&x.dataset.c===c)||[...row.children].find(x=>!x.disabled);if(b&&b.dataset.c===c)b.click();else if(b){err++;miss++;sfx.no();}});
+        if(k===need.length)complete(HB&&HB.step?1:2);}
+      else wrong(b);}
+    const nextT=()=>k<need.length?[...row.children].find(x=>!x.disabled&&x.dataset.c===need[k]):null;
+    function complete(g){gems+=g;if(g){O.addGems(g,card);O.floatText(card,'+'+g);}sfx.ok(i);card.querySelector('.slots').outerHTML=`<div class="bigw gp-done">${w.w}</div>`;sayW(w);
+      setTimeout(()=>{if(!card.isConnected)return;i++;if(i<pool.length)run();else{T.setKey(null);T.finishAct('spell-'+L,err,lets,gems,back,()=>spell(back,L));}},D(g?1500:4200));}
+    function wrong(b){err++;miss++;sfx.no();if(b){b.classList.remove('shake');void b.offsetWidth;b.classList.add('shake');
+        if(k===need.length-1&&FINAL[need[k]]===b.dataset.c)fb.innerHTML=`בְּסוֹף מִלָּה כּוֹתְבִים <b>${need[k]}</b> (אוֹת סוֹפִית)`;}
+      if(miss>=2){if(HB&&!HB.step)HB.offer();else{const t=nextT();if(t)t.classList.add('show');}}}
+    /* #54 one help button: tap 1 = the next letter glows, tap 2 = the whole word letter by letter (a mistake, no gems) */
+    if(window.HELP&&HELP.button){HB=HELP.button(s,{before:fb,get ans(){const t=nextT();return t?[...row.children].indexOf(t):-1;},
+      clue:()=>{const t=nextT();if(!t)return '';t.classList.add('show');return `${SPH.next}: <b>${need[k]}</b>`;},
+      answer:()=>{if(k<need.length){err++;while(k<need.length){const t=nextT();if(t){t.disabled=true;t.classList.add('ok');}k++;}fb.textContent='';complete(0);}
+        const fin=FINAL[need[need.length-1]]?`<div>${SPH.fin}: <b>${need[need.length-1]}</b></div>`:'';
+        return `<div>${HELP.BT.ans}: <b class="hq-a">${w.w}</b></div><div class="hq-x">${SPH.by} ${need.join(' · ')}${fin}</div>`;}});
+      HB.wrong=()=>wrong(null);}
+    T.setKey(e=>{const c=T.TYPE&&T.TYPE.keyOf(e);if(!c||c===' ')return;const b=[...row.children].find(x=>!x.disabled&&x.dataset.c===c)||[...row.children].find(x=>!x.disabled);if(b&&b.dataset.c===c)b.click();else if(b)wrong(null);});
     window.__spell={get need(){return need;},get k(){return k;},row};
     setTimeout(()=>{if(card.isConnected)sayW(w);},D(350));};
   run();}
@@ -6885,7 +6930,10 @@ function speakList(){const out=new Set();const add=s=>{if(s)out.add(String(s).re
 const UI={first:'בְּאֵיזוֹ אוֹת מַתְחִילָה הַמִּלָּה?',pw:'אֵיזוֹ מִלָּה מַתְאִימָה לַתְּמוּנָה?',wp:'אֵיזוֹ תְּמוּנָה מַתְאִימָה לַמִּלָּה?',build:'לוֹחֲצִים עַל הַהֲבָרוֹת לְפִי הַסֵּדֶר, מִיָּמִין לִשְׂמֹאל',
  copy:'כְּתֹב אֶת הַמִּלָּה: לוֹחֲצִים עַל הָאוֹתִיּוֹת לְפִי הַסֵּדֶר',dict:'שׁוֹמְעִים אֶת הַמִּלָּה וְכוֹתְבִים אוֹתָהּ',miss:'אֵיזוֹ אוֹת חֲסֵרָה?',order:'סַדֵּר אֶת הַמִּלִּים לְמִשְׁפָּט',
  paperGo:'סִיַּמְתִּי לִכְתֹּב',paperChk:'בּוֹא נִבְדֹּק:',paperOk:'בָּדַקְתִּי',paperPar:'הַרְאֵה לְאַבָּא אוֹ לְאִמָּא',paperParOk:'אַבָּא אוֹ אִמָּא רָאוּ',paperEx:'דֻּגְמָאוֹת:',
- paperTake:'קַח דַּף וְעִפָּרוֹן',storyRead:'הַקְרֵא לִי',storyQ:'לַשְּׁאֵלוֹת',finHint:'בְּסוֹף מִלָּה כּוֹתְבִים אוֹת סוֹפִית',again:'נַסֵּה שׁוּב',heard:'אֵיזוֹ מִלָּה שָׁמַעְתָּ?'};
+ paperTake:'קַח דַּף וְעִפָּרוֹן',storyRead:'הַקְרֵא לִי',storyQ:'לַשְּׁאֵלוֹת',finHint:'בְּסוֹף מִלָּה כּוֹתְבִים אוֹת סוֹפִית',again:'נַסֵּה שׁוּב',heard:'אֵיזוֹ מִלָּה שָׁמַעְתָּ?',
+ /* #54 the help button on the tile screens */
+ hNextsyl:'הַהֲבָרָה הַבָּאָה',hNextlet:'הָאוֹת הַבָּאָה',hNextword:'הַמִּלָּה הַבָּאָה',
+ hBysyl:'הֲבָרָה אַחֲרֵי הֲבָרָה, מִיָּמִין לִשְׂמֹאל:',hBylet:'אוֹת אַחֲרֵי אוֹת, מִיָּמִין לִשְׂמֹאל:',hByword:'מִלָּה אַחֲרֵי מִלָּה, מִיָּמִין לִשְׂמֹאל:'};
 
 /* parent names of the activities (no nikud; read by the parents' content map) */
 const SKILLS={'read-first':'אות ראשונה: 300 מילים מדורגות לפי ניקוד (7 רמות)','read-pw':'מילה ותמונה: קריאת מילה מדורגת לפי ניקוד','read-wp':'תמונה למילה: קריאת מילה מדורגת לפי ניקוד',
@@ -6958,23 +7006,34 @@ function pw(back){const L=level('word');T.quiz({id:'rb2-pw-'+L,title:'אֵיזו
 function wp(back){const L=level('word');T.quiz({id:'rb2-wp-'+L,title:'אֵיזוֹ תְּמוּנָה?',bg:'city',back,n:8,gen:withAsked(()=>{const w=lvPick(withPic,L,null,'rb-word',wk);const ds=[];
   for(const x of shuffle(withPic)){if(ds.length>=3)break;if(x!==w&&x.pic!==w.pic&&!R.near(x,w)&&!ds.some(d=>R.near(d,x)))ds.push(x);}const opts=shuffle([w,...ds]);
   return {pr:`<div class="bigw">${w.w}</div><div class="qq">${UI.wp}</div>`,opts:opts.map(x=>pic(x.pic)),ans:opts.indexOf(w),cls:'picb',reveal:()=>say(w.w),key:w.w,bank:'rb-word'};})});}
-/* tap tiles in order (syllables, letters or words); calls done(errors) */
-function tiles(s,o,done){let k=0,err=0,miss=0;s.innerHTML='';const card=h('div','prq tqc',`${o.head||''}<div class="slots">${o.need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
+/* tap tiles in order (syllables, letters or words); calls done(errors, gems). o.unit = 'syl'|'let'|'word', o.whole = the word/sentence.
+   #54 one help button: tap 1 = the next tile glows, tap 2 = the whole answer with a short explanation (counts as a mistake, no gems). */
+function tiles(s,o,done){let k=0,err=0,miss=0,HB=null;s.innerHTML='';const card=h('div','prq tqc',`${o.head||''}<div class="slots">${o.need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
   if(o.play){const pb=h('button','hintbtn',ICON.say+'<span>הַשְׁמַע</span>');pb.onclick=o.play;card.appendChild(pb);}s.appendChild(card);
-  const row=h('div','chs');const fb=h('div','lcap','');
+  const row=h('div','chs');const fb=h('div','lcap','');const unit=o.unit||'let';
   shuffle(o.tiles.map((x,i)=>[x,i])).forEach(([x])=>{const b=h('button','chb tx'+(o.big?' big2':''),x);b.dataset.t=x;b.onclick=()=>tap(b);row.appendChild(b);});
   s.appendChild(row);s.appendChild(fb);if(o.tip)s.appendChild(h('div','lsent',o.tip));
+  const nextT=()=>k<o.need.length?[...row.children].find(y=>!y.disabled&&y.dataset.t===o.need[k]):null;
+  const fill=(j,x)=>{const sl=card.querySelectorAll('.slot2')[j];sl.textContent=x;sl.classList.add('on');};
+  const complete=g=>{sfx.ok(1);card.querySelector('.slots').classList.add('flash');if(g){O.addGems(g,card);O.floatText(card,'+'+g);}if(o.end)o.end(card);setTimeout(()=>{if(card.isConnected)done(err,g);},D(g?1400:4200));};
   function tap(b){if(b.disabled||k>=o.need.length)return;const x=b.dataset.t;
-    if(x===o.need[k]){const sl=card.querySelectorAll('.slot2')[k];sl.textContent=x;sl.classList.add('on');b.disabled=true;b.classList.add('ok');k++;miss=0;sfx.pop(k);fb.textContent='';row.querySelectorAll('.show').forEach(y=>y.classList.remove('show'));
-      if(k===o.need.length){sfx.ok(1);card.querySelector('.slots').classList.add('flash');O.addGems(2,card);O.floatText(card,'+2');if(o.end)o.end(card);setTimeout(()=>{if(card.isConnected)done(err);},D(1400));}}
-    else{err++;miss++;sfx.no();b.classList.remove('shake');void b.offsetWidth;b.classList.add('shake');
-      if(o.fin&&k===o.need.length-1&&R.FINAL[o.need[k]]===x)fb.innerHTML=`${UI.finHint}: <b>${o.need[k]}</b>`;
-      if(miss>=2){const t=[...row.children].find(y=>!y.disabled&&y.dataset.t===o.need[k]);if(t)t.classList.add('show');}}}
+    if(x===o.need[k]){fill(k,x);b.disabled=true;b.classList.add('ok');k++;miss=0;sfx.pop(k);fb.textContent='';row.querySelectorAll('.show').forEach(y=>y.classList.remove('show'));
+      if(k===o.need.length)complete(HB&&HB.step?1:2);}
+    else wrong(b);}
+  function wrong(b){err++;miss++;sfx.no();if(b){b.classList.remove('shake');void b.offsetWidth;b.classList.add('shake');}
+    if(o.fin&&k===o.need.length-1&&b&&R.FINAL[o.need[k]]===b.dataset.t)fb.innerHTML=`${UI.finHint}: <b>${o.need[k]}</b>`;
+    if(miss>=2){if(HB&&!HB.step)HB.offer();else{const t=nextT();if(t)t.classList.add('show');}}}
+  if(window.HELP&&HELP.button){HB=HELP.button(s,{before:fb,get ans(){const t=nextT();return t?[...row.children].indexOf(t):-1;},
+    clue:()=>{const t=nextT();if(!t)return '';t.classList.add('show');return `${UI['hNext'+unit]}: <b>${o.need[k]}</b>`;},
+    answer:()=>{if(k<o.need.length){err++;while(k<o.need.length){const t=nextT();if(t){t.disabled=true;t.classList.add('ok');}fill(k,o.need[k]);k++;}fb.textContent='';complete(0);}
+      const last=o.need[o.need.length-1],fin=o.fin&&R.FINAL[last]?`<div>${UI.finHint}: <b>${last}</b></div>`:'';
+      return `<div>${HELP.BT.ans}: <b class="hq-a">${o.whole||o.need.join(unit==='word'?' ':'')}</b></div><div class="hq-x">${UI['hBy'+unit]} ${o.need.join(' · ')}${fin}</div>`;}});
+    HB.wrong=()=>wrong(null);}
   window.__rb2={get need(){return o.need;},get k(){return k;},row};}
 function build(back){const L=level('word');const pool=[];for(let t=0;pool.length<6&&t<200;t++){const w=lvPick(W,L,x=>x.syl.length>1,'rb-word',wk);if(!pool.includes(w))pool.push(w);}
-  let i=0,err=0;O.setScreen('sTal','city',back);const s=$('#sTal');
+  let i=0,err=0,gems=0;O.setScreen('sTal','city',back);const s=$('#sTal');
   const run=()=>{const w=pool[i];T.hudT('בּוֹנִים מִלָּה',T.progressBar(i,pool.length));O.sayNow=T.spk(w.w);
-    tiles(s,{need:w.syl,tiles:w.syl,head:w.pic?pic(w.pic,1):'',play:()=>say(w.w),tip:UI.build,end:()=>say(w.w)},e=>{err+=e;if(window.LEARN)try{LEARN.seen('rb-word',w.w,!e,false);}catch(x){}i++;if(i<pool.length)run();else T.finishAct('rb2-build-'+L,err,pool.length,pool.length*2,back,()=>build(back));});
+    tiles(s,{need:w.syl,tiles:w.syl,unit:'syl',whole:w.w,head:w.pic?pic(w.pic,1):'',play:()=>say(w.w),tip:UI.build,end:()=>say(w.w)},(e,g)=>{err+=e;gems+=g|0;if(window.LEARN)try{LEARN.seen('rb-word',w.w,!e,false);}catch(x){}i++;if(i<pool.length)run();else T.finishAct('rb2-build-'+L,err,pool.length,gems,back,()=>build(back));});
     if(!w.pic)setTimeout(()=>say(w.w),D(300));};run();}
 function sent(back){const L=level('sent');T.quiz({id:'rb2-sent-'+L,title:'קוֹרְאִים מִשְׁפָּט',bg:'city',back,n:8,gen:()=>{const q=lvPick(R.sentences,L,null,'rb-sent',x=>x.t);const opts=shuffle([q.a,...q.ds]);
   return {pr:`<div class="sent">${nk(q.t,q.p)}</div><div class="qq">${nk(q.q,q.qp,1)}</div>`,opts:opts.map(ansHTML),ans:opts.indexOf(q.a),cls:q.a[0]==='@'?'picb':'tx',say:T.spk(q.q),key:q.t,bank:'rb-sent'};}});}
@@ -6998,19 +7057,24 @@ function mixPlan(L){const ws=R.writing;const P=[];const add=(kind,arr)=>{const i
 const DIST='בגדזלמנרתפסקשצ'.split('');
 function extraLetters(need,n){const out=[];const last=need[need.length-1];if(R.FINAL[last]&&!need.includes(R.FINAL[last]))out.push(R.FINAL[last]);
   for(const c of shuffle(DIST)){if(out.length>=n)break;if(!need.some(x=>R.sameSound(x,c))&&!out.some(x=>R.sameSound(x,c)))out.push(c);}return out;}
-function mix(back){const L=level('mix');const plan=mixPlan(L);let i=0,err=0;O.setScreen('sTal','meadow',back);const s=$('#sTal');
-  const next=e=>{const [kind,it]=plan[i];if(kind!=='order'&&window.LEARN)try{LEARN.seen('rb-write',mixKey(kind,it),!e,false);}catch(x){}err+=e;i++;if(i<plan.length)run();else{T.setKey(null);T.finishAct('rb2-mix-'+L,err,plan.length*2,plan.length*2,back,()=>mix(back));}};
+function mix(back){const L=level('mix');const plan=mixPlan(L);let i=0,err=0,gems=0;O.setScreen('sTal','meadow',back);const s=$('#sTal');
+  const next=(e,g)=>{gems+=g|0;const [kind,it]=plan[i];if(kind!=='order'&&window.LEARN)try{LEARN.seen('rb-write',mixKey(kind,it),!e,false);}catch(x){}err+=e;i++;if(i<plan.length)run();else{T.setKey(null);T.finishAct('rb2-mix-'+L,err,plan.length*2,gems,back,()=>mix(back));}};
   const run=()=>{const [kind,it]=plan[i];T.hudT('כּוֹתְבִים',T.progressBar(i,plan.length));
-    if(kind==='copy'){O.sayNow=T.spk(it.w);tiles(s,{need:it.letters,tiles:[...it.letters,...extraLetters(it.letters,L<3?1:2)],head:`${pic(it.pic)}<div class="bigw">${it.w}</div>`,tip:UI.copy,big:1,fin:1,end:()=>say(it.w)},next);}
-    else if(kind==='dict'){O.sayNow=T.spk(it.w);tiles(s,{need:it.letters,tiles:[...it.letters,...extraLetters(it.letters,2)],head:`${pic(it.pic)}<div class="gp-ear" style="font-size:44px">👂</div>`,play:()=>say(it.w),tip:UI.dict,big:1,fin:1,
+    if(kind==='copy'){O.sayNow=T.spk(it.w);tiles(s,{need:it.letters,whole:it.w,tiles:[...it.letters,...extraLetters(it.letters,L<3?1:2)],head:`${pic(it.pic)}<div class="bigw">${it.w}</div>`,tip:UI.copy,big:1,fin:1,end:()=>say(it.w)},next);}
+    else if(kind==='dict'){O.sayNow=T.spk(it.w);tiles(s,{need:it.letters,whole:it.w,tiles:[...it.letters,...extraLetters(it.letters,2)],head:`${pic(it.pic)}<div class="gp-ear" style="font-size:44px">👂</div>`,play:()=>say(it.w),tip:UI.dict,big:1,fin:1,
       end:c=>{c.querySelector('.slots').outerHTML=`<div class="bigw">${it.w}</div>`;say(it.w);}},next);setTimeout(()=>{if(s.isConnected)say(it.w);},D(350));}
-    else if(kind==='order'){O.sayNow=T.spk(UI.order);tiles(s,{need:it.words,tiles:it.words,head:`<div class="qq">${UI.order}</div>`,end:()=>say(it.t)},next);}
+    else if(kind==='order'){O.sayNow=T.spk(UI.order);tiles(s,{need:it.words,tiles:it.words,unit:'word',whole:it.t,head:`<div class="qq">${UI.order}</div>`,end:()=>say(it.t)},next);}
     else{O.sayNow=T.spk(UI.miss);s.innerHTML='';let tries=0;const card=h('div','prq tqc',`${pic(it.pic)}<div class="bigw">${it.show}</div><div class="qq">${UI.miss}</div>`);
       const pb=h('button','hintbtn',ICON.say+'<span>הַשְׁמַע</span>');pb.onclick=()=>say(it.w);card.appendChild(pb);s.appendChild(card);
-      const row=h('div','chs');const fb=h('div','lcap','');shuffle(it.opts.slice()).forEach(c=>{const b=h('button','chb tx big2',c);b.onclick=()=>{if(b.disabled)return;
-        if(c===it.ans){b.classList.add('ok');sfx.ok(1);O.addGems(tries?1:2,b);card.querySelector('.bigw').textContent=it.w;say(it.w);[...row.children].forEach(x=>x.disabled=true);setTimeout(()=>{if(card.isConnected)next(tries);},D(1500));}
-        else{tries++;b.classList.add('bad');b.disabled=true;sfx.no();if(R.FINAL[it.ans]===c)fb.innerHTML=`${UI.finHint}: <b>${it.ans}</b>`;}};row.appendChild(b);});
-      s.appendChild(row);s.appendChild(fb);window.__rb2={miss:it,row};}};
+      const row=h('div','chs');const fb=h('div','lcap','');const ops=shuffle(it.opts.slice());let lock=false,HB=null;
+      const win=g=>{lock=true;card.querySelector('.bigw').textContent=it.w;say(it.w);[...row.children].forEach(x=>x.disabled=true);setTimeout(()=>{if(card.isConnected)next(tries,g);},D(g?1500:4200));};
+      ops.forEach(c=>{const b=h('button','chb tx big2',c);b.onclick=()=>{if(b.disabled||lock)return;
+        if(c===it.ans){b.classList.add('ok');sfx.ok(1);const g=tries||(HB&&HB.step)?1:2;O.addGems(g,b);O.floatText(b,'+'+g);win(g);}
+        else{tries++;b.classList.add('bad');b.disabled=true;sfx.no();if(R.FINAL[it.ans]===c)fb.innerHTML=`${UI.finHint}: <b>${it.ans}</b>`;if(tries>=2&&HB)HB.offer();}};row.appendChild(b);});
+      /* #54 one help button: tap 1 = two options go away, tap 2 = the letter and the whole word */
+      s.appendChild(row);s.appendChild(fb);
+      if(window.HELP&&HELP.mc)HB=HELP.mc(s,{row,ans:ops.indexOf(it.ans),before:fb,explain:`<span class="bigw">${it.w}</span>`+(R.FINAL[it.ans]?`<div>${UI.finHint}</div>`:''),reveal:()=>{if(lock)return;tries++;win(0);}});
+      window.__rb2={miss:it,row};}};
   run();}
 /* ---- writing on paper: the task, then a check screen ---- */
 function nextPaper(){const L=level('paper');const at=R.writing.paper.filter(p=>p.lv===L);return at.find(p=>!st('rb2-pp-'+p.id))||pick(at);}
@@ -7144,17 +7208,24 @@ const KIND={
     wrap.appendChild(card);O.sayNow=q.say||T.plainHe(q.pr);if(T.rdQ&&!q.play)T.rdQ(q,card);
     const row=h('div','chs'+(q.opts.length===4?' g4':''));q.opts.forEach((op,k)=>{const b=h('button','chb tx '+(q.cls||''),op);b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
     if(q.play&&q.auto)setTimeout(()=>{if(card.isConnected)q.play();},D(400));
+    /* #54 one help button: tap 1 = a clue (or two options go away), tap 2 = the answer with a short explanation; the question ends there */
+    const HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,clue:q.clue,explain:q.explain,reveal:()=>{if(lock)return;lock=true;if(q.after)q.after();done(2,false,null);}}):null;
     function pickA(k,b){if(lock||b.disabled)return;
-      if(k===q.ans){if(T.rdA&&!q.play)T.rdA(q,tries,b);lock=true;b.classList.add('ok');sfx.ok(tries);if(q.after)q.after();done(tries,!tries,b);return;}
+      if(k===q.ans){if(T.rdA&&!q.play)T.rdA(q,tries,b);lock=true;b.classList.add('ok');sfx.ok(tries);if(q.after)q.after();done(tries,!tries&&!(HB&&HB.step),b);return;}
       tries++;b.classList.add('bad');b.disabled=true;sfx.no();
-      if(tries>=2||q.opts.length<=2){lock=true;row.children[q.ans].classList.add('show');if(q.after)q.after();done(Math.max(tries,2),false,null);}}
+      if(tries>=2||q.opts.length<=2){lock=true;row.children[q.ans].classList.add('show');if(q.after)q.after();if(HB)HB.answer();done(Math.max(tries,2),false,null);}}
     return {ans:()=>q.ans,solve:()=>row.children[q.ans].click()};},
   /* see the note -> press it on the piano */
   piano(q,wrap,done){let tries=0,lock=false;const card=h('div','prq tqc',`${staffSVG([{i:q.i,d:'q'}],{clef:q.clef,minW:200})}<div class="qq">נַגֵּן אֶת הַתָּו הַזֶּה בַּפְּסַנְתֵּר.</div>`);wrap.appendChild(card);O.sayNow='נגן את התו הזה בפסנתר.';
-    const target=midiOf(q.i);const kb=keyboard(q.clef==='bass'?48:60,q.names,(m,k)=>{play(m);if(lock)return;
-      if(m===target){lock=true;flash(k,'ok');sfx.ok(tries);done(tries,!tries,k);return;}
-      tries++;flash(k,'bad');if(tries>=2){lock=true;const c=kb.children[kb.idx(target)];c.classList.add('show');setTimeout(()=>play(target),D(500));done(2,false,null);}});
-    wrap.appendChild(kb);keyMap(kb);return {ans:()=>kb.idx(target),solve:()=>kb.children[kb.idx(target)].click()};},
+    const target=midiOf(q.i);let HB=null;const kb=keyboard(q.clef==='bass'?48:60,q.names,(m,k)=>{play(m);if(lock)return;
+      if(m===target){lock=true;flash(k,'ok');sfx.ok(tries);done(tries,!tries&&!(HB&&HB.step),k);return;}
+      tries++;flash(k,'bad');if(tries>=2)end();});
+    const end=()=>{lock=true;const c=kb.children[kb.idx(target)];c.classList.add('show');setTimeout(()=>play(target),D(500));if(HB)HB.answer();done(2,false,null);};
+    wrap.appendChild(kb);keyMap(kb);
+    /* #54 one help button: tap 1 = the note's name, tap 2 = its key glows, counted up from דּוֹ */
+    if(window.HELP&&HELP.button)HB=HELP.button(wrap,{get ans(){return kb.idx(target);},clue:()=>`${HM.note} <b>${nameOf(q.i)}</b>. ${HM.find}`,
+      answer:()=>{if(!lock)end();return `<div>${HELP.BT.ans}: <b class="hq-a">${nameOf(q.i)}</b></div><div class="hq-x">${countUp(q.i)}</div>`;}});
+    return {ans:()=>kb.idx(target),solve:()=>kb.children[kb.idx(target)].click()};},
   /* a short melody on the staff, played note by note */
   melody(q,wrap,done){const notes=parseMel(q.song);let pos=0,err=0,miss=0,lock=false;
     const card=h('div','prq tqc m2mel');wrap.appendChild(card);
@@ -7163,12 +7234,18 @@ const KIND={
       const svg=(r,ri,minW)=>staffSVG(r.map((n,j)=>Object.assign({},n,{bar:j<r.length-1?n.bar:0})),{time:ri===0,end:ri===rows.length-1,minW,fill:1});
       const maxW=Math.max(...rows.map((r,ri)=>+svg(r,ri).match(/data-w="([\d.]+)"/)[1]));
       card.innerHTML=rows.map((r,ri)=>svg(r,ri,maxW)).join('')+`<div class="qq">נַגֵּן אֶת הַתָּוִים לְפִי הַסֵּדֶר, מִשְּׂמֹאל לְיָמִין ➡️</div>`;};
-    draw();O.sayNow='נגן את התווים לפי הסדר, משמאל לימין.';
+    draw();O.sayNow='נגן את התווים לפי הסדר, משמאל לימין.';let HB=null;
+    const tune=()=>{let t0=.5;notes.forEach(n=>{play(midiOf(n.i),.4*BEATS[n.d],.8,t0);t0+=.42*BEATS[n.d];});};
     const kb=keyboard(60,q.names,(m,k)=>{play(m,.45);if(lock)return;const t=midiOf(notes[pos].i);
       if(m===t){flash(k,'ok');pos++;miss=0;kb.querySelectorAll('.show').forEach(x=>x.classList.remove('show'));
-        if(pos>=notes.length){lock=true;draw();sfx.ok(2);let t0=.5;notes.forEach(n=>{play(midiOf(n.i),.4*BEATS[n.d],.8,t0);t0+=.42*BEATS[n.d];});done(err,!err,k);return;}draw();return;}
-      err++;miss++;flash(k,'bad');if(miss>=2)kb.children[kb.idx(t)].classList.add('show');});
+        if(pos>=notes.length){lock=true;draw();sfx.ok(2);tune();done(err,!err&&!(HB&&HB.step),k);return;}draw();return;}
+      err++;miss++;flash(k,'bad');if(miss>=2){if(HB&&!HB.step)HB.offer();else kb.children[kb.idx(t)].classList.add('show');}});
     wrap.appendChild(kb);keyMap(kb);
+    /* #54 one help button: tap 1 = the next key glows, tap 2 = the whole tune plays by itself with the note names */
+    if(window.HELP&&HELP.button)HB=HELP.button(wrap,{get ans(){return pos<notes.length?kb.idx(midiOf(notes[pos].i)):-1;},
+      clue:()=>{if(pos>=notes.length)return '';kb.children[kb.idx(midiOf(notes[pos].i))].classList.add('show');return `${HM.next} <b>${nameOf(notes[pos].i)}</b>`;},
+      answer:()=>{if(!lock){lock=true;pos=notes.length;draw();kb.children[kb.idx(midiOf(notes[notes.length-1].i))].classList.add('show');tune();done(Math.max(err,2),false,null);}
+        return `<div class="hq-x">${HM.tune} <b class="hq-a">${notes.map(n=>nameOf(n.i)).join(' ')}</b></div>`;}});
     return {ans:()=>pos<notes.length?kb.idx(midiOf(notes[pos].i)):undefined,solve:()=>{while(!lock)kb.children[kb.idx(midiOf(notes[pos].i))].click();}};},
   /* listen to the rhythm, then tap it on the drum */
   tap(q,wrap,done){const pat=q.pat,on=onsets(pat);let tries=0,taps=[],t0=0,phase='idle';const beat=60/72*1000;
@@ -7194,26 +7271,37 @@ const KIND={
 /* computer keyboard: A S D F G H J K = white keys from the lowest */
 function keyMap(kb){const ws=[...kb.querySelectorAll('.mw')];T.setKey(e=>{const k='ASDFGHJK'.indexOf((e.code||'').replace('Key',''));if(k>=0&&ws[k]&&!e.repeat){e.preventDefault();ws[k].click();}});}
 
+/* #54 the help button texts (kid-facing) */
+const HM={note:'הַתָּו הוּא',find:'חַפֵּשׂ אוֹתוֹ בַּפְּסַנְתֵּר.',next:'הַתָּו הַבָּא:',tune:'כָּךְ מְנַגְּנִים:',up:'סוֹפְרִים מִדּוֹ לְמַעְלָה:',down:'סוֹפְרִים מִדּוֹ לְמַטָּה:',
+  hi:'הַצְּלִיל הַשֵּׁנִי גָּבוֹהַּ יוֹתֵר, כְּמוֹ לַעֲלוֹת בְּמַדְרֵגוֹת.',lo:'הַצְּלִיל הַשֵּׁנִי נָמוּךְ יוֹתֵר, כְּמוֹ לָרֶדֶת בְּמַדְרֵגוֹת.',
+  hlClue:'הַקְשֵׁב שׁוּב: הַצְּלִיל הַשֵּׁנִי עוֹלֶה אוֹ יוֹרֵד?',same:'שְׁנֵי הַצְּלִילִים שָׁוִים בְּדִיּוּק.',diff:'הַצְּלִיל הַשֵּׁנִי שׁוֹנֶה מֵהָרִאשׁוֹן.',
+  sameClue:'הַקְשֵׁב שׁוּב: הַאִם שְׁנֵי הַצְּלִילִים שָׁוִים?',whClue:'הַקְשֵׁב שׁוּב: כַּמָּה רָחוֹק הוּא מִדּוֹ?',
+  w:'עִגּוּל רֵיק, בְּלִי מַקֵּל: תָּו שָׁלֵם, אַרְבַּע פְּעָמוֹת.',h:'עִגּוּל רֵיק עִם מַקֵּל: תָּו חֲצִי, שְׁתֵּי פְּעָמוֹת.',
+  q:'עִגּוּל מָלֵא עִם מַקֵּל: תָּו רֶבַע, פְּעָמָה אַחַת.',e:'עִגּוּל מָלֵא, מַקֵּל וְדֶגֶל: שְׁמִינִית, חֲצִי פְּעָמָה.'};
+window.HELP_TEXTS=(window.HELP_TEXTS||[]).concat(Object.values(HM));
+/* "count up from do": דּוֹ · רֶה · מִי (or down for the bass notes) */
+const countUp=i=>{const st=i>=0?1:-1,out=[];for(let k=0;k!==i+st;k+=st)out.push(nameOf(k));return `${i>=0?HM.up:HM.down} ${out.join(' · ')}`;};
+
 /* ---------- question sets per level ---------- */
 const noteBtn=(i,clef)=>`<span class="m2opt">${staffSVG([{i,d:'q'}],{clef,minW:120,cls:'mini'})}<b>${nameOf(i)}</b></span>`;
 function readQs(){const L0=READ[ST().read-1];const qs=[];let last=null;
   for(let n=0;n<8;n++){const rv=rev('read'),L=rv?READ[rv.lv[1]-1]:L0;let i;do i=pick(L.pool);while(i===last&&L.pool.length>1);last=i;
     if(n%2===0){const right=nameOf(i);const names=[...new Set(L.pool.map(nameOf))].filter(x=>x!==right);const opts=shuffle([right,...shuffle(names).slice(0,L.opts-1)]);
-      qs.push({k:'choice',pr:`${staffSVG([{i,d:'q'}],{clef:L.clef,minW:200})}<div class="qq">אֵיזֶה תָּו זֶה?</div>`,opts,ans:opts.indexOf(right),after:()=>play(midiOf(i)),key:'r'+n,rv:rv&&rv.id});}
+      qs.push({k:'choice',pr:`${staffSVG([{i,d:'q'}],{clef:L.clef,minW:200})}<div class="qq">אֵיזֶה תָּו זֶה?</div>`,opts,ans:opts.indexOf(right),explain:countUp(i),after:()=>play(midiOf(i)),key:'r'+n,rv:rv&&rv.id});}
     else qs.push({k:'piano',i,clef:L.clef,names:L.names,rv:rv&&rv.id});}
   return qs;}
 function earQs(){const kind=EAR[ST().ear-1];const qs=[];
   for(let n=0;n<8;n++){
     if(kind==='hl-big'||kind==='hl-small'){const a=rand(60,67);const b=a+(Math.random()<.5?-1:1)*(kind==='hl-big'?rand(7,12):rand(2,4));const opts=['גָּבוֹהַּ יוֹתֵר ⬆️','נָמוּךְ יוֹתֵר ⬇️'];
-      qs.push({k:'choice',pr:`<div class="m2ear">🎵 🎵</div><div class="qq">הַקְשֵׁב לִשְׁנֵי צְלִילִים. הַשֵּׁנִי גָּבוֹהַּ יוֹתֵר אוֹ נָמוּךְ יוֹתֵר?</div>`,opts,ans:b>a?0:1,play:()=>{play(a,.6);play(b,.6,1,.8);},auto:1,playLbl:'שׁוּב',say:'הקשב לשני צלילים. השני גבוה יותר או נמוך יותר?',a,b});}
+      qs.push({k:'choice',pr:`<div class="m2ear">🎵 🎵</div><div class="qq">הַקְשֵׁב לִשְׁנֵי צְלִילִים. הַשֵּׁנִי גָּבוֹהַּ יוֹתֵר אוֹ נָמוּךְ יוֹתֵר?</div>`,opts,ans:b>a?0:1,explain:b>a?HM.hi:HM.lo,clue:()=>{play(a,.6);play(b,.6,1,1.4);return HM.hlClue;},play:()=>{play(a,.6);play(b,.6,1,.8);},auto:1,playLbl:'שׁוּב',say:'הקשב לשני צלילים. השני גבוה יותר או נמוך יותר?',a,b});}
     else if(kind==='same'){const a=rand(60,69);const same=n%2===0?Math.random()<.5:Math.random()<.5;const b=same?a:a+(Math.random()<.5?-1:1)*rand(2,5);const opts=['אוֹתוֹ צְלִיל','צְלִיל אַחֵר'];
-      qs.push({k:'choice',pr:`<div class="m2ear">🎵 🎵</div><div class="qq">הַקְשֵׁב לִשְׁנֵי צְלִילִים. אוֹתוֹ צְלִיל אוֹ צְלִיל אַחֵר?</div>`,opts,ans:same?0:1,play:()=>{play(a,.6);play(b,.6,1,.8);},auto:1,playLbl:'שׁוּב',say:'הקשב לשני צלילים. אותו צליל או צליל אחר?',a,b});}
+      qs.push({k:'choice',pr:`<div class="m2ear">🎵 🎵</div><div class="qq">הַקְשֵׁב לִשְׁנֵי צְלִילִים. אוֹתוֹ צְלִיל אוֹ צְלִיל אַחֵר?</div>`,opts,ans:same?0:1,explain:same?HM.same:HM.diff,clue:()=>{play(a,.6);play(b,.6,1,1.4);return HM.sameClue;},play:()=>{play(a,.6);play(b,.6,1,.8);},auto:1,playLbl:'שׁוּב',say:'הקשב לשני צלילים. אותו צליל או צליל אחר?',a,b});}
     else{const pool=kind==='which2'?[0,4]:[0,2,4];const x=pick(pool);const opts=pool.map(i=>noteBtn(i));
-      qs.push({k:'choice',pr:`<div class="m2ear">🎹</div><div class="qq">קֹדֶם דּוֹ, וְאַחֲרָיו תָּו סוֹדִי. אֵיזֶה תָּו הוּא?</div>`,opts,ans:pool.indexOf(x),cls:'m2pic',play:()=>{play(60,.6);play(midiOf(x),.7,1,1.1);},auto:1,playLbl:'שׁוּב',say:'קודם דו, ואחריו תו סודי. איזה תו הוא?',a:60,b:midiOf(x)});}}
+      qs.push({k:'choice',pr:`<div class="m2ear">🎹</div><div class="qq">קֹדֶם דּוֹ, וְאַחֲרָיו תָּו סוֹדִי. אֵיזֶה תָּו הוּא?</div>`,opts,ans:pool.indexOf(x),cls:'m2pic',explain:countUp(x),clue:pool.length<3?()=>{play(60,.6);play(midiOf(x),.7,1,1.4);return HM.whClue;}:undefined,play:()=>{play(60,.6);play(midiOf(x),.7,1,1.1);},auto:1,playLbl:'שׁוּב',say:'קודם דו, ואחריו תו סודי. איזה תו הוא?',a:60,b:midiOf(x)});}}
   return qs;}
 function rhyQs(){const L0=RHY[ST().rhy-1];const qs=[];
   for(let n=0;n<L0.nq;n++){const rv=rev('rhy'),L=rv?RHY[rv.lv[1]-1]:L0;const v=L.vals[n%L.vals.length];const byBeats=n>=L.vals.length;const opts=shuffle(L.vals.map(x=>byBeats?VALB[x]:VALN[x]));const right=byBeats?VALB[v]:VALN[v];
-    qs.push({k:'choice',pr:`${staffSVG([{i:0,d:v}],{one:true,minW:160})}<div class="qq">${byBeats?'כַּמָּה פְּעָמוֹת נִמְשָׁךְ הַתָּו הַזֶּה?':'אֵיזֶה תָּו זֶה?'}</div>`,opts,ans:opts.indexOf(right),cls:byBeats?'m2num':'',key:'v'+n,rv:rv&&rv.id});}
+    qs.push({k:'choice',pr:`${staffSVG([{i:0,d:v}],{one:true,minW:160})}<div class="qq">${byBeats?'כַּמָּה פְּעָמוֹת נִמְשָׁךְ הַתָּו הַזֶּה?':'אֵיזֶה תָּו זֶה?'}</div>`,opts,ans:opts.indexOf(right),explain:HM[v],cls:byBeats?'m2num':'',key:'v'+n,rv:rv&&rv.id});}
   shuffle(L0.pats.slice()).slice(0,8-L0.nq).forEach(p=>qs.push({k:'tap',pat:p}));
   return qs;}
 function melQs(){const L=MEL[ST().mel-1];return L.songs.map(song=>({k:'melody',song,names:L.names,items:parseMel(song).length}));}
@@ -7380,11 +7468,23 @@ function lesson(id,title,tasks,back,opts={}){let i=0,err=0,gems=0;O.setScreen('s
 const prompt=(wrap,html,sub)=>{const c=h('div','prq tqc czq',`<div class="qq">${html}</div>${sub?`<div class="czsub">${sub}</div>`:''}`);wrap.appendChild(c);say(html+(sub?' '+sub:''));return c;};
 const note=(wrap)=>{const n=h('div','lcap czmsg','');wrap.appendChild(n);return n;};
 /* multiple choice (same look as the game's quizzes; .chs children so the shared test loop can answer) */
-function choiceTask(pr,opts,ans,after){return (wrap,done)=>{let tries=0,lock=false;const card=h('div','prq tqc',pr);wrap.appendChild(card);say(T.plainHe(pr));if(T.rdQ)T.rdQ({pr},card);
+/* #54 hp = {clue, explain} for the one help button: tap 1 = clue (or wrong options go away), tap 2 = the answer; after(card,quiet) */
+function choiceTask(pr,opts,ans,after,hp={}){return (wrap,done)=>{let tries=0,lock=false;const card=h('div','prq tqc',pr);wrap.appendChild(card);say(T.plainHe(pr));if(T.rdQ)T.rdQ({pr},card);
   const row=h('div','chs');opts.forEach((op,k)=>{const b=h('button','chb tx',op);b.onclick=()=>{if(lock||b.disabled)return;
-    if(k===ans){lock=true;b.classList.add('ok');sfx.ok(tries);if(after)after(card);done(tries,b);return;}
-    tries++;b.disabled=true;b.classList.add('bad');sfx.no();if(tries>=2||opts.length<=2){lock=true;row.children[ans].classList.add('show');if(after)after(card);done(2,null);}};row.appendChild(b);});
-  wrap.appendChild(row);return {ans:()=>ans,solve:()=>row.children[ans].click()};};}
+    if(k===ans){lock=true;b.classList.add('ok');sfx.ok(tries);if(after)after(card);done(Math.max(tries,HB&&HB.step?1:0),b);return;}
+    tries++;b.disabled=true;b.classList.add('bad');sfx.no();if(tries>=2||opts.length<=2){if(HB&&HB.el.isConnected)return HB.answer();lock=true;row.children[ans].classList.add('show');if(after)after(card);done(2,null);}};row.appendChild(b);});
+  wrap.appendChild(row);
+  const HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans,clue:hp.clue,explain:hp.explain,reveal:()=>{if(lock)return;lock=true;if(after)after(card,true);done(2,null);}}):null;
+  return {ans:()=>ans,solve:()=>row.children[ans].click()};};}
+
+/* #54 the one help button on a board: clue() marks the piece and returns the text, answer() shows the move and ends the task */
+const boardHelp=(wrap,o)=>{const a=window.HELP&&HELP.button?HELP.button(wrap,{clue:o.clue,answer:o.answer}):null;if(a)a.wrong=o.wrong;return a;};
+/* after a wrong try: the 2nd one offers the help by itself, the last one shows the answer */
+const helpAfter=(hb,errs,max,end)=>{if(errs>=max){if(hb&&hb.el.isConnected)hb.answer();else end();}else if(errs===2&&hb)hb.offer();};
+const helped=hb=>hb&&hb.step?1:0;
+/* how each piece looks (a clue for finding it) */
+const LOOKS={K:'לַמֶּלֶךְ יֵשׁ צְלָב קָטָן לְמַעְלָה.',Q:'לַמַּלְכָּה יֵשׁ כֶּתֶר עִם כַּדּוּרִים קְטַנִּים.',R:'הַצְּרִיחַ נִרְאֶה כְּמוֹ מִגְדָּל.',B:'לָרָץ יֵשׁ כּוֹבַע מְחֻדָּד.',
+  N:'הַפָּרָשׁ נִרְאֶה כְּמוֹ רֹאשׁ שֶׁל סוּס.',P:'הָרַגְלִי הוּא הַכְּלִי הַקָּטָן, וְיֵשׁ הַרְבֵּה כְּמוֹתוֹ.'};
 
 /* random helpers */
 const empty=()=>Array(64).fill('');
@@ -7396,13 +7496,17 @@ const near=(a,b)=>Math.max(Math.abs((a&7)-(b&7)),Math.abs((a>>3)-(b>>3)));
 
 /* ---------- 1. the board and the pieces ---------- */
 function nameTask(u){const opts=shuffle([u,...shuffle(ORDER.filter(x=>x!==u)).slice(0,2)]);
-  return choiceTask(`<div class="czbig">${piece(Math.random()<.5?u:u.toLowerCase())}</div><div class="qq">אֵיזֶה כְּלִי זֶה?</div>`,opts.map(x=>NM[x][0]),opts.indexOf(u));}
+  return choiceTask(`<div class="czbig">${piece(Math.random()<.5?u:u.toLowerCase())}</div><div class="qq">אֵיזֶה כְּלִי זֶה?</div>`,opts.map(x=>NM[x][0]),opts.indexOf(u),null,{explain:LOOKS[u]});}
 function findTask(pc){return (wrap,done)=>{const u=pc.toUpperCase(),c=side(pc),[ind,def,fem]=NM[u];const uniq=u==='K'||u==='Q';
   const txt=uniq?`אֵיפֹה ${def} ${COL[c][1][fem]}? גַּע ${fem?'בָּהּ':'בּוֹ'}.`:`אֵיפֹה יֵשׁ ${ind} ${COL[c][0][fem]}? גַּע בּוֹ.`;
   prompt(wrap,txt);const b=fromFEN(START).b;let tries=0,lock=false;
-  const el=boardEl((s)=>{if(lock)return;if(b[s]===pc){lock=true;paint(el,b,{good:new Set([s])});sfx.ok(tries);done(tries,el.querySelector(`[data-s="${s}"]`));return;}
-    tries++;sfx.no();flashSq(el,s);if(tries>=3){lock=true;paint(el,b,{good:new Set(b.map((x,k)=>x===pc?k:-1).filter(k=>k>=0))});done(2,null);}});
-  paint(el,b);wrap.appendChild(el);return {solve:()=>el.querySelector(`[data-s="${b.indexOf(pc)}"]`).click()};};}
+  const end=()=>{if(lock)return;lock=true;paint(el,b,{good:new Set(b.map((x,k)=>x===pc?k:-1).filter(k=>k>=0))});done(2,null);};
+  const miss=s=>{tries++;sfx.no();flashSq(el,s);helpAfter(hb,tries,3,end);};
+  const el=boardEl((s)=>{if(lock)return;if(b[s]===pc){lock=true;paint(el,b,{good:new Set([s])});sfx.ok(tries);done(Math.max(tries,helped(hb)),el.querySelector(`[data-s="${s}"]`));return;}miss(s);});
+  paint(el,b);wrap.appendChild(el);
+  const hb=boardHelp(wrap,{clue:()=>`${c==='w'?'הַכֵּלִים הַלְּבָנִים לְמַטָּה.':'הַכֵּלִים הַשְּׁחֹרִים לְמַעְלָה.'} ${LOOKS[u]}`,
+    answer:()=>{end();return `הִנֵּה ${def} ${COL[c][1][fem]}, בַּמִּשְׁבֶּצֶת הַיְּרֻקָּה. ${LOOKS[u]}`;},wrong:()=>{if(!lock)miss(b.findIndex(x=>x!==pc));}});
+  return {solve:()=>el.querySelector(`[data-s="${b.indexOf(pc)}"]`).click()};};}
 function runBoard(back){const kinds=shuffle(ORDER.slice()).slice(0,4);const finds=shuffle(['K','Q','R','B','N','P','k','q','r','n']).slice(0,4);
   const tasks=[];for(let k=0;k<4;k++){tasks.push(nameTask(kinds[k]));tasks.push(findTask(finds[k]));}
   lesson('chess-board','הַלּוּחַ וְהַכֵּלִים',tasks,back,{done:'מַכִּיר אֶת הַכֵּלִים!',again:()=>runBoard(back)});}
@@ -7421,10 +7525,14 @@ function moveBoard(u,k){const b=empty();const W=u;let s;
   return {b,s};}
 function moveTask(u,k){return (wrap,done)=>{let su=moveBoard(u,k);while(!reach(su.b,su.s).size)su=moveBoard(u,k);const {b,s}=su;const tgt=reach(b,s);const [ind,def,fem]=NM[u];
   prompt(wrap,`לְאָן ${def} ${fem?'יְכוֹלָה':'יָכוֹל'} לָלֶכֶת? גַּע בְּכָל הַמִּשְׁבָּצוֹת.`);
-  const got=new Set();let errs=0,lock=false;const msg=note(wrap);
-  const el=boardEl(t=>{if(lock||t===s||got.has(t))return;if(tgt.has(t)){got.add(t);sfx.pop(2);paint(el,b,{sel:s,dots:got});if(got.size===tgt.size){lock=true;msg.textContent='מָצָאתָ אֶת כֻּלָּן!';sfx.ok(errs);done(errs>3?2:errs>1?1:0,el);}return;}
-    errs++;sfx.no();flashSq(el,t);if(errs>=5){lock=true;paint(el,b,{sel:s,dots:tgt});msg.textContent='הִנֵּה כָּל הַמִּשְׁבָּצוֹת.';done(2,null);}});
-  paint(el,b,{sel:s});wrap.appendChild(el);return {target:tgt,solve:()=>[...tgt].forEach(t=>{if(!lock&&!got.has(t))el.querySelector(`[data-s="${t}"]`).click();})};};}
+  const got=new Set();let errs=0,lock=false,hs=null;const msg=note(wrap);
+  const end=()=>{if(lock)return;lock=true;paint(el,b,{sel:s,dots:tgt,good:new Set([...tgt].filter(x=>!got.has(x)))});msg.textContent='הִנֵּה כָּל הַמִּשְׁבָּצוֹת.';done(2,null);};
+  const miss=t=>{errs++;sfx.no();flashSq(el,t);helpAfter(hb,errs,5,end);};
+  const el=boardEl(t=>{if(lock||t===s||got.has(t))return;if(tgt.has(t)){got.add(t);if(hs===t)hs=null;sfx.pop(2);paint(el,b,{sel:s,dots:got,hint:hs});if(got.size===tgt.size){lock=true;msg.textContent='מָצָאתָ אֶת כֻּלָּן!';sfx.ok(errs);done(Math.max(errs>3?2:errs>1?1:0,helped(hb)),el);}return;}miss(t);});
+  paint(el,b,{sel:s});wrap.appendChild(el);
+  const hb=boardHelp(wrap,{clue:()=>{hs=[...tgt].find(x=>!got.has(x));paint(el,b,{sel:s,dots:got,hint:hs});return `${RULE[u]} סִמַּנְתִּי לְךָ מִשְׁבֶּצֶת אַחַת.`;},
+    answer:()=>{end();return `הִנֵּה כָּל הַמִּשְׁבָּצוֹת שֶׁ${def} ${fem?'יְכוֹלָה':'יָכוֹל'} לְהַגִּיעַ אֲלֵיהֶן.`;},wrong:()=>{if(!lock)miss([...Array(64).keys()].find(x=>x!==s&&!tgt.has(x)));}});
+  return {target:tgt,solve:()=>[...tgt].forEach(t=>{if(!lock&&!got.has(t))el.querySelector(`[data-s="${t}"]`).click();})};};}
 function demo(u,back,go){O.setScreen('sTal','valley',back);T.hudT(NM[u][0]);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq cz');s.appendChild(wrap);
   const b=empty();const sq=u==='P'?sqOf('d2'):sqOf('d4');b[sq]=u;const card=h('div','prq tqc czq',`<div class="czhead">${piece(u)}<b>${NM[u][1]}</b></div><div class="qq">${RULE[u]}</div>`);wrap.appendChild(card);
   const el=boardEl(null);el.classList.add('sm');paint(el,b,{sel:sq,dots:reach(b,sq)});wrap.appendChild(el);say(RULE[u]);O.say(T.spk?T.spk(RULE[u]):RULE[u]);
@@ -7445,13 +7553,18 @@ function captureSetup(n){const kinds=ORDER.slice(0,Math.max(1,Math.min(6,ST().mv
   return null;}
 function captureTask(n){return (wrap,done)=>{let su=captureSetup(n);while(!su)su=captureSetup(n);const {b,target,from}=su;
   prompt(wrap,'אֵיזֶה כְּלִי שָׁחֹר אֶפְשָׁר לֶאֱכֹל? גַּע בּוֹ.');const msg=note(wrap);let tries=0,lock=false;
-  const el=boardEl(s=>{if(lock||side(b[s])!=='b')return;if(s===target){lock=true;const nb=make(posOf(b,'w'),from).b;paint(el,nb,{last:[from.f,from.t]});msg.textContent='יָפֶה! אָכַלְתָּ!';sfx.ok(tries);done(tries,el);return;}
-    tries++;sfx.no();flashSq(el,s);if(tries>=2){lock=true;paint(el,b,{good:new Set([target]),sel:from.f});msg.textContent=`${NM[from.pc][1]} ${NM[from.pc][2]?'יְכוֹלָה':'יָכוֹל'} לֶאֱכֹל כָּאן.`;done(2,null);}});
-  paint(el,b);wrap.appendChild(el);return {b,target,solve:()=>el.querySelector(`[data-s="${target}"]`).click()};};}
+  const [,def,fem]=NM[from.pc];
+  const end=()=>{if(lock)return;lock=true;paint(el,b,{good:new Set([target]),sel:from.f});msg.textContent=`${def} ${fem?'יְכוֹלָה':'יָכוֹל'} לֶאֱכֹל כָּאן.`;done(2,null);};
+  const miss=s=>{tries++;sfx.no();flashSq(el,s);helpAfter(hb,tries,2,end);};
+  const el=boardEl(s=>{if(lock||side(b[s])!=='b')return;if(s===target){lock=true;const nb=make(posOf(b,'w'),from).b;paint(el,nb,{last:[from.f,from.t]});msg.textContent='יָפֶה! אָכַלְתָּ!';sfx.ok(tries);done(Math.max(tries,helped(hb)),el);return;}miss(s);});
+  paint(el,b);wrap.appendChild(el);
+  const hb=boardHelp(wrap,{clue:()=>{paint(el,b,{hint:from.f});return `סִמַּנְתִּי אֶת ${def}. ${fem?'הִיא':'הוּא'} ${fem?'יְכוֹלָה':'יָכוֹל'} לֶאֱכֹל. לְאָן ${fem?'הִיא מַגִּיעָה':'הוּא מַגִּיעַ'}?`;},
+    answer:()=>{end();return `${def} ${fem?'אוֹכֶלֶת':'אוֹכֵל'} אֶת הַכְּלִי בַּמִּשְׁבֶּצֶת הַיְּרֻקָּה. ${RULE[from.pc]}`;},wrong:()=>{if(!lock)miss(b.findIndex((x,k)=>side(x)==='b'&&k!==target));}});
+  return {b,target,solve:()=>el.querySelector(`[data-s="${target}"]`).click()};};}
 function runCapture(back){lesson('chess-capture','מָה אֶפְשָׁר לֶאֱכֹל?',[0,1,2,3,4,5].map(n=>captureTask(n)),back,{done:'צַיָּד אַלּוּף!',again:()=>runCapture(back)});}
 
 /* ---------- move input shared by check / mate / game: tap a piece, then a square ---------- */
-function mover(el,getPos,o){let sel=null;const draw=extra=>paint(el,getPos().b,Object.assign({sel,dots:sel!=null&&o.dots?new Set(legal(getPos(),sel).map(m=>m.t)):null,chk:inCheck(getPos())?kingSq(getPos().b,getPos().t):null,last:o.last&&o.last()},extra||{}));
+function mover(el,getPos,o){let sel=null;const draw=extra=>paint(el,getPos().b,Object.assign({sel,dots:sel!=null&&o.dots?new Set(legal(getPos(),sel).map(m=>m.t)):null,chk:inCheck(getPos())?kingSq(getPos().b,getPos().t):null,last:o.last&&o.last(),hint:o.hint&&o.hint()},extra||{}));
   el.onclick=e=>{const c=e.target.closest('.cq');if(!c||o.locked())return;const s=+c.dataset.s,p=getPos();
     if(side(p.b[s])===p.t){sel=s;sfx.pop(1);draw();return;}
     if(sel==null)return;const ps=pseudo(p,sel).filter(m=>m.t===s);const lg=legal(p,sel).filter(m=>m.t===s);
@@ -7465,26 +7578,34 @@ function checkSetup(want){for(let t=0;t<800;t++){const b=empty();const K=freeSq(
     if(want==='esc'&&(!chk||legal(p).length<2))continue;if(want==='no'&&!legal(p).length)continue;return {p,K,a,as};}return null;}
 function isCheckTask(){return (wrap,done)=>{const yes=Math.random()<.5;const {p,as}=checkSetup(yes?'yes':'no');const el=boardEl(null);paint(el,p.b);
   const [ind,def,fem]=NM[p.b[as].toUpperCase()];
-  const t=choiceTask(`<div class="qq">הַאִם הַמֶּלֶךְ הַלָּבָן בְּשַׁח?</div>`,['כֵּן','לֹא'],yes?0:1,card=>{
-    card.insertAdjacentHTML('beforeend',`<div class="czsub">${yes?`כֵּן! ${def} ${COL.b[1][fem]} ${fem?'תּוֹקֶפֶת':'תּוֹקֵף'} אֶת הַמֶּלֶךְ.`:'לֹא, אַף כְּלִי לֹא תּוֹקֵף אֶת הַמֶּלֶךְ.'}</div>`);
-    paint(el,p.b,{chk:yes?kingSq(p.b,'w'):null,sel:yes?as:null});})(wrap,done);wrap.insertBefore(el,wrap.querySelector('.chs'));t.pos=p;return t;};}
+  const why=yes?`כֵּן! ${def} ${COL.b[1][fem]} ${fem?'תּוֹקֶפֶת':'תּוֹקֵף'} אֶת הַמֶּלֶךְ.`:'לֹא, אַף כְּלִי לֹא תּוֹקֵף אֶת הַמֶּלֶךְ.';
+  const t=choiceTask(`<div class="qq">הַאִם הַמֶּלֶךְ הַלָּבָן בְּשַׁח?</div>`,['כֵּן','לֹא'],yes?0:1,(card,quiet)=>{
+    if(!quiet)card.insertAdjacentHTML('beforeend',`<div class="czsub">${why}</div>`);
+    paint(el,p.b,{chk:yes?kingSq(p.b,'w'):null,sel:yes?as:null});},
+    {clue:()=>{paint(el,p.b,{hint:as});return `סִמַּנְתִּי אֶת ${def} ${COL.b[1][fem]}. ${fem?'הִיא יְכוֹלָה':'הוּא יָכוֹל'} לְהַגִּיעַ לַמֶּלֶךְ הַלָּבָן?`;},explain:why})(wrap,done);wrap.insertBefore(el,wrap.querySelector('.chs'));t.pos=p;return t;};}
 function escapeTask(withHelp){return (wrap,done)=>{let su=null;for(let t=0;t<50&&!su;t++){su=checkSetup('esc');if(su&&withHelp){const b=su.p.b;const r=freeSq(b,x=>{const bb=b.slice();bb[x]='R';return legal(posOf(bb,'w'),x).some(m=>m.t===su.as)&&near(x,su.K)>1;});if(r==null){su=null;continue;}b[r]='R';}}
-  let p=su.p;prompt(wrap,'הַמֶּלֶךְ שֶׁלְּךָ בְּשַׁח! הַצֵּל אוֹתוֹ.');const msg=note(wrap);let errs=0,lock=false;
-  const el=boardEl(null);const mv=mover(el,()=>p,{dots:false,locked:()=>lock,onMove:(m,pseudoOk,from)=>{
-    if(m){lock=true;p=make(p,m);paint(el,p.b,{last:[m.f,m.t]});msg.textContent='הַמֶּלֶךְ בָּטוּחַ!';sfx.ok(errs);done(errs>2?2:errs,el);return;}
-    errs++;sfx.no();msg.textContent=pseudoOk?'עֲדַיִן שַׁח! נַסֵּה מִשְׁבֶּצֶת אַחֶרֶת.':'הַכְּלִי לֹא זָז כָּכָה.';if(!withHelp)mv.select(su.K);else mv.draw();
-    if(errs>=4){lock=true;paint(el,p.b,{dots:new Set(legal(p).map(x=>x.t)),sel:withHelp?null:su.K});msg.textContent='לְכָאן אֶפְשָׁר לָלֶכֶת.';done(2,null);}}});
+  let p=su.p;prompt(wrap,'הַמֶּלֶךְ שֶׁלְּךָ בְּשַׁח! הַצֵּל אוֹתוֹ.');const msg=note(wrap);let errs=0,lock=false,hs=null;
+  const ms0=legal(p);const best=ms0.find(m=>withHelp&&m.t===su.as&&m.pc==='R')||ms0.find(m=>m.pc==='K')||ms0[0];const [,bdef,bfem]=NM[best.pc];
+  const end=()=>{if(lock)return;lock=true;paint(el,p.b,{dots:new Set(legal(p).map(x=>x.t)),sel:best.f,good:new Set([best.t])});msg.textContent='לְכָאן אֶפְשָׁר לָלֶכֶת.';done(2,null);};
+  const miss=pseudoOk=>{errs++;sfx.no();msg.textContent=pseudoOk?'עֲדַיִן שַׁח! נַסֵּה מִשְׁבֶּצֶת אַחֶרֶת.':'הַכְּלִי לֹא זָז כָּכָה.';if(!withHelp)mv.select(su.K);else mv.draw();helpAfter(hb,errs,4,end);};
+  const el=boardEl(null);const mv=mover(el,()=>p,{dots:false,locked:()=>lock,hint:()=>hs,onMove:(m,pseudoOk,from)=>{
+    if(m){lock=true;p=make(p,m);paint(el,p.b,{last:[m.f,m.t]});msg.textContent='הַמֶּלֶךְ בָּטוּחַ!';sfx.ok(errs);done(Math.max(errs>2?2:errs,helped(hb)),el);return;}miss(pseudoOk);}});
   if(withHelp)mv.draw();else mv.select(su.K);wrap.appendChild(el);
+  const hb=boardHelp(wrap,{clue:()=>{hs=best.f;mv.draw();return best.pc==='K'?'הַמֶּלֶךְ צָרִיךְ לָזוּז לְמִשְׁבֶּצֶת שֶׁאַף כְּלִי שָׁחֹר לֹא תּוֹקֵף.':`סִמַּנְתִּי אֶת ${bdef}. ${bfem?'הִיא יְכוֹלָה':'הוּא יָכוֹל'} לֶאֱכֹל אֶת הַכְּלִי שֶׁתּוֹקֵף!`;},
+    answer:()=>{end();return `${bdef} ${bfem?'זָזָה':'זָז'} לַמִּשְׁבֶּצֶת הַיְּרֻקָּה, וְהַמֶּלֶךְ בָּטוּחַ.`;},wrong:()=>{if(!lock)miss(true);}});
   return {get pos(){return p;},K:su.K,solve:()=>{const m=legal(p)[0];if(withHelp||mv.sel!==m.f)el.querySelector(`[data-s="${m.f}"]`).click();el.querySelector(`[data-s="${m.t}"]`).click();}};};}
 function runCheck(back){lesson('chess-check','שַׁח!',[isCheckTask(),isCheckTask(),isCheckTask(),escapeTask(0),escapeTask(0),escapeTask(0),escapeTask(1),escapeTask(1)],back,{done:'שׁוֹמֵר הַמֶּלֶךְ!',again:()=>runCheck(back)});}
 
 /* ---------- 5. mate in one (hand-made puzzles) ---------- */
-function mateTask(fen){return (wrap,done)=>{let p=fromFEN(fen);const sol=mates(p);prompt(wrap,'תֵּן מָט בְּמַהֲלָךְ אֶחָד!');const msg=note(wrap);let errs=0,lock=false;
-  const el=boardEl(null);const mv=mover(el,()=>p,{dots:true,locked:()=>lock,onMove:(m,pseudoOk)=>{
-    if(m&&status(make(p,m))==='mate'){lock=true;p=make(p,m);paint(el,p.b,{last:[m.f,m.t],chk:kingSq(p.b,'b')});msg.textContent='מָט! כָּל הַכָּבוֹד!';sfx.ok(errs);done(errs>2?2:errs,el);return;}
-    errs++;sfx.no();msg.textContent=m&&status(make(p,m))==='check'?'זֶה שַׁח, אֲבָל לֹא מָט. נַסֵּה שׁוּב.':m?'זֶה לֹא מָט. נַסֵּה שׁוּב.':'הַכְּלִי לֹא זָז כָּכָה.';
-    mv.draw(errs>=2?{hint:sol[0].f}:{});if(errs>=4){lock=true;paint(el,p.b,{sel:sol[0].f,good:new Set([sol[0].t])});msg.textContent='הִנֵּה הַמָּט.';done(2,null);}}});
-  mv.draw();wrap.appendChild(el);return {solve:()=>{el.querySelector(`[data-s="${sol[0].f}"]`).click();el.querySelector(`[data-s="${sol[0].t}"]`).click();}};};}
+function mateTask(fen){return (wrap,done)=>{let p=fromFEN(fen);const sol=mates(p);prompt(wrap,'תֵּן מָט בְּמַהֲלָךְ אֶחָד!');const msg=note(wrap);let errs=0,lock=false,hs=null;
+  const [,def,fem]=NM[sol[0].pc];
+  const end=()=>{if(lock)return;lock=true;paint(el,p.b,{sel:sol[0].f,good:new Set([sol[0].t])});msg.textContent='הִנֵּה הַמָּט.';done(2,null);};
+  const miss=m=>{errs++;sfx.no();msg.textContent=m&&status(make(p,m))==='check'?'זֶה שַׁח, אֲבָל לֹא מָט. נַסֵּה שׁוּב.':m?'זֶה לֹא מָט. נַסֵּה שׁוּב.':'הַכְּלִי לֹא זָז כָּכָה.';mv.draw();helpAfter(hb,errs,4,end);};
+  const el=boardEl(null);const mv=mover(el,()=>p,{dots:true,locked:()=>lock,hint:()=>hs,onMove:(m,pseudoOk)=>{
+    if(m&&status(make(p,m))==='mate'){lock=true;p=make(p,m);paint(el,p.b,{last:[m.f,m.t],chk:kingSq(p.b,'b')});msg.textContent='מָט! כָּל הַכָּבוֹד!';sfx.ok(errs);done(Math.max(errs>2?2:errs,helped(hb)),el);return;}miss(m);}});
+  mv.draw();wrap.appendChild(el);
+  const hb=boardHelp(wrap,{clue:()=>{hs=sol[0].f;mv.draw();return `סִמַּנְתִּי אֶת ${def}. ${fem?'הִיא נוֹתֶנֶת':'הוּא נוֹתֵן'} אֶת הַמָּט. לְאָן?`;},
+    answer:()=>{end();return `${def} ${fem?'הוֹלֶכֶת':'הוֹלֵךְ'} לַמִּשְׁבֶּצֶת הַיְּרֻקָּה. הַמֶּלֶךְ הַשָּׁחֹר בְּשַׁח, וְאֵין לוֹ לְאָן לִבְרֹחַ. זֶה מָט!`;},wrong:()=>{if(!lock)miss(null);}});return {solve:()=>{el.querySelector(`[data-s="${sol[0].f}"]`).click();el.querySelector(`[data-s="${sol[0].t}"]`).click();}};};}
 function runMate(back){const cz=ST();const lv=cz.mate===2?2:1;const set=lv===1?PUZ.slice(0,4):PUZ.slice(4);
   lesson('chess-mate','מָט בְּמַהֲלָךְ אֶחָד',set.map(mateTask),back,{done:'אַלּוּף הַמָּט!',again:()=>runMate(back),onEnd:st=>{if(st>=2&&lv===1){cz.mate=2;O.persist();return 'עָלִיתָ לְשָׁלָב הַבָּא!';}return '';}});}
 
@@ -8436,6 +8557,11 @@ function teachView(c){
   if(c.kind==='sight')return {head:'מִלָּה שֶׁרוֹאִים הַרְבֵּה!',body:`<div class="e2word">${L_(c.w)}</div><div class="e2he">${L_(c.ex)} = ${c.exHe}</div>`};
   return {head:'הַקְשֵׁב, וְאָז אֱמֹר בְּקוֹל',body:`<div class="e2sit">${E2.PH[c.p].emo}</div><div class="e2phr">${L_(c.p)}</div><div class="e2he">${E2.PH[c.p].he}</div>`,honor:1};}
 
+/* #54 a short Hebrew clue for the help button ('' = wrong options go away) */
+const CLUE={read:'הַקְשֵׁב לַמִּלָּה וּבְחַר אֶת הַתְּמוּנָה שֶׁלָּהּ.',sent:'הַקְשֵׁב לַמִּשְׁפָּט וְחַפֵּשׂ בּוֹ אֶת הַמִּלָּה שֶׁל הַתְּמוּנָה.'};
+function clueOf(q){if(CLUE[q.type])return CLUE[q.type];
+  if(q.type==='sound'&&E2.LET[q.L].he)return `${q.end?'בַּסּוֹף':'בַּהַתְחָלָה'} יֵשׁ צְלִיל כְּמוֹ <b class="e2heL">${E2.LET[q.L].he}</b>.`;return '';}
+
 /* ---------- one round of a level ---------- */
 const NAMES=['eng-voc','eng-abc','eng-read','eng-talk','eng-song'];
 const ACTN={'eng-voc':'מִלִּים','eng-abc':'אוֹתִיּוֹת וּצְלִילִים','eng-read':'קוֹרְאִים','eng-talk':'מְדַבְּרִים','eng-song':'שִׁירִים'};
@@ -8462,11 +8588,10 @@ function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save
   async function speakTeach(c,card,v){const tok=++TOK;
     if(v.tiles){const ts=[...card.querySelectorAll('.e2t')];for(const t of ts){if(tok!==TOK)return;ts.forEach(x=>x.classList.remove('on'));t.classList.add('on');await sleep(D(450));}if(tok!==TOK)return;ts.forEach(x=>x.classList.add('on'));}
     en(c.say);await waitSay(c.say,'en',tok);if(tok===TOK)card.querySelectorAll('.e2t').forEach(x=>x.classList.remove('on'));}
-  function renderQ(step){const q=E2.gen(save,step);window.__e2q=q;const v=qView(q);let tries=0,lock=false,hinted=false;cur={ans:q.ans};
+  function renderQ(step){const q=E2.gen(save,step);window.__e2q=q;const v=qView(q);let tries=0,lock=false,hinted=false,fin=false;cur={ans:q.ans};
     const card=h('div','prq tqc',v.pr);
     const playIt=()=>{if(v.seq)return playSeq();if(v.play)return talk(v.play);};
     if(v.play||v.seq){const pb=h('button','hintbtn',ICON.say+`<span>${v.seq?'שׁוּב':'הַשְׁמַע'}</span>`);pb.onclick=twice(()=>playIt());card.appendChild(pb);}
-    if(v.hint){const hb=h('button','hintbtn lsn',ICON.say+'<span>עֶזְרָה</span>');hb.onclick=twice(()=>{hinted=true;if(v.karaoke){const tok=++TOK;karaoke(card.querySelector('.e2sent'),v.hint,tok);}else talk([['en',v.hint]]);});card.appendChild(hb);}
     wrap.appendChild(card);
     const row=h('div','chs'+(q.opts[0].t==='let'||q.opts[0].t==='en'?' ltr':'')+(q.opts.length===4?' e2g4':''));
     q.opts.forEach((o,k)=>{const b=h('button','chb '+optCls(q),optHTML(o));b.onclick=()=>pick(k,b);row.appendChild(b);});wrap.appendChild(row);
@@ -8479,13 +8604,17 @@ function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save
     if(!v.noAuto)setTimeout(async()=>{if(!card.isConnected)return;if(first&&v.ask){await talk([['he',v.ask]]);if(!card.isConnected)return;}playIt();},D(350));
     else if(first&&v.ask)setTimeout(()=>{if(card.isConnected)talk([['he',v.ask]]);},D(350));
     const settle=r=>{const k=q.k;const p=res[k];res[k]=p==='bad'||r==='bad'?'bad':p==='hint'||r==='hint'?'hint':'ok';E2.mark(save,k,res[k],b0[k]|0,d);O.persist();};
-    const reveal=()=>{if(v.explain){ex.hidden=false;ex.innerHTML=`<div class="cap"><div class="e2ex">${v.explain}</div></div>`;}
-      if(v.afterK){const tok=++TOK;karaoke(card.querySelector('.e2sent'),q.s,tok);}else if(v.after)talk(v.after);};
+    const sayAfter=()=>{if(v.afterK){const tok=++TOK;karaoke(card.querySelector('.e2sent'),q.s,tok);}else if(v.after)talk(v.after);};
+    const reveal=()=>{if(v.explain){ex.hidden=false;ex.innerHTML=`<div class="cap"><div class="e2ex">${v.explain}</div></div>`;}sayAfter();};
+    /* #54 the one help button: tap 1 = the spoken clue + a short Hebrew clue, tap 2 = the answer + its explanation (the question ends like after two mistakes) */
+    const HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,before:ex,explain:v.explain?`<div class="e2ex">${v.explain}</div>`:'',
+      clue:()=>{hinted=true;if(v.hint){if(v.karaoke){const tok=++TOK;karaoke(card.querySelector('.e2sent'),v.hint,tok);}else talk([['en',v.hint]]);}else playIt();return clueOf(q);},
+      reveal:()=>{if(lock)return;lock=true;hush();if(!fin)err++;settle('bad');nq++;sayAfter();setTimeout(next,D(4200));}}):null;
     function pick(k,b){if(lock||b.disabled)return;
       if(k===q.ans){lock=true;hush();b.classList.add('ok');sfx.ok(i);const g=tries||hinted?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);
         if(!tries&&T.skHit)T.skHit(NAMES[lv],!hinted);if(!tries&&KN)KN.hit(NAMES[lv],!hinted);settle(tries?'bad':hinted?'hint':'ok');nq++;reveal();setTimeout(next,D(v.after||v.afterK?2600:1700));return;}
       if(!tries&&T.skHit)T.skHit(NAMES[lv],false);if(!tries&&KN)KN.hit(NAMES[lv],false);tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();
-      if(tries>=2){lock=true;hush();settle('bad');nq++;row.children[q.ans].classList.add('show');reveal();setTimeout(next,D(3000));}}
+      if(tries>=2){if(HB&&HB.el.isConnected){fin=true;HB.answer();return;}lock=true;hush();settle('bad');nq++;row.children[q.ans].classList.add('show');reveal();setTimeout(next,D(3000));}}
     }
   function next(){if(!wrap.isConnected)return;i++;if(i>=steps.length){T.setKey(null);const t=doneTitle(before,snapshot());T.finishAct(id,err,Math.max(1,nq),gems,back,()=>round(lv,back),t);}else render();}
   T.setKey(e=>{if(/^[1-9]$/.test(e.key)){const r=wrap.querySelector('.chs');const b=r&&r.children[+e.key-1];if(b)b.click();}});
@@ -8495,7 +8624,7 @@ function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save
 
 /* ---------- songs ---------- */
 /* one action: the song he has sung the least (a newly opened song first) */
-function songs(back){hush();const list=E2.openSongs(O.save);if(!list.length){he('עוֹד אֵין שִׁיר. קֹדֶם לוֹמְדִים מִלִּים!');if(back)back();return;}const g=E2.st(O.save).g;const min=Math.min(...list.map(x=>g[x.th]|0));return sing(list.find(x=>(g[x.th]|0)===min),back);}
+function songs(back){hush();const list=E2.openSongs(O.save);if(!list.length){he('עוֹד אֵין שִׁיר. קֹדֶם לוֹמְדִים מִלִּים!');const s=$('#sTal');if(s)s.innerHTML='';if(back)back();return;}const g=E2.st(O.save).g;const min=Math.min(...list.map(x=>g[x.th]|0));return sing(list.find(x=>(g[x.th]|0)===min),back);}
 function sing(song,back){hush();O.setScreen('sTal','sea',back);T.hudT('אַנְגְּלִית: '+song.he);O.sayNow='הקשב ושיר איתי';const s=$('#sTal');s.innerHTML='';
   const wrap=h('div','tq e2');s.appendChild(wrap);
   const card=h('div','prq tqc e2song',`<div class="e2head">${song.he}</div><div class="e2q">הַקְשֵׁב וְשִׁיר אִתִּי</div>${song.l.map(l=>`<div class="e2line">${wordsHTML(l)}</div>`).join('')}`);wrap.appendChild(card);
@@ -9168,13 +9297,17 @@ function round(o){/* o: {id, sk, title, bg, back, n, next(i) → q, again} */
     const row=h('div','chs n'+q.opts.length+(q.opts[0].t==='num'?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+optCls(op),optHTML(op));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');
     const done=(ok)=>{if(!first)return;first=false;if(q.bank&&window.LEARN)try{window.LEARN.seen(q.bank,q.bkey,ok,false);}catch(e){}const ch=C.answer(TH(),o.sk,ok);hit(o.sk,ok);O.persist();if(ch===1)O.floatText(card,'🎉 עָלִיתָ שָׁלָב!');};
-    const explain=()=>{ex.hidden=false;ex.innerHTML=`<div class="cap"><div>${sprTok(q.rule)}</div>${q.ruleItems?`<div class="thser sm">${q.ruleItems.map(x=>`<span class="thi">${optHTML(x)}</span>`).join('')}</div>`:''}</div>`;
+    const ruleHTML=()=>`<div>${sprTok(q.rule)}</div>${q.ruleItems?`<div class="thser sm">${q.ruleItems.map(x=>`<span class="thi">${optHTML(x)}</span>`).join('')}</div>`:''}`;
+    /* only: the help box already shows the answer with the rule, so the explanation box holds just 'continue' */
+    const explain=(only)=>{ex.hidden=false;ex.innerHTML=only?'':`<div class="cap">${ruleHTML()}</div>`;
       const nb=h('button','bigbtn sm',O.ICON.play+'<span>הַמְשֵׁךְ</span>');nb.onclick=()=>{sfx.pop(1);next();};ex.appendChild(nb);setTimeout(()=>nb.focus(),50);T.setKey(e=>{if(e.key==='Enter'||e.key===' ')nb.click();});};
+    /* #54 one help button: clue (elimination), then the answer with the rule (the question ends like after two mistakes) */
+    const HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,explain:ruleHTML,before:ex,reveal:()=>{if(lock)return;lock=true;err++;done(false);explain(true);}}):null;
     function pickA(k,b){if(lock||b.disabled)return;
-      if(k===q.ans){lock=true;done(tries===0);if(T.rdA)T.rdA(q,tries,b);b.classList.add('ok');sfx.ok(i);const g=tries?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);
+      if(k===q.ans){lock=true;done(tries===0);if(T.rdA)T.rdA(q,tries,b);b.classList.add('ok');sfx.ok(i);const g=tries||(HB&&HB.step)?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);
         if(tries)explain();else setTimeout(next,D(900));return;}
       tries++;err++;done(false);b.classList.add('bad');b.disabled=true;sfx.no();
-      if(tries>=2||q.opts.length<=2){lock=true;row.children[q.ans].classList.add('show');explain();}}
+      if(tries>=2||q.opts.length<=2){lock=true;row.children[q.ans].classList.add('show');if(HB&&HB.el.isConnected){HB.answer();explain(true);}else explain();}}
     T.setKey(e=>{if(/^[1-9]$/.test(e.key)){const b=row.children[+e.key-1];if(b)b.click();}});
     window.__think={q,get ans(){return q.ans;},wrap,i};};
   function next(){if(!wrap.isConnected)return;i++;if(i>=o.n){T.setKey(null);T.finishAct(o.id,err,o.n,gems,o.back,o.again);}else render();}
@@ -9194,10 +9327,12 @@ function readRC(back){const th=TH();th.rcR=th.rcR||[];let lv=C.level(th,'rc');le
       if(!qi)setTimeout(()=>{if(wrap.isConnected)O.say(INSTR);},D(400));
       const row=h('div','chs n'+q.opts.length);q.opts.forEach((op,k)=>{const b=h('button','chb '+optCls(op),optHTML(op));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
       const done=ok=>{if(!first)return;first=false;const ch=C.answer(TH(),'rc',ok);hit('rc',ok);if(nk||ch.nk)hit('nk',ok);O.persist();if(ch.lv===1)O.floatText(card,'🎉 עָלִיתָ שָׁלָב!');else if(ch.nk===1)O.floatText(card,'🎉 קוֹרֵא גַּם בְּלִי נִקּוּד!');};
+      /* #54 one help button: clue (elimination), then the answer (the question ends like after two mistakes) */
+      const HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,reveal:()=>{if(lock)return;lock=true;err++;perr++;done(false);setTimeout(nextQ,D(4200));}}):null;
       function pickA(k,b){if(lock||b.disabled)return;
-        if(k===q.ans){lock=true;done(tries===0);b.classList.add('ok');sfx.ok(qi);const g=tries?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);setTimeout(nextQ,D(tries?1600:900));return;}
+        if(k===q.ans){lock=true;done(tries===0);b.classList.add('ok');sfx.ok(qi);const g=tries||(HB&&HB.step)?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);setTimeout(nextQ,D(tries?1600:900));return;}
         tries++;err++;perr++;done(false);b.classList.add('bad');b.disabled=true;sfx.no();if(lv===3)addSay();
-        if(tries>=2){lock=true;row.children[q.ans].classList.add('show');setTimeout(nextQ,D(2400));}}
+        if(tries>=2){lock=true;row.children[q.ans].classList.add('show');if(HB&&HB.el.isConnected)HB.answer();setTimeout(nextQ,D(HB?4200:2400));}}
       T.setKey(e=>{if(/^[1-9]$/.test(e.key)){const b=row.children[+e.key-1];if(b)b.click();}});
       window.__think={q,get ans(){return q.ans;},wrap,i:qi};};
     const nextQ=()=>{if(!wrapNow||!wrapNow.isConnected)return;qi++;if(qi<pick.qs.length)ask();else{if(window.LEARN)try{window.LEARN.seen('rc',pick.P.p,!perr,false);}catch(e){}pi++;if(pi<NP)passage();else{T.setKey(null);T.finishAct('read-rc',err,NP*3,gems,back,()=>readRC(back));}}};
@@ -9220,8 +9355,10 @@ function challenge(back){const tl=testLv();if(!tl)return back();const plan=C.tes
     const iv=setInterval(()=>{if(!wrap.isConnected){clearInterval(iv);return;}tick();},1000);
     const render=()=>{const q=qs[i];T.hudT('אֶתְגַּר הָאַלּוּפִים',T.progressBar(i,qs.length));wrap.innerHTML='';
       const card=h('div','prq tqc',`${q.pt?`<div class="thp${TH().nk?' nk':''}">${T.nikudText(q.pt,q.pp)}</div>`:''}${promptHTML(q)}${q.text?`<div class="qq">${q.pt?T.nikudText(q.text,q.textP,true):q.text}</div>`:''}`);wrap.appendChild(card);
-      const row=h('div','chs n'+q.opts.length+(q.opts[0].t==='num'?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+optCls(op)+(got[i]===k?' pick':''),optHTML(op));b.onclick=()=>{sfx.pop(1);got[i]=k;b.classList.add('pick');setTimeout(()=>step(1),D(250));};row.appendChild(b);});wrap.appendChild(row);
+      const row=h('div','chs n'+q.opts.length+(q.opts[0].t==='num'?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+optCls(op)+(got[i]===k?' pick':''),optHTML(op));b.onclick=()=>{if(got[i]===-1)return;sfx.pop(1);got[i]=k;b.classList.add('pick');setTimeout(()=>step(1),D(250));};row.appendChild(b);});wrap.appendChild(row);
       const nav=h('div','thnav');const skip=h('button','plink',got[i]==null?'דַּלֵּג ←':'הַבָּא ←');skip.onclick=()=>step(1);nav.appendChild(skip);wrap.appendChild(nav);
+      /* #54 one help button: clue (elimination), then the answer — that question counts as not solved, and the test moves on */
+      if(window.HELP&&HELP.mc)HELP.mc(wrap,{row,ans:q.ans,before:nav,reveal:()=>{got[i]=-1;setTimeout(()=>{if(wrap.isConnected&&!ended&&qs[i]===q)step(1);},D(4200));}});
       T.setKey(e=>{if(/^[1-9]$/.test(e.key)){const b=row.children[+e.key-1];if(b)b.click();}});window.__think={q,get ans(){return q.ans;},wrap,i,test:true};};
     /* after the last question, go back to the ones that were skipped; finish when all are answered */
     const step=()=>{const open=qs.map((_,k)=>k).filter(k=>got[k]==null);if(!open.length)return finish();const nx=open.find(k=>k>i);i=nx!=null?nx:open[0];render();};
@@ -9824,13 +9961,17 @@ function askQ(wrap,q,i,n,title,onAns){T.hudT(title,T.progressBar(i,n));wrap.inne
   const row=h('div','chs ltr');let tries=0,lock=false;
   q.opts.forEach((v,k)=>{const b=h('button','chb num',String(v));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
   const exb=h('div','hintbox');exb.hidden=true;wrap.appendChild(exb);card.classList.add('flashin');
-  const showEx=()=>{if(q.chart){const c=card.querySelector('.lnhc');if(c)c.outerHTML=hundred(q.chart,true);}exb.hidden=false;exb.innerHTML=`<div class="cap">${q.tip?`<div>💡 ${q.tip}</div>`:''}${q.ex||''}</div>`;
+  /* only: the help box already shows the answer with the explanation, so the explanation box holds just 'continue' */
+  const showEx=(only)=>{if(q.chart){const c=card.querySelector('.lnhc');if(c)c.outerHTML=hundred(q.chart,true);}exb.hidden=false;exb.innerHTML=only?'':`<div class="cap">${q.tip?`<div>💡 ${q.tip}</div>`:''}${q.ex||''}</div>`;
     const nb=h('button','bigbtn',O.ICON.play+'<span>הַמְשֵׁךְ</span>');nb.onclick=()=>{sfx.pop(1);onAns(null);};exb.appendChild(nb);setTimeout(()=>nb.focus(),50);T.setKey(e=>{if(e.key==='Enter'||e.key===' ')nb.click();});};
+  /* #54 one help button: the strategy tip as the clue, then the answer with its explanation (the question ends like after two mistakes) */
+  const HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,clue:q.tip,explain:q.ex||(q.tip?'💡 '+q.tip:''),before:exb,
+    reveal:()=>{if(lock)return;lock=true;if(tries===0)onAns({ok:false,first:true,ms:Date.now()-t0},true);tries++;showEx(true);}}):null;
   function pickA(k,b){if(lock||b.disabled)return;const ms=Date.now()-t0;
-    if(k===q.ans){lock=true;if(tries===0)onAns({ok:true,first:true,ms},true);b.classList.add('ok');sfx.ok(i);const g=tries?1:2;O.addGems(g,b);O.floatText(b,'+'+g);
+    if(k===q.ans){lock=true;if(tries===0)onAns({ok:true,first:true,ms},true);b.classList.add('ok');sfx.ok(i);const g=tries||(HB&&HB.step)?1:2;O.addGems(g,b);O.floatText(b,'+'+g);
       if(tries){showEx();}else{if(q.chart){const c=card.querySelector('.lnhc');if(c)c.outerHTML=hundred(q.chart,true);}setTimeout(()=>onAns(null),D(q.chart?1500:900));}return;}
     if(tries===0)onAns({ok:false,first:true,ms},true);tries++;b.classList.add('bad');b.disabled=true;sfx.no();
-    if(tries>=2){lock=true;row.children[q.ans].classList.add('show');showEx();}}
+    if(tries>=2){lock=true;row.children[q.ans].classList.add('show');if(HB&&HB.el.isConnected){HB.answer();showEx(true);}else showEx();}}
   T.setKey(e=>{if(/^[1-9]$/.test(e.key)){const b=row.children[+e.key-1];if(b)b.click();}});
   window.__learn={q,get ans(){return q.ans;},wrap,i};}
 
@@ -10421,7 +10562,31 @@ function right(){if(!S)return {solo:true,star:true};const st=S;const solo=st.lev
   S=null;return {solo,star:solo};}
 function stop(keepPend){if(S){clearTimeout(S.idleT);clearTimeout(S.exT);hidePanel();if(ovOwn&&!ov().querySelector('.hlp-tb'))closeOv();}S=null;if(!keepPend)pend=null;}
 
-const HELP=window.HELP={register,classify,start,wrong,right,stop,due,stuckList,parentHTML,cfg,
+/* ---------- #54 the help button: ONE big button on every question.
+   tap 1 = a small clue, tap 2 = the answer with a short explanation. After 2 wrong answers the host calls offer() (clue by itself)
+   or answer() (when its question ends there). button(host,o): o = {clue()→html|'' , answer()→html, before}; mc(host,o) for choice rows:
+   o = {row, ans, clue (text), explain (html), reveal()} — clue without text: wrong options go away until two are left. ---------- */
+const BT={lbl:'עֶזְרָה',clue:'רֶמֶז',offer:'צָרִיךְ עֶזְרָה? הִנֵּה רֶמֶז',elim:'הוֹרַדְתִּי תְּשׁוּבוֹת שֶׁלֹּא מַתְאִימוֹת.',again:'הַקְשֵׁב שׁוּב לַשְּׁאֵלָה וְחַשֵּׁב.',ans:'הַתְּשׁוּבָה הִיא'};
+function button(host,o){if(!host)return null;o=o||{};(host.isConnected?document:host).querySelectorAll('.helpq').forEach(x=>x.remove());/* a late timer of a closed screen never takes the live button away */
+  const w=el('helpq'),box=el('helpbox');const b=btn('helpbtn','<span class="hq-i" aria-hidden="true">?</span><span>'+BT.lbl+'</span>',()=>tap(false));
+  box.hidden=true;w.append(b,box);if(o.before&&o.before.parentNode===host)host.insertBefore(w,o.before);else host.appendChild(w);
+  let n=0;const show=(html,voice)=>{box.hidden=false;box.innerHTML=html;box.classList.remove('in');void box.offsetWidth;box.classList.add('in');say(voice||html);};
+  function tap(auto){if(n>=2||!w.isConnected)return;n++;track({h:'btn',n,auto:auto?1:0});
+    if(n===1){let c='';try{c=o.clue?o.clue():'';}catch(e){}const head=auto?BT.offer:BT.clue;show(`<b>${head}:</b> ${c||BT.again}`);}
+    else{let e='';try{e=o.answer?o.answer():'';}catch(x){}b.disabled=true;w.classList.remove('offer');w.classList.add('done');show(e||BT.ans);}}
+  const api={el:w,box,btn:b,o,tap:()=>tap(false),offer(){if(n===0&&w.isConnected){w.classList.add('offer');tap(true);}},answer(){if(n<2&&w.isConnected){n=1;tap(true);}},get step(){return n;},get ans(){return o.ans;}};
+  w._help=api;return api;}
+function elim(row,ans){const bs=[...row.children].filter((x,k)=>k!==ans&&!x.disabled);if(row.children.length<=2||bs.length<1)return false;
+  shuffle(bs).slice(0,Math.max(0,bs.length-1)).forEach(x=>{x.disabled=true;x.classList.add('gone');});return bs.length>1;}
+function mc(host,o){o=o||{};const rowOf=()=>typeof o.row==='function'?o.row():o.row,ansOf=()=>typeof o.ans==='function'?o.ans():o.ans;
+  return button(host,{before:o.before,get ans(){return ansOf();},
+    clue:()=>{const t=typeof o.clue==='function'?o.clue():o.clue;if(t)return t;const row=rowOf();if(row&&elim(row,ansOf()))return BT.elim;return '';},
+    answer:()=>{const row=rowOf(),a=row&&row.children[ansOf()];if(a)a.classList.add('show');const lbl=a?a.innerHTML:'';try{o.reveal&&o.reveal();}catch(e){}
+      const x=typeof o.explain==='function'?o.explain():o.explain;return `<div>${BT.ans}: <b class="hq-a">${lbl}</b></div>${x?`<div class="hq-x">${x}</div>`:''}`;}});}
+/* packs (loaded before this file) put their fixed help texts in window.HELP_TEXTS, so pregen has them */
+const allTexts=()=>Object.values(BT).concat([BT.clue+': '+BT.elim,BT.clue+': '+BT.again,BT.offer+': '+BT.elim,BT.offer+': '+BT.again],[...new Set(window.HELP_TEXTS||[])]);
+
+const HELP=window.HELP={register,classify,start,wrong,right,stop,due,stuckList,parentHTML,cfg,button,mc,allTexts,BT,
   explain:(q,ctx)=>{const d=q&&q.type&&REG[q.type]?q:classify(q,ctx);if(!d)return null;const ex=REG[d.type];return {d,ex,topic:ex.topic(d,ctx),tip:ex.tip&&ex.tip(d),hint:ex.hint(d,ctx),visual:ex.visual&&ex.visual(d,ctx),
     example:ex.example&&(ex.reading?null:ex.example(d)),similar:ex.similar&&ex.similar(d),teach:ex.teach&&ex.teach(d),show:ex.show&&ex.show(d),whole:ex.whole&&ex.whole(d)};},
   teachLog:()=>DB().tb.slice(),get state(){return S?{type:S.d.type,level:S.level,phase:S.phase,wrong:S.wrong}:null;},
