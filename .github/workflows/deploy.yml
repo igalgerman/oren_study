@@ -1,0 +1,114 @@
+# Deploy + voice pregen in GitHub Actions (#192): 0 work on the PC.
+# Runs after the "tests" workflow succeeded on a push to main. Only the newest commit on main deploys.
+# Needs the repo secret CLOUDFLARE_API_TOKEN (the owner adds it once: Settings > Secrets and variables > Actions).
+name: deploy
+on:
+  workflow_run:
+    workflows: [tests]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:          # manual run (e.g. right after the secret was added): deploys the newest main
+permissions:
+  contents: read
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: deploy-main
+      cancel-in-progress: true
+    outputs:
+      deployed: ${{ steps.report.outputs.ok }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || 'main' }}
+      - name: Newest commit on main?
+        id: newest
+        run: |
+          main=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "$main" != "$(git rev-parse HEAD)" ]; then
+            echo "newest=no" >> "$GITHUB_OUTPUT"
+            echo "Skipped: main moved on to $main; that commit deploys after its tests." | tee -a "$GITHUB_STEP_SUMMARY"
+          else echo "newest=yes" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/setup-python@v5
+        if: steps.newest.outputs.newest == 'yes'
+        with:
+          python-version: '3.12'
+      - name: Deploy (build + deploy.sh)
+        if: steps.newest.outputs.newest == 'yes'
+        working-directory: oren2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then echo "no token: the owner adds the repo secret CLOUDFLARE_API_TOKEN" > "$RUNNER_TEMP/deploy.log"; exit 0; fi
+          bash cf/tools/deploy.sh 2>&1 | tee "$RUNNER_TEMP/deploy.log" || true
+      - name: Summary
+        id: report
+        if: steps.newest.outputs.newest == 'yes'
+        run: python3 tools/ci/deploy_ci.py report "$RUNNER_TEMP/deploy.log"
+      - name: Live smoke check (page, save round trip, /api/tts/status)
+        if: steps.newest.outputs.newest == 'yes'
+        run: python3 tools/ci/deploy_ci.py smoke "${{ steps.report.outputs.url }}"
+
+  deploy-failed:
+    # one issue "Deploy failed" (P0): opened once, then commented on each new failure
+    needs: deploy
+    if: failure() && needs.deploy.result == 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          body="Deploy of $SHA failed (deploy or live smoke check). Nothing new went live. Log: $RUN"
+          n=$(gh issue list --state open --search 'in:title "Deploy failed"' --json number,title --jq '[.[] | select(.title == "Deploy failed")][0].number')
+          if [ -n "$n" ]; then gh issue comment "$n" --body "$body"
+          else gh issue create --title "Deploy failed" --label P0 --body "$body"; fi
+
+  pregen:
+    # voice pregen: its own job, own timeout and own queue, so it never blocks or delays a deploy
+    needs: deploy
+    if: needs.deploy.outputs.deployed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    concurrency:
+      group: pregen-main
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || 'main' }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install playwright
+        working-directory: oren2
+        run: |
+          npm i --no-save --no-package-lock playwright
+          npx playwright install --with-deps chromium
+      - name: Build
+        working-directory: oren2
+        run: python3 build_talents.py
+      - name: Restore pregen state (done texts + today's count)
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/oren-pregen
+          key: pregen-state-${{ github.run_id }}
+          restore-keys: pregen-state-
+      - name: Voice pregen
+        run: node oren2/cf/tools/pregen.js
+      - name: Save pregen state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/oren-pregen
+          key: pregen-state-${{ github.run_id }}-${{ github.run_attempt }}

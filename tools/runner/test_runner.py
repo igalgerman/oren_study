@@ -41,6 +41,14 @@ _q2 = [{"number": 5, "labels": ["pack", "ready-for-agent"], "createdAt": "1"},
 assert [i["number"] for i in _sel(_q2, 1)] == [6]
 print("ok bugs-first")
 
+# #177: hand work labelled 'manual' never takes a lane and is never started by the runner
+_q3 = [{"number": 10, "labels": ["manual", "in-progress", "core"], "createdAt": "1"},
+       {"number": 11, "labels": ["manual"], "createdAt": "1"},
+       {"number": 12, "labels": ["manual", "ready-for-agent"], "createdAt": "1"},
+       {"number": 13, "labels": ["core", "ready-for-agent"], "createdAt": "2"}]
+assert [i["number"] for i in _sel(_q3, 1)] == [13]
+print("ok manual")
+
 # questions + parking
 NL = chr(10)
 def scr(*lines): return NL.join(lines) + NL
@@ -104,6 +112,11 @@ assert [k for k, _ in _al] == ["free", "pr70", "bl5"], _al
 assert _al[0][1] == "2 lane(s) free for 20 min while work is ready" and _al[1][1].startswith("PR #70 has not moved for 90 min"), _al
 assert _al[2][1] == "#5 blocked for 3.0 h (waits for the owner)", _al
 assert [k for k, _ in W.idle_alarms(_iss, [], _now, _now - 5 * 60, 3)] == ["bl5"]   # free only 5 min: no alarm yet
+_cl = [{"n": 7, "state": "working", "last": "2026-11-26T09:00:00Z"}, {"n": 8, "state": "working", "last": "2026-11-26T11:30:00Z"}, {"n": 9, "last": ""}]
+_cn = _c.timegm((2026, 11, 26, 12, 0, 0, 0, 0, 0))
+_ca = W.cloud_stuck_alarms(_cl, _cn, 2)
+assert [k for k, _ in _ca] == ["cl7"] and "#7" in _ca[0][1] and "3.0 h" in _ca[0][1], _ca   # quiet 3 h > 2 h; #8 recent; #9 no data
+assert W.cloud_stuck_alarms(_cl, _cn, 4) == []
 print("ok idle alarm")
 # #123: closed wins over blocked; parked windows go after PARKED_MIN idle, never while waiting on a prompt
 _pk = [{"name": "review-41", "state": "live", "status": "done", "marker": True},
@@ -227,11 +240,18 @@ def _fake_run(cmd, **kw):
     return (0, "injected 1 2" + NL + "website copy written" + NL + "worker 3" + NL + "ok https://x.oren-game.pages.dev" + NL) if "deploy.sh" in " ".join(map(str, cmd)) else (0, "")
 _orig_run, _orig_env = r.run, r.env_file
 r.run, r.env_file = _fake_run, (lambda: {"CLOUDFLARE_API_TOKEN": "t"})
+# #192: deploy runs in GitHub Actions by default: the runner never calls deploy.sh, never starts pregen, never marks deployed.sha
+_dic = r.CFG.get("deploy_in_ci"); r.CFG.pop("deploy_in_ci", None)
+assert r.deploy_text(None).startswith("deploy runs in GitHub Actions") and _calls == []
+assert not r.deploy_text(None).startswith("deployed")          # so process() skips start_pregen and deploy_main skips deployed.sha
+r.CFG["deploy_in_ci"] = False
 r.CFG["pregen"] = False
 assert r.deploy_text(None) == "deployed ok https://x.oren-game.pages.dev (pregen off)" and not any("pregen.js" in " ".join(map(str, c)) for c in _calls)
 r.CFG["pregen"] = True; _calls.clear()
 assert r.deploy_text(None).startswith("deployed ok https://") and not any("pregen.js" in " ".join(map(str, c)) for c in _calls)   # #175: pregen runs later, outside the lock
 r.run, r.env_file = _orig_run, _orig_env; r.CFG["pregen"] = False
+if _dic is None: r.CFG.pop("deploy_in_ci", None)
+else: r.CFG["deploy_in_ci"] = _dic
 print("ok deploy")
 # sync_decision: keep the main checkout up to date with origin/main (#47)
 assert r.sync_decision("main", "main", False, 3) == ("pull", "")
@@ -371,6 +391,50 @@ assert r.reviewer_model(["model:opus"]) == "opus"
 assert r.reviewer_model(["model:haiku"]) == "sonnet" and r.reviewer_model([]) == "sonnet" and r.reviewer_model(["model:fable"]) == "sonnet"
 assert r.model_name(["model:fable"]) == "fable" and r.model_name([]) == "sonnet"
 print("ok model labels")
+
+# #133: remote lanes (local_lanes / remote_lanes), remote worker start, results from GitHub
+assert r.CFG["local_lanes"] == 0 and r.CFG["remote_lanes"] == 4 and "max_parallel" not in r.CFG
+assert r.total_lanes() == 4
+ch = [I(1, [R, "pack"]), I(2, [R, "pack"]), I(3, [R, "pack"])]
+assert [(i["number"], w) for i, w in r.assign_where(ch, 0, 0, 1, 4)] == [(1, "local"), (2, "remote"), (3, "remote")]
+assert [(i["number"], w) for i, w in r.assign_where(ch, 1, 0, 1, 4)] == [(1, "remote"), (2, "remote"), (3, "remote")]   # local busy -> remote
+assert [(i["number"], w) for i, w in r.assign_where(ch, 1, 3, 1, 4)] == [(1, "remote")]                                 # one remote slot left
+assert r.assign_where(ch, 1, 4, 1, 4) == []                                                                              # all busy
+ex = [{"number": 9, "labels": ["express"]}]
+assert [(i["number"], w) for i, w in r.assign_where(ex, 1, 4, 1, 4)] == [(9, "remote")]   # #72: express beyond the cap still gets a slot
+assert [(i["number"], w) for i, w in r.assign_where(ex, 1, 0, 1, 0)] == [(9, "local")]    # no remote lanes: local
+assert r.assign_where([{"number": 9, "labels": []}], 1, 4, 1, 4) == []                    # a normal issue still waits
+assert [(i["number"], w) for i, w in r.assign_where(ch, 0, 0, 1, 0)] == [(1, "local")]                                  # no remote lanes configured
+p = r.remote_worker_prompt(7, "core", bug=True)
+assert "#7" in p and "lane/7" in p and "FLOW.md" in p and "Fixes #7" in p and "gh issue comment 7" in p
+assert "RESULT: DONE" in p and "QUESTION:" in p and "diagnosing-bugs" in p
+assert "diagnosing-bugs" not in r.remote_worker_prompt(7, "core")
+# wait_remote polls GitHub state (no herdr screen) until a final state
+seq = iter([{"state": "working"}, {"state": "working"}, {"state": "done", "line": "RESULT: DONE x", "pr": {"number": 9}}])
+t = [0]
+def sl(s): t[0] += s
+res = r.wait_remote(lambda: next(seq), sl, lambda: t[0], 3600, 30)
+assert res["state"] == "done" and t[0] == 60
+t[0] = 0
+res = r.wait_remote(lambda: {"state": "working"}, sl, lambda: t[0], 100, 30)
+assert res["state"] == "timeout"
+assert r.wait_remote(lambda: {"state": "question", "line": "QUESTION: a or b?"}, sl, lambda: 0, 100, 30)["state"] == "question"
+# a started remote issue records where=remote in stats
+import json as _j
+r.RUNS = r.HERE / ".runs-test133"
+r.stat(5, "core", "start", where="remote")
+ev = _j.loads((r.RUNS / "stats.jsonl").read_text().splitlines()[-1]); assert ev["where"] == "remote"
+import shutil as _sh; _sh.rmtree(r.RUNS)
+# remote_worker(): start via remote.py, poll GitHub, map to RESULT line; fake remote + fake gh
+calls = []
+def fake_start(n, task, cwd): calls.append(("start", n, task)); return {"ok": True, "session": "session_x", "url": "https://claude.ai/code/session_x"}
+res = r.remote_worker(7, "pack", False, fake_start, lambda: {"state": "done", "line": "RESULT: DONE https://p", "pr": {"number": 3}}, lambda s: None, lambda: 0, 60, 30)
+assert res == "RESULT: DONE https://p" and calls[0][0] == "start" and calls[0][1] == 7 and "lane/7" in calls[0][2]
+res = r.remote_worker(7, "pack", False, lambda n, t, cwd: {"ok": False, "error": "403"}, lambda: {"state": "working"}, lambda s: None, lambda: 0, 60, 30)
+assert res.startswith("RESULT: STUCK") and "403" in res
+res = r.remote_worker(7, "pack", False, fake_start, lambda: {"state": "question", "line": "QUESTION: x?"}, lambda s: None, lambda: 0, 60, 30)
+assert res == "QUESTION: x?"
+print("ok remote lanes")
 # #175: voice pregen runs in the background AFTER the merge lock, one at a time, never blocking an issue
 import os as _os
 class _P:
@@ -387,6 +451,14 @@ _src = (r.HERE / "runner.py").read_text(encoding="utf-8")
 _blk = _src.split('with FileLock("integrate", wait=True, note=f"#{n} deploy"):\n            stat(n, lane, "merged")', 1)[1].split("\n        m = sync_main", 1)[0]
 assert "pregen.js" not in _src.split("def deploy_text", 1)[1].split("def pregen_cmd", 1)[0] and "start_pregen(log)" in _blk
 print("ok pregen outside the merge lock")
+# #166: merge straight on green; update the branch only on a real conflict; lock only around `gh pr merge`
+assert r.needs_branch_update("CONFLICTING") and not r.needs_branch_update("MERGEABLE") and not r.needs_branch_update("UNKNOWN") and not r.needs_branch_update("")
+_src = (r.HERE / "runner.py").read_text(encoding="utf-8")
+_ci = _src.split("def ci_integrate", 1)[1].split("def find_pr_merged", 1)[0]
+assert "needs_branch_update" in _ci and 'FileLock("integrate"' in _ci.split("def merge():", 1)[1]
+_ib = _src.split("def integrate():", 1)[1].split("rounds = [0]", 1)[0]
+assert _ib.index("kind[\"ci\"] = rc == 6") < _ib.index("FileLock(\"integrate\"")   # CI path takes no lock; only the fallback does
+print("ok #166 merge on green, lock only around gh pr merge")
 # #181 merge lock watch: the lock says who/why/since; dead holders cleared; held > 20 min -> alarm
 r.RUNS.mkdir(exist_ok=True)
 _lk = r.FileLock("test181", note="#5 deploy"); _lk.path.unlink(missing_ok=True)
@@ -404,6 +476,28 @@ _a = W.lock_alarm((7, "#122 deploy", _t - 31 * 60), True, _t, [167, 176])
 assert _a[0] == "alarm" and "31 min" in _a[1] and "#122 deploy" in _a[1] and "#167, #176" in _a[1], _a
 assert W.lock_alarm((7, "#1 CI merge", _t - 60), False, _t)[0] == "clear"
 print("ok merge lock watch")
+
+# #149: four review colours. GREEN pass / BLUE pass-with-notes / PURPLE owner question / RED fix
+assert r.parse_verdict("VERDICT: PASS") == ("pass", "", "")
+assert r.parse_verdict("VERDICT: PASS-NOTES rename x; add test y") == ("notes", "rename x; add test y", "")
+assert r.parse_verdict("VERDICT: FIX button crashes: no test") == ("fix", "button crashes: no test", "")
+assert r.parse_verdict("VERDICT: PURPLE should Oren hear a or b? merge-safe") == ("purple", "should Oren hear a or b?", "merge-safe")
+assert r.parse_verdict("VERDICT: PURPLE should it speak? hold") == ("purple", "should it speak?", "hold")
+assert r.parse_verdict("VERDICT: PURPLE should it speak?") == ("purple", "should it speak?", "hold")   # no flag: safe default = hold
+assert r.parse_verdict("") == ("none", "", "") and r.parse_verdict("VERDICT: MAYBE") == ("none", "", "")
+assert r.find_marker("● VERDICT: PURPLE a or b? hold\n", "VERDICT:") == "VERDICT: PURPLE a or b? hold"   # ' or ' in a question is fine for VERDICT
+assert r.find_marker("❯ end with `VERDICT: PASS`, `VERDICT: PASS-NOTES <list>` ...\n", "VERDICT:") == ""
+assert r.polish_lines("a; b ;", 5) == ["- a (PR #5)", "- b (PR #5)"]
+assert r.polish_title("pack") == "Polish backlog (pack)"
+# round 2 checks only the round-1 RED points; FIX only for RED reasons
+_p = r.review_prompt(7, 9, round1="button crashes")
+assert "button crashes" in _p and "ONLY" in _p
+assert "VERDICT: PASS-NOTES" in r.review_prompt(7, 9) and "VERDICT: PURPLE" in r.review_prompt(7, 9) and "RED" in r.review_prompt(7, 9)
+assert r.FIX_ROUNDS == 2          # one more fix round before blocking (2 fixes, 3 reviews)
+print("ok #149")
+# #149: no screenshots when no oren2/ file changed
+assert "no oren2/ file changed" in r.worker_prompt(7, "pack", "") and "no oren2/ file changed" in r.review_prompt(7, 9)
+print("ok skip screenshots")
 # Code Mode trial: every 3rd issue number; 0 = off
 _cm = r.CFG.get("code_mode_every")
 r.CFG["code_mode_every"] = 3; assert [n for n in range(1, 10) if r.code_mode(n)] == [3, 6, 9]

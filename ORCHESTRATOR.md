@@ -12,7 +12,7 @@ Keep your own context small: do the work through the runner (herdr windows) or S
 - Runner: `tools/runner/run.cmd <n>` (one issue now) or `run.cmd` (one pass over the ready queue). Opens herdr windows
   `run-<n>` → `issue-<n>` (worker, interactive Sonnet, owner can talk to it) → `review-<n>` → integrate (wait for green CI, squash-merge, ONE build + deploy; #74)
   → deploy if `.env` has `CLOUDFLARE_API_TOKEN` → pregen → closes the issue. The `run-<n>` window's exit note lands in your terminal.
-  Config: `tools/runner/config.toml` (remote, branch, max_parallel=3, model, hc path). Not yet proven on a real issue.
+  Config: `tools/runner/config.toml` (remote, branch, local_lanes=1 + remote_lanes=4, model, hc path). Not yet proven on a real issue.
 - herdr CLI: `C:\Users\97254\AppData\Local\Programs\herdr-core\hc.exe` (`hc ls`, `hc read <t>`, `hc run --bg --name X claude ...`).
   Never touch the owner's other terminals.
 - Panel mod: `tools/mods/oren-lanes` (loaded with --plugin-dir by `tools/orchestrator.cmd`; `/lanes` opens it).
@@ -46,7 +46,7 @@ idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → r
 ## Owner decisions, 26 Nov 2026 (after the flow analysis)
 - Order: first the flow fixes (#62 line endings, #149 review severity, #166 merge on green, #177 hand-work label, #153 chains), then remote lanes (#134-#137 carry Blocked-by lines).
 - Freeze on NEW tool features (runner, watchdog, panel, dashboard, remote, freeze/recover) until #152 (CI runs the tool tests) is merged. Bug fixes to the system and all game work continue. After #152: tooling gets at most 1 lane, the game at least 2.
-- Your own hand work never carries `in-progress` (the runner counts it as a lane) and tooling never gets `core`. Until #177 adds a `manual` label, leave hand work unlabelled and link the PR.
+- Your own hand work never carries `in-progress` (the runner counts it as a lane) and tooling never gets `core`. Label hand work `manual` (the runner ignores it: no lane, never started) and link the PR.
 - Do not split work into many tiny issues: a problem you find while working goes into the existing issue as a comment unless it is a separate real defect.
 
 ## Your job, always (owner's wish: everything automatic)
@@ -54,6 +54,12 @@ idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → r
 - Guide the owner only when something needs HIM (a `ready-for-human` issue, a grilling question). Never ask him to run skills, wizards or commands you can run yourself.
 - Deploys happen automatically after each green merge. Voice pregen runs after each deploy.
 - Owner says "stats" / "status" / "how many issues": run `python3 tools/runner/dashboard.py --text` and paste its lines (#142). He can also double-click `tools\dashboard.cmd` for the page.
+
+## Owner questions: ONE place (#193)
+- Every question for the owner lives in the pinned, owner-assigned GitHub issue **'Questions for the owner'** (GitHub mobile notifies him). The watchdog posts each waiting window's question there by itself (issue link, question, options); `remote.py status <n>` posts a remote QUESTION comment.
+- Your own question (or one from a reviewer PURPLE point / grill): `python tools/runner/owner_q.py ask <#n|window> "<question in Hebrew, options>"`.
+- For each NEW question (watchdog line `NEW OWNER QUESTION`): send a PushNotification with the question text (#189). Never write 'waiting for you in window X' without the question text.
+- He answers in that issue (the watchdog types `OWNER ANSWERED ...` into your window) or here. Relay the answer to the window / issue, then `python tools/runner/owner_q.py answered <key> "<answer>"`. Open list: `owner_q.py open` (also in the dashboard 'Needs you').
 
 ## Questions from workers → the owner, in YOUR window (relay)
 Workers and reviewers report to you (herdr notes arrive in your terminal). The owner answers here, in your window, not in worker tabs.
@@ -77,7 +83,10 @@ Resume when the owner answers: type the answer into the window (`hc send issue-<
 The runner labels such an issue `blocked` + `needs-orchestrator` (NOT `ready-for-human`) and sends you `STUCK #n: <why> — decide: unblock, split, or ask the owner`. It is YOUR job: read the issue comment and the window, fix it yourself (rewrite/split the issue, fix the runner, do the missing step), then remove `blocked` + `needs-orchestrator` and `tools/runner/run.cmd <n>`. Ask the owner only if it is truly his decision (then ask in your window; if he is away it becomes a parked question with `ready-for-human`). The panel shows these in a dim "orchestrator handling" line, not in the owner's lane.
 
 ## Observer (acting, within limits)
-Every `observer_minutes` (config.toml, default 10) the watchdog runs `tools/runner/observer.py`, python rules only (no LLM): `make_ready` (needs-orchestrator/P0 untouched 30+ min while you are idle), `rerun` (in-progress with no live run-n terminal for 10+ min), `fix_blocked_by` (normalize dependency lines). Limits: max 5 actions per run, same action+issue once per 60 min, never on ready-for-human, never on an issue with an open lane/<n> PR, never while `integrate.lock` is alive (re-checked before each action). Each action is commented on the issue ("Observer: ...") and logged in `tools/runner/.runs/observer.log`; last result `observer.last`. To stop it: `observer_minutes = 0`. Dry run: `python tools/runner/observer.py --dry`. Use `needs-orchestrator` on purpose to keep the observer off an issue for 30 min.
+Every `observer_minutes` (config.toml, default 10) the watchdog runs `tools/runner/observer.py`, python rules only (no LLM): `make_ready` (needs-orchestrator/P0 untouched 30+ min while you are idle), `rerun` (in-progress with no live run-n terminal for 10+ min), `fix_blocked_by` (normalize dependency lines). Limits: max 5 actions per run, same action+issue once per 60 min, never on ready-for-human, never on an issue with an open lane/<n> PR, never while `integrate.lock` is alive (re-checked before each action). Each action is commented on the issue ("Observer: ...") and logged in `tools/runner/.runs/observer.log`; last result `observer.last`. To stop it: `observer_minutes = 0`. Dry run: `python tools/runner/observer.py --dry`. Use `needs-orchestrator` on purpose to keep the observer off an issue for 30 min. The `rerun` rule skips issues labelled `cloud` (no local run window by design).
+
+## AI observer (#203, read-only)
+Every `ai_observer_minutes` (default 60, 0 = off) the watchdog runs `tools/runner/ai_observer.py`: one headless Sonnet session with read-only tools looks for inconsistencies (labels vs Blocked-by, PRs not moving, cloud lanes, log errors, the merge lock). You get `AI OBSERVER (hourly, read-only):` with up to 5 `OBSERVER: <problem #n> -> <fix, who>` lines; act on them yourself (the same finding is not repeated for 6 h). Owner findings also land in #193. Last result: `tools/runner/.runs/ai_observer.last`. One run by hand: `python tools/runner/ai_observer.py`.
 
 ## Code changes
 - runner.py changes apply to the NEXT issue run (every run is a fresh `python runner.py` process; running runs keep the code they started with). The watchdog reloads runner.py by itself when the file changes; a change in watchdog.py itself needs the `watchdog` window restarted (kill it, run the watchdog line of tools/orchestrator.cmd) at a quiet moment.

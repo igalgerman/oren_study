@@ -11,6 +11,7 @@ sys.path.insert(0, str(HERE))
 import runner as R          # gh(), blockers(), CFG
 import stats as S           # pipeline timings from stats.jsonl
 import trends as T          # stuck reasons from runner.log
+import remote as RM         # cloud lanes (#136)
 
 OUT = R.RUNS / "dashboard.html"
 STATES = [("running", "Running now"), ("needs_you", "Needs you"), ("blocked", "Blocked"),
@@ -50,8 +51,9 @@ def forecast(open_n, closed_ts, opened_ts, now, history_h):
             "net": [open_n / x for x in sorted(nets, reverse=True)] if nets else None,
             "gross": [open_n / x for x in sorted(gross, reverse=True)] if gross else None}
 
-def model(issues, prs, events, now, log_text=""):
-    """Pure: everything the page and the text show. issues/prs as gh JSON (labels as names), events from stats.jsonl."""
+def model(issues, prs, events, now, log_text="", cloud=()):
+    """Pure: everything the page and the text show. issues/prs as gh JSON (labels as names), events from stats.jsonl,
+    cloud = rows of remote.cloud() (#136)."""
     op = [i for i in issues if i["state"] == "OPEN"]
     open_nums = {i["number"] for i in op}
     closed_at = {i["number"]: epoch(i.get("closedAt")) for i in issues if i["state"] == "CLOSED"}
@@ -99,12 +101,15 @@ def model(issues, prs, events, now, log_text=""):
         elif n in last and e.get("event") in STEP: last[n]["event"] = e["event"]
     running = [{**r, "step": STEP.get(last.get(r["n"], {}).get("event"), "started by hand"),
                 "for_s": now - last[r["n"]]["start"] if r["n"] in last else None} for r in by_state["running"]]
+    cloud_n = {i["number"] for i in op if "cloud" in i["labels"]}
+    running = [r for r in running if r["n"] not in cloud_n]          # #136: cloud lanes have their own table
     recent = sorted(((closed_at[i["number"]], i) for i in issues if i["state"] == "CLOSED" and closed_at.get(i["number"])),
                     key=lambda x: -x[0])[:10]
     t = S.compute(events, now)["totals"]
     p0_closed = [closed_at[i["number"]] for i in issues if i["state"] == "CLOSED" and "P0" in i["labels"]]
     return {
-        "now": now, "open": len(op), "by_state": by_state, "by_prio": by_prio, "rows": rows, "running": running,
+        "now": now, "open": len(op), "cloud": list(cloud), "cloud_n": len(cloud_n),
+        "lanes": f"local {len(running)}/{R.CFG.get('local_lanes', 3)} · cloud {len(cloud_n)}/{R.CFG.get('remote_lanes', 0)}", "by_state": by_state, "by_prio": by_prio, "rows": rows, "running": running,
         "closed_24h": sum(within(c, 24) for c in closed_at.values()), "closed_7d": sum(within(c, 168) for c in closed_at.values()),
         "closed_total": len(closed_at), "opened_24h": sum(within(c, 24) for c in created.values()),
         "merged_24h": sum(within(m, 24) for m in merged), "merged_7d": sum(within(m, 168) for m in merged),
@@ -147,8 +152,13 @@ def text(m):
     d = m["last_deploy"]
     lines.append("Last deploy: " + (f"{hhmm(d['ts'])} {'ok' if d.get('ok') else 'FAILED'}" if d else "no record yet") + f" · runner deploys 24 h: {tr['deploys_ok']} ok, {tr['deploys_fail']} failed")
     if tr["stuck"]: lines.append("Top stuck reasons (24 h): " + "; ".join(f"{k} ({len(v)})" for k, v in tr["stuck"][:3]))
+    lines.append("Lanes: " + m["lanes"])
+    for c in m["cloud"]:
+        lines.append(f"  cloud #{c['n']} {c['title'][:40]} — {c['state']} · last {hhmm(epoch(c['last'])) if epoch(c['last']) else '-'}"
+                     + (" · STALE" if c["stale"] else "") + (f" · {c['pr']}" if c["pr"] else "") + (f" · {c['session']}" if c["session"] else ""))
     if m["running"]: lines.append("Running: " + "; ".join(f"#{r['n']} {r['step']} {dur(r['for_s'])}" for r in m["running"]))
     if s["needs_you"]: lines.append("Needs you: " + ", ".join(f"#{r['n']} {r['title'][:50]}" for r in s["needs_you"]))
+    for q in m.get("questions", []): lines.append(f"Needs you (question): {q['window']} {q['text'][:120]} {q['url']}")   # #193
     return "\n".join(lines)
 
 def _bars(rows, aria, every=1):
@@ -216,9 +226,12 @@ def page(m):
     d = m["last_deploy"]
     dep = (f"{hhmm(d['ts'])} " + ("ok" if d.get("ok") else '<span class="warn">FAILED</span>')) if d else "no record yet"
     fin = tr["by_runner"] / tr["started"] if tr["started"] else None
+    qs = m.get("questions", [])   # #193: open owner questions (pinned 'Questions for the owner' issue)
+    qrows = "".join(f'<tr><td class="n">{e(q["window"])}</td><td>{e(q["text"])}</td><td class="n"><a href="{e(q["url"])}">answer</a></td></tr>' for q in qs)
+    qcard = f'<div class="card"><h2>Needs you: open questions</h2><table><tr><th>from</th><th>question</th><th></th></tr>{qrows}</table></div>' if qrows else ""
     tiles = "".join([
         tile(m["open"], "open issues", f"P0 {p['P0']} · P1 {p['P1']} · P2 {p['P2']} · P3 {p['P3']}" + (f" · <span class='warn'>{p['-']} without priority</span>" if p['-'] else "")),
-        tile(len(s["needs_you"]), "need you", "answer or decide" if s["needs_you"] else "nothing waits for you"),
+        tile(len(s["needs_you"]) + len(qs), "need you", "answer or decide" if s["needs_you"] or qs else "nothing waits for you"),
         tile(len(s["running"]), "running now", f"{len(s['ready'])} ready · {len(s['waiting'])} waiting · {len(s['blocked'])} blocked"),
         tile(m["closed_24h"], "closed in 24 h", f"{m['opened_24h']} new in 24 h · {m['closed_total']} closed in total"),
         tile(m["merged_24h"], "PRs merged in 24 h", f"{m['open_prs']} PRs open · last deploy {dep}"),
@@ -250,6 +263,11 @@ def page(m):
              f'<li>Runner deploys: {tr["deploys_ok"]} ok, {tr["deploys_fail"]} failed (hand deploys are not recorded).</li>'
              f'<li>Average times (runner records): build {S.fmt(m["avg_build"])}, review {S.fmt(m["avg_review"])}, start to merge {S.fmt(m["avg_merge"])}.</li></ul>'
              + (f'<h2 style="margin-top:12px">Why issues got stuck (distinct issues, 24 h)</h2><table>{stuck}</table>' if stuck else "") + '</div>')
+    cl_rows = "".join(f'<tr><td class="n">{link(c["n"])}</td><td>{e(c["title"])}</td><td class="n">{e(c["state"])}' + (' <span class="warn">STALE</span>' if c["stale"] else '')
+                      + f'</td><td class="n sub">{hhmm(epoch(c["last"])) if epoch(c["last"]) else "-"}</td><td class="n">' + (f'<a href="{e(c["pr"])}">PR</a>' if c["pr"] else "-")
+                      + '</td><td class="n">' + (f'<a href="{e(c["session"])}">session</a>' if c["session"] else "-") + '</td></tr>' for c in m["cloud"])
+    cloud = (f'<div class="card"><h2>Cloud lanes <span class="count">{m["cloud_n"]}</span></h2><table><tr><th>#</th><th>issue</th><th>state</th>'
+             f'<th>last activity</th><th>PR</th><th>session</th></tr>{cl_rows}</table></div>') if m["cloud_n"] else ""
     run_rows = "".join(f'<tr><td class="n">{link(r["n"])}</td><td>{e(r["title"])}</td><td class="n">{r["step"]}</td><td class="n sub">{dur(r["for_s"])}</td></tr>' for r in m["running"])
     running = f'<div class="card"><h2>Running now <span class="count">{len(m["running"])}</span></h2><table><tr><th>#</th><th>issue</th><th>step</th><th>running for</th></tr>{run_rows}</table></div>' if run_rows else ""
     rec_rows = "".join(f'<tr><td class="n">{link(r["n"])}</td><td>{e(r["title"])}</td><td class="n sub">{hhmm(r["at"])}</td><td class="n sub">{dur(r["open_s"])}</td></tr>' for r in m["recent"])
@@ -267,7 +285,7 @@ def page(m):
             f'<h1>Oren game: work status</h1><div class="sub">Made {time.strftime("%d %b %H:%M", time.localtime(now))} (Israel time). '
             f'Sources: GitHub issues and PRs (live), the runner\'s records (.runs/stats.jsonl, runner.log). Estimates are marked. '
             f'For fresh numbers run tools\\dashboard.cmd again.</div>'
-            f'<div class="tiles">{tiles}</div>{_ai_card(m)}{fcard}{running}'
+            f'<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}</div>{qcard}{_ai_card(m)}{fcard}{running}{cloud}'
             f'<div class="cols"><div class="card"><h2>Opened vs closed, per hour (last 24 h)</h2>'
             f'<div class="legend"><span><i style="background:var(--s1)"></i>opened</span><span><i style="background:var(--s2)"></i>closed</span></div>{_bars(m["hours"], "Issues opened and closed per hour", 3)}</div>'
             f'<div class="card"><h2>Open issues, hour by hour (last 24 h)</h2>{_line(m["hours"], "Open issues at the end of each hour", 3)}</div></div>'
@@ -379,10 +397,12 @@ def ai_load():
 def gather():
     issues, prs = fetch()
     now = time.time()
-    m = model(issues, prs, S.read_events(R.RUNS / "stats.jsonl"), now, runner_log())
+    m = model(issues, prs, S.read_events(R.RUNS / "stats.jsonl"), now, runner_log(), RM.cloud())
     w, wmt = _file("watchdog.log"); _, rmt = _file("runner.log"); ol, omt = _file("observer.last")
     _, bmt = _file("watchdog.beat"); wmt = bmt or wmt          # heartbeat every pass; the log is written only on events
     m["ov"] = oversight(w, wmt, rmt, ol, omt, now)
+    import owner_q
+    m["questions"] = owner_q.open_list() or []            # #193
     return m
 
 def ai_tick(log=print):

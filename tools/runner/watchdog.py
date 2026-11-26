@@ -1,11 +1,13 @@
 """Watchdog: keeps the flow from getting stuck. Runs forever in the herdr window `watchdog` (started by tools/orchestrator.cmd).
 Every minute it checks, deterministically:
   1. a worker/reviewer/intake window waiting for an answer (status blocked)  -> tells the orchestrator (once per new screen; also a worker whose last line is QUESTION:)
+     and posts the question in the pinned issue 'Questions for the owner' (owner_q.py, #193; once per window+question); an owner reply there -> tells the orchestrator
   2. a worker/reviewer that stopped without its RESULT:/VERDICT: line for 10 min -> tells the orchestrator
   3. free lanes + ready issues but no runner pass running                       -> starts a runner pass
   3b. a window waiting for the owner longer than park_minutes (the runner parks it itself; this is the fallback): issue gets blocked + ready-for-human, lane freed
   3c. owner lane: no intake window open + a needs-triage/needs-info issue -> opens ONE `intake-<n>` (oldest issue), `NEEDS YOU: intake-<n> is open`
   5. every observer_minutes: observer.py applies deterministic rules (make_ready, rerun, fix Blocked-by lines) within limits
+  5b. every ai_observer_minutes (#203): ai_observer.py, ONE read-only headless Sonnet check in a thread; new findings -> the orchestrator
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
 It never answers questions or presses keys in other windows; it only tells the orchestrator and starts the runner.
@@ -17,6 +19,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 import runner as R   # config, gh(), select(), hc paths
+import owner_q as OQ # #193: the pinned 'Questions for the owner' issue
 
 EVERY = int(R.CFG.get("watchdog_seconds", 60))
 LOG = R.RUNS / "watchdog.log"
@@ -74,12 +77,16 @@ def check_windows(ts):
             if status == "blocked" and "trust this folder" in screen and now - since < 120: continue   # the runner accepts this dialog itself
             if status == "blocked" and now - since < 90: continue                                        # short menus the runner/owner answers at once: no alarm
             h = hashlib.sha1((q or tail[-600:]).encode()).hexdigest()
+            url = OQ.post(name, q, tail)                        # #193: into the pinned owner-questions issue (once; retried while gh fails)
+            if url: log(f"posted owner question for {name}: {url}")
             if told.get(name) != h:
                 told[name] = h
                 pin(t, True)
                 what = f"asks: {q}" if q else "is waiting for an answer"
-                tell(f"{needs_you_line(name, q, tail)}{chr(10)}WATCHDOG: window {name} {what}. Ask the owner ONE short line in your window, then answer it "
-                     f"(hc send {name} \"..\" or the menu option he picks). Its screen ends with:{chr(10)}{tail}")
+                tell(f"{needs_you_line(name, q, tail)}{chr(10)}WATCHDOG: window {name} {what}. NEW OWNER QUESTION"
+                     + (f" (posted: {url})" if url else " (in the 'Questions for the owner' issue)")
+                     + f": send a PushNotification with the question text, then relay his answer (hc send {name} \"..\" or the menu option he picks) "
+                     f"and mark it answered (owner_q.py answered <key>). Its screen ends with:{chr(10)}{tail}")
             m = re.match(r"(?:issue|review)-(\d+)", name)       # fallback for a runner that did not park by itself
             if m and R.should_park(since, now, R.PARK_MINUTES + 3) and R.park_issue(int(m[1]), name, tail, since):
                 log(f"parked #{m[1]} ({name} waiting since {time.strftime('%H:%M', time.localtime(since))})")
@@ -105,7 +112,7 @@ def check_lanes(ts):
     rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: return
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
-    if not R.select(issues, R.CFG["max_parallel"], R.MAX_CORE, R.EXPRESS): return
+    if not R.select(issues, R.total_lanes(), R.MAX_CORE, R.EXPRESS): return
     orch = R.hc_json("get", "orchestrator", "--json").get("address", "")
     name = f"run-pass-{int(time.time()) % 100000}"
     cmd = [R.HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(R.ROOT), "--label", "role=runner"]
@@ -223,6 +230,9 @@ def cleanup(ts):
 def observer_tick():
     import observer; observer.run_if_due()      # acting observer (observer.py)
 
+def ai_observer_tick():
+    import ai_observer; ai_observer.run_if_due(tell, log)   # #203: hourly AI check (thread; not reloaded: that would reset its never-two guard)
+
 SYNC_MIN = int(R.CFG.get("sync_minutes", 3))
 _sync = {"last": 0.0, "msg": ""}
 
@@ -257,6 +267,15 @@ def idle_alarms(issues, prs, now, free_since, max_parallel):
             out.append((f"bl{i['number']}", f"#{i['number']} blocked for {h:.1f} h" + (" (waits for the owner)" if "ready-for-human" in i["labels"] else "")))
     return out
 
+def cloud_stuck_alarms(rows, now, stuck_hours):
+    """Pure (#136): -> list of (key, text) for cloud lanes (remote.cloud() rows) with no comment/commit for stuck_hours."""
+    out = []
+    for c in rows:
+        m = _age_min(c.get("last"), now)
+        if c.get("last") and m >= stuck_hours * 60:
+            out.append((f"cl{c['n']}", f"cloud lane #{c['n']} has had no activity for {m / 60:.1f} h (stuck_hours {stuck_hours:g}; state {c.get('state', '?')})"))
+    return out
+
 def alarms_once(now=None):
     now = now or time.time()
     rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
@@ -264,10 +283,14 @@ def alarms_once(now=None):
     if rc or rc2: return None
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
     running = sum("in-progress" in i["labels"] for i in issues)
-    free = running < R.CFG["max_parallel"] and bool(R.select(issues, R.CFG["max_parallel"]))
+    free = running < R.total_lanes() and bool(R.select(issues, R.total_lanes()))
     if not free: _alarm["free_since"] = None
     elif _alarm["free_since"] is None: _alarm["free_since"] = now
-    return idle_alarms(issues, json.loads(out2), now, _alarm["free_since"], R.CFG["max_parallel"])
+    try:
+        import remote; cloud = remote.cloud(now=now)
+    except Exception as e:
+        log(f"cloud lanes unreadable: {e!r}"); cloud = []
+    return idle_alarms(issues, json.loads(out2), now, _alarm["free_since"], R.total_lanes()) + cloud_stuck_alarms(cloud, now, float(R.CFG.get("stuck_hours", 2)))
 
 def alarm_tick():
     """Every 10 min: idle alarms to the orchestrator (+ watchdog.log); the same alarm at most once an hour."""
@@ -317,10 +340,12 @@ def tick():
     except OSError: pass
     ts = windows()
     check_windows(ts)
+    OQ.answers_tick(tell)
     check_lanes(ts)
     check_intake(ts)
     cleanup(R.hc_json("ls", "--all", "--json").get("terminals", []) or ts)
     observer_tick()
+    ai_observer_tick()
     sync_tick()
     alarm_tick()
     trends_tick()
