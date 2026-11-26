@@ -20,6 +20,10 @@ assert len(m["days"]) == 14 and m["days"][0]["label"] == "13 Nov" and m["days"][
 t = D.text(m)
 assert t.startswith("Open issues: 6  (P0 1, P1 1, P2 2, P3 0, no priority 2)") and "Needs you: #2 t2" in t and "Last deploy:" in t, t
 assert "<svg" in D.page(m) and "#2</a>" in D.page(m)
+# #293: the PC load line (pcload.py's .runs/pc.json), red on the page when alarmed
+mp = {**m, "pc": "PC: CPU 91% · RAM 12% free · ALARM"}
+assert "PC: CPU 91% · RAM 12% free · ALARM" in D.text(mp) and "PC: CPU" not in t
+assert 'style="color:var(--bad)">PC: CPU 91%' in D.page(mp)
 # the answer at the top (verdict): worst thing first, every sentence from the model's own numbers
 v = D.verdict(m)
 assert (v["level"], v["head"]) == ("you", "1 issue needs you") and "1 issue waits for your answer or decision." in v["why"], v
