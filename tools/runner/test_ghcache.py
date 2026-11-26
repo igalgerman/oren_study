@@ -190,4 +190,15 @@ finally: RN.subprocess.run = real_sub
 assert time.time() - G.load()["ts"] < 5 and not W._GH_BUSY.is_set(), "the thread refreshed the cache through runner.run"
 print("ok watchdog ghcache_tick")
 
+# ---------- review fix: CI from the cache counts as green for the watchdog (#225 nudge, merge-lock alarm) ----------
+def pr_node(n, st):
+    return {"number": n, "isDraft": False, "autoMergeRequest": None, "createdAt": "2026-11-26T10:00:00Z", "updatedAt": "2026-11-26T10:00:00Z",
+            "commits": {"nodes": [{"commit": {"committedDate": "2026-11-26T10:00:00Z", "statusCheckRollup": {"state": st}}}]}}
+cached = [G._flat(pr_node(1, "SUCCESS")), G._flat(pr_node(2, "PENDING")), G._flat(pr_node(3, "FAILURE"))]
+assert W.waiting_reviews(cached, time.time()) == [1], "a cached SUCCESS PR waits for review; PENDING/FAILURE do not"
+real_gh = W.R.gh
+W.R.gh = lambda *a, **k: (0, json.dumps(cached))
+try: assert W.green_waiting() == [1], "merge-lock alarm lists the cached green PR"
+finally: W.R.gh = real_gh
+print("ok cached statusCheckRollup is green for watchdog checks")
 print("ALL ghcache tests passed")

@@ -121,7 +121,7 @@ def _flat(node):
         nodes = d["commits"].get("nodes") or []
         d["commits"] = [{"committedDate": (c.get("commit") or {}).get("committedDate", "")} for c in nodes]
         st = ((nodes[-1].get("commit") or {}).get("statusCheckRollup") or {}).get("state") if nodes else None   # panel: CI red = FAILURE/ERROR
-        d["statusCheckRollup"] = [{"state": st}] if st else []
+        d["statusCheckRollup"] = [{"state": st, "conclusion": st}] if st else []   # watchdog green checks read conclusion (review #341)
     if isinstance(d.get("closingIssuesReferences"), dict): d["closingIssuesReferences"] = d["closingIssuesReferences"].get("nodes") or []
     return d
 
