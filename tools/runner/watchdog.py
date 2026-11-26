@@ -110,6 +110,24 @@ def check_windows(ts):
         else:
             idle_since.pop(name, None); told.pop(name, None)
 
+PASS_BACKOFF_S = 300   # #284: the same ready issues as the last start -> no new pass for 5 min (the pass started nothing for them)
+
+def pass_decision(pass_held, key, last, now, backoff=PASS_BACKOFF_S):
+    """Pure (#284): (start?, why). pass_held: a runner pass holds the 'pass' lock; key: the ready issue numbers;
+    last: {'ts', 'key'} of the watchdog's last start or None."""
+    if pass_held: return False, "a runner pass is running"
+    if last and list(last.get("key") or []) == list(key) and now - float(last.get("ts", 0)) < backoff:
+        return False, f"back off: same ready issues {list(key)} as the pass started {int(now - float(last['ts']))}s ago"
+    return True, ""
+
+def last_pass_start():
+    try: return json.loads((R.RUNS / "pass_start.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError): return None
+
+def note_pass_start(key, now):
+    R.RUNS.mkdir(parents=True, exist_ok=True)
+    (R.RUNS / "pass_start.json").write_text(json.dumps({"ts": now, "key": list(key)}), encoding="utf-8")
+
 def check_lanes(ts):
     import freeze
     if freeze.is_frozen(R.RUNS): return     # #139: frozen, start no runner pass
@@ -117,7 +135,12 @@ def check_lanes(ts):
     rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: return
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
-    if not R.select(issues, R.total_lanes(), R.MAX_CORE, R.EXPRESS): return
+    ready = R.select(issues, R.total_lanes(), R.MAX_CORE, R.EXPRESS)
+    if not ready: return
+    key, now = tuple(sorted(i["number"] for i in ready)), time.time()
+    ok, why = pass_decision(R.FileLock("pass").held_by_other(), key, last_pass_start(), now)   # #284/#250: one pass alive at a time
+    if not ok: return
+    note_pass_start(key, now)
     orch = R.hc_json("get", "orchestrator", "--json").get("address", "")
     name = f"run-pass-{int(time.time()) % 100000}"
     cmd = [R.HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(R.ROOT), "--label", "role=runner"]

@@ -253,18 +253,21 @@ def push_ref(n, br):
     """#246: what a worker in the local worktree (branch lane/<n>) pushes: lane/<n>, or HEAD:<the PR's claude/* head>."""
     return f"lane/{n}" if br in (None, f"lane/{n}") else f"HEAD:{br}"
 
+PC_TESTS = ("Do NOT run the game suites or Playwright here (oren2/tests/run.sh, node tests/*.test.js): on this PC they refuse, they run in CI "
+            "on the PR (#284); run only the python tool tests you touched (python3 tools/runner/test_*.py). ")
+
 def ci_fix_prompt(n, names, br=None):
     br = br or f"lane/{n}"
     return (f"Issue #{n}: the CI check(s) {', '.join(names) or '(see the PR)'} failed on {br} even after one rerun. "
             f"Use `gh run list --branch {br}` and `gh run view <id> --log-failed`, fix the real cause in this worktree, "
-            f"run the affected suites locally, commit, and `git push {REMOTE} {push_ref(n, br)}`. Never force-push, never push to {BRANCH}. "
+            + PC_TESTS + f"Commit, and `git push {REMOTE} {push_ref(n, br)}`. Never force-push, never push to {BRANCH}. "
             "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
 
 def resolve_prompt(n, files, br=None):
     br = br or f"lane/{n}"
     return (f"Issue #{n}: merging {br} into {BRANCH} failed because {BRANCH} moved on" + (f" (conflicting files: {', '.join(files)})" if files else "") + ". "
             f"In this worktree run `git fetch {REMOTE} && git merge -X renormalize {REMOTE}/{BRANCH}`, resolve the conflicts keeping BOTH sides' intent, "
-            "run `python3 build_talents.py` (in oren2/) and the full tests (`oren2/tests/run.sh`; rerun a flaky suite alone once), commit, "
+            "run `python3 build_talents.py` (in oren2/). " + PC_TESTS + "Commit, "
             f"and `git push {REMOTE} {push_ref(n, br)}`. Never force-push, never rewrite {BRANCH}, never push to {BRANCH}. "
             "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
 
@@ -406,7 +409,8 @@ def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=N
     ended() True (#234: issue closed / lane PR merged elsewhere) -> {'state': 'ended'}."""
     start = clock()
     while True:
-        st = get_status()
+        try: st = get_status()
+        except subprocess.TimeoutExpired: st = {}         # #284: a gh timeout under load: just poll again
         if st.get("state") in ("done", "stuck", "question"):
             return st
         if ended and ended():
@@ -643,11 +647,19 @@ def redact(t):
         t = t.replace(s, "***")
     return t
 
+def no_window(os_name=None):
+    """#284: creationflags for every child process: CREATE_NO_WINDOW on Windows (no console window flashes), 0 elsewhere."""
+    return 0x08000000 if (os_name or os.name) == "nt" else 0
+
+def is_transient(e):
+    """#284: a gh/git call that timed out under load is not the issue's fault: retry next pass, never BLOCK."""
+    return isinstance(e, subprocess.TimeoutExpired)
+
 def run(cmd, cwd=None, env=None, input=None, log=None, timeout=None):
     e = dict(os.environ); e.update(env or {})
     e["PATH"] = CFG["extra_path"].replace("/c/", "C:/", 1) + os.pathsep + e["PATH"]
     p = subprocess.run(cmd, cwd=cwd, env=e, input=input, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace", timeout=timeout)
+                       encoding="utf-8", errors="replace", timeout=timeout, creationflags=no_window())
     out = redact((p.stdout or "") + (p.stderr or ""))
     if log:
         with open(log, "a", encoding="utf-8") as f:
@@ -935,8 +947,7 @@ def worker_prompt(n, lane, review_text=None, bug=False):
     if bug:
         base += ("This is a BUG: follow docs/agents/skills/diagnosing-bugs.md, then tdd: reproduce it with a failing test (add it to the relevant suite in oren2/tests/), then fix it so the test passes; "
                  "say the root cause in the PR body.\n")
-    steps = ("Steps: 1) implement; 2) python3 build_talents.py (in oren2/, PATH already has python3) and run the build + the suites for what you changed, muted "
-             "(see FLOW.md); 3) for each changed screen take screenshots (skip them when no oren2/ file changed) at phone 390x844 and desktop 1366x768 into "
+    steps = ("Steps: 1) implement; 2) python3 build_talents.py (in oren2/, PATH already has python3); " + PC_TESTS + "3) for each changed screen take screenshots (skip them when no oren2/ file changed) at phone 390x844 and desktop 1366x768 into "
              f"C:/work/Oren_study/shots/{n}/ and LOOK at them (simple, one main action, Hebrew with nikud); 4) commit (do NOT commit oren2/index.html "
              f"or oren2/cf/public/index.html, node_modules, package*.json, tests/.tmp); 5) `git push -u {REMOTE} lane/{n}`; 6) open a PR to {BRANCH} with "
              f"`gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Closes #{n}` (use the mattpocock-skills:pr skill to write the PR body; skip if a PR already exists). "
@@ -1187,7 +1198,7 @@ def start_pregen(log=None, popen=None):
         out = open(RUNS / "pregen.log", "a", encoding="utf-8")
         out.write(f"\n=== pregen {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n"); out.flush()
         flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        p = (popen or subprocess.Popen)(pregen_cmd(), cwd=str(MAIN_CHECKOUT), env=env, stdout=out, stderr=subprocess.STDOUT, creationflags=flags)
+        p = (popen or subprocess.Popen)(pregen_cmd(), cwd=str(MAIN_CHECKOUT), env=env, stdout=out, stderr=subprocess.STDOUT, creationflags=flags | no_window())
         lock.path.write_text(str(p.pid))                     # held while that process lives (FileLock checks the pid)
         if log: log_to(log, f"voice pregen started in the background (pid {p.pid}, .runs/pregen.log)")
         return "started"
@@ -1496,6 +1507,11 @@ def process_locked(issue, where="local"):
         stat(n, lane, "blocked")
         block(n, str(e), log); return f"BLOCKED: {e}"
     except Exception as e:                      # any crash: never leave the issue in-progress
+        if is_transient(e):                     # #284: gh timed out under load: not blocked, the next pass starts it again
+            stat(n, lane, "retry")
+            set_labels(n, remove=["in-progress"])
+            log_to(log, f"[runner] transient {e!r}: retry next pass")
+            return f"RETRY next pass: {e!r}"
         stat(n, lane, "blocked")
         try:                                    # full traceback in run.log: a bare FileNotFoundError(2, ...) names no file (#158)
             import traceback

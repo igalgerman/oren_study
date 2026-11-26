@@ -14,6 +14,9 @@ if [ -n "${SUITES_SHARD:-}" ]; then
   SUITES=("${PICK[@]}")
 fi
 [ "${LIST_ONLY:-}" = 1 ] && { printf '%s\n' "${SUITES[@]}"; exit 0; }
+# #284: never on the owner's PC (50 headless browsers made it crawl): only CI, a cloud session, or an explicit ALLOW_LOCAL_TESTS=1
+if [ "${CI:-}" != true ] && [ "${ALLOW_LOCAL_TESTS:-}" != 1 ] && [ "${CLAUDE_CODE_REMOTE:-}" != true ]; then
+  echo "game suites run in CI only (#284): see the PR's 'tests' check (ALLOW_LOCAL_TESTS=1 to override)"; exit 3; fi
 python3 build_talents.py >/dev/null || { echo "build failed"; exit 1; }
 python3 cf/tools/make_worker.py >/dev/null || { echo "worker bundle failed"; exit 1; }
 export NODE_OPTIONS="--require ./tests/mute.js ${NODE_OPTIONS:-}"
