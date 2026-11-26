@@ -14,6 +14,14 @@ assert C.due({"started": T0 - 6 * 3600}, T0, 0) == "every 6 h"
 assert C.due({"started": T0 - 3600}, T0, T0 - 600) == "tools/runner or tools/mods changed", "a merge into the tooling after the last start"
 assert C.due({"started": T0 - 3600}, T0, T0 - 7200) is None, "the change was before the last canary"
 assert C.due({"started": 0, "run": {"n": 5}}, T0, T0) is None, "never two canaries at once"
+# #538: at most one canary per canary_minutes (default 60), whatever the reason
+assert C.GAP_MIN == 60
+assert C.due({"started": T0 - 30 * M}, T0, T0 - 10 * M) is None, "a tooling change 30 min after the last canary waits"
+assert C.due({"started": T0 - 61 * M}, T0, T0 - 10 * M) == "tools/runner or tools/mods changed"
+assert C.due({"started": T0 - 30 * M}, T0, T0 - 10 * M, gap_min=20) == "tools/runner or tools/mods changed", "canary_minutes from config"
+assert C.p0_waiting([{"number": 3, "labels": [{"name": "P0"}, {"name": "ready-for-agent"}]}]) == [3]
+assert C.p0_waiting([{"number": 3, "labels": ["P0", "ready-for-agent", "in-progress"]}, {"number": 4, "labels": ["P0", "needs-orchestrator"]}]) == [], \
+       "a P0 that runs, or waits for the orchestrator (not for a lane), does not hold the canary"
 
 # ---------- pure: which steps are done ----------
 I = lambda state="OPEN", *labels: {"state": state, "labels": [{"name": l} for l in labels]}
@@ -40,23 +48,30 @@ assert dict(C.STEPS) == {"start": 10, "pr": 30, "review": 20, "merge": 20, "clos
 
 # ---------- fake GitHub ----------
 class GH:
-    """Answers gh commands from a little world: one canary issue, maybe its PR; records writes."""
-    def __init__(self): self.issue, self.pr, self.verdict, self.calls, self.leftovers, self.p0 = None, None, "", [], [], []
+    """Answers gh commands from a little world: the rolling canary issue, maybe its PR; records writes."""
+    def __init__(self): self.issue, self.pr, self.verdict, self.calls, self.leftovers, self.p0, self.pr_at = None, None, "", [], [], [], "2099-01-01T00:00:00Z"
     def __call__(self, cmd, env=None):
         self.calls.append(cmd)
         line = " ".join(map(str, cmd))
         if cmd[:3] == ["gh", "label", "create"]: return 0, ""
-        if cmd[:3] == ["gh", "issue", "list"] and "canary" in cmd: return 0, json.dumps([{"number": n} for n in self.leftovers])
+        if cmd[:3] == ["gh", "issue", "list"] and "canary" in cmd:
+            old = [{"number": n, "state": "OPEN", "title": f"Canary 2026-11-2{n % 10} 10:00"} for n in self.leftovers]
+            roll = [{"number": 401, "state": self.issue["state"], "title": C.TITLE}] if self.issue else []
+            return 0, json.dumps(old + roll)
         if cmd[:3] == ["gh", "issue", "list"] and "P0" in cmd: return 0, json.dumps(self.p0)
         if cmd[:3] == ["gh", "issue", "create"] and "P0" in cmd[cmd.index("--label") + 1]:
             self.p0.append({"number": 500 + len(self.p0), "title": cmd[cmd.index("--title") + 1]}); return 0, "https://github.com/x/y/issues/500\n"
         if cmd[:3] == ["gh", "issue", "create"]:
+            assert self.issue is None, "the rolling canary issue is never created twice"
             self.issue = {"number": 401, "state": "OPEN", "labels": []}
             return 0, "https://github.com/igalgerman/oren_study/issues/401\n"
+        if cmd[:3] == ["gh", "issue", "reopen"]: self.issue["state"] = "OPEN"; return 0, ""
+        if cmd[:3] == ["gh", "issue", "edit"]:
+            self.issue["labels"] = [{"name": l} for l in cmd[cmd.index("--add-label") + 1].split(",")]; return 0, ""
         if cmd[:3] == ["gh", "issue", "view"]:
             return 0, json.dumps({**self.issue, "comments": []})
         if cmd[:3] == ["gh", "pr", "list"]:
-            if "--head" in cmd and self.pr: return 0, json.dumps([{"number": 77, "headRefName": "lane/401", "state": self.pr}])
+            if "--head" in cmd and self.pr: return 0, json.dumps([{"number": 77, "headRefName": "lane/401", "state": self.pr, "createdAt": self.pr_at}])
             return 0, "[]"
         if cmd[:3] == ["gh", "pr", "view"]:
             return 0, json.dumps({"comments": [{"body": self.verdict}] if self.verdict else []})
@@ -71,11 +86,14 @@ def tick(gh, st, now, changed=0, side=None, stopped=False):
 
 # a green canary: issue opened -> started -> PR -> review -> merge -> closed; panel 'flow ok HH:MM'
 gh, st = GH(), {}
+gh.pr_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(T0 + 15 * M))
 tick(gh, st, T0)
 c = gh.writes("gh", "issue", "create")[0]
 assert c[c.index("--label") + 1] == "canary,express,P3,pack,ready-for-agent", c   # #450: its own express lane
 body = c[c.index("--body") + 1]
 assert "## Acceptance" in body and C.FILE in body and "Out of scope" in body, "the runner refuses an issue without Acceptance (#186)"
+assert c[c.index("--title") + 1] == C.TITLE, "one rolling canary issue (#538)"
+assert "only" in body and "Refs" not in body, body
 assert st["run"]["n"] == 401 and st["started"] == T0
 assert gh.writes("gh", "label", "create"), "the canary label is made once"
 gh.issue["labels"] = [{"name": "in-progress"}]; tick(gh, st, T0 + 4 * M)
@@ -91,6 +109,45 @@ saved = json.loads(C.STATE.read_text(encoding="utf-8"))
 assert saved["text"] == "flow ok 14:45", "the panel/dashboard read .runs/canary.json text"
 tick(gh, st, T0 + 3 * 3600)
 assert st.get("run") is None, "the next canary waits 6 h"
+# #538: the next run reuses the same issue: reopened, ready again, a comment for this run; no new issue
+tick(gh, st, T0 + 6 * 3600 + M)
+assert len(gh.writes("gh", "issue", "create")) == 1, "no second canary issue"
+assert gh.writes("gh", "issue", "reopen") and gh.writes("gh", "issue", "reopen")[0][3] == "401"
+ed = gh.writes("gh", "issue", "edit")[-1]
+assert "ready-for-agent" in ed[ed.index("--add-label") + 1] and "in-progress" in ed[ed.index("--remove-label") + 1], ed
+assert "canary " + time.strftime("%Y-%m-%d %H:%M", time.localtime(T0 + 6 * 3600 + M)) in ed[ed.index("--body") + 1], "the new line to append"
+cm = gh.writes("gh", "issue", "comment")[-1]
+assert cm[3] == "401" and "Canary run" in cm[cm.index("--body") + 1], cm
+assert st["run"]["n"] == 401 and st["run"]["opened"] == T0 + 6 * 3600 + M
+# the last run's merged PR is not this run's: steps start again from nothing
+gh.issue["labels"] = []
+tick(gh, st, T0 + 6 * 3600 + 5 * M)
+assert st["run"]["at"] == {}, st["run"]
+gh.pr, gh.verdict, gh.pr_at = "OPEN", "", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(T0 + 6 * 3600 + 8 * M))
+tick(gh, st, T0 + 6 * 3600 + 10 * M)
+assert set(st["run"]["at"]) == {"start", "pr"}, st["run"]
+
+# #538: two ticks 10 min apart (a tooling merge in between) -> one canary
+gh, st, said[:] = GH(), {}, []
+gh.pr_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(T0 + M))
+tick(gh, st, T0)
+gh.pr, gh.verdict, gh.issue["state"] = "MERGED", "VERDICT: PASS", "CLOSED"
+tick(gh, st, T0 + 5 * M)
+assert st.get("run") is None and st["last_ok"] == T0 + 5 * M, "green in 5 min"
+tick(gh, st, T0 + 15 * M, changed=T0 + 10 * M)
+assert len(gh.writes("gh", "issue", "create")) == 1 and not gh.writes("gh", "issue", "reopen"), "only one canary within the hour"
+tick(gh, st, T0 + 61 * M, changed=T0 + 10 * M)
+assert gh.writes("gh", "issue", "reopen"), "after the hour the tooling change starts the next one"
+# never on a governor STOP, never while a P0 waits for a lane; it starts once they are gone
+gh, st = GH(), {}
+tick(gh, st, T0, stopped=True)
+assert not gh.writes("gh", "issue", "create") and st.get("run") is None, "governor STOP: no canary"
+gh.p0 = [{"number": 9, "title": "real P0", "labels": [{"name": "P0"}, {"name": "ready-for-agent"}]}]
+tick(gh, st, T0 + 5 * M)
+assert not gh.writes("gh", "issue", "create") and st.get("run") is None, "a P0 waits: no canary"
+gh.p0 = []
+tick(gh, st, T0 + 10 * M)
+assert gh.writes("gh", "issue", "create") and st["run"]["n"] == 401
 
 # a missed deadline: ONE alarm naming the step (to orchestrator + inspector), NEEDS-ATTENTION on the panel
 gh, st, said[:] = GH(), {}, []
@@ -150,6 +207,11 @@ gh.leftovers = [390, 395]
 tick(gh, st, T0)
 closed = [c[3] for c in gh.writes("gh", "issue", "close")]
 assert closed == ["390", "395"], closed
+# ... but never the rolling one
+gh2, st2 = GH(), {}
+gh2.issue = {"number": 401, "state": "OPEN", "labels": []}
+tick(gh2, st2, T0)
+assert not gh2.writes("gh", "issue", "close") and st2["run"]["n"] == 401
 
 # a GitHub error: nothing is opened, retried next tick
 class Down(GH):

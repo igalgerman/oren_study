@@ -174,6 +174,17 @@ assert "Canary: flow ok 14:45" in D.text(m3) and "Canary: flow ok 14:45" in D.pa
 m3["canary"] = "NEEDS-ATTENTION: canary #401 step pr late (30 min)"
 assert "Canary: NEEDS-ATTENTION: canary #401 step pr late (30 min)" in D.text(m3)
 print("ok dashboard canary line (#330)")
+# #538: canary PRs are counted on their own, not in 'merged by runner' (nor in 'not finished by the runner')
+ci = issues + [I(60, "CLOSED", ["canary", "express", "P3", "pack"], cl="2026-11-26T07:30:00Z")]
+cprs = prs + [{"number": 61, "state": "MERGED", "mergedAt": "2026-11-26T07:20:00Z", "headRefName": "claude/x", "title": "canary", "body": "Fixes #60"},
+              {"number": 62, "state": "MERGED", "mergedAt": "2026-11-26T07:40:00Z", "headRefName": "lane/60", "title": "canary", "body": ""}]
+cev = ev2 + [{"ts": now - 2400, "issue": 60, "event": "start"}, {"ts": now - 1200, "issue": 60, "event": "merged"}]
+mc = D.model(ci, cprs, cev, now, log)
+assert (mc["truth"]["started"], mc["truth"]["by_runner"], mc["truth"]["canary"]) == (2, 1, 2), mc["truth"]
+assert mc["merged_24h"] == 1, "the canary PRs are not in the merged count either"
+assert "canary PRs merged 2 (not counted above)" in D.text(mc), D.text(mc)
+assert "2</b> canary pull requests" in D.page(mc)
+print("ok dashboard canary PRs apart (#538)")
 # #236: an in-progress issue running remote without the cloud label is a cloud lane (a remote.cloud() row), not local
 ic4 = issues + [I(13, "OPEN", ["in-progress", "P0"])]
 cl4 = [{"n": 13, "title": "t13", "state": "working", "line": "", "last": "2026-11-26T07:50:00Z", "stale": False, "pr": "", "session": ""}]
