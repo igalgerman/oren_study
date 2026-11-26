@@ -284,7 +284,7 @@ def assign_where(chosen, local_busy, remote_busy, local_lanes, remote_lanes):
 SPEC = ("A 'Batch:' issue (title starts with Batch:) or an issue labelled 'spec': follow docs/agents/skills/implement-spec.md "
         "(one branch, sub-agents in parallel for independent parts, integrate, test once, one PR).\n")
 
-def remote_worker_prompt(n, lane, bug=False):
+def remote_worker_prompt(n, lane, bug=False, retry=False):
     """Task for a cloud worker (#133): no herdr, no local paths. It reports through an issue comment (the runner polls GitHub)."""
     base = (f"You are an unattended worker for GitHub issue #{n} in repo {REPO} (lane: {lane}). If its title starts with 'Batch:', follow "
             f"its 'How to work' section: independent members (different files) may go to sub-agents (Agent tool); you integrate, test once "
@@ -292,6 +292,9 @@ def remote_worker_prompt(n, lane, bug=False):
             f"(`gh issue view {n} --repo {REPO} --comments`). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n" + SPEC)
     if bug:
         base += "This is a BUG: follow docs/agents/skills/diagnosing-bugs.md, then tdd: reproduce it with a failing test, then fix it; say the root cause in the PR body.\n"
+    if retry:                                    # #137: an earlier cloud session died without a RESULT comment
+        base += (f"An earlier cloud session for this issue ended without a RESULT comment: if lane/{n} exists on GitHub, "
+                 f"continue from it (`git fetch {REMOTE} lane/{n}` and check it out) instead of starting over.\n")
     return base + (f"Work on branch lane/{n} (create it from {BRANCH}). Follow the worker rules in FLOW.md: run the tests you touched, commit "
                    f"(not the built oren2/index.html or oren2/cf/public/index.html), `git push -u {REMOTE} lane/{n}`, and open a PR to {BRANCH} "
                    f"with `gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Fixes #{n}` (if you may only push claude/* branches, use your claude/* branch instead; the runner finds the PR by `Fixes #{n}`). Never deploy, never force-push, never push to {BRANCH}.\n"
@@ -335,18 +338,67 @@ def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=N
             return {"state": "timeout", "line": "", "pr": st.get("pr")}
         sleep(poll_s)
 
-def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None):
+class Refused(Exception):
+    """#137: the cloud refused to start a session (CLI error, usage limit, no network): run locally or wait, never STUCK."""
+
+def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None, comment=None):
     """Start the cloud worker and wait for its comment. Returns the marker line (`RESULT: ...` / `QUESTION: ...`) like agent() does.
-    on_start(start result) keeps the session id (#134: FIX points are sent back to this session)."""
-    s = start(n, remote_worker_prompt(n, lane, bug), CFG.get("main_checkout", "."))
-    if not s.get("ok"):
-        return f"RESULT: STUCK remote start failed: {s.get('error', '?')}"
-    if on_start: on_start(s)
-    st = wait_remote(get_status, sleep, clock, timeout_s, poll_s, ended)
-    if st["state"] == "ended": raise Ended("cloud worker")
-    if st["state"] == "timeout":
-        return f"RESULT: STUCK remote worker silent for {timeout_s // 3600}h ({s.get('url', '')})"
-    return st["line"]
+    on_start(start result) keeps the session id (#134: FIX points are sent back to this session).
+    #137: a refused start raises Refused; a session silent for timeout_s (died without RESULT) -> comment() + ONE new session, then STUCK."""
+    urls = []
+    for attempt in (1, 2):
+        s = start(n, remote_worker_prompt(n, lane, bug, retry=attempt > 1), CFG.get("main_checkout", "."))
+        if not s.get("ok"):
+            raise Refused(s.get("error", "?"))
+        if on_start: on_start(s)
+        urls.append(s.get("url", "") or "?")
+        st = wait_remote(get_status, sleep, clock, timeout_s, poll_s, ended)
+        if st["state"] == "ended": raise Ended("cloud worker")
+        if st["state"] != "timeout":
+            return st["line"]
+        if attempt == 1 and comment:
+            comment(f"Runner: the cloud session {urls[0]} ended without a RESULT line (silent for {timeout_s // 60} min); retrying once in a new cloud session.")
+    return f"RESULT: STUCK cloud worker died twice without a RESULT line ({', '.join(urls)})"
+
+REFUSE_PAUSE_S = 3600   # #137: after a refused cloud start: no new cloud start, and at most one orchestrator note, per hour
+
+def refusal_state():
+    try: return json.loads((RUNS / "remote_refused.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError): return {}
+
+def remote_paused(state, now):
+    return now - state.get("at", -REFUSE_PAUSE_S) < REFUSE_PAUSE_S
+
+def note_due(state, now):
+    return now - state.get("noted", -REFUSE_PAUSE_S) >= REFUSE_PAUSE_S
+
+def lanes_now(remote_lanes, state, now):
+    """Remote slots for this pass: none while a refused start is less than an hour old (no retry storm)."""
+    return 0 if remote_paused(state, now) else remote_lanes
+
+def record_refusal(n, error, now=None):
+    """Remember the refusal (pauses cloud starts for an hour); one orchestrator note + watchdog.log line per hour. -> True when noted."""
+    now = time.time() if now is None else now
+    st = refusal_state(); due = note_due(st, now)
+    st.update(at=now, error=error[:300], issue=n)
+    if due: st["noted"] = now
+    RUNS.mkdir(parents=True, exist_ok=True)
+    (RUNS / "remote_refused.json").write_text(json.dumps(st), encoding="utf-8")
+    if due:
+        msg = f"cloud start refused for #{n}: {error[:200]} - cloud starts paused 1 h; issues run locally if a local lane is free, else wait"
+        with open(RUNS / "watchdog.log", "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S ", time.localtime(now)) + msg + chr(10))
+        tell_orchestrator(msg)
+    return due
+
+def local_lane_free(n):
+    """#137: is a local lane free for #n (other in-progress issues running locally < local_lanes)? Any gh error -> False."""
+    if LOCAL_LANES <= 0: return False
+    rc, out = gh("issue", "list", "--state", "open", "--label", "in-progress", "--limit", "200", "--json", "number,labels")
+    if rc: return False
+    try: busy = [i["number"] for i in json.loads(out) if i["number"] != n and "manual" not in [l["name"] for l in i["labels"]]]
+    except (ValueError, KeyError, TypeError): return False
+    return sum(where_of(b) == "local" for b in busy) < LOCAL_LANES
 
 def find_marker(text, prefix):
     """Last RESULT:/VERDICT: line on a terminal screen (skips the echoed prompt: it has backticks / placeholders)."""
@@ -678,6 +730,10 @@ def agent(name, prompt, cwd, tools, log, marker, n, role, model=MODEL, over=None
 
 def spawn(extra_args):
     """From inside a run terminal: start another run (one issue, or a pass) as its own terminal, reporting to the same main session."""
+    return spawn_out(extra_args)[0]
+
+def spawn_out(extra_args):
+    """spawn() -> (rc, output), so a caller can see why `hc run` failed (e.g. name_taken)."""
     name = f"run-{extra_args[0].lstrip('#')}" if extra_args else f"run-pass-{int(time.time()) % 100000}"
     parent = CFG.get("parent") or (hc_json("get", TERM, "--json").get("parent", "") if TERM else "")
     cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(ROOT), "--label", "role=runner"]
@@ -685,7 +741,7 @@ def spawn(extra_args):
     cmd += [sys.executable, str(HERE / "runner.py"), *extra_args, f"--term={name}"]
     rc, out = run(cmd)
     print(out.strip() or f"started terminal {name}")
-    return rc
+    return rc, out
 
 def launch_self():
     """run.cmd entry: start this whole run as terminal run-<n> (its exit note goes to the main session) and return at once."""
@@ -1096,11 +1152,21 @@ def process_locked(issue, where="local"):
             remote_question(res)
             out = res
         elif where == "remote":                          # #133: the cloud worker needs no worktree here; it is made after the review (resolve uses it, #134)
-            res = remote_worker(n, lane, "bug" in issue["labels"], remote.start, lambda: remote.status(n, since=started),
-                                time.sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over)
-            remote_question(res)
-            out = res
-        else:
+            try:
+                res = remote_worker(n, lane, "bug" in issue["labels"], remote.start, lambda: remote.status(n, since=started),
+                                    time.sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over,
+                                    comment=lambda b: gh("issue", "comment", str(n), "--body", b))
+                remote_question(res)
+                out = res
+            except Refused as e:                         # #137: local lane free -> run here; else give the issue back, it waits
+                record_refusal(n, str(e))
+                if not local_lane_free(n):
+                    stat(n, lane, "waiting", why="cloud start refused")
+                    set_labels(n, remove=["in-progress"])
+                    return f"WAITING: cloud start refused ({str(e)[:200]}), no local lane free"
+                where = "local"; set_where(n, where)
+                gh("issue", "comment", str(n), "--body", redact(f"Runner: cloud start refused ({str(e)[:200]}); running locally instead."))
+        if where == "local":
             prep_worktree()
             out, res = agent(f"issue-{n}", worker_prompt(n, lane, bug="bug" in issue["labels"]), wt, WORKER_TOOLS if lane != "review" else REVIEW_LANE_TOOLS,
                              d / "worker1.log", "RESULT:", n, "worker", wm, over=over)
@@ -1271,13 +1337,47 @@ def main():
         print(f"ISSUE {n}: {res}")
         if USE_HERDR and TERM: spawn([])        # keep the lanes full: a fresh pass picks the next ready issues
         return 0
+    return one_pass(run_pass)
+
+def one_pass(fn):
+    """#250: one pass at a time (select + spawn under the 'pass' lock); a second pass exits at once."""
+    try: lock = FileLock("pass").__enter__()
+    except Blocked:
+        print("another pass is running"); return 0
+    try: return fn()
+    finally: lock.__exit__()
+
+def live_terminals():
+    rc, out = hc("ls", "--json", timeout=30)
+    try: return json.loads(out.strip().splitlines()[-1]).get("terminals", [])
+    except Exception: return []
+
+def may_give_back(n, out, terms):
+    """#250: drop in-progress after a failed spawn only when no run-<n> is live, never on name_taken (that run is someone else's)."""
+    return "name_taken" not in (out or "") and not any(t.get("name") == f"run-{n}" and t.get("state") == "live" for t in terms)
+
+def start_chosen(chosen, wmap, spawn_=None, terms_=None):
+    spawn_, terms_ = spawn_ or spawn_out, terms_ or live_terminals
+    results = []
+    for c in chosen:
+        n = c["number"]
+        set_labels(n, add=["in-progress"])          # claim now so the next pass doesn't pick it twice
+        set_where(n, wmap[n])
+        rc, out = spawn_([str(n)] + (["--remote"] if wmap[n] == "remote" else []))
+        if not rc: results.append((n, "started"))
+        elif may_give_back(n, out, terms_()):        # could not start: give it back, log it, don't count it
+            set_labels(n, remove=["in-progress"]); results.append((n, "not started (hc run failed)"))
+        else: results.append((n, "not started (run already live)"))
+    return results
+
+def run_pass():
     rc, out = gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: print("gh failed:", out); return 1
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
     busy = [i["number"] for i in issues if "in-progress" in i["labels"]]
     remote_busy = sum(where_of(b) == "remote" for b in busy)
     gv = governor_pass(remote_busy)                     # #239: remote lane count from the 5h usage
-    remote_lanes = gv["lanes"]
+    remote_lanes = lanes_now(gv["lanes"], refusal_state(), time.time())   # #137: no cloud starts for 1 h after a refusal
     chosen = [] if gv["stop"] else [c for c in select(issues, LOCAL_LANES + remote_lanes, MAX_CORE, EXPRESS) if not FileLock(f"issue-{c['number']}").held_by_other()]
     wmap = {c["number"]: w for c, w in assign_where(chosen, len(busy) - remote_busy, remote_busy, LOCAL_LANES, remote_lanes)}
     chosen = [c for c in chosen if c["number"] in wmap]
@@ -1298,12 +1398,7 @@ def main():
         gh("issue", "comment", str(s["number"]), "--body", f"Runner: in-progress for over {CFG['stuck_hours']}h with no runner process; marked blocked.")
     results = []
     if chosen and USE_HERDR and TERM:
-        for c in chosen:
-            set_labels(c["number"], add=["in-progress"])          # claim now so the next pass doesn't pick it twice
-            set_where(c["number"], wmap[c["number"]])
-            if spawn([str(c["number"])] + (["--remote"] if wmap[c["number"]] == "remote" else [])):                         # could not start (e.g. name_taken): give it back, log it, don't count it
-                set_labels(c["number"], remove=["in-progress"]); results.append((c["number"], "not started (hc run failed)"))
-            else: results.append((c["number"], "started"))
+        results = start_chosen(chosen, wmap)
     elif chosen:
         with ThreadPoolExecutor(max_workers=len(chosen)) as ex:
             results = list(ex.map(lambda c: (c["number"], process(c, wmap[c["number"]])), chosen))

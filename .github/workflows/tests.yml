@@ -55,7 +55,7 @@ jobs:
       - name: Python tool tests
         run: |
           fail=0
-          for t in tools/runner/test_*.py tools/ask/test/idle_test.py; do
+          for t in tools/runner/test_*.py tools/ci/test_*.py tools/ask/test/idle_test.py; do
             echo "== $t"; python3 "$t" || { echo "FAILED: $t"; fail=1; }
           done
           exit $fail

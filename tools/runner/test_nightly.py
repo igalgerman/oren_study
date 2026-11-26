@@ -1,5 +1,6 @@
 """#219 nightly retro + handoff + batch trigger with a fake claude and a fake gh. Run: python3 tools/runner/test_nightly.py"""
-import base64, json, subprocess, sys, tempfile, threading, time
+import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
+import base64, json, subprocess, sys, threading, time
 from pathlib import Path
 sys.argv.append("--dry-run")
 import runner as R
