@@ -790,6 +790,53 @@ assert r.one_pass(lambda: _ran.append(1) or 0) == 0 and _ran == [1]
 assert not (r.RUNS / "pass.lock").exists()
 print("ok one pass at a time (#250)")
 
+# #186: no '## Acceptance' section -> the runner refuses the issue (stays ready, one batched inbox line per hour)
+assert r.has_acceptance("Goal\n\n## Acceptance\n- [ ] a\n")
+assert r.has_acceptance("### Acceptance (3 points)\n- a")
+assert not r.has_acceptance("see the acceptance list") and not r.has_acceptance("") and not r.has_acceptance(None)
+_qa = [{"number": 1, "labels": [R, "pack"], "createdAt": "1", "body": "## Acceptance\n- a"},
+       {"number": 2, "labels": [R, "pack"], "createdAt": "2", "body": "no section"},
+       {"number": 3, "labels": ["in-progress", "pack"], "createdAt": "3", "body": ""},        # already running: never refused
+       {"number": 4, "labels": [R, "pack", "manual"], "createdAt": "4", "body": ""}]       # hand work: runner ignores it
+assert nums(r.no_acceptance(_qa)) == [2]
+assert nums(r.no_acceptance(_qa + [{"number": 6, "labels": [R, "P0"], "createdAt": "6", "body": ""}, {"number": 7, "labels": [R, "express"], "createdAt": "7", "body": ""},
+                                   {"number": 8, "labels": [R, "bug"], "createdAt": "8", "body": ""}])) == [2]          # P0 / express / bug are exempt
+assert r.acceptance_line([_qa[1], _qa[0]]) == "add Acceptance lists: #2 #1"
+assert r.acceptance_due(0, 5000) and not r.acceptance_due(1000, 1000 + 3599) and r.acceptance_due(1000, 1000 + 3600)
+import tempfile as _tf
+_saved = {k: getattr(r, k) for k in ("hc", "USE_HERDR", "RUNS")}
+_sent2 = []
+r.hc = lambda *a, **k: _sent2.append(a); r.USE_HERDR = True; r.RUNS = Path(_tf.mkdtemp())
+try:
+    assert r.ask_acceptance([_qa[1]], now=10000) and not r.ask_acceptance([_qa[1]], now=10000 + 60)     # once per hour, no per-issue pings
+    assert r.ask_acceptance([_qa[1]], now=10000 + 3600) and not r.ask_acceptance([], now=99999)
+finally:
+    for k, v in _saved.items(): setattr(r, k, v)
+assert _sent2[0][:3] == ("send", "inbox", "add Acceptance lists: #2") and len(_sent2) == 2, _sent2
+# worker: build exactly the Acceptance list; reviewer: FIX only for a missed acceptance point, wrong behaviour or a failing test
+for _w in (r.worker_prompt(7, "pack"), r.remote_worker_prompt(7, "pack")):
+    assert "## Acceptance" in _w and "Out of scope" in _w, _w
+for _v in (r.review_prompt(7, 9), r.remote_review_prompt(7, 9)):
+    assert "missed Acceptance point" in _v and "PASS-NOTES" in _v, _v
+# gate(): shared by the pass and the watchdog idle alarm; hc raising must not crash ask_acceptance
+_g, _gr = r.gate(_qa)
+assert nums(_gr) == [2] and "ready-for-agent" not in _g[1]["labels"] and nums(r.select(_g, 3)) == [1]
+def _boom(*a, **k): raise FileNotFoundError("hc")
+_saved = {k: getattr(r, k) for k in ("hc", "USE_HERDR", "RUNS")}
+r.hc = _boom; r.USE_HERDR = True; r.RUNS = Path(_tf.mkdtemp())
+try:
+    assert r.ask_acceptance([_qa[1]], now=10000) is False and not (r.RUNS / "acceptance_ask.txt").exists()
+finally:
+    for k, v in _saved.items(): setattr(r, k, v)
+import json, watchdog as _W
+_saved_gh = _W.R.gh; _W.R.gh = lambda *a, **k: (0, json.dumps([{"number": 2, "labels": [{"name": R}], "createdAt": "2", "updatedAt": "2", "title": "t", "body": "no section"}]) if a[0] == "issue" else "[]")
+_W._alarm["free_since"] = None
+try:
+    _W.alarms_once(now=1000.0)
+    assert _W._alarm["free_since"] is None, "refused issue must not count as startable work"
+finally:
+    _W.R.gh = _saved_gh
+print("ok acceptance (#186)")
 # #137: cloud start refused -> local lane if free, else wait; one note per hour; dead session -> retry once, then STUCK
 _t = [0]
 def _clk(): return _t[0]

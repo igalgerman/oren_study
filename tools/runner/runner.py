@@ -70,6 +70,48 @@ def blockers(body):
             out += [int(x) for x in re.findall(r"#(\d+)", line)]
     return out
 
+ACCEPT_RE = re.compile(r"^#{2,3}\s*Acceptance\b", re.I | re.M)
+
+def has_acceptance(body):
+    """#186: the issue body has an '## Acceptance' heading (checkable points + tests + Out of scope)."""
+    return bool(ACCEPT_RE.search(body or ""))
+
+ACCEPT_EXEMPT = ("express", "bug", "P0")                      # #186: urgent work keeps flowing without the list
+
+def no_acceptance(issues):
+    """#186: ready issues the runner would start but that have no '## Acceptance' section (P0, express and bug issues are exempt)."""
+    return [i for i in issues if "ready-for-agent" in i["labels"] and "in-progress" not in i["labels"]
+            and "manual" not in i["labels"] and not any(l in ACCEPT_EXEMPT for l in i["labels"]) and not has_acceptance(i.get("body"))]
+
+def acceptance_line(issues):
+    return "add Acceptance lists: " + " ".join(f"#{i['number']}" for i in issues)
+
+def acceptance_due(last, now, every=3600):
+    """Pure (#186): at most one batched inbox line per hour."""
+    return not last or now - last >= every
+
+def ask_acceptance(bad, now=None):
+    """#186: no worker starts these issues, and nothing is relabelled one by one: at most once per hour ONE line to the inbox window."""
+    now = time.time() if now is None else now
+    mark = RUNS / "acceptance_ask.txt"
+    try: last = float(mark.read_text().strip())
+    except (OSError, ValueError): last = 0
+    if not bad or not acceptance_due(last, now): return False
+    try:
+        if USE_HERDR: hc("send", "inbox", acceptance_line(bad), timeout=30)
+    except Exception as e: print(f"acceptance ask failed (will retry next pass): {e!r}"); return False   # timeout / missing hc must not crash the pass
+    try: RUNS.mkdir(exist_ok=True); mark.write_text(str(now))
+    except OSError: pass
+    return True
+
+def demote(i):
+    return {**i, "labels": [l for l in i["labels"] if l != "ready-for-agent"] + ["needs-info"]}
+
+def gate(issues):
+    """#186: (issues with the Acceptance-less ones demoted, the refused list). Shared by the pass and the watchdog idle alarm."""
+    refused = no_acceptance(issues)
+    return [demote(i) if i in refused else i for i in issues], refused
+
 def select(issues, max_parallel, max_core=1, express_lanes=0):
     """issues: [{number, labels:[names], createdAt, body}] -> issues to start now (express first, then oldest).
     An issue waits while any issue in its 'Blocked by:' line is still open (= in this list).
@@ -314,6 +356,7 @@ def assign_where(chosen, local_busy, remote_busy, local_lanes, remote_lanes):
         elif "express" in i.get("labels", []): out.append((i, "remote" if remote_lanes > 0 else "local"))   # #72: select() gave it the extra express slot: all lanes busy still starts it
     return out
 
+ACCEPT = ("Build exactly the issue's `## Acceptance` list (every point, with the tests it names) and nothing in its `Out of scope` (#186).")
 SPEC = ("A 'Batch:' issue (title starts with Batch:) or an issue labelled 'spec': follow docs/agents/skills/implement-spec.md "
         "(one branch, sub-agents in parallel for independent parts, integrate, test once, one PR).\n")
 
@@ -322,7 +365,8 @@ def remote_worker_prompt(n, lane, bug=False, retry=False):
     base = (f"You are an unattended worker for GitHub issue #{n} in repo {REPO} (lane: {lane}). If its title starts with 'Batch:', follow "
             f"its 'How to work' section: independent members (different files) may go to sub-agents (Agent tool); you integrate, test once "
             f"and open ONE PR with a 'Fixes #m' line per member. Read CLAUDE.md and FLOW.md, then the issue "
-            f"(`gh issue view {n} --repo {REPO} --comments`). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n" + SPEC)
+            f"(`gh issue view {n} --repo {REPO} --comments`). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
+            f"{ACCEPT}\n" + SPEC)
     if bug:
         base += "This is a BUG: follow docs/agents/skills/diagnosing-bugs.md, then tdd: reproduce it with a failing test, then fix it; say the root cause in the PR body.\n"
     if retry:                                    # #137: an earlier cloud session died without a RESULT comment
@@ -790,7 +834,8 @@ def worker_prompt(n, lane, review_text=None, bug=False):
     base = (f"You are an unattended worker for GitHub issue #{n} in repo {REPO} (lane: {lane}). If its title starts with 'Batch:', follow "
             f"its 'How to work' section: independent members (different files) may go to sub-agents (Agent tool); you integrate, test once "
             f"and open ONE PR with a 'Fixes #m' line per member. Read CLAUDE.md and FLOW.md, then the issue "
-            f"(`gh issue view {n} --repo {REPO} --comments`). Work only inside this worktree (your cwd). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n" + SPEC)
+            f"(`gh issue view {n} --repo {REPO} --comments`). Work only inside this worktree (your cwd). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
+            f"{ACCEPT}\n" + SPEC)
     if lane == "review":
         return base + (f"This is a read-only review issue: change NO files, make no commits, open no PR. Post your report as ONE issue comment "
                        f"(`gh issue comment {n} --repo {REPO} --body-file <file>`; write the file under oren2/tests/.tmp/). "
@@ -815,7 +860,8 @@ def review_colours(round1=""):
                "`VERDICT: PASS-NOTES <note>; <note>` (BLUE: nothing wrong for Oren or the parent, only polish such as naming, small cleanup, extra test idea, comment wording; one line, notes split by `;`); "
                "`VERDICT: PURPLE <question in one line> merge-safe` or `... hold` (PURPLE: a real product/design choice only the owner can make, e.g. what Oren sees or hears or what the parent can do, the code works; "
                "merge-safe = merge now and ask, hold = park until he answers; never for code style); "
-               "`VERDICT: FIX <points>` (RED). RED ONLY for: wrong behaviour for Oren or the parent, a failing or missing test for the change, a spec/acceptance miss, security, data loss, a broken build. "
+               "`VERDICT: FIX <points>` (RED). Judge against the issue's `## Acceptance` list (#186). RED ONLY for: a missed Acceptance point, wrong behaviour for Oren or the parent, "
+               "a failing or missing test for the change, security, data loss, a broken build. "
                "Justify each RED point in one line. Everything else is a BLUE note, never FIX.")
     if round1:
         colours += ("\nThis is a re-review: check ONLY whether these round-1 RED points are fixed, raise NO new nits and no new points "
@@ -1430,6 +1476,8 @@ def run_pass():
     rc, out = gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: print("gh failed:", out); return 1
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
+    issues, refused = gate(issues)                          # #186: no Acceptance section -> not started
+    if refused and not DRY: ask_acceptance(refused)
     busy = [i["number"] for i in issues if "in-progress" in i["labels"]]
     remote_busy = sum(where_of(b) == "remote" for b in busy)
     gv = governor_pass(remote_busy)                     # #239: remote lane count from the 5h usage
@@ -1444,6 +1492,7 @@ def run_pass():
         print(f"[dry-run] repo={REPO} branch={BRANCH} model={MODEL} local_lanes={LOCAL_LANES} remote_lanes={REMOTE_LANES} max_core={MAX_CORE}")
         print(f"[dry-run] {governor_text(gv)}; {gv['why']}")
         print(f"[dry-run] open issues: {len(issues)}; in-progress: {sum('in-progress' in i['labels'] for i in issues)}")
+        for i in refused: print(f"[dry-run] would refuse #{i['number']} (no ## Acceptance section; stays ready-for-agent, asked once per hour)")
         for c in chosen: print(f"[dry-run] would start #{c['number']} ({lane_of(c['labels'])}): {c['title']}")
         for s in stuck: print(f"[dry-run] would block stuck #{s['number']} (in-progress, idle > {CFG['stuck_hours']}h, no runner process)")
         if not chosen and not stuck: print("[dry-run] nothing to do")
