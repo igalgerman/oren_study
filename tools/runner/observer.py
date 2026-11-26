@@ -15,7 +15,7 @@ LOCK = R.RUNS / "integrate.lock"
 ACTIONS = ("make_ready", "rerun", "fix_blocked_by")
 MAX_ACTIONS, REPEAT_MIN = 5, 60
 ORCH_MIN, NORUN_MIN = 30, 10          # needs-orchestrator / P0 untouched this long; in-progress without run terminal this long
-_running = {"v": False}
+_running = globals().get("_running") or {"v": False}   # #345: kept across a reload (a thread may be running)
 
 def ts(s):
     from datetime import datetime

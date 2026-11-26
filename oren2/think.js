@@ -102,7 +102,8 @@ const spr=(v,o)=>Object.assign({t:'spr',v,n:1,z:1,fl:0,up:0},o);
 const TRN={s:'הַצּוּרָה',c:'הַצֶּבַע',n:'הַכַּמּוּת',z:'הַגֹּדֶל',r:'הַכִּוּוּן'};
 function genAna(lv){
   if(lv===1){const tk=pk(Object.keys(TR));const t=TR[tk];const pool=t.only||OBJ1;const [o1,o2]=shuf(pool);const A=spr(o1,t.b),Bx=spr(o1,Object.assign({},t.b,t.f)),C=spr(o2,t.b),ans=spr(o2,Object.assign({},t.b,t.f));
-    const other=pk(Object.keys(TR).filter(k=>k!==tk&&(!TR[k].only||TR[k].only.includes(o2))));const wrong=spr(o2,Object.assign({},TR[other].b,TR[other].f));
+    /* the wrong option must look clearly different (#7): "two"/"three" get the other count, never a slightly bigger one */
+    const other=tk==='big'?pk(['two','three']):tk==='two'?'three':'two';const wrong=spr(o2,Object.assign({},TR[other].b,TR[other].f));
     const ds=[C,okey(wrong)===okey(C)||okey(wrong)===okey(ans)?spr(o1,t.b):wrong];
     return mk('ana',1,{kind:'analogy',a:A,b:Bx,c:C,ans,ds,text:'כְּמוֹ בַּזּוּג הָרִאשׁוֹן — מָה חָסֵר?',rule:t.r+'. אוֹתוֹ דָּבָר בַּזּוּג הַשֵּׁנִי.',key:'p'+o1+o2+tk});}
   const pic=lv===2||(lv===3&&rnd()<.3)||(lv===5&&rnd()<.2);
