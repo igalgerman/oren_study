@@ -216,12 +216,19 @@ export function parseRemoteLanes(toml: string): number {
 export const isCloud = (i: Issue) => (i.labels ?? []).some(x => x.name === 'cloud')
 
 /** #136: a row of `python tools/runner/remote.py cloud`. last = ISO UTC of the newest comment/commit. */
-export type CloudLane = { n: number; title: string; state: string; line?: string; last: string; stale: boolean; pr: string; session: string }
+export type CloudLane = { n: number; title: string; state: string; line?: string; last: string; stale: boolean; pr: string; session: string; manual?: boolean }
 
-/** #236: cloud lanes = open issues labelled cloud + the rows of `remote.py cloud` (in-progress issues whose run is remote). */
+/** #263: rows still working (state done = RESULT: DONE or PR merged -> DONE, not a lane). */
+export const activeCloud = (lanes: CloudLane[]) => lanes.filter(c => c.state !== 'done')
+
+/** #236: cloud lanes = open issues labelled cloud + the rows of `remote.py cloud` (in-progress issues whose run is remote); #263: minus done ones. */
 export function cloudCount(issues: Issue[], lanes: CloudLane[]): number {
-  return new Set([...issues.filter(isCloud).map(i => i.number), ...lanes.map(c => c.n)]).size
+  const done = new Set(lanes.filter(c => c.state === 'done').map(c => c.n))
+  return new Set([...issues.filter(isCloud).map(i => i.number), ...activeCloud(lanes).map(c => c.n)].filter(n => !done.has(n))).size
 }
+
+/** #263: finished cloud sessions for the DONE list. */
+export const cloudDone = (lanes: CloudLane[]) => lanes.filter(c => c.state === 'done').map(c => `✓ #${c.n} ${short(c.title)} (cloud)`)
 
 const hhmmIso = (iso: string) => {
   const t = Date.parse(iso)
@@ -231,8 +238,8 @@ const hhmmIso = (iso: string) => {
 /** #136: per cloud lane a '☁ #n title — state · HH:MM' line (+ ' · STALE'), then the PR and session links on their own lines. */
 export function cloudRows(lanes: CloudLane[]): string[] {
   const out: string[] = []
-  for (const c of lanes) {
-    out.push(`☁ #${c.n} ${short(c.title)} — ${c.state} · last ${hhmmIso(c.last)}${c.stale ? ' · STALE' : ''}`)
+  for (const c of activeCloud(lanes)) {
+    out.push(`☁ #${c.n} ${short(c.title)} — ${c.state}${c.manual ? ' · manual' : ''} · last ${hhmmIso(c.last)}${c.stale ? ' · STALE' : ''}`)
     if (c.pr) out.push(`   PR ${c.pr}`)
     if (c.session) out.push(`   session ${c.session}`)
   }

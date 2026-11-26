@@ -3,7 +3,7 @@ import type { Register } from 'claude-code'
 
 import type { OrenLanesData } from '../types/index'
 import {
-  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, usageJson, governorLine, flowRows, laneReasons, view, statsLines, parseMaxCore, parseLocalLanes, parseRemoteLanes, cloudRows, cloudCount,
+  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, usageJson, governorLine, flowRows, laneReasons, view, statsLines, parseMaxCore, parseLocalLanes, parseRemoteLanes, cloudRows, cloudCount, cloudDone,
 } from './lanes'
 import type { CloudLane, Issue, View, Win } from './lanes'
 
@@ -99,6 +99,7 @@ export const register: Register = on => {
           const closed = cl.exitCode === 0 ? (JSON.parse(cl.stdout) as Issue[]) : []
           flow = flowRows(issues, closed, windows, prs)
           vw = view(issues, closed, windows, prs, 3, maxCore)
+          vw = { ...vw, done: [...cloudDone(lanesCloud), ...vw.done.filter(x => !lanesCloud.some(c => c.state === 'done' && x.startsWith(`✓ #${c.n} `)))].slice(0, 3) }   // #263
           const dayAgo = Date.now() - 24 * 3600 * 1000
           const today = closed.filter(c => Date.parse((c as { closedAt?: string }).closedAt ?? '') > dayAgo).length
           const g = groupIssues(issues)

@@ -5,7 +5,8 @@
   (runner only) review_status(pr, since)               -> {state: working|done, line: last VERDICT line of a PR comment, body} (#134)
   python tools/runner/remote.py send <session> "<text>" -> JSON {ok, error}
   python tools/runner/remote.py cloud                  -> JSON list, one per open issue labelled cloud (#136) or in-progress with a remote run (#236):
-      {n, title, state, line, last, stale, pr, session}  last = ISO UTC of the newest comment/commit
+      {n, title, state, line, last, stale, pr, session, manual}  last = ISO UTC of the newest comment/commit
+      state done = RESULT: DONE or the PR merged; manual = no .runs/<n> (started by hand). Lanes show only active() rows (#263).
 
 start needs a TTY (`claude --cloud` refuses piped output), so it runs inside a herdr terminal.
 The herdr server's env has CLAUDE_CODE_OAUTH_TOKEN (inference-only scope -> 403 on cloud);
@@ -168,17 +169,23 @@ def review_status(pr, run=sh, since=None):
 SESSION = re.compile(r"https://claude\.ai/code/session_\w+")
 STALE_MIN = int(float(CFG.get("stuck_hours", 1)) * 60)   # same threshold as the runner's stuck rule and the watchdog alarm
 
-def cloud_lane(issue, pr, commit_iso, now):
-    """Pure (#136): one cloud lane row from the issue (gh JSON with comments), its lane PR (or None) and the last commit time."""
+def cloud_lane(issue, pr, commit_iso, now, manual=False):
+    """Pure (#136): one cloud lane row from the issue (gh JSON with comments), its lane PR (or None) and the last commit time.
+    manual = started by hand (remote.py start, no run dir) (#263)."""
     comments = issue.get("comments") or []
     bodies = [c.get("body", "") for c in comments]
     st = state_from([c.get("body", "") for c in current_run(comments)], pr)    # #236: only this run's RESULT counts
+    if (pr or {}).get("mergedAt"): st["state"] = "done"                        # #263: PR merged = done
     sess = next((m[0] for b in reversed(bodies) for m in [SESSION.search(b or "")] if m), "")
     times = [t for t in [*(c.get("createdAt", "") for c in comments), commit_iso or ""] if t]
     last = max(times) if times else issue.get("createdAt", "")
     stale = bool(last) and now - _epoch(last) > STALE_MIN * 60
     return {"n": issue["number"], "title": issue.get("title", ""), "state": st["state"], "line": st["line"],
-            "last": last, "stale": stale, "pr": (pr or {}).get("url", ""), "session": sess}
+            "last": last, "stale": stale, "pr": (pr or {}).get("url", ""), "session": sess, "manual": manual}
+
+def active(row):
+    """#263: a cloud row that is still a lane (not done); done rows go to DONE and are not counted."""
+    return row.get("state") != "done"
 
 def _epoch(iso):
     import calendar, time
@@ -202,7 +209,7 @@ def cloud(run=sh, now=None):
     for i in listed("in-progress"):
         if i["number"] not in issues and where(i["number"]) == "remote": issues[i["number"]] = i
     issues = list(issues.values())
-    rc, out = run(["gh", "pr", "list", "--repo", REPO, "--state", "all", "--limit", "200", "--json", "number,url,headRefName,commits,body"])
+    rc, out = run(["gh", "pr", "list", "--repo", REPO, "--state", "all", "--limit", "200", "--json", "number,url,headRefName,commits,body,mergedAt"])
     allp = json.loads(out) if rc == 0 and out.strip() else []
     prs = {p["headRefName"]: p for p in allp}
     rows = []
@@ -212,7 +219,7 @@ def cloud(run=sh, now=None):
         if not pr:
             rc, out = run(["gh", "api", f"repos/{REPO}/branches/lane/{i['number']}", "--jq", ".commit.commit.committer.date"])
             commit = out.strip() if rc == 0 else ""
-        rows.append(cloud_lane(i, pr, commit, now))
+        rows.append(cloud_lane(i, pr, commit, now, manual=not (RUNS / str(i["number"])).is_dir()))
     return rows
 
 def main(argv):
