@@ -338,7 +338,61 @@ def alarm_tick():
         if t in new: _alarm["sent"][k] = now
     tell("IDLE ALARM (watchdog): " + " · ".join(new))
 
-RELOAD = ("remote", "owner_q", "freeze", "stats", "recover", "conflicts")   # #229: reloaded on change, before runner.py (observer/ai_observer keep in-memory guards: not reloaded)
+KEEP = ("observer", "ai_observer", "nightly")   # #229: in-memory never-two guards: never reloaded (they use R in place, which is reloaded)
+
+def local_modules(here=None):
+    """#300: names of the loaded modules that live in tools/runner (except watchdog itself / __main__)."""
+    here = Path(here or HERE).resolve(); out = []
+    for n, m in list(sys.modules.items()):
+        f = getattr(m, "__file__", None)
+        if n in ("__main__", "watchdog") or not f: continue
+        try:
+            if Path(f).resolve().parent == here: out.append(n)
+        except OSError: pass
+    return sorted(out)
+
+def _imports(path):
+    """Local-looking module names a file imports (top level and inside functions)."""
+    import ast
+    try: tree = ast.parse(Path(path).read_text(encoding="utf-8", errors="replace"))
+    except (OSError, SyntaxError, ValueError): return set()
+    out = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import): out |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level: out.add(node.module.split(".")[0])
+    return out
+
+def dep_order(names, here=None):
+    """#300: names sorted so a module comes after the local modules it imports (cycles: file order)."""
+    here, names, done, seen = Path(here or HERE), list(names), [], set()
+    def visit(n):
+        if n in seen: return
+        seen.add(n)
+        for d in sorted(_imports(here / f"{n}.py")):
+            if d in names and d != n: visit(d)
+        done.append(n)
+    for n in names: visit(n)
+    return done
+
+def reload_all(log, here=None, keep=KEEP):
+    """#300: reload every loaded tools/runner module (not `keep`) in dependency order. Raises on a failed reload
+    (the caller keeps the old stamps, so the next tick retries). -> the names reloaded."""
+    order = [n for n in dep_order(local_modules(here), here) if n not in keep]
+    for n in order: importlib.reload(sys.modules[n])
+    if order: log("reloaded " + ", ".join(f"{n}.py" for n in order))
+    return order
+
+def stamps(here=None):
+    """#300: mtime of every .py in tools/runner (a merge touches several at once)."""
+    out = {}
+    for f in Path(here or HERE).glob("*.py"):
+        try: out[f.name] = f.stat().st_mtime
+        except OSError: pass
+    return out
+
+def reload_self(W):
+    """Load the newest watchdog.py (main() runs as __main__ the first time)."""
+    return importlib.reload(W) if W.__name__ == "watchdog" else importlib.import_module("watchdog")
 
 def parse_args(argv):
     """#229: unknown flags (and --help) end here, before the loop."""
@@ -368,30 +422,21 @@ def main():
     try: loop(a.once)
     finally: lock.__exit__()
 
-def _mtime(name):
-    try: return (HERE / f"{name}.py").stat().st_mtime
-    except OSError: return None
-
 def loop(once):
     log("watchdog started")
-    W, me = sys.modules[__name__], Path(__file__).resolve()
-    stamp, wstamp = (HERE / "runner.py").stat().st_mtime, me.stat().st_mtime
-    mods = {n: _mtime(n) for n in RELOAD}
+    W = sys.modules[__name__]
+    st, force, seen = stamps(), False, set()
     while True:
         try:
-            for n in RELOAD:                  # #229: remote.py & co changed: reload them first, so runner.py and the ticks use the new code
-                t = _mtime(n)
-                if t != mods[n]:
-                    mods[n] = t
-                    if n in sys.modules: importlib.reload(sys.modules[n]); log(f"reloaded {n}.py")
-            m = (HERE / "runner.py").stat().st_mtime
-            if m != stamp:                    # runner.py changed: pick up the new select()/park logic without restarting this window
-                stamp = m; importlib.reload(R); log("reloaded runner.py")
-            w = me.stat().st_mtime
-            if w != wstamp:                   # #127: watchdog.py changed (a merged fix): load it too, no manual restart
-                wstamp = w; W = importlib.reload(W) if W.__name__ == "watchdog" else importlib.import_module("watchdog")
-                log("reloaded watchdog.py")
+            now = stamps()
+            if now != st or force:            # #300: a merged fix (any tools/runner file) or a half-updated tick: reload ALL, in dependency order, then watchdog.py
+                reload_all(log)
+                W = reload_self(W); log("reloaded watchdog.py")
+                st, force = now, False        # only after a clean reload: a failed one is retried next tick
             W.tick()
+        except AttributeError as e:           # #300: new code calling an old module: log once, full reload next tick
+            if repr(e) not in seen: seen.add(repr(e)); log(f"error: {e!r} (full reload)")
+            force = True
         except Exception as e:
             log(f"error: {e!r}")
         if once: return
