@@ -203,3 +203,16 @@ test('#329 the panel reads GitHub only from the shared cache (.runs/gh_cache.jso
   expect(err).toMatch('GitHub cache 400 s old')
   expect(GH_CACHE).toMatch('tools/runner/.runs/gh_cache.json')
 })
+
+test('#437 UP NEXT shows the tier and sorts express, P0, tier, bug, P1..P3', () => {
+  const p = panel(base({ open: [
+    { number: 1, title: 'tier two P1', labels: L('ready-for-agent', 'P1', 'tier-2') },
+    { number: 2, title: 'plain P2', labels: L('ready-for-agent') },
+    { number: 3, title: 'urgent late tier', labels: L('ready-for-agent', 'P0', 'tier-2') },
+    { number: 4, title: 'bug P3', labels: L('ready-for-agent', 'bug', 'P3') },
+    { number: 5, title: 'express', labels: L('ready-for-agent', 'express', 'P3', 'tier-3') },
+  ] }))
+  expect(p.issues.next).toEqual([5, 3, 4, 2, 1])
+  expect(p.next.find(r => r.text.includes('#1 '))!.text).toMatch(/^P1 T2 #1 /)
+  expect(p.next.find(r => r.text.includes('#2 '))!.text).toMatch(/^P2 #2 /)
+})

@@ -35,4 +35,5 @@ The owner's lane (panel "YOUR LANE") shows only `ready-for-human` and `needs-tri
 
 ## Priority labels
 
-`P0` urgent, `P1` high, `P2` normal (default when missing), `P3` low. The runner starts bugs first, then P0 before P3, then the oldest; the panel shows `[Pn]` in UP NEXT.
+`P0` urgent, `P1` high, `P2` normal (default when missing), `P3` low. Tiers (#437): `tier-1` (default, no label), `tier-2`, `tier-3` — a later round of work; the owner's 26 Nov game picks are `tier-2`.
+The runner starts `express`, then P0 (any tier), then tier 1→3, then bugs, then P1→P3, then the oldest; the panel shows `Pn` (and `T2`/`T3`) in UP NEXT.

@@ -46,6 +46,15 @@ def priority_of(labels):
             return n
     return 2
 
+def tier_of(labels):
+    """#437: 1-3 from a tier-1..tier-3 label; tier 1 when missing."""
+    return next((n for n in (1, 2, 3) if f"tier-{n}" in labels), 1)
+
+def queue_key(i):
+    """#437: express, then P0 (any tier), then tier 1 < 2 < 3, then bug, then P1..P3, then oldest."""
+    l = i["labels"]; p = priority_of(l)
+    return ("express" not in l, p != 0, tier_of(l), "bug" not in l, p, i["createdAt"])
+
 MODEL_IDS = {"haiku": "haiku", "sonnet": "sonnet", "opus": "opus", "fable": "claude-fable-5-2"}
 _MODEL_RANK = ["haiku", "sonnet", "opus", "fable"]
 
@@ -139,7 +148,7 @@ def select(issues, max_parallel, max_core=1, express_lanes=0, core_held=0):
              and "in-progress" not in i["labels"] and "blocked" not in i["labels"] and "manual" not in i["labels"]
              and not any(b in open_nums for b in blockers(i.get("body")))]
     chosen = []
-    for i in sorted(ready, key=lambda i: ("express" not in i["labels"], "bug" not in i["labels"], priority_of(i["labels"]), i["createdAt"])):   # express first, bugs, then P0..P3, then oldest
+    for i in sorted(ready, key=queue_key):   # #437: express, P0, tier, bug, P1..P3, oldest
         if "express" in i["labels"] and exp_free > 0:
             exp_free -= 1; chosen.append(i); continue
         if slots <= 0:
