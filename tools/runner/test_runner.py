@@ -420,3 +420,6 @@ assert "button crashes" in _p and "ONLY" in _p
 assert "VERDICT: PASS-NOTES" in r.review_prompt(7, 9) and "VERDICT: PURPLE" in r.review_prompt(7, 9) and "RED" in r.review_prompt(7, 9)
 assert r.FIX_ROUNDS == 2          # one more fix round before blocking (2 fixes, 3 reviews)
 print("ok #149")
+# #149: no screenshots when no oren2/ file changed
+assert "no oren2/ file changed" in r.worker_prompt(7, "pack", "") and "no oren2/ file changed" in r.review_prompt(7, 9)
+print("ok skip screenshots")
