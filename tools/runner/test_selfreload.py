@@ -19,5 +19,6 @@ def sleep(_):
 W.time.sleep = sleep
 try: W.main()
 except SystemExit: pass
+calls = [c for c in calls if not (c.startswith("reloaded ") and c != "reloaded watchdog.py")]   # #300: the other modules are reloaded first
 assert calls == ["watchdog started", "old", "reloaded watchdog.py", "new"], calls
 print("ok watchdog self-reload")

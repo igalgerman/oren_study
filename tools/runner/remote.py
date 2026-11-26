@@ -1,12 +1,12 @@
 """Cloud Claude sessions for the runner (#131 spike). See docs/agents/remote.md.
 
   python tools/runner/remote.py start <n> "<task>"     -> JSON {ok, session, url, error}
-  python tools/runner/remote.py status <n>             -> JSON {state: working|done|stuck|question, line, pr}
+  python tools/runner/remote.py status <n>             -> JSON {state: working|done|stuck|question, line, pr}  (#297: an open PR quiet 10 min = done)
   (runner only) review_status(pr, since)               -> {state: working|done, line: last VERDICT line of a PR comment, body} (#134)
   python tools/runner/remote.py send <session> "<text>" -> JSON {ok, error}
   python tools/runner/remote.py cloud                  -> JSON list, one per open issue labelled cloud (#136) or in-progress with a remote run (#236):
       {n, title, state, line, last, stale, pr, session, manual}  last = ISO UTC of the newest comment/commit
-      state done = RESULT: DONE or the PR merged; manual = no .runs/<n> (started by hand). Lanes show only active() rows (#263).
+      state done = RESULT: DONE or the PR merged; waiting review = open PR quiet 10 min, no RESULT line (#297); manual = no .runs/<n> (started by hand). Lanes show only active() rows (#263).
 
 start needs a TTY (`claude --cloud` refuses piped output), so it runs inside a herdr terminal.
 The herdr server's env has CLAUDE_CODE_OAUTH_TOKEN (inference-only scope -> 403 on cloud);
@@ -26,7 +26,8 @@ RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # same as runner.
 
 def sh(cmd, env=None):
     p = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                       stdin=subprocess.DEVNULL, timeout=600)
+                       stdin=subprocess.DEVNULL, timeout=600,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))   # no console popups under pythonw
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 def clean_env():
@@ -40,13 +41,15 @@ def parse_start(out):
     err = next((l for l in lines if "rror" in l or "fail" in l), lines[-1] if lines else "no output")
     return {"ok": False, "session": "", "url": "", "error": err}
 
-def start(n, task, cwd, run=sh):
-    """cwd must be a checkout whose current commit is on GitHub (e.g. the main checkout): the session starts there."""
+def start(n, task, cwd, run=sh, name=None):
+    """cwd must be a checkout whose current commit is on GitHub (e.g. the main checkout): the session starts there.
+    name (#306): a session that is not an issue's worker (the cloud desks) -> window <name>, label role=desk."""
     task = task.replace('"', "'")                             # double quotes break the Windows argv to bash ('file not found')
-    name = f"remote-{n}"
+    labels = ["--label", f"issue={n}", "--label", "role=remote"] if not name else ["--label", "role=desk"]
+    name = name or f"remote-{n}"
     run([HC, "rm", name])                                        # leftover finished terminal of an earlier start
-    rc, out = run([HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), "--label", f"issue={n}",
-                   "--label", "role=remote", BASH, "-c", f'unset {TOKEN_VAR}; "$0" --cloud "$1"', CLAUDE, task])
+    rc, out = run([HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), *labels,
+                   BASH, "-c", f'unset {TOKEN_VAR}; "$0" --cloud "$1"', CLAUDE, task])
     if rc:
         return {"ok": False, "session": "", "url": "", "error": out.strip()[:300] or f"hc run exit {rc}"}
     run([HC, "wait", name, "--timeout", "180", "--json"])
@@ -82,15 +85,39 @@ def current_run(comments):
     k = max((i for i, c in enumerate(comments) if (c.get("body") or "").startswith(STARTED)), default=0)
     return comments[k:]
 
-def status(n, run=sh, since=None):
+QUIET_MIN = 10           # #297: an open PR whose head has no new commit for this long = the worker is done (it forgot RESULT: DONE)
+BY_PR = "done by PR (no RESULT line)"
+
+def last_commit(pr):
+    return max((c.get("committedDate", "") for c in (pr or {}).get("commits") or []), default="")
+
+def pr_quiet(pr, now, quiet_min=QUIET_MIN, commit_iso=None):
+    """Pure (#297): pr is open (not merged/closed) and its newest commit is at least quiet_min old."""
+    if not pr or pr.get("mergedAt") or (pr.get("state") or "OPEN").upper() != "OPEN": return False
+    t = _epoch(commit_iso if commit_iso is not None else last_commit(pr))
+    return t > 0 and now - t >= quiet_min * 60
+
+def log_line(text):
+    import time
+    try:
+        RUNS.mkdir(parents=True, exist_ok=True)
+        with open(RUNS / "runner.log", "a", encoding="utf-8") as f: f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + text + chr(10))
+    except OSError: pass
+
+def status(n, run=sh, since=None, now=None):
     """since = ISO UTC time (#133): only comments created at or after it count, so an earlier run's RESULT line is ignored.
-    Without since (CLI) the latest 'Runner: started' comment marks the run start (#236)."""
+    Without since (CLI) the latest 'Runner: started' comment marks the run start (#236).
+    #297: no RESULT line but this run's PR is open and quiet QUIET_MIN min -> done (logged 'done by PR (no RESULT line)')."""
+    import time
     rc, out = run(["gh", "issue", "view", str(n), "--repo", REPO, "--json", "comments"])
     cur = current_run(json.loads(out).get("comments", [])) if rc == 0 else []
     comments = [c.get("body", "") for c in cur if not since or c.get("createdAt", "") >= since]
     st = state_from(comments, None)
     if not since and cur and (cur[0].get("body") or "").startswith(STARTED): since = cur[0].get("createdAt", "")
-    st["pr"] = find_pr(n, run, "all", st["line"], "number,url,isDraft", since=since)   # #246: also a claude/* head; #264: this run's PR only
+    st["pr"] = find_pr(n, run, "all", st["line"], "number,url,isDraft,state,commits", since=since)   # #246: also a claude/* head; #264: this run's PR only
+    if st["state"] == "working" and pr_quiet(st["pr"], time.time() if now is None else now):
+        st["state"], st["line"] = "done", f"RESULT: DONE {st['pr'].get('url', '')} ({BY_PR})"
+        log_line(f"#{n} {BY_PR}: PR #{st['pr'].get('number')} quiet {QUIET_MIN}+ min")
     return st
 
 PR_URL = re.compile(r"/pull/(\d+)")
@@ -121,7 +148,7 @@ def find_pr(n, run=sh, state="open", line=None, fields="number,headRefName", sin
         line = state_from([c.get("body", "") for c in current_run(_json(rc, out, {}).get("comments", []))], None)["line"]
     m = PR_URL.search(line or "") if (line or "").startswith("RESULT: DONE") else None
     if m:
-        p = _json(*run(["gh", "pr", "view", m[1], "--repo", REPO, "--json", fields + ",state"]), {})
+        p = _json(*run(["gh", "pr", "view", m[1], "--repo", REPO, "--json", fields + ("" if "state" in fields.split(",") else ",state")]), {})
         if p.get("number") and (state == "all" or p.get("state", "").lower() == state):
             if "state" not in fields.split(","): p.pop("state", None)
             return p
@@ -184,6 +211,7 @@ def cloud_lane(issue, pr, commit_iso, now, manual=False):
     bodies = [c.get("body", "") for c in comments]
     st = state_from([c.get("body", "") for c in current_run(comments)], pr)    # #236: only this run's RESULT counts
     if (pr or {}).get("mergedAt"): st["state"] = "done"                        # #263: PR merged = done
+    elif st["state"] == "working" and pr_quiet(pr, now, commit_iso=commit_iso or ""): st["state"] = "waiting review"   # #297: done by PR
     sess = next((m[0] for b in reversed(bodies) for m in [SESSION.search(b or "")] if m), "")
     times = [t for t in [*(c.get("createdAt", "") for c in comments), commit_iso or ""] if t]
     last = max(times) if times else issue.get("createdAt", "")
@@ -217,7 +245,7 @@ def cloud(run=sh, now=None):
     for i in listed("in-progress"):
         if i["number"] not in issues and where(i["number"]) == "remote": issues[i["number"]] = i
     issues = list(issues.values())
-    rc, out = run(["gh", "pr", "list", "--repo", REPO, "--state", "all", "--limit", "200", "--json", "number,url,headRefName,commits,body,mergedAt"])
+    rc, out = run(["gh", "pr", "list", "--repo", REPO, "--state", "all", "--limit", "200", "--json", "number,url,headRefName,commits,body,mergedAt,state"])
     allp = json.loads(out) if rc == 0 and out.strip() else []
     prs = {p["headRefName"]: p for p in allp}
     rows = []

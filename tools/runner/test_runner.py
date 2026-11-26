@@ -278,7 +278,7 @@ def _mock_run(out):
         _ran.append(list(map(str, cmd))); return (0, out)
     return f
 _orig_run16 = r.run
-r.run = _mock_run(_json.dumps({"spaces": [{"id": "s1", "name": "other"}, {"id": "s2", "name": r.CFG.get("herdr_space", "Oren_study_orech")}]}))
+r.run = _mock_run(_json.dumps({"spaces": [{"id": "s1", "name": "other"}, {"id": "s2", "name": r.CFG.get("herdr_space", "oren-workers")}]}))
 r._SPACE = None
 assert r.space_args() == ["--label", "herdr.space=s2"]; assert len(_ran) == 1
 r.space_args(); assert len(_ran) == 1                                                       # cached
@@ -414,6 +414,8 @@ p = r.remote_worker_prompt(7, "core", bug=True)
 assert "#7" in p and "lane/7" in p and "FLOW.md" in p and "Fixes #7" in p and "gh issue comment 7" in p
 assert "RESULT: DONE" in p and "QUESTION:" in p and "diagnosing-bugs" in p
 assert "diagnosing-bugs" not in r.remote_worker_prompt(7, "core")
+# #297: the cloud prompt ENDS with the mandatory RESULT comment step
+assert "LAST STEP (mandatory)" in p and p.rstrip().endswith("not finished until that comment is on the issue.") and p.rindex("RESULT: DONE <PR url>") > p.rindex("gh pr create"), p
 # #219: Batch:/spec issues follow implement-spec (local and cloud prompts)
 assert "implement-spec.md" in r.remote_worker_prompt(7, "core") and "Batch:" in r.remote_worker_prompt(7, "core") and "spec" in r.worker_prompt(7, "core")
 assert "implement-spec.md" in r.worker_prompt(7, "core")
@@ -666,8 +668,9 @@ print("ok #246 claude/* PR heads")
 from datetime import datetime as _dt, timezone as _tz
 _iso = lambda t: _dt.fromtimestamp(t, _tz.utc).isoformat()
 _now = 1_800_000_000.0
-_G = {"target": 90, "min": 2, "max": 8, "stop": 93, "pace": 3.5, "week_cap": 4, "stale_s": 900, "fallback": 4}
-def _u(pct, reset_h, week=10, week_reset_h=24 * 6, age=60):
+import time as _time_mod
+_G = {"target": 90, "min": 2, "max": 8, "stop": 93, "pace": 3.5, "week_cap": 4, "week_target": 99, "stale_s": 900, "fallback": 4}
+def _u(pct, reset_h, week=None, week_reset_h=24 * 6, age=60):
     return {"five_h_pct": pct, "five_h_reset": _iso(_now + reset_h * 3600), "week_pct": week, "week_reset": _iso(_now + week_reset_h * 3600), "at": _iso(_now - age)}
 # below target: 20% with 4h left, 3.5%/h/lane -> (90-20)/(3.5*4)=5 lanes
 g = r.governor(_u(20, 4), [], _now, _G); assert g["lanes"] == 5 and not g["stop"] and abs(g["projected"] - 90) < 0.01, g
@@ -678,9 +681,22 @@ g = r.governor(_u(85, 3), [], _now, _G); assert g["lanes"] == 2 and g["projected
 # 93% stop: no new run
 g = r.governor(_u(93, 1), [], _now, _G); assert g["stop"] and "STOP" in r.governor_text(g) and "governor: 0 lanes" in r.governor_text(g)
 assert not r.governor(_u(92.9, 0.1), [], _now, _G)["stop"]
-# weekly guard: 2 days into the week (even ~28.6%), week 45% > 38.6 -> cap 4; 30% -> no cap
+# #274 weekly-aware: projected week % at its reset (linear) aims at week_target (99)
+# behind: 4 days in, week 39% -> ~68% at reset -> more lanes (max) even though the 5h projection alone gives 5
+g = r.governor(_u(20, 4, week=39, week_reset_h=24 * 3), [], _now, _G); assert g["lanes"] == 8 and abs(g["week_projected"] - 68.25) < 0.01, g
+# ahead: 4 days in, week 80% -> ~140% -> fewer lanes (week_cap)
+g = r.governor(_u(5, 1, week=80, week_reset_h=24 * 3), [], _now, _G); assert g["lanes"] == 4 and g["week_projected"] > 99, g
+# 2 days in: 45% -> ~157% ahead -> cap 4; 20% -> ~70% behind -> 8
 assert r.governor(_u(5, 1, week=45, week_reset_h=24 * 5), [], _now, _G)["lanes"] == 4
-assert r.governor(_u(5, 1, week=30, week_reset_h=24 * 5), [], _now, _G)["lanes"] == 8
+assert r.governor(_u(5, 1, week=20, week_reset_h=24 * 5), [], _now, _G)["lanes"] == 8
+# first hours of a week: too early to project -> 5h rule only
+assert r.governor(_u(20, 4, week=1, week_reset_h=24 * 7 - 2), [], _now, _G)["lanes"] == 5
+# behind week but 5h at stop -> no new run (the 5h stop wins)
+assert r.governor(_u(93, 1, week=39, week_reset_h=24 * 3), [], _now, _G)["stop"]
+# text shows both windows and the target
+t = r.governor_text(r.governor(_u(20, 4, week=39, week_reset_h=24 * 3), [], _now, _G))
+assert t.startswith("governor: 8 lanes, aim 90% (5h 20% -> ~") and " · week 39% -> ~68% at " in t and t.endswith(")"), t
+assert _time_mod.strftime("%a %H:%M", _time_mod.localtime(_now + 24 * 3 * 3600)) in t, t
 # stale / missing -> config remote_lanes
 assert r.governor(_u(20, 4, age=16 * 60), [], _now, _G)["lanes"] == 4
 assert r.governor(None, [], _now, _G)["lanes"] == 4 and not r.governor(None, [], _now, _G)["stop"]
@@ -695,7 +711,17 @@ assert r.governor(_u(20, 4), _h, _now, _G)["lanes"] == 8
 assert r.gov_pace(_h, _now, "other", 3.5) == 3.5
 assert r.gov_pace([{**_h[1], "at": _now - 300}, _h[1]], _now, _rs, 3.5) == 3.5
 assert r.gov_pace([{**x, "busy": 0} for x in _h], _now, _rs, 3.5) == 3.5
-t = r.governor_text(r.governor(_u(20, 4), [], _now, _G)); assert t.startswith("governor: 5 lanes (5h 20% -> ~90% at ") and len(t.split(" at ")[1]) == 6, t
+t = r.governor_text(r.governor(_u(20, 4), [], _now, _G)); assert t.startswith("governor: 5 lanes, aim 90% (5h 20% -> ~90% at ") and len(t.split(" at ")[1]) == 6 and "week" not in t, t
+# #269: the 5h reset is past -> a new window: pct 0, never stop, lanes as for a fresh window
+g = r.governor(_u(95, -0.05), [], _now, _G); assert not g["stop"] and g["lanes"] == r.governor(_u(0, 5), [], _now, _G)["lanes"] > 0 and g["pct"] == 0 and g["why"] == "new 5h window", g
+assert g["reset"] > _now and "new 5h window" in r.governor_text(g) and "STOP" not in r.governor_text(g), r.governor_text(g)
+g = r.governor(_u(95, 0.05), [], _now, _G); assert g["stop"] and "STOP" in r.governor_text(g)   # reset still ahead -> stop per governor_stop
+assert r.governor(_u(95, -0.05, age=16 * 60), [], _now, _G)["why"].startswith("no fresh usage")   # stale -> fallback unchanged
+# #269: on stop only express issues still start (below 100%); 100% -> nothing
+_ch = [{"number": 1, "labels": ["core"]}, {"number": 2, "labels": ["express", "core"]}]
+assert r.stop_filter(_ch, {"stop": False, "pct": 50}) == _ch
+assert [c["number"] for c in r.stop_filter(_ch, {"stop": True, "pct": 95})] == [2]
+assert r.stop_filter(_ch, {"stop": True, "pct": 100}) == []
 print("ok governor")
 # total_lanes follows a fresh governor.json (the watchdog uses it), else config
 import json as _json, time as _time
@@ -706,6 +732,11 @@ assert r.total_lanes() == r.LOCAL_LANES + 7
 assert r.total_lanes() == r.LOCAL_LANES
 (r.RUNS / "governor.json").write_text(_json.dumps({"lanes": 7, "stop": False, "at": _time.time() - 3600}))
 assert r.total_lanes() == r.LOCAL_LANES + r.REMOTE_LANES
+# #269: a stop written before the 5h reset does not hold the lanes at 0 after it (the watchdog then starts a pass)
+(r.RUNS / "governor.json").write_text(_json.dumps({"lanes": 7, "stop": True, "reset": _time.time() - 30, "at": _time.time()}))
+assert r.total_lanes() == r.LOCAL_LANES + 7
+(r.RUNS / "governor.json").write_text(_json.dumps({"lanes": 7, "stop": True, "reset": _time.time() + 600, "at": _time.time()}))
+assert r.total_lanes() == r.LOCAL_LANES
 (r.RUNS / "governor.json").unlink()
 print("ok governor lanes")
 # #234: a run ends as DONE when its issue is closed or its lane PR is merged elsewhere (every wait loop checks, one gh call per poll)
@@ -1016,3 +1047,9 @@ assert _res.startswith("PARKED"), _res
 assert _sent and _sent[0][0] == "session_old" and "green" in _sent[0][1] and not _starts, (_sent, _starts)
 assert ("blocked", "ready-for-human") in [a for a, _ in _lab] and not r.pending_answer(11)
 print("ok #135 resume end to end")
+
+# 26 Nov: a gh timeout in issue_over never ends or kills a run
+import subprocess as _sp
+def _slow(cmd, **k): raise _sp.TimeoutExpired(cmd, 60)
+assert r.issue_over(5, 0, run_=_slow) is False
+print("ok issue_over timeout")

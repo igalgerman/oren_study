@@ -165,7 +165,9 @@ function unitDone(save,u){const E=st(save);if(E.u[u.id])return true;if(u.lv===4)
   if(!groupsOf(u).every(g=>u.items.some(k=>groupOf(k)===g&&seen(save,k))))return false;
   const n=u.items.filter(k=>known(save,k)).length;if(n>=Math.ceil(u.items.length*.8)){E.u[u.id]=1;return true;}return false;}
 const doneUnits=(save,lv)=>LEVELS[lv].units.filter(u=>unitDone(save,u)).length;
-function levelOpen(save,lv){if(lv===0||(save.set&&save.set.all))return true;const [from,n]=OPEN[lv];return doneUnits(save,from)>=n;}
+/* a level also opens when Oren already knows the level before it (#57: 3 right in a row, or the parent said so) */
+const knowsLv=(save,lv)=>!!(save.kn&&save.kn.k&&(save.kn.k[LEVELS[lv].id]||{}).ok);
+function levelOpen(save,lv){if(lv===0||(save.set&&save.set.all))return true;if(lv<4&&knowsLv(save,lv-1))return true;const [from,n]=OPEN[lv];return doneUnits(save,from)>=n;}
 const songOpen=(save,th)=>levelOpen(save,4)&&(unitDone(save,UNIT['v-'+th])||!!(save.set&&save.set.all));
 const openSongs=save=>SONGS.filter(s=>songOpen(save,s.th));
 const curUnit=(save,lv)=>LEVELS[lv].units.find(u=>!unitDone(save,u))||null;
@@ -411,8 +413,8 @@ function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save
       if(v.afterK){const tok=++TOK;karaoke(card.querySelector('.e2sent'),q.s,tok);}else if(v.after)talk(v.after);};
     function pick(k,b){if(lock||b.disabled)return;
       if(k===q.ans){lock=true;hush();b.classList.add('ok');sfx.ok(i);const g=tries||hinted?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);
-        if(!tries&&T.skHit)T.skHit(NAMES[lv],!hinted);settle(tries?'bad':hinted?'hint':'ok');nq++;reveal();setTimeout(next,D(v.after||v.afterK?2600:1700));return;}
-      if(!tries&&T.skHit)T.skHit(NAMES[lv],false);tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();
+        if(!tries&&T.skHit)T.skHit(NAMES[lv],!hinted);if(!tries&&KN)KN.hit(NAMES[lv],!hinted);settle(tries?'bad':hinted?'hint':'ok');nq++;reveal();setTimeout(next,D(v.after||v.afterK?2600:1700));return;}
+      if(!tries&&T.skHit)T.skHit(NAMES[lv],false);if(!tries&&KN)KN.hit(NAMES[lv],false);tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();
       if(tries>=2){lock=true;hush();settle('bad');nq++;row.children[q.ans].classList.add('show');reveal();setTimeout(next,D(3000));}}
     }
   function next(){if(!wrap.isConnected)return;i++;if(i>=steps.length){T.setKey(null);const t=doneTitle(before,snapshot());T.finishAct(id,err,Math.max(1,nq),gems,back,()=>round(lv,back),t);}else render();}
@@ -446,7 +448,11 @@ if(LN)LN.add('eng-abc',{title:'אוֹתִיּוֹת בְּאַנְגְּלִית
   {art:()=>`<div class="lcrow"><div class="e2let e2one">B</div><div class="e2let e2one">b</div></div>`,t:'לְכָל אוֹת יֵשׁ צוּרָה גְּדוֹלָה וְצוּרָה קְטַנָּה. שְׁתֵּיהֶן אוֹתָהּ אוֹת.',after:()=>talk([['en','B']])},
   {art:()=>`<div class="lcrow"><div class="e2let e2one">B</div><div class="e2kw">${pic('ball')}<span class="e2word sm"><b>b</b>all</span></div></div>`,t:'לְכָל אוֹת יֵשׁ צְלִיל. הָאוֹת הַזֹּאת נִשְׁמַעַת כְּמוֹ בּ, כְּמוֹ בַּהַתְחָלָה שֶׁל בּוֹל.',after:()=>talk([['en',E2.sayIsFor('B','ball')]])}]});
 const ABC=back=>round(1,back);
-const runLv=(lv,back)=>lv===4?songs(back):lv===1&&LN?LN.first('eng-abc',back,()=>ABC(back)):round(lv,back);
+/* what Oren knows (#57): the English levels are one ladder. 2 wrong in a row → the level plays the easier one, quietly, until that is known again */
+const KN=window.KNOW;
+if(KN)KN.area('english',{name:'אנגלית',skills:NAMES.slice(0,4).map(id=>({id,track:'eng',lesson:LN&&id==='eng-abc'?'eng-abc':undefined})),
+  asks:[{id:'eng-voc',q:'מכיר מילים בסיסיות באנגלית',skills:['eng-voc']},{id:'eng-abc',q:'מכיר את האותיות באנגלית והצלילים שלהן',skills:['eng-abc']},{id:'eng-read',q:'קורא מילים קצרות באנגלית',skills:['eng-read']}]});
+const runLv=(lv,back)=>(lv>=1&&lv<=3&&KN&&KN.stepped(NAMES[lv]))?runLv(lv-1,back):lv===4?songs(back):lv===1&&LN?LN.first('eng-abc',back,()=>ABC(back)):round(lv,back);
 const ACTS=NAMES.map((id,lv)=>({id,name:ACTN[id],icon:ICONS[id],avail:()=>lv===4?E2.openSongs(O.save).length>0:E2.levelOpen(O.save,lv),run:back=>runLv(lv,back)}));
 function register(){const b=T.BUILD.find(x=>x.id==='eng');if(!b||b._e2)return;b._e2=1;
   b.acts.forEach(a=>{if(T.ACT[a.id]===a)delete T.ACT[a.id];});b.acts=ACTS.slice();ACTS.forEach(a=>{a.b=b;T.ACT[a.id]=a;});

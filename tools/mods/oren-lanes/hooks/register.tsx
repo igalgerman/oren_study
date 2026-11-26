@@ -3,7 +3,7 @@ import type { Register } from 'claude-code'
 
 import type { OrenLanesData } from '../types/index'
 import {
-  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, usageJson, governorLine, flowRows, laneReasons, view, statsLines, parseMaxCore, parseLocalLanes, parseRemoteLanes, cloudRows, cloudCount, cloudDone,
+  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, usageJson, governorLine, flowRows, laneReasons, view, statsLines, parseMaxCore, parseLocalLanes, parseRemoteLanes, cloudRows, cloudCount, cloudDone, DESKS,
 } from './lanes'
 import type { CloudLane, Issue, View, Win } from './lanes'
 
@@ -18,6 +18,12 @@ const USAGE = 'C:/work/Oren_study/a/tools/runner/.runs/usage.json'   // #239: re
 const GOVERNOR = 'C:/work/Oren_study/a/tools/runner/.runs/governor.json'
 const PY = 'C:\\Users\\97254\\miniforge3\\python.exe'
 const REMOTE = 'C:/work/Oren_study/a/tools/runner/remote.py'
+const PYW = 'C:/Users/97254/miniforge3/pythonw.exe'
+const QUIET = 'C:/work/Oren_study/a/tools/runner/quiet.py'
+// $.process.run has no hide-window option: go through pythonw (no console) -> quiet.py (CREATE_NO_WINDOW child)
+export const quietArgv = (argv: string[]): string[] => [PYW, QUIET, ...argv]
+const quietRun = ($: { process: { run: (argv: string[], init?: any) => Promise<any> } }, argv: string[], init?: any) =>
+  $.process.run(quietArgv(argv), init)
 const ROOT = /^c:[\\/]+work[\\/]+oren_study([\\/]|$)/i
 const DATA = { plugin: 'oren-lanes', key: 'data' } as const
 // an atom, so every refresh REDRAWS the pane (a plain $.state.get in render did not subscribe)
@@ -41,13 +47,13 @@ export const register: Register = on => {
         let issues: Issue[] = []
         let lastLog = ''
         try {
-          const r = await $.process.run([HC, 'ls', '--json'], { timeoutMs: 10000 })
+          const r = await quietRun($, [HC, 'ls', '--json'], { timeoutMs: 10000 })
           if (r.exitCode !== 0) throw new Error(`hc exit ${r.exitCode}`)
           windows = parseWindows(r.stdout)
           // guard: the watchdog must always run — start it again if its window is gone
           // (`hc ls` lists live terminals only)
           if (!/"name":\s*"watchdog"/.test(r.stdout)) {
-            await $.process.run([HC, 'run', '--bg', '--no-parent', '--outlive-parent', '--name', 'watchdog',
+            await quietRun($, [HC, 'run', '--bg', '--no-parent', '--outlive-parent', '--name', 'watchdog',
               '--cwd', 'C:\\work\\Oren_study\\a', 'C:\\Users\\97254\\miniforge3\\python.exe', 'tools\\runner\\watchdog.py'], { timeoutMs: 15000 })
             $.ui.toast('watchdog restarted')
           }
@@ -55,7 +61,7 @@ export const register: Register = on => {
           errors.push(`windows unavailable: ${trunc(String(err), 60)}`)
         }
         try {
-          const r = await $.process.run(
+          const r = await quietRun($, 
             ['gh', 'issue', 'list', '-R', REPO, '--state', 'open', '--limit', '100',
               '--json', 'number,title,labels,body'],
             { timeoutMs: 90000 },
@@ -82,7 +88,7 @@ export const register: Register = on => {
         let cloud: string[] = []
         let lanesCloud: CloudLane[] = []
         try {   // #136: one row per cloud lane, state from tools/runner/remote.py
-          const r = await $.process.run([PY, REMOTE, 'cloud'], { timeoutMs: 120000 })
+          const r = await quietRun($, [PY, REMOTE, 'cloud'], { timeoutMs: 120000 })
           if (r.exitCode !== 0) throw new Error(`remote.py exit ${r.exitCode}`)
           lanesCloud = JSON.parse(r.stdout) as CloudLane[]
           cloud = cloudRows(lanesCloud)
@@ -93,8 +99,8 @@ export const register: Register = on => {
         let vw: View | undefined
         let done = ''
         try {
-          const pr = await $.process.run(['gh', 'pr', 'list', '-R', REPO, '--state', 'open', '--json', 'headRefName'], { timeoutMs: 90000 })
-          const cl = await $.process.run(['gh', 'issue', 'list', '-R', REPO, '--state', 'closed', '--limit', '300', '--json', 'number,title,labels,closedAt'], { timeoutMs: 90000 })
+          const pr = await quietRun($, ['gh', 'pr', 'list', '-R', REPO, '--state', 'open', '--json', 'headRefName'], { timeoutMs: 90000 })
+          const cl = await quietRun($, ['gh', 'issue', 'list', '-R', REPO, '--state', 'closed', '--limit', '300', '--json', 'number,title,labels,closedAt'], { timeoutMs: 90000 })
           const prs = pr.exitCode === 0 ? (JSON.parse(pr.stdout) as { headRefName: string }[]).map(p => p.headRefName) : []
           const closed = cl.exitCode === 0 ? (JSON.parse(cl.stdout) as Issue[]) : []
           flow = flowRows(issues, closed, windows, prs)
@@ -116,6 +122,8 @@ export const register: Register = on => {
         } catch { /* no reading */ }
         let governor = ''
         try { governor = governorLine((await $.fs.read(GOVERNOR)) as string) } catch { /* no runner pass yet */ }
+        let desks = ''
+        try { desks = governorLine((await $.fs.read(DESKS)) as string) } catch { /* #306: desks.py did not run yet */ }
 
         const prev = (await $.state.get(LIVE)).value ?? []
         const hcOk = !errors.some(x => x.startsWith('windows'))
@@ -127,11 +135,11 @@ export const register: Register = on => {
         const prevData = await read($, dataAtom)
         const ghFailed = errors.some(x => x.startsWith('backlog'))
         const data: OrenLanesData = ghFailed && prevData ? {
-          ...prevData, windows, usage, governor, stats, observer, lastLog, localMax, remoteMax,
+          ...prevData, windows, usage, governor, desks, stats, observer, lastLog, localMax, remoteMax,
           errors: [`GitHub slow — showing data from ${new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(prevData.updatedAt))}`],
           updatedAt: prevData.updatedAt,
         } : {
-          windows, groups: groupIssues(issues), lastLog, errors, usage, governor, flow, done, lanes: laneReasons(issues, windows, 3, maxCore), view: vw, stats, observer,
+          windows, groups: groupIssues(issues), lastLog, errors, usage, governor, desks, flow, done, lanes: laneReasons(issues, windows, 3, maxCore), view: vw, stats, observer,
           localMax, remoteMax, cloudCount: cloudCount(issues, lanesCloud), cloud,
           updatedAt: await $.clock.now(),
         }
@@ -175,6 +183,7 @@ export const register: Register = on => {
         <Text bold>{trunc(summary || 'Backlog …', width)}</Text>
         {d.usage ? dim('Usage ' + d.usage) : null}
         {d.governor ? dim(d.governor) : null}
+        {d.desks ? (d.desks.includes('down') ? <Text color="red">{trunc(d.desks, width)}</Text> : dim(d.desks)) : null}
         {(d.done ?? '').includes('⚠') ? <Text color="yellow">{trunc('⚠ Lanes running out of work — add to the backlog (/idea, /task)', width)}</Text> : null}
         {d.errors.map(dim)}
         {v && head('LANES')}

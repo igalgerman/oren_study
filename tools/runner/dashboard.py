@@ -241,6 +241,7 @@ def text(m):
     sl = m.get("stuck_lanes") or []     # #248: runs unchanged past stuck_hours and still stuck 30 min after the alarm
     if sl: lines.append(f"STUCK LANES: {len(sl)} (" + ", ".join(f"run-{n}" for n in sl) + ")")
     lines.append(conflicts_line(m.get("pr_conflicts") or []))
+    if m.get("desks"): lines.append(m["desks"])                       # #306: cloud inbox / ask ok|down
     lines.append("Lanes: " + m["lanes"] + (" · " + m["governor"] if m.get("governor") else ""))
     for c in m["cloud"]:
         lines.append(f"  cloud #{c['n']} {c['title'][:40]} — {c['state']}{' · manual' if c.get('manual') else ''} · last {hhmm(epoch(c['last'])) if epoch(c['last']) else '-'}"
@@ -684,6 +685,8 @@ def gather():
     try: m["pr_conflicts"] = json.loads((R.RUNS / "pr_conflicts.json").read_text(encoding="utf-8"))   # #262 (written by the watchdog)
     except Exception: m["pr_conflicts"] = []
     m["governor"] = governor_line()                         # #239
+    try: m["desks"] = json.loads((R.RUNS / "desks.json").read_text(encoding="utf-8")).get("text", "")   # #306 (written by desks.py)
+    except Exception: m["desks"] = ""
     return m
 
 def ai_tick(log=print):

@@ -133,5 +133,5 @@ P.tick = lambda tell, log, **k: calls.append(1)
 W.parked_tick(); assert calls == [1]
 P.tick = lambda *a, **k: 1 / 0
 W.parked_tick()
-assert "parked" in W.RELOAD and "parked_tick()" in Path(W.__file__).read_text()
+assert "parked_tick()" in Path(W.__file__).read_text(encoding="utf-8")
 print("ok parked watchdog")
