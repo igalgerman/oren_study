@@ -5,7 +5,7 @@ Every minute it checks, deterministically:
   3. free lanes + ready issues but no runner pass running                       -> starts a runner pass
   3b. a window waiting for the owner longer than park_minutes (the runner parks it itself; this is the fallback): issue gets blocked + ready-for-human, lane freed
   3c. owner lane: no intake window open + a needs-triage/needs-info issue -> opens ONE `intake-<n>` (oldest issue), `NEEDS YOU: intake-<n> is open`
-  5. every observer_minutes: a read-only headless Claude audits the flow (observer_prompt.md); problems go to the orchestrator
+  5. every observer_minutes: observer.py applies deterministic rules (make_ready, rerun, fix Blocked-by lines) within limits
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
 It never answers questions or presses keys in other windows; it only tells the orchestrator and starts the runner.
@@ -204,47 +204,8 @@ def cleanup(ts):
             R.hc("rm", t["address"], timeout=30)
             log(f"closed window {name} ({t['address']}, was {t.get('state')})")
 
-OBSERVER_MIN = int(R.CFG.get("observer_minutes", 30))
-OBS_PROMPT = HERE / "observer_prompt.md"
-OBS_LOG, OBS_LAST = R.RUNS / "observer.log", R.RUNS / "observer.last"
-OBS_TOOLS = ["Read", "Grep", "Glob", "Bash(gh:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(hc:*)"]
-_obs = {"last": 0.0, "running": False}
-
-def observer_due(last, now, minutes, running):
-    """Pure: start the observer when none runs and `minutes` passed since the last start."""
-    return not running and now - last >= minutes * 60
-
-def parse_observer(text):
-    """Pure: the `OBSERVER: <problem> -> <fix>` lines of the output ([] when OK or unparseable), max 8."""
-    out = [l.strip() for l in text.splitlines() if l.strip().startswith("OBSERVER:")]
-    out = [l for l in out if l.rstrip() != "OBSERVER: OK"]
-    return out[:8]
-
-def observer_once():
-    """Run the observer now (blocking); returns the problem lines. Logs, writes observer.last, tells the orchestrator."""
-    prompt = OBS_PROMPT.read_text(encoding="utf-8").replace("{HC}", R.HC)
-    cmd = [shutil.which("claude") or "claude", "-p", "--model", "sonnet", "--permission-mode", "auto", "--allowedTools", *OBS_TOOLS]
-    rc, out = R.run(cmd, cwd=str(R.ROOT), input=prompt, timeout=900)   # prompt on stdin: --allowedTools would swallow a positional one
-    hhmm = time.strftime("%H:%M")
-    R.RUNS.mkdir(parents=True, exist_ok=True)
-    with open(OBS_LOG, "a", encoding="utf-8") as f: f.write(f"=== {time.strftime('%Y-%m-%d %H:%M:%S')} rc={rc}\n{out}\n")
-    probs = parse_observer(out)
-    if rc or ("OBSERVER-END" not in out and not probs and "OBSERVER: OK" not in out): res = f"{hhmm} failed (rc {rc})"
-    elif probs: res = f"{hhmm} {len(probs)} problems"
-    else: res = f"{hhmm} OK"
-    OBS_LAST.write_text(res + "\n", encoding="utf-8")
-    if probs: tell("OBSERVER found:" + chr(10) + chr(10).join(probs))
-    log("observer: " + res)
-    return probs
-
 def observer_tick():
-    if not observer_due(_obs["last"], time.time(), OBSERVER_MIN, _obs["running"]): return
-    _obs["last"], _obs["running"] = time.time(), True
-    def work():
-        try: observer_once()
-        except Exception as e: log(f"observer error: {e!r}")
-        finally: _obs["running"] = False
-    threading.Thread(target=work, daemon=True).start()
+    import observer; observer.run_if_due()      # acting observer (observer.py)
 
 SYNC_MIN = int(R.CFG.get("sync_minutes", 3))
 _sync = {"last": 0.0, "msg": ""}
@@ -309,9 +270,6 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8")
         al = alarms_once()
         print("could not read GitHub" if al is None else "\n".join(t for _, t in al) or "nothing idle or stuck"); return
-    if "--observe-once" in sys.argv:
-        sys.stdout.reconfigure(encoding="utf-8")
-        print("\n".join(observer_once()) or "no problems"); print(OBS_LAST.read_text()); return
     log("watchdog started")
     W, me = sys.modules[__name__], Path(__file__).resolve()
     stamp, wstamp = (HERE / "runner.py").stat().st_mtime, me.stat().st_mtime
