@@ -42,6 +42,7 @@ idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → r
 - Lanes refill by themselves (each finished run starts a new pass). When a `run-<n>` note arrives: read its last line, tell the owner ONE line (done / tests / live link, or blocked + why), fix the runner if it broke, then `/go` again if a lane is free.
 - Guide the owner only when something needs HIM (a `ready-for-human` issue, a grilling question). Never ask him to run skills, wizards or commands you can run yourself.
 - Deploys happen automatically after each green merge. Voice pregen runs after each deploy.
+- Owner says "stats" / "status" / "how many issues": run `python3 tools/runner/dashboard.py --text` and paste its lines (#142). He can also double-click `tools\dashboard.cmd` for the page.
 
 ## Questions from workers → the owner, in YOUR window (relay)
 Workers and reviewers report to you (herdr notes arrive in your terminal). The owner answers here, in your window, not in worker tabs.
