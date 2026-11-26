@@ -1047,8 +1047,9 @@ function limitToday(){const x=limNow();return x&&x.min?x.min:0;}
 T.limLeft=()=>{const x=limNow();if(!x)return null;return x.n?{n:Math.max(0,x.n-doneN())}:{min:Math.max(0,x.min-usedMin())};};
 T.timeLeft=()=>{const x=T.limLeft();return x&&x.min!=null?x.min:null;};
 /* more for today: minutes or activities, on top of what is left */
+const pnow=()=>{O.persist();O.famNow&&O.famNow();};
 function grant(kind,v){const l=LIM(),x=limNow();if(kind==='min'){const base=x&&x.min&&x.min>usedMin()?x.min:usedMin();l.today={d:O.today(),min:base+v};}
-  else{const base=x&&x.n&&x.n>doneN()?x.n:doneN();l.today={d:O.today(),n:base+v};}O.persist();}
+  else{const base=x&&x.n&&x.n>doneN()?x.n:doneN();l.today={d:O.today(),n:base+v};}pnow();}
 const pdOpen={};/* which "more" sections stay open when the panel redraws */
 const pdet=(box,key,title)=>{const d=document.createElement('details');d.className='pdet';d.innerHTML=`<summary>${title}</summary>`;const inner=h('div','pdin');d.appendChild(inner);if(pdOpen[key])d.open=true;d.addEventListener('toggle',()=>{pdOpen[key]=d.open;});box.appendChild(d);return inner;};
 function timeTab(box){const l=LIM(),x=limNow(),left=T.limLeft(),t=todayL();
@@ -1058,9 +1059,9 @@ function timeTab(box){const l=LIM(),x=limNow(),left=T.limLeft(),t=todayL();
   const mk=(row,n,fn,on)=>{const b=h('button','pchip big'+(on?' on':''),n);b.onclick=()=>{fn();sfx.ok&&sfx.ok(1);panel('time');};row.appendChild(b);return b;};
   const g=h('div','pbig');[['+15 דק׳',()=>grant('min',15)],['+ משימה',()=>grant('n',1)]].forEach(([n,f])=>{const b=h('button','bigbtn sm','<span>'+n+'</span>');b.onclick=()=>{f();sfx.ok&&sfx.ok(1);panel('time');};g.appendChild(b);});ts.appendChild(g);
   const more=pdet(ts,'tmore','עוד אפשרויות');
-  const pr=h('div','popt','<span>רק להיום:</span>');[20,30,45,60].forEach(v=>mk(pr,v+' דק׳',()=>{l.today={d:O.today(),min:v};O.persist();},t&&t.min===v));[3,5,8].forEach(v=>mk(pr,v+' משימות',()=>{l.today={d:O.today(),n:v};O.persist();},t&&t.n===v));
-  mk(pr,'ללא הגבלה',()=>{l.today={d:O.today(),none:1};O.persist();},t&&t.none);if(t)mk(pr,'↺ כמו כל יום',()=>{l.today=null;O.persist();});
-  mk(pr,'⏹ לסיים עכשיו',()=>{l.today={d:O.today(),min:Math.max(1,usedMin())};O.persist();}).classList.add('bad');more.appendChild(pr);
+  const pr=h('div','popt','<span>רק להיום:</span>');[20,30,45,60].forEach(v=>mk(pr,v+' דק׳',()=>{l.today={d:O.today(),min:v};pnow();},t&&t.min===v));[3,5,8].forEach(v=>mk(pr,v+' משימות',()=>{l.today={d:O.today(),n:v};pnow();},t&&t.n===v));
+  mk(pr,'ללא הגבלה',()=>{l.today={d:O.today(),none:1};pnow();},t&&t.none);if(t)mk(pr,'↺ כמו כל יום',()=>{l.today=null;pnow();});
+  mk(pr,'⏹ לסיים עכשיו',()=>{l.today={d:O.today(),min:Math.max(1,usedMin())};pnow();}).classList.add('bad');more.appendChild(pr);
   const ds=sec(pdet(box,'tdaily','🗓️ הגבלה קבועה לכל יום'),'הגבלה קבועה לכל יום','<div class="pnote">נספר רק זמן פעיל. אורן רואה למעלה כמה נשאר. בסוף הזמן — מסך "נתראה מחר"; אם אורן באמצע פעילות, הוא מסיים אותה (עד 5 דקות). שינוי מהטלפון שלכם מגיע למכשיר של אורן תוך כדקה.</div>');
   const dr=h('div','popt','<span>דקות ביום:</span>');[[0,'ללא'],[20,'20'],[30,'30'],[45,'45'],[60,'60'],[90,'90']].forEach(([v,n])=>{const b=h('button','pchip'+((l.daily|0)===v?' on':''),n);b.onclick=()=>{l.daily=v;O.persist();panel('time');};dr.appendChild(b);});ds.appendChild(dr);
   const br=h('div','popt','<span>לא לשחק אחרי:</span>');[[0,'ללא'],[18,'18:00'],[19,'19:00'],[20,'20:00'],[21,'21:00']].forEach(([v,n])=>{const b=h('button','pchip'+((l.bed|0)===v?' on':''),n);b.onclick=()=>{l.bed=v;O.persist();panel('time');};br.appendChild(b);});ds.appendChild(br);
@@ -1073,7 +1074,7 @@ function timeUp(kind){if(lockEl&&lockEl.isConnected)return;endGrace();O.hush&&O.
   const head=kind==='bed'?'זְמַן לָנוּחַ':left&&left.n!=null?'סִיַּמְתָּ אֶת הַמְּשִׂימוֹת שֶׁל הַיּוֹם!':'הַזְּמַן שֶׁל הַיּוֹם נִגְמַר';
   lockEl=h('div','tlock',`<div class="card"><div class="callp bob">${T.friend()}</div><h2>${head}</h2><div class="sub">כָּל הַכָּבוֹד הַיּוֹם, אוֹרֶן!${n?` סִיַּמְתָּ ${n===1?'מְשִׂימָה אַחַת':`${n} מְשִׂימוֹת`}.`:''}<br>הַמֹּחַ וְהַגּוּף צְרִיכִים גַּם לָנוּחַ וּלְשַׂחֵק בַּחוּץ.<br>הַכֹּל שָׁמוּר. נִתְרָאֶה מָחָר 👋</div></div>`);
   const row=h('div','btnrow');const pb=h('button','bigbtn plain sm','🔒 <span>הוֹרֶה: עוֹד זְמַן</span>');pb.onclick=()=>login(()=>{const ov=$('#ov');ov.hidden=false;ov.innerHTML='<div class="card"><h2>כמה להוסיף להיום?</h2></div>';const r=h('div','btnrow');
-      const give=f=>{f();if(kind==='bed')LIM().bedOff=O.today();O.persist();ov.hidden=true;parentOn=false;unlock(false);};
+      const give=f=>{f();if(kind==='bed')LIM().bedOff=O.today();pnow();ov.hidden=true;parentOn=false;unlock(false);};
       [[10,'+10 דק׳'],[20,'+20 דק׳'],[30,'+30 דק׳']].forEach(([v,n2])=>{const b=h('button','bigbtn sm','<span>'+n2+'</span>');b.onclick=()=>give(()=>grant('min',v));r.appendChild(b);});
       const b1=h('button','bigbtn sm','<span>עוד משימה אחת</span>');b1.onclick=()=>give(()=>grant('n',1));r.appendChild(b1);
       const c=h('button','bigbtn plain sm','<span>ביטול</span>');c.onclick=()=>{ov.hidden=true;parentOn=false;};r.appendChild(c);ov.firstChild.appendChild(r);});
@@ -1107,7 +1108,7 @@ function pill(left){const hud=$('#hud');if(!hud)return;if(!pillEl){pillEl=h('but
   const show=left&&(left.min!=null?left.min>0:left.n>0)&&!O.isParentPlay&&$('#sPar').hidden;pillEl.hidden=!show;document.body.classList.toggle('haspill',!!show);if(!show)return;const tx=pillText(left);if(pillEl.textContent!==tx)pillEl.textContent=tx;pillEl.classList.toggle('low',left.min!=null?left.min<=5:left.n<=1);}
 O.on('screen',()=>setTimeout(()=>pill(T.limLeft()),0));O.on('synced',()=>limCheck());
 setInterval(()=>{limCheck();const left=T.limLeft();/* near the end or locked: look for the parent's grant more often */
-  if(O.family&&(lockEl||(left&&(left.n!=null?left.n<=1:left.min<=5)))&&Date.now()-lastPull>(window.__pullGap!=null?window.__pullGap:20000)){lastPull=Date.now();O.famPull&&O.famPull();}},2000);
+  if(O.family&&(lockEl||(left&&(left.n!=null?left.n<=1:left.min<=5)))&&Date.now()-lastPull>(window.__pullGap!=null?window.__pullGap:lockEl?5000:20000)){lastPull=Date.now();O.famPull&&O.famPull();}},2000);
 T.limCheck=limCheck;
 /* --- voice --- *//* --- voice --- */
 const SAMPLE='שָׁלוֹם אוֹרֶן! הַיּוֹם נִלְמַד יַחַד. הֶחָתוּל יָשֵׁן עַל הַכִּסֵּא. כַּמָּה זֶה שָׁלוֹשׁ וְעוֹד אַרְבַּע? נָכוֹן, שֶׁבַע!';
