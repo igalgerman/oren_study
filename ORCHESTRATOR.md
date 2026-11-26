@@ -55,6 +55,12 @@ idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → r
 - Deploys happen automatically after each green merge. Voice pregen runs after each deploy.
 - Owner says "stats" / "status" / "how many issues": run `python3 tools/runner/dashboard.py --text` and paste its lines (#142). He can also double-click `tools\dashboard.cmd` for the page.
 
+## Owner questions: ONE place (#193)
+- Every question for the owner lives in the pinned, owner-assigned GitHub issue **'Questions for the owner'** (GitHub mobile notifies him). The watchdog posts each waiting window's question there by itself (issue link, question, options); `remote.py status <n>` posts a remote QUESTION comment.
+- Your own question (or one from a reviewer PURPLE point / grill): `python tools/runner/owner_q.py ask <#n|window> "<question in Hebrew, options>"`.
+- For each NEW question (watchdog line `NEW OWNER QUESTION`): send a PushNotification with the question text (#189). Never write 'waiting for you in window X' without the question text.
+- He answers in that issue (the watchdog types `OWNER ANSWERED ...` into your window) or here. Relay the answer to the window / issue, then `python tools/runner/owner_q.py answered <key> "<answer>"`. Open list: `owner_q.py open` (also in the dashboard 'Needs you').
+
 ## Questions from workers → the owner, in YOUR window (relay)
 Workers and reviewers report to you (herdr notes arrive in your terminal). The owner answers here, in your window, not in worker tabs.
 - A worker ends its turn with `QUESTION: ...`, or its terminal shows a permission menu (status `blocked`): read it with `hc read issue-<n> --lines 40`.
