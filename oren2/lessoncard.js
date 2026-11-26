@@ -18,7 +18,7 @@ const list=ids=>(Array.isArray(ids)?ids:[ids]).filter(id=>DEF[id]);
 api.seen=id=>!!LC()[id];
 /* KNOW (#57): a known skill marks its lesson seen (skipped); a wrong answer later unmarks it (the lesson comes back) */
 api.mark=(id,on)=>{if(on)LC()[id]=1;else delete LC()[id];O.persist();};
-function run(ids,back,then){ids=ids.slice();if(!ids.length)return then();const id=ids.shift(),d=DEF[id],cards=d.cards;let i=0;
+function run(ids,back,then){ids=ids.slice();if(!ids.length)return then();const id=ids.shift(),d=DEF[id],cards=d.cards;let i=0;if(O.track)O.track('pop',{p:'card',id});
   O.setScreen('sTal',d.bg||'final',back);const s=$('#sTal');
   const show=()=>{const c=cards[i];T.hudT(d.title,T.progressBar(i,cards.length));s.innerHTML='';
     const wrap=h('div','tq lc');s.appendChild(wrap);

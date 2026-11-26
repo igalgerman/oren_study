@@ -112,6 +112,8 @@ B.RC.forEach((P, i) => {
   });
 });
 ok(!rcBad.length, `reading passages: ${B.RC.length} passages, plain (ktiv male) copies aligned word by word ${rcBad.slice(0, 6).join(' | ')}`);
+{ const st = B.RC.filter(P => P.lv >= 3), bad = st.filter(P => !['sci', 'math', 'value', 'word'].includes(P.gk) || !/[א-ת]/.test(P.goal || '') || NIK.test(P.goal) || !(P.les >= 0 && P.les < P.q.length)).map(P => P.p.slice(0, 20));
+  ok(!bad.length, `#355 every story passage (level 3+) has one learning goal (no nikud) and a lesson question ${bad.join(' | ')}`); }
 ok(B.RC.length >= 40 && [1, 2, 3, 4, 5].every(l => lvCount[l] >= 6), 'at least 40 passages, 6+ per level ' + JSON.stringify(lvCount));
 
 /* ---------- 3. nikud on all kid text ---------- */
