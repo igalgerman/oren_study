@@ -1,4 +1,5 @@
 """#193 owner questions: one post per window+question, from fake watchdog screens. Run: python3 tools/runner/test_owner_q.py"""
+import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 import json, re, sys, tempfile, time
 from pathlib import Path
 sys.argv.append("--dry-run")

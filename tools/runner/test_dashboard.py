@@ -1,4 +1,5 @@
 """#142 dashboard: pure model() and text(). Run: python3 tools/runner/test_dashboard.py"""
+import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 import calendar, sys, time
 sys.argv.append("--dry-run")
 import dashboard as D

@@ -1,4 +1,5 @@
 # Tests for freeze (#139): python tools/runner/test_freeze.py
+import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 import json, tempfile
 from pathlib import Path
 import freeze as f
