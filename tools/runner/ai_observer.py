@@ -51,7 +51,7 @@ def tail(path, n=40):
 def lock_text():
     try:
         p = subprocess.run([sys.executable, str(HERE / "watchdog.py"), "--lock"], capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=60, stdin=subprocess.DEVNULL)
+                           encoding="utf-8", errors="replace", timeout=60, stdin=subprocess.DEVNULL, creationflags=R.no_window())
         return (p.stdout or p.stderr or "").strip() or "(no output)"
     except (OSError, subprocess.TimeoutExpired) as e: return f"(could not read: {e!r})"
 
@@ -66,7 +66,7 @@ def command(model=None):
 def ask_claude(prompt):
     """-> (ok, stdout or error text)."""
     try:
-        p = RUN(command(), input=prompt, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=TIMEOUT_S, cwd=str(R.ROOT))
+        p = RUN(command(), input=prompt, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=TIMEOUT_S, cwd=str(R.ROOT), creationflags=R.no_window())
     except subprocess.TimeoutExpired: return False, f"timeout after {TIMEOUT_S // 60} min"
     except OSError as e: return False, f"could not start claude: {e!r}"
     if p.returncode: return False, f"claude exit {p.returncode}: {((p.stderr or '') + (p.stdout or '')).strip()[:200]}"

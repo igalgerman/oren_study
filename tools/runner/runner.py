@@ -58,6 +58,17 @@ def model_of(labels):
     """Value for `claude --model`."""
     return MODEL_IDS.get(model_name(labels), MODEL)
 
+def fix_model(rnd, wm):
+    """#303: the last fix round (FIX_ROUNDS) uses Opus; a stronger model (fable) stays."""
+    return "opus" if rnd >= FIX_ROUNDS and wm not in ("opus", MODEL_IDS["fable"]) else wm
+
+def red_escalation(n, reviews):
+    """#303: comment when the reviewer is still RED after the last fix round: every review, for the orchestrator (never the owner)."""
+    each = 9000 // max(1, len(reviews))
+    parts = [f"### Review {i}\n```\n{(t or '').strip()[-each:]}\n```" for i, t in enumerate(reviews, 1)]
+    return (f"Runner: the reviewer is still RED after {len(reviews) - 1} fix rounds (the last one with Opus). "
+            f"For the orchestrator: decide (fix by hand, split, or close). All reviews of #{n}:\n\n" + "\n\n".join(parts))
+
 def reviewer_model(labels):
     """Reviewer: opus when the issue is model:opus, else sonnet."""
     return "opus" if "model:opus" in labels else "sonnet"
@@ -165,6 +176,13 @@ def integrate_with_resolve(integrate, resolve, max_rounds=2):
         if not resolve(files):
             return ("failed", rc, out)
 
+def integrate_failure(rc, out):
+    """Pure (#302): the BLOCKED reason of a failed merge step: its own first output line, never a bare 'integrate.sh exit N'."""
+    lines = [l.strip() for l in (out or "").splitlines() if l.strip()]
+    if rc == 6 and lines and lines[0] == "CI RED": return "CI red: " + (", ".join(lines[1:]) or "?")
+    if not lines: return f"merge step failed (exit {rc}, no output)"
+    return lines[0][:200] if lines[0].startswith("CI ") else "merge step failed: " + lines[0][:200]
+
 def ci_verdict(checks):
     """Pure (#74): `gh pr checks --json name,bucket` list -> 'none' (no checks yet) | 'pending' | 'red' | 'green'.
     A missing or pending check is never green; skipped checks are ignored."""
@@ -254,18 +272,21 @@ def push_ref(n, br):
     """#246: what a worker in the local worktree (branch lane/<n>) pushes: lane/<n>, or HEAD:<the PR's claude/* head>."""
     return f"lane/{n}" if br in (None, f"lane/{n}") else f"HEAD:{br}"
 
+PC_TESTS = ("Do NOT run the game suites or Playwright here (oren2/tests/run.sh, node tests/*.test.js): on this PC they refuse, they run in CI "
+            "on the PR (#284); run only the python tool tests you touched (python3 tools/runner/test_*.py). ")
+
 def ci_fix_prompt(n, names, br=None):
     br = br or f"lane/{n}"
     return (f"Issue #{n}: the CI check(s) {', '.join(names) or '(see the PR)'} failed on {br} even after one rerun. "
             f"Use `gh run list --branch {br}` and `gh run view <id> --log-failed`, fix the real cause in this worktree, "
-            f"run the affected suites locally, commit, and `git push {REMOTE} {push_ref(n, br)}`. Never force-push, never push to {BRANCH}. "
+            + PC_TESTS + f"Commit, and `git push {REMOTE} {push_ref(n, br)}`. Never force-push, never push to {BRANCH}. "
             "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
 
 def resolve_prompt(n, files, br=None):
     br = br or f"lane/{n}"
     return (f"Issue #{n}: merging {br} into {BRANCH} failed because {BRANCH} moved on" + (f" (conflicting files: {', '.join(files)})" if files else "") + ". "
             f"In this worktree run `git fetch {REMOTE} && git merge -X renormalize {REMOTE}/{BRANCH}`, resolve the conflicts keeping BOTH sides' intent, "
-            "run `python3 build_talents.py` (in oren2/) and the full tests (`oren2/tests/run.sh`; rerun a flaky suite alone once), commit, "
+            "run `python3 build_talents.py` (in oren2/). " + PC_TESTS + "Commit, "
             f"and `git push {REMOTE} {push_ref(n, br)}`. Never force-push, never rewrite {BRANCH}, never push to {BRANCH}. "
             "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
 
@@ -430,7 +451,8 @@ def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=N
     ended() True (#234: issue closed / lane PR merged elsewhere) -> {'state': 'ended'}."""
     start = clock()
     while True:
-        st = get_status()
+        try: st = get_status()
+        except subprocess.TimeoutExpired: st = {}         # #284: a gh timeout under load: just poll again
         if st.get("state") in ("done", "stuck", "question"):
             return st
         if ended and ended():
@@ -667,11 +689,19 @@ def redact(t):
         t = t.replace(s, "***")
     return t
 
+def no_window(os_name=None):
+    """#284: creationflags for every child process: CREATE_NO_WINDOW on Windows (no console window flashes), 0 elsewhere."""
+    return 0x08000000 if (os_name or os.name) == "nt" else 0
+
+def is_transient(e):
+    """#284: a gh/git call that timed out under load is not the issue's fault: retry next pass, never BLOCK."""
+    return isinstance(e, subprocess.TimeoutExpired)
+
 def run(cmd, cwd=None, env=None, input=None, log=None, timeout=None):
     e = dict(os.environ); e.update(env or {})
     e["PATH"] = CFG["extra_path"].replace("/c/", "C:/", 1) + os.pathsep + e["PATH"]
     p = subprocess.run(cmd, cwd=cwd, env=e, input=input, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace", timeout=timeout)
+                       encoding="utf-8", errors="replace", timeout=timeout, creationflags=no_window())
     out = redact((p.stdout or "") + (p.stderr or ""))
     if log:
         with open(log, "a", encoding="utf-8") as f:
@@ -828,14 +858,14 @@ HERDR_APP = CFG.get("herdr_app", r"C:\Users\97254\AppData\Local\Programs\herdr-a
 _SPACE = None
 def space_args():
     """`--label herdr.space=<id>`: the terminal opens as a tab in that Herdr space, shows in the Agents panel and
-    gets Herdr's own blocked/done alerts. Space chosen by name (config herdr_space, default Oren_study_orech)."""
+    gets Herdr's own blocked/done alerts. Space chosen by name (config herdr_space, default oren-workers)."""
     global _SPACE
     if _SPACE is None:
         _SPACE = ""
         try:
             rc, out = run([HERDR_APP, "ls"], timeout=30)
             for sp in json.loads(out).get("spaces", []):
-                if sp.get("name") == CFG.get("herdr_space", "Oren_study_orech"): _SPACE = sp["id"]
+                if sp.get("name") == CFG.get("herdr_space", "oren-workers"): _SPACE = sp["id"]
         except Exception:
             pass
     return ["--label", f"herdr.space={_SPACE}"] if _SPACE else []
@@ -959,8 +989,7 @@ def worker_prompt(n, lane, review_text=None, bug=False):
     if bug:
         base += ("This is a BUG: follow docs/agents/skills/diagnosing-bugs.md, then tdd: reproduce it with a failing test (add it to the relevant suite in oren2/tests/), then fix it so the test passes; "
                  "say the root cause in the PR body.\n")
-    steps = ("Steps: 1) implement; 2) python3 build_talents.py (in oren2/, PATH already has python3) and run the build + the suites for what you changed, muted "
-             "(see FLOW.md); 3) for each changed screen take screenshots (skip them when no oren2/ file changed) at phone 390x844 and desktop 1366x768 into "
+    steps = ("Steps: 1) implement; 2) python3 build_talents.py (in oren2/, PATH already has python3); " + PC_TESTS + "3) for each changed screen take screenshots (skip them when no oren2/ file changed) at phone 390x844 and desktop 1366x768 into "
              f"C:/work/Oren_study/shots/{n}/ and LOOK at them (simple, one main action, Hebrew with nikud); 4) commit (do NOT commit oren2/index.html "
              f"or oren2/cf/public/index.html, node_modules, package*.json, tests/.tmp); 5) `git push -u {REMOTE} lane/{n}`; 6) open a PR to {BRANCH} with "
              f"`gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Closes #{n}` (use the mattpocock-skills:pr skill to write the PR body; skip if a PR already exists). "
@@ -1022,11 +1051,13 @@ def remote_fix_prompt(n, review_text, br=None):
             "with `RESULT: DONE <PR url>` (or `RESULT: STUCK <why>`, or `QUESTION: <question, options>` and stop) on its own line:\n---\n"
             + review_text[-6000:] + "\n---")
 
-def remote_fix(n, session, review_text, send, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None, br=None):
-    """#134: FIX for a cloud worker: the points go to its session (send); no session or send failed -> a new cloud fix session. -> marker line."""
+def remote_fix(n, session, review_text, send, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None, br=None, model=None):
+    """#134: FIX for a cloud worker: the points go to its session (send); no session or send failed -> a new cloud fix session. -> marker line.
+    model (#303, the Opus round): always a new session with that model (a running session keeps its model); refused -> without it."""
     text = remote_fix_prompt(n, review_text, br)
-    if not (session and send(session, text).get("ok")):
-        s = start(n, text, CFG.get("main_checkout", "."))
+    if model or not (session and send(session, text).get("ok")):
+        s = start(n, text, CFG.get("main_checkout", "."), model=model) if model else start(n, text, CFG.get("main_checkout", "."))
+        if model and not s.get("ok"): s = start(n, text, CFG.get("main_checkout", "."))
         if not s.get("ok"):
             return f"RESULT: STUCK remote fix start failed: {s.get('error', '?')}"
         if on_start: on_start(s)
@@ -1203,20 +1234,24 @@ def start_pregen(log=None, popen=None):
     """#175: voice pregen in the background, OUTSIDE the merge lock (it can take 30 min); one at a time; never blocks an issue.
     -> 'started' / 'already running' / 'off' / 'failed: ...'."""
     if not CFG.get("pregen", False): return "off"
-    lock = FileLock("pregen")
-    if lock.held_by_other(): return "already running"
-    env = dict(os.environ); env.update({k: v for k, v in env_file().items() if k.startswith("CLOUDFLARE_")})
-    try:
+    try:                                                     # #301: nothing here may raise into process(): a failure is a note, never a block
+        lock = FileLock("pregen")
+        if lock.held_by_other(): return "already running"
+        env = dict(os.environ); env.update({k: v for k, v in env_file().items() if k.startswith("CLOUDFLARE_")})
         RUNS.mkdir(exist_ok=True)
         out = open(RUNS / "pregen.log", "a", encoding="utf-8")
         out.write(f"\n=== pregen {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n"); out.flush()
         flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        p = (popen or subprocess.Popen)(pregen_cmd(), cwd=str(MAIN_CHECKOUT), env=env, stdout=out, stderr=subprocess.STDOUT, creationflags=flags)
+        p = (popen or subprocess.Popen)(pregen_cmd(), cwd=str(MAIN_CHECKOUT), env=env, stdout=out, stderr=subprocess.STDOUT, creationflags=flags | no_window())
         lock.path.write_text(str(p.pid))                     # held while that process lives (FileLock checks the pid)
         if log: log_to(log, f"voice pregen started in the background (pid {p.pid}, .runs/pregen.log)")
         return "started"
     except Exception as e:
         return f"failed: {e!r}"
+
+def pregen_note(res):
+    """#301: start_pregen's result as a note for the close comment ('' unless it failed); the issue still closes."""
+    return f" Note: voice pregen did not start ({res}); it is resumable, run it again later." if res.startswith("failed") else ""
 
 def log_to(log, text):
     try:
@@ -1244,6 +1279,7 @@ def ci_integrate(n, wt, log, over=None, sha=""):
             if run(["git", "push", "-q", REMOTE, f"HEAD:{br}"], cwd=wt, log=log)[0]: return 5, "push failed"
             sha = run(["git", "rev-parse", "HEAD"], cwd=wt)[1].strip()   # #185: the runner's own merge-main commit is the new head to match
             time.sleep(20)                                           # let GitHub start the new run
+    why = {"merge": ""}
     def get_checks():
         try: return json.loads(gh("pr", "checks", str(pr), "--json", "name,bucket", log=log)[1] or "[]")
         except ValueError: return []
@@ -1257,7 +1293,9 @@ def ci_integrate(n, wt, log, over=None, sha=""):
     def merge():                                                 # #185: no lock: GitHub merges atomically; the deploy keeps its own lock
         if refused(): return False
         rc_, o_ = gh("pr", "merge", str(pr), "--squash", "--match-head-commit", sha, log=log)
-        return True if rc_ == 0 else ("conflict" if merge_conflict(o_) else False)
+        if rc_ == 0 or state() == "merged": return True          # #302: GitHub's auto-merge may have merged it a moment earlier
+        why["merge"] = " ".join(o_.split())[:160]
+        return "conflict" if merge_conflict(o_) else False
     def mark():                                                  # #185: only reached after VERDICT PASS (process() calls us after the review loop)
         if refused(): return False
         rc_, o_ = gh("pr", "merge", str(pr), "--auto", "--squash", "--match-head-commit", sha, log=log)
@@ -1273,7 +1311,7 @@ def ci_integrate(n, wt, log, over=None, sha=""):
     disable_auto(pr, log)                                        # #185: not merged -> a later (unreviewed) push must not auto-merge
     if res[0] == "red": return 6, "CI RED\n" + "\n".join(res[1])
     if res[0] == "conflict": return 2, "CONFLICT: main moved after green CI (gh pr merge reports merge conflicts)"
-    return 7, "CI " + ("timed out" if res[0] == "timeout" else "green but `gh pr merge` failed")
+    return 7, "CI " + ("timed out" if res[0] == "timeout" else "green but `gh pr merge` failed" + (": " + why["merge"] if why["merge"] else ""))
 
 def find_pr_merged(n):
     return remote.pr_for(n, run=run, state="merged")[0] is not None     # #246: lane/<n> or claude/* head
@@ -1447,6 +1485,7 @@ def process_locked(issue, where="local"):
             pr = find_pr(n)
             if not pr: raise Blocked(f"auto-resume: no open PR for #{n}")
             reviewed["sha"] = gh("pr", "view", str(pr), "--json", "headRefOid", "-q", ".headRefOid")[1].strip()
+        reviews = []
         for rnd in range(1, FIX_ROUNDS + 2):
             if step in ("resolve", "merge"): break
             pr = find_pr(n)
@@ -1475,17 +1514,20 @@ def process_locked(issue, where="local"):
                 raise Blocked(verdict or "reviewer gave no VERDICT line" + (f": {rv[:300]}" if where == "remote" else ""))
             disable_auto(pr, log)                  # #185: FIX after a (hand) auto-merge mark: never merge the unfixed PR
             stat(n, lane, "review_fix")
-            if rnd == FIX_ROUNDS + 1:
-                stat(n, lane, "blocked")
-                block(n, f"reviewer asked for fixes {rnd} times; needs a human", log); return f"BLOCKED: reviewer asked for fixes {rnd} times; needs a human"
+            reviews.append(rv or verdict)
+            if rnd == FIX_ROUNDS + 1:               # #303: still RED after the Opus round -> the orchestrator, with every review
+                stat(n, lane, "blocked"); stat(n, lane, "red_escalated")
+                gh("issue", "comment", str(n), "--body", redact(red_escalation(n, reviews)))
+                why = f"reviewer still RED after {FIX_ROUNDS} fix rounds; to the orchestrator"
+                block(n, why, log); return f"BLOCKED: {why}"
             red = text or rv[-1500:]
             if where == "remote":                  # #134: FIX goes back to the cloud worker session (or a new cloud fix session)
                 since = utc()
                 res = remote_fix(n, saved_session(), rv, remote.send, remote.start, lambda: remote.status(n, since=since), time.sleep, time.time,
-                                 3 * 3600, 60, on_start=save_session, ended=over, br=branch_of(n))
+                                 3 * 3600, 60, on_start=save_session, ended=over, br=branch_of(n), model=fix_model(rnd, wm) if rnd >= FIX_ROUNDS else None)
                 remote_question(res)
             else:
-                out, res = agent(f"issue-{n}-fix" + ("" if rnd == 1 else str(rnd)), worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / f"worker{rnd + 1}.log", "RESULT:", n, "worker", wm, over=over)
+                out, res = agent(f"issue-{n}-fix" + ("" if rnd == 1 else str(rnd)), worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / f"worker{rnd + 1}.log", "RESULT:", n, "worker", fix_model(rnd, wm), over=over)
             if not res.startswith("RESULT: DONE"):
                 raise Blocked(res or "fix worker gave no RESULT line")
             stat(n, lane, "fix_done")
@@ -1493,7 +1535,7 @@ def process_locked(issue, where="local"):
 
         kind = {"ci": False}
         def integrate():
-            if CFG.get("ci_merge", True) and find_pr(n):     # #74: CI decides, no local full suite
+            if CFG.get("ci_merge", True):                    # #74: CI decides, no local full suite; #302: no PR -> rc 4, never the local integrate.sh
                 rc, out = ci_integrate(n, wt, log, over, reviewed["sha"])           # #166: takes the lock itself, only around `gh pr merge`
                 kind["ci"] = rc == 6
                 return rc, out
@@ -1517,14 +1559,14 @@ def process_locked(issue, where="local"):
             gh("issue", "comment", str(n), "--body", redact("Runner: merge conflicts not resolved after 2 rounds. Conflicting files: " + (", ".join(files) or "(see log)")))
             return "BLOCKED: merge conflicts after 2 resolve rounds"
         if outcome[0] == "failed":
-            raise Blocked(outcome[2] if outcome[1] == 7 else f"integrate.sh exit {outcome[1]}")
+            raise Blocked(integrate_failure(outcome[1], outcome[2]))
         with FileLock("integrate", wait=True, note=f"#{n} deploy"):
             stat(n, lane, "merged")
             dep = deploy_main(log) if CFG.get("ci_merge", True) and find_pr_merged(n) else deploy_text(log)
-        if dep.startswith("deployed"): start_pregen(log)    # #175: after the lock, in the background
+        pre = start_pregen(log) if dep.startswith("deployed") else ""    # #175: after the lock, in the background; #301: never blocks
         m = sync_main(log)                       # result logged (review of #47)
         if m: log_line(m)
-        gh("issue", "close", str(n), "--comment", f"Merged to {BRANCH}, tests green, {dep}.")
+        gh("issue", "close", str(n), "--comment", f"Merged to {BRANCH}, tests green, {dep}.{pregen_note(pre)}")
         set_labels(n, remove=["in-progress"])
         remove_worktree(wt, log)
         close_windows(n)
@@ -1543,6 +1585,11 @@ def process_locked(issue, where="local"):
         stat(n, lane, "blocked")
         block(n, str(e), log); return f"BLOCKED: {e}"
     except Exception as e:                      # any crash: never leave the issue in-progress
+        if is_transient(e):                     # #284: gh timed out under load: not blocked, the next pass starts it again
+            stat(n, lane, "retry")
+            set_labels(n, remove=["in-progress"])
+            log_to(log, f"[runner] transient {e!r}: retry next pass")
+            return f"RETRY next pass: {e!r}"
         stat(n, lane, "blocked")
         try:                                    # full traceback in run.log: a bare FileNotFoundError(2, ...) names no file (#158)
             import traceback

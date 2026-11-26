@@ -113,6 +113,9 @@ export function usageJson(limits: Limit[], nowMs: number) {
   return { five_h_pct: f.percentUsed, five_h_reset: f.resetsAt ?? null, week_pct: w ? w.percentUsed : null, week_reset: w?.resetsAt ?? null, at: new Date(nowMs).toISOString() }
 }
 
+/** #306: cloud desks line ('cloud desks: inbox ok · ask down'), written by tools/runner/desks.py; read with governorLine. */
+export const DESKS = 'C:/work/Oren_study/a/tools/runner/.runs/desks.json'
+
 /** #239: the runner's governor line from .runs/governor.json text; '' when missing or unreadable. */
 export function governorLine(json: string): string {
   try { return String((JSON.parse(json) as { text?: string }).text ?? '') } catch { return '' }

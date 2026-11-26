@@ -12,10 +12,12 @@ import runner as R          # gh(), blockers(), CFG
 import stats as S           # pipeline timings from stats.jsonl
 import trends as T          # stuck reasons from runner.log
 import remote as RM         # cloud lanes (#136)
+import parked as PK         # #282: batch members, manual, later
 
 OUT = R.RUNS / "dashboard.html"
 STATES = [("running", "Running now"), ("needs_you", "Needs you"), ("blocked", "Blocked"),
-          ("waiting", "Waiting for another issue"), ("ready", "Ready to start"), ("other", "Not triaged / other")]
+          ("waiting", "Waiting for another issue"), ("ready", "Ready to start"),
+          ("batch", "In a batch"), ("manual", "Manual"), ("later", "Later"), ("other", "Not triaged / other")]
 STEP = {"start": "building", "worker_done": "in review", "review_fix": "fixing review notes", "fix_done": "in review",
         "review_pass": "merging (CI)", "resolve": "resolving a conflict", "merged": "deploying"}
 
@@ -23,14 +25,14 @@ def epoch(iso):
     try: return calendar.timegm(time.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S"))
     except (TypeError, ValueError): return None
 
-def state_of(i, open_nums):
+def state_of(i, open_nums, bm=None):
     l = set(i["labels"])
     if "in-progress" in l: return "running"
     if l & {"ready-for-human", "needs-triage", "needs-info"}: return "needs_you"
     if "blocked" in l: return "blocked"
     if any(b != i["number"] and b in open_nums for b in R.blockers(i.get("body"))): return "waiting"
     if "ready-for-agent" in l: return "ready"
-    return "other"
+    return PK.kind(i, bm or {}) or "other"          # #282: on purpose not ready-for-agent -> own bucket
 
 def prio_of(i):
     return next((p for p in ("P0", "P1", "P2", "P3") if p in i["labels"]), "-")
@@ -58,7 +60,9 @@ def model(issues, prs, events, now, log_text="", cloud=()):
     open_nums = {i["number"] for i in op}
     closed_at = {i["number"]: epoch(i.get("closedAt")) for i in issues if i["state"] == "CLOSED"}
     created = {i["number"]: epoch(i.get("createdAt")) for i in issues}
-    rows = sorted(({"n": i["number"], "title": i["title"], "state": state_of(i, open_nums), "prio": prio_of(i),
+    bm = PK.batch_map(issues)
+    rows = sorted(({"n": i["number"], "title": i["title"], "state": state_of(i, open_nums, bm), "prio": prio_of(i),
+                    "batch": bm[i["number"]]["number"] if i["number"] in bm else None,
                     "age_h": (now - (created[i["number"]] or now)) / 3600,
                     "blockers": [b for b in R.blockers(i.get("body")) if b in open_nums and b != i["number"]]} for i in op),
                   key=lambda r: (r["prio"], r["n"]))
@@ -89,6 +93,7 @@ def model(issues, prs, events, now, log_text="", cloud=()):
     ev24 = [e for e in events if e.get("ts", 0) > now - 86400]
     by_runner, started = S.finish_rate(events, now)
     fixes = sum(e.get("event") == "review_fix" for e in ev24); passes = sum(e.get("event") == "review_pass" for e in ev24)
+    red_esc = sum(e.get("event") == "red_escalated" for e in ev24)      # #303: still RED after the Opus fix round -> orchestrator
     deploys = [e for e in events if e.get("event") == "deploy"]
     stuck = {}
     for n, k in T.blocked_lines(log_text, now - 86400):
@@ -124,7 +129,7 @@ def model(issues, prs, events, now, log_text="", cloud=()):
         "last_deploy": max(deploys, key=lambda e: e["ts"]) if deploys else None,
         "fc": fc,
         "fc_p0": forecast(by_prio["P0"], p0_closed, [], now, history_h) if by_prio["P0"] else None, "p0_open": by_prio["P0"],
-        "truth": {"started": started, "by_runner": by_runner, "fixes": fixes, "passes": passes,
+        "truth": {"started": started, "by_runner": by_runner, "fixes": fixes, "passes": passes, "red_escalated": red_esc,
                   "deploys_ok": sum(1 for d in deploys if d["ts"] > now - 86400 and d.get("ok")),
                   "deploys_fail": sum(1 for d in deploys if d["ts"] > now - 86400 and d.get("ok") is False),
                   "stuck": sorted(stuck.items(), key=lambda x: -len(x[1]))[:6]},
@@ -145,8 +150,9 @@ def eta_plan(rows, running, t, fc, now, lanes=None):
         sec = max(600, b - (r["for_s"] or 0)) + rv + wait if r["step"] == "building" else left.get(r["step"], mg / 2)
         out[r["n"]] = (now + sec, now + sec * 1.5)
     for r in rows:
-        if r["state"] in ("needs_you", "blocked", "other"):
-            out[r["n"]] = {"needs_you": "waits for you", "blocked": "blocked", "other": "not triaged"}[r["state"]]
+        if r["state"] in ("needs_you", "blocked", "other", "batch", "manual", "later"):
+            out[r["n"]] = {"needs_you": "waits for you", "blocked": "blocked", "other": "not triaged", "manual": "manual",
+                           "later": "later", "batch": f"in batch #{r.get('batch')}"}[r["state"]]
     fast, slow = max(fc["c6"], fc["c24"]), min(fc["c6"], fc["c24"]) or max(fc["c6"], fc["c24"])
     lanes = lanes or int(R.CFG.get("max_parallel", 3))
     busy = [v[0] - now for v in out.values() if isinstance(v, tuple)]
@@ -222,7 +228,8 @@ def text(m):
              f"Forecast (estimate, {m['history_h']:.0f} h of history): " + fc_text(fc, m["now"], "all open issues"),
              "  " + (fc_text(m["fc_p0"], m["now"], f"the {m['p0_open']} open P0") if m["fc_p0"] else "no open P0"),
              f"Runner (24 h): started {tr['started']}, finished by itself {tr['by_runner']} ({pct(tr['by_runner'], tr['started'])}); "
-             f"PRs not finished by the runner (by hand, or it crashed after merging) ≈ {max(0, m['merged_24h'] - tr['by_runner'])}; reviews sent back {tr['fixes']} of {tr['fixes'] + tr['passes']}",
+             f"PRs not finished by the runner (by hand, or it crashed after merging) ≈ {max(0, m['merged_24h'] - tr['by_runner'])}; reviews sent back {tr['fixes']} of {tr['fixes'] + tr['passes']}; "
+             f"to the orchestrator after 3 RED reviews: {tr.get('red_escalated', 0)}",
              f"Average: build {S.fmt(m['avg_build'])}, review {S.fmt(m['avg_review'])}, start to merge {S.fmt(m['avg_merge'])}"]
     d = m["last_deploy"]
     lines.append("Last deploy: " + (f"{hhmm(d['ts'])} {'ok' if d.get('ok') else 'FAILED'}" if d else "no record yet") + f" · deploys 24 h: {tr['deploys_ok']} ok, {tr['deploys_fail']} failed")
@@ -230,11 +237,16 @@ def text(m):
     sl = m.get("stuck_lanes") or []     # #248: runs unchanged past stuck_hours and still stuck 30 min after the alarm
     if sl: lines.append(f"STUCK LANES: {len(sl)} (" + ", ".join(f"run-{n}" for n in sl) + ")")
     lines.append(conflicts_line(m.get("pr_conflicts") or []))
+    if m.get("desks"): lines.append(m["desks"])                       # #306: cloud inbox / ask ok|down
     lines.append("Lanes: " + m["lanes"] + (" · " + m["governor"] if m.get("governor") else ""))
     for c in m["cloud"]:
         lines.append(f"  cloud #{c['n']} {c['title'][:40]} — {c['state']}{' · manual' if c.get('manual') else ''} · last {hhmm(epoch(c['last'])) if epoch(c['last']) else '-'}"
                      + (" · STALE" if c["stale"] else "") + (f" · {c['pr']}" if c["pr"] else "") + (f" · {c['session']}" if c["session"] else ""))
     if m.get("cloud_done"): lines.append("Cloud done: " + "; ".join(f"#{c['n']} {c['title'][:40]}" for c in m["cloud_done"]))   # #263
+    if s.get("batch"):                   # #282: members under their batch
+        by_b = {}
+        for r in s["batch"]: by_b.setdefault(r["batch"], []).append(r["n"])
+        lines.append("In batches: " + "; ".join(f"#{b} (" + " ".join(f"#{n}" for n in ns) + ")" for b, ns in sorted(by_b.items())))
     if m["running"]: lines.append("Running: " + "; ".join(f"#{r['n']} {r['step']} {dur(r['for_s'])}" for r in m["running"]))
     lines.append("Bottom line (estimate): " + "; ".join(f"{a} merged by {b}" for a, b in bottom_line(m)))
     nxt = sorted(((v, n) for n, v in m["plan"].items() if isinstance(v, tuple)))[:8]
@@ -442,7 +454,8 @@ def page(m):
                  f'<ul class="facts"><li>The runner started <b>{tr["started"]}</b> issues and finished <b>{tr["by_runner"]}</b> by itself ({pct(tr["by_runner"], tr["started"])}). '
                  f'{m["merged_24h"]} pull requests were merged in total, so about <b>{max(0, m["merged_24h"] - tr["by_runner"])}</b> were not finished by the runner: '
                  f'merged by hand (orchestrator), or the runner crashed right after merging and never recorded it.</li>'
-                 f'<li>Reviews: {tr["passes"]} passed, <b>{tr["fixes"]}</b> sent back for fixes ({pct(tr["fixes"], tr["fixes"] + tr["passes"])}).</li>'
+                 f'<li>Reviews: {tr["passes"]} passed, <b>{tr["fixes"]}</b> sent back for fixes ({pct(tr["fixes"], tr["fixes"] + tr["passes"])}); '
+                 f'<b>{tr.get("red_escalated", 0)}</b> still red after 3 reviews went to the orchestrator.</li>'
                  f'<li>Runner deploys: {tr["deploys_ok"]} ok, {tr["deploys_fail"]} failed (hand deploys are not recorded).</li>'
                  f'<li>Average times (runner records): build {S.fmt(m["avg_build"])}, review {S.fmt(m["avg_review"])}, start to merge {S.fmt(m["avg_merge"])}.</li>'
                  f'<li>Pull requests: {m["merged_24h"]} merged in 24 hours, {m["merged_7d"]} in 7 days, {m["open_prs"]} open now. '
@@ -639,7 +652,7 @@ def ai_refresh(numbers, model=None):
     try:
         # the prompt goes on stdin: --tools takes a list and would swallow a prompt argument after it
         p = subprocess.run([claude, "-p", "--model", model, "--no-session-persistence", "--tools", ""], input=AI_PROMPT + numbers,
-                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180, creationflags=R.no_window())
     except (OSError, subprocess.TimeoutExpired):
         return None
     out = (p.stdout or "").strip()
@@ -673,6 +686,8 @@ def gather():
     try: m["pr_conflicts"] = json.loads((R.RUNS / "pr_conflicts.json").read_text(encoding="utf-8"))   # #262 (written by the watchdog)
     except Exception: m["pr_conflicts"] = []
     m["governor"] = governor_line()                         # #239
+    try: m["desks"] = json.loads((R.RUNS / "desks.json").read_text(encoding="utf-8")).get("text", "")   # #306 (written by desks.py)
+    except Exception: m["desks"] = ""
     return m
 
 def ai_tick(log=print):

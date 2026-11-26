@@ -30,7 +30,7 @@
 
 ## Project layout
 - `oren2/` — the main game. Edit `talents.js`, `talents.css`, `arcade.js`, `arcade.css` and the core in `index.html`, then run `python3 build_talents.py` (injects the parts into `index.html` and writes `cf/public/index.html`).
-- Tests: `oren2/tests/run.sh` (all suites, in parallel). Run before every publish.
+- Tests: `oren2/tests/run.sh` (all suites, in parallel) runs in CI (GitHub Actions) and cloud sessions only, never on the owner's PC (#284: it refuses there).
 - Publish: the Claude artifact from `oren2/index.html`; the website via `oren2/cf/tools/deploy.sh` (Cloudflare Pages, project `oren-game`).
 - Voice: after pregen, run `node oren2/cf/tools/voicecheck.js` so new sentences are pronunciation-checked (parent picks spellings at https://oren-game.pages.dev/api/tts/listen; results at /api/tts/review).
 - Game voice is fixed: Google he-IL-Chirp3-HD-Kore at 0.9. After adding/changing missions or kid text, run `node oren2/cf/tools/pregen.js` after deploy so all audio exists in advance (resumable, ~700 new sentences/day).

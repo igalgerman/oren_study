@@ -81,6 +81,7 @@ const SHOTS=process.env.GAPS_SHOTS;                 /* folder for screenshots */
      if(c.t==='bal3'&&c.idx[q.ans]!==(c.ask==='heavy'?0:2))bad.push(tag+' bal3');}
    return {bad:[...new Set(bad)].slice(0,12),cnt,units:Object.keys(GX.units)};});
  ok(`math units generate correct questions (${M.units.join(', ')})`,!M.bad.length,M.bad.join(' | '));
+ ok('square-or-rectangle question never shows two identical rectangles (fixed random)',await p.evaluate(()=>{const R=Math.random;const out=[];try{for(const v of [0.7,0.75,0.8])for(const i of [0,1]){Math.random=()=>v;const q=window.__GX.units['shp-2'].gen(i);if(q.chk.ask==='sqrect')out.push(new Set(q.opts).size===q.opts.length);}}finally{Math.random=R;}return out.length>0&&out.every(Boolean);}));
  ok('every math question kind appears',['pict:count','pict:most','pict:least','pict:more','pict:total','shape:which','shape:name','shape:sides','shape:corners','shape:sqrect','ruler:undefined','long:long','long:short','bal:heavy','bal:light','bal3:heavy','bal3:light'].every(k=>M.cnt[k]),JSON.stringify(M.cnt));
 
  /* ---------- math in the real game modes ---------- */
@@ -124,7 +125,8 @@ const EMIT=await p.evaluate(()=>/tlDone/.test(String(window.TAL.record)));   /* 
  await p.evaluate(()=>window.GAPS.spell(()=>window.OREN.showMap(),3));await sleep(400);await shot('spell-3');ok('spelling letters in equal rows',await p.evaluate(()=>{const b=[...document.querySelectorAll('#sTal .gp-tiles .chb')];const m={};b.forEach(x=>{const k=Math.round(x.getBoundingClientRect().top);m[k]=(m[k]||0)+1;});const c=Object.values(m);return Math.max(...c)-Math.min(...c)<=1&&b.every(x=>x.getBoundingClientRect().right<=innerWidth);}));
  await p.evaluate(()=>window.GAPS.spell(()=>window.OREN.showMap()));await sleep(400);await shot('spell-1');
  await spellRun(1);ok('spelling round records spell-1 and write-spell',((await tl('spell-1'))||{}).s>=2&&(!EMIT||!!(await tl('write-spell'))));await closeOv();
- let fin=false;for(let t=0;t<4&&!fin;t++){fin=await spellRun(2,true);await closeOv();}
+ /* only 8 of 43 four-letter words can show the note: a round of 6 has none ~27% of the time, so try up to 20 rounds (#292) */
+ let fin=false;for(let t=0;t<20&&!fin;t++){fin=await spellRun(2,true);await closeOv();}
  ok('spelling: a regular letter at the end of a word gets the final-letter note',fin);
  await spellRun(3);ok('spelling level 3 plays',!!(await tl('spell-3')));await closeOv();
 

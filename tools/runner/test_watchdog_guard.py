@@ -51,8 +51,9 @@ W.time.sleep = sleep
 try: W.main()
 except SystemExit: pass
 finally: os.utime(rp, (st.st_atime, st.st_mtime)); importlib.reload = real_reload
-assert "reloaded remote.py" in calls, calls
-assert reloaded == ["remote"], reloaded
+assert any("remote.py" in c for c in calls if c.startswith("reloaded")), calls
+assert "remote" in reloaded and "runner" in reloaded and reloaded.index("remote") < reloaded.index("runner"), reloaded   # #300: all, in dependency order
+assert reloaded[-1] == "watchdog", reloaded
 assert calls.count("tick") == 2, calls
 assert hasattr(R.remote, "cloud")
 print("ok watchdog guard")
