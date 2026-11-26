@@ -57,6 +57,7 @@ idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → r
 
 ## Owner questions: ONE place (#193)
 - Every question for the owner lives in the pinned, owner-assigned GitHub issue **'Questions for the owner'** (GitHub mobile notifies him). The watchdog posts each waiting window's question there by itself (issue link, question, options); `remote.py status <n>` posts a remote QUESTION comment.
+- Write every owner question (#205) the way docs/agents/skills/to-questionnaire.md says: clear options, a recommendation, Hebrew for decisions.
 - Your own question (or one from a reviewer PURPLE point / grill): `python tools/runner/owner_q.py ask <#n|window> "<question in Hebrew, options>"`.
 - For each NEW question (watchdog line `NEW OWNER QUESTION`): send a PushNotification with the question text (#189). Never write 'waiting for you in window X' without the question text.
 - He answers in that issue (the watchdog types `OWNER ANSWERED ...` into your window) or here. Relay the answer to the window / issue, then `python tools/runner/owner_q.py answered <key> "<answer>"`. Open list: `owner_q.py open` (also in the dashboard 'Needs you').

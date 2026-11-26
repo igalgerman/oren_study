@@ -8,6 +8,8 @@ Every minute it checks, deterministically:
   3c. owner lane: no intake window open + a needs-triage/needs-info issue -> opens ONE `intake-<n>` (oldest issue), `NEEDS YOU: intake-<n> is open`
   5. every observer_minutes: observer.py applies deterministic rules (make_ready, rerun, fix Blocked-by lines) within limits
   5b. every ai_observer_minutes (#203): ai_observer.py, ONE read-only headless Sonnet check in a thread; new findings -> the orchestrator
+  5c. #219 nightly.py: once a day at retro_hour ONE read-only headless Sonnet retro + handoff (issue 'Daily retro <date>', handoff PR);
+      batch trigger: tells the inbox to run /batch once a day, and early when >= 8 ready P2/P3 issues share a lane
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
   4b. orchestrator / inbox / inspector terminal finished (#140)                -> removed by address and started again (recover.py commands)
@@ -243,6 +245,11 @@ def observer_tick():
 def ai_observer_tick():
     import ai_observer; ai_observer.run_if_due(tell, log)   # #203: hourly AI check (thread; not reloaded: that would reset its never-two guard)
 
+def nightly_tick():
+    import nightly   # #219: not reloaded (that would reset its never-two guard)
+    nightly.retro_if_due(tell, log)
+    nightly.batch_tick(lambda t: R.hc("send", "inbox", t, timeout=30)[0], log)
+
 SYNC_MIN = int(R.CFG.get("sync_minutes", 3))
 _sync = {"last": 0.0, "msg": ""}
 
@@ -358,6 +365,7 @@ def tick():
     cleanup(all_ts)
     observer_tick()
     ai_observer_tick()
+    nightly_tick()
     sync_tick()
     alarm_tick()
     trends_tick()

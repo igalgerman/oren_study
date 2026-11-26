@@ -409,6 +409,12 @@ p = r.remote_worker_prompt(7, "core", bug=True)
 assert "#7" in p and "lane/7" in p and "FLOW.md" in p and "Fixes #7" in p and "gh issue comment 7" in p
 assert "RESULT: DONE" in p and "QUESTION:" in p and "diagnosing-bugs" in p
 assert "diagnosing-bugs" not in r.remote_worker_prompt(7, "core")
+# #219: Batch:/spec issues follow implement-spec (local and cloud prompts)
+assert "implement-spec.md" in r.remote_worker_prompt(7, "core") and "Batch:" in r.remote_worker_prompt(7, "core") and "spec" in r.worker_prompt(7, "core")
+assert "implement-spec.md" in r.worker_prompt(7, "core")
+assert "docs/agents/skills/diagnosing-bugs.md" in r.remote_worker_prompt(7, "core", bug=True) and "docs/agents/skills/diagnosing-bugs.md" in r.worker_prompt(7, "core", bug=True)
+import recover as _rc; assert "docs/agents/skills/writing-for-agents.md" in _rc.INBOX_PROMPT
+print("ok #219 skill docs")
 # wait_remote polls GitHub state (no herdr screen) until a final state
 seq = iter([{"state": "working"}, {"state": "working"}, {"state": "done", "line": "RESULT: DONE x", "pr": {"number": 9}}])
 t = [0]
