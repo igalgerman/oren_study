@@ -37,7 +37,7 @@ On PASS (config `ci_merge = true`, #74): the runner merges main into the lane (c
 Known: `worker` suite fails only on Windows (ESM c:\ path); `reading`/`activities`/`time-missions` can be flaky under load — rerun alone once.
 
 ## Observer
-Every `observer_minutes` the watchdog starts a fresh read-only Claude (`tools/runner/observer_prompt.md`) that audits labels, PRs, lanes, duplicates and closed issues, and tells the orchestrator `OBSERVER found: ...`. Result in `tools/runner/.runs/observer.last` (panel bottom line).
+Every `observer_minutes` the watchdog runs `tools/runner/observer.py` (deterministic rules, no LLM): make_ready (needs-orchestrator/P0 untouched 30+ min while the orchestrator is idle), rerun (in-progress with no live run window for 10+ min), fix Blocked-by lines. Max 5 actions per run, each commented on the issue; never on ready-for-human, on an issue with an open lane/<n> PR, or while integrate.lock is alive. Result in `tools/runner/.runs/observer.last`; `observer_minutes = 0` stops it.
 
 Questions to the owner: in Hebrew, through tools/ask/ask.py (browser page), one round at a time; never ask in the terminal when the owner prefers Hebrew.
 
