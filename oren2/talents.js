@@ -156,7 +156,7 @@ const dailyPool=()=>Object.keys(ACT).filter(id=>bState(ACT[id].b)==='on'&&!actOf
 /* the day's path: t = steps ('math', an activity id, 'tog:<k>' together, 'rw:<k>' real-world), ch = how it was formed (a domain Oren chose, or 'plan').
    No path until Oren answers "what do you feel like today?" (or the parent's template builds it). cr = real-world missions waiting for the path. */
 function dailyEnsure(){const s=S();if(s.daily&&s.daily.d===today()){const d=s.daily,pool=dailyPool();d.cr=d.cr||[];for(let i=0;i<d.t.length;i++)if(d.t[i]!=='math'&&!/:/.test(d.t[i])&&!d.done[i]&&!pool.includes(d.t[i])){const alt=pool.filter(x=>!d.t.includes(x));if(alt.length)d.t[i]=fitPick(d.t.slice(0,i),alt);}return d;}
-  const prev=s.daily;const cr=prev?[...(prev.cr||[]),...prev.t.filter((x,i)=>/^rw:/.test(x)&&!prev.done[i])]:[];
+  const prev=s.daily;const cr=prev?[...(prev.cr||[]),...prev.t.filter((x,i)=>/^rw:/.test(x)&&!prev.done[i]),...(prev.tm||[]).filter(x=>x==='math'||ACT[x])]:[];   /* #359: tm = missions of a topic the parent put off to tomorrow */
   const plan=S().set.plan;let t=[];
   if(plan&&plan.length){const used=new Set();t=plan.map(sp=>{if(sp==='math')return 'math';if(String(sp).startsWith('act:')){const aid=sp.slice(4);if(ACT[aid]&&dailyPool().includes(aid)&&!used.has(aid)){used.add(aid);return aid;}sp='any';}const pool=dailyPool().filter(id=>!used.has(id)&&(sp==='any'||ACT[id].b.id===sp));const id=pool.length?fitPick([...used],pool):pick(dailyPool().filter(x=>!used.has(x)));used.add(id);return id||'math';}).concat(cr);}
   s.daily={d:today(),t,done:t.map(()=>0),claimed:0,ch:t.length?'plan':0,cr:t.length?[]:cr};O.persist();return s.daily;}
@@ -997,50 +997,52 @@ function togPick(){const ov=$('#ov');ov.hidden=false;ov.innerHTML='<div class="c
 const BAR=(v,max,col)=>`<span class="pbar"><i style="width:${max?Math.min(100,v/max*100):0}%;background:${col||'#4fae4f'}"></i></span>`;
 const fmtMin=sec=>{const m=Math.round(sec/60);return m<60?m+' דק׳':(m/60).toFixed(1)+' שע׳';};
 function lastDays(n){const out=[];const d=new Date();for(let i=n-1;i>=0;i--){const x=new Date(d);x.setDate(d.getDate()-i);const k=x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');out.push([k,x]);}return out;}
-/* three simple tabs; everything else lives in closed sections under "settings" */
-const TABS=[['sum','📊 סיכום'],['day','📅 היום של אורן'],['more','⚙️ הגדרות']];
-const MORE=[['voice','🔊 קול — בדיקה ובחירה'],['try','🎮 לשחק כהורה (ניסיון)'],['msg','💌 הודעה לאורן'],['parts','🧩 להפעיל / לכבות חלקים'],['health','🥤 הפסקות וארוחות'],['read','📖 קריאה'],['prog','⏭️ דילוג, איפוס ויהלומים'],['perm','🎤 הרשאות'],['set','🔑 סיסמה וגיבוי'],['map','🗺️ מפת התוכן']];
-const GROUP={plan:'day',time:'day',health:'more',read:'more',map:'more',voice:'more',try:'more',msg:'more',parts:'more',prog:'more',perm:'more',set:'more'};
-const FN={map:box=>{if(T.contentMap)T.contentMap(box,sec,BAR);},sum:sumTab,try:tryTab,plan:planTab,time:timeTab,health:box=>{if(window.HEALTH)window.HEALTH.panel(box,sec,()=>panel('health'),'set');},read:box=>{if(T.rdSettings)T.rdSettings(box,sec,()=>panel('read'));},voice:voiceTab,perm:permTab,parts:partsTab,prog:progTab,msg:msgTab,set:setTab};
-let curTab='sum',openSec=null;
+/* #359: the main view is one day (what he did, live · the plan ahead · strong / weak); everything else is behind one "הגדרות ועוד" entry, in closed sections */
+const MORE=[['time','⏱️ זמן משחק והגבלה'],['rem','⏰ תזכורת והודעה לאורן'],['tmpl','🗓️ התבנית לכל יום'],['know','🧭 מה אורן כבר יודע'],['learn','🛤️ המסלול של אורן — הבא בתור'],['full','📈 פירוט מלא'],['iss','⚠️ תקלות'],['voice','🔊 קול — בדיקה ובחירה'],['try','🎮 לשחק כהורה (ניסיון)'],['msg','💌 הודעה לאורן'],['parts','🧩 להפעיל / לכבות חלקים'],['health','🥤 הפסקות וארוחות'],['read','📖 קריאה'],['prog','⏭️ דילוג, איפוס ויהלומים'],['perm','🎤 הרשאות'],['set','🔑 סיסמה וגיבוי'],['map','🗺️ מפת התוכן']];
+const FN={map:box=>{if(T.contentMap)T.contentMap(box,sec,BAR);},full:fullTab,try:tryTab,tmpl:tmplTab,time:timeTab,iss:issues,
+  rem:box=>{if(window.HEALTH)window.HEALTH.panel(box,sec,()=>panel('rem'),'today');},know:box=>{if(window.KNOW)window.KNOW.panel(box,sec,()=>panel('know'));},learn:box=>{if(window.LEARN)window.LEARN.parentPanel(box,sec,()=>panel('learn'));},
+  health:box=>{if(window.HEALTH)window.HEALTH.panel(box,sec,()=>panel('health'),'set');},read:box=>{if(T.rdSettings)T.rdSettings(box,sec,()=>panel('read'));},voice:voiceTab,perm:permTab,parts:partsTab,prog:progTab,msg:msgTab,set:setTab};
+/* a section that would be empty is not listed (G8) */
+const HAS={iss:()=>issList().length>0,perm:()=>!permNone(),rem:()=>!!window.HEALTH,know:()=>!!window.KNOW,learn:()=>!!window.LEARN};
+const ALIAS={sum:'day',plan:'day','plan-t':'tmpl'};
+let curTab='day',openSec=null;
 /* on the website there is nothing to approve: no permissions section (G8: hide empty sections) */
 const permNone=()=>!!window.__site&&!(window.claude&&window.claude.use);
 const exitParent=()=>{parentOn=false;O.showMap();};
 function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(dl&&!dl.hidden)dl.hidden=true;if(!parentOn)return login(()=>panel(tab));
-  if(tab&&GROUP[tab]){openSec=tab;curTab=GROUP[tab];}else if(tab){curTab=tab;if(tab!=='more')openSec=null;}
+  tab=ALIAS[tab]||tab;if(tab&&FN[tab]){openSec=tab;curTab='more';}else if(tab){curTab=tab==='more'?'more':'day';if(tab!=='more')openSec=null;}
   const sy=$('#screens').scrollTop;O.setScreen('sPar','valley',exitParent);O.hud('<div class="chip">לוח הורים</div>');const s=$('#sPar');s.innerHTML='';
-  s.appendChild(h('div','whead',`<h1>לוח הורים</h1>`));const nb=h('div','pnow');s.appendChild(nb);nowTop(nb);const tb=h('div','ptabs');TABS.forEach(([id,n])=>{const b=h('button','ptab'+(id===curTab?' on':''),n);b.onclick=()=>{openSec=null;panel(id);};tb.appendChild(b);});s.appendChild(tb);
+  s.appendChild(h('div','whead',`<h1>${curTab==='more'?'הגדרות ועוד':'לוח הורים'}</h1>`));
   const body=h('div','pbody');s.appendChild(body);
-  if(curTab==='sum')sumTab(body);
-  else if(curTab==='day'){timeTab(body);if(window.HEALTH)window.HEALTH.panel(body,sec,()=>panel('day'),'today');planTab(body);if(window.DAYLOG)window.DAYLOG.panel(body,sec);if(window.LEARN)window.LEARN.parentPanel(body,sec,()=>panel('day'));if(window.KNOW)window.KNOW.panel(body,sec,()=>panel('day'));}
-  else MORE.filter(([id])=>id!=='perm'||!permNone()).forEach(([id,n])=>{const d=document.createElement('details');d.className='pdet';const sm=document.createElement('summary');sm.textContent=n;d.appendChild(sm);const inner=h('div','pdin');d.appendChild(inner);let done=false;
-    const fill=()=>{if(done)return;done=true;FN[id](inner);};d.addEventListener('toggle',()=>{if(d.open){openSec=id;fill();}});if(openSec===id){d.open=true;fill();}body.appendChild(d);});
+  if(curTab==='day'){const v=h('div','pday');body.appendChild(v);if(window.PDAY)window.PDAY.view(v,{sec,nowTop});
+    const mr=h('div','btnrow');const mb=h('button','bigbtn plain sm pdmore','⚙️ <span>הגדרות ועוד</span>');mb.onclick=()=>{openSec=null;panel('more');};mr.appendChild(mb);body.appendChild(mr);}
+  else{const bk=h('button','pchip pdback','→ חזרה ליום');bk.onclick=()=>panel('day');body.appendChild(bk);warns(body);
+    MORE.filter(([id])=>!HAS[id]||HAS[id]()).forEach(([id,n])=>{const d=document.createElement('details');d.className='pdet';const sm=document.createElement('summary');sm.textContent=n;d.appendChild(sm);const inner=h('div','pdin');d.appendChild(inner);let done=false;
+    const fill=()=>{if(done)return;done=true;FN[id](inner);};d.addEventListener('toggle',()=>{if(d.open){openSec=id;fill();}});if(openSec===id){d.open=true;fill();}body.appendChild(d);});}
   const out=h('div','btnrow');const bb=h('button','bigbtn plain sm',ICON.home+'<span>יציאה מלוח ההורים</span>');bb.onclick=exitParent;out.appendChild(bb);s.appendChild(out);window.__par=curTab;parLiveOn();
-  if(GROUP[tab]&&openSec)setTimeout(()=>{const o=s.querySelector('details[open]');if(o&&tab===openSec&&curTab==='more')o.scrollIntoView({block:'start'});else $('#screens').scrollTop=sy;},0);}
+  if(openSec&&curTab==='more')setTimeout(()=>{const o=s.querySelector('details[open]');if(o&&tab===openSec)o.scrollIntoView({block:'start'});else $('#screens').scrollTop=sy;},0);}
 T.parentPanel=t=>{parentOn=true;panel(t);};
-/* #352: the top line of every tab: "playing now · N min (from HH:MM)" + one stop button, or "last played" */
-function nowTop(el){const DL=window.DAYLOG;el.innerHTML=DL?DL.nowLine():'';const left=T.limLeft();if(!DL||!DL.playing()||(left&&left.min<=0))return;
-  const b=h('button','pchip bad','⏹ לעצור עכשיו');b.onclick=()=>{stopNow();sfx.ok&&sfx.ok(1);nowTop(el);};el.firstChild?el.firstChild.appendChild(b):el.appendChild(b);}
-/* while the parent panel is open: pull the family save every 20s so "playing now" and the log follow Oren from another house */
+/* #352: the top line of the day: "playing now · N min (from HH:MM)" + stop, and (#359) "skip now", or "last played" */
+function nowTop(el){const DL=window.DAYLOG,PD=window.PDAY;el.innerHTML=DL?DL.nowLine():'';const left=T.limLeft();if(!DL||!DL.playing()||(left&&left.min<=0))return;
+  const row=el.firstChild||el;const pc=PD&&PD.cmds().find(c=>c.k==='now'&&!(O.realSave.pcA||{})[c.i]);
+  if(PD&&(O.realSave.now||{}).id){if(pc){const b=h('button','pchip','⏭ ממתין… בטל');b.onclick=()=>{PD.undo(pc.i);nowTop(el);};row.appendChild(b);}
+    else{const b=h('button','pchip pdskipnow','⏭ דלג עכשיו');b.onclick=()=>{PD.send('now');sfx.ok&&sfx.ok(1);nowTop(el);};row.appendChild(b);}}
+  const b=h('button','pchip bad','⏹ לעצור עכשיו');b.onclick=()=>{stopNow();sfx.ok&&sfx.ok(1);nowTop(el);};row.appendChild(b);}
+/* while the parent panel is open: pull the family save every 30 s so the day view follows Oren live, also from another house */
 let parLive=0;
 function parLiveOn(){if(parLive)return;parLive=setInterval(()=>{if(!parentOn||$('#sPar').hidden){clearInterval(parLive);parLive=0;return;}
-  Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(window.DAYLOG)window.DAYLOG.refresh();document.querySelectorAll('#sPar .pnow').forEach(nowTop);});},window.__parPull||20000);}
+  Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(window.PDAY&&curTab==='day')window.PDAY.refresh();});},window.__parPull||30000);}
 const sec=(box,t,html)=>{const d=h('section','psec',`<h3>${t}</h3>`);if(html)d.insertAdjacentHTML('beforeend',html);box.appendChild(d);return d;};
 /* --- summary --- */
 /* problems in the last 14 days: one short line, details only on tap */
 const ISS={voice:'🔊 הקול של Google לא ענה בזמן — הושמע קול גיבוי',sync:'☁️ השמירה לענן לא הצליחה',err:'🐞 תקלה במשחק'};
 const WHY={off:'(המכשיר לא היה מחובר לאינטרנט)',full:'(השרת לא קיבל שמירות באותו זמן — המשחק ניסה שוב אחר כך)'};/* #129: the real reason, 'no internet' only when offline */
-function issues(box){const from=lastDays(14)[0][0];const L=(O.realSave.iss||[]).filter(x=>x.d>=from).sort((a,b)=>a.d<b.d?1:-1);
-  if(!L.length)return;/* no problems: nothing to show (G8) */
-  const d=document.createElement('details');d.className='pdet piss';d.innerHTML=`<summary>⚠️ היו ${L.length} תקלות בשבועיים האחרונים — לחצו לפרטים</summary>`+L.map(x=>`<div class="prow"><span class="pn">${x.d.slice(8)}.${x.d.slice(5,7)} · ${ISS[x.k]||x.k}${WHY[x.m]?' '+WHY[x.m]:x.m?` <small dir="ltr">${String(x.m).replace(/[<>&]/g,'')}</small>`:''}${x.r?' · 📨 נשלח דיווח לבדיקה':''}</span><span class="pc">×${x.n}</span></div>`).join('');box.appendChild(d);}
-function sumTab(box){const s0=T.S(),sv=O.save;
-  permStates().then(st=>{if(st&&Object.values(st).some(v=>v==='prompt'||v==='denied')){const w=h('button','pwarn','⚠️ יש הרשאות שעוד לא אושרו (למשל מיקרופון). לחצו כאן כדי לאשר מראש, כדי שאורן לא ייתקע באמצע.');w.onclick=()=>panel('perm');box.prepend(w);}});
-  if(!SET().voiceOk){const w=h('button','pwarn','🔊 עוד לא בדקתם את הקול של המשחק. לחצו כאן — לוקח דקה: שומעים דוגמה ואומרים אוקי.');w.onclick=()=>panel('voice');box.appendChild(w);}
-  /* three lines: today's minutes, streak, what he did today; everything else in "פירוט מלא" (G8) */
-  const DL=window.DAYLOG,done=DL?[...new Set(DL.rows(O.today()).filter(e=>e[6]==='c').map(e=>DL.nameOf(e[1])))]:[];const st0=O.dayStreak();
-  box.appendChild(h('div','psum',`<div class="psl">⏱️ היום: <b>${usedMin()} דק׳</b> משחק</div><div class="psl">🔥 רצף: <b>${st0===1?'יום אחד':st0+' ימים'}</b></div><div class="psl">🎯 היום: ${done.length?done.join(' · '):DL?'עוד לא סיים פעילות':doneN()+' פעילויות'}</div>`));
-  issues(box);
-  const det=document.createElement('details');det.className='pdet';det.innerHTML='<summary>📈 פירוט מלא</summary>';const dbox=h('div','pdin');det.appendChild(dbox);box.appendChild(det);box=dbox;
+const issList=()=>{const from=lastDays(14)[0][0];return (O.realSave.iss||[]).filter(x=>x.d>=from).sort((a,b)=>a.d<b.d?1:-1);};
+function issues(box){const L=issList();box.appendChild(h('div','piss',`<div class="pnote">${L.length} תקלות בשבועיים האחרונים</div>`+L.map(x=>`<div class="prow"><span class="pn">${x.d.slice(8)}.${x.d.slice(5,7)} · ${ISS[x.k]||x.k}${WHY[x.m]?' '+WHY[x.m]:x.m?` <small dir="ltr">${String(x.m).replace(/[<>&]/g,'')}</small>`:''}${x.r?' · 📨 נשלח דיווח לבדיקה':''}</span><span class="pc">×${x.n}</span></div>`).join('')));}
+/* the two "not checked yet" notes stay at the top of the settings (#359: no longer on the day view) */
+function warns(box){permStates().then(st=>{if(st&&Object.values(st).some(v=>v==='prompt'||v==='denied')){const w=h('button','pwarn','⚠️ יש הרשאות שעוד לא אושרו (למשל מיקרופון). לחצו כאן כדי לאשר מראש, כדי שאורן לא ייתקע באמצע.');w.onclick=()=>panel('perm');box.querySelector('.pdback').after(w);}});
+  if(!SET().voiceOk){const w=h('button','pwarn','🔊 עוד לא בדקתם את הקול של המשחק. לחצו כאן — לוקח דקה: שומעים דוגמה ואומרים אוקי.');w.onclick=()=>panel('voice');box.appendChild(w);}}
+function fullTab(box){const s0=T.S(),sv=O.save;
   if(window.LEARN){const rl=window.LEARN.runwayLine();if(rl)box.appendChild(h('div','pnote',rl));}if(T.thinkSummary)T.thinkSummary(box,sec);
   const acc=sv.ans?Math.round((sv.ok|0)/sv.ans*100):0;const totT=Object.values(s0.time).reduce((a,v)=>a+(v|0),0);const talSt=Object.values(s0.tl).reduce((a,c)=>a+(c.s|0),0);
   sec(box,'במבט אחד',`<div class="ptiles">
@@ -1062,26 +1064,8 @@ function sumTab(box){const s0=T.S(),sv=O.save;
   const pr=prof();const md=s0.mood.slice(-14);const jarN=s0.jar.reduce((a,j)=>a+(j.i?j.i.length:0),0);
   sec(box,'אורן — רגשות והעדפות',`${pr?`<div class="pnote">החבר: ${plain(O.PET().n)} · צבע: ${plain((P_COL.find(a=>a[0]===pr.col)||[])[1]||'')} · הכי כיף לו: ${plain((P_LOVE.find(a=>a[0]===pr.love)||[])[1]||'')}</div>`:''}
     ${md.length?`<div class="pmood">${md.map(m=>FACES[m.f]?`<span title="${m.d}">${FACES[m.f].s}<small>${m.d.slice(5).replace('-','/')}</small></span>`:'').join('')}</div>`:'<div class="pnote">עוד לא נרשמו רגשות.</div>'}<div class="pnote">בצנצנת התודה: ${jarN} דברים טובים.</div>`);}
-/* --- today's plan --- */
-let tdOpen=-1;
-function planTab(box){const st=SET();let plan=(st.plan&&st.plan.slice())||['math','any','any'];
-  /* today's path: live control */
-  const d=T.dailyEnsure();const ts=sec(box,'המשימות של היום (עכשיו)','<div class="pnote">✓ = בוצע, ✕ = להסיר. לחיצה על שורה: סדר, החלפה, ניסיון. משפיע מיד על המסך של אורן.</div>');
-  if(!d.t.length)ts.appendChild(h('div','pnote',d.ch?'':'אורן עוד לא בחר מה בא לו היום. כשיבחר, ייבנה לו שביל קצר (3 צעדים בתחום שבחר + הפתעה). אפשר גם להוסיף כאן צעדים כבר עכשיו.'));
-  d.t.forEach((id,i)=>{const nm=T.stepName(id);
-    /* per row only ✓ and ✕; a tap on the row shows the rest (order, replace, try) */
-    const r=h('div','prow tdrow'+(tdOpen===i?' open':''),`<span class="pn">${i+1}. ${nm}</span><span class="pst ${d.done[i]?'ok':'warn'}">${d.done[i]?'בוצע ✓':'עוד לא'}</span>`);
-    const ch=(l,f,box,cls)=>{const b=h('button','pchip'+(cls?' '+cls:''),l);b.onclick=e=>{e.stopPropagation();f();O.persist();panel('plan');};(box||r).appendChild(b);return b;};
-    ch(d.done[i]?'↺':'✓',()=>{d.done[i]=d.done[i]?0:1;},r,'tdx').title=d.done[i]?'לא בוצע':'בוצע';
-    if(d.t.length>1)ch('✕',()=>{d.t.splice(i,1);d.done.splice(i,1);tdOpen=-1;},r,'tdx').title='הסר';
-    const mo=h('div','tdmore');r.appendChild(mo);
-    if(i>0)ch('▲ למעלה',()=>{[d.t[i-1],d.t[i]]=[d.t[i],d.t[i-1]];[d.done[i-1],d.done[i]]=[d.done[i],d.done[i-1]];tdOpen=i-1;},mo);
-    if(ACT[id])ch('🔄 החלף',()=>{const pool=T.dailyPool().filter(x=>!d.t.includes(x));if(pool.length)d.t[i]=O.pick(pool);},mo);
-    if(!/:/.test(id)){const b=h('button','pchip','▶ נסו');b.onclick=e=>{e.stopPropagation();tryIt(id);};mo.appendChild(b);}
-    r.onclick=()=>{tdOpen=tdOpen===i?-1:i;r.classList.toggle('open',tdOpen===i);};ts.appendChild(r);});
-  if(d.t.length<5){const ar=h('div','popt','<span>הוספת משימה להיום:</span>');[['math','🧮 חשבון'],['any','🎲 אקראית']].forEach(([k,n])=>{const b=h('button','pchip',n);b.onclick=()=>{let id='math';if(k==='any'){const pool=T.dailyPool().filter(x=>!d.t.includes(x));if(!pool.length)return;id=O.pick(pool);}d.t.push(id);d.done.push(0);d.claimed=0;O.persist();panel('plan');};ar.appendChild(b);});ts.appendChild(ar);}
-  /* the template for every day */
-  const tdet=document.createElement('details');tdet.className='pdet';tdet.innerHTML='<summary>🗓️ התבנית לכל יום (לא חובה)</summary>';const tin=h('div','pdin');tdet.appendChild(tin);if(openSec==='plan-t')tdet.open=true;tdet.addEventListener('toggle',()=>{if(tdet.open)openSec='plan-t';});box.appendChild(tdet);box=tin;
+/* --- the template for every day (the day view's "plan ahead" is in pday.js) --- */
+function tmplTab(box){const st=SET();let plan=(st.plan&&st.plan.slice())||['math','any','any'];
   const ps=sec(box,'התבנית לכל יום',`<div class="pnote">מכאן נבנה השביל של כל יום חדש. לכל צעד: חשבון, פעילות לבחירת המשחק, בניין מסוים או פעילות מסוימת. כשיש תבנית, אורן לא נשאל "מה בא לך היום?" — השביל נבנה ממנה. בסוף השביל מגיע סוף הסיפור של היום, ואז זמן חופשי.</div>`);
   const rows=h('div','');ps.appendChild(rows);
   const opts=[['math','🧮 חשבון'],['any','🎲 לבחירת המשחק'],...BUILD.filter(b=>!st.hide[b.id]).map(b=>[b.id,'🏠 '+plain(b.name)+' (פעילות כלשהי)']),...BUILD.filter(b=>!st.hide[b.id]).flatMap(b=>b.acts.filter(a=>!st.offA[a.id]).map(a=>['act:'+a.id,'· '+plain(b.name)+' — '+plain(a.name)]))];
@@ -1089,11 +1073,12 @@ function planTab(box){const st=SET();let plan=(st.plan&&st.plan.slice())||['math
       opts.forEach(([k,n])=>{const o=document.createElement('option');o.value=k;o.textContent=n;if(k===v)o.selected=true;sel.appendChild(o);});sel.onchange=()=>{plan[i]=sel.value;};r.appendChild(sel);
       const up=h('button','pchip','▲');up.disabled=i===0;up.onclick=()=>{[plan[i-1],plan[i]]=[plan[i],plan[i-1]];draw();};const rm=h('button','pchip','✕');rm.disabled=plan.length<2;rm.onclick=()=>{plan.splice(i,1);draw();};r.append(up,rm);rows.appendChild(r);});
     if(plan.length<5){const add=h('button','pchip','+ הוספת צעד');add.onclick=()=>{plan.push('any');draw();};rows.appendChild(add);}};draw();
-  const row=h('div','btnrow');const sv=h('button','bigbtn sm','<span>שמירת התבנית</span>');sv.onclick=()=>{st.plan=plan.slice();const dd=T.S().daily;let now=false;if(!dd||!dd.done.some(Boolean)){delete T.S().daily;now=true;}O.persist();sfx.ok(1);O.floatText(sv,now?'נשמר — כבר מהיום':'נשמר — יתחיל ממחר');setTimeout(()=>panel('plan'),900);};
-  const df=h('button','bigbtn plain sm','<span>חזרה לברירת מחדל</span>');df.onclick=()=>{delete st.plan;O.persist();panel('plan');};row.append(df,sv);ps.appendChild(row);}
+  const row=h('div','btnrow');const sv=h('button','bigbtn sm','<span>שמירת התבנית</span>');sv.onclick=()=>{st.plan=plan.slice();const dd=T.S().daily;let now=false;if(!dd||!dd.done.some(Boolean)){delete T.S().daily;now=true;}O.persist();sfx.ok(1);O.floatText(sv,now?'נשמר — כבר מהיום':'נשמר — יתחיל ממחר');setTimeout(()=>panel('tmpl'),900);};
+  const df=h('button','bigbtn plain sm','<span>חזרה לברירת מחדל</span>');df.onclick=()=>{delete st.plan;O.persist();panel('tmpl');};row.append(df,sv);ps.appendChild(row);}
 /* --- try it yourself (parent sandbox) --- */
 function enterTry(fresh){parentOn=false;O.parentPlay(true,fresh);}
 function tryIt(id){enterTry();if(id==='math'){O.showJourney();return;}const a=ACT[id];if(a)a.run(O.showMap);else O.showMap();}
+T.tryIt=tryIt;
 /* two buttons (G8): play as the parent user, or start that parent user over (fresh: all open, 500 gems) */
 function tryTab(box){const ts=sec(box,'משתמש הורה',`<div class="pnote">משתמש נפרד: הכל פתוח. ההתקדמות של אורן לא מושפעת.</div>`);
   const r=h('div','btnrow');const go=h('button','bigbtn','🎮 <span>לשחק כהורה</span>');go.onclick=()=>{enterTry();O.showMap();};
@@ -1293,8 +1278,8 @@ function setTab(box){const st=SET();
 
 /* ===== HOME: one clear place to start · "what do you feel like today?" · today's path · together time · home button ===== */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;const {h,$,ICON,SPR,pick,shuffle}=O;const {X,ACT,ALLSPR}=T;const sfx=O.sfx,D=O.D;
-T.nextLevel=()=>nextLevel();
-function nextLevel(){const off=(T.S().set.offW)||{};for(const w of O.WORLDS){if(off[w.id])continue;for(const lv of w.levels){if(!O.stars(lv.id)&&O.unlocked(lv))return lv;}}return null;}
+function nextLevel(){const off=(T.S().set.offW)||{};for(const w of O.WORLDS){if(off[w.id])continue;for(const lv of w.levels){if(!O.stars(lv.id)&&!O.known(lv.id)&&O.unlocked(lv))return lv;}}return null;}
+T.nextLevel=nextLevel;
 const dayNum=()=>{const [y,m,d]=O.today().split('-').map(Number);return Math.floor(Date.UTC(y,m-1,d)/864e5);};
 /* ---------- together time (🤝): Oren leads most of these ---------- */
 const TOG=[
@@ -1372,7 +1357,7 @@ function choose(dm,first){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.bs|0)>
   if(!bonus&&!d.rv&&window.HEALTH){d.rv=1;const rv=window.HEALTH.review().find(x=>!d.t.includes(x)&&!st.includes(x));if(rv)st=[rv].concat(st);}
   /* #358 variety: a mission that would repeat the kind is swapped for the engine's next pick in this domain, then in the others */
   st=T.vary(d.t,st,()=>{let ex=[];[dm,...wpick(doms().filter(x=>x.id!==gid(dm)),9).map(o=>o.id)].forEach(id=>{if(id!=='tog')ex=ex.concat(stepsOf(id,3,new Set([...d.t,...st,...ex])).filter(x=>!ex.includes(x)));});return ex;});
-  if(!bonus){st=st.concat(d.cr||[]);d.cr=[];}st.forEach(x=>{d.t.push(x);d.done.push(0);});d.ch=dm;
+  if(!bonus){st=st.concat(d.cr||[]);d.cr=[];}st.forEach(x=>{d.t.push(x);d.done.push(0);});d.ch=dm;if(window.PDAY)window.PDAY.mark();
   if(dm!=='tog'){S0.dom=S0.dom||{};S0.dom[gid(dm)]=dayNum();}O.persist();sfx.ok(2);home();}
 function lastStep(){const l=T.S().last;if(!l)return null;if(l.id==='math')return nextLevel()?'math':null;return T.dailyPool().includes(l.id)?l.id:null;}
 /* "something else": a few big tiles (math, the doors, together time); a door drills down to its buildings */

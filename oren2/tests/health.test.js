@@ -124,7 +124,7 @@ const SH = process.env.HSHOTS; if (SH) fs.mkdirSync(SH, { recursive: true });
   // parent panel
   if (BUILT) {
     /* #7: the settings live under הגדרות, today's log stays on the day tab */
-    await p.evaluate(() => window.TAL.parentPanel('day')); await sleep(400);
+    await p.evaluate(() => window.TAL.parentPanel('rem')); await sleep(400);
     const lg0 = await p.evaluate(() => { const lg = [...document.querySelectorAll('#sPar .psec')].find(x => /הפסקות וזמן לפי תחום/.test(x.textContent)); return { log: lg ? lg.textContent : '', set: /הפסקות, ארוחות/.test(document.getElementById('sPar').textContent), old: /תזכורת הפסקה אחרי/.test(document.getElementById('sPar').textContent) }; });
     await p.evaluate(() => window.TAL.parentPanel('health')); await sleep(400);
     const pn = await p.evaluate(() => { const s = [...document.querySelectorAll('#sPar .psec')].find(x => /הפסקות, ארוחות/.test(x.textContent));
@@ -144,7 +144,7 @@ const SH = process.env.HSHOTS; if (SH) fs.mkdirSync(SH, { recursive: true });
   const rem = () => p.evaluate(() => { const e = document.querySelector('.hlock.hrem'); if (!e) return null; return { h2: (e.querySelector('h2') || {}).textContent, ok: !!e.querySelector('.hback'), dis: (e.querySelector('.hback') || {}).disabled, k: (e.querySelector('.hk') || {}).textContent }; });
   ok('three fixed reminder sentences, with nikud', await p.evaluate(() => { const t = window.HEALTH.remTexts(); return t.length === 3 && t.every(s => /[ְ-ּ]/.test(s)); }));
   if (BUILT) {
-    await p.evaluate(() => window.TAL.parentPanel('day')); await sleep(400);
+    await p.evaluate(() => window.TAL.parentPanel('rem')); await sleep(400);
     const rs = p.locator('#sPar .psec', { hasText: 'תזכורת לאורן' });
     const rp = await rs.evaluate(s => ({ big: [...s.querySelectorAll('.bigbtn')].map(b => b.textContent.trim()), chips: [...s.querySelectorAll('.pchip')].map(b => b.textContent.trim()), inputs: s.querySelectorAll('input,textarea').length })).catch(() => null);
     ok('parent panel: 3 reminder buttons, "now" or in X minutes, one message field (#353)', rp && rp.big.length === 3 && rp.chips[0] === 'עכשיו' && rp.chips.length >= 3 && rp.inputs === 1, JSON.stringify(rp));
@@ -188,7 +188,7 @@ const SH = process.env.HSHOTS; if (SH) fs.mkdirSync(SH, { recursive: true });
   const msg = () => p.evaluate(() => { const e = document.querySelector('.hlock.hmsg'); if (!e) return null; return { h2: (e.querySelector('h2') || {}).textContent, again: !!e.querySelector('.hagain'), close: !!e.querySelector('.hback'), fr: !!e.querySelector('.hav') }; });
   const TXT = 'אורן, יש לך 2 דקות ואז לאכול <b>';
   if (BUILT) {
-    await p.evaluate(() => window.TAL.parentPanel('day')); await sleep(400);
+    await p.evaluate(() => window.TAL.parentPanel('rem')); await sleep(400);
     const ms = () => p.locator('#sPar .psec', { hasText: 'תזכורת לאורן' });
     const fld = await ms().evaluate(s => { const i = s.querySelector('input.hmsgin'); return i ? { ph: i.placeholder, max: i.maxLength, lbl: s.textContent.includes('הודעה מהחבר') } : null; }).catch(() => null);
     ok('#353 one text field "a message from the friend", max ~120 chars', fld && fld.lbl && fld.max >= 100 && fld.max <= 140, JSON.stringify(fld));
@@ -220,7 +220,7 @@ const SH = process.env.HSHOTS; if (SH) fs.mkdirSync(SH, { recursive: true });
   ok('#353 shown = said', await p.evaluate(() => !!window.TAL.S().set.rem.s));
   await pressBack(); await sleep(300);
   ok('#353 close dismisses it and it does not come back', !(await msg()) && await p.evaluate(() => { window.HEALTH.check(); return window.TAL.S().set.rem.ok === 1 && !document.querySelector('.hlock.hmsg'); }));
-  if (BUILT) { await p.evaluate(() => window.TAL.parentPanel('day')); await sleep(300);
+  if (BUILT) { await p.evaluate(() => window.TAL.parentPanel('rem')); await sleep(300);
     ok('#353 the parent sees "said"', /נאמרה/.test(await p.locator('#sPar .psec', { hasText: 'תזכורת לאורן' }).textContent()));
     await p.evaluate(() => window.OREN.showMap()); await sleep(300); }
   await p.evaluate(() => { const t = window.HEALTH.clock(); window.TAL.S().set.rem = { k: 'msg', x: '   ', at: t, t }; window.HEALTH.check(); }); await sleep(300);
