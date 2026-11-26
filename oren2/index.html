@@ -144,6 +144,7 @@ svg.px{shape-rendering:crispEdges;display:block}
 
 /* STORY dialog */
 .dlg{position:absolute;inset:0;z-index:7;display:flex;align-items:flex-end;justify-content:center;padding:20px var(--gut-r) 50px var(--gut);background:rgba(20,25,40,.45);animation:fadein .3s}
+body:has(#dlg:not([hidden])) .hud{z-index:8}/* #356: back/home stay visible above a story dialog */
 .dbox{position:relative;display:flex;align-items:flex-end;gap:18px;width:min(900px,100%);background:var(--paper);padding:18px 22px;box-shadow:0 0 0 6px var(--ink),0 12px 0 6px rgba(0,0,0,.25)}
 .dbox .who{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px}
 .dbox .who .sp svg{width:110px}
@@ -1494,7 +1495,7 @@ function addGems(n,fromEl){save.gems=(save.gems|0)+n;
 const app=$('#app');let backTo=null,curWorld=null;
 const wipeEl=$('#wipe');wipeEl.innerHTML='<i></i>'.repeat(70);
 function wipe(){if(window.__fast||RM())return;sfx.whoosh();wipeEl.hidden=false;[...wipeEl.children].forEach((c,i)=>{const r=i/10|0,col=i%10;c.style.animation='none';void c.offsetWidth;c.style.animation='';c.style.animationDelay=((r+col)*22)+'ms';});clearTimeout(wipe.t);wipe.t=setTimeout(()=>wipeEl.hidden=true,720);}
-function setScreen(id,w,back){hush();if(window.HELP)HELP.stop();document.body.classList.toggle('inpar',id==='sPar');document.body.classList.remove('act');window.__noAuto=0;/* leaving a screen stops any reading aloud; the new screen may speak right after */['sStart','sHome','sMap','sWorld','sLearn','sPlay','sKing','sStudio','sTeach','sTable','sFinal','sTal','sPar'].forEach(s=>$('#'+s).hidden=s!==id);$('#hud').hidden=id==='sStart';$('#ov').hidden=true;
+function setScreen(id,w,back){hush();if(window.HELP)HELP.stop();document.body.classList.toggle('inpar',id==='sPar');document.body.classList.remove('act');window.__noAuto=0;/* leaving a screen stops any reading aloud; the new screen may speak right after */['sStart','sHome','sMap','sWorld','sLearn','sPlay','sKing','sStudio','sTeach','sTable','sFinal','sTal','sPar'].forEach(s=>$('#'+s).hidden=s!==id);$('#hud').hidden=id==='sStart';$('#ov').hidden=true;{const dl=$('#dlg');if(!dl.hidden){dl.hidden=true;dl.innerHTML='';}}/* #356: a story dialog belongs to the screen it was opened on */
   if(app.dataset.w!==(w||'meadow')){app.dataset.w=w||'meadow';bgW=app.dataset.w;paintBG(performance.now());}setTheme(THEME_OF[app.dataset.w]||'map');
   backTo=back||null;$('#btnBack').style.visibility=back?'visible':'hidden';$('#btnBack').innerHTML=back===showMap?ICON.home:ICON.back;$('#screens').scrollTop=0;play=null;stopSpeed();updateGems();wipe();emit('screen',id,back);}
 $('#btnSay').innerHTML=ICON.say;$('#btnMusic').innerHTML=ICON.music;$('#icoStart').innerHTML=ICON.play;
@@ -1508,6 +1509,7 @@ $('#btnBack').onclick=()=>{hush();backTo&&backTo();};
 (()=>{let armed=false;const arm=()=>{if(armed)return;try{history.pushState({oren:1},'');armed=true;}catch(e){}};/* browsers skip entries added without a tap, so (re)arm on taps */
   arm();addEventListener('pointerdown',()=>{if(!armed||!(history.state&&history.state.oren))armed=false,arm();},true);addEventListener('keydown',arm,true);
   addEventListener('popstate',()=>{armed=false;arm();const t=document.querySelector('.tour');if(t&&t._end){t._end();return;}
+    const x=!$('#ov').hidden&&$('#ov .tpx');if(x){x.click();return;}/* #356: a popup with ✕ closes first, the screen stays */
     if(!$('#ov').hidden&&!backTo){$('#ov').hidden=true;return;}if(backTo){hush();backTo();}});})();
 /* a button in a pop-up card (close, continue, reply) stops the reading first; its own new speech still plays */
 $('#ov').addEventListener('click',e=>{if(e.target.closest&&e.target.closest('button'))hush();},true);
@@ -3327,7 +3329,7 @@ svg.tl{width:60px;height:60px;display:block}
 .hlp-syl span.go{color:#c0392b}
 .hlp-syl i{font-style:normal;color:#8e6fd1;font-size:40px}
 /* overlay cards (worked example, call a parent, explain to me) */
-.hlpc{width:min(640px,calc(100vw - 32px));max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);overflow:auto;direction:rtl}
+.hlpc{position:relative;width:min(640px,calc(100vw - 32px));max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);overflow:auto;direction:rtl}
 .hlpc h2{font-size:26px;line-height:1.35;text-align:center;margin:0}
 .hlp-h{display:flex;align-items:center;gap:10px;justify-content:center}
 .hlp-intro{font-family:var(--read,serif);font-size:22px;line-height:1.5;text-align:center;background:#fff;padding:8px 12px;box-shadow:0 3px 0 rgba(0,0,0,.1)}
@@ -10012,6 +10014,8 @@ function openOv(html,cls){const o=ov();if(!o)return null;o.hidden=false;o.innerH
 function closeOv(){const o=ov();if(o&&ovOwn&&o.querySelector('.hlpc')){o.hidden=true;o.innerHTML='';}ovOwn=false;}
 const ovOpen=()=>{const o=ov(),dl=document.getElementById('dlg');return (o&&!o.hidden)||(dl&&!dl.hidden);};
 const btn=(cls,html,f)=>{const b=document.createElement('button');b.className=cls;b.innerHTML=html;b.onclick=f;return b;};
+/* #356: every help popup can be closed (✕ in the corner; the phone back gesture presses it too) */
+const xBtn=(card,f)=>{const x=btn('tpx','✕',f);x.setAttribute('aria-label','סגור');card.appendChild(x);};
 
 function arm(){if(!S)return;clearTimeout(S.idleT);const ms=+((((O().save||{}).set||{}).helpIdle)||0)*1000||cfg.idle;
   S.idleT=setTimeout(()=>{if(!S)return;if(S.ctx.mount&&!S.ctx.mount.isConnected)return stop();if(document.hidden||ovOpen()||S.busy)return arm();onIdle();},ms);}
@@ -10044,10 +10048,11 @@ function example(){const st=S;const d2=simData(st);if(!d2)return parents();st.d2
   const card=openOv(`<div class="hlp-h"><span class="hlp-f">${pet()}</span><h2>${title}</h2></div>${e.intro?`<div class="hlp-intro">${e.intro}</div>`:''}${v&&(v.svg||v.html)?`<div class="hlp-v">${v.svg||v.html||''}</div>`:''}<ol class="hlp-steps"></ol>`,'hlp-ex');
   if(!card){st.busy=false;return parents();}
   const vv=card.querySelector('.hlp-v');if(vv){play(vv);vv.onclick=()=>play(vv);}
+  const go=()=>{clearTimeout(st.exT);closeOv();st.busy=false;try{O().hush&&O().hush();}catch(e){}step(4);};xBtn(card,go);
   const ol=card.querySelector('.hlp-steps');say(title+'. '+(e.intro?strip(e.intro):''));
   let i=0;const next=()=>{if(S!==st||!card.isConnected)return;if(i<e.steps.length){const li=document.createElement('li');li.innerHTML=e.steps[i];ol.appendChild(li);say(e.steps[i]);i++;
       st.exT=setTimeout(next,D(Math.max(2400,strip(e.steps[i-1]).length*85)));return;}
-    const row=el('btnrow');row.appendChild(btn('bigbtn hlp-go','<span>עַכְשָׁו תּוֹרִי!</span>',()=>{closeOv();st.busy=false;try{O().hush&&O().hush();}catch(e){}step(4);}));card.appendChild(row);};
+    const row=el('btnrow');row.appendChild(btn('bigbtn hlp-go','<span>עַכְשָׁו תּוֹרִי!</span>',go));card.appendChild(row);};
   st.exT=setTimeout(next,D(e.intro?3200:1800));}
 function solo(){const st=S;const q3=st.ctx.present?simHostQ(st,st.d2?keyOf(st.d2):null):null;
   if(!q3){st.phase='after';hidePanel();arm();return;}
@@ -10055,11 +10060,11 @@ function solo(){const st=S;const q3=st.ctx.present?simHostQ(st,st.d2?keyOf(st.d2
 function parents(){const st=S;if(!st)return;st.busy=true;clearTimeout(st.idleT);hidePanel();const ex=st.ex,d=st.d;
   const show=ex.show?ex.show(d):'',showHTML=st.q&&st.q.k==='ch'?`<div class="hlp-intro">${st.q.pr}</div>`:show?(/[א-ת]/.test(show)?`<div class="hlp-intro">${show}</div>`:`<div class="hlp-q">${E(esc(show))}</div>`):'';
   const card=openOv(`<div class="hlp-f big bob">${pet()}</div><h2>בּוֹא נִקְרָא לְאַבָּא אוֹ לְאִמָּא, נִפְתֹּר יַחַד</h2>${showHTML}${ex.tip?`<div class="hlp-tip">להורה: ${esc(ex.tip(d))}</div>`:''}`,'hlp-par-call');
-  if(!card)return;const row=el('btnrow');row.appendChild(btn('bigbtn','<span>פָּתַרְנוּ יַחַד!</span>',()=>{closeOv();const c=st.ctx;if(S===st){S.busy=false;stop();}if(c.done)c.done('parents');}));card.appendChild(row);
+  if(!card)return;xBtn(card,()=>{closeOv();if(S===st){S.busy=false;stop();}});const row=el('btnrow');row.appendChild(btn('bigbtn','<span>פָּתַרְנוּ יַחַד!</span>',()=>{closeOv();const c=st.ctx;if(S===st){S.busy=false;stop();}if(c.done)c.done('parents');}));card.appendChild(row);
   say('בּוֹא נִקְרָא לְאַבָּא אוֹ לְאִמָּא, נִפְתֹּר יַחַד');try{O().sfx&&O().sfx.star&&O().sfx.star(0);}catch(e){}}
 function teach(st){const ex=st.ex;if(!ex.teach)return false;const opts=shuffle(ex.teach(st.d));
   const eq=st.d.l!=null&&st.d.op?E(eqFull(st.d)):'';const card=openOv(`<div class="hlp-h"><span class="hlp-f">${pet()}</span><h2>תַּסְבִּיר לִי, אֵיךְ עָשִׂיתָ?</h2></div>${eq?`<div class="hlp-q">${eq}</div>`:''}<div class="hlp-opts"></div>`,'hlp-tb');
-  if(!card)return false;const box=card.querySelector('.hlp-opts');DB().tday=today();persist();
+  if(!card)return false;xBtn(card,closeOv);const box=card.querySelector('.hlp-opts');DB().tday=today();persist();
   const done=pick_=>{const db=DB();db.tb.push({d:today(),type:st.d.type,ex:plain(ex.show?ex.show(st.d):''),pick:plain(pick_)});db.tb=db.tb.slice(-30);persist();
     box.innerHTML=`<div class="hlp-thanks">אֵיזֶה הֶסְבֵּר יָפֶה!</div>`;card.querySelector('.hlp-aloud')&&card.querySelector('.hlp-aloud').remove();say('אֵיזֶה הֶסְבֵּר יָפֶה!');try{O().sfx.ok(3);}catch(e){}setTimeout(closeOv,D(1500));};
   opts.forEach(o=>box.appendChild(btn('chb tx hlp-opt',`<span>${o}</span>`,()=>done(o))));

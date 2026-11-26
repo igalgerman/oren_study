@@ -25,7 +25,7 @@
 .hlp-syl span.go{color:#c0392b}
 .hlp-syl i{font-style:normal;color:#8e6fd1;font-size:40px}
 /* overlay cards (worked example, call a parent, explain to me) */
-.hlpc{width:min(640px,calc(100vw - 32px));max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);overflow:auto;direction:rtl}
+.hlpc{position:relative;width:min(640px,calc(100vw - 32px));max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);overflow:auto;direction:rtl}
 .hlpc h2{font-size:26px;line-height:1.35;text-align:center;margin:0}
 .hlp-h{display:flex;align-items:center;gap:10px;justify-content:center}
 .hlp-intro{font-family:var(--read,serif);font-size:22px;line-height:1.5;text-align:center;background:#fff;padding:8px 12px;box-shadow:0 3px 0 rgba(0,0,0,.1)}
