@@ -235,11 +235,18 @@ def _fake_run(cmd, **kw):
     return (0, "injected 1 2" + NL + "website copy written" + NL + "worker 3" + NL + "ok https://x.oren-game.pages.dev" + NL) if "deploy.sh" in " ".join(map(str, cmd)) else (0, "")
 _orig_run, _orig_env = r.run, r.env_file
 r.run, r.env_file = _fake_run, (lambda: {"CLOUDFLARE_API_TOKEN": "t"})
+# #192: deploy runs in GitHub Actions by default: the runner never calls deploy.sh, never starts pregen, never marks deployed.sha
+_dic = r.CFG.get("deploy_in_ci"); r.CFG.pop("deploy_in_ci", None)
+assert r.deploy_text(None).startswith("deploy runs in GitHub Actions") and _calls == []
+assert not r.deploy_text(None).startswith("deployed")          # so process() skips start_pregen and deploy_main skips deployed.sha
+r.CFG["deploy_in_ci"] = False
 r.CFG["pregen"] = False
 assert r.deploy_text(None) == "deployed ok https://x.oren-game.pages.dev (pregen off)" and not any("pregen.js" in " ".join(map(str, c)) for c in _calls)
 r.CFG["pregen"] = True; _calls.clear()
 assert r.deploy_text(None).startswith("deployed ok https://") and not any("pregen.js" in " ".join(map(str, c)) for c in _calls)   # #175: pregen runs later, outside the lock
 r.run, r.env_file = _orig_run, _orig_env; r.CFG["pregen"] = False
+if _dic is None: r.CFG.pop("deploy_in_ci", None)
+else: r.CFG["deploy_in_ci"] = _dic
 print("ok deploy")
 # sync_decision: keep the main checkout up to date with origin/main (#47)
 assert r.sync_decision("main", "main", False, 3) == ("pull", "")

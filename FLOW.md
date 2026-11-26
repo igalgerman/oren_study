@@ -47,4 +47,5 @@ Questions to the owner: in Hebrew, through tools/ask/ask.py (browser page), one 
 Every owner question also lands in ONE place: the pinned issue 'Questions for the owner' (#193, `tools/runner/owner_q.py`; the watchdog posts window questions itself). Write `QUESTION:` lines in Hebrew, with the options.
 
 ## CI (GitHub Actions, #73)
-`.github/workflows/tests.yml` runs all suites on every PR to main and every push to main: 6 parallel shards (`SUITES_SHARD=i/6 tests/run.sh`, a failed suite is retried alone once) and one summary job `tests`. **A PR is mergeable when the `tests` check is green.** No secrets in CI; deploy stays local.
+`.github/workflows/tests.yml` runs all suites on every PR to main and every push to main: 6 parallel shards (`SUITES_SHARD=i/6 tests/run.sh`, a failed suite is retried alone once) and one summary job `tests`. **A PR is mergeable when the `tests` check is green.** No secrets in the tests workflow.
+Deploy (#192): `.github/workflows/deploy.yml` runs after `tests` is green on a push to main (newest commit only): build + `deploy.sh` (repo secret `CLOUDFLARE_API_TOKEN`), job summary (ok/fail, URL, D1), live smoke check (`tools/ci/deploy_ci.py`), then voice pregen in its own job. A failed deploy opens/comments the issue `Deploy failed` (P0). The runner no longer deploys (`deploy_in_ci = true`; `false` = old PC deploy with `.env`).
