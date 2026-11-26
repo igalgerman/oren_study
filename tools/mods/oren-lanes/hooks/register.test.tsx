@@ -42,9 +42,9 @@ test('windows, finished runs and status line', () => {
   expect(finishedRuns(['run-5', 'run-6', 'issue-12'], wins)).toEqual(['run-5', 'run-6'])
   const groups = groupIssues([])
   const d = { windows: wins, groups, lastLog: '', errors: [], updatedAt: 0 }
-  expect(statusLine(d)).toBe('lanes 1/3 · ready 0 · blocked 0')
+  expect(statusLine(d)).toBe('lanes local 1/3 · cloud 0/0 · ready 0 · blocked 0')
   groups.needsYou.count = 2
-  expect(statusLine(d)).toMatch(/^lanes 1\/3 · ready 0 · blocked 0/)
+  expect(statusLine(d)).toMatch(/^lanes local 1\/3 · cloud 0/0 · ready 0 · blocked 0/)
 })
 
 import { usageText } from './lanes'
@@ -148,9 +148,9 @@ test('status line counts distinct issues, capped at 3', () => {
     windows: ['issue-12', 'issue-12-fix', 'issue-13', 'issue-14', 'issue-15'].map(live),
     groups: groupIssues([]), lastLog: '', errors: [], updatedAt: 0,
   }
-  expect(statusLine(d)).toMatch(/^lanes 3\/3 /)
+  expect(statusLine(d)).toMatch(/^lanes local 3\/3 /)
   d.windows = ['issue-12', 'issue-12-fix'].map(live)
-  expect(statusLine(d)).toMatch(/^lanes 1\/3 /)
+  expect(statusLine(d)).toMatch(/^lanes local 1\/3 /)
 })
 
 test('express lane shows as ⚡ and express issues go first in up next', () => {
@@ -217,4 +217,38 @@ test('your lane shows the open intake window', () => {
   expect(v.you[0]).toBe('▶ #8 Idea about maps — intake window open')
   expect(v.you[1]).toMatch(/^\? #9 /)
   expect(v.lanes.some(l => l.includes('#8'))).toBe(false)
+})
+
+import { cloudRows, parseLocalLanes, parseRemoteLanes } from './lanes'
+
+test('#136 lanes line: local X/Y from config local_lanes, cloud = open issues labelled cloud', () => {
+  expect(parseLocalLanes('local_lanes = 0   # all in the cloud\nremote_lanes = 4')).toBe(0)
+  expect(parseRemoteLanes('local_lanes = 0\nremote_lanes = 4')).toBe(4)
+  expect(parseLocalLanes('')).toBe(3)
+  const d = { windows: [{ name: 'issue-7', state: 'live/working' }], groups: groupIssues([]), lastLog: '', errors: [], updatedAt: 0, localMax: 0, remoteMax: 4, cloudCount: 4 }
+  expect(statusLine(d)).toMatch(/^lanes local 1\/0 · cloud 4\/4 · ready 0/)
+})
+
+test('#136 one row per cloud lane: state, last activity HH:MM (Israel), STALE, PR and session links', () => {
+  const rows = cloudRows([
+    { n: 140, title: 'Cloud thing', state: 'working', last: '2026-11-26T09:41:00Z', stale: true, pr: '', session: 'https://claude.ai/code/session_01A' },
+    { n: 152, title: 'Other', state: 'done', last: '2026-11-26T10:05:00Z', stale: false, pr: 'https://github.com/x/y/pull/201', session: '' },
+  ])
+  expect(rows).toEqual([
+    '☁ #140 Cloud thing — working · last 11:41 · STALE',
+    '   session https://claude.ai/code/session_01A',
+    '☁ #152 Other — done · last 12:05',
+    '   PR https://github.com/x/y/pull/201',
+  ])
+  expect(cloudRows([])).toEqual([])
+})
+
+test('#136 cloud issues stay out of the local lane rows; local rows unchanged', () => {
+  const L = (...n: string[]) => n.map(name => ({ name }))
+  const v = view([
+    { number: 1, title: 'local one', labels: L('in-progress') },
+    { number: 2, title: 'cloud one', labels: L('in-progress', 'cloud') },
+  ], [], [{ name: 'issue-1', state: 'live/working' }], [])
+  expect(v.lanes[0]).toBe('● #1 local one — building')
+  expect(v.lanes.some(s => s.includes('#2'))).toBe(false)
 })

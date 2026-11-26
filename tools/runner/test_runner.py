@@ -112,6 +112,11 @@ assert [k for k, _ in _al] == ["free", "pr70", "bl5"], _al
 assert _al[0][1] == "2 lane(s) free for 20 min while work is ready" and _al[1][1].startswith("PR #70 has not moved for 90 min"), _al
 assert _al[2][1] == "#5 blocked for 3.0 h (waits for the owner)", _al
 assert [k for k, _ in W.idle_alarms(_iss, [], _now, _now - 5 * 60, 3)] == ["bl5"]   # free only 5 min: no alarm yet
+_cl = [{"n": 7, "state": "working", "last": "2026-11-26T09:00:00Z"}, {"n": 8, "state": "working", "last": "2026-11-26T11:30:00Z"}, {"n": 9, "last": ""}]
+_cn = _c.timegm((2026, 11, 26, 12, 0, 0, 0, 0, 0))
+_ca = W.cloud_stuck_alarms(_cl, _cn, 2)
+assert [k for k, _ in _ca] == ["cl7"] and "#7" in _ca[0][1] and "3.0 h" in _ca[0][1], _ca   # quiet 3 h > 2 h; #8 recent; #9 no data
+assert W.cloud_stuck_alarms(_cl, _cn, 4) == []
 print("ok idle alarm")
 # #123: closed wins over blocked; parked windows go after PARKED_MIN idle, never while waiting on a prompt
 _pk = [{"name": "review-41", "state": "live", "status": "done", "marker": True},

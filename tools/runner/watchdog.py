@@ -267,6 +267,15 @@ def idle_alarms(issues, prs, now, free_since, max_parallel):
             out.append((f"bl{i['number']}", f"#{i['number']} blocked for {h:.1f} h" + (" (waits for the owner)" if "ready-for-human" in i["labels"] else "")))
     return out
 
+def cloud_stuck_alarms(rows, now, stuck_hours):
+    """Pure (#136): -> list of (key, text) for cloud lanes (remote.cloud() rows) with no comment/commit for stuck_hours."""
+    out = []
+    for c in rows:
+        m = _age_min(c.get("last"), now)
+        if c.get("last") and m >= stuck_hours * 60:
+            out.append((f"cl{c['n']}", f"cloud lane #{c['n']} has had no activity for {m / 60:.1f} h (stuck_hours {stuck_hours:g}; state {c.get('state', '?')})"))
+    return out
+
 def alarms_once(now=None):
     now = now or time.time()
     rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
@@ -277,7 +286,11 @@ def alarms_once(now=None):
     free = running < R.total_lanes() and bool(R.select(issues, R.total_lanes()))
     if not free: _alarm["free_since"] = None
     elif _alarm["free_since"] is None: _alarm["free_since"] = now
-    return idle_alarms(issues, json.loads(out2), now, _alarm["free_since"], R.total_lanes())
+    try:
+        import remote; cloud = remote.cloud(now=now)
+    except Exception as e:
+        log(f"cloud lanes unreadable: {e!r}"); cloud = []
+    return idle_alarms(issues, json.loads(out2), now, _alarm["free_since"], R.total_lanes()) + cloud_stuck_alarms(cloud, now, float(R.CFG.get("stuck_hours", 2)))
 
 def alarm_tick():
     """Every 10 min: idle alarms to the orchestrator (+ watchdog.log); the same alarm at most once an hour."""
