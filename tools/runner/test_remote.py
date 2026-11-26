@@ -226,3 +226,20 @@ assert r.answer_after_question([{"body": "green"}, Q]) == ""                    
 assert r.answer_after_question([Q, {"body": "a"}, {"body": "QUESTION: b or c?"}, {"body": "c"}]) == "c"   # the last question counts
 assert r.answer_after_question([]) == ""
 print("ok answer_after_question")
+
+# #277: a run waiting for a core slot shows 'waiting for core slot' (still listed, not a busy lane);
+# STALE counts only activity since THIS run started (older comments/commits ignored)
+NOW277 = calendar.timegm((2026, 11, 26, 14, 35, 0, 0, 0, 0))
+i57 = {"number": 57, "title": "t57", "createdAt": "2026-11-20T09:00:00Z", "comments": [c("old note", "2026-11-25T22:46:00Z")]}
+row = r.cloud_lane(i57, None, "2026-11-25T20:00:00Z", NOW277, waiting=True, since="2026-11-26T14:22:00Z")
+assert row["state"] == r.WAIT_CORE == "waiting for core slot" and row["stale"] is False and row["last"] == "2026-11-26T14:22:00Z", row
+assert r.active(row) and not r.busy(row) and r.busy({"state": "working"}) and not r.busy({"state": "done"})
+assert r.cloud_lane(i57, None, "", calendar.timegm((2026, 11, 26, 18, 0, 0, 0, 0, 0)), since="2026-11-26T14:22:00Z")["stale"] is True   # quiet since start
+assert r.cloud_lane(i57, None, "2026-11-26T14:30:00Z", NOW277, since="2026-11-26T14:22:00Z")["last"] == "2026-11-26T14:30:00Z"
+# cloud(): since = when .runs/<n>/where was written; waiting = .runs/<n>/core_wait with a live pid
+(r.RUNS / "57").mkdir(parents=True, exist_ok=True); (r.RUNS / "57" / "where").write_text("remote")
+os.utime(r.RUNS / "57" / "where", (NOW277 - 600, NOW277 - 600)); (r.RUNS / "57" / "core_wait").write_text(str(os.getpid()))
+f = Fake(("--label cloud", 0, "[]"), ("--label in-progress", 0, json.dumps([i57])), ("pr list", 0, "[]"), ("branches/", 1, ""))
+row = r.cloud(run=f, now=NOW277)[0]
+assert row["state"] == "waiting for core slot" and not row["stale"] and row["last"] == "2026-11-26T14:25:00Z", row
+print("ok #277")

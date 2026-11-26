@@ -1079,6 +1079,32 @@ def _slow(cmd, **k): raise _sp.TimeoutExpired(cmd, 60)
 assert r.issue_over(5, 0, run_=_slow) is False
 print("ok issue_over timeout")
 
+_core = lambda n: I(n, [R, "core"])
+# #277: core runs that already hold a core slot count even without an in-progress label (max_core never exceeded);
+# the lane goes to a pack issue instead
+assert nums(r.select([_core(1), I(2, [R, "pack"])], 3, 3, core_held=3)) == [2]
+assert nums(r.select([_core(1), _core(2), I(3, [R, "pack"])], 3, 3, core_held=2)) == [1, 3]
+assert nums(r.select([I(1, ["in-progress", "core"]), _core(2), _core(3)], 4, 3, core_held=1)) == [2, 3]   # label and lock are the same run
+assert nums(r.select([_core(1), _e(2, ["core"])], 3, 1, 1, core_held=1)) == [2]                          # express rule unchanged
+# #277: a run waiting in core_slot() writes .runs/<n>/core_wait (with its pid) until it gets a slot; it is no busy cloud lane
+locks = [r.FileLock(f"core-{k}").__enter__() for k in range(r.MAX_CORE)]
+seen = []
+class _Stop(Exception): pass
+def _sleep(s):
+    seen.append(r.waiting_core(277))
+    if len(seen) > 1: raise _Stop()
+    for l in locks: l.__exit__()                                  # slots free up while it waits
+_real_sleep, r.time.sleep = r.time.sleep, _sleep
+try:
+    with r.core_slot(277): got = r.waiting_core(277)
+finally: r.time.sleep = _real_sleep
+assert seen == [True] and got is False and not r.waiting_core(277), (seen, got)
+r.set_where(278, "remote"); r.set_where(279, "remote"); r.set_where(280, "local")
+(r.RUNS / "279" / "core_wait").write_text(str(os.getpid()))
+assert r.waiting_core(279) and r.remote_busy([278, 279, 280]) == 1
+(r.RUNS / "279" / "core_wait").write_text("999999999")         # dead pid: stale marker, not waiting
+assert not r.waiting_core(279)
+print("ok core wait (#277)")
 # #302: block reasons name the real failure (not 'integrate.sh exit N'); ci_merge never falls back to the local integrate.sh
 assert r.integrate_failure(6, "CI RED\ntests") == "CI red: tests"
 assert r.integrate_failure(4, "no open PR for issue #12") == "merge step failed: no open PR for issue #12"
