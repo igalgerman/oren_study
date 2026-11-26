@@ -245,7 +245,9 @@ def main():
         print(text)
         R.hc("send", "orchestrator", text, timeout=30)
     R.RUNS.mkdir(parents=True, exist_ok=True)
-    cleared = stale_locks(R.RUNS, R.pid_alive, boot_time())     # first, so a recover.lock left by a crash does not block us
+    import beatcheck
+    if beatcheck.install(R): print("could not install the beatcheck task (#365): run python tools/runner/beatcheck.py --install")
+    cleared =stale_locks(R.RUNS, R.pid_alive, boot_time())     # first, so a recover.lock left by a crash does not block us
     try:
         with R.FileLock("recover"):
             recover(dict(runs=R.RUNS, alive=R.pid_alive, boot=boot_time(), cleared=cleared, herdr_up=herdr_up, start_herdr=start_herdr,

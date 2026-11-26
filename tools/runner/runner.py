@@ -877,13 +877,38 @@ def is_transient(e):
     """#284: a gh/git call that timed out under load is not the issue's fault: retry next pass, never BLOCK."""
     return isinstance(e, subprocess.TimeoutExpired)
 
+# #365: inside a watchdog tick (tick_mode) every call is bounded: no timeout -> TICK_TIMEOUT_S, a timeout is an rc-124 answer (never
+# raises), a rate limit is not slept on (ghcache), and after one gh timeout the tick's other gh calls fail at once. Threads keep their own rules.
+TICK_TIMEOUT_S = int(CFG.get("tick_timeout_seconds", 60))
+
+class tick_mode:
+    def __init__(self, cap=None): self.cap = cap
+    def __enter__(self): ghcache._TICK.cap, ghcache._TICK.gh_down = self.cap or TICK_TIMEOUT_S, False; return self
+    def __exit__(self, *a): ghcache._TICK.cap, ghcache._TICK.gh_down = None, False
+
+def tick_timeout(timeout):
+    """Inside a tick: the bounded timeout (None -> the tick cap; never above max(cap, 120) s). Outside: unchanged."""
+    cap = ghcache.tick_cap()
+    return min(timeout or cap, max(cap, 120)) if cap else timeout
+
+def _tries():
+    return 1 if ghcache.tick_cap() else ghcache.TRIES
+
 def run(cmd, cwd=None, env=None, input=None, log=None, timeout=None):
     e = dict(os.environ); e.update(env or {})
     e["PATH"] = CFG["extra_path"].replace("/c/", "C:/", 1) + os.pathsep + e["PATH"]
+    cap = ghcache.tick_cap(); timeout = tick_timeout(timeout)
+    is_gh = bool(cmd) and str(cmd[0]) == "gh"
     ghauth.apply(cmd, e)                                 # #363: gh runs as the GitHub App (own rate limits); claude/git keep the owner login
     def raw():
-        p = subprocess.run(cmd, cwd=cwd, env=e, input=input, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=timeout, creationflags=no_window())
+        if cap and is_gh and ghcache._TICK.gh_down: return 124, "skipped: gh timed out earlier in this watchdog tick"
+        try:
+            p = subprocess.run(cmd, cwd=cwd, env=e, input=input, capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", timeout=timeout, creationflags=no_window())
+        except subprocess.TimeoutExpired:
+            if not cap: raise
+            if is_gh: ghcache._TICK.gh_down = True
+            return 124, f"timed out after {timeout} s: {' '.join(map(str, cmd))[:120]}"
         return p.returncode, redact((p.stdout or "") + (p.stderr or ""))
     rc, out = ghcache.call(list(map(str, cmd)), raw)     # #329: gh reads from the shared cache, rate limits retried
     if log:
