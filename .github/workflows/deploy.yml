@@ -94,6 +94,7 @@ jobs:
         working-directory: oren2
         run: |
           npm i --no-save --no-package-lock playwright
+          sudo apt-get update -qq || true
           npx playwright install --with-deps chromium
       - name: Build
         working-directory: oren2
