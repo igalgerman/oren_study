@@ -1,5 +1,5 @@
 # Deploy + voice pregen in GitHub Actions (#192): 0 work on the PC.
-# Runs after the "tests" workflow succeeded on a push to main. Only the newest commit on main deploys.
+# Runs after the "tests" workflow succeeded on a push to main (only the newest commit deploys), and every 15 min for the newest green main.
 # Needs the repo secret CLOUDFLARE_API_TOKEN (the owner adds it once: Settings > Secrets and variables > Actions).
 name: deploy
 on:
@@ -7,14 +7,43 @@ on:
     workflows: [tests]
     types: [completed]
     branches: [main]
+  schedule:
+    - cron: '*/15 * * * *'    # deploys the newest green main if it never went live (a cancelled or skipped run, #192)
   workflow_dispatch:          # manual run (e.g. right after the secret was added): deploys the newest main
 permissions:
   contents: read
+  actions: read               # plan: Actions caches (deploy-attempt-<sha>) and the newest green tests run
 jobs:
+  plan:
+    # which sha deploys ("" = nothing to do): the green commit if it is still the newest main; every 15 min the newest green main
+    # if its deploy was never tried (cancelled/skipped runs never leave merged work off the site); manual: the newest main
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.plan.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/ci
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          export MAIN_SHA=$(git ls-remote origin refs/heads/main | cut -f1)
+          export GREEN_SHA=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/tests.yml/runs?branch=main&event=push&status=success&per_page=1" --jq '.workflow_runs[0].head_sha // ""')
+          python3 tools/ci/deploy_ci.py plan
+
   deploy:
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    needs: plan
+    if: needs.plan.outputs.sha != ''
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    environment:
+      name: production        # one GitHub deployment per real deploy: the dashboard reads them (ok/failed, time, URL)
+      url: ${{ steps.report.outputs.url }}
     concurrency:
       group: deploy-main
       cancel-in-progress: true
@@ -23,21 +52,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || 'main' }}
-      - name: Newest commit on main?
-        id: newest
-        run: |
-          main=$(git ls-remote origin refs/heads/main | cut -f1)
-          if [ "$main" != "$(git rev-parse HEAD)" ]; then
-            echo "newest=no" >> "$GITHUB_OUTPUT"
-            echo "Skipped: main moved on to $main; that commit deploys after its tests." | tee -a "$GITHUB_STEP_SUMMARY"
-          else echo "newest=yes" >> "$GITHUB_OUTPUT"; fi
+          ref: ${{ needs.plan.outputs.sha }}
+      - name: Mark this sha as tried (the 15-min check never deploys it again)
+        run: mkdir -p ~/.deploy-attempt && echo "${{ needs.plan.outputs.sha }}" > ~/.deploy-attempt/sha
+      - uses: actions/cache/save@v4
+        continue-on-error: true   # a second run for the same sha: the key exists already
+        with:
+          path: ~/.deploy-attempt
+          key: deploy-attempt-${{ needs.plan.outputs.sha }}
       - uses: actions/setup-python@v5
-        if: steps.newest.outputs.newest == 'yes'
         with:
           python-version: '3.12'
       - name: Deploy (build + deploy.sh)
-        if: steps.newest.outputs.newest == 'yes'
         working-directory: oren2
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -46,16 +72,14 @@ jobs:
           bash cf/tools/deploy.sh 2>&1 | tee "$RUNNER_TEMP/deploy.log" || true
       - name: Summary
         id: report
-        if: steps.newest.outputs.newest == 'yes'
         run: python3 tools/ci/deploy_ci.py report "$RUNNER_TEMP/deploy.log"
       - name: Live smoke check (page, save round trip, /api/tts/status)
-        if: steps.newest.outputs.newest == 'yes'
         run: python3 tools/ci/deploy_ci.py smoke "${{ steps.report.outputs.url }}"
 
   deploy-failed:
     # one issue "Deploy failed" (P0): opened once, then commented on each new failure
-    needs: deploy
-    if: failure() && needs.deploy.result == 'failure'
+    needs: [plan, deploy]
+    if: failure() && (needs.deploy.result == 'failure' || needs.plan.result == 'failure')
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -64,7 +88,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          SHA: ${{ needs.plan.outputs.sha }}
         run: |
           body="Deploy of $SHA failed (deploy or live smoke check). Nothing new went live. Log: $RUN"
           n=$(gh issue list --state open --search 'in:title "Deploy failed"' --json number,title --jq '[.[] | select(.title == "Deploy failed")][0].number')
@@ -73,17 +97,17 @@ jobs:
 
   pregen:
     # voice pregen: its own job, own timeout and own queue, so it never blocks or delays a deploy
-    needs: deploy
+    needs: [plan, deploy]
     if: needs.deploy.outputs.deployed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     concurrency:
       group: pregen-main
-      cancel-in-progress: true
+      cancel-in-progress: false   # a newer deploy never cancels a running pregen (it is resumable): one at a time, the newest waits
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || 'main' }}
+          ref: ${{ needs.plan.outputs.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22

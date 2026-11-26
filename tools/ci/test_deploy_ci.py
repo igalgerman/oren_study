@@ -57,3 +57,19 @@ H.broken = {"tts"}
 assert d.main(["smoke", URL]) == 1
 srv.shutdown()
 print("ok main")
+
+# plan: which sha this run deploys ("" = skip). attempted(sha) = a deploy of that sha was already tried (cache marker)
+never, always = (lambda s: False), (lambda s: True)
+assert d.plan("workflow_run", "b", "b", "b", never)[0] == "b"
+sha, why = d.plan("workflow_run", "a", "b", "a", never); assert sha == "" and "main moved on" in why, why      # a newer commit deploys after its tests
+sha, why = d.plan("workflow_run", "b", "b", "b", always); assert sha == "" and "already" in why, why           # a re-run of tests: no second deploy
+assert d.plan("schedule", "", "c", "b", never)[0] == "b"                       # 15-min check: the newest GREEN main, even while main's newest tests run
+sha, why = d.plan("schedule", "", "c", "b", always); assert sha == "" and "already" in why, why                # never redeploy (or re-fail) the same sha every 15 min
+sha, why = d.plan("schedule", "", "c", "", never); assert sha == "" and "no green" in why, why
+assert d.plan("workflow_dispatch", "", "c", "b", always)[0] == "c"            # manual run: always the newest main
+os.environ.update(GITHUB_OUTPUT=outp, EVENT="schedule", RUN_SHA="", MAIN_SHA="c", GREEN_SHA="b")
+open(outp, "w").close()
+assert d.main(["plan"], attempted=never) == 0 and "sha=b" in open(outp).read() and "Deploy b" in open(summ).read()
+open(outp, "w").close()
+assert d.main(["plan"], attempted=always) == 0 and "sha=\n" in open(outp).read() and "Skipped" in open(summ).read()
+print("ok plan")
