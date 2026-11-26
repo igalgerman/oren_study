@@ -10,7 +10,9 @@ never the paid API, never `claude -p` on the PC). Config: `ai_observer_where = "
 
 Two scheduled tasks (fresh session per run, created once; manage them at claude.ai/code -> Scheduled):
 - `Oren AI observer (hourly)`: every hour. Prompt: "Follow docs/agents/cloud-tasks.md, section AI observer, in igalgerman/oren_study."
-- `Oren nightly retro`: daily 22:4x Asia/Jerusalem (before `retro_hour` 23). Prompt: "... section Nightly retro ...".
+- `Oren nightly retro`: daily 22:41 Asia/Jerusalem (before `retro_hour` 23). Prompt: "... section Nightly retro ...".
+Created 26 Nov 2026 (#289): `trig_012s8RwkxkTSzHi477fGm8dh` (observer, minute :06) and `trig_01CjmG4AQo5TZt2EZ8S18F7f` (retro);
+no push/e-mail notifications (the watchdog relays). Each one stops at once while this file is not on main.
 
 In a cloud session `gh` has no GraphQL: use the REST API only (`gh api repos/igalgerman/oren_study/...`). Work in a checkout
 of igalgerman/oren_study (`git clone https://github.com/igalgerman/oren_study` when the working directory has none) and read
