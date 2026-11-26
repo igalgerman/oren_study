@@ -29,7 +29,6 @@ jobs:
         working-directory: oren2
         run: |
           npm i --no-save --no-package-lock playwright
-          sudo apt-get update -qq || true
           npx playwright install --with-deps chromium
       - name: Shard split check
         working-directory: oren2
