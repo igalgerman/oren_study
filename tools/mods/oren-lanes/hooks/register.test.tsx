@@ -80,6 +80,10 @@ test('stats lines', () => {
   expect(l[2]).toBe('avg build 8m · review 15m')
   expect(l[3]).toBe('last #2: build 5m · review - · merge -')
   expect(statsLines('', 0)).toEqual([])
+  // #114: last deploy line (Israel time)
+  const d = (ts: number, ok: boolean, d1: boolean) => JSON.stringify({ ts, issue: 0, lane: '', event: 'deploy', ok, d1, url: 'https://x.oren-game.pages.dev' })
+  expect(statsLines([text, d(1795671000, false, true), d(1795671559, true, false)].join('\n'), 91000)[4]).toBe('last deploy 07:39 ok · ⚠ no D1, saves on KV')
+  expect(statsLines(d(1795671000, false, true), 0)).toEqual(['last deploy 07:30 FAILED'])
 })
 
 import { laneReasons } from './lanes'
@@ -168,4 +172,15 @@ test('express lane shows as ⚡ and express issues go first in up next', () => {
 test('no express issue: no ⚡ line', () => {
   const v = view([], [], [], [])
   expect(v.lanes.some(l => l.startsWith('⚡'))).toBe(false)
+})
+
+test('model label shows in up next and lanes, e.g. [P1·opus]', () => {
+  const lab = (...n: string[]) => n.map(name => ({ name }))
+  const v = view([
+    { number: 1, title: 'ui', labels: lab('ready-for-agent', 'P1', 'model:opus') },
+    { number: 2, title: 'plain', labels: lab('ready-for-agent', 'P2') },
+    { number: 3, title: 'busy', labels: lab('in-progress', 'P1', 'model:fable') },
+  ], [], [], [])
+  expect(v.next).toEqual(['[P1·opus] #1 ui  (ready)', '[P2] #2 plain  (ready)'])
+  expect(v.lanes[0]).toBe('1. #3 running [fable] · busy')
 })

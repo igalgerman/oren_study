@@ -43,6 +43,22 @@ def priority_of(labels):
             return n
     return 2
 
+MODEL_IDS = {"haiku": "haiku", "sonnet": "sonnet", "opus": "opus", "fable": "claude-fable-5-2"}
+_MODEL_RANK = ["haiku", "sonnet", "opus", "fable"]
+
+def model_name(labels):
+    """#65: short name from a model:<x> label; MODEL (config, sonnet) when missing or unknown. Two labels: the most capable wins."""
+    found = [m for m in _MODEL_RANK if f"model:{m}" in labels]
+    return found[-1] if found else MODEL
+
+def model_of(labels):
+    """Value for `claude --model`."""
+    return MODEL_IDS.get(model_name(labels), MODEL)
+
+def reviewer_model(labels):
+    """Reviewer: opus when the issue is model:opus, else sonnet."""
+    return "opus" if "model:opus" in labels else "sonnet"
+
 def blockers(body):
     """Issue numbers in 'Blocked by: #1, #2' lines."""
     out = []
@@ -270,12 +286,12 @@ def gh(*args, **kw):
 def now():
     return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
-def stat(n, lane, event):
-    """Append one timing event to .runs/stats.jsonl; never raises."""
+def stat(n, lane, event, **extra):
+    """Append one timing event to .runs/stats.jsonl (extra fields, e.g. deploy ok/url/d1); never raises."""
     try:
         RUNS.mkdir(exist_ok=True)
         with open(RUNS / "stats.jsonl", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"ts": int(time.time()), "issue": n, "lane": lane, "event": event}) + chr(10))
+            f.write(json.dumps({"ts": int(time.time()), "issue": n, "lane": lane, "event": event, **extra}) + chr(10))
     except Exception: pass
 
 # ---------- pipeline for one issue ----------
@@ -335,8 +351,8 @@ class FileLock:
     def __exit__(self, *a):
         self.path.unlink(missing_ok=True)
 
-def claude_hidden(prompt, cwd, tools, log):
-    cmd = [shutil.which("claude") or "claude", "-p", "--model", MODEL, "--permission-mode", "auto",
+def claude_hidden(prompt, cwd, tools, log, model=MODEL):
+    cmd = [shutil.which("claude") or "claude", "-p", "--model", model, "--permission-mode", "auto",
            "--allowedTools", *tools]
     # prompt goes via stdin; "--allowedTools" is variadic so keep it last
     rc, out = run(cmd, cwd=cwd, input=prompt, log=log, timeout=3 * 3600)
@@ -378,12 +394,12 @@ def parent_args():
         p = hc_json("get", TERM, "--json").get("parent", "")
     return ["--parent", p] if p else []
 
-def agent(name, prompt, cwd, tools, log, marker, n, role):
+def agent(name, prompt, cwd, tools, log, marker, n, role, model=MODEL):
     """Run an INTERACTIVE claude in a herdr terminal the owner can open; return (screen text, marker line).
     Terminals are closed after success and left open when BLOCKED/PARKED. A window of that name that is still live (parked earlier) is re-attached, not restarted.
     Waiting for a person longer than park_minutes -> Parked. Falls back to the hidden `claude -p` when herdr is unavailable."""
     if not USE_HERDR:
-        out = claude_hidden(prompt, cwd, tools, log)
+        out = claude_hidden(prompt, cwd, tools, log, model)
         return out, last_line(out, marker)
     if live(name):
         info0 = hc_json("get", name, "--json"); screen0 = hc("read", name, "--lines", "400")[1]
@@ -393,7 +409,7 @@ def agent(name, prompt, cwd, tools, log, marker, n, role):
         # bash wrapper only puts the python3 shim on PATH; the prompt goes after `--` ("--allowedTools" is variadic)
         cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), "--label", f"issue={n}", "--label", f"role={role}", *space_args(), *parent_args(),
                BASH, "-c", 'export PATH="$1:$PATH"; shift; exec "$@"', "_", CFG["extra_path"],
-               shutil.which("claude") or "claude", "--model", MODEL, "--permission-mode", "auto",
+               shutil.which("claude") or "claude", "--model", model, "--permission-mode", "auto",
                "--allowedTools", *tools, "--", prompt + INTERACTIVE_NOTE]
         rc, out = run(cmd, log=log)
         if rc: raise Blocked(f"cannot start terminal {name}: {out.strip()[:200]}")
@@ -520,9 +536,12 @@ def deploy_text(log):
         if k.startswith("CLOUDFLARE_"): env[k] = v
     rc, out = run([BASH, "oren2/cf/tools/deploy.sh"], cwd=INTEG, env=env, log=log, timeout=900)
     last = (out.strip().splitlines() or [""])[-1]           # deploy.sh prints progress lines first, "ok <url>" last (#50)
+    d1 = "D1 not bound" not in out                           # deploy.sh warns when the save database is not bound (#109)
     if rc != 0 or not last.startswith("ok"):
+        stat(0, "", "deploy", ok=False, d1=d1, why=last[:200])   # #114: deploy evidence
         raise Blocked("deploy failed")
     url = last
+    stat(0, "", "deploy", ok=True, d1=d1, url=last.split()[-1])
     if not CFG.get("pregen", False):                       # off until #68: pregen burns the free KV write limit
         return f"deployed {url} (pregen off)"
     rc, _ = run(["node", "oren2/cf/tools/pregen.js"], cwd=INTEG, env=env, log=log, timeout=1800)
@@ -613,9 +632,10 @@ def process_locked(issue):
     d = RUNS / str(n); d.mkdir(parents=True, exist_ok=True)
     log = d / "run.log"
     wt = Path(CFG["worktree_prefix"] + str(n))
+    wm, rm = model_of(issue["labels"]), reviewer_model(issue["labels"])
     try:
-        stat(n, lane, "start")
-        set_labels(n, add=["in-progress"]); gh("issue", "comment", str(n), "--body", f"Runner: started ({lane} lane, {MODEL}).")
+        stat(n, lane, "start", model=model_name(issue["labels"]))
+        set_labels(n, add=["in-progress"]); gh("issue", "comment", str(n), "--body", f"Runner: started ({lane} lane, worker {model_name(issue['labels'])}, reviewer {rm}).")
         run(["git", "fetch", "-q", REMOTE], cwd=ROOT, log=log)
         pushed = bool(find_pr(n)) or bool(run(["git", "ls-remote", "--heads", REMOTE, f"lane/{n}"], cwd=ROOT)[1].strip())
         resume = any(live(w) for w in (f"issue-{n}", f"issue-{n}-fix", f"review-{n}", f"review-{n}-2"))
@@ -626,11 +646,15 @@ def process_locked(issue):
                 remove_worktree(wt, log)
                 run(["git", "branch", "-D", f"lane/{n}"], cwd=ROOT, log=log)
             if not wt.exists():                              # lane.sh continues from origin/lane/<n> when pushed work exists (never deleted)
-                rc, _ = run([BASH, "tools/lane.sh", str(n), BRANCH], cwd=ROOT, env={"REMOTE": REMOTE}, log=log)
-                if rc: raise Blocked("lane.sh failed")
+                for attempt in (1, 2):                       # #116: one lane.sh at a time (two at once race on .git/config), one retry
+                    with FileLock("lane", wait=True):
+                        rc, _ = run([BASH, "tools/lane.sh", str(n), BRANCH], cwd=ROOT, env={"REMOTE": REMOTE}, log=log)
+                    if not rc: break
+                    remove_worktree(wt, log); run(["git", "branch", "-D", f"lane/{n}"], cwd=ROOT, log=log)
+                if rc: raise Blocked("lane.sh failed twice (see run.log)")
 
         out, res = agent(f"issue-{n}", worker_prompt(n, lane, bug="bug" in issue["labels"]), wt, WORKER_TOOLS if lane != "review" else REVIEW_LANE_TOOLS,
-                         d / "worker1.log", "RESULT:", n, "worker")
+                         d / "worker1.log", "RESULT:", n, "worker", wm)
         (d / "worker1.out").write_text(redact(out), encoding="utf-8")
         if not res.startswith("RESULT: DONE"):
             raise Blocked(res or "worker gave no RESULT line")
@@ -644,7 +668,7 @@ def process_locked(issue):
             pr = find_pr(n)
             if not pr: raise Blocked("worker said DONE but no open PR for lane/%d" % n)
             rv, verdict = agent(f"review-{n}" + ("" if rnd == 1 else f"-{rnd}"), review_prompt(n, pr), wt, READ_TOOLS,
-                                d / f"review{rnd}.log", "VERDICT:", n, "reviewer")
+                                d / f"review{rnd}.log", "VERDICT:", n, "reviewer", rm)
             (d / f"review{rnd}.out").write_text(redact(rv), encoding="utf-8")
             if verdict.startswith("VERDICT: PASS"):
                 stat(n, lane, "review_pass"); break
@@ -654,7 +678,7 @@ def process_locked(issue):
             if rnd == 2:
                 stat(n, lane, "blocked")
                 block(n, "reviewer asked for fixes twice; needs a human", log); return "BLOCKED: reviewer asked for fixes twice; needs a human"
-            out, res = agent(f"issue-{n}-fix", worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / "worker2.log", "RESULT:", n, "worker")
+            out, res = agent(f"issue-{n}-fix", worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / "worker2.log", "RESULT:", n, "worker", wm)
             if not res.startswith("RESULT: DONE"):
                 raise Blocked(res or "fix worker gave no RESULT line")
             stat(n, lane, "fix_done")
@@ -676,7 +700,7 @@ def process_locked(issue):
         def resolve(files):
             rounds[0] += 1
             stat(n, lane, "resolve")
-            o, r_ = agent(f"issue-{n}-resolve{rounds[0]}", ci_fix_prompt(n, files) if kind["ci"] else resolve_prompt(n, files), wt, WORKER_TOOLS, d / f"resolve{rounds[0]}.log", "RESULT:", n, "worker")
+            o, r_ = agent(f"issue-{n}-resolve{rounds[0]}", ci_fix_prompt(n, files) if kind["ci"] else resolve_prompt(n, files), wt, WORKER_TOOLS, d / f"resolve{rounds[0]}.log", "RESULT:", n, "worker", wm)
             return r_.startswith("RESULT: DONE")
         outcome = integrate_with_resolve(integrate, resolve, 2)
         if outcome[0] == "giveup":

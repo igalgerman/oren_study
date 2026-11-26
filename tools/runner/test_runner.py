@@ -77,6 +77,41 @@ _st = {"review-25", "issue-26", "intake-27", "issue-28", "issue-29"}
 assert sorted(W.leftovers(_idle, set(), set(), human={28}, stale=_st)) == ["intake-27", "issue-29", "review-25"]   # 26 has live run, 28 is for the owner
 assert W.leftovers(_idle, set(), set(), human={28}, stale=set()) == []                                          # not idle long enough
 print("ok orphans")
+# #110: issue-<n>-resolve<k> windows: closed with the issue, when stale, or when the next round is live
+_rs = [{"name": "issue-38-resolve1", "state": "live", "status": "done", "marker": True},
+       {"name": "issue-38-resolve2", "state": "live", "status": "idle", "marker": True},
+       {"name": "issue-40-resolve1", "state": "live", "status": "done", "marker": True},
+       {"name": "issue-40-resolve2", "state": "live", "status": "working", "marker": False},
+       {"name": "issue-41-resolve1", "state": "live", "status": "working", "marker": False}]
+assert sorted(W.leftovers(_rs, closed={38}, blocked=set())) == ["issue-38-resolve1", "issue-38-resolve2", "issue-40-resolve1"], W.leftovers(_rs, {38}, set())
+assert W.leftovers(_rs, closed=set(), blocked={38}, stale={"issue-41-resolve1"}) == ["issue-40-resolve1", "issue-41-resolve1"]
+print("ok resolve windows")
+# #113: a closed issue whose runner still holds issue-<n>.lock keeps its windows (the runner is deploying)
+_bz = [{"name": "run-38", "state": "live", "status": "", "marker": False},
+       {"name": "issue-38", "state": "live", "status": "done", "marker": True}]
+assert W.leftovers(_bz, closed={38}, blocked=set(), busy={38}) == []
+assert sorted(W.leftovers(_bz, closed={38}, blocked=set())) == ["issue-38", "run-38"]
+print("ok busy run kept")
+# #117 idle alarm: free lanes 15+ min with ready work, PR quiet 60+ min, blocked 2+ h
+import calendar as _c
+_now = _c.timegm((2026, 11, 26, 6, 0, 0, 0, 0, 0))
+_iss = [{"number": 5, "labels": ["blocked", "ready-for-human"], "updatedAt": "2026-11-26T03:00:00Z"},
+        {"number": 6, "labels": ["blocked"], "updatedAt": "2026-11-26T05:00:00Z"},
+        {"number": 7, "labels": ["in-progress"], "updatedAt": "2026-11-26T05:59:00Z"}]
+_prs = [{"number": 70, "title": "Observer v2", "updatedAt": "2026-11-26T04:30:00Z"}, {"number": 71, "title": "x", "updatedAt": "2026-11-26T05:30:00Z"}]
+_al = W.idle_alarms(_iss, _prs, _now, _now - 20 * 60, 3)
+assert [k for k, _ in _al] == ["free", "pr70", "bl5"], _al
+assert _al[0][1] == "2 lane(s) free for 20 min while work is ready" and _al[1][1].startswith("PR #70 has not moved for 90 min"), _al
+assert _al[2][1] == "#5 blocked for 3.0 h (waits for the owner)", _al
+assert [k for k, _ in W.idle_alarms(_iss, [], _now, _now - 5 * 60, 3)] == ["bl5"]   # free only 5 min: no alarm yet
+print("ok idle alarm")
+# #123: closed wins over blocked; parked windows go after PARKED_MIN idle, never while waiting on a prompt
+_pk = [{"name": "review-41", "state": "live", "status": "done", "marker": True},
+       {"name": "issue-48-fix", "state": "live", "status": "done", "marker": True},
+       {"name": "issue-49", "state": "live", "status": "blocked", "marker": False}]
+assert W.leftovers(_pk, closed={41}, blocked={41, 48, 49}) == ["review-41"]
+assert W.leftovers(_pk, closed=set(), blocked={41, 48, 49}, old={"issue-48-fix"}) == ["issue-48-fix"]
+print("ok parked windows")
 
 # regression: a finished run-2 next to a live run-2 must not close anything (the live one is working)
 assert W.leftovers([{"name": "run-2", "state": "finished"}, {"name": "run-2", "state": "live", "status": ""}], set(), set()) == []
@@ -302,3 +337,14 @@ assert nums(r.select([I(1, ["in-progress", "core"]), I(2, ["in-progress", "core"
 assert nums(r.select([_e(1, ["pack", "blocked"]), _e(2, ["pack"], )], 3, 2, 1)) == [2]
 assert r.CFG["express_lanes"] == 1
 print("ok express")
+
+# #65: model from the issue's model:* label
+assert r.model_of([]) == "sonnet" and r.model_of(["pack", "P1"]) == "sonnet"     # no label = config default
+assert r.model_of(["model:opus"]) == "opus" and r.model_of(["model:haiku", "pack"]) == "haiku"
+assert r.model_of(["model:bogus"]) == "sonnet"
+assert r.model_of(["model:fable"]) == "claude-fable-5-2"
+assert r.model_of(["model:sonnet", "model:opus"]) == "opus"                      # most capable wins if two labels
+assert r.reviewer_model(["model:opus"]) == "opus"
+assert r.reviewer_model(["model:haiku"]) == "sonnet" and r.reviewer_model([]) == "sonnet" and r.reviewer_model(["model:fable"]) == "sonnet"
+assert r.model_name(["model:fable"]) == "fable" and r.model_name([]) == "sonnet"
+print("ok model labels")

@@ -10,7 +10,7 @@ Every minute it checks, deterministically:
 It never answers questions or presses keys in other windows; it only tells the orchestrator and starts the runner.
 Usage: python watchdog.py [--once]
 """
-import hashlib, importlib, json, re, shutil, subprocess, sys, time, threading
+import calendar, hashlib, importlib, json, re, shutil, subprocess, sys, time, threading
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -113,12 +113,15 @@ def check_lanes(ts):
 
 FINISHED_RE = re.compile(r"^(run|issue|review|intake)-|^watchdog|^flowtest")
 IDLE_MIN = 15      # a live issue/review/intake window done/idle this long, with no live run-<n>, only holds RAM
+PARKED_MIN = 60    # #123: a parked (blocked) issue's done/idle windows, after this long
 quiet_since = {}   # live window name -> first time seen done/idle
 
-def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset()):
+def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset(), busy=frozenset(), old=frozenset()):
     """Pure: names of windows to close. ts = hc terminals (name, state, status, marker True/False),
     closed = closed issue numbers, blocked = issue numbers labelled blocked (parked: keep their windows for the owner),
-    human = issue numbers labelled ready-for-human (owner may look), stale = live window names done/idle for IDLE_MIN+."""
+    human = issue numbers labelled ready-for-human (owner may look), stale = live window names done/idle for IDLE_MIN+,
+    busy = issue numbers whose runner still holds issue-<n>.lock (#113: a CI merge auto-closes the issue before the deploy),
+    old = live window names done/idle for PARKED_MIN+ (#123: a parked issue's windows go then; its screen is in the park comment)."""
     live = {t["name"] for t in ts if t.get("state") == "live"}
     live_run = {int(m.group(1)) for x in live for m in [re.match(r"^run-(\d+)(-\w+)?$", x)] if m}
     out = []
@@ -127,15 +130,21 @@ def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset()):
         if t.get("state") != "live" and FINISHED_RE.match(name):            # any finished terminal: remove it (by address)
             if name not in live and name not in out: out.append(name)
             continue
-        m = re.match(r"^(issue|review|run|intake)-(\d+)(-fix|-2)?$", name)
+        m = re.match(r"^(issue|review|run|intake)-(\d+)(-fix|-2|-resolve\d+)?$", name)   # #110: resolve rounds too
         if not m: continue
         n, role, suffix = int(m.group(2)), m.group(1), m.group(3) or ""
         if t.get("state") != "live": continue
-        if n in blocked: continue                                           # parked: the owner looks at it later
-        if n in closed: out.append(name); continue                          # issue done: everything for it goes
+        if n in busy: continue                                              # #113: runner still deploying/closing it
+        if n in closed: out.append(name); continue                          # issue done: everything for it goes (#123: even if labelled blocked)
+        if n in blocked:                                                    # parked: the owner may look, for PARKED_MIN
+            if name in old: out.append(name)
+            continue
         if role != "run" and name in stale and n not in live_run and n not in human: out.append(name); continue
         if role in ("run", "intake") or t.get("status") not in ("done", "idle") or not t.get("marker"): continue
         # a worker/reviewer that printed its RESULT/VERDICT and was superseded by the next step's window
+        if suffix.startswith("-resolve"):                                   # #110: superseded by the next resolve round
+            if f"issue-{n}-resolve{int(suffix[8:]) + 1}" in live: out.append(name)
+            continue
         later = {"issue": [f"review-{n}", f"review-{n}-2", f"issue-{n}-fix"] if not suffix else [f"review-{n}-2"],
                  "review": [f"issue-{n}-fix"] if not suffix else []}[role]
         if any(x in live for x in later): out.append(name)
@@ -148,18 +157,22 @@ def cleanup(ts):
     closed = {i["number"] for i in iss if i["state"] == "CLOSED"}
     blocked = {i["number"] for i in iss if any(l["name"] == "blocked" for l in i["labels"])}
     human = {i["number"] for i in iss if any(l["name"] == "ready-for-human" for l in i["labels"])}
-    rows, now, stale = [], time.time(), set()
+    rows, now, stale, old = [], time.time(), set(), set()
     for t in ts:
         name = t.get("name") or ""
         if not FINISHED_RE.match(name): continue
         if t.get("state") == "live" and t.get("status") in ("done", "idle"):
-            if now - quiet_since.setdefault(name, now) >= IDLE_MIN * 60: stale.add(name)
+            q = now - quiet_since.setdefault(name, now)
+            if q >= IDLE_MIN * 60: stale.add(name)
+            if q >= PARKED_MIN * 60: old.add(name)
         else: quiet_since.pop(name, None)
         if t.get("state") == "live" and not re.match(r"^(issue|review|run|intake)-\d+", name): continue   # never touch live watchdog etc.
         mk = "VERDICT:" if name.startswith("review-") else "RESULT:"
         marker = t.get("state") == "live" and t.get("status") in ("done", "idle") and bool(R.find_marker(screen_tail(name, 40), mk))
         rows.append({**t, "name": name, "marker": marker})
-    for name in leftovers(rows, closed, blocked, human, stale):
+    nums = {int(m.group(1)) for t in rows for m in [re.match(r"^\w+-(\d+)", t["name"])] if m}
+    busy = {n for n in nums if R.FileLock(f"issue-{n}").held_by_other()}
+    for name in leftovers(rows, closed, blocked, human, stale, busy, old):
         # act on the ADDRESS of the matching row, never the bare name: a finished terminal can share its
         # name with a new live one, and `hc kill <name>` would hit the live one.
         for t in rows:
@@ -182,7 +195,58 @@ def sync_tick():
     if msg and msg != _sync["msg"]: log(msg)
     _sync["msg"] = msg
 
+PR_QUIET_MIN, BLOCKED_HOURS, FREE_MIN, ALARM_EVERY_MIN = 60, 2, 15, 60   # #117 idle alarm
+_alarm = {"last": 0.0, "free_since": None, "sent": {}}
+
+def _age_min(iso, now):
+    try: return (now - calendar.timegm(time.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S"))) / 60   # GitHub times are UTC
+    except (TypeError, ValueError): return 0
+
+def idle_alarms(issues, prs, now, free_since, max_parallel):
+    """Pure (#117): -> list of (key, text). issues: open, labels as names; prs: open (number, title, updatedAt);
+    free_since = epoch when 'free lane + startable work' was first seen (None = not now)."""
+    out = []
+    running = sum("in-progress" in i["labels"] for i in issues)
+    if free_since is not None and now - free_since >= FREE_MIN * 60:
+        out.append(("free", f"{max_parallel - running} lane(s) free for {int((now - free_since) / 60)} min while work is ready"))
+    for p in prs:
+        m = _age_min(p.get("updatedAt"), now)
+        if m >= PR_QUIET_MIN: out.append((f"pr{p['number']}", f"PR #{p['number']} has not moved for {int(m)} min ({p.get('title', '')[:50]})"))
+    for i in issues:
+        h = _age_min(i.get("updatedAt"), now) / 60
+        if "blocked" in i["labels"] and h >= BLOCKED_HOURS:
+            out.append((f"bl{i['number']}", f"#{i['number']} blocked for {h:.1f} h" + (" (waits for the owner)" if "ready-for-human" in i["labels"] else "")))
+    return out
+
+def alarms_once(now=None):
+    now = now or time.time()
+    rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
+    rc2, out2 = R.gh("pr", "list", "--state", "open", "--json", "number,title,updatedAt")
+    if rc or rc2: return None
+    issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
+    running = sum("in-progress" in i["labels"] for i in issues)
+    free = running < R.CFG["max_parallel"] and bool(R.select(issues, R.CFG["max_parallel"]))
+    if not free: _alarm["free_since"] = None
+    elif _alarm["free_since"] is None: _alarm["free_since"] = now
+    return idle_alarms(issues, json.loads(out2), now, _alarm["free_since"], R.CFG["max_parallel"])
+
+def alarm_tick():
+    """Every 10 min: idle alarms to the orchestrator (+ watchdog.log); the same alarm at most once an hour."""
+    now = time.time()
+    if now - _alarm["last"] < 600: return
+    _alarm["last"] = now
+    al = alarms_once(now) or []
+    new = [t for k, t in al if now - _alarm["sent"].get(k, 0) >= ALARM_EVERY_MIN * 60]
+    if not new: return
+    for k, t in al:
+        if t in new: _alarm["sent"][k] = now
+    tell("IDLE ALARM (watchdog): " + " · ".join(new))
+
 def main():
+    if "--alarms-once" in sys.argv:          # #117: one command: is anything idle or stuck?
+        sys.stdout.reconfigure(encoding="utf-8")
+        al = alarms_once()
+        print("could not read GitHub" if al is None else "\n".join(t for _, t in al) or "nothing idle or stuck"); return
     log("watchdog started")
     stamp = (HERE / "runner.py").stat().st_mtime
     while True:
@@ -196,6 +260,7 @@ def main():
             cleanup(R.hc_json("ls", "--all", "--json").get("terminals", []) or ts)
             observer_tick()
             sync_tick()
+            alarm_tick()
         except Exception as e:
             log(f"error: {e!r}")
         if "--once" in sys.argv: return

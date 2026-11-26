@@ -153,6 +153,9 @@ export function statsLines(text: string, nowSec: number): string[] {
     try { const e = JSON.parse(l) as StatEvent; if (typeof e.ts === 'number') evs.push(e) } catch { /* skip */ }
   }
   evs.sort((a, b) => a.ts - b.ts)
+  const dep = evs.filter(e => e.event === 'deploy').pop() as (StatEvent & { ok?: boolean; url?: string; d1?: boolean }) | undefined
+  const hhmm = (s: number) => new Date(s * 1000).toLocaleTimeString('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit' })
+  const depLine = dep ? [`last deploy ${hhmm(dep.ts)} ${dep.ok ? 'ok' : 'FAILED'}${dep.d1 === false ? ' · ⚠ no D1, saves on KV' : ''}`] : []   // #114
   for (const e of evs) {
     if (e.event === 'start') { per.set(e.issue, { start: e.ts }); continue }
     const p = per.get(e.issue)
@@ -162,7 +165,7 @@ export function statsLines(text: string, nowSec: number): string[] {
     else if (e.event === 'merged') { p.merge = e.ts - p.start; p.mergedAt = e.ts }
   }
   const all = [...per.entries()]
-  if (!all.length) return []
+  if (!all.length) return depLine
   const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null)
   const ps = all.map(([, p]) => p)
   const merged = ps.filter(p => p.merge !== undefined)
@@ -173,15 +176,19 @@ export function statsLines(text: string, nowSec: number): string[] {
     `avg to merge ${dur(avg(merged.map(p => p.merge as number)))}`,
     `avg build ${dur(avg(ps.filter(p => p.build !== undefined).map(p => p.build as number)))} · review ${dur(avg(ps.filter(p => p.review !== undefined).map(p => p.review as number)))}`,
     `last #${n}: build ${dur(last.build ?? null)} · review ${dur(last.review ?? null)} · merge ${dur(last.merge ?? null)}`,
+    ...depLine,
   ]
 }
+
+/** #65: the model:<x> label (haiku|sonnet|opus|fable), '' when there is none (= default sonnet). */
+function modelOf(l: Set<string>): string { return ['haiku', 'sonnet', 'opus', 'fable'].reverse().find(m => l.has(`model:${m}`)) ?? '' }
 
 /** One line per lane (3): what runs in it, or WHY it is free. */
 export function laneReasons(open: Issue[], wins: Win[], max = 3): string[] {
   const lab = (i: Issue) => new Set((i.labels ?? []).map(x => x.name))
   const openNums = new Set(open.map(i => i.number))
   const running = open.filter(i => lab(i).has('in-progress'))
-  const rows = running.map((i, k) => `${k + 1}. #${i.number} running · ${i.title}`)
+  const rows = running.map((i, k) => { const m = modelOf(lab(i)); return `${k + 1}. #${i.number} running${m ? ` [${m}]` : ''} · ${i.title}` })
   if (rows.length >= max) return rows.slice(0, max)
   const coreBusy = running.some(i => lab(i).has('core'))
   const ready = open.filter(i => { const l = lab(i); return l.has('ready-for-agent') && !l.has('in-progress') && !l.has('blocked')
@@ -232,7 +239,7 @@ export function view(open: Issue[], closed: Issue[], wins: Win[], prBranches: st
   const orch = orchNums.length ? [`orchestrator handling: ${orchNums.join(' ')}`] : []
   const next = open.filter(i => lab(i).has('ready-for-agent') && !lab(i).has('in-progress') && !lab(i).has('blocked'))
     .sort((a, b) => (+!exp(a) - +!exp(b)) || (+!lab(a).has('bug') - +!lab(b).has('bug')) || prio(a) - prio(b) || a.number - b.number)
-    .map(i => { const w = parseBlockers(i.body).filter(b => b !== i.number && openNums.has(b)); return `${exp(i) ? '⚡ ' : ''}[P${prio(i)}] #${i.number} ${short(i.title)}${w.length ? '  (after #' + w.join(', #') + ')' : '  (ready)'}` })
+    .map(i => { const w = parseBlockers(i.body).filter(b => b !== i.number && openNums.has(b)); return `${exp(i) ? '⚡ ' : ''}[P${prio(i)}${modelOf(lab(i)) ? '·' + modelOf(lab(i)) : ''}] #${i.number} ${short(i.title)}${w.length ? '  (after #' + w.join(', #') + ')' : '  (ready)'}` })
   const done = closed.slice(0, 3).map(i => lab(i).has('needs-triage') ? `→ #${i.number} ${short(i.title)} (split into tasks)` : `✓ #${i.number} ${short(i.title)}`)
   return { lanes, you, orch, next, done }
 }
