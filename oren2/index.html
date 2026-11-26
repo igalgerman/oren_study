@@ -3026,6 +3026,8 @@ body.fron #screens{padding-bottom:84px}
   .chb.shp{min-width:88px;min-height:86px}.chb.shp svg{width:72px;height:72px}.prq svg.shp1{width:120px;height:120px}
   .chb.pen{min-width:150px}.chb.pen svg{width:150px;height:34px}
 }
+/* rhymes: the picture above the word */
+.gp-rhy{display:flex;flex-direction:column;align-items:center;gap:4px}.gp-rhy .pic svg{width:96px;height:96px}
 
 /* ===== MUSIC 2 (music2.js) ===== */
 .m2 .m2staff{display:block;height:auto;background:#fff;max-width:100%}
@@ -5896,11 +5898,62 @@ const STORIES=[
 /* extra questions for the 6 older stories (by index): none since #355 — each now has its own 3 questions, the last about the lesson (2-3 per story) */
 const STORY_Q={};
 
+/* ===================== 9. RHYMES: hear a word (with its picture), pick the word that rhymes ===================== */
+/* one set per line: word|sprite, its rhyme family, the words that rhyme with it. Words of one family are never offered against each other. */
+const RHY_RAW=`עִפָּרוֹן|pencil on בַּלּוֹן לִימוֹן
+דְּרָקוֹן|dragon on חַלּוֹן סַבּוֹן
+יַהֲלוֹם|gem on חֲלוֹם שָׁלוֹם
+דָּג|fish ag גַּג חַג
+קֶשֶׁת|rainbow esh רֶשֶׁת
+נֶשֶׁר|eagle esh גֶּשֶׁר קֶשֶׁר
+כּוֹכָב|star av זָהָב
+צָב|turtle av חָלָב
+אַרְנָב|rabbit av זָנָב
+יָרֵחַ|moon ach פּוֹרֵחַ
+מַפְתֵּחַ|key ach שָׂמֵחַ
+פֶּרַח|flower ach קֶרַח
+תַּפּוּחַ|apple ach לוּחַ רוּחַ
+לֵב|heart ev זְאֵב כְּאֵב
+סִירָה|boat ia שִׁירָה דִּירָה
+מִטְרִיָּה|umbrella ia סִפְרִיָּה
+עֵץ|tree etz קוֹפֵץ נוֹצֵץ
+דֶּגֶל|flag egel רֶגֶל עֵגֶל
+כּוֹבַע|hat va צֶבַע אֶצְבַּע
+לֶהָבָה|flame va אַהֲבָה
+כַּדּוּר|ball ur תַּנּוּר צִיּוּר
+צִפּוֹר|bird or כִּנּוֹר אוֹר
+עָנָן|cloud an גַּנָּן
+לִוְיָתָן|whale an קָטָן
+פָּנָס|lantern as אֲנָנָס
+מִגְדָּל|tower al סַנְדָּל
+גַּל|wave al סַל גָּמָל
+הַר|mount ar נָהָר פַּר
+יַנְשׁוּף|owl uf גּוּף עוּף
+מַסְמֵר|nail er שׁוֹמֵר
+גָּבִישׁ|crystal ish כְּבִישׁ
+צְרִיף|hut if כִּיף
+מַנְעוּל|lock ul חָתוּל`;
+const RHY=RHY_RAW.trim().split('\n').map(l=>{const [ws,f,...r]=l.trim().split(/\s+/);const [w,spr]=ws.split('|');return {w,spr,f,r};});
+const RHY_ASK='מָה מִתְחָרֵז עִם ';
+let rhyTok=0;
+/* the voice: the word, then each choice in turn (one word per sentence, so every sentence exists in advance) */
+function rhySay(s,os,card){const tok=++rhyTok;O.say(RHY_ASK+s.w);os.forEach((o,k)=>setTimeout(()=>{if(tok===rhyTok&&(!card||card.isConnected))O.say(o);},D(2200+k*1300)));}
+function rhyQ(used){const s=lword('gp-rhy',used?RHY.filter(x=>!used.has(x.w)):RHY);if(used)used.add(s.w);const a=pick(s.r);const ds=[];
+  for(const x of shuffle(RHY.filter(x=>x.f!==s.f).flatMap(x=>[x.w,...x.r]))){if(ds.length>=2)break;if(!ds.includes(x))ds.push(x);}
+  const os=shuffle([a,...ds]);let card=null;
+  return {pr:`<div class="gp-rhy">${pic(s)}<div class="bigw">${s.w}</div></div><div class="qq">מָה מִתְחָרֵז?</div>`,opts:os,ans:os.indexOf(a),cls:'tx',
+    play:()=>{card=document.querySelector('#sTal .tqc');rhySay(s,os,card);},auto:1,playLbl:'שׁוּב',say:plainHe(RHY_ASK+s.w),
+    explain:`<span class="bigw">${s.w} · ${a}</span>`,reveal:()=>O.say(s.w+', '+a),bank:'gp-rhy',bkey:s.w,key:s.w,chk:{w:s.w,a,f:s.f}};}
+/* a round of 5 different words (the learning engine alone may offer the same unseen word again) */
+function rhyRound(back){const used=new Set();T.quiz({id:'read-rhyme',title:'מִלִּים מִתְחָרְזוֹת',bg:'city',back,n:5,gen:i=>{if(!i)used.clear();return rhyQ(used);}});}
+/* every sentence the rhymes say, for the voice pregen */
+const speakList=()=>[...new Set(RHY.flatMap(s=>[RHY_ASK+s.w,s.w,...s.r,...s.r.map(a=>s.w+', '+a)]))];
+
 /* ---------- names for the parents' skills view (no nikud) ---------- */
 const SKILLS={'read-nik':'סולם הניקוד: הברות ומילים','nik-1':'ניקוד: קמץ ופתח (אַ)','nik-2':'ניקוד: חיריק (אִי)','nik-3':'ניקוד: חולם (אוֹ)','nik-4':'ניקוד: שורוק וקובוץ (אוּ)','nik-5':'ניקוד: צירי וסגול (אֶ)','nik-6':'ניקוד: שווא',
  'read-sound':'מודעות פונולוגית: הצליל הפותח (שמיעה בלבד)','snd-1':'צליל פותח: אות (3 אפשרויות)','snd-2':'צליל פותח: אות (4 אפשרויות)','snd-3':'צליל פותח: הברה',
  'write-spell':'כתיב: שומעים מילה וכותבים מאותיות','spell-1':'כתיב: מילים של 2-3 אותיות','spell-2':'כתיב: מילים של 4 אותיות','spell-3':'כתיב: מילים של 5+ אותיות',
- 'read-flu':'שטף קריאה: מילים ב-45 שניות (שיא אישי)','write-trace':'כתיבת אותיות (כולל אותיות סופיות)',
+ 'read-flu':'שטף קריאה: מילים ב-45 שניות (שיא אישי)','read-rhyme':'מודעות פונולוגית: חרוזים (שומעים מילה ובוחרים מילה שמתחרזת)','write-trace':'כתיבת אותיות (כולל אותיות סופיות)',
  'pict-1':'גרף תמונות: כמה, הכי הרבה, הכי מעט','pict-2':'גרף תמונות: בכמה יותר, ביחד','shp-1':'צורות: זיהוי משולש, ריבוע, מלבן, עיגול','shp-2':'צורות: צלעות, קודקודים, מחומש ומשושה',
  'len-1':'מדידת אורך בסרגל (ס"מ)','len-2':'השוואה: ארוך-קצר, כבד-קל (מאזניים)'};
 
@@ -5908,11 +5961,12 @@ const SKILLS={'read-nik':'סולם הניקוד: הברות ומילים','nik-1
 const ACTS={
  read:[{id:'read-nik',name:'סֻלַּם הַנִּקּוּד',icon:()=>'<span class="gp-ic">בָּ</span>',run:nikMenu},
   {id:'read-sound',name:'מָה שׁוֹמְעִים בַּהַתְחָלָה?',icon:()=>'<span style="font-size:34px">👂</span>',run:back=>sndRound(back)},
-  {id:'read-flu',name:'מֵרוֹץ מִלִּים',icon:()=>'<span style="font-size:34px">⏱️</span>',noMenu:true,run:race}],
+  {id:'read-flu',name:'מֵרוֹץ מִלִּים',icon:()=>'<span style="font-size:34px">⏱️</span>',noMenu:true,run:race},
+  {id:'read-rhyme',name:'מִלִּים מִתְחָרְזוֹת',icon:()=>'<span style="font-size:34px">🎵</span>',run:rhyRound}],
  write:[{id:'write-spell',name:'כּוֹתְבִים מִלִּים',icon:()=>T.X.abc,run:back=>spell(back)}]};
 function addAct(bid,a){const b=T.BUILD.find(x=>x.id===bid);if(!b||T.ACT[a.id])return;b.acts.push(a);T.ACT[a.id]=a;a.b=b;}
 function register(){Object.entries(ACTS).forEach(([bid,as])=>as.forEach(a=>addAct(bid,a)));}
-window.GAPS={register,ACTS,WD,parse,hi,level,nikMenu,nikRound,nikIntro,nikQ,RUNG,sndQ,sndRound,spell,race,raceRun,FINALS,finNote,STORIES,STORY_Q,SKILLS,sameSound,
+window.GAPS={register,ACTS,WD,parse,hi,level,nikMenu,nikRound,nikIntro,nikQ,RUNG,sndQ,sndRound,spell,race,raceRun,RHY,rhyQ,rhyRound,speakList,FINALS,finNote,STORIES,STORY_Q,SKILLS,sameSound,
   set dict(v){dict=v;dictTried=true;}};
 })();
 
