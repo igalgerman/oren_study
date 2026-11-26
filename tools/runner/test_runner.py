@@ -149,7 +149,7 @@ assert nums(r.select([_c(1), _c(2), _c(3)], 3, 2)) == [1, 2]
 assert nums(r.select([I(1, ["in-progress", "core"]), _c(2), _c(3)], 3, 2)) == [2]
 assert nums(r.select([I(1, ["in-progress", "core"]), I(2, ["in-progress", "core"]), _c(3), I(4, [R, "pack"])], 3, 2)) == [4]
 assert nums(r.select([_c(1), _c(2)], 3)) == [1]          # default max_core = 1
-assert r.CFG["max_core"] == 2
+assert r.CFG["max_core"] >= 2        # 3 since 26 Nov (#183)
 print("ok max_core")
 
 # conflict -> resolve -> retry, at most 2 resolve rounds
@@ -401,3 +401,10 @@ _a = W.lock_alarm((7, "#122 deploy", _t - 31 * 60), True, _t, [167, 176])
 assert _a[0] == "alarm" and "31 min" in _a[1] and "#122 deploy" in _a[1] and "#167, #176" in _a[1], _a
 assert W.lock_alarm((7, "#1 CI merge", _t - 60), False, _t)[0] == "clear"
 print("ok merge lock watch")
+# Code Mode trial: every 3rd issue number; 0 = off
+_cm = r.CFG.get("code_mode_every")
+r.CFG["code_mode_every"] = 3; assert [n for n in range(1, 10) if r.code_mode(n)] == [3, 6, 9]
+r.CFG["code_mode_every"] = 0; assert not any(r.code_mode(n) for n in range(1, 10))
+r.CFG["code_mode_every"] = _cm
+assert '"CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1"] if code_mode(n)' in (r.HERE / "runner.py").read_text(encoding="utf-8")
+print("ok code mode trial")

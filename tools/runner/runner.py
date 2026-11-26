@@ -414,6 +414,12 @@ def parent_args():
         p = hc_json("get", TERM, "--json").get("parent", "")
     return ["--parent", p] if p else []
 
+def code_mode(n):
+    """Code Mode trial (owner, 26 Nov): issues whose number is a multiple of code_mode_every run their Claude windows with
+    CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 (interactive sessions only; 0 = off). Recorded in the 'start' stat for comparison."""
+    k = int(CFG.get("code_mode_every", 0) or 0)
+    return k > 0 and int(n) % k == 0
+
 def agent(name, prompt, cwd, tools, log, marker, n, role, model=MODEL):
     """Run an INTERACTIVE claude in a herdr terminal the owner can open; return (screen text, marker line).
     Terminals are closed after success and left open when BLOCKED/PARKED. A window of that name that is still live (parked earlier) is re-attached, not restarted.
@@ -429,6 +435,7 @@ def agent(name, prompt, cwd, tools, log, marker, n, role, model=MODEL):
         # bash wrapper only puts the python3 shim on PATH; the prompt goes after `--` ("--allowedTools" is variadic)
         cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), "--label", f"issue={n}", "--label", f"role={role}", *space_args(), *parent_args(),
                BASH, "-c", 'export PATH="$1:$PATH"; shift; exec "$@"', "_", CFG["extra_path"],
+               *(["env", "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1"] if code_mode(n) else []),   # Code Mode trial (owner, 26 Nov)
                shutil.which("claude") or "claude", "--model", model, "--permission-mode", "auto",
                "--allowedTools", *tools, "--", prompt + INTERACTIVE_NOTE]
         rc, out = run(cmd, log=log)
@@ -683,7 +690,7 @@ def process_locked(issue):
     wt = Path(CFG["worktree_prefix"] + str(n))
     wm, rm = model_of(issue["labels"]), reviewer_model(issue["labels"])
     try:
-        stat(n, lane, "start", model=model_name(issue["labels"]))
+        stat(n, lane, "start", model=model_name(issue["labels"]), code_mode=code_mode(n))
         set_labels(n, add=["in-progress"]); gh("issue", "comment", str(n), "--body", f"Runner: started ({lane} lane, worker {model_name(issue['labels'])}, reviewer {rm}).")
         run(["git", "fetch", "-q", REMOTE], cwd=ROOT, log=log)
         pushed = bool(find_pr(n)) or bool(run(["git", "ls-remote", "--heads", REMOTE, f"lane/{n}"], cwd=ROOT)[1].strip())
