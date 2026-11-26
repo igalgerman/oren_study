@@ -47,7 +47,7 @@ def blockers(body):
     """Issue numbers in 'Blocked by: #1, #2' lines."""
     out = []
     for line in (body or "").splitlines():
-        if line.strip().lower().startswith("blocked by"):
+        if line.lstrip(" 	-*>").lower().startswith("blocked by"):
             out += [int(x) for x in re.findall(r"#(\d+)", line)]
     return out
 

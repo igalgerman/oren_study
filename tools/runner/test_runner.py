@@ -24,6 +24,10 @@ print("ok")
 # blocked-by: #3 waits while #1 is open; starts when #1 is gone
 from runner import select as _sel, blockers as _bl
 assert _bl("x\nBlocked by: #1, #2\n") == [1, 2]
+assert _bl("- Blocked by: #23") == [23]
+assert _bl("  * blocked by: #4, #5") == [4, 5]
+assert _bl("> Blocked by: #6") == [6]
+assert _bl("see Blocked by #7 in text") == []
 _q = [{"number": 1, "labels": ["core"], "createdAt": "1"},
       {"number": 3, "labels": ["core", "ready-for-agent"], "createdAt": "3", "body": "Blocked by: #1"},
       {"number": 4, "labels": ["pack", "ready-for-agent"], "createdAt": "4", "body": ""}]
