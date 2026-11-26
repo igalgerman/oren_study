@@ -59,6 +59,10 @@ const RUNG=[{v:'a',n:'קָמָץ וּפַתָּח',say:'קָמָץ וּפַתָ�
 const learnedAt=r=>VO.slice(0,r+1);
 const poolAt=r=>WD.filter(w=>w.r<=r);
 const focusAt=r=>WD.filter(w=>w.r===r);
+/* a word chosen by the learning engine (LEARN.pickItem: wrong ones back on schedule, unseen first, no repeats) and marked seen; focus = the words of the newest rung, tried first 70% of the time */
+function lword(bank,pool,focus){const LN=window.LEARN;if(LN&&LN.pickItem&&pool.length>1)try{const ask=a=>{const r=LN.pickItem(bank,a.map(x=>({k:x.w})));return r&&{w:a.find(x=>x.w===r.item.k),why:r.why};};
+  let r=focus&&focus.length&&Math.random()<.7?ask(focus):null;if(!r||!r.w||r.why==='recycle')r=ask(pool);if(r&&r.w){LN.seen(bank,r.w.w,true,false);return r.w;}}catch(e){}
+  return focus&&focus.length&&Math.random()<.7?pick(focus):pick(pool);}
 /* question kinds: hs = hear a word, choose its first syllable · ss = see a syllable, choose the word · rw = hear a word, choose it */
 function sylOpts(w,learned){const a=w.s1;const out=[{s:a.s,v:a.v,b:w.base}];
   const same=shuffle(learned.filter(v=>v!==a.v&&!clash(v,a.v))).map(v=>({s:mk(w.base,v),v,b:w.base}));
@@ -67,7 +71,7 @@ function sylOpts(w,learned){const a=w.s1;const out=[{s:a.s,v:a.v,b:w.base}];
   return shuffle(out);}
 function nikQ(r,i,n){const learned=learnedAt(r);const kind=i<n*.4?'hs':i<n*.75?'ss':'rw';
   const pool=poolAt(r).filter(w=>w.s1);const focus=focusAt(r).filter(w=>w.s1);
-  const w=(Math.random()<.7&&focus.length?pick(focus):pick(pool));
+  const w=lword('gp-nik',pool,focus);
   if(kind==='hs'){const os=sylOpts(w,learned);return {pr:`<div class="gp-ear">👂</div><div class="qq">בְּאֵיזוֹ הֲבָרָה מַתְחִילָה הַמִּלָּה?</div>`,opts:os.map(o=>o.s),ans:os.findIndex(o=>o.s===w.s1.s),cls:'tx big2',
       play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו הברה מתחילה המילה',explain:`<span class="bigw">${hi(w)}</span>`,key:'hs'+w.w,chk:{t:'syl',w:w.w}};}
   if(kind==='ss'){const same=pool.filter(x=>x!==w&&x.base===w.base&&x.s1.v!==w.s1.v&&!clash(x.s1.v,w.s1.v));
@@ -91,7 +95,7 @@ function nikMenu(back){const me=()=>nikMenu(back);O.setScreen('sTal','city',back
 
 /* ===================== 5. WHAT SOUND STARTS THE WORD (audio only) ===================== */
 const LETTERS='בגדזחטיכלמנסעפצקרשת'.split('');
-function sndQ(L){const pool=WD.filter(w=>w.s1&&(L<3||w.s1.v!=='s'));const w=pick(pool);
+function sndQ(L){const pool=WD.filter(w=>w.s1&&(L<3||w.s1.v!=='s'));const w=lword('gp-snd',pool);
   if(L<3){const k=L===1?3:4;const ds=[];for(const c of shuffle(LETTERS)){if(ds.length>=k-1)break;if(!sameSound(c,w.f)&&!ds.some(d=>sameSound(d,c)))ds.push(c);}
     const os=shuffle([w.f,...ds]);return {pr:`<div class="gp-ear">👂</div><div class="qq">בְּאֵיזוֹ אוֹת מַתְחִילָה הַמִּלָּה שֶׁשָּׁמַעְתָּ?</div>`,opts:os,ans:os.indexOf(w.f),cls:'tx big2'+(os.length===4?' gp4':''),
       play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו אות מתחילה המילה ששמעת',explain:`${pic(w)}<span class="bigw">${hi(w)}</span>`,key:w.w,chk:{t:'letter',w:w.w}};}

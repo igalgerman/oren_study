@@ -5344,6 +5344,10 @@ const RUNG=[{v:'a',n:'קָמָץ וּפַתָּח',say:'קָמָץ וּפַתָ�
 const learnedAt=r=>VO.slice(0,r+1);
 const poolAt=r=>WD.filter(w=>w.r<=r);
 const focusAt=r=>WD.filter(w=>w.r===r);
+/* a word chosen by the learning engine (LEARN.pickItem: wrong ones back on schedule, unseen first, no repeats) and marked seen; focus = the words of the newest rung, tried first 70% of the time */
+function lword(bank,pool,focus){const LN=window.LEARN;if(LN&&LN.pickItem&&pool.length>1)try{const ask=a=>{const r=LN.pickItem(bank,a.map(x=>({k:x.w})));return r&&{w:a.find(x=>x.w===r.item.k),why:r.why};};
+  let r=focus&&focus.length&&Math.random()<.7?ask(focus):null;if(!r||!r.w||r.why==='recycle')r=ask(pool);if(r&&r.w){LN.seen(bank,r.w.w,true,false);return r.w;}}catch(e){}
+  return focus&&focus.length&&Math.random()<.7?pick(focus):pick(pool);}
 /* question kinds: hs = hear a word, choose its first syllable · ss = see a syllable, choose the word · rw = hear a word, choose it */
 function sylOpts(w,learned){const a=w.s1;const out=[{s:a.s,v:a.v,b:w.base}];
   const same=shuffle(learned.filter(v=>v!==a.v&&!clash(v,a.v))).map(v=>({s:mk(w.base,v),v,b:w.base}));
@@ -5352,7 +5356,7 @@ function sylOpts(w,learned){const a=w.s1;const out=[{s:a.s,v:a.v,b:w.base}];
   return shuffle(out);}
 function nikQ(r,i,n){const learned=learnedAt(r);const kind=i<n*.4?'hs':i<n*.75?'ss':'rw';
   const pool=poolAt(r).filter(w=>w.s1);const focus=focusAt(r).filter(w=>w.s1);
-  const w=(Math.random()<.7&&focus.length?pick(focus):pick(pool));
+  const w=lword('gp-nik',pool,focus);
   if(kind==='hs'){const os=sylOpts(w,learned);return {pr:`<div class="gp-ear">👂</div><div class="qq">בְּאֵיזוֹ הֲבָרָה מַתְחִילָה הַמִּלָּה?</div>`,opts:os.map(o=>o.s),ans:os.findIndex(o=>o.s===w.s1.s),cls:'tx big2',
       play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו הברה מתחילה המילה',explain:`<span class="bigw">${hi(w)}</span>`,key:'hs'+w.w,chk:{t:'syl',w:w.w}};}
   if(kind==='ss'){const same=pool.filter(x=>x!==w&&x.base===w.base&&x.s1.v!==w.s1.v&&!clash(x.s1.v,w.s1.v));
@@ -5376,7 +5380,7 @@ function nikMenu(back){const me=()=>nikMenu(back);O.setScreen('sTal','city',back
 
 /* ===================== 5. WHAT SOUND STARTS THE WORD (audio only) ===================== */
 const LETTERS='בגדזחטיכלמנסעפצקרשת'.split('');
-function sndQ(L){const pool=WD.filter(w=>w.s1&&(L<3||w.s1.v!=='s'));const w=pick(pool);
+function sndQ(L){const pool=WD.filter(w=>w.s1&&(L<3||w.s1.v!=='s'));const w=lword('gp-snd',pool);
   if(L<3){const k=L===1?3:4;const ds=[];for(const c of shuffle(LETTERS)){if(ds.length>=k-1)break;if(!sameSound(c,w.f)&&!ds.some(d=>sameSound(d,c)))ds.push(c);}
     const os=shuffle([w.f,...ds]);return {pr:`<div class="gp-ear">👂</div><div class="qq">בְּאֵיזוֹ אוֹת מַתְחִילָה הַמִּלָּה שֶׁשָּׁמַעְתָּ?</div>`,opts:os,ans:os.indexOf(w.f),cls:'tx big2'+(os.length===4?' gp4':''),
       play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו אות מתחילה המילה ששמעת',explain:`${pic(w)}<span class="bigw">${hi(w)}</span>`,key:w.w,chk:{t:'letter',w:w.w}};}
@@ -7089,12 +7093,16 @@ function lesson(o){const cards=o.cards.filter(c=>c);if(!cards.length)return o.th
   show();}
 /* question bank → T.quiz. q = {lv, q, a, ds, art, ex, cls} */
 const Q=(lv,q,a,ds,x)=>Object.assign({lv,q,a,ds},x||{});
-function pickQs(bank,L,n){const pool=shuffle(bank.filter(q=>q.lv<=L));pool.sort((a,b)=>(b.lv===L)-(a.lv===L));return pool.slice(0,Math.min(n,pool.length)).sort((a,b)=>a.lv-b.lv);}
+function pickQs(bank,L,n,id){const ok=bank.filter(q=>q.lv<=L),LN=window.LEARN;
+  if(id&&LN&&LN.pickItem&&ok.length>n)try{/* the learning engine chooses (wrong ones back on schedule, unseen first, no repeats) */const bk='x2-'+id,items=ok.map(q=>({k:q.q,lv:q.lv})),got=[],ex=new Set();
+    while(got.length<n){const r=LN.pickItem(bk,items,{lv:L,upto:true,exclude:ex});if(!r)break;ex.add(r.item.k);got.push(ok.find(q=>q.q===r.item.k));LN.seen(bk,r.item.k,true,false);}
+    if(got.length===n)return got.sort((a,b)=>a.lv-b.lv);}catch(e){}
+  const pool=shuffle(ok);pool.sort((a,b)=>(b.lv===L)-(a.lv===L));return pool.slice(0,Math.min(n,pool.length)).sort((a,b)=>a.lv-b.lv);}
 const mkQ=q=>{const opts=shuffle([q.a,...q.ds]);return {pr:`${q.art?`<div class="e2art sm">${q.art}</div>`:''}<div class="qq">${q.q}</div>`,opts:opts.map(x=>q.fmt?q.fmt(x):x),ans:opts.indexOf(q.a),cls:(q.cls||'tx')+' e2o',key:q.q+'|'+q.a,explain:q.ex||''};};
 function runQuiz(o,list){STEP=null;T.quiz({id:o.id,title:o.title,bg:o.bg,back:o.back,n:list.length,gen:i=>typeof list[i]==='function'?list[i]():mkQ(list[i])});}
 /* a lesson + quiz activity: def = {id,name,icon,bg,title,cards:[{lv,art,t}],bank:[Q...],n} */
 function lessonAct(def){return Object.assign({},def,{run:back=>{const L=lvl(def.id),o={id:def.id,title:def.title||def.name,bg:def.bg,back};
-  lesson({...o,cards:def.cards.filter(c=>c.lv===L),then:()=>runQuiz(o,def.gen?def.gen(L):pickQs(def.bank,L,def.n||6))});}});}
+  lesson({...o,cards:def.cards.filter(c=>c.lv===L),then:()=>runQuiz(o,def.gen?def.gen(L):pickQs(def.bank,L,def.n||6,def.id))});}});}
 
 /* tap things in the right order. rounds = [{q, items:[{html,lbl}] in order, start, ex}] */
 function orderGame(o){let r=0,err=0,gems=0;O.setScreen('sTal',o.bg,o.back);const s=$('#sTal');
@@ -7319,7 +7327,7 @@ const YR_GK={id:'yr-gk',name:'יֶדַע כְּלָלִי',icon:()=>em('💡'),s
   Q(2,'מָה טָס בַּשָּׁמַיִם?','מָטוֹס',['אוֹטוֹבּוּס','רַכֶּבֶת']),
   Q(3,'כַּמָּה פְּעָמִים בַּיּוֹם כְּדַאי לְצַחְצֵחַ שִׁנַּיִם?','פַּעֲמַיִם',['אַף פַּעַם','פַּעַם בְּשָׁבוּעַ'],{art:em('🪥')}),Q(3,'מִי עוֹזֵר לְחַיּוֹת חוֹלוֹת?','וֵטֶרִינָר',['טַיָּס','סַפָּר'],{art:em('🐶')}),
   Q(3,'אָדֹם וְצָהֹב מְעֹרְבָּבִים יַחַד נוֹתְנִים...','כָּתֹם',['כָּחֹל','יָרֹק'],{art:em('🔴 + 🟡')}),Q(3,'מָה חוֹבְשִׁים עַל הָרֹאשׁ כְּשֶׁרוֹכְבִים עַל אוֹפַנַּיִם?','קַסְדָּה',['כּוֹבַע גֶּרֶב','מִשְׁקְפֵי שֶׁמֶשׁ'],{art:em('🚲')})],
- run:back=>{const L=lvl('yr-gk');runQuiz({id:'yr-gk',title:'יֶדַע כְּלָלִי',bg:'meadow',back},pickQs(YR_GK.bank,L,7));}};
+ run:back=>{const L=lvl('yr-gk');runQuiz({id:'yr-gk',title:'יֶדַע כְּלָלִי',bg:'meadow',back},pickQs(YR_GK.bank,L,7,'yr-gk'));}};
 
 /* ================= 🧱 BLOCK BUILDING ================= */
 const PLANS={1:[['RRR','R.R','RRR'],['.R.','RRR','.R.'],['R..','RR.','RRR'],['RRR','.R.','.R.']],
@@ -7419,7 +7427,7 @@ function kidTexts(){const out=[];const add=s=>{if(s)out.push(String(s));};
   [CITIES,SEAS,REGIONS,CONT,OCEANS,HOOD].forEach(m=>Object.values(m).forEach(v=>add(v[0])));Object.values(MYFL).forEach(v=>add(v[0]));Object.values(BN).forEach(add);return out;}
 window.EXPLORE2={register,BUILDINGS:BLD,GROUP_OF,SKILLS,kidTexts,ids:()=>BLD.flatMap(b=>b.acts.map(a=>a.id)),level:lvl,
   DATA:{PLANETS,HOL,HOL_ORDER,INV,CITIES:Object.fromEntries(Object.entries(CITIES).map(([k,v])=>[k,{n:v[0],ll:v[1],xy:cityPos(k)}])),SEAS,REGIONS,CONT:Object.keys(CONT),OCEANS,FCONT,CYC,PLANS,MIRR,HOOD,banks:()=>Object.fromEntries(BLD.flatMap(b=>b.acts).filter(a=>a.bank).map(a=>[a.id,a.bank]))},
-  gen:{NAT_GRP:L=>NAT_GRP.gen(L),YR_HOL:L=>YR_HOL.gen(L),countQ,viewQ,topView,frontView,mkQ},
+  gen:{pickQs,NAT_GRP:L=>NAT_GRP.gen(L),YR_HOL:L=>YR_HOL.gen(L),countQ,viewQ,topView,frontView,mkQ},
   step:()=>{if(STEP)return STEP();const q=window.__quiz;if(q&&q.wrap&&q.wrap.isConnected){const c=q.wrap.querySelector('.chs');if(c&&c.children[q.ans])c.children[q.ans].click();}}};
 })();
 
@@ -7650,10 +7658,12 @@ function genAbc(save,k){const kind=k[0],L=k.slice(2),b=box(save,k);const seenL=A
   if(kind==='c'){const up=b%2===0;const target=up?L.toLowerCase():L;const set=up?LOOK.lower:LOOK.upper;const look=(set.find(g=>g.includes(target))||[]).filter(x=>x!==target).map(x=>x.toUpperCase());
     const ds=fill([...shuf(look),...shuf(seenL),...shuf(AZ)],2);
     return mk({k,lv:1,type:'case',L,up,show:up?L:L.toLowerCase()},{t:'let',v:target},ds.map(x=>({t:'let',v:up?x.toLowerCase():x})));}
-  const kw=b===0?LET[L].kw[0]:pk(LET[L].kw);const inWord=kw.toUpperCase().replace(/[^A-Z]/g,'').split('');
+  const kw=b===0?LET[L].kw[0]:lkw(L);const inWord=kw.toUpperCase().replace(/[^A-Z]/g,'').split('');
   const bad=[...inWord,...(SOUNDMATE[L]||[])];const n=b>=2?4:3;
   const ds=fill([...shuf(seenL),...shuf(AZ)],n-1,bad);
   return mk({k,lv:1,type:'sound',L,w:kw,end:LET[L].end},{t:'let',v:L},ds.map(x=>({t:'let',v:x})));}
+/* a keyword of letter L chosen by the learning engine (unseen first, no repeats); plain random without it */
+function lkw(L){const kws=LET[L].kw;const LN=typeof window!=='undefined'&&window.LEARN;if(LN&&LN.pickItem&&kws.length>1){try{const r=LN.pickItem('eng-kw',kws.map(w=>({k:L+':'+w})));const w=r&&r.item.k.slice(2);if(w&&kws.includes(w)){LN.seen('eng-kw',r.item.k,true,false);return w;}}catch(e){}}return pk(kws);}
 const CVCW=CVC.flatMap(([v,ws])=>ws);const vowelOf=w=>(CVC.find(([v,ws])=>ws.includes(w))||[''])[0];
 const diff1=(a,b)=>a.length===b.length&&[...a].filter((c,i)=>c!==b[i]).length===1;
 function genRead(save,k,pass){const kind=k[0],v=k.slice(2),b=box(save,k);
@@ -8214,6 +8224,9 @@ const B=window.THINK_BANK;
 let rnd=Math.random;
 const ri=(a,b)=>a+Math.floor(rnd()*(b-a+1));
 const pk=a=>a[Math.floor(rnd()*a.length)];
+/* a random item of a finite bank, chosen by the learning engine (LEARN.pickItem: wrong ones back on schedule, unseen first, no repeats) and marked seen; plain random without it */
+const bkey=x=>JSON.stringify(x).slice(0,80);
+function lpick(bank,arr){const LN=typeof window!=='undefined'&&window.LEARN;if(LN&&LN.pickItem&&arr.length>1){try{const r=LN.pickItem(bank,arr.map(x=>({k:bkey(x)})));const it=r&&arr.find(x=>bkey(x)===r.item.k);if(it){LN.seen(bank,r.item.k,true,false);return it;}}catch(e){}}return pk(arr);}
 const shuf=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
 const L=t=>`<span class="ltr">${t}</span>`;
 const MAXLV=5;
@@ -8318,7 +8331,7 @@ function genAna(lv){
     const ds=tileDs(ans,ch,(lv<=3?3:4)-1,[C]);
     return mk('ana',lv,{kind:'analogy',a:{t:'tile',v:A},b:{t:'tile',v:Bt},c:{t:'tile',v:C},ans:{t:'tile',v:ans},ds,text:'כְּמוֹ בַּזּוּג הָרִאשׁוֹן — מָה חָסֵר?',
       rule:`בַּזּוּג הָרִאשׁוֹן הִשְׁתַּנָּה ${ch.map(k=>TRN[k]).join(' וְ')}. אוֹתוֹ דָּבָר בַּזּוּג הַשֵּׁנִי.`,key:'t'+[A,Bt,C].map(x=>okey({t:'tile',v:x})).join()});}
-  const lvB=lv===2?3:lv;const it=pk(B.ANA.filter(x=>x[0]===lvB));const [,a,b,c,ans,ds,rule]=it;const n=lv<=3?3:4;
+  const lvB=lv===2?3:lv;const it=lpick('th-ana',B.ANA.filter(x=>x[0]===lvB));const [,a,b,c,ans,ds,rule]=it;const n=lv<=3?3:4;
   const dd=shuf([...new Set(ds.filter(d=>d!==ans))]).slice(0,n-1);
   return mk('ana',lv,{kind:'analogy',a:{t:'txt',v:a},b:{t:'txt',v:b},c:{t:'txt',v:c},ans:{t:'txt',v:ans},ds:dd.map(v=>({t:'txt',v})),text:'כְּמוֹ בַּזּוּג הָרִאשׁוֹן — מָה חָסֵר?',rule:'הַקֶּשֶׁר: '+rule,key:'w'+a+c});}
 
@@ -8327,7 +8340,7 @@ function picOdd(lv){const n=nOpts(lv);const cats=Object.keys(B.PICCAT);for(let t
     if(B.PICNO.some(([x,y])=>(x===A&&y===Bk)||(x===Bk&&y===A)))continue;const wa=B.PICCAT[A].w;if(wa.length<n-1)continue;
     const same=shuf(wa).slice(0,n-1),odd=pk(B.PICCAT[Bk].w);
     return mk('rel',lv,{kind:'words',html:'',text:'מִי לֹא שַׁיָּךְ?',ans:spr(odd),ds:same.map(v=>spr(v)),rule:`הַשְּׁאָר הֵם ${B.PICCAT[A].n}`,key:'po'+odd+same.join()});}}
-function opp(lv){const n=nOpts(lv);const [w1,w2,k]=pk(B.OPP);const [q,a]=rnd()<.5?[w1,w2]:[w2,w1];
+function opp(lv){const n=nOpts(lv);const [w1,w2,k]=lpick('th-rel',B.OPP);const [q,a]=rnd()<.5?[w1,w2]:[w2,w1];
   const pool=shuf(B.OPP.filter(x=>x[2][0]===k[0]&&x[2]!==k)).flatMap(x=>[x[0],x[1]]).filter(x=>x!==q&&x!==a);const ds=shuf([...new Set(pool)]).slice(0,n-1);
   return mk('rel',lv,{kind:'words',html:`<div class="thw">${q}</div>`,text:'מָה הַהֵפֶךְ?',ans:{t:'txt',v:a},ds:ds.map(v=>({t:'txt',v})),rule:`הַהֵפֶךְ שֶׁל ${q} הוּא ${a}`,key:'op'+q});}
 function catPair(){const ks=Object.keys(B.CAT);for(;;){const A=pk(ks),Bk=pk(ks);if(A!==Bk&&!B.CATNO.some(([x,y])=>(x===A&&y===Bk)||(x===Bk&&y===A)))return [A,Bk];}}
@@ -8335,16 +8348,16 @@ function wordOdd(lv){const [A,Bk]=catPair();const same=shuf(B.CAT[A][1]).slice(0
   return mk('rel',lv,{kind:'words',html:'',text:'אֵיזוֹ מִלָּה לֹא שַׁיֶּכֶת?',ans:{t:'txt',v:odd},ds:same.map(v=>({t:'txt',v})),rule:`הַשְּׁאָר הֵם ${B.CAT[A][0]}`,key:'wo'+odd+same.join()});}
 function belongs(lv){const [A]=catPair();const ws=shuf(B.CAT[A][1]);const shown=ws.slice(0,3),a=ws[3];const others=shuf(Object.keys(B.CAT).filter(k=>k!==A&&!B.CATNO.some(([x,y])=>(x===A&&y===k)||(x===k&&y===A)))).slice(0,3).map(k=>pk(B.CAT[k][1]));
   return mk('rel',lv,{kind:'words',html:`<div class="thw sm">${shown.join(' · ')}</div>`,text:'מָה עוֹד שַׁיָּךְ לַקְּבוּצָה?',ans:{t:'txt',v:a},ds:others.map(v=>({t:'txt',v})),rule:`כֻּלָּם ${B.CAT[A][0]}`,key:'be'+shown.join()});}
-function part(lv){const [p,w,g,ds]=pk(B.PART);
+function part(lv){const [p,w,g,ds]=lpick('th-rel',B.PART);
   return mk('rel',lv,{kind:'words',html:`<div class="thw">${p}</div>`,text:g==='f'?'הִיא חֵלֶק שֶׁל...':'הוּא חֵלֶק שֶׁל...',ans:{t:'txt',v:w},ds:shuf(ds).slice(0,nOpts(lv)-1).map(v=>({t:'txt',v})),rule:`${p} — חֵלֶק שֶׁל ${w}`,key:'pa'+p});}
-function syn(lv){const [w,s,ds]=pk(B.SYN);
+function syn(lv){const [w,s,ds]=lpick('th-rel',B.SYN);
   return mk('rel',lv,{kind:'words',html:`<div class="thw">${w}</div>`,text:'אֵיזוֹ מִלָּה אוֹמֶרֶת כִּמְעַט אוֹתוֹ דָּבָר?',ans:{t:'txt',v:s},ds:shuf(ds).slice(0,nOpts(lv)-1).map(v=>({t:'txt',v})),rule:`${w} וְ${s} — כִּמְעַט אוֹתוֹ דָּבָר`,key:'sy'+w});}
-function hardOdd(lv){const [three,odd,why]=pk(B.ODD);
+function hardOdd(lv){const [three,odd,why]=lpick('th-rel',B.ODD);
   return mk('rel',lv,{kind:'words',html:'',text:'אֵיזוֹ מִלָּה לֹא שַׁיֶּכֶת?',ans:{t:'txt',v:odd},ds:three.map(v=>({t:'txt',v})),rule:`הַשְּׁאָר ${why}`,key:'ho'+odd});}
 function genRel(lv){const f=pk({1:[picOdd],2:[picOdd,opp,opp],3:[wordOdd,opp,belongs],4:[part,syn,wordOdd,belongs],5:[hardOdd,hardOdd,syn,part]}[lv]);return f(lv);}
 
 /* ---------- sentence completion ---------- */
-function genSen(lv){const it=pk(B.SEN.filter(x=>x[0]===lv));const [,s,a,ds]=it;const two=/…/.test(a);
+function genSen(lv){const it=lpick('th-sen',B.SEN.filter(x=>x[0]===lv));const [,s,a,ds]=it;const two=/…/.test(a);
   const html=s.split('___').map(x=>x).join('<span class="blank">____</span>');
   return mk('sen',lv,{kind:'words',html:`<div class="sent2">${html}</div>`,text:two?'אֵילוּ מִלִּים מַשְׁלִימוֹת אֶת הַמִּשְׁפָּט?':'אֵיזוֹ מִלָּה מַשְׁלִימָה אֶת הַמִּשְׁפָּט?',
     ans:{t:'txt',v:a},ds:shuf(ds).slice(0,nOpts(lv)-1).map(v=>({t:'txt',v})),rule:`<div class="sent2">${s.split('___').reduce((acc,x,i)=>acc+(i?`<b class="fill">${a.split(' … ')[i-1]||a}</b>`:'')+x,'')}</div>`,key:'se'+s});}
