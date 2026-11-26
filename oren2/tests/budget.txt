@@ -11,3 +11,5 @@ regressions 60            # #356 walks all ~114 activities, taps back on each: ~
 playthrough-desktop 300   # FULL=1 only: plays every world level by level
 playthrough-phone 300     # FULL=1 only: same on the phone viewport
 eventlog 60               # #348 event log: worker + fake D1, then the real page through the worker: ~15 s
+friend-desktop 60         # #433 adds the error-in-a-mission check (one thrown error, ~2 s): ~25 s in all
+friend-phone 60           # same file on the phone viewport
