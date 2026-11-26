@@ -599,6 +599,22 @@ def auto_resume(issues, lookup, set_labels, comment, tell):
         out.append((n, step))
     return out
 
+def open_pr_resumes(chosen, lookup):
+    """#295: before a pass starts issue n, look up its open PR (lookup(n) -> pr_resume_info or None). PR open -> no new worker:
+    store the resume step (review/fix/resolve/merge, #264 path); a PURPLE owner question -> not started. A stored step or a
+    pending owner answer is left as is. -> the issues to start."""
+    out = []
+    for c in chosen:
+        n = c["number"]
+        if _resume_file(n, "resume").exists() or pending_answer(n): out.append(c); continue
+        info = lookup(n)
+        if info and info.get("pr"):
+            step = resume_step(info.get("mergeable", ""), info.get("verdict", ""))
+            if not step: continue
+            set_resume(n, step, info.get("verdict", ""))
+        out.append(c)
+    return out
+
 def human_without_question(issues):
     """Pure (#264): blocked + ready-for-human issues (gh JSON with comments) with no QUESTION: line and no PURPLE owner question
     -> numbers. The owner only gets real questions; a hand task (not blocked) is his own and stays."""
@@ -1671,6 +1687,7 @@ def run_pass():
     chosen = stop_filter([c for c in select(issues, LOCAL_LANES + remote_lanes, MAX_CORE, EXPRESS) if not FileLock(f"issue-{c['number']}").held_by_other()], gv)   # #269: express still starts on stop
     wmap = {c["number"]: w for c, w in assign_where(chosen, len(busy) - remote_busy, remote_busy, LOCAL_LANES, remote_lanes)}
     chosen = [c for c in chosen if c["number"] in wmap]
+    if not DRY: chosen = open_pr_resumes(chosen, resume_lookup)     # #295: an issue with an open PR resumes; never a second worker
     cutoff = CFG["stuck_hours"] * 3600
     stuck = [i for i in issues if "in-progress" in i["labels"] and not FileLock(f"issue-{i['number']}").held_by_other()
              and (time.time() - datetime.fromisoformat(i["updatedAt"].replace("Z", "+00:00")).timestamp()) > cutoff]

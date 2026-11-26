@@ -152,3 +152,26 @@ def fake_run(cmd):
 assert remote.status(192, run=fake_run, since="2026-11-26T12:00:00Z")["pr"]["number"] == 238
 assert remote.status(192, run=fake_run)["pr"]["number"] == 238                    # CLI: the 'Runner: started' comment is the run start
 print("ok remote.status ignores an earlier run's PR")
+
+# #295: the pass never starts a second worker for an issue that already has an open PR (lane/n, claude/*, 'Fixes #n')
+saved = r.remote.pr_for, r.gh
+prs = {281: (286, "claude/github-issue-281-x")}                                   # #281 has a cloud worker's PR open
+def fgh(*a, **k):
+    if a[:2] == ("pr", "view"): return 0, json.dumps({"number": int(a[2]), "state": "OPEN", "mergeable": "MERGEABLE", "headRefOid": "h", "commits": [], "comments": []})
+    return 0, ""
+r.remote.pr_for, r.gh = (lambda n, run=None, state="open": prs.get(n, (None, None))), fgh
+try:
+    chosen = [I(281, ["ready-for-agent", "pack"]), I(148, ["ready-for-agent", "pack"])]
+    got = r.open_pr_resumes(chosen, r.resume_lookup)
+finally: r.remote.pr_for, r.gh = saved
+assert [c["number"] for c in got] == [281, 148], got                              # both run: 281 as a resume, 148 fresh
+assert r.take_resume(281) == "review" and r.take_resume(148) == "", "open claude/* PR -> resume at review, no new worker"
+look = {300: {"pr": 9, "mergeable": "MERGEABLE", "verdict": "VERDICT: PURPLE red or blue? hold"},
+        301: {"pr": 8, "mergeable": "MERGEABLE", "verdict": "VERDICT: FIX add test"}, 302: {"pr": 7, "mergeable": "CONFLICTING", "verdict": ""}}
+r.set_resume(303, "merge", "VERDICT: PASS")                                       # auto_resume already stored a step: kept as is
+calls = []
+got = r.open_pr_resumes([I(n, ["ready-for-agent"]) for n in (300, 301, 302, 303)], lambda n: calls.append(n) or look.get(n))
+assert [c["number"] for c in got] == [301, 302, 303] and 303 not in calls, (got, calls)   # PURPLE owner question: not started at all
+assert r.take_resume(301) == "fix" and r.take_resume_verdict(301) == "VERDICT: FIX add test"
+assert r.take_resume(302) == "resolve" and r.take_resume(303) == "merge" and r.take_resume(300) == ""
+print("ok #295 an open PR resumes, no second worker")
