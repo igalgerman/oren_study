@@ -1,0 +1,11 @@
+# #187 time budget per suite, in seconds (tests/run.sh FAILS a suite slower than this). Name = the suite as run.sh prints it.
+# default 60; a slower suite needs a line here with a '# why'. Measured 26 Nov 2026 in a 4-core cloud box, 3 suites at once (like a CI shard).
+default 60
+activities 180            # opens and finishes all ~47 Talents City activities one by one: 128 s even alone
+explore2-desktop 90       # 99 checks over every explore world: ~70 s under load
+explore2-phone 90         # same file on the phone viewport: ~70 s
+edge-cases 90             # real-speed level transitions and timers: ~68 s
+help-desktop 90           # every generated question's explainer: ~68 s
+help-phone 90             # same file on the phone viewport: ~67 s
+playthrough-desktop 300   # FULL=1 only: plays every world level by level
+playthrough-phone 300     # FULL=1 only: same on the phone viewport
