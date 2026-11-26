@@ -93,6 +93,16 @@ const srv = http.createServer((q, r) => { const m = /^\/api\/save\/([a-f0-9]{32}
     const got = await A.waitForFunction(() => !document.querySelector('.tlock:not(.tyay)') && !!document.querySelector('.tyay'), null, { timeout: 6000 }).then(() => true).catch(() => false);
     ok('the parent\'s phone grants +15: Oren\'s device unlocks by itself, with the happy note', got, await A.evaluate(() => JSON.stringify(window.TAL.S().set.lim)));
     ok('and the top bar shows the new time', await A.evaluate(() => { const e = document.querySelector('#hud .tpill'); return !!e && !e.hidden && /15 דַּקּוֹת/.test(e.textContent); }));
+    // #45: 'he has X minutes' REPLACES what is left: end now (stopper), then 30 -> stopper goes, 30 left (not 30 + old)
+    const chip = (t) => B.evaluate(() => window.TAL.parentPanel('day')).then(() => sleep(300)).then(() => B.evaluate(() => { const d = document.querySelector('#sPar details.pdet'); if (d) d.open = true; })).then(() => B.locator('#sPar .pchip', { hasText: t }).first().click());
+    await chip('לסיים עכשיו');
+    ok('parent ends the day: his device locks', await A.waitForFunction(() => !!document.querySelector('.tlock:not(.tyay)'), null, { timeout: 6000 }).then(() => true).catch(() => false));
+    await chip('30 דק׳');
+    const un = await A.waitForFunction(() => !document.querySelector('.tlock:not(.tyay)'), null, { timeout: 6000 }).then(() => true).catch(() => false);
+    ok('parent: "30 minutes": the stopper goes away at once', un);
+    ok('and he has exactly 30 minutes left (replaces, not adds)', await A.evaluate(() => window.TAL.timeLeft() === 30), await A.evaluate(() => JSON.stringify(window.TAL.S().set.lim)));
+    await chip('20 דק׳');
+    ok('a smaller number replaces too: 20 left', await A.waitForFunction(() => window.TAL.timeLeft() === 20, null, { timeout: 6000 }).then(() => true).catch(() => false));
   }
   ok('no page errors', !errs.length, errs.join(' | '));
   await b.close(); srv.close(); L.finish('timelimit-' + L.variant, res);
