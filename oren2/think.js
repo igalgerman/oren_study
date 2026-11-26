@@ -410,7 +410,7 @@ T.thinkSummary=(box,sec)=>{const L=skillList().filter(x=>x.n>=6);
     :'<div class="pnote">יופיע אחרי כמה ימי משחק (צריך לפחות 6 תשובות בנושא).</div>');sk.classList.add('thsum');
   /* the last 7 days, one line each, tap for details */
   const s0=S(),days=C.lastDays(7),log=O.save.alog||{};const dn=d=>{const t=C.lastDays(2);return d===t[0]?'היום':d===t[1]?'אתמול':'יום '+'אבגדהוש'[new Date(d+'T12:00').getDay()]+'׳';};
-  const actName=k=>k.startsWith('w:')?plain((O.WORLDS.find(w=>'w:'+w.id===k)||{name:'חשבון'}).name):T.ACT[k]?plain(T.ACT[k].name):k;
+  const actName=k=>k.startsWith('arc-')?'ארקייד':k.startsWith('w:')?plain((O.WORLDS.find(w=>'w:'+w.id===k)||{name:'חשבון'}).name):T.ACT[k]?plain(T.ACT[k].name):k;
   const rows=days.map(d=>{const L=log[d]||{a:{},s:0,k:{}},m=Math.round((s0.time[d]|0)/60);const acts=Object.entries(L.a||{}).sort((a,b)=>b[1]-a[1]);
     if(!m&&!acts.length)return `<div class="thday off"><span>${dn(d)}</span><span>לא שיחק</span></div>`;
     const [a,o]=C.sumK(O.save,[d]);const ks=Object.entries(L.k||{}).filter(([k])=>k!=='nk');
@@ -419,8 +419,10 @@ T.thinkSummary=(box,sec)=>{const L=skillList().filter(x=>x.n>=6);
   const w1=C.lastDays(14).slice(0,7),w2=C.lastDays(14).slice(7);const mins=w1.map(d=>(s0.time[d]|0)/60),played=mins.filter(m=>m>=1).length;const avg=played?Math.round(mins.reduce((a,b)=>a+b,0)/played):0;
   const [a1,o1]=C.sumK(O.save,w1),[a2,o2]=C.sumK(O.save,w2);
   /* compact: one line for today, the week behind one tap */
-  const t0=days[0],L0=log[t0]||{a:{}},m0=Math.round((s0.time[t0]|0)/60),a0=Object.keys(L0.a||{});
-  sec(box,'היום',`<div class="pnote">${m0} דק׳${a0.length?' · '+a0.slice(0,3).map(actName).join(', '):' · עוד לא שיחק'}${L0.s?' · ⭐ '+L0.s:''}</div>
+  /* #352: "hasn't played yet" only with no minutes and no play today (the arcade counts too) */
+  const t0=days[0],L0=log[t0]||{a:{}},m0=Math.round((s0.time[t0]|0)/60),a0=[...new Set(Object.keys(L0.a||{}).map(actName))];
+  const nt=+((O.realSave||O.save).now||{}).t||0,playedT=nt&&new Date(nt).toDateString()===new Date().toDateString();
+  sec(box,'היום',`<div class="pnote">${m0} דק׳${a0.length?' · '+a0.slice(0,3).join(', '):m0||playedT?'':' · עוד לא שיחק'}${L0.s?' · ⭐ '+L0.s:''}</div>
     <details class="pdet"><summary>📅 7 ימים אחרונים</summary><div class="pdin">${rows}<div class="pnote thavg">ממוצע ${avg} דק׳ ביום משחק · דיוק השבוע ${a1?pct(o1/a1):'—'}${a2?` (שבוע קודם ${pct(o2/a2)})`:''}</div></div></details>`);};
 /* inside "full details": every skill in one table */
 T.thinkSkills=(box,sec,BAR)=>{const L=skillList().filter(x=>x.n||x.k==='nk'&&(TH().nk|0));if(!L.length)return;

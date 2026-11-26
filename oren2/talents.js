@@ -164,7 +164,7 @@ O.on('kingdomScene',sc=>{if(!window.TAL_noHome&&!sc.querySelector('.kmine')){con
 let lastAct=Date.now(),session=0;
 ['pointerdown','keydown'].forEach(ev=>addEventListener(ev,()=>{lastAct=Date.now();},true));
 /* every tick is saved (and so sent to the family save): the phone shows the full play time (#41) */
-function timeTick(){if(document.hidden||Date.now()-lastAct>60000||$('#hud').hidden)return;const s=S();const d=today();s.time[d]=(s.time[d]|0)+15;session+=15;O.persist();}
+function timeTick(){if(document.hidden||Date.now()-lastAct>60000||$('#hud').hidden)return;const s=S();const d=today();s.time[d]=(s.time[d]|0)+15;session+=15;if(window.DAYLOG&&window.DAYLOG.beat)window.DAYLOG.beat();O.persist();}
 O.timeTick=timeTick;setInterval(timeTick,15000);
 const breakTime=()=>window.HEALTH&&window.HEALTH.breakNow();
 
@@ -958,7 +958,7 @@ const exitParent=()=>{parentOn=false;O.showMap();};
 function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(dl&&!dl.hidden)dl.hidden=true;if(!parentOn)return login(()=>panel(tab));
   if(tab&&GROUP[tab]){openSec=tab;curTab=GROUP[tab];}else if(tab){curTab=tab;if(tab!=='more')openSec=null;}
   const sy=$('#screens').scrollTop;O.setScreen('sPar','valley',exitParent);O.hud('<div class="chip">לוח הורים</div>');const s=$('#sPar');s.innerHTML='';
-  s.appendChild(h('div','whead',`<h1>לוח הורים</h1>`));const tb=h('div','ptabs');TABS.forEach(([id,n])=>{const b=h('button','ptab'+(id===curTab?' on':''),n);b.onclick=()=>{openSec=null;panel(id);};tb.appendChild(b);});s.appendChild(tb);
+  s.appendChild(h('div','whead',`<h1>לוח הורים</h1>`));const nb=h('div','pnow');s.appendChild(nb);nowTop(nb);const tb=h('div','ptabs');TABS.forEach(([id,n])=>{const b=h('button','ptab'+(id===curTab?' on':''),n);b.onclick=()=>{openSec=null;panel(id);};tb.appendChild(b);});s.appendChild(tb);
   const body=h('div','pbody');s.appendChild(body);
   if(curTab==='sum')sumTab(body);
   else if(curTab==='day'){timeTab(body);if(window.HEALTH)window.HEALTH.panel(body,sec,()=>panel('day'),'today');planTab(body);if(window.DAYLOG)window.DAYLOG.panel(body,sec);if(window.LEARN)window.LEARN.parentPanel(body,sec,()=>panel('day'));if(window.KNOW)window.KNOW.panel(body,sec,()=>panel('day'));}
@@ -967,10 +967,13 @@ function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(
   const out=h('div','btnrow');const bb=h('button','bigbtn plain sm',ICON.home+'<span>יציאה מלוח ההורים</span>');bb.onclick=exitParent;out.appendChild(bb);s.appendChild(out);window.__par=curTab;parLiveOn();
   if(GROUP[tab]&&openSec)setTimeout(()=>{const o=s.querySelector('details[open]');if(o&&tab===openSec&&curTab==='more')o.scrollIntoView({block:'start'});else $('#screens').scrollTop=sy;},0);}
 T.parentPanel=t=>{parentOn=true;panel(t);};
+/* #352: the top line of every tab: "playing now · N min (from HH:MM)" + one stop button, or "last played" */
+function nowTop(el){const DL=window.DAYLOG;el.innerHTML=DL?DL.nowLine():'';const left=T.limLeft();if(!DL||!DL.playing()||(left&&left.min<=0))return;
+  const b=h('button','pchip bad','⏹ לעצור עכשיו');b.onclick=()=>{stopNow();sfx.ok&&sfx.ok(1);nowTop(el);};el.firstChild?el.firstChild.appendChild(b):el.appendChild(b);}
 /* while the parent panel is open: pull the family save every 20s so "playing now" and the log follow Oren from another house */
 let parLive=0;
 function parLiveOn(){if(parLive)return;parLive=setInterval(()=>{if(!parentOn||$('#sPar').hidden){clearInterval(parLive);parLive=0;return;}
-  Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(window.DAYLOG)window.DAYLOG.refresh();});},window.__parPull||20000);}
+  Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(window.DAYLOG)window.DAYLOG.refresh();document.querySelectorAll('#sPar .pnow').forEach(nowTop);});},window.__parPull||20000);}
 const sec=(box,t,html)=>{const d=h('section','psec',`<h3>${t}</h3>`);if(html)d.insertAdjacentHTML('beforeend',html);box.appendChild(d);return d;};
 /* --- summary --- */
 /* problems in the last 14 days: one short line, details only on tap */
@@ -987,7 +990,7 @@ function sumTab(box){const s0=T.S(),sv=O.save;
   box.appendChild(h('div','psum',`<div class="psl">⏱️ היום: <b>${usedMin()} דק׳</b> משחק</div><div class="psl">🔥 רצף: <b>${st0===1?'יום אחד':st0+' ימים'}</b></div><div class="psl">🎯 היום: ${done.length?done.join(' · '):DL?'עוד לא סיים פעילות':doneN()+' פעילויות'}</div>`));
   issues(box);
   const det=document.createElement('details');det.className='pdet';det.innerHTML='<summary>📈 פירוט מלא</summary>';const dbox=h('div','pdin');det.appendChild(dbox);box.appendChild(det);box=dbox;
-  if(DL)DL.nowBox(box);if(window.LEARN){const rl=window.LEARN.runwayLine();if(rl)box.appendChild(h('div','pnote',rl));}if(T.thinkSummary)T.thinkSummary(box,sec);
+  if(window.LEARN){const rl=window.LEARN.runwayLine();if(rl)box.appendChild(h('div','pnote',rl));}if(T.thinkSummary)T.thinkSummary(box,sec);
   const acc=sv.ans?Math.round((sv.ok|0)/sv.ans*100):0;const totT=Object.values(s0.time).reduce((a,v)=>a+(v|0),0);const talSt=Object.values(s0.tl).reduce((a,c)=>a+(c.s|0),0);
   sec(box,'במבט אחד',`<div class="ptiles">
     <div><b>${new Set([...(sv.days||[]),...Object.keys(s0.time).filter(k=>(s0.time[k]|0)>=60)]).size}</b><span>ימי משחק</span></div><div><b>${O.dayStreak()}</b><span>רצף ימים</span></div>
@@ -1059,13 +1062,15 @@ O.on('tlDone',()=>{tEnd=Date.now();cntUp();});O.on('levelDone',()=>{tEnd=Date.no
 function cntUp(){if(O.isParentPlay)return;const s=T.S();s.cnt=s.cnt||{};const d=O.today();s.cnt[d]=(s.cnt[d]|0)+1;const ks=Object.keys(s.cnt).sort();ks.slice(0,Math.max(0,ks.length-30)).forEach(k=>delete s.cnt[k]);}
 const todayL=()=>{const l=LIM();return l.today&&l.today.d===O.today()?l.today:null;};
 /* today's limit: {min} or {n} or null */
-function limNow(){const t=todayL(),l=LIM();if(t){if(t.none)return null;if(t.min)return {min:t.min};}return l.daily?{min:l.daily|0}:null;}
+function limNow(){const t=todayL(),l=LIM();if(t){if(t.none)return null;if(t.min!=null)return {min:t.min|0};}return l.daily?{min:l.daily|0}:null;}
 function limitToday(){const x=limNow();return x&&x.min?x.min:0;}
 /* what is left: {min:m}, or null without a limit */
 T.limLeft=()=>{const x=limNow();if(!x)return null;return {min:Math.max(0,x.min-usedMin())};};
 T.timeLeft=()=>{const x=T.limLeft();return x&&x.min!=null?x.min:null;};
 /* more minutes for today, on top of what is left */
 const pnow=()=>{O.persist();O.famNow&&O.famNow();};
+/* "he has 0 more minutes" (#132): his device shows the gentle stop screen on its next sync */
+function stopNow(){LIM().today={d:O.today(),min:usedMin()};pnow();}
 function grant(v){const l=LIM(),x=limNow();const base=x&&x.min&&x.min>usedMin()?x.min:usedMin();l.today={d:O.today(),min:base+v};pnow();}
 const pdOpen={};/* which "more" sections stay open when the panel redraws */
 const pdet=(box,key,title)=>{const d=document.createElement('details');d.className='pdet';d.innerHTML=`<summary>${title}</summary>`;const inner=h('div','pdin');d.appendChild(inner);if(pdOpen[key])d.open=true;d.addEventListener('toggle',()=>{pdOpen[key]=d.open;});box.appendChild(d);return inner;};
@@ -1078,7 +1083,7 @@ function timeTab(box){const l=LIM(),x=limNow(),left=T.limLeft(),t=todayL();
   const more=pdet(ts,'tmore','עוד אפשרויות');
   const pr=h('div','popt','<span>יֵשׁ לוֹ עוֹד:</span>');[20,30,45,60].forEach(v=>mk(pr,v+' דק׳',()=>{l.today={d:O.today(),min:usedMin()+v};pnow();},left&&left.min===v));
   mk(pr,'ללא הגבלה',()=>{l.today={d:O.today(),none:1};pnow();},t&&t.none);if(t)mk(pr,'↺ כמו כל יום',()=>{l.today=null;pnow();});
-  mk(pr,'⏹ לסיים עכשיו',()=>{l.today={d:O.today(),min:Math.max(1,usedMin())};pnow();}).classList.add('bad');more.appendChild(pr);
+  mk(pr,'⏹ לסיים עכשיו',stopNow).classList.add('bad');more.appendChild(pr);
   const ds=sec(pdet(box,'tdaily','🗓️ הגבלה קבועה לכל יום'),'הגבלה קבועה לכל יום','<div class="pnote">נספר רק זמן פעיל. אורן רואה למעלה כמה נשאר. בסוף הזמן — מסך "נתראה מחר"; אם אורן באמצע פעילות, הוא מסיים אותה (עד 5 דקות). שינוי מהטלפון שלכם מגיע למכשיר של אורן תוך כדקה.</div>');
   const dr=h('div','popt','<span>דקות ביום:</span>');[[0,'ללא'],[20,'20'],[30,'30'],[45,'45'],[60,'60'],[90,'90']].forEach(([v,n])=>{const b=h('button','pchip'+((l.daily|0)===v?' on':''),n);b.onclick=()=>{l.daily=v;O.persist();panel('time');};dr.appendChild(b);});ds.appendChild(dr);
   const br=h('div','popt','<span>לא לשחק אחרי:</span>');[[0,'ללא'],[18,'18:00'],[19,'19:00'],[20,'20:00'],[21,'21:00']].forEach(([v,n])=>{const b=h('button','pchip'+((l.bed|0)===v?' on':''),n);b.onclick=()=>{l.bed=v;O.persist();panel('time');};br.appendChild(b);});ds.appendChild(br);

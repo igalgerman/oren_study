@@ -2,3 +2,4 @@
 .dlnow.on{background:#e3f6e3;font-weight:700}
 .dlrow .dli{display:inline-block;width:1.2em;text-align:center}
 .dlrow.dl-q,.dlrow.dl-s{opacity:.75}
+.pnow .dlnow{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.pnow .dlnow .pchip{margin:0}

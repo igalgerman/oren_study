@@ -1,7 +1,8 @@
 /* ===== DAY LOG: everything Oren did, for the parent (also from another house, in real time through the family save) =====
    save.alog[day].e = [[min, id, stars, ok, n, helped, o], ...]   min = minutes after midnight when it started,
      ok/n = right on the first try / questions, o: 'c' done · 'q' left in the middle · 'x' opened and closed at once (only for Oren's "again" list) · 's' a path step he did not reach · 'b' stopped for a break
-   save.now = {id, t}  the activity being played and the last moment something happened (ms) — "playing now" for the parent.
+   save.now = {id, t, s}  the activity being played, the last moment something happened (ms; also each active play tick, the heartbeat) and when this play
+     session started (s; a new session after 3+ min without a heartbeat) — "playing now · N min (from HH:MM)" for the parent (#352).
    Detailed entries are kept for 14 days (think.js keeps the day counts for 35). Parent text has no nikud. */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;
 const DL=window.DAYLOG={};
@@ -19,14 +20,18 @@ DL.add=add;
 
 /* ---------- the activity being played ---------- */
 let cur=null;
-const now=t=>{if(O.isParentPlay)return;S().now={id:cur?cur.id:null,t:t||Date.now()};};
+const GAP=3*60000;
+const mark=id=>{if(O.isParentPlay)return;const t=Date.now(),p=S().now;S().now={id,t,s:p&&p.s&&t-(+p.t||0)<GAP?p.s:t};};
+const now=()=>mark(cur?cur.id:null);
+/* the heartbeat: every active play tick (talents.js timeTick, which saves anyway) — never from the parent panel */
+DL.beat=()=>{const par=document.querySelector('#sPar');if(par&&!par.hidden)return;mark(cur&&!cur.end?cur.id:null);};
 function begin(id){if(O.isParentPlay)return;if(cur&&!cur.end)end(cur.brk?'b':'q');cur={id,t:Date.now(),d:day(),ok:0,n:0,help:0};now();}
 function end(o,st){const c=cur;if(!c||c.end)return;c.end=1;if(o!=='c'&&!c.n&&Date.now()-c.t<15000)o='x';   /* opened and closed at once: 'x' — kept for Oren's "again" list, not shown to the parent */
   add(c.d,[minOf(c.t),c.id,st|0,c.ok,c.n,c.help,o]);now();cur=null;O.persist();}
 DL.begin=begin;DL.end=end;DL.cur=()=>cur;
 /* a round that ends again and again ("again"): each finish is its own line */
 function done(id,st){if(O.isParentPlay)return;if(cur&&cur.id===id&&!cur.end){end('c',st);return;}if(cur&&!cur.end)end('q');
-  const t=Date.now();add(day(),[minOf(t),id,st|0,0,0,0,'c']);S().now={id:null,t};O.persist();}
+  const t=Date.now();add(day(),[minOf(t),id,st|0,0,0,0,'c']);mark(null);O.persist();}
 O.on('tlDone',(id,st)=>done(id,st!=null?st:((T.S().tl[id]||{}).s|0)));
 O.on('levelDone',(lv,st)=>{if(lv&&lv.id)done('lv:'+lv.id,st);});
 O.on('tq',(id,ok)=>{if(cur&&!cur.end){cur.n++;if(ok)cur.ok++;now();}});
@@ -57,8 +62,9 @@ DL.rows=d=>{const L=((O.realSave.alog||{})[d]||{}).e||[];return L.filter(e=>e[6]
 DL.rowHTML=e=>{const [m,id,st,ok,n,hp,o]=e;const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`${ok}/${n} נכון בניסיון ראשון`:'',hp?`עזרה ×${hp}`:'',WHY[o]].filter(Boolean).join(' · ');
   return `<div class="prow dlrow dl-${o}"><span class="pn"><b class="dli">${ICO[o]||''}</b> ${o==='s'?'':hhmm(m)+' · '}${DL.nameOf(id)} <small>${DL.domOf(id)}</small></span><span class="pc">${res}</span></div>`;};
 /* the top line of the summary: playing now / last played */
-DL.nowLine=()=>{const nw=O.realSave.now;if(!nw||!nw.t)return '';const ago=Date.now()-nw.t;const nm=nw.id?DL.nameOf(nw.id):'';
-  if(ago<3*60000)return `<div class="dlnow on">🟢 אורן משחק עכשיו${nm?': '+nm:''} · ${ago<60000?'עכשיו':'לפני '+Math.round(ago/60000)+' דק׳'}</div>`;
+DL.playing=()=>{const nw=O.realSave.now;return !!(nw&&nw.t&&Date.now()-nw.t<GAP);};
+DL.nowLine=()=>{const nw=O.realSave.now;if(!nw||!nw.t)return '';
+  if(DL.playing()){const s=+nw.s||nw.t,d=new Date(s);return `<div class="dlnow on">🟢 משחק עכשיו · ${Math.max(0,Math.round((Date.now()-s)/60000))} דק׳ (מ-${pad(d.getHours())}:${pad(d.getMinutes())})</div>`;}
   const d=new Date(nw.t),t0=new Date();const same=d.toDateString()===t0.toDateString();const y=new Date(t0);y.setDate(t0.getDate()-1);
   const when=same?'היום':d.toDateString()===y.toDateString()?'אתמול':pad(d.getDate())+'.'+pad(d.getMonth()+1);
   return `<div class="dlnow">שיחק לאחרונה: ${when} ${pad(d.getHours())}:${pad(d.getMinutes())}</div>`;};
@@ -70,12 +76,10 @@ DL.merge=(save,o)=>{for(const d in o.alog||{}){const src=(o.alog[d]||{}).e;if(!A
   if(o.now&&(+o.now.t||0)>(+(save.now||{}).t||0))save.now=o.now;trim();};
 /* parent panel, day tab: "playing now" and what he did today and yesterday, one line each. Tap a day to see its lines. */
 const rowsHTML=d=>{const r=DL.rows(d);return r.length?r.map(DL.rowHTML).join(''):'<div class="pnote">עוד לא שיחק</div>';};
-DL.panel=(box,sec)=>{const s=sec(box,'מה אורן עשה','<div class="dlnowbox">'+DL.nowLine()+'</div>');
+DL.panel=(box,sec)=>{const s=sec(box,'מה אורן עשה','');
   const ds=[0,1].map(i=>{const x=new Date();x.setDate(x.getDate()-i);return x;});
   ds.forEach((x,i)=>{const d=x.getFullYear()+'-'+pad(x.getMonth()+1)+'-'+pad(x.getDate());const det=document.createElement('details');det.className='pdet';if(i===0)det.open=true;
     det.innerHTML=`<summary>${i?'אתמול':'היום'}</summary><div class="pdin dllog" data-d="${d}">${rowsHTML(d)}</div>`;s.appendChild(det);});return s;};
-/* top line of the summary tab */
-DL.nowBox=box=>{const d=document.createElement('div');d.className='dlnowbox';d.innerHTML=DL.nowLine();box.appendChild(d);};
 /* redraw the live parts (called after each family pull while the parent panel is open) */
-DL.refresh=()=>{document.querySelectorAll('.dlnowbox').forEach(e=>{e.innerHTML=DL.nowLine();});document.querySelectorAll('.dllog[data-d]').forEach(e=>{e.innerHTML=rowsHTML(e.dataset.d);});};
+DL.refresh=()=>{document.querySelectorAll('.dllog[data-d]').forEach(e=>{e.innerHTML=rowsHTML(e.dataset.d);});};
 })();
