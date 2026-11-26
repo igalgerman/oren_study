@@ -106,6 +106,18 @@ export function usageText(limits: Limit[]): string {
   return [part('five_hour', '5h', false), part('seven_day', 'week', true)].filter(Boolean).join(' · ')
 }
 
+/** #239: the reading the runner's usage governor needs (written to .runs/usage.json every refresh); null when there is no 5h reading. */
+export function usageJson(limits: Limit[], nowMs: number) {
+  const f = limits.find(x => x.kind === 'five_hour'), w = limits.find(x => x.kind === 'seven_day')
+  if (!f) return null
+  return { five_h_pct: f.percentUsed, five_h_reset: f.resetsAt ?? null, week_pct: w ? w.percentUsed : null, week_reset: w?.resetsAt ?? null, at: new Date(nowMs).toISOString() }
+}
+
+/** #239: the runner's governor line from .runs/governor.json text; '' when missing or unreadable. */
+export function governorLine(json: string): string {
+  try { return String((JSON.parse(json) as { text?: string }).text ?? '') } catch { return '' }
+}
+
 export const STAGES = ['Plan', 'Build', 'Review', 'Merge', 'Live'] as const
 
 /** One line per issue: where it is in idea → build → review → merge+tests → live. */

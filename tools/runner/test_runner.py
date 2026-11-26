@@ -570,3 +570,50 @@ assert W.orch_decision("done", [213], _st, _n + 31 * 60) == "escalate"
 _st["escalated"] = _n + 31 * 60
 assert W.orch_decision("done", [213], _st, _n + 40 * 60) == "nudge"              # no second escalation within 2 h
 print("ok watch the checker")
+
+# #239 usage governor (pure)
+from datetime import datetime as _dt, timezone as _tz
+_iso = lambda t: _dt.fromtimestamp(t, _tz.utc).isoformat()
+_now = 1_800_000_000.0
+_G = {"target": 90, "min": 2, "max": 8, "stop": 93, "pace": 3.5, "week_cap": 4, "stale_s": 900, "fallback": 4}
+def _u(pct, reset_h, week=10, week_reset_h=24 * 6, age=60):
+    return {"five_h_pct": pct, "five_h_reset": _iso(_now + reset_h * 3600), "week_pct": week, "week_reset": _iso(_now + week_reset_h * 3600), "at": _iso(_now - age)}
+# below target: 20% with 4h left, 3.5%/h/lane -> (90-20)/(3.5*4)=5 lanes
+g = r.governor(_u(20, 4), [], _now, _G); assert g["lanes"] == 5 and not g["stop"] and abs(g["projected"] - 90) < 0.01, g
+# far below: capped at max
+assert r.governor(_u(5, 1), [], _now, _G)["lanes"] == 8
+# above target: projection over 90 even at min -> min
+g = r.governor(_u(85, 3), [], _now, _G); assert g["lanes"] == 2 and g["projected"] > 90, g
+# 93% stop: no new run
+g = r.governor(_u(93, 1), [], _now, _G); assert g["stop"] and "STOP" in r.governor_text(g) and "governor: 0 lanes" in r.governor_text(g)
+assert not r.governor(_u(92.9, 0.1), [], _now, _G)["stop"]
+# weekly guard: 2 days into the week (even ~28.6%), week 45% > 38.6 -> cap 4; 30% -> no cap
+assert r.governor(_u(5, 1, week=45, week_reset_h=24 * 5), [], _now, _G)["lanes"] == 4
+assert r.governor(_u(5, 1, week=30, week_reset_h=24 * 5), [], _now, _G)["lanes"] == 8
+# stale / missing -> config remote_lanes
+assert r.governor(_u(20, 4, age=16 * 60), [], _now, _G)["lanes"] == 4
+assert r.governor(None, [], _now, _G)["lanes"] == 4 and not r.governor(None, [], _now, _G)["stop"]
+assert r.governor({"at": "junk"}, [], _now, _G)["lanes"] == 4
+assert "no fresh usage" in r.governor_text(r.governor(None, [], _now, _G))
+# pace from the last hour (same window): 10 pts in 1h with 5 busy lanes = 2%/h/lane -> 20% + 2*n*4 <= 90 -> 8
+_rs = _iso(_now + 4 * 3600)
+_h = [{"at": _now - 3600, "pct": 10, "reset": _rs, "busy": 5}, {"at": _now - 60, "pct": 20, "reset": _rs, "busy": 5}]
+assert abs(r.gov_pace(_h, _now, _rs, 3.5) - 10 / (3540 / 3600) / 5) < 1e-9
+assert r.governor(_u(20, 4), _h, _now, _G)["lanes"] == 8
+# samples from another window, too short a span, or no busy lanes -> default pace
+assert r.gov_pace(_h, _now, "other", 3.5) == 3.5
+assert r.gov_pace([{**_h[1], "at": _now - 300}, _h[1]], _now, _rs, 3.5) == 3.5
+assert r.gov_pace([{**x, "busy": 0} for x in _h], _now, _rs, 3.5) == 3.5
+t = r.governor_text(r.governor(_u(20, 4), [], _now, _G)); assert t.startswith("governor: 5 lanes (5h 20% -> ~90% at ") and len(t.split(" at ")[1]) == 6, t
+print("ok governor")
+# total_lanes follows a fresh governor.json (the watchdog uses it), else config
+import json as _json, time as _time
+(r.RUNS).mkdir(exist_ok=True)
+(r.RUNS / "governor.json").write_text(_json.dumps({"lanes": 7, "stop": False, "at": _time.time()}))
+assert r.total_lanes() == r.LOCAL_LANES + 7
+(r.RUNS / "governor.json").write_text(_json.dumps({"lanes": 7, "stop": True, "at": _time.time()}))
+assert r.total_lanes() == r.LOCAL_LANES
+(r.RUNS / "governor.json").write_text(_json.dumps({"lanes": 7, "stop": False, "at": _time.time() - 3600}))
+assert r.total_lanes() == r.LOCAL_LANES + r.REMOTE_LANES
+(r.RUNS / "governor.json").unlink()
+print("ok governor lanes")

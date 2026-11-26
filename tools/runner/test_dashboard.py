@@ -117,3 +117,6 @@ pg3 = D.page(m3)
 assert "Cloud lanes" in pg3 and '<a href="https://github.com/x/y/pull/201">PR</a>' in pg3 and ">session</a>" in pg3 and "STALE" in pg3
 assert "Cloud lanes" not in D.page(m)
 print("ok dashboard cloud")
+m3["governor"] = "governor: 6 lanes (5h 40% -> ~89% at 19:00)"
+assert "Lanes: " in D.text(m3) and "· governor: 6 lanes (5h 40% -> ~89% at 19:00)" in D.text(m3) and "governor: 6 lanes" in D.page(m3)
+print("ok dashboard governor")
