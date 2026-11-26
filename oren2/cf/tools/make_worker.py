@@ -137,8 +137,8 @@ async function diag(req,env,u){
    try{const old=((await env.SAVES.list({prefix:'diag:'})).keys||[]).map(x=>x.name).sort().reverse().slice(200);for(const x of old)await env.SAVES.delete(x);}catch(e){}
    return J({ok:true,id:k});}catch(e){return J({error:'store'},503);}}
  if(req.method!=='GET')return J({error:'method'},405);
- const key=req.headers.get('x-admin-key')||u.searchParams.get('key')||'';/* GET = parent/admin only: env DIAG_KEY (a secret set in Cloudflare); unset = always refused */
- if(!env.DIAG_KEY||key!==env.DIAG_KEY)return J({error:'unauthorized'},401);
+ const key=req.headers.get('x-admin-key')||'';/* GET = parent/admin only: env DIAG_KEY (a secret set in Cloudflare); unset = always refused */
+ if(!env.DIAG_KEY||(await sha(key))!==(await sha(env.DIAG_KEY)))return J({error:'unauthorized'},401);
  const id=u.searchParams.get('id');const out=x=>({id:String(x.id),fam:x.fam,at:x.at,log:JSON.parse(x.log||'[]'),snap:x.snap,snapLen:x.snapLen});
  if(id){let x=null;if(/^diag:\\d+$/.test(id)){const v=await env.SAVES.get(id);if(v)x={id,...JSON.parse(v)};}
   else if(env.DB&&/^\\d+$/.test(id))try{x=await env.DB.prepare('SELECT id,fam,at,log,snap FROM diag WHERE id=?').bind(+id).first();}catch(e){}

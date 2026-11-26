@@ -1183,10 +1183,14 @@ function famRef(id){const url='/api/save/'+id;return {
 const DIAG={k:'oren4-diag',sent:0};
 function syncWhy(st,j){return !navigator.onLine?'off':j&&j.error==='store'?'full':st?'http '+st:'net';}
 function diagLog(ep,st,e){try{let L=[];try{L=JSON.parse(localStorage.getItem(DIAG.k))||[];}catch(x){}L.push({t:Date.now(),ep,st:st|0,rt:cloud.fail|0,e:String(e||'').slice(0,200)});localStorage.setItem(DIAG.k,JSON.stringify(L.slice(-30)));}catch(x){}}
-function diagSnap(){try{const c=document.body.cloneNode(true);c.querySelectorAll('script,style,svg,canvas,audio,video,[hidden]').forEach(n=>n.remove());return c.outerHTML.slice(0,150000);}catch(e){return '<body></body>';}}
-async function diagSend(){if(DIAG.sent||!FAM.on||kidSave)return;DIAG.sent=1;let log=[];try{log=JSON.parse(localStorage.getItem(DIAG.k))||[];}catch(e){}
-  try{const r=await fetch('/api/diag',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({fam:FAM.id,log,snap:diagSnap()})});if(!r.ok)throw 0;
-    const e=(save.iss||[]).find(x=>x.d===today()&&x.k==='sync');if(e){e.r=1;try{localStorage.setItem(KEY,JSON.stringify(save));}catch(x){}}}catch(e){DIAG.sent=0;}}
+function diagSnap(){try{return (document.body.innerText||'').replace(/\s+/g,' ').trim();}catch(e){return '';}}
+/* the whole POST body must fit the server cap (18000 chars): keep the start of the visible screen text, drop the rest */
+function diagBody(fam,log,snap){let b=JSON.stringify({fam,log,snap});while(b.length>18000&&snap.length){snap=snap.slice(0,Math.max(0,snap.length-(b.length-18000)-8));b=JSON.stringify({fam,log,snap});}
+  while(b.length>18000&&log.length){log=log.slice(1);b=JSON.stringify({fam,log,snap});}return b;}
+/* at most once per page session; one retry after 60 s if the send fails */
+async function diagSend(retry){if(DIAG.sent||!FAM.on||kidSave)return;DIAG.sent=1;let log=[];try{log=JSON.parse(localStorage.getItem(DIAG.k))||[];}catch(e){}
+  try{const r=await fetch('/api/diag',{method:'POST',headers:{'content-type':'application/json'},body:diagBody(FAM.id,log,diagSnap())});if(!r.ok)throw 0;
+    const e=(save.iss||[]).find(x=>x.d===today()&&x.k==='sync');if(e){e.r=1;try{localStorage.setItem(KEY,JSON.stringify(save));}catch(x){}}}catch(e){if(!retry)setTimeout(()=>{DIAG.sent=0;diagSend(1);},60000);}}
 /* the parent changed the time limit: send it now, not after the 25 s save delay (#34) */
 async function famNow(){if(!FAM.on||kidSave)return;cloud.dirty=true;FAM.force=true;try{await cloudFlush();}finally{FAM.force=false;}}
 async function famPull(){if(!FAM.on||kidSave)return;try{const snap=await cloud.ref.get();if(snap.exists){const before=JSON.stringify([save.set,save.gems,save.time]);mergeIn(snap.data());updateGems();if(before!==JSON.stringify([save.set,save.gems,save.time]))emit('synced');}}catch(e){}}

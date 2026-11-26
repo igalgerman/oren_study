@@ -34,7 +34,7 @@ const path = require('path');
     ok('diag GET without the key is refused (401)', (await f('/api/diag')).status === 401 && (await f('/api/diag?id=1')).status === 401 && (await f('/api/diag', { headers: { 'x-admin-key': 'wrong' } })).status === 401);
     const noKey = await m.default.fetch(new Request('https://oren.test/api/diag', H), { ...env, DIAG_KEY: undefined });
     ok('diag GET is refused when no key is configured', noKey.status === 401);
-    ok('diag GET also accepts ?key=', (await f('/api/diag?key=sekret')).status === 200);
+    ok('diag GET refuses ?key= (header only)', (await f('/api/diag?key=sekret')).status === 401 && (await f('/api/diag', { headers: { 'x-admin-key': 'sekret' } })).status === 200);
     ok('diag POST over 20 KB rejected', (await f('/api/diag', { method: 'POST', body: JSON.stringify({ ...D, snap: 'a'.repeat(21000) }) })).status === 413);
     const l = await (await f('/api/diag', H)).json();
     ok('diag list for the orchestrator (log, no snapshot)', l.length === 1 && l[0].fam.length === 6 && !JSON.stringify(l).includes(id) && l[0].log[0].st === 503 && l[0].snap === undefined && l[0].snapLen === D.snap.length, JSON.stringify(l));
