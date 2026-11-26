@@ -227,6 +227,8 @@ async function browser() {
     }
     await run('read-build'); ok(await tilesLoop() && ((await tl('read-build')) || {}).s >= 2, 'read-build: syllables in order'); await closeOv();
     ok(await p.evaluate(() => window.READBANK2.level('word')) === 3, 'word level: two strong activities pass a level (4 rounds → level 3)');
+    const bt = await p.evaluate(() => window.TAL.STORIES.filter(s => !(['sci', 'math', 'value', 'word'].includes(s.gk) && /[א-ת]/.test(s.goal || '') && !/[\u0591-\u05C7]/.test(s.goal) && s.q.length >= 2 && s.q.length <= 3 && s.les >= 0 && s.les < s.q.length)).map(s => s.t));
+    ok(!bt.length, '#355 bedtime stories: a learning goal, 2-3 questions, one about the lesson ' + bt.join(' | '));
     await run('story-new'); await sleep(200);
     const sty = await p.evaluate(() => { const s = document.querySelectorAll('#sTal .sl'); return s.length; }); ok(sty >= 3, 'story-new shows a story (' + sty + ' lines)');
     await p.evaluate(() => [...document.querySelectorAll('#sTal .bigbtn')].pop().click()); ok(await quizLoop() && ((await tl('story-new')) || {}).s === 3, 'story-new: 3 questions → story card recorded'); await closeOv();
