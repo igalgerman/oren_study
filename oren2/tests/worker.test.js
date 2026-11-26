@@ -209,6 +209,30 @@ const path = require('path');
   const handled = (u, method = 'GET') => { let r = false; H.fetch({ request: new Request('https://oren.test' + u, { method }), respondWith: () => { r = true; }, waitUntil() {} }); return r; };
   ok('sw: /api/save never cached, POST ignored', !handled('/api/save/' + id) && !handled('/api/tts/pregen', 'POST') && !handled('/api/tts/queue'));
   ok('sw: page, audio, status and icons handled', handled('/') && handled('/api/tts?t=x&v=he-IL-Chirp3-HD-Kore&r=0.9') && handled('/api/tts/status') && handled('/icon-192.png'));
+  // D1 storage (#71): writes go to D1 only, reads fall back to KV and copy lazily
+  {
+    globalThis.fetch = async (u, o) => { const b = JSON.parse(o.body); calls.push(b); return new Response(JSON.stringify({ audioContent: Buffer.from('MP3' + b.input.text).toString('base64') })); };
+    const T = { tts_audio: new Map(), saves: new Map(), meta: new Map() }; const kv2 = new Map();
+    const tb = q => /tts_audio/.test(q) ? 'tts_audio' : /saves/.test(q) ? 'saves' : 'meta';
+    const DB = { prepare: q => ({ bind: (...a) => ({
+      first: async () => { const r = T[tb(q)].get(a[0]); return r === undefined ? null : r; },
+      run: async () => { const t = tb(q); T[t].set(a[0], t === 'tts_audio' ? { bin: a[1] } : t === 'saves' ? { data: a[1] } : { v: a[1] }); return {}; } }) }) };
+    const env2 = { DB, SAVES: { get: async (k, t) => kv2.get(k) || null, put: async (k, v) => { kv2.set(k, v); } }, GOOGLE_TTS_KEY: 'k' };
+    const g = (u, o) => m.default.fetch(new Request('https://oren.test' + u, o), env2);
+    const id2 = 'cd'.repeat(16);
+    ok('D1: save goes to D1, not KV', (await g('/api/save/' + id2, { method: 'PUT', body: JSON.stringify({ v: 4, gems: 3 }) })).status === 200 && JSON.parse(T.saves.get(id2).data).gems === 3 && kv2.size === 0);
+    ok('D1: save read back from D1', (await (await g('/api/save/' + id2)).json()).gems === 3);
+    const id3 = 'ef'.repeat(16); kv2.set(id3, JSON.stringify({ v: 4, gems: 9 }));
+    ok('D1: old save in KV is still read and copied to D1', (await (await g('/api/save/' + id3)).json()).gems === 9 && !!T.saves.get(id3));
+    const k0 = kv2.size; const nc2 = calls.length;
+    const v1 = await g('/api/tts?t=' + encodeURIComponent('דִּין') + '&r=0.9');
+    ok('D1: new sentence stored in D1 audio table, KV untouched', v1.status === 200 && T.tts_audio.size === 1 && T.meta.size >= 1 && kv2.size === k0 && calls.length === nc2 + 1);
+    const v2 = await g('/api/tts?t=' + encodeURIComponent('דִּין') + '&r=0.9');
+    ok('D1: second request is a D1 hit', v2.status === 200 && calls.length === nc2 + 1 && Buffer.from(await v2.arrayBuffer()).toString().startsWith('MP3'));
+    const key = [...T.tts_audio.keys()][0]; const bytes = T.tts_audio.get(key).bin; T.tts_audio.clear(); kv2.set(key, bytes);
+    const v3 = await g('/api/tts?t=' + encodeURIComponent('דִּין') + '&r=0.9');
+    ok('D1: old audio in KV is served without Google and copied to D1', v3.status === 200 && calls.length === nc2 + 1 && T.tts_audio.size === 1);
+  }
   globalThis.fetch = realFetch;
   L.finish('worker', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT worker 0 1'); process.exitCode = 1; });
