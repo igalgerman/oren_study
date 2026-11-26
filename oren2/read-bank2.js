@@ -871,7 +871,7 @@ function tiles(s,o,done){let k=0,err=0,miss=0;s.innerHTML='';const card=h('div',
 function build(back){const L=level('word');const pool=[];for(let t=0;pool.length<6&&t<200;t++){const w=lvPick(W,L,x=>x.syl.length>1,'rb-word',wk);if(!pool.includes(w))pool.push(w);}
   let i=0,err=0;O.setScreen('sTal','city',back);const s=$('#sTal');
   const run=()=>{const w=pool[i];T.hudT('בּוֹנִים מִלָּה',T.progressBar(i,pool.length));O.sayNow=T.spk(w.w);
-    tiles(s,{need:w.syl,tiles:w.syl,head:w.pic?pic(w.pic,1):'',play:()=>say(w.w),tip:UI.build,end:()=>say(w.w)},e=>{err+=e;i++;if(i<pool.length)run();else T.finishAct('rb2-build-'+L,err,pool.length,pool.length*2,back,()=>build(back));});
+    tiles(s,{need:w.syl,tiles:w.syl,head:w.pic?pic(w.pic,1):'',play:()=>say(w.w),tip:UI.build,end:()=>say(w.w)},e=>{err+=e;if(window.LEARN)try{LEARN.seen('rb-word',w.w,!e,false);}catch(x){}i++;if(i<pool.length)run();else T.finishAct('rb2-build-'+L,err,pool.length,pool.length*2,back,()=>build(back));});
     if(!w.pic)setTimeout(()=>say(w.w),D(300));};run();}
 function sent(back){const L=level('sent');T.quiz({id:'rb2-sent-'+L,title:'קוֹרְאִים מִשְׁפָּט',bg:'city',back,n:8,gen:()=>{const q=lvPick(R.sentences,L,null,'rb-sent',x=>x.t);const opts=shuffle([q.a,...q.ds]);
   return {pr:`<div class="sent">${nk(q.t,q.p)}</div><div class="qq">${nk(q.q,q.qp,1)}</div>`,opts:opts.map(ansHTML),ans:opts.indexOf(q.a),cls:q.a[0]==='@'?'picb':'tx',say:T.spk(q.q),key:q.t,bank:'rb-sent'};}});}
@@ -880,17 +880,19 @@ function sent(back){const L=level('sent');T.quiz({id:'rb2-sent-'+L,title:'קוֹ
 function nextStory(){const L=level('story');const at=R.stories.filter(x=>x.lv===L);
   if(window.LEARN){try{const r=LEARN.pickItem('rb-story',at.map(x=>({k:x.t,lv:x.lv})),{lv:L});const it=r&&at.find(x=>x.t===r.item.k);if(it)return it;}catch(e){}}
   return at.find(x=>st('rb2-st-'+x.id)<2)||pick(at);}
-function story(back,k){const sto=k!=null?R.stories[k]:nextStory();if(window.LEARN)try{LEARN.seen('rb-story',sto.t,true,false);}catch(e){}O.setScreen('sTal','final',back);T.hudT('סִפּוּר');O.sayNow='קְרָא אֶת הַסִּפּוּר, וְאַחַר כָּךְ עוֹנִים עַל שְׁאֵלוֹת.';const s=$('#sTal');s.innerHTML='';
+/* recorded once per story, after its questions (#360): any wrong answer, or the story read aloud to him → back after 1 day */
+function story(back,k){const sto=k!=null?R.stories[k]:nextStory();let heard=false;O.setScreen('sTal','final',back);T.hudT('סִפּוּר');O.sayNow='קְרָא אֶת הַסִּפּוּר, וְאַחַר כָּךְ עוֹנִים עַל שְׁאֵלוֹת.';const s=$('#sTal');s.innerHTML='';
   const page=h('div','story');page.innerHTML=`<div class="sth"><span>${pic(sto.spr[0])}</span><h2>${nk(sto.t,sto.tp)}</h2><span>${pic(sto.spr[1])}</span></div>`+sto.s.map((x,i)=>`<p class="sl" data-i="${i}">${nk(x,sto.p[i])}</p>`).join('');s.appendChild(page);
   const row=h('div','btnrow');const rd=h('button','bigbtn blue sm',ICON.say+`<span>${UI.storyRead}</span>`);const go=h('button','bigbtn',ICON.play+`<span>${UI.storyQ}</span>`);row.append(rd,go);s.appendChild(row);
   const mark=i=>page.querySelectorAll('.sl').forEach(p=>p.classList.toggle('cur',+p.dataset.i===i));
-  page.querySelectorAll('.sl').forEach(p=>p.onclick=()=>{mark(+p.dataset.i);if(T.readEl)T.readEl(p);else say(sto.s[+p.dataset.i]);});
-  rd.onclick=()=>{if(T.readSeq){T.readSeq([...page.querySelectorAll('.sl')],mark);return;}let i=0;const nx=()=>{if(i>=sto.s.length||!page.isConnected)return;mark(i);say(sto.s[i]);i++;setTimeout(nx,D(3200));};nx();};
-  go.onclick=()=>{O.hush&&O.hush();T.readStop&&T.readStop();T.quiz({id:'rb2-st-'+sto.id,title:sto.t,bg:'final',back,n:sto.q.length,gen:i=>{const [,q,qp,a,ds]=sto.q[i];const opts=shuffle([a,...ds]);
+  page.querySelectorAll('.sl').forEach(p=>p.onclick=()=>{heard=true;mark(+p.dataset.i);if(T.readEl)T.readEl(p);else say(sto.s[+p.dataset.i]);});
+  rd.onclick=()=>{heard=true;if(T.readSeq){T.readSeq([...page.querySelectorAll('.sl')],mark);return;}let i=0;const nx=()=>{if(i>=sto.s.length||!page.isConnected)return;mark(i);say(sto.s[i]);i++;setTimeout(nx,D(3200));};nx();};
+  go.onclick=()=>{O.hush&&O.hush();T.readStop&&T.readStop();T.quiz({id:'rb2-st-'+sto.id,title:sto.t,bg:'final',back,n:sto.q.length,end:err=>{if(window.LEARN)LEARN.seen('rb-story',sto.t,!err,heard);},gen:i=>{const [,q,qp,a,ds]=sto.q[i];const opts=shuffle([a,...ds]);
     return {pr:`<div class="sent">${nk(q,qp,1)}</div>`,opts,ans:opts.indexOf(a),cls:'tx',say:T.spk(q),key:q};}});};}
 
 /* ---- writing: a mixed graded session (copy, dictation, missing letter, sentence order) ---- */
-function mixPlan(L){const ws=R.writing;const P=[];const add=(kind,arr)=>{const it=lvPick(arr,L);if(it)P.push([kind,it]);};
+const mixKey=(kind,it)=>kind+':'+(it.w||it.t);
+function mixPlan(L){const ws=R.writing;const P=[];const add=(kind,arr)=>{const it=lvPick(arr,L,null,'rb-write',x=>mixKey(kind,x));if(it)P.push([kind,it]);};
   if(L===1){for(let i=0;i<3;i++)add('copy',ws.copy);for(let i=0;i<3;i++)add('miss',ws.miss);}
   else{add('copy',ws.copy);add('dict',ws.dict);add('dict',ws.dict);add('miss',ws.miss);add('miss',ws.miss);const oL=Math.min(5,L-1);const o=pick(ws.order.filter(x=>x.lv===oL));if(o)P.push(['order',o]);}
   return P;}
@@ -898,7 +900,7 @@ const DIST='בגדזלמנרתפסקשצ'.split('');
 function extraLetters(need,n){const out=[];const last=need[need.length-1];if(R.FINAL[last]&&!need.includes(R.FINAL[last]))out.push(R.FINAL[last]);
   for(const c of shuffle(DIST)){if(out.length>=n)break;if(!need.some(x=>R.sameSound(x,c))&&!out.some(x=>R.sameSound(x,c)))out.push(c);}return out;}
 function mix(back){const L=level('mix');const plan=mixPlan(L);let i=0,err=0;O.setScreen('sTal','meadow',back);const s=$('#sTal');
-  const next=e=>{err+=e;i++;if(i<plan.length)run();else{T.setKey(null);T.finishAct('rb2-mix-'+L,err,plan.length*2,plan.length*2,back,()=>mix(back));}};
+  const next=e=>{const [kind,it]=plan[i];if(kind!=='order'&&window.LEARN)try{LEARN.seen('rb-write',mixKey(kind,it),!e,false);}catch(x){}err+=e;i++;if(i<plan.length)run();else{T.setKey(null);T.finishAct('rb2-mix-'+L,err,plan.length*2,plan.length*2,back,()=>mix(back));}};
   const run=()=>{const [kind,it]=plan[i];T.hudT('כּוֹתְבִים',T.progressBar(i,plan.length));
     if(kind==='copy'){O.sayNow=T.spk(it.w);tiles(s,{need:it.letters,tiles:[...it.letters,...extraLetters(it.letters,L<3?1:2)],head:`${pic(it.pic)}<div class="bigw">${it.w}</div>`,tip:UI.copy,big:1,fin:1,end:()=>say(it.w)},next);}
     else if(kind==='dict'){O.sayNow=T.spk(it.w);tiles(s,{need:it.letters,tiles:[...it.letters,...extraLetters(it.letters,2)],head:`${pic(it.pic)}<div class="gp-ear" style="font-size:44px">👂</div>`,play:()=>say(it.w),tip:UI.dict,big:1,fin:1,

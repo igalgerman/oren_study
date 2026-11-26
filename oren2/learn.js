@@ -330,19 +330,20 @@ function seen(st,bank,key,ok,helped){st=ensure(st);st.sn=st.sn||{};st.wr=st.wr||
   else if(w[h]&&w[h][0]<=t){const step=w[h][1]+1;if(step>3)delete w[h];else w[h]=[t+IV[step],step];}
   const ks=Object.keys(w);if(ks.length>WR_CAP)ks.sort((a,b)=>w[a][0]-w[b][0]).slice(0,ks.length-WR_CAP).forEach(k=>delete w[k]);
   if(!ks.length)delete st.wr[bank];return isNew;}
-/* items: [{k, lv?}] or keys · o: {lv: level filter, upto: ≤ lv, exclude: Set of keys, mastered: allow spot reviews}
-   order: a wrong item that is due → an unseen item at his level → (mastered) a 15% spot review → the oldest seen item */
-function pickItem(st,bank,items,o){st=ensure(st);o=o||{};const t=today();const ex=o.exclude||new Set();
+/* items: [{k, lv?}] or keys · o: {lv: level filter, upto: ≤ lv, exclude: Set of keys, mastered: allow spot reviews, held: Set of keys picked and not answered yet}
+   order: a wrong item that is due → an unseen item at his level → (mastered) a 15% spot review → the oldest seen item. A held item is skipped while others are left.
+   Picking records nothing: the pack calls seen() once, after the answer (#360). */
+function pickItem(st,bank,items,o){st=ensure(st);o=o||{};const t=today();const ex=o.exclude||new Set(),hd=o.held||new Set();
   const all=items.map(x=>typeof x==='object'?x:{k:x}).filter(x=>!ex.has(x.k));
   const atLv=o.lv==null?all:all.filter(x=>x.lv==null||(o.upto?x.lv<=o.lv:x.lv===o.lv));const pool=atLv.length?atLv:all;if(!pool.length)return null;
   const w=(st.wr||{})[bank]||{};const sn=snList(st,bank);const pos=new Map(sn.map((h,i)=>[h,i]));
-  const due=pool.filter(x=>{const e=w[hash(x.k)];return e&&e[0]<=t;}).sort((a,b)=>w[hash(a.k)][0]-w[hash(b.k)][0]);
+  const due=pool.filter(x=>{const e=w[hash(x.k)];return e&&e[0]<=t&&!hd.has(x.k);}).sort((a,b)=>w[hash(a.k)][0]-w[hash(b.k)][0]);
   if(due.length)return {item:due[0],why:'review'};
-  const fresh=pool.filter(x=>!pos.has(hash(x.k)));const old=pool.filter(x=>pos.has(hash(x.k))&&!w[hash(x.k)]);
+  const fresh=pool.filter(x=>!pos.has(hash(x.k))&&!hd.has(x.k));const old=pool.filter(x=>pos.has(hash(x.k))&&!w[hash(x.k)]&&!hd.has(x.k));
   if(o.mastered&&old.length&&rnd()<.15)return {item:pk(old),why:'spot'};
   if(fresh.length)return {item:pk(fresh),why:'new'};
-  const rec=pool.filter(x=>!w[hash(x.k)]||w[hash(x.k)][0]<=t);const src=rec.length?rec:pool;
-  return {item:src.slice().sort((a,b)=>pos.get(hash(a.k))-pos.get(hash(b.k)))[0],why:'recycle'};}
+  const rec=pool.filter(x=>(!w[hash(x.k)]||w[hash(x.k)][0]<=t)&&!hd.has(x.k));const src=rec.length?rec:pool;const at=x=>pos.has(hash(x.k))?pos.get(hash(x.k)):-1;
+  return {item:src.slice().sort((a,b)=>at(a)-at(b))[0],why:'recycle'};}
 /* unseen items left at his level, and how many weeks that is at his pace (new items a week, last 14 days; perWeek when no data) */
 function runwayOf(st,bank,items,o){st=ensure(st);o=o||{};const t=today();const sn=new Set(snList(st,bank));
   const all=items.map(x=>typeof x==='object'?x:{k:x});const atLv=o.lv==null?all:all.filter(x=>x.lv==null||(o.upto?x.lv<=o.lv:x.lv===o.lv));
@@ -355,6 +356,8 @@ function mergeSeen(dst,src){for(const b in src.sn||{}){dst.sn=dst.sn||{};const a
 
 /* ---------- the stateless API: works on the bound state (the game binds save.lrn; Node tests get a private one) ---------- */
 const BIND={};
+/* items picked in this page but not answered yet (bank → key → ms): one quiz does not ask the same item twice; forgotten after 20 minutes */
+const HELD={};const held=b=>{const m=HELD[b]||(HELD[b]=new Map());const t=nowFn();for(const [k,v] of m)if(t-v>12e5)m.delete(k);return m;};
 const S=()=>BIND.state?BIND.state():(BIND._st=ensure(BIND._st));
 const DRILL_IDS=['mm-ten','mm-dbl','mm-comp','mm-skip','mm-pv','wp','ch'];
 const drillCands=st=>DRILL_IDS.map(sk=>({skill:sk,step:'ln-math',dom:'math',topic:sk==='wp'?'word':sk==='ch'?'chal':'mental',frontier:!(st.k[sk]||{}).n,name:PAR[sk]}));
@@ -374,8 +377,8 @@ return {core,
   summary:()=>summary(S(),BIND.names||(sk=>PAR[sk]||sk)),
   state:()=>S(),
   bind:o=>{Object.assign(BIND,o);},
-  seen:(bank,key,ok,helped)=>{const r=seen(S(),bank,key,ok,helped);BIND.after&&BIND.after();return r;},
-  pickItem:(bank,items,o)=>pickItem(S(),bank,items,o),hash,
+  seen:(bank,key,ok,helped)=>{if(HELD[bank])HELD[bank].delete(key);const r=seen(S(),bank,key,ok,helped);BIND.after&&BIND.after();return r;},
+  pickItem:(bank,items,o)=>{const hd=held(bank);const r=pickItem(S(),bank,items,Object.assign({},o,{held:new Set([...hd.keys(),...((o&&o.held)||[])])}));if(r)hd.set(r.item.k,nowFn());return r;},hash,
   merge,zone,eff,acc,isDue,placeStart,placeStep,placeDone,placeResult,
   MM,MM_IDS,DRILL_IDS,PW,WT,WT_BY_LV,wordQ,solve,CH,CH_BY_LV,chalQ,PM,PW,paperQ,gen,count,NOUN,NAMES_M,NAMES_F,lp,vav,MATH_LADDER,KID,PAR,IV,QUICK,maxLv,dayNum,
   setRandom:f=>{rnd=f||Math.random;},setNow:f=>{nowFn=f||(()=>Date.now());}};})();
