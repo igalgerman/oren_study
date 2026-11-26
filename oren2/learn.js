@@ -224,7 +224,7 @@ const WT=[
  {id:'pi-book',th:'piano',lv:[2,4],f:'a-b',g:x=>{const [a,b]=pair(x.lv);return [`בַּסֵּפֶר שֶׁל ${x.N} יֵשׁ ${x.c(a,'song')}. ${x.v('הוּא כְּבָר יוֹדֵעַ','הִיא כְּבָר יוֹדַעַת')} לְנַגֵּן ${x.c(b,'song')}. כַּמָּה שִׁירִים ${x.v('הוּא עוֹד לֹא יוֹדֵעַ','הִיא עוֹד לֹא יוֹדַעַת')}?`,a,b];}},
  {id:'pi-months',th:'piano',lv:[4,5],f:'a*b-c',g:x=>{const a=ri(2,4),b=ri(3,6),c=ri(2,a*b-1);return [`${x.N} ${x.v('לָמַד','לָמְדָה')} ${x.c(a,'song')} בְּכָל חֹדֶשׁ, בְּמֶשֶׁךְ ${x.c(b,'month')}. ${x.c(c,'song')} ${x.v('הוּא שָׁכַח','הִיא שָׁכְחָה')}. כַּמָּה שִׁירִים ${x.v('הוּא זוֹכֵר','הִיא זוֹכֶרֶת')} עַכְשָׁו?`,a,b,c];}},
  {id:'pi-test',th:'piano',lv:[3,4],f:'a-b',g:x=>{const a=pk([20,30,40,50,60]),b=ri(5,a-3);return [`לִפְנֵי הַהוֹפָעָה ${x.N} ${x.v('צָרִיךְ','צְרִיכָה')} לְהִתְאַמֵּן ${x.c(a,'minute')}. ${x.v('הוּא כְּבָר הִתְאַמֵּן','הִיא כְּבָר הִתְאַמְּנָה')} ${x.c(b,'minute')}. כַּמָּה דַּקּוֹת עוֹד ${x.v('חֲסֵרוֹת לוֹ','חֲסֵרוֹת לָהּ')}?`,a,b];}},
- {id:'pi-keys',th:'piano',lv:[3,5],f:'a+b',g:x=>{const a=ri(14,52),b=ri(10,36);return [`לַפְּסַנְתֵּר שֶׁל ${x.N} יֵשׁ ${x.c(a,'key')} לְבָנִים ${x.c(b,'key','וְ')} שְׁחֹרִים. כַּמָּה קְלִידִים יֵשׁ לַפְּסַנְתֵּר?`,a,b];}},
+ {id:'pi-keys',th:'piano',lv:[3,5],f:'a+b',g:x=>{const [a,b]=pk([[52,36],[36,25],[29,20],[22,15],[15,10]]);return [`לַפְּסַנְתֵּר שֶׁל ${x.N} יֵשׁ ${x.c(a,'key')} לְבָנִים ${x.c(b,'key','וְ')} שְׁחֹרִים. כַּמָּה קְלִידִים יֵשׁ לַפְּסַנְתֵּר?`,a,b];}},
  /* ---- building ---- */
  {id:'bl-add',th:'build',lv:[1,3],f:'a+b',g:x=>{const [a,b]=split(x.lv,3);return [`${x.N} ${x.v('בָּנָה','בָּנְתָה')} מִגְדָּל מִ-${B(a)} בְּלוֹקִים. ${x.v('הוּא הוֹסִיף','הִיא הוֹסִיפָה')} עוֹד ${x.c(b,'block')}. מִכַּמָּה בְּלוֹקִים בָּנוּי הַמִּגְדָּל עַכְשָׁו?`,a,b];}},
  {id:'bl-sub',th:'build',lv:[1,3],f:'a-b',g:x=>{const [a,b]=pair(x.lv);return [`בַּקֻּפְסָה הָיוּ ${x.c(a,'block')}. ${x.N} ${x.v('לָקַח','לָקְחָה')} ${x.c(b,'block')} לַבִּנְיָן. כַּמָּה בְּלוֹקִים נִשְׁאֲרוּ בַּקֻּפְסָה?`,a,b];}},
@@ -278,7 +278,7 @@ const CH={
    let t,u;do{u=ri(0,8);t=ri(u+1,9);}while(t+u>18);const s=t+u,d=t-u;return {kind:'digits2',p:{s,d},v:t*10+u,text:`אֲנִי מִסְפָּר דּוּ-סִפְרָתִי. סְכוּם הַסְּפָרוֹת שֶׁלִּי הוּא ${B(s)}, וְסִפְרַת הָעֲשָׂרוֹת גְּדוֹלָה בְּ-${B(d)} מִסִּפְרַת הָאֲחָדוֹת. מִי אֲנִי?`,ds:[u*10+t,t*10+u+1,s*10+d].filter(x=>x<100),key:'h'+s+d};},
  grow:lv=>{let seq,rule;if(lv<=3){const a=ri(1,10),d0=ri(1,2);seq=[a];for(let j=0;j<5;j++)seq.push(seq[j]+d0+j);rule='הַקְּפִיצָה גְּדֵלָה בְּ-1 כָּל פַּעַם';}
    else if(lv===4){const a=ri(10,30),x=ri(3,6),y=ri(1,x-1);seq=[a];for(let j=0;j<5;j++)seq.push(seq[j]+(j%2?-y:x));rule=`קָדִימָה ${x}, אָחוֹרָה ${y}, וְשׁוּב`;}
-   else{const a=ri(1,5),k=2;seq=[a];for(let j=0;j<4;j++)seq.push(seq[j]*k);rule='כָּל מִסְפָּר כָּפוּל 2 מֵהַקּוֹדֵם';}
+   else{const a=ri(1,5),k=2;seq=[a];for(let j=0;j<4;j++)seq.push(seq[j]*k);rule='כָּל מִסְפָּר גָּדוֹל פִּי 2 מֵהַקּוֹדֵם';}
    const v=seq.pop();return {kind:'grow',p:{seq},v,html:`<div class="lnx lnseq">${L(seq.join(', ')+', ?')}</div>`,text:'מָה הַמִּסְפָּר הַבָּא? חַפֵּשׂ אֶת הַחֻקִּיּוּת.',rule,ds:[v+1,v-1,2*seq[seq.length-1]-seq[seq.length-2]],key:'q'+seq.join(',')};},
  legs:lv=>{const a=ri(2,lv===5?6:4),b=ri(2,lv===5?6:4);return {kind:'legs',p:{a,b},v:4*a+2*b,text:`בֶּחָצֵר יֵשׁ ${count(a,'dog')} וְעוֹד ${count(b,'hen')}. לְכָל כֶּלֶב יֵשׁ ${B(4)} רַגְלַיִם, וּלְכָל תַּרְנְגֹלֶת יֵשׁ שְׁתֵּי רַגְלַיִם. כַּמָּה רַגְלַיִם יֵשׁ לְכֻלָּם בְּיַחַד?`,ds:[2*(a+b),4*(a+b),4*a+2*b+2],key:'l'+a+b};},
 };
@@ -330,19 +330,20 @@ function seen(st,bank,key,ok,helped){st=ensure(st);st.sn=st.sn||{};st.wr=st.wr||
   else if(w[h]&&w[h][0]<=t){const step=w[h][1]+1;if(step>3)delete w[h];else w[h]=[t+IV[step],step];}
   const ks=Object.keys(w);if(ks.length>WR_CAP)ks.sort((a,b)=>w[a][0]-w[b][0]).slice(0,ks.length-WR_CAP).forEach(k=>delete w[k]);
   if(!ks.length)delete st.wr[bank];return isNew;}
-/* items: [{k, lv?}] or keys · o: {lv: level filter, upto: ≤ lv, exclude: Set of keys, mastered: allow spot reviews}
-   order: a wrong item that is due → an unseen item at his level → (mastered) a 15% spot review → the oldest seen item */
-function pickItem(st,bank,items,o){st=ensure(st);o=o||{};const t=today();const ex=o.exclude||new Set();
+/* items: [{k, lv?}] or keys · o: {lv: level filter, upto: ≤ lv, exclude: Set of keys, mastered: allow spot reviews, held: Set of keys picked and not answered yet}
+   order: a wrong item that is due → an unseen item at his level → (mastered) a 15% spot review → the oldest seen item. A held item is skipped while others are left.
+   Picking records nothing: the pack calls seen() once, after the answer (#360). */
+function pickItem(st,bank,items,o){st=ensure(st);o=o||{};const t=today();const ex=o.exclude||new Set(),hd=o.held||new Set();
   const all=items.map(x=>typeof x==='object'?x:{k:x}).filter(x=>!ex.has(x.k));
   const atLv=o.lv==null?all:all.filter(x=>x.lv==null||(o.upto?x.lv<=o.lv:x.lv===o.lv));const pool=atLv.length?atLv:all;if(!pool.length)return null;
   const w=(st.wr||{})[bank]||{};const sn=snList(st,bank);const pos=new Map(sn.map((h,i)=>[h,i]));
-  const due=pool.filter(x=>{const e=w[hash(x.k)];return e&&e[0]<=t;}).sort((a,b)=>w[hash(a.k)][0]-w[hash(b.k)][0]);
+  const due=pool.filter(x=>{const e=w[hash(x.k)];return e&&e[0]<=t&&!hd.has(x.k);}).sort((a,b)=>w[hash(a.k)][0]-w[hash(b.k)][0]);
   if(due.length)return {item:due[0],why:'review'};
-  const fresh=pool.filter(x=>!pos.has(hash(x.k)));const old=pool.filter(x=>pos.has(hash(x.k))&&!w[hash(x.k)]);
+  const fresh=pool.filter(x=>!pos.has(hash(x.k))&&!hd.has(x.k));const old=pool.filter(x=>pos.has(hash(x.k))&&!w[hash(x.k)]&&!hd.has(x.k));
   if(o.mastered&&old.length&&rnd()<.15)return {item:pk(old),why:'spot'};
   if(fresh.length)return {item:pk(fresh),why:'new'};
-  const rec=pool.filter(x=>!w[hash(x.k)]||w[hash(x.k)][0]<=t);const src=rec.length?rec:pool;
-  return {item:src.slice().sort((a,b)=>pos.get(hash(a.k))-pos.get(hash(b.k)))[0],why:'recycle'};}
+  const rec=pool.filter(x=>(!w[hash(x.k)]||w[hash(x.k)][0]<=t)&&!hd.has(x.k));const src=rec.length?rec:pool;const at=x=>pos.has(hash(x.k))?pos.get(hash(x.k)):-1;
+  return {item:src.slice().sort((a,b)=>at(a)-at(b))[0],why:'recycle'};}
 /* unseen items left at his level, and how many weeks that is at his pace (new items a week, last 14 days; perWeek when no data) */
 function runwayOf(st,bank,items,o){st=ensure(st);o=o||{};const t=today();const sn=new Set(snList(st,bank));
   const all=items.map(x=>typeof x==='object'?x:{k:x});const atLv=o.lv==null?all:all.filter(x=>x.lv==null||(o.upto?x.lv<=o.lv:x.lv===o.lv));
@@ -355,6 +356,8 @@ function mergeSeen(dst,src){for(const b in src.sn||{}){dst.sn=dst.sn||{};const a
 
 /* ---------- the stateless API: works on the bound state (the game binds save.lrn; Node tests get a private one) ---------- */
 const BIND={};
+/* items picked in this page but not answered yet (bank → key → ms): one quiz does not ask the same item twice; forgotten after 20 minutes */
+const HELD={};const held=b=>{const m=HELD[b]||(HELD[b]=new Map());const t=nowFn();for(const [k,v] of m)if(t-v>12e5)m.delete(k);return m;};
 const S=()=>BIND.state?BIND.state():(BIND._st=ensure(BIND._st));
 const DRILL_IDS=['mm-ten','mm-dbl','mm-comp','mm-skip','mm-pv','wp','ch'];
 const drillCands=st=>DRILL_IDS.map(sk=>({skill:sk,step:'ln-math',dom:'math',topic:sk==='wp'?'word':sk==='ch'?'chal':'mental',frontier:!(st.k[sk]||{}).n,name:PAR[sk]}));
@@ -374,8 +377,8 @@ return {core,
   summary:()=>summary(S(),BIND.names||(sk=>PAR[sk]||sk)),
   state:()=>S(),
   bind:o=>{Object.assign(BIND,o);},
-  seen:(bank,key,ok,helped)=>{const r=seen(S(),bank,key,ok,helped);BIND.after&&BIND.after();return r;},
-  pickItem:(bank,items,o)=>pickItem(S(),bank,items,o),hash,
+  seen:(bank,key,ok,helped)=>{if(HELD[bank])HELD[bank].delete(key);const r=seen(S(),bank,key,ok,helped);BIND.after&&BIND.after();return r;},
+  pickItem:(bank,items,o)=>{const hd=held(bank);const r=pickItem(S(),bank,items,Object.assign({},o,{held:new Set([...hd.keys(),...((o&&o.held)||[])])}));if(r)hd.set(r.item.k,nowFn());return r;},hash,
   merge,zone,eff,acc,isDue,placeStart,placeStep,placeDone,placeResult,
   MM,MM_IDS,DRILL_IDS,PW,WT,WT_BY_LV,wordQ,solve,CH,CH_BY_LV,chalQ,PM,PW,paperQ,gen,count,NOUN,NAMES_M,NAMES_F,lp,vav,MATH_LADDER,KID,PAR,IV,QUICK,maxLv,dayNum,
   setRandom:f=>{rnd=f||Math.random;},setNow:f=>{nowFn=f||(()=>Date.now());}};})();

@@ -317,6 +317,49 @@ def prune_if_due(log, now=None):
     if gone: log(f"pruned .runs of {len(gone)} closed issue(s): " + " ".join(f"#{n}" for n in gone))
     return gone
 
+# ---------- #326: helper worktrees (.claude/worktrees/*, the inspector's sub-agents) ----------
+def stale_worktrees(rows, prs):
+    """Pure (#326): paths of clean worktrees whose branch is pushed (a PR of it is at the same head, or origin has the head)
+    and whose PRs are all merged/closed. rows: {path, branch, head, dirty, remote_has_head}; prs: {headRefName, headRefOid, state}."""
+    out = []
+    for w in rows:
+        mine = [p for p in prs if p.get("headRefName") == w["branch"]]
+        if w["dirty"] or w["branch"] in ("", "HEAD") or not mine: continue
+        if any(p.get("state") == "OPEN" for p in mine): continue
+        if w["remote_has_head"] or any(p.get("headRefOid") == w["head"] for p in mine): out.append(w["path"])
+    return out
+
+def worktree_rows():
+    """The git worktrees under <main checkout>/.claude/worktrees: branch, head, dirty (any change, untracked too), pushed head."""
+    root, rows = Path(R.MAIN_CHECKOUT) / ".claude" / "worktrees", []
+    if not root.is_dir(): return rows
+    for d in sorted(p for p in root.iterdir() if p.is_dir() and (p / ".git").exists()):
+        g = lambda *a: R.run(["git", "-C", str(d), *a], timeout=60)
+        rc, head = g("rev-parse", "HEAD")
+        if rc: continue
+        branch = g("rev-parse", "--abbrev-ref", "HEAD")[1].strip()
+        rc_st, st = g("status", "--porcelain")
+        rc_r, n = g("rev-list", "--count", f"HEAD", f"^{R.REMOTE}/{branch}") if branch != "HEAD" else (1, "")
+        rows.append({"path": str(d), "branch": branch, "head": head.strip(), "dirty": rc_st != 0 or bool(st.strip()),
+                     "remote_has_head": rc_r == 0 and n.strip() == "0"})
+    return rows
+
+def worktrees_if_due(log, now=None):
+    """Watchdog hook (#326), once a day with the #304 prune: remove stale helper worktrees. -> paths removed, or None."""
+    now = now or time.time(); day = time.strftime("%Y-%m-%d", time.localtime(now))
+    st = load_state()
+    if st.get("worktrees_day") == day: return None
+    rows = worktree_rows()
+    if rows:
+        rc, out = gh("pr", "list", "--state", "all", "--limit", "500", "--json", "headRefName,headRefOid,state")
+        if rc: return None                  # GitHub unreadable: try again next tick
+        gone = stale_worktrees(rows, json.loads(out))
+    else: gone = []
+    for p in gone: R.remove_worktree(p)
+    st["worktrees_day"] = day; save_state(st)
+    if gone: log(f"removed {len(gone)} stale helper worktree(s): " + " ".join(gone))
+    return gone
+
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     if sys.argv[1:2] == ["retro"]: print(run_once(tell=print))

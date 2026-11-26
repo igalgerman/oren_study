@@ -31,12 +31,20 @@ const srv = http.createServer((q, r) => { const m = /^\/api\/save\/([a-f0-9]{32}
   await used(18); await lim({ daily: 30 }); await sleep(100);
   let pl = await pill(); ok('a limit: the top bar shows the minutes left', pl && pl.t === '⏱️ 12 דַּקּוֹת' && !pl.low, JSON.stringify(pl));
   await p.locator('#hud .tpill').click(); ok('tapping it says how much is left', (await said()).includes('נִשְׁאֲרוּ לְךָ 12 דַּקּוֹת'), await said());
-  await used(20); await lim({}); ok('spoken reminder at 10 minutes', (await said()).includes('נִשְׁאֲרוּ לְךָ עוֹד 10 דַּקּוֹת'));
-  await used(28); await lim({}); pl = await pill(); ok('last minutes: orange, and a reminder at 2', pl && pl.low && pl.t === '⏱️ 2 דַּקּוֹת' && (await said()).includes('נִשְׁאֲרוּ לְךָ עוֹד 2 דַּקּוֹת'), JSON.stringify(pl));
+  // #361: every ~10 minutes one calm line with the minutes as words; a heads-up at 5 and at 1
+  await used(20); await lim({}); ok('time left said at 10 minutes, as words', (await said()).includes('נִשְׁאֲרוּ לָנוּ עוֹד עֶשֶׂר דַּקּוֹת'), await said());
+  await used(25); await lim({}); pl = await pill(); ok('last minutes: orange, and the gentle heads-up at 5', pl && pl.low && pl.t === '⏱️ 5 דַּקּוֹת' && (await said()).includes('עוֹד חָמֵשׁ דַּקּוֹת נִגְמֹר. בּוֹא נְסַיֵּם אֶת מָה שֶׁהִתְחַלְנוּ.'), JSON.stringify(pl) + ' ' + await said());
+  ok('no digits in the spoken time lines', !/\d/.test((await p.evaluate(() => window.__said)).filter(x => /לָנוּ|נִגְמֹר/.test(x)).join(' ')), await said());
   await p.evaluate(() => window.TAL.openHub()); await sleep(100); ok('the pill is on every screen', !!(await pill()));
   if (process.env.HSHOTS) await p.screenshot({ path: path.join(process.env.HSHOTS, 'pill-' + L.variant + '.png') });
+  // #361: the 1-minute heads-up waits for a safe point (after an answer), never mid-question
+  await startAct(); await sleep(150); await p.evaluate(() => { window.__said = []; }); await used(29); await lim({}); await sleep(100);
+  const h1 = 'עוֹד דַּקָּה אַחַת נִגְמֹר. בּוֹא נְסַיֵּם אֶת מָה שֶׁהִתְחַלְנוּ.';
+  ok('heads-up at 1 minute: not said in the middle of a question', !(await said()).includes(h1), await said());
+  await p.evaluate(id => window.OREN.emit('tq', id, true), rid); await sleep(100);
+  ok('heads-up at 1 minute: said right after his answer', (await said()).includes(h1), await said());
   // finish what you started
-  await startAct(); await sleep(150); await used(31); await lim({}); await sleep(100);
+  await sleep(150); await used(31); await lim({}); await sleep(100);
   ok('time is up mid-activity: no lock, a gentle banner', !(await locked()) && await p.evaluate(() => { const g = document.querySelector('.tgrace'); return !!g && g.textContent.includes('זֶה הַתַּרְגִּיל הָאַחֲרוֹן, אַחֲרָיו נִפָּרֵד'); }));
   if (process.env.HSHOTS) await p.screenshot({ path: path.join(process.env.HSHOTS, 'grace-' + L.variant + '.png') });
   await endAct(); await p.evaluate(() => window.TAL.limCheck()); ok('not over the result window', !(await locked()));
@@ -103,6 +111,26 @@ const srv = http.createServer((q, r) => { const m = /^\/api\/save\/([a-f0-9]{32}
     ok('and he has exactly 30 minutes left (replaces, not adds)', await A.evaluate(() => window.TAL.timeLeft() === 30), await A.evaluate(() => JSON.stringify(window.TAL.S().set.lim)));
     await chip('20 דק׳');
     ok('a smaller number replaces too: 20 left', await A.waitForFunction(() => window.TAL.timeLeft() === 20, null, { timeout: 6000 }).then(() => true).catch(() => false));
+    // #361: Oren's laptop played more than the parent's phone knows (its saves fail, the phone still shows the old minutes).
+    // "he has 30 more" must give him 30 more, never end his time early.
+    await chip('60 דק׳'); await A.waitForFunction(() => window.TAL.timeLeft() >= 55, null, { timeout: 6000 }).catch(() => { });
+    await A.route('**/api/save/*', r => r.request().method() === 'PUT' ? r.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"store"}' }) : r.continue());
+    await A.evaluate(() => { const O = window.OREN, T = window.TAL; T.S().time[O.today()] = 45 * 60; O.persist(); }); await sleep(500);
+    const bUsed = await B.evaluate(() => { window.OREN.famPull(); return Math.floor((window.TAL.S().time[window.OREN.today()] | 0) / 60); });
+    await chip('30 דק׳');
+    const gotIt = await A.waitForFunction(() => { const t = window.TAL.S().set.lim.today; return t && t.add === 30; }, null, { timeout: 6000 }).then(() => true).catch(() => false);
+    await sleep(2500); await A.evaluate(() => window.TAL.limCheck());
+    ok('saves failing: the phone still thinks he played less', bUsed < 45, String(bUsed));
+    ok('"he has 30 more" from the phone: his device is not stopped', gotIt && !(await A.evaluate(() => !!document.querySelector('.tlock:not(.tyay)'))), await A.evaluate(() => JSON.stringify(window.TAL.S().set.lim.today)));
+    const aLeft = await A.evaluate(() => window.TAL.timeLeft());
+    ok('and he gets the full 30 minutes from now', aLeft >= 29 && aLeft <= 30, String(aLeft));
+    // the save works again: the phone shows the same "נשאר" as his device
+    await A.unroute('**/api/save/*'); await A.evaluate(() => { dispatchEvent(new Event('online')); });
+    const same = await B.waitForFunction(a => { window.OREN.famPull(); return Math.abs(window.TAL.timeLeft() - a) <= 1 && Math.floor((window.TAL.S().time[window.OREN.today()] | 0) / 60) >= 45; }, aLeft, { timeout: 8000, polling: 500 }).then(() => true).catch(() => false);
+    ok('the parent panel shows the same minutes left as his device (±1)', same, JSON.stringify(await B.evaluate(() => [window.TAL.timeLeft(), window.TAL.S().set.lim.today, window.TAL.S().tg])));
+    await B.evaluate(() => window.TAL.parentPanel('day')); await sleep(300);
+    const st = await B.evaluate(() => (document.querySelector('#sPar .pstat') || {}).textContent || '');
+    ok('the panel line says the same "נשאר"', new RegExp('נשאר: (' + aLeft + '|' + (aLeft - 1) + ') דק׳').test(st), st);
   }
   ok('no page errors', !errs.length, errs.join(' | '));
   await b.close(); srv.close(); L.finish('timelimit-' + L.variant, res);

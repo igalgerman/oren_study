@@ -76,20 +76,26 @@ function result(o){const ov=$('#ov');ov.hidden=false;
   const b=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');b.onclick=()=>{ov.hidden=true;o.back();};row.appendChild(b);ov.firstChild.appendChild(row);
   O.duck(true);setTimeout(()=>O.duck(false),D(2000));sfx.win();if(window.FRIEND)setTimeout(()=>window.FRIEND.stepCheck(),0);if(o.stars!=null)for(let k=0;k<o.stars;k++)setTimeout(()=>sfx.star(k),D(300+k*350));O.rain();setTimeout(()=>b.focus(),300);}
 function finishAct(id,errors,n,gems,back,again,title){const st=errors<=Math.max(1,n*.1)?3:errors<=Math.max(3,n*.3)?2:1;const bonus=5+st*2;O.addGems(bonus);record(id,st);result({title,stars:st,gems:gems+bonus,back,again});}
-/* generic multiple-choice quiz: q = {pr, opts, ans, cls, ltr, play, auto, reveal(el), explain, key} */
-function quiz(o){const qs=[],seen=new Set();let t=0;while(qs.length<o.n&&t++<400){const q=o.gen(qs.length);const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k))continue;seen.add(k);qs.push(q);}
+/* generic multiple-choice quiz: q = {pr, opts, ans, cls, ltr, play, auto, reveal(el), explain, key, bank, bkey}
+   q.bank: the item comes from a finite bank — its first answer is recorded there (LEARN.seen, key q.bkey or q.key; #360).
+   o.pool: the generator draws from a finite list — the quiz keeps its own bank 'tq-<id>' and lets the learning engine choose (wrong ones back on schedule).
+   o.end(err): called once after the last question, before the result. */
+function quiz(o){const qs=[],seen=new Set();let t=0;const LN=window.LEARN,pb=o.pool&&LN&&LN.pickItem?'tq-'+o.id:null;
+  const gen=()=>{const q=o.gen(qs.length);if(!pb||q.bank||q.key==null)return q;const c=[q];for(let j=0;j<24;j++){const x=o.gen(qs.length);if(x.key!=null&&!c.some(y=>y.key===x.key))c.push(x);}
+    try{const r=LN.pickItem(pb,c.filter(x=>!seen.has(x.key)).map(x=>({k:x.key})));const x=r&&c.find(y=>y.key===r.item.k);if(x)return Object.assign(x,{bank:pb});}catch(e){}return q;};
+  while(qs.length<o.n&&t++<400){const q=gen();const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k))continue;seen.add(k);qs.push(q);}
   let i=0,err=0,gems=0,lock=false,tries=0;O.setScreen('sTal',o.bg||'valley',o.back);
   const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq');s.appendChild(wrap);
-  const render=()=>{const q=qs[i];tries=0;lock=false;hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||plainHe(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
+  const render=()=>{const q=qs[i];tries=0;lock=false;if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||plainHe(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
     wrap.innerHTML='';const card=h('div','prq tqc',q.pr);if(q.play){const pb=h('button','hintbtn',ICON.say+`<span>${q.playLbl||'הַשְׁמַע'}</span>`);pb.onclick=q.play;card.appendChild(pb);}
     wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});const row=h('div','chs'+(q.ltr?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');if(o.side){const sb=h('button','bigbtn plain sm qside',o.side.lbl);sb.onclick=()=>o.side.open(wrap);wrap.appendChild(sb);}if(q.auto&&q.play)setTimeout(()=>{if(qs[i]===q)q.play();},D(350));};
   const resolve=(q)=>{const ex=wrap.querySelector('.hintbox');if(q.explain){ex.hidden=false;ex.innerHTML=`<div class="cap">${q.explain}</div>`;}if(q.reveal)q.reveal(wrap.querySelector('.tqc'));};
-  function pickA(k,b){if(lock||b.disabled)return;const q=qs[i];if(!tries){O.emit('tq',o.id,k===q.ans);if(q.bank&&window.LEARN)window.LEARN.seen(q.bank,q.key,k===q.ans,false);}
+  function pickA(k,b){if(lock||b.disabled)return;const q=qs[i];if(O.evAns)O.evAns(k===q.ans,{m:o.id,tr:tries,x:k});if(!tries){O.emit('tq',o.id,k===q.ans);if(q.bank&&window.LEARN)try{window.LEARN.seen(q.bank,q.bkey!=null?q.bkey:q.key,k===q.ans,false);}catch(e){}}
     if(k===q.ans){if(window.TAL.rdA)window.TAL.rdA(q,tries,b);lock=true;if(window.FRIEND)window.FRIEND.onCorrect({tries});b.classList.add('ok');sfx.ok(i);const g=tries?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);resolve(q);setTimeout(next,D(q.explain||q.reveal?2300:1000));return;}
     tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();if(o.onWrong)o.onWrong();const fin=tries>=2||q.opts.length<=2;if(window.FRIEND)window.FRIEND.onWrong({final:fin});
     if(fin){lock=true;const c=wrap.querySelector('.chs').children[q.ans];c.classList.add('show');resolve(q);setTimeout(next,D(2600));}}
-  function next(){if(!wrap.isConnected)return;i++;if(i>=qs.length){KEY=null;finishAct(o.id,err,qs.length,gems,o.back,()=>quiz(o),o.doneTitle);}else render();}
+  function next(){if(!wrap.isConnected)return;i++;if(i>=qs.length){KEY=null;if(o.end)try{o.end(err);}catch(e){}finishAct(o.id,err,qs.length,gems,o.back,()=>quiz(o),o.doneTitle);}else render();}
   KEY=e=>{if(wrap.hidden)return;if(/^[1-9]$/.test(e.key)){const b=wrap.querySelector('.chs')&&wrap.querySelector('.chs').children[+e.key-1];if(b)b.click();}};
   window.__quiz={get ans(){return qs[i]&&qs[i].ans;},get i(){return i;},get wrap(){return wrap;}};
   render();}
@@ -246,9 +252,9 @@ const ISR=[['מָה הָעִיר הַבִּירָה שֶׁל יִשְׂרָאֵ�
  ['בְּאֵיזֶה יָם הַמַּיִם כָּל כָּךְ מְלוּחִים שֶׁאֶפְשָׁר לָצוּף בְּקַלּוּת?','יָם הַמֶּלַח',['הַיָּם הָאָדֹם','הַכִּנֶּרֶת']],['מָה הַצְּבָעִים שֶׁל דֶּגֶל יִשְׂרָאֵל?','כָּחֹל וְלָבָן',['אָדֹם וְלָבָן','יָרֹק וְצָהֹב']],
  ['הַכִּנֶּרֶת הִיא...','אֲגַם',['הַר','מִדְבָּר']],['אֵיזֶה מִדְבָּר יֵשׁ בִּדְרוֹם יִשְׂרָאֵל?','הַנֶּגֶב',['הַגָּלִיל','הַגּוֹלָן']],['הַחֶרְמוֹן הוּא...','הַר',['יָם','עִיר']]];
 building({id:'world',name:'הָעוֹלָם וְיִשְׂרָאֵל',color:'#4fae4f',bg:'valley',icon:()=>X.globe,blurb:'דְּגָלִים, יַבָּשׁוֹת וְהָאָרֶץ שֶׁלָּנוּ.',acts:[
-  {id:'world-flag',name:'דְּגָלִים',icon:()=>flag('il'),run:back=>quiz({id:'world-flag',title:'דְּגָלִים',bg:'valley',back,n:8,gen:()=>{const ks=Object.keys(FL);const k=pick(ks);const opts=shuffle([k,...shuffle(ks.filter(x=>x!==k)).slice(0,2)]);return {pr:`${flag(k)}<div class="qq">שֶׁל אֵיזוֹ מְדִינָה הַדֶּגֶל?</div>`,opts:opts.map(x=>FL[x][0]),ans:opts.indexOf(k),cls:'tx',key:k};}})},
-  {id:'world-ani',name:'אֵיפֹה הֵם גָּרִים?',icon:()=>X.globe,run:back=>quiz({id:'world-ani',title:'אֵיפֹה הֵם גָּרִים?',bg:'valley',back,n:7,gen:()=>{const [a,c,ds]=pick(ANI);const opts=shuffle([c,...ds]);return {pr:`<div class="bigw">${a}</div><div class="qq">בְּאֵיזוֹ יַבֶּשֶׁת חַי בַּעַל הַחַיִּים הַזֶּה בַּטֶּבַע?</div>`,opts,ans:opts.indexOf(c),cls:'tx',key:a};}})},
-  {id:'world-il',name:'הָאָרֶץ שֶׁלָּנוּ',icon:()=>flag('il'),run:back=>quiz({id:'world-il',title:'הָאָרֶץ שֶׁלָּנוּ',bg:'valley',back,n:7,gen:()=>{const [q,a,ds]=pick(ISR);const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}})}]});
+  {id:'world-flag',name:'דְּגָלִים',icon:()=>flag('il'),run:back=>quiz({id:'world-flag',pool:1,title:'דְּגָלִים',bg:'valley',back,n:8,gen:()=>{const ks=Object.keys(FL);const k=pick(ks);const opts=shuffle([k,...shuffle(ks.filter(x=>x!==k)).slice(0,2)]);return {pr:`${flag(k)}<div class="qq">שֶׁל אֵיזוֹ מְדִינָה הַדֶּגֶל?</div>`,opts:opts.map(x=>FL[x][0]),ans:opts.indexOf(k),cls:'tx',key:k};}})},
+  {id:'world-ani',name:'אֵיפֹה הֵם גָּרִים?',icon:()=>X.globe,run:back=>quiz({id:'world-ani',pool:1,title:'אֵיפֹה הֵם גָּרִים?',bg:'valley',back,n:7,gen:()=>{const [a,c,ds]=pick(ANI);const opts=shuffle([c,...ds]);return {pr:`<div class="bigw">${a}</div><div class="qq">בְּאֵיזוֹ יַבֶּשֶׁת חַי בַּעַל הַחַיִּים הַזֶּה בַּטֶּבַע?</div>`,opts,ans:opts.indexOf(c),cls:'tx',key:a};}})},
+  {id:'world-il',name:'הָאָרֶץ שֶׁלָּנוּ',icon:()=>flag('il'),run:back=>quiz({id:'world-il',pool:1,title:'הָאָרֶץ שֶׁלָּנוּ',bg:'valley',back,n:7,gen:()=>{const [q,a,ds]=pick(ISR);const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}})}]});
 /* Bedtime stories */
 const STORIES=[
  {t:'הַחֲתוּלָה וְהַכַּדּוּר הָאָדֹם',spr:['cat','ball'],gk:'sci',goal:'כדי לראות צריך אור',s:['לְנוֹעָה יֵשׁ חֲתוּלָה קְטַנָּה בְּשֵׁם מִיצִי.','מִיצִי אוֹהֶבֶת לְשַׂחֵק בְּכַדּוּר אָדֹם.','יוֹם אֶחָד הַכַּדּוּר הִתְגַּלְגֵּל מִתַּחַת לַמִּטָּה.','מִתַּחַת לַמִּטָּה הָיָה חֹשֶׁךְ, וּמִיצִי לֹא מָצְאָה אוֹתוֹ.','נוֹעָה הֵבִיאָה פָּנָס, וְהָאוֹר הֵאִיר מִתַּחַת לַמִּטָּה.','עִם אוֹר רוֹאִים! הִנֵּה הַכַּדּוּר! מִיצִי קָפְצָה מִשִּׂמְחָה.'],
@@ -273,7 +279,7 @@ const storyLv=()=>{try{const R=window.READBANK2;return R&&R.level?R.level('story
 let SS=null;   /* the story being played: {id, t0, lv, help, wrong, heard, log} */
 /* a story he listened to (whole or a line) is marked: only stories read alone move the story level up (read-bank2.js) */
 O.on('tlDone',id=>{if(SS&&SS.id===id){const c=T.S().tl[id];if(c){c.l=SS.heard?1:0;O.persist();}}});
-function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), title (html), name (quiz title), tp (plain title), goal, spr:[html,html], lines:[html], q:[{pr, say, a, ds}], back, qback} */
+function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), title (html), name (quiz title), tp (plain title), goal, spr:[html,html], lines:[html], q:[{pr, say, a, ds}], back, qback, end(err, heard): after the last question (#360)} */
   const lv=storyLv(),help=helpOf(lv);const ss=SS={id:o.id,t0:Date.now(),lv,help,wrong:false,heard:false,log:{t:o.tp,g:o.goal||'',lv,r:'a'}};
   if(window.DAYLOG&&DAYLOG.note)DAYLOG.note(o.act,ss.log);
   const shows=k=>(ss.wrong&&help.wrong.includes(k))||(help[k]!=null&&Date.now()-ss.t0>=D(help[k]*1000));
@@ -293,7 +299,7 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
     page(box,bk);s.scrollTop=0;};
   const questions=()=>{O.hush();T.readStop&&T.readStop();quiz({id:o.id,title:o.name,bg:'final',back:o.qback||o.back,n:o.q.length,
     gen:i=>{const q=o.q[i];/* the index, not a counter: "again" restarts at 0 (#350) */const opts=shuffle([q.a,...q.ds]);return {pr:`<div class="sent">${q.pr}</div>`,opts,ans:opts.indexOf(q.a),cls:'tx',say:q.say,key:q.pr};},
-    onWrong:()=>{ss.wrong=true;},side:{lbl:'📖 <span>לַסִּפּוּר</span>',open:peek}});};
+    onWrong:()=>{ss.wrong=true;},end:err=>{if(o.end)o.end(err,ss.heard);},side:{lbl:'📖 <span>לַסִּפּוּר</span>',open:peek}});};
   O.setScreen('sTal','final',o.back);T.hudT('סִפּוּר');const s=$('#sTal');s.innerHTML='';
   const go=h('button','bigbtn stgo',ICON.play+'<span>לַשְּׁאֵלוֹת</span>');go.onclick=questions;page(s,go);
   if(window.FRIEND&&FRIEND.readFirst){O.sayNow=T.spk(FRIEND.READFIRST);FRIEND.readFirst();}else O.sayNow='קְרָא אֶת הַסִּפּוּר, וְאַחַר כָּךְ עוֹנִים עַל שְׁאֵלוֹת.';}
@@ -465,10 +471,10 @@ function dayNight(back){O.setScreen('sTal','final',back);T.hudT('יוֹם וְל
     quiz({id:'sci-day',title:'יוֹם וְלַיְלָה',bg:'final',back,n:3,gen:i=>{const [q,a,ds]=Q[i];const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}});};}
 const bodyFig=(x,y)=>`<div class="bodyf">${O.AV()}<span class="arrow" style="left:${x}%;top:${y}%"></span></div>`;
 building({id:'lab',name:'הַמַּעְבָּדָה',color:'#3cb371',bg:'mount',icon:()=>X.flask,blurb:'נִסּוּיִים קְטַנִּים: מְנַחֲשִׁים, בּוֹדְקִים וְלוֹמְדִים.',acts:[
-  {id:'sci-float',name:'צָף אוֹ שׁוֹקֵעַ?',icon:()=>X.boat,run:back=>quiz({id:'sci-float',title:'צָף אוֹ שׁוֹקֵעַ?',bg:'sea',back,n:8,gen:()=>{const [n,k,f,g]=pick(FLOAT);const fm=g==='f';return {pr:`${tank(k)}<div class="qq">${n}: ${fm?'תָּצוּף אוֹ תִּשְׁקַע?':'יָצוּף אוֹ יִשְׁקַע?'}</div>`,opts:fm?['תָּצוּף','תִּשְׁקַע']:['יָצוּף','יִשְׁקַע'],ans:f?0:1,cls:'tx',key:n,reveal:el=>{const it=el.querySelector('#itm');if(it)it.classList.add(f?'floats':'sinks');sfx.plank();},explain:`${n} ${f?(fm?'צָפָה':'צָף'):(fm?'שׁוֹקַעַת':'שׁוֹקֵעַ')}!`};}})},
-  {id:'sci-mag',name:'מַגְנֵטִים',icon:()=>X.magnet,run:back=>quiz({id:'sci-mag',title:'מַגְנֵטִים',bg:'city',back,n:8,gen:()=>{const [n,k,m]=pick(MAG);return {pr:`<div class="magv"><span class="mg">${X.magnet}</span><span class="item" id="itm">${ALLSPR(k)}</span></div><div class="qq">הַאִם הַמַּגְנֵט יִמְשֹׁךְ אֶת ${n}?</div>`,opts:['כֵּן','לֹא'],ans:m?0:1,cls:'tx',key:n,reveal:el=>{const it=el.querySelector('#itm');if(it&&m)it.classList.add('pulled');},explain:m?'מַגְנֵט מוֹשֵׁךְ בַּרְזֶל וּפְלָדָה.':'מַגְנֵט לֹא מוֹשֵׁךְ עֵץ, אֶבֶן, פְּלַסְטִיק אוֹ אֹכֶל.'};}})},
-  {id:'sci-animals',name:'מִיּוּן בַּעֲלֵי חַיִּים',icon:()=>SPR.owl,run:back=>quiz({id:'sci-animals',title:'מִיּוּן בַּעֲלֵי חַיִּים',bg:'forest',back,n:8,gen:()=>{const [n,k,c,ex,fm]=pick(ANIMALS);return {pr:`<span class="pic">${ALLSPR(k)}</span><div class="qq">${n} ${fm?'הִיא':'הוּא'}...</div>`,opts:CLASSES,ans:CLASSES.indexOf(c),cls:'tx',key:n,explain:ex||''};}})},
-  {id:'sci-body',name:'גּוּף הָאָדָם',icon:()=>O.AV(),run:back=>quiz({id:'sci-body',title:'גּוּף הָאָדָם',bg:'valley',back,n:7,gen:()=>{const [n,[x,y]]=pick(BODY);const opts=shuffle([n,...shuffle(BODY.filter(b=>b[0]!==n)).slice(0,2).map(b=>b[0])]);return {pr:`${bodyFig(x,y)}<div class="qq">מָה מְסֻמָּן בַּחֵץ?</div>`,opts,ans:opts.indexOf(n),cls:'tx',key:n};}})},
+  {id:'sci-float',name:'צָף אוֹ שׁוֹקֵעַ?',icon:()=>X.boat,run:back=>quiz({id:'sci-float',pool:1,title:'צָף אוֹ שׁוֹקֵעַ?',bg:'sea',back,n:8,gen:()=>{const [n,k,f,g]=pick(FLOAT);const fm=g==='f';return {pr:`${tank(k)}<div class="qq">${n}: ${fm?'תָּצוּף אוֹ תִּשְׁקַע?':'יָצוּף אוֹ יִשְׁקַע?'}</div>`,opts:fm?['תָּצוּף','תִּשְׁקַע']:['יָצוּף','יִשְׁקַע'],ans:f?0:1,cls:'tx',key:n,reveal:el=>{const it=el.querySelector('#itm');if(it)it.classList.add(f?'floats':'sinks');sfx.plank();},explain:`${n} ${f?(fm?'צָפָה':'צָף'):(fm?'שׁוֹקַעַת':'שׁוֹקֵעַ')}!`};}})},
+  {id:'sci-mag',name:'מַגְנֵטִים',icon:()=>X.magnet,run:back=>quiz({id:'sci-mag',pool:1,title:'מַגְנֵטִים',bg:'city',back,n:8,gen:()=>{const [n,k,m]=pick(MAG);return {pr:`<div class="magv"><span class="mg">${X.magnet}</span><span class="item" id="itm">${ALLSPR(k)}</span></div><div class="qq">הַאִם הַמַּגְנֵט יִמְשֹׁךְ אֶת ${n}?</div>`,opts:['כֵּן','לֹא'],ans:m?0:1,cls:'tx',key:n,reveal:el=>{const it=el.querySelector('#itm');if(it&&m)it.classList.add('pulled');},explain:m?'מַגְנֵט מוֹשֵׁךְ בַּרְזֶל וּפְלָדָה.':'מַגְנֵט לֹא מוֹשֵׁךְ עֵץ, אֶבֶן, פְּלַסְטִיק אוֹ אֹכֶל.'};}})},
+  {id:'sci-animals',name:'מִיּוּן בַּעֲלֵי חַיִּים',icon:()=>SPR.owl,run:back=>quiz({id:'sci-animals',pool:1,title:'מִיּוּן בַּעֲלֵי חַיִּים',bg:'forest',back,n:8,gen:()=>{const [n,k,c,ex,fm]=pick(ANIMALS);return {pr:`<span class="pic">${ALLSPR(k)}</span><div class="qq">${n} ${fm?'הִיא':'הוּא'}...</div>`,opts:CLASSES,ans:CLASSES.indexOf(c),cls:'tx',key:n,explain:ex||''};}})},
+  {id:'sci-body',name:'גּוּף הָאָדָם',icon:()=>O.AV(),run:back=>quiz({id:'sci-body',pool:1,title:'גּוּף הָאָדָם',bg:'valley',back,n:7,gen:()=>{const [n,[x,y]]=pick(BODY);const opts=shuffle([n,...shuffle(BODY.filter(b=>b[0]!==n)).slice(0,2).map(b=>b[0])]);return {pr:`${bodyFig(x,y)}<div class="qq">מָה מְסֻמָּן בַּחֵץ?</div>`,opts,ans:opts.indexOf(n),cls:'tx',key:n};}})},
   {id:'sci-plant',name:'מָה צָרִיךְ צֶמַח?',icon:()=>SPR.flower,run:plant},
   {id:'sci-states',name:'קֶרַח, מַיִם וְאֵדִים',icon:()=>'<span style="font-size:34px">🧊</span>',run:states},
   {id:'sci-day',name:'יוֹם וְלַיְלָה',icon:()=>X.moon,run:dayNight},
@@ -1092,7 +1098,17 @@ O.on('tlDone',()=>{tEnd=Date.now();cntUp();});O.on('levelDone',()=>{tEnd=Date.no
 function cntUp(){if(O.isParentPlay)return;const s=T.S();s.cnt=s.cnt||{};const d=O.today();s.cnt[d]=(s.cnt[d]|0)+1;const ks=Object.keys(s.cnt).sort();ks.slice(0,Math.max(0,ks.length-30)).forEach(k=>delete s.cnt[k]);}
 const todayL=()=>{const l=LIM();return l.today&&l.today.d===O.today()?l.today:null;};
 /* today's limit: {min} or {n} or null */
-function limNow(){const t=todayL(),l=LIM();if(t){if(t.none)return null;if(t.min!=null)return {min:t.min|0};}return l.daily?{min:l.daily|0}:null;}
+function limNow(){const t=todayL(),l=LIM();if(t){if(t.none)return null;if(t.min!=null)return {min:effMin(t)};}return l.daily?{min:l.daily|0}:null;}
+/* #361: a grant ("he has X more", "+15") keeps what the giving device knew he had played (u) and what it gave (add, at).
+   A phone whose copy of his play time is behind (his saves failed) would otherwise end his time early. The device he plays on
+   notes what IT had played when the grant first reached it (save.tg[at], synced, max), and both devices count X from there.
+   The giving device notes nothing (its count is u); it remembers its own grants on this device only. */
+const GAVE='oren4-gave',gave=()=>{try{return JSON.parse(localStorage.getItem(GAVE))||[];}catch(e){return [];}};
+function effMin(t){if(t.add==null||!t.at)return t.min|0;const s=T.S(),g=s.tg=s.tg||{},sp=$('#sPar');
+  if(g[t.at]==null&&!parentOn&&!O.isParentPlay&&(!sp||sp.hidden)&&!gave().includes(t.at)){g[t.at]=usedMin();const ks=Object.keys(g).sort();ks.slice(0,Math.max(0,ks.length-10)).forEach(k=>delete g[k]);O.persist();}
+  return (t.min|0)+Math.max(0,(g[t.at]!=null?g[t.at]|0:t.u|0)-(t.u|0));}
+/* a grant of v minutes counted from u played minutes */
+function giveT(u,v){const at=Date.now();try{localStorage.setItem(GAVE,JSON.stringify(gave().concat(at).slice(-10)));}catch(e){}return {d:O.today(),min:u+v,add:v,u,at};}
 function limitToday(){const x=limNow();return x&&x.min?x.min:0;}
 /* what is left: {min:m}, or null without a limit */
 T.limLeft=()=>{const x=limNow();if(!x)return null;return {min:Math.max(0,x.min-usedMin())};};
@@ -1101,7 +1117,7 @@ T.timeLeft=()=>{const x=T.limLeft();return x&&x.min!=null?x.min:null;};
 const pnow=()=>{O.persist();O.famNow&&O.famNow();};
 /* "he has 0 more minutes" (#132): his device shows the gentle stop screen on its next sync */
 function stopNow(){LIM().today={d:O.today(),min:usedMin()};pnow();}
-function grant(v){const l=LIM(),x=limNow();const base=x&&x.min&&x.min>usedMin()?x.min:usedMin();l.today={d:O.today(),min:base+v};pnow();}
+function grant(v){const l=LIM(),x=limNow();const base=x&&x.min&&x.min>usedMin()?x.min:usedMin();l.today=giveT(base,v);pnow();}
 const pdOpen={};/* which "more" sections stay open when the panel redraws */
 const pdet=(box,key,title)=>{const d=document.createElement('details');d.className='pdet';d.innerHTML=`<summary>${title}</summary>`;const inner=h('div','pdin');d.appendChild(inner);if(pdOpen[key])d.open=true;d.addEventListener('toggle',()=>{pdOpen[key]=d.open;});box.appendChild(d);return inner;};
 function timeTab(box){const l=LIM(),x=limNow(),left=T.limLeft(),t=todayL();
@@ -1111,7 +1127,7 @@ function timeTab(box){const l=LIM(),x=limNow(),left=T.limLeft(),t=todayL();
   const mk=(row,n,fn,on)=>{const b=h('button','pchip big'+(on?' on':''),n);b.onclick=()=>{fn();sfx.ok&&sfx.ok(1);panel('time');};row.appendChild(b);return b;};
   const g=h('div','pbig');[['+15 דק׳',()=>grant(15)]].forEach(([n,f])=>{const b=h('button','bigbtn sm','<span>'+n+'</span>');b.onclick=()=>{f();sfx.ok&&sfx.ok(1);panel('time');};g.appendChild(b);});ts.appendChild(g);
   const more=pdet(ts,'tmore','עוד אפשרויות');
-  const pr=h('div','popt','<span>יֵשׁ לוֹ עוֹד:</span>');[20,30,45,60].forEach(v=>mk(pr,v+' דק׳',()=>{l.today={d:O.today(),min:usedMin()+v};pnow();},left&&left.min===v));
+  const pr=h('div','popt','<span>יֵשׁ לוֹ עוֹד:</span>');[20,30,45,60].forEach(v=>mk(pr,v+' דק׳',()=>{l.today=giveT(usedMin(),v);pnow();},left&&left.min===v));
   mk(pr,'ללא הגבלה',()=>{l.today={d:O.today(),none:1};pnow();},t&&t.none);if(t)mk(pr,'↺ כמו כל יום',()=>{l.today=null;pnow();});
   mk(pr,'⏹ לסיים עכשיו',stopNow).classList.add('bad');more.appendChild(pr);
   const ds=sec(pdet(box,'tdaily','🗓️ הגבלה קבועה לכל יום'),'הגבלה קבועה לכל יום','<div class="pnote">נספר רק זמן פעיל. אורן רואה למעלה כמה נשאר. בסוף הזמן — מסך "נתראה מחר"; אם אורן באמצע פעילות, הוא מסיים אותה (עד 5 דקות). שינוי מהטלפון שלכם מגיע למכשיר של אורן תוך כדקה.</div>');
@@ -1151,9 +1167,18 @@ function limCheck(){const left=T.limLeft(),bed=bedNow();const timeOver=!!(left&&
     timeUp(byTasks?'done':'time');return;}
   if(Date.now()-grace>5*60000||((tEnd>tEnd0||graceDone||!inAct())&&!ovOpen))timeUp(byTasks?'done':'time');}
 let tEnd0=0;
-/* spoken reminders: 10 and 2 minutes left, and the last activity */
-function warn(left){const d=O.today();const once=(k,f)=>{if(warned[d+k])return;warned[d+k]=1;f();};
-  [10,2].forEach(m=>{if(left.min<=m&&left.min>m-2)once('m'+m,()=>O.say(T.spk(`נִשְׁאֲרוּ לְךָ עוֹד ${m} דַּקּוֹת`)));});}
+/* spoken, calm (#361): every 10 minutes what is left (as words), a heads-up at 5 and at 1; said at a safe point:
+   right away outside an activity, else after his next answer (or when the activity ends), never in the middle of a question */
+const TENS=['','עֶשֶׂר','עֶשְׂרִים','שְׁלוֹשִׁים','אַרְבָּעִים','חֲמִשִּׁים','שִׁשִּׁים','שִׁבְעִים','שְׁמוֹנִים','תִּשְׁעִים'];
+const HEADS={5:'עוֹד חָמֵשׁ דַּקּוֹת נִגְמֹר. בּוֹא נְסַיֵּם אֶת מָה שֶׁהִתְחַלְנוּ.',1:'עוֹד דַּקָּה אַחַת נִגְמֹר. בּוֹא נְסַיֵּם אֶת מָה שֶׁהִתְחַלְנוּ.'};
+let tlPend='';
+const inQ=()=>inAct()||!$('#sTal').hidden;
+function tlSay(t){if(inQ())tlPend=t;else{tlPend='';O.say(T.spk(t));}}
+const tlSafe=()=>{if(!tlPend||lockEl)return;const t=tlPend;tlPend='';O.say(T.spk(t));};
+O.on('ans',tlSafe);O.on('tq',tlSafe);O.on('screen',()=>setTimeout(()=>{if(tlPend&&!inQ())tlSafe();},0));
+function warn(left){const d=O.today(),m=left.min;const once=(k,f)=>{if(warned[d+k])return;warned[d+k]=1;f();};
+  if(m>=4&&m<=5)once('h5',()=>tlSay(HEADS[5]));else if(m===1)once('h1',()=>tlSay(HEADS[1]));
+  else if(m>=10&&m%10===0&&TENS[m/10])once('l'+m,()=>tlSay(`נִשְׁאֲרוּ לָנוּ עוֹד ${TENS[m/10]} דַּקּוֹת`));}
 /* what is left, small, in the top bar on every screen */
 let pillEl=null;
 function pillText(left){return left.min<=0?'⏱️ 0':left.min===1?'⏱️ דַּקָּה אַחַת':`⏱️ ${left.min} דַּקּוֹת`;}

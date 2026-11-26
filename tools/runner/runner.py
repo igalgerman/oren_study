@@ -8,7 +8,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import remote, ghcache, ghauth
+import remote, ghcache, ghauth, pcload   # pcload: #293 PC load watch
 ROOT = HERE.parent.parent                      # repo checkout (tools/runner/../..)
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # #229: tests point this at a temp dir
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -18,6 +18,7 @@ DRY = "--dry-run" in sys.argv
 HC = CFG.get("hc", "")                            # herdr CLI; missing -> old hidden `claude -p` path
 USE_HERDR = bool(HC) and Path(HC).exists() and not DRY and os.environ.get("RUNNER_NO_HERDR") != "1"
 TERM = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--term=")), "")   # our own herdr terminal name (set by launch_self)
+NOTIFY = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--notify=")), "")  # #279: a notify-off pass tells this terminal only when it did something
 INTEG = Path(CFG["worktree_prefix"] + "integrate")       # own checkout for merge/test/deploy, so a dirty orchestrator checkout never blocks it
 INTERACTIVE_NOTE = ("\nWhen you are completely finished, make the very last line of your final message exactly the marker line described above, "
                     "then stay open: the owner may open this terminal and ask you questions.\n"
@@ -466,6 +467,33 @@ def governor_text(gv):
         s += f" · week {gv['week_pct']:.0f}% -> ~{min(100, gv['week_projected']):.0f}% at {time.strftime('%a %H:%M', time.localtime(gv['week_reset']))}"
     return s + ")" + (" · STOP" if gv["stop"] else " · new 5h window" if gv.get("why") == "new 5h window" else "")
 
+def governor_now(now=None):
+    """#279: the last governor decision (.runs/governor.json, < 15 min old) without taking a new usage sample -> {lanes, stop, pct};
+    missing or stale -> config remote_lanes. A stop from before the 5h reset is over (#269)."""
+    now = time.time() if now is None else now
+    try:
+        gv = json.loads((RUNS / "governor.json").read_text(encoding="utf-8"))
+        if now - gv["at"] < 15 * 60:
+            return {"lanes": int(gv["lanes"]), "stop": bool(gv["stop"] and not (gv.get("reset") and gv["reset"] <= now)), "pct": gv.get("pct")}
+    except Exception: pass
+    return {"lanes": REMOTE_LANES, "stop": False, "pct": None}
+
+def pass_choice(issues, local_lanes, remote_lanes, gv, core_held_n, locked, where=None):
+    """#279: what a runner pass starts now -> [(issue, 'local'|'remote')] (before the open-PR lookup). The ONE lane check, shared by
+    run_pass and the watchdog (which spawns a pass only when this is not empty): Acceptance gate, select(), issue locks, governor stop, free slots."""
+    where = where or where_of
+    issues, _ = gate(issues)
+    busy = [i["number"] for i in issues if "in-progress" in i["labels"]]
+    rbusy = sum(where(b) == "remote" and not waiting_core(b) for b in busy)     # same as remote_busy()
+    chosen = stop_filter([c for c in select(issues, local_lanes + remote_lanes, MAX_CORE, EXPRESS, core_held_n) if not locked(c["number"])], gv)
+    return assign_where(chosen, sum(where(b) != "remote" for b in busy), rbusy, local_lanes, remote_lanes)
+
+def pass_now(issues, gv=None):
+    """#279: pass_choice with this PC's live inputs (governor, cloud refusal pause, PC load, core slots, issue locks)."""
+    gv = gv or governor_now()
+    return pass_choice(issues, local_lanes_now(pcload.alarmed(RUNS)), lanes_now(gv["lanes"], refusal_state(), time.time()), gv,
+                       core_held(), lambda n: FileLock(f"issue-{n}").held_by_other())
+
 def stop_filter(chosen, gv):
     """Pure (#269): on a governor stop only owner-approved 'express' issues still start, and only below 100%.
     #450: the canary (express too, for its own lane) never starts on a stop."""
@@ -731,6 +759,14 @@ def record_refusal(n, error, now=None):
             f.write(time.strftime("%Y-%m-%d %H:%M:%S ", time.localtime(now)) + msg + chr(10))
         tell_orchestrator(msg)
     return due
+
+def local_lanes_now(is_alarmed, local=None):
+    """#293: while the PC load watch is alarmed the runner starts no new LOCAL work."""
+    return 0 if is_alarmed else (LOCAL_LANES if local is None else local)
+
+def refusal_pauses(error, runs=None, now=None):
+    """#293 (14:52): a cloud start that failed with no output while the PC is alarmed was the PC: it sets no cloud pause."""
+    return not pcload.pc_not_cloud(error, pcload.alarmed(runs or RUNS, now))
 
 def local_lane_free(n):
     """#137: is a local lane free for #n (other in-progress issues running locally < local_lanes)? Any gh error -> False."""
@@ -1009,20 +1045,37 @@ def sync_decision(branch, into, dirty, behind):
     if dirty: return ("skip", "main checkout has uncommitted changes")
     return ("pull", "")
 
-def sync_main(log=None):
-    """Fast-forward the main checkout to origin/main when that is harmless. Returns a message ('' = nothing to say); never raises."""
+def dirty_files(status):
+    """Pure (#326): the tracked changed paths of `git status --porcelain` (untracked '??' left out)."""
+    return [l[3:].strip() for l in status.splitlines() if l.strip() and not l.startswith("??")]
+
+def sync_main(log=None, info=None):
+    """Fast-forward the main checkout to origin/main when that is harmless. Returns a message ('' = nothing to say); never raises.
+    #326: `info` (a dict) gets act (pull|none|skip|fail|net), behind, why, dirty (files), and after a pull old/new head + changed files."""
+    info = {} if info is None else info
+    info.update(act="net", behind=None)
     try:
         g = lambda *a: run(["git", "-C", str(MAIN_CHECKOUT), *a], timeout=120)
         rc, out = g("fetch", "-q", REMOTE)
         if rc: return f"sync failed: fetch rc {rc} {out.strip()[:200]}"
         branch = g("rev-parse", "--abbrev-ref", "HEAD")[1].strip()
         behind = int(g("rev-list", "--count", f"HEAD..{REMOTE}/{BRANCH}")[1].strip() or 0)
-        act, why = sync_decision(branch, BRANCH, is_dirty(g("status", "--porcelain")[1]), behind)
+        dirty = dirty_files(g("status", "--porcelain")[1])
+        act, why = sync_decision(branch, BRANCH, bool(dirty), behind)
+        info.update(behind=behind, why=why, dirty=dirty, act="skip" if why else "none")
         if act == "pull":
+            old = g("rev-parse", "HEAD")[1].strip()
             rc, out = g("merge", "-q", "--ff-only", f"{REMOTE}/{BRANCH}")
-            return f"main checkout fast-forwarded ({behind} commits)" if rc == 0 else f"sync failed: ff-only rc {rc} {out.strip()[:200]}"
+            if rc:
+                info.update(act="fail", why=f"ff-only rc {rc} {out.strip()[:200]}")
+                return f"sync failed: ff-only rc {rc} {out.strip()[:200]}"
+            new = g("rev-parse", "HEAD")[1].strip()
+            info.update(act="pull", old=old, new=new,
+                        changed=[l.strip() for l in g("diff", "--name-only", old, new)[1].splitlines() if l.strip()])
+            return f"main checkout fast-forwarded ({behind} commits)"
         return f"sync skipped ({behind} behind): {why}" if why else ""
     except Exception as e:
+        info["act"] = "fail"; info.setdefault("why", repr(e))
         return f"sync error: {e!r}"
 
 def remove_worktree(wt, log=None):
@@ -1171,12 +1224,28 @@ def hc_json(*args):
             continue
     return {}
 
-def parent_args():
-    """Notes go to the main session: config `parent`, else the parent of our own run-<n> terminal, else herdr's default."""
+def my_parent():
+    """Notes go to the main session: config `parent`, else the parent of our own run-<n> terminal, else the --notify target
+    of a notify-off pass (#279), else '' (herdr's default)."""
     p = CFG.get("parent", "")
     if not p and TERM:
         p = hc_json("get", TERM, "--json").get("parent", "")
+    return p or NOTIFY
+
+def parent_args():
+    p = my_parent()
     return ["--parent", p] if p else []
+
+def pass_cmd(name, parent):
+    """#279: hc command for a runner pass. Notify off (--no-parent: herdr sends no exit note); the pass itself tells
+    --notify=<parent> only when it started or blocked something (notify_pass)."""
+    cmd = [HC, "run", "--bg", "--outlive-parent", "--no-parent", "--name", name, "--cwd", str(ROOT), "--label", "role=runner",
+           sys.executable, str(HERE / "runner.py"), f"--term={name}"]
+    return cmd + ([f"--notify={parent}"] if parent else [])
+
+def notify_pass(started, stuck, line, to, send):
+    """#279: a pass that started nothing and blocked nothing stays quiet; otherwise its pass line goes to `to`."""
+    if to and (started or stuck): send(to, line)
 
 def code_mode(n):
     """Code Mode trial (owner, 26 Nov): issues whose number is a multiple of code_mode_every run their Claude windows with
@@ -1260,10 +1329,12 @@ def spawn(extra_args):
 def spawn_out(extra_args):
     """spawn() -> (rc, output), so a caller can see why `hc run` failed (e.g. name_taken)."""
     name = f"run-{extra_args[0].lstrip('#')}" if extra_args else f"run-pass-{int(time.time()) % 100000}"
-    parent = CFG.get("parent") or (hc_json("get", TERM, "--json").get("parent", "") if TERM else "")
-    cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(ROOT), "--label", "role=runner"]
-    if parent: cmd += ["--parent", parent]
-    cmd += [sys.executable, str(HERE / "runner.py"), *extra_args, f"--term={name}"]
+    parent = my_parent()
+    if not extra_args: cmd = pass_cmd(name, parent)       # #279: a pass is notify-off
+    else:
+        cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(ROOT), "--label", "role=runner"]
+        if parent: cmd += ["--parent", parent]
+        cmd += [sys.executable, str(HERE / "runner.py"), *extra_args, f"--term={name}"]
     rc, out = run(cmd)
     print(out.strip() or f"started terminal {name}")
     return rc, out
@@ -1796,8 +1867,8 @@ def process_locked(issue, where="local"):
                 remote_question(res)
                 out = res
             except Refused as e:                         # #137: local lane free -> run here; else give the issue back, it waits
-                record_refusal(n, str(e))
-                if not local_lane_free(n):
+                if refusal_pauses(str(e)): record_refusal(n, str(e))   # #293: not when the PC was the cause
+                if pcload.alarmed(RUNS) or not local_lane_free(n):      # #293: no new local work while the PC is overloaded
                     stat(n, lane, "waiting", why="cloud start refused")
                     set_labels(n, remove=["in-progress"])
                     return f"WAITING: cloud start refused ({str(e)[:200]}), no local lane free"
@@ -1958,6 +2029,8 @@ def close_windows(n):
     """After a successful issue: close its worker/reviewer windows (kept open when BLOCKED, so the owner can look)."""
     if not USE_HERDR: return
     for t in (f"issue-{n}", f"issue-{n}-fix", f"issue-{n}-resolve1", f"issue-{n}-resolve2", f"review-{n}", f"review-{n}-2", f"review-{n}-3", f"issue-{n}-fix2"):
+        addr = hc_json("get", t, "--json").get("address", "")     # #26: settle the tab so it leaves Herdr's active lists
+        if addr and Path(HERDR_APP).exists(): run([HERDR_APP, "do", "tab.settle", "--terminal", addr], timeout=30)
         hc("kill", t, timeout=30); hc("rm", t, timeout=30)
 
 def resolve_pr(n, k):
@@ -2117,12 +2190,10 @@ def run_pass():
         for m, step in auto_resume(issues, resume_lookup, set_labels, lambda k, b: gh("issue", "comment", str(k), "--body", b), tell_orchestrator):
             log_line(f"{now()} #{m}: auto-resume at {step}")
     busy = [i["number"] for i in issues if "in-progress" in i["labels"]]
-    rbusy = remote_busy(busy)                            # #277: a run waiting for a core slot holds no cloud lane
-    gv = governor_pass(rbusy)                     # #239: remote lane count from the 5h usage
-    remote_lanes = lanes_now(gv["lanes"], refusal_state(), time.time())   # #137: no cloud starts for 1 h after a refusal
-    chosen = stop_filter([c for c in select(issues, LOCAL_LANES + remote_lanes, MAX_CORE, EXPRESS, core_held()) if not FileLock(f"issue-{c['number']}").held_by_other()], gv)   # #269: express still starts on stop
-    wmap = {c["number"]: w for c, w in assign_where(chosen, sum(where_of(b) != "remote" for b in busy), rbusy, LOCAL_LANES, remote_lanes)}
-    chosen = [c for c in chosen if c["number"] in wmap]
+    gv = governor_pass(remote_busy(busy))         # #239: remote lane count from the 5h usage (#277: a run waiting for a core slot holds no cloud lane)
+    pairs = pass_now(issues, gv)                  # #279: the same lane check as the watchdog (#137 refusal pause, #293 PC load, #269 stop)
+    wmap = {c["number"]: w for c, w in pairs}
+    chosen = [c for c, _ in pairs]
     if not DRY: chosen = open_pr_resumes(chosen, resume_lookup)     # #295: an issue with an open PR resumes; never a second worker
     cutoff = CFG["stuck_hours"] * 3600
     stuck = [i for i in issues if "in-progress" in i["labels"] and not FileLock(f"issue-{i['number']}").held_by_other()
@@ -2146,7 +2217,10 @@ def run_pass():
     elif chosen:
         with ThreadPoolExecutor(max_workers=len(chosen)) as ex:
             results = list(ex.map(lambda c: (c["number"], process(c, wmap[c["number"]])), chosen))
-    log_line(f"{now()} pass: started={sum(r == 'started' for _, r in results) if results else len(chosen)} stuck={len(stuck)} " + " ".join(f"#{n}:{r}" for n, r in results))
+    started = sum(r == 'started' for _, r in results) if results else len(chosen)
+    line = f"pass: started={started} stuck={len(stuck)} " + " ".join(f"#{n}:{r}" for n, r in results)
+    log_line(f"{now()} {line}")
+    notify_pass(started, len(stuck), line.strip(), NOTIFY, lambda to, t: hc("send", to, t, timeout=30) if USE_HERDR else None)   # #279
     for n, r in results: print(f"ISSUE {n}: {r}")
     return 0
 

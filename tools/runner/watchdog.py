@@ -23,8 +23,12 @@ Every minute it checks, deterministically:
       writes the session links + dashboard.py --text into ONE pinned issue (edited in place, nothing committed)
   5d. #330 canary.py: every 6 h (and after a merge into tools/runner or tools/mods) ONE tiny canary issue runs the whole flow;
       a step past its deadline -> alarm to the orchestrator + inspector, NEEDS-ATTENTION on panel/dashboard; side paths hourly
+  5f. #293 pcload.py, every 2 min: CPU / free RAM / heavy process counts; an overload -> alarm with the top 3 processes by RAM and who
+      started them, to the orchestrator + inspector (once per 30 min per cause); .runs/pc.json for the panel/dashboard. Never kills.
   5e. #187 once a week: tools/test_garden.py (test trim proposal: ONE issue 'Test trim proposal (week N)'; it never deletes a test)
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
+  6b. #326 mainsync.py: behind 10+ min or skipped twice in a row -> alarm (orchestrator + inspector, names the dirty files);
+     a sync that changed the panel mod -> /reload-plugins to the orchestrator, CLAUDE.md/ORCHESTRATOR.md/inbox prompt -> re-read (when idle)
   7. #304: a network error (sync, or a tick that raised a network/timeout error) is retried next tick and only logged + told to the
      orchestrator on the NET_ALARM-th in a row; nightly.prune_if_due removes .runs/<n> of issues closed > 24 h once a day
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
@@ -150,7 +154,7 @@ def check_lanes(ts):
     rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: return
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
-    ready = R.select(issues, R.total_lanes(), R.MAX_CORE, R.EXPRESS)
+    ready = [i for i, _ in R.pass_now(issues)]     # #279: the pass's own lane check; no free lane -> no pass (and no gh call of it)
     if not ready: return
     key, now = tuple(sorted(i["number"] for i in ready)), time.time()
     ok, why = pass_decision(R.FileLock("pass").held_by_other(), key, last_pass_start(), now)   # #284/#250: one pass alive at a time
@@ -158,10 +162,7 @@ def check_lanes(ts):
     note_pass_start(key, now)
     orch = R.hc_json("get", "orchestrator", "--json").get("address", "")
     name = f"run-pass-{int(time.time()) % 100000}"
-    cmd = [R.HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(R.ROOT), "--label", "role=runner"]
-    cmd += ["--parent", orch] if orch else ["--no-parent"]
-    cmd += [sys.executable, str(HERE / "runner.py"), f"--term={name}"]
-    rc, out = R.run(cmd, timeout=60)
+    rc, out = R.run(R.pass_cmd(name, orch), timeout=60)   # #279: notify off; the pass tells the orchestrator only when it started/blocked something
     log(f"free lane + ready issue -> started {name} (rc {rc})")
 
 def pick_intake(issues, ts):
@@ -178,10 +179,11 @@ def check_intake(ts):
     i = pick_intake([{**x, "labels": [l["name"] for l in x["labels"]]} for x in json.loads(out)], ts)
     if not i: return
     n, name = i["number"], f"intake-{i['number']}"
+    import recover
     prompt = (f"/grill-me issue #{n} (gh issue view {n} --repo {R.CFG['repo']} --comments), then /to-tickets for what comes out of it, "
               f"then close #{n} with links to the new tickets. Every ticket gets an '## Acceptance' section before ready-for-agent: 3-7 checkable points "
               f"+ the tests that prove them, and 'Out of scope' (#186). If #{n} is only waiting because it has no Acceptance section, "
-              f"skip the grilling: write that section into #{n}'s body.")
+              f"skip the grilling: write that section into #{n}'s body. " + recover.TRIAGE_STEPS)
     cmd = [R.HC, "run", "--bg", "--outlive-parent", *R.space_args(), "--name", name, "--cwd", R.CFG.get("main_checkout", str(R.ROOT)),
            "--label", f"issue={n}", "--label", "role=intake", shutil.which("claude") or "claude", R.argv_prompt(name, prompt)]
     rc, out = R.run(cmd, timeout=60)
@@ -298,6 +300,7 @@ def nightly_tick():
     nightly.retro_if_due(tell, log)
     nightly.batch_tick(lambda t: R.hc("send", "inbox", t, timeout=30)[0], log)
     nightly.prune_if_due(log)   # #304
+    nightly.worktrees_if_due(log)   # #326: helper worktrees whose branch is pushed and merged/closed
     nightly.night_report_if_due(tell, log)   # #282
 
 def parked_tick():
@@ -316,6 +319,9 @@ def due_tick():
 
 def canary_tick():
     import canary; canary.tick(say=lambda t: (tell(t), R.hc("send", "inspector", t, timeout=30)), log=lambda m: log("canary: " + m))   # #330
+
+def pc_tick(ts):
+    import pcload; pcload.tick(ts, send=lambda w, m: R.hc("send", w, m, timeout=30), log=log)   # #293: reports only, never kills
 
 def desks_tick():
     import desks; desks.run_if_due(log)   # #306: cloud inbox + ask sessions, pinned links + live status (thread; its never-two lock survives a reload)
@@ -343,10 +349,16 @@ SYNC_MIN = int(R.CFG.get("sync_minutes", 3))
 _sync = {"last": 0.0, "msg": ""}
 
 def sync_tick():
-    """Every SYNC_MIN minutes fast-forward the main checkout; log changes of state only. Network errors: retried next tick (#304)."""
+    """Every SYNC_MIN minutes fast-forward the main checkout; log changes of state only. Network errors: retried next tick (#304).
+    #326 (mainsync.py): every tick queued reload sends go to idle sessions; after each sync the behind/skip alarm (orchestrator +
+    inspector, names the dirty files) and, after a pull, /reload-plugins and re-read messages are queued."""
+    import mainsync
+    mainsync.deliver_tick(log)
     if time.time() - _sync["last"] < SYNC_MIN * 60: return
     _sync["last"] = time.time()
-    msg = R.sync_main()
+    info = {}
+    msg = R.sync_main(info=info)
+    mainsync.after_sync(info, time.time(), say=lambda t: (tell(t), R.hc("send", "inspector", t, timeout=30)), log=log)
     k, alarm = net_streak(_net, "sync", msg)
     if k:
         _sync["last"] = 0.0
@@ -602,6 +614,7 @@ def tick():
         step("stuck_tick", stuck_tick, ts)
         step("net_due_tick", net_due_tick, ts) # #364
         step("conflicts_tick", conflicts_tick, ts)  # #262
+        step("pc_tick", pc_tick, ts)                # #293
         for name, fn in (("observer_tick", observer_tick), ("ai_observer_tick", ai_observer_tick), ("nightly_tick", nightly_tick),
                          ("parked_tick", parked_tick), ("due_tick", due_tick), ("garden_tick", garden_tick),   # #282 #241 #187
                          ("issues_stuck_tick", issues_stuck_tick), ("desks_tick", desks_tick), ("canary_tick", canary_tick),   # #280 #330

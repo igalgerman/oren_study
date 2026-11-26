@@ -7,6 +7,7 @@ The WHOLE recovery after a restart (planned freeze #139, or a crash), in order:
   5. every open in-progress issue (local or cloud) whose runner is dead: a half-done merge in its worktree is reset to the pushed branch,
      in-progress is removed (ready-for-agent kept/added) so the runner restarts it; .runs/frozen is removed first
   6. starts the watchdog when missing (it starts the runner passes), then reports in ONE issue comment (recover_issue) and to the orchestrator
+Also (#27, also with --open): herdr's sound setting from sounds.py (blocked and done sound different).
 Usage: python recover.py [--install | --open]   (--open = tools/orchestrator.cmd, #25: steps 1-4 + watchdog only)"""
 import json, os, shutil, sys, time
 from pathlib import Path
@@ -15,7 +16,11 @@ TASK = "Oren recover"
 CONTROL = ("orchestrator", "inbox", "inspector")    # the 3 Claude sessions on the PC, tabs of 'oren' in this order
 INBOX_PROMPT = ("You are the INBOX of the Oren game multi-agent system (repo igalgerman/oren_study). Read CLAUDE.md and FLOW.md. "
                 "The owner talks to you: a new idea -> /idea, a clear task -> /task, a bug -> /bug, a status question -> /status. "
-                "Write every new issue the way docs/agents/skills/writing-for-agents.md says. Propose each new issue's model label (docs/agents/models.md). Do nothing else; wait for the owner.")
+                "Write every new issue the way docs/agents/skills/writing-for-agents.md says. Propose each new issue's model label (docs/agents/models.md). "
+                "Run the mattpocock-skills:triage steps on every new issue (#29): duplicate check per CLAUDE.md, labels per docs/agents/triage-labels.md, "
+                "P-level, an Acceptance list, one lane label, Blocked by lines. Do nothing else; wait for the owner.")
+TRIAGE_STEPS = ("Run the mattpocock-skills:triage steps on every new ticket (#29): duplicate check per CLAUDE.md ('One backlog, no duplicates'), "
+                "labels per docs/agents/triage-labels.md, a P-level, an Acceptance list, one lane label (core/pack/review), 'Blocked by: #n' lines.")
 ORCH_PROMPT = "Read ORCHESTRATOR.md and continue as the orchestrator. Open the Oren lanes panel (/lanes)."
 INSPECTOR_PROMPT = "You are the INSPECTOR of the Oren game multi-agent system. Read C:/work/Oren_study/INSPECTOR_HANDOFF.md first and follow it."
 
@@ -208,7 +213,10 @@ def main():
         print(out.strip())
         print(f"installed: '{TASK}' runs tools\\recover.cmd at logon" if rc == 0 else "install failed: run tools\\recover.cmd --install once as administrator")
         return rc
-    import freeze, subprocess
+    import freeze, subprocess, sounds
+    try:                                              # #27: blocked = double beep, done = soft chime (herdr [ui.sound])
+        if sounds.apply(): print("herdr sounds set:", sounds.config_path()); R.hc("server", "reload-config", timeout=30)
+    except Exception as e: print("herdr sounds not set:", e)
     def terminals(): return R.hc_json("ls", "--all", "--json").get("terminals", [])
     def herdr_up(): return R.hc("ls", "--json", timeout=30)[0] == 0 and bool(spaces(R))
     def start_herdr():

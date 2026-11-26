@@ -962,8 +962,8 @@ const len1=i=>{const off=i>=3&&mm(.6);const s=off?rand(1,4):0;const L=off?rand(2
 function penSVG(x,L,col){const w=L*18;return `<svg viewBox="0 0 200 44" aria-hidden="true"><rect x="${x}" y="12" width="8" height="20" fill="#ff9cc2" stroke="#1d2631" stroke-width="2"/><rect x="${x+8}" y="12" width="${w-24}" height="20" fill="${col}" stroke="#1d2631" stroke-width="2"/><path d="M${x+w-16} 12 L${x+w} 22 L${x+w-16} 32Z" fill="#e9c8a0" stroke="#1d2631" stroke-width="2"/></svg>`;}
 function longQ(hard){let Ls;do{Ls=[0,0,0].map(()=>rand(3,10));}while(new Set(Ls).size<3);const long=mm(.5);const cols=shuffle(COL.slice()).slice(0,3);
   const opts=Ls.map((L,k)=>penSVG(hard?rand(2,190-L*18):2,L,cols[k]));const v=long?Math.max(...Ls):Math.min(...Ls);
-  return ch(`<div class="qq">אֵיזֶה עִפָּרוֹן הֲכִי ${long?'אָרֹךְ':'קָצָר'}?</div>`,opts,Ls.indexOf(v),hard?'מִסְתַּכְּלִים גַּם עַל הַהַתְחָלָה וְגַם עַל הַסּוֹף':'כֻּלָּם מַתְחִילִים בְּאוֹתוֹ מָקוֹם. מִי מַגִּיעַ הֲכִי רָחוֹק?',
-    long?'הֶאָרֹךְ תּוֹפֵס הֲכִי הַרְבֵּה מָקוֹם':'הַקָּצָר תּוֹפֵס הֲכִי מְעַט מָקוֹם','pen',{t:'long',Ls,ask:long?'long':'short'});}
+  return ch(`<div class="qq">אֵיזֶה עִפָּרוֹן הֲכִי ${long?'אָרֹךְ':'קָצָר'}?</div>`,opts,Ls.indexOf(v),hard?'מִסְתַּכְּלִים גַּם עַל הַהַתְחָלָה וְגַם עַל הַסּוֹף':`כֻּלָּם מַתְחִילִים בְּאוֹתוֹ מָקוֹם. ${long?'מִי מַגִּיעַ הֲכִי רָחוֹק?':'מִי נִגְמָר הֲכִי מֻקְדָּם?'}`,
+    long?'הָאָרֹךְ תּוֹפֵס הֲכִי הַרְבֵּה מָקוֹם':'הַקָּצָר תּוֹפֵס הֲכִי מְעַט מָקוֹם','pen',{t:'long',Ls,ask:long?'long':'short'});}
 /* heavier / lighter: a balance scale */
 const CUBE=c=>`<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M4 10 L12 3 L37 3 L30 10Z" fill="${c}" opacity=".7" stroke="#1d2631" stroke-width="2"/><path d="M30 10 L37 3 L37 30 L30 37Z" fill="${c}" opacity=".85" stroke="#1d2631" stroke-width="2"/><rect x="4" y="10" width="26" height="27" fill="${c}" stroke="#1d2631" stroke-width="2.5"/></svg>`;
 function scaleSVG(cl,cr,leftDown){const th=(leftDown?1:-1)*13*Math.PI/180,R=70,cx=100,cy=34;const L=[cx-R*Math.cos(th),cy+R*Math.sin(th)],Rr=[cx+R*Math.cos(th),cy-R*Math.sin(th)];
@@ -1141,7 +1141,7 @@ function mergeIn(o){if(!o||typeof o!=='object')return;
   if(o.set&&(+o.setT||0)>(+save.setT||0)){save.set=o.set;save.setT=o.setT;lastSetJ=JSON.stringify(save.set);}
   for(const x of (o.iss||[])){if(!x||!x.d||!x.k)continue;save.iss=save.iss||[];const e=save.iss.find(y=>y.d===x.d&&y.k===x.k);if(e)e.n=Math.max(e.n|0,x.n|0);else save.iss.push(x);}if(save.iss)save.iss=save.iss.sort((a,b)=>a.d<b.d?-1:1).slice(-30);
   for(const k of ['prof','bdg','last'])if(o[k]&&!save[k])save[k]=o[k];
-  for(const m of ['dom','rw','coach','cnt'])for(const [k,v] of Object.entries(o[m]||{})){save[m]=save[m]||{};save[m][k]=Math.max(+save[m][k]||0,+v||0);}
+  for(const m of ['dom','rw','coach','cnt','tg'])for(const [k,v] of Object.entries(o[m]||{})){save[m]=save[m]||{};save[m][k]=Math.max(+save[m][k]||0,+v||0);}
   if(o.lrn&&window.LEARN&&window.LEARN.core)save.lrn=window.LEARN.core.merge(save.lrn,o.lrn);
   if(o.kn&&window.KNOW)save.kn=window.KNOW.core.merge(save.kn,o.kn);
   if(o.help&&typeof o.help==='object'){const hp=save.help=save.help||{items:{},tb:[],t:0};hp.items=hp.items||{};for(const [k,v] of Object.entries(o.help.items||{})){const c=hp.items[k];if(!c||(v.n|0)>(c.n|0)||((v.n|0)===(c.n|0)&&String(v.last||'')>String(c.last||'')))hp.items[k]=v;}
@@ -1154,10 +1154,48 @@ function logIssue(k,m){try{if(kidSave||window.__fast)return;const d=today();save
 /* #350: a crash keeps its first stack line ("fn file:line:col", Chrome "at ..." or Safari "fn@...") so the next one can be found */
 function errWhere(e){try{const st=String(e.error&&e.error.stack||'').split('\n').map(x=>x.trim()).find(x=>/:\d+:\d+\)?$/.test(x));
   const at=st?st.replace(/^at /,'').replace(/ \((.*)\)$/,' $1').replace(/@/,' '):e.filename?e.filename+':'+e.lineno+':'+e.colno:'';return at.replace(/(?:https?|file):\/\/\S*\/([^\/\s]*?)(:\d+:\d+)/g,(_,f,n)=>(f||'index.html')+n);}catch(x){return '';}}
-window.addEventListener('error',e=>{const w=e?errWhere(e):'';logIssue('err',String(e&&e.message||'').slice(0,120)+(w?' @ '+w:''));});
-function persist(){save.t=Date.now();if(!kidSave){const j=JSON.stringify(save.set||{});if(j!==lastSetJ){if(lastSetJ)save.setT=Date.now();lastSetJ=j;}}if(kidSave){try{localStorage.setItem(KEY+'-parent',JSON.stringify(save));}catch(e){}return;}try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}cloudSave();}
+window.addEventListener('error',e=>{const w=e?errWhere(e):'';logIssue('err',String(e&&e.message||'').slice(0,120)+(w?' @ '+w:''));try{track('err',Object.assign({msg:String(e&&e.message||'').slice(0,120),at:w},evSnap()));}catch(x){}});
+function persist(){save.t=Date.now();if(!kidSave){const j=JSON.stringify(save.set||{});if(j!==lastSetJ){if(lastSetJ)save.setT=Date.now();lastSetJ=j;}}if(kidSave){try{localStorage.setItem(KEY+'-parent',JSON.stringify(save));}catch(e){}return;}try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}cloudSave();evFlush('save');}
 /* parent play: a separate sandbox user with everything open; never touches Oren's save or the cloud */
 let kidSave=null;
+/* #348 event log: track(kind,data) records what Oren does as short events (ids and numbers, never text the kid typed). They wait in a
+   buffer on this device and go to /api/log in batches (one D1 row each): on save and on a 60 s tick (at most once a minute), and when the
+   page hides. A failed send puts the batch back (the newest EV.max are kept on the device, oldest dropped) until the next send: no retry loop.
+   At most EV.cap events per page session (the rest are counted). Parent play (sandbox) is not logged. Every event has an id (i) for #462. */
+const EV={k:'oren4-ev',sid:(Math.random().toString(36).slice(2)+'0000000000').slice(0,10),n:0,cap:2000,max:600,buf:[],last:0,busy:0,drop:0,t0:Date.now(),s:'',sT:Date.now(),m:'',q:'',lv:'',qT:0,lf:0};
+try{const o=JSON.parse(localStorage.getItem(EV.k)||'null');if(o&&Array.isArray(o.ev))EV.buf=o.ev.slice(-EV.max).map(e=>(e.osid||(e.osid=o.sid),e));}catch(e){}
+function evSan(d){const o={};if(d&&typeof d==='object')for(const k in d){const v=d[k];if(typeof v==='number'&&isFinite(v))o[k]=Math.round(v*100)/100;else if(typeof v==='boolean')o[k]=v?1:0;else if(typeof v==='string'&&v)o[k]=v.slice(0,120);}return o;}
+function track(k,d,force){try{if(kidSave)return;if(EV.n>=EV.cap&&!force){EV.drop++;return;}EV.n++;
+  const e=Object.assign({s:EV.s,m:EV.m},evSan(d),{i:EV.n,t:Date.now(),k});if(!e.s)delete e.s;if(!e.m)delete e.m;EV.buf.push(e);if(EV.buf.length>EV.max)EV.buf.splice(0,EV.buf.length-EV.max);}catch(x){}}
+/* the state an error is attached to: screen, mission, question id, level, stars */
+function evSnap(){let st=0;try{st=EV.lv&&save.s[EV.lv]!=null?save.s[EV.lv]|0:((save.tl||{})[EV.m]||{}).s|0;}catch(e){}return {s:EV.s,m:EV.m,q:EV.q,lv:EV.lv||EV.m,st};}
+const evHash=s=>{let h=5381;s=String(s);for(let i=0;i<s.length;i++)h=(h*33+s.charCodeAt(i))>>>0;return h.toString(36);};
+function evScreen(id){const now=Date.now();if(id===EV.s)return;track('scr',{s:id,from:EV.s,ms:EV.s?now-EV.sT:0});EV.s=id;EV.sT=now;}
+function evMission(m,lv){EV.m=String(m||'');EV.lv=lv?String(lv):'';EV.q='';track('mis',{m:EV.m,lv:EV.lv});}
+function evQ(key,d){EV.q=evHash(key);EV.qT=Date.now();track('q',Object.assign({q:EV.q},d));}
+function evAns(ok,d){track('ans',Object.assign({q:EV.q,ok:ok?1:0,ms:EV.qT?Date.now()-EV.qT:-1},d));}
+function evKeep(){try{if(EV.buf.length)localStorage.setItem(EV.k,JSON.stringify({sid:EV.sid,ev:EV.buf}));else localStorage.removeItem(EV.k);}catch(x){}}
+function evFlush(why){try{if(!FAM.on||kidSave||!EV.buf.length)return;const hide=why==='hide';
+  if(!hide&&(EV.busy||Date.now()-EV.last<(window.__logGap!=null?window.__logGap:60000)))return;
+  EV.last=Date.now();const ev=EV.buf.splice(0,200);const body=JSON.stringify({fam:FAM.id,sid:EV.sid,tz:new Date().getTimezoneOffset(),ev});
+  const back=()=>{EV.buf=ev.concat(EV.buf).slice(-EV.max);evKeep();};
+  if(hide&&navigator.sendBeacon){let sent=false;try{sent=navigator.sendBeacon('/api/log',new Blob([body],{type:'application/json'}));}catch(x){}if(sent)evKeep();else back();return;}
+  EV.busy=1;fetch('/api/log',{method:'POST',headers:{'content-type':'application/json'},body,keepalive:body.length<60000}).then(r=>{if(!r.ok)back();else evKeep();},back).finally(()=>{EV.busy=0;});}catch(x){}}
+function evDevice(){const n=navigator,ua=n.userAgent||'',w=Math.min(screen.width||0,screen.height||0),touch=(n.maxTouchPoints|0)>0||'ontouchstart' in window;
+  const br=(/Edg\/(\d+)/.exec(ua)&&'Edge '+RegExp.$1)||(/(?:Chrome|CriOS)\/(\d+)/.exec(ua)&&'Chrome '+RegExp.$1)||(/Firefox\/(\d+)/.exec(ua)&&'Firefox '+RegExp.$1)||(/Version\/(\d+).*Safari/.exec(ua)&&'Safari '+RegExp.$1)||'other';
+  const os=/Android/.test(ua)?'Android':/iPhone|iPad|iPod/.test(ua)||(/Mac/.test(ua)&&touch)?'iOS':/Windows/.test(ua)?'Windows':/Mac/.test(ua)?'Mac':/CrOS/.test(ua)?'ChromeOS':/Linux/.test(ua)?'Linux':'other';
+  return {dev:!touch?'desktop':w&&w<600?'phone':'tablet',host:location.hostname||location.protocol.replace(':',''),art:window.claude?1:0,ver:document.documentElement.innerHTML.length,
+    vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio||1,br,os,lang:n.language||'',net:(n.connection&&n.connection.effectiveType)||''};}
+(()=>{const start=()=>track('ss',evDevice());if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
+  addEventListener('load',()=>setTimeout(()=>{try{const nv=performance.getEntriesByType('navigation')[0];if(nv)track('perf',{load:Math.round(nv.loadEventStart||nv.duration),dcl:Math.round(nv.domContentLoadedEventEnd),ttfb:Math.round(nv.responseStart)});}catch(e){}},0));
+  try{new PerformanceObserver(l=>{for(const x of l.getEntries())if(x.duration>200&&EV.lf<50){EV.lf++;track('lf',{ms:Math.round(x.duration)});}}).observe({type:'longtask',buffered:true});}catch(e){}
+  document.addEventListener('click',e=>{try{const t=e.target&&e.target.closest?e.target.closest('button,a,input,select,label,[role=button],[onclick],[id]')||e.target:null;if(!t||!t.tagName)return;
+    const c=t.classList&&t.classList[0];const d={tg:t.id?'#'+t.id:c?t.tagName.toLowerCase()+'.'+c:t.tagName.toLowerCase()};if(t.dataset&&/^\d+$/.test(t.dataset.i||''))d.x=+t.dataset.i;track('tap',d);}catch(x){}},true);
+  addEventListener('unhandledrejection',e=>{const r=e&&e.reason;track('err',Object.assign({msg:String(r&&r.message||r||'').slice(0,120),rej:1},evSnap()));});
+  for(const [f,k] of [['error','cerr'],['warn','cwarn']]){const o=console[f];if(typeof o!=='function')continue;console[f]=function(...a){try{const x=a[0];track(k,Object.assign({msg:String(x&&x.message||x).slice(0,120)},evSnap()));}catch(e){}return o.apply(this,a);};}
+  setInterval(()=>evFlush('tick'),60000);
+  document.addEventListener('visibilitychange',()=>{track('vis',{v:document.visibilityState==='visible'?1:0});if(document.visibilityState==='hidden')evFlush('hide');});
+  addEventListener('pagehide',()=>{track('se',{dur:Math.round((Date.now()-EV.t0)/1000),n:EV.n,drop:EV.drop},true);evFlush('hide');});})();
 const COACH_DONE={tour:1,home:99,hub:99,group:99,map:99,'i-city':1,'i-map':1,'i-king':1,'i-arc':1};
 function parentSandbox(){const b=blank();b.coach=Object.assign({},kidSave&&kidSave.coach,COACH_DONE);b.story={intro:1};b.gems=500;b.set={all:1,brk:0,hide:{},lim:{daily:0,bed:0}};b.prof=kidSave&&kidSave.prof;b.daily=null;return b;}
 function parentPlay(on,fresh){if(on&&!kidSave){kidSave=save;let ps=null;if(!fresh)try{ps=JSON.parse(localStorage.getItem(KEY+'-parent'));}catch(e){}save=ps&&ps.v?ps:parentSandbox();if(!save.prof&&kidSave.prof)save.prof=kidSave.prof;save.coach=Object.assign({},kidSave.coach,save.coach,COACH_DONE);window.__parentPlay=true;document.body.classList.add('pplay');}
@@ -1169,7 +1207,7 @@ function skipLevel(){const p=play;if(!p||!p.lv)return false;const lv=p.lv;save.s
    about 20 min (cloud.next) and carry the newest data; new moves meanwhile only mark the save dirty (no write per move, no retry loop) */
 function cloudSave(){if(!cloud.ref)return;cloud.dirty=true;if(Date.now()<(cloud.next||0))return;clearTimeout(cloud.timer);cloud.timer=setTimeout(cloudFlush,1500);}
 async function cloudFlush(){if(!cloud.ref||cloud.busy||!cloud.dirty)return;if(Date.now()<(cloud.next||0))return;cloud.busy=true;cloud.dirty=false;
-  try{const body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;if(JSON.stringify(body).length>200000){save.rq=save.rq.slice(-15);body.rq=save.rq;}if(await cloud.ref.set(body)!=='later'){cloud.fail=0;cloud.next=0;clearTimeout(cloud.rt);}}catch(e){if(FAM.on){const f=cloud.fail|0;if(!f)logIssue('sync',e&&e.why);if(e&&e.code!=='invalid_argument'){if(f>=4)diagSend();const d=(window.__famRetry!=null?window.__famRetry:5000)*Math.pow(3,Math.min(f,5));cloud.fail=f+1;cloud.next=Date.now()+d;clearTimeout(cloud.rt);cloud.rt=setTimeout(()=>{cloud.next=0;cloud.dirty=true;FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},d);}}if(e&&e.code==='invalid_argument'){if(!cloud.retried&&save.rq.length>10){cloud.retried=1;save.rq=save.rq.slice(-10);cloud.dirty=true;}else cloud.ref=null;}}
+  try{const body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;if(JSON.stringify(body).length>200000){save.rq=save.rq.slice(-15);body.rq=save.rq;}if(await cloud.ref.set(body)!=='later'){cloud.fail=0;cloud.next=0;clearTimeout(cloud.rt);}}catch(e){if(FAM.on){const f=cloud.fail|0;track('sync',Object.assign({why:String(e&&e.why||''),n:f},evSnap()));if(!f)logIssue('sync',e&&e.why);if(e&&e.code!=='invalid_argument'){if(f>=4)diagSend();const d=(window.__famRetry!=null?window.__famRetry:5000)*Math.pow(3,Math.min(f,5));cloud.fail=f+1;track('retry',{what:'save',n:f+1,ms:d});cloud.next=Date.now()+d;clearTimeout(cloud.rt);cloud.rt=setTimeout(()=>{cloud.next=0;cloud.dirty=true;FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},d);}}if(e&&e.code==='invalid_argument'){if(!cloud.retried&&save.rq.length>10){cloud.retried=1;save.rq=save.rq.slice(-10);cloud.dirty=true;}else cloud.ref=null;}}
   cloud.busy=false;if(cloud.dirty)cloudSave();updateSaveNote();}
 /* ---------- own-website mode: one private family save at /api/save (no codes or links: every device sees the same progress) ---------- */
 const FAM={id:null,on:false,last:0};
@@ -1371,7 +1409,7 @@ const withNikud=s=>String(s).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
 const VS={n:{},ev:[],tm:0,own:null,wait:60000};
 const ARTIFACT=/claude\.ai|claudeusercontent/.test(location.host);
 const voiceWhy=()=>ARTIFACT?'artifact-host':/^https?:$/.test(location.protocol)&&!window.__noFamily?'status-failed':'no-site';
-function voiceLog(how,why,t,lang){try{const d=today(),n=VS.n[d]=VS.n[d]||{google:0,claude:0,browser:0};n[how]++;
+function voiceLog(how,why,t,lang){track('voice',{src:how,why:String(why||''),lang:lang||''});try{const d=today(),n=VS.n[d]=VS.n[d]||{google:0,claude:0,browser:0};n[how]++;
   if(how==='browser'){VS.ev.push({d,r:why,k:String(t||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,60),ms:GV.ms,h:location.host||location.protocol,l:lang==='en'?'en':'he'});if(VS.ev.length>100)VS.ev.shift();}
   if(!VS.tm)VS.tm=setTimeout(voiceFlush,VS.wait);}catch(e){}}
 function voiceFlush(){clearTimeout(VS.tm);VS.tm=0;const days=VS.n,ev=VS.ev;if(!Object.keys(days).length)return;VS.n={};VS.ev=[];
@@ -1380,7 +1418,7 @@ function voiceFlush(){clearTimeout(VS.tm);VS.tm=0;const days=VS.n,ev=VS.ev;if(!O
   try{if(navigator.sendBeacon&&navigator.sendBeacon(url,body))return;}catch(e){}try{fetch(url,{method:'POST',body,mode:'no-cors',keepalive:true}).catch(()=>{});}catch(e){}}
 window.__vs=VS;window.__voiceFlush=voiceFlush;
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')voiceFlush();});addEventListener('pagehide',voiceFlush);
-function browserSay(t,lang,why){if(!('speechSynthesis' in window))return;voiceLog('browser',why||voiceWhy(),t,lang);speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(lang==='en'?plain(t):fullSpell(t));u.lang=lang==='en'?'en-US':'he-IL';const v=lang==='en'?enVoice:heVoice;if(v)u.voice=v;u.rate=lang==='en'?.85:.92;u.pitch=1.05;u.onstart=()=>duck(true);u.onend=u.onerror=()=>duck(false);VS.own=u;speechSynthesis.speak(u);}
+function browserSay(t,lang,why){if(!('speechSynthesis' in window))return;voiceLog('browser',why||voiceWhy(),t,lang);speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(lang==='en'?plain(t):fullSpell(t));u.lang=lang==='en'?'en-US':'he-IL';const v=lang==='en'?enVoice:heVoice;if(v)u.voice=v;u.rate=lang==='en'?.85:.92;u.pitch=1.05;u.onstart=()=>{duck(true);track('au',{ev:'play',src:'browser'});};u.onend=()=>{duck(false);track('au',{ev:'end',src:'browser'});};u.onerror=e=>{duck(false);track('au',{ev:'fail',src:'browser',why:String(e&&e.error||'')});};VS.own=u;speechSynthesis.speak(u);}
 /* Google voice on the family website: one fixed voice on every device (chosen by the parents in blind tests),
    each sentence made in advance by cf/tools/pregen.js and cached by the server */
 const GVOICE='he-IL-Chirp3-HD-Kore',GRATE=0.9;
@@ -1394,13 +1432,23 @@ GV.wait=GV.site?GV.check(3):Promise.resolve();
 window.__gv=GV;
 const GEN={v:'en-US-Chirp3-HD-Despina',r:0.85};/* English: one fixed Google voice too, chosen by the parents */
 const useGoogle=lang=>(lang==='he'||lang==='en')&&GV.ok;
-function googleSay(t,lang,again){const en=lang==='en';try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}try{speechSynthesis.cancel();}catch(e){}
-  const url='/api/tts?t='+encodeURIComponent((en?plain(t):fullSpell(t)).slice(0,400))+'&v='+(en?GEN.v:GVOICE)+'&r='+(en?GEN.r:GRATE)+'&k='+GV.ver;
-  const a=new Audio(url);GV.audio=a;let go=false;
-  const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;try{a.pause();}catch(e){}GV.audio=null;
-    if(!again&&why!=='no-audio'&&why!=='blocked'){logIssue('voice',why+' (retry)');googleSay(t,lang,1);return;}browserSay(t,en?'en':'he',why);if(why!=='blocked')logIssue('voice',why);};
+/* #401: the server speaks at most 400 chars a request. A longer text is cut at sentence ends (else at a word) into parts
+   of at most 400, spoken one after the other. pregen.js uses this same function, so every part's audio exists in advance. */
+function ttsParts(s,max=400){s=String(s).replace(/\s+/g,' ').trim();if(s.length<=max)return [s];
+  const out=[];let cur='';const put=x=>{if(!cur)cur=x;else if(cur.length+1+x.length<=max)cur+=' '+x;else{out.push(cur);cur=x;}};
+  for(const sen of s.match(/[^.!?]+(?:[.!?]+|$)/g).map(x=>x.trim()).filter(Boolean)){
+    if(sen.length<=max){put(sen);continue;}
+    for(const w of sen.split(' ')){for(let i=0;i<w.length;i+=max)put(w.slice(i,i+max));}}
+  if(cur)out.push(cur);return out;}
+window.__ttsParts=ttsParts;
+function googleSay(t,lang,again,part){const en=lang==='en';part=part|0;if(!part){try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}try{speechSynthesis.cancel();}catch(e){}}
+  const parts=ttsParts(en?plain(t):fullSpell(t)),last=part>=parts.length-1;
+  const url='/api/tts?t='+encodeURIComponent(parts[part])+'&v='+(en?GEN.v:GVOICE)+'&r='+(en?GEN.r:GRATE)+'&k='+GV.ver;
+  const a=new Audio(url);GV.audio=a;let go=false;const t0=Date.now();
+  const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;track('au',{ev:'fail',src:'google',why,ms:Date.now()-t0});try{a.pause();}catch(e){}GV.audio=null;
+    if(!again&&why!=='no-audio'&&why!=='blocked'){logIssue('voice',why+' (retry)');track('retry',{what:'voice',why});googleSay(t,lang,1,part);return;}browserSay(t,en?'en':'he',why);if(why!=='blocked')logIssue('voice',why);};
   const tm=setTimeout(()=>{if(!go)fall('timeout');},GV.ms);/* the browser voice only after a retry and a long wait (#36) */
-  a.onplaying=()=>{if(!go)voiceLog('google','',t,lang);go=true;clearTimeout(tm);};a.onplay=()=>duck(true);a.onended=()=>{duck(false);if(GV.audio===a)GV.audio=null;};
+  a.onplaying=()=>{if(!go){if(!part)voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});}go=true;clearTimeout(tm);};a.onplay=()=>duck(true);a.onended=()=>{if(GV.audio===a&&!last){googleSay(t,lang,0,part+1);return;}duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a)GV.audio=null;};/* the next part; stopped (hush) or replaced: the rest is not spoken */
   a.onerror=()=>fall(a.error&&a.error.code===4?'no-audio':'audio-error');/* 4: not audio, e.g. the server answered 429/502 (not made yet) */
   a.play().catch(e=>fall(e&&e.name==='NotAllowedError'?'blocked':e&&e.name==='NotSupportedError'?'no-audio':'audio-error'));}
 function say(t,lang){if(!t||window.__fast)return;const stamp=window.__autoSaid=Date.now();lang=lang||'he';
@@ -1497,7 +1545,7 @@ const wipeEl=$('#wipe');wipeEl.innerHTML='<i></i>'.repeat(70);
 function wipe(){if(window.__fast||RM())return;sfx.whoosh();wipeEl.hidden=false;[...wipeEl.children].forEach((c,i)=>{const r=i/10|0,col=i%10;c.style.animation='none';void c.offsetWidth;c.style.animation='';c.style.animationDelay=((r+col)*22)+'ms';});clearTimeout(wipe.t);wipe.t=setTimeout(()=>wipeEl.hidden=true,720);}
 function setScreen(id,w,back){hush();if(window.HELP)HELP.stop();document.body.classList.toggle('inpar',id==='sPar');document.body.classList.remove('act');window.__noAuto=0;/* leaving a screen stops any reading aloud; the new screen may speak right after */['sStart','sHome','sMap','sWorld','sLearn','sPlay','sKing','sStudio','sTeach','sTable','sFinal','sTal','sPar'].forEach(s=>$('#'+s).hidden=s!==id);$('#hud').hidden=id==='sStart';$('#ov').hidden=true;{const dl=$('#dlg');if(!dl.hidden){dl.hidden=true;dl.innerHTML='';}}/* #356: a story dialog belongs to the screen it was opened on */
   if(app.dataset.w!==(w||'meadow')){app.dataset.w=w||'meadow';bgW=app.dataset.w;paintBG(performance.now());}setTheme(THEME_OF[app.dataset.w]||'map');
-  backTo=back||null;$('#btnBack').style.visibility=back?'visible':'hidden';$('#btnBack').innerHTML=back===showMap?ICON.home:ICON.back;$('#screens').scrollTop=0;play=null;stopSpeed();updateGems();wipe();emit('screen',id,back);}
+  backTo=back||null;$('#btnBack').style.visibility=back?'visible':'hidden';$('#btnBack').innerHTML=back===showMap?ICON.home:ICON.back;$('#screens').scrollTop=0;play=null;stopSpeed();updateGems();wipe();evScreen(id);emit('screen',id,back);}
 $('#btnSay').innerHTML=ICON.say;$('#btnMusic').innerHTML=ICON.music;$('#icoStart').innerHTML=ICON.play;
 if(!save.avOren){save.av=Object.assign({},save.av,OREN_LOOK);save.avOren=1;try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}}
 if(save.snd==null)save.snd=save.music===false?1:2;
@@ -1851,7 +1899,7 @@ function trainingSet(){const done=ALLU.filter(u=>!u.boss&&stars(u.id+'-0'));cons
 function startTraining(){const u={id:'train',name:'אִמּוּן יוֹמִי',w:{id:'train',bg:'meadow',name:'אִמּוּן יוֹמִי'}};playLevel({id:'train',type:'train',u,w:u.w,n:12},trainingSet());}
 function playLevel(lv,preset){
   hush();const u=lv.u;const train=lv.type==='train';
-  setScreen('sPlay',lv.w.bg,train?showMap:()=>showWorld(lv.w));
+  setScreen('sPlay',lv.w.bg,train?showMap:()=>showWorld(lv.w));evMission(u&&u.id||lv.id,lv.id);
   const qs=preset||uniq(lv.gen,lv.n);const mode=lv.type==='game'?lv.mode:lv.type==='boss'?'boss':'classic';
   if(lv.type==='boss')setTheme('boss');
   play={lv,u,qs,i:0,errors:0,hints:0,streak:0,tries:0,hint:0,lock:false,requeued:new Set(),hp:qs.length,boxes:[],bi:0,col:null,mode,N:qs.length,done:0,gemsEarned:0};
@@ -1877,7 +1925,7 @@ function hudPlay(){const p=play;if(!p)return;const nm=p.lv.type==='train'?'אִ�
   $('#hudMid').innerHTML=`<div class="chip">${nm}</div><div class="progress">${p.qs.map((_,k)=>`<i class="pb${k<p.i?' on':k===p.i?' cur':''}"></i>`).join('')}</div>${p.streak>=2?`<div class="streak">${SPR.flame}${p.streak}</div>`:''}`;}
 function setBubble(t){const b=$('#bText');if(b)b.innerHTML=t;}
 function showQ(){
-  const p=play;const q=p.qs[p.i];p.tries=0;p.hint=0;p.lock=false;p.col=null;p.choice=null;p.revealed=false;
+  const p=play;const q=p.qs[p.i];evQ(qkey(q),{ty:q.k});p.tries=0;p.hint=0;p.lock=false;p.col=null;p.choice=null;p.revealed=false;
   const qa=$('#qa');const pad=$('#pad');
   if(q.k==='col'){qa.innerHTML=`<div class="colwrap" id="colw"></div>`;p.col=colInit(q);pad.hidden=false;}
   else if(q.k==='ch'||(p.mode==='bubbles'&&['bin','add3','eq','word'].includes(q.k))){
@@ -1917,8 +1965,8 @@ function helpStart(q){const p=play;p.help=false;if(!window.HELP||p.mode==='speed
     present:q2=>{if(play!==p)return;p.qs.splice(p.i,1,q2);showQ();},
     done:()=>{if(play!==p)return;p.revealed=true;requeue();questionDone(false);p.i++;p.lock=true;if(p.i>=p.qs.length)finishLevel();else showQ();}});}
 function showHint(manual){const p=play;if(!p||p.lock||p.mode==='speed')return;const q=p.qs[p.i];const hb=$('#hint');
-  if(q.k==='col'){if(manual)p.hints++;hb.hidden=false;hb.innerHTML=colHint(q,p.col);setBubble('הִנֵּה רֶמֶז');return;}
-  if(p.hint>=2)return;p.hint++;if(manual)p.hints++;hb.hidden=false;hb.innerHTML=hintHTML(q,p.hint);hb.style.animation='none';void hb.offsetWidth;hb.style.animation='fadein .35s';
+  if(q.k==='col'){if(manual)p.hints++;track('help',{h:'hint'});hb.hidden=false;hb.innerHTML=colHint(q,p.col);setBubble('הִנֵּה רֶמֶז');return;}
+  if(p.hint>=2)return;p.hint++;if(manual)p.hints++;track('help',{h:'hint',n:p.hint});hb.hidden=false;hb.innerHTML=hintHTML(q,p.hint);hb.style.animation='none';void hb.offsetWidth;hb.style.animation='fadein .35s';
   setBubble('הִנֵּה רֶמֶז');}
 function praise(text){const qa=$('#qa');const pr=h('div','praise',text);qa.appendChild(pr);setTimeout(()=>pr.remove(),1000);}
 function recordDay(){const d=today();if(!save.days.includes(d))save.days.push(d);}
@@ -1933,7 +1981,7 @@ function sceneAdvance(){const p=play;if(p.done>=p.N)return;const k=p.done++;
   if(p.mode==='mine'){const b=$('#mb'+k);if(b){b.classList.add('br');sfx.crack();}if(p.done>=p.N){const c=$('#chest');if(c){c.innerHTML=SPR.chestO;c.classList.add('open');}}}
   if(p.mode==='run'){const r=$('#runner');const o=$('#ob'+k);if(r){r.classList.remove('jump');void r.offsetWidth;r.classList.add('jump');r.style.right=(8+(k+1)*(84/p.N))+'%';sfx.jump();}if(o)o.classList.add('done');}
   if(p.mode==='build'){const pl=$('#pl'+k);if(pl){pl.classList.add('on');sfx.plank();}if(p.done>=p.N){const w=$('#walker');if(w)setTimeout(()=>{w.style.right='calc(100% - 40px)';},300);}}}
-function onCorrect(){const p=play,q=p.qs[p.i];p.lock=true;p.streak++;if(p.help&&window.HELP){const r=HELP.right();p.help=false;if(r&&!r.star)p.hint=Math.max(p.hint,1);}
+function onCorrect(){const p=play,q=p.qs[p.i];evAns(1,{tr:p.tries});p.lock=true;p.streak++;if(p.help&&window.HELP){const r=HELP.right();p.help=false;if(r&&!r.star)p.hint=Math.max(p.hint,1);}
   sfx.ok(p.streak);burst(...center($('#qa')),22);
   praise(p.streak>=5&&p.streak%5===0?`${p.streak} בִּרְצִיפוּת!`:pick(PRAISE));if(window.FRIEND&&p.mode!=='speed')window.FRIEND.onCorrect({tries:p.tries});
   if(q.f&&p.tries===0&&p.hint===0&&!p.revealed)markFact(q.f[0],q.f[1],q.op===':'?2:1);
@@ -1946,7 +1994,7 @@ function onCorrect(){const p=play,q=p.qs[p.i];p.lock=true;p.streak++;if(p.help&&
   if(p.mode==='speed'){p.score++;speedHud();p.i++;setTimeout(()=>{if(play!==p)return;nextSpeedQ();},D(450));return;}
   p.i++;hudPlay();
   setTimeout(()=>{if(play!==p)return;if(p.i>=p.qs.length)finishLevel();else showQ();},D(q.k==='word'?1300:1100));}
-function onWrong(el){const p=play;p.tries++;p.errors++;p.streak=0;hudPlay();if(p.help&&window.HELP)HELP.wrong();sfx.no();if(window.FRIEND&&p.mode!=='speed')window.FRIEND.onWrong({final:p.tries>=3});
+function onWrong(el){const p=play;evAns(0,{tr:p.tries});p.tries++;p.errors++;p.streak=0;hudPlay();if(p.help&&window.HELP)HELP.wrong();sfx.no();if(window.FRIEND&&p.mode!=='speed')window.FRIEND.onWrong({final:p.tries>=3});
   if(el){el.classList.remove('shake');void el.offsetWidth;el.classList.add('shake');}
   const c=$('#pet');if(c){c.classList.remove('hop','tilt');void c.offsetWidth;c.classList.add('tilt');}
   const g=$('#giant');if(g){g.classList.remove('hit','laugh');void g.offsetWidth;g.classList.add('laugh');}}
@@ -2120,7 +2168,7 @@ function showFinal(){setScreen('sFinal','final',showMap);$('#hudMid').innerHTML=
 
 updateGems();cloudInit();
 const BUS={};function emit(e,...a){(BUS[e]||[]).forEach(f=>{try{f(...a);}catch(x){console.error(x);}});}
-window.OREN={get save(){return save;},persist,famNow,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l)=>say(t,l),get heVoice(){return heVoice;},setVoicePref,
+window.OREN={get save(){return save;},persist,track,evFlush,evMission,evQ,evAns,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l)=>say(t,l),get heVoice(){return heVoice;},setVoicePref,
   set sayNow(v){sayNow=v;AUTO.gen++;},get sayNow(){return sayNow;},hud:html=>{$('#hudMid').innerHTML=html;document.body.classList.toggle('act',!document.body.classList.contains('inpar')&&/class="chip"/.test(html));},resetAll:keep=>{const snd=save.snd;save=blank();save.snd=snd;Object.assign(save,keep||{});persist();renderStart();},on:(e,f)=>{(BUS[e]=BUS[e]||[]).push(f);},emit,blank};
 window.__oren4={renderAudio,THEMES,RAW,setTheme,get mus(){return mus;},WORLDS,ALLLV,ALLU,hintHTML,hintData,uniq,colInit,colNeedBorrow,digs,qkey,bubbleOpts,storyFor,teachCheck,HEROES,get play(){return play;},get save(){return save;},startLevel,playLevel,showMap,showWorld,kingdom,studio,teacher,playSpeed,setFast:v=>{window.__fast=v;},mergeIn,migrateOld,lp};
 })();
@@ -3479,20 +3527,26 @@ function result(o){const ov=$('#ov');ov.hidden=false;
   const b=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');b.onclick=()=>{ov.hidden=true;o.back();};row.appendChild(b);ov.firstChild.appendChild(row);
   O.duck(true);setTimeout(()=>O.duck(false),D(2000));sfx.win();if(window.FRIEND)setTimeout(()=>window.FRIEND.stepCheck(),0);if(o.stars!=null)for(let k=0;k<o.stars;k++)setTimeout(()=>sfx.star(k),D(300+k*350));O.rain();setTimeout(()=>b.focus(),300);}
 function finishAct(id,errors,n,gems,back,again,title){const st=errors<=Math.max(1,n*.1)?3:errors<=Math.max(3,n*.3)?2:1;const bonus=5+st*2;O.addGems(bonus);record(id,st);result({title,stars:st,gems:gems+bonus,back,again});}
-/* generic multiple-choice quiz: q = {pr, opts, ans, cls, ltr, play, auto, reveal(el), explain, key} */
-function quiz(o){const qs=[],seen=new Set();let t=0;while(qs.length<o.n&&t++<400){const q=o.gen(qs.length);const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k))continue;seen.add(k);qs.push(q);}
+/* generic multiple-choice quiz: q = {pr, opts, ans, cls, ltr, play, auto, reveal(el), explain, key, bank, bkey}
+   q.bank: the item comes from a finite bank — its first answer is recorded there (LEARN.seen, key q.bkey or q.key; #360).
+   o.pool: the generator draws from a finite list — the quiz keeps its own bank 'tq-<id>' and lets the learning engine choose (wrong ones back on schedule).
+   o.end(err): called once after the last question, before the result. */
+function quiz(o){const qs=[],seen=new Set();let t=0;const LN=window.LEARN,pb=o.pool&&LN&&LN.pickItem?'tq-'+o.id:null;
+  const gen=()=>{const q=o.gen(qs.length);if(!pb||q.bank||q.key==null)return q;const c=[q];for(let j=0;j<24;j++){const x=o.gen(qs.length);if(x.key!=null&&!c.some(y=>y.key===x.key))c.push(x);}
+    try{const r=LN.pickItem(pb,c.filter(x=>!seen.has(x.key)).map(x=>({k:x.key})));const x=r&&c.find(y=>y.key===r.item.k);if(x)return Object.assign(x,{bank:pb});}catch(e){}return q;};
+  while(qs.length<o.n&&t++<400){const q=gen();const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k))continue;seen.add(k);qs.push(q);}
   let i=0,err=0,gems=0,lock=false,tries=0;O.setScreen('sTal',o.bg||'valley',o.back);
   const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq');s.appendChild(wrap);
-  const render=()=>{const q=qs[i];tries=0;lock=false;hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||plainHe(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
+  const render=()=>{const q=qs[i];tries=0;lock=false;if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||plainHe(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
     wrap.innerHTML='';const card=h('div','prq tqc',q.pr);if(q.play){const pb=h('button','hintbtn',ICON.say+`<span>${q.playLbl||'הַשְׁמַע'}</span>`);pb.onclick=q.play;card.appendChild(pb);}
     wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});const row=h('div','chs'+(q.ltr?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');if(o.side){const sb=h('button','bigbtn plain sm qside',o.side.lbl);sb.onclick=()=>o.side.open(wrap);wrap.appendChild(sb);}if(q.auto&&q.play)setTimeout(()=>{if(qs[i]===q)q.play();},D(350));};
   const resolve=(q)=>{const ex=wrap.querySelector('.hintbox');if(q.explain){ex.hidden=false;ex.innerHTML=`<div class="cap">${q.explain}</div>`;}if(q.reveal)q.reveal(wrap.querySelector('.tqc'));};
-  function pickA(k,b){if(lock||b.disabled)return;const q=qs[i];if(!tries){O.emit('tq',o.id,k===q.ans);if(q.bank&&window.LEARN)window.LEARN.seen(q.bank,q.key,k===q.ans,false);}
+  function pickA(k,b){if(lock||b.disabled)return;const q=qs[i];if(O.evAns)O.evAns(k===q.ans,{m:o.id,tr:tries,x:k});if(!tries){O.emit('tq',o.id,k===q.ans);if(q.bank&&window.LEARN)try{window.LEARN.seen(q.bank,q.bkey!=null?q.bkey:q.key,k===q.ans,false);}catch(e){}}
     if(k===q.ans){if(window.TAL.rdA)window.TAL.rdA(q,tries,b);lock=true;if(window.FRIEND)window.FRIEND.onCorrect({tries});b.classList.add('ok');sfx.ok(i);const g=tries?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);resolve(q);setTimeout(next,D(q.explain||q.reveal?2300:1000));return;}
     tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();if(o.onWrong)o.onWrong();const fin=tries>=2||q.opts.length<=2;if(window.FRIEND)window.FRIEND.onWrong({final:fin});
     if(fin){lock=true;const c=wrap.querySelector('.chs').children[q.ans];c.classList.add('show');resolve(q);setTimeout(next,D(2600));}}
-  function next(){if(!wrap.isConnected)return;i++;if(i>=qs.length){KEY=null;finishAct(o.id,err,qs.length,gems,o.back,()=>quiz(o),o.doneTitle);}else render();}
+  function next(){if(!wrap.isConnected)return;i++;if(i>=qs.length){KEY=null;if(o.end)try{o.end(err);}catch(e){}finishAct(o.id,err,qs.length,gems,o.back,()=>quiz(o),o.doneTitle);}else render();}
   KEY=e=>{if(wrap.hidden)return;if(/^[1-9]$/.test(e.key)){const b=wrap.querySelector('.chs')&&wrap.querySelector('.chs').children[+e.key-1];if(b)b.click();}};
   window.__quiz={get ans(){return qs[i]&&qs[i].ans;},get i(){return i;},get wrap(){return wrap;}};
   render();}
@@ -3649,9 +3703,9 @@ const ISR=[['מָה הָעִיר הַבִּירָה שֶׁל יִשְׂרָאֵ�
  ['בְּאֵיזֶה יָם הַמַּיִם כָּל כָּךְ מְלוּחִים שֶׁאֶפְשָׁר לָצוּף בְּקַלּוּת?','יָם הַמֶּלַח',['הַיָּם הָאָדֹם','הַכִּנֶּרֶת']],['מָה הַצְּבָעִים שֶׁל דֶּגֶל יִשְׂרָאֵל?','כָּחֹל וְלָבָן',['אָדֹם וְלָבָן','יָרֹק וְצָהֹב']],
  ['הַכִּנֶּרֶת הִיא...','אֲגַם',['הַר','מִדְבָּר']],['אֵיזֶה מִדְבָּר יֵשׁ בִּדְרוֹם יִשְׂרָאֵל?','הַנֶּגֶב',['הַגָּלִיל','הַגּוֹלָן']],['הַחֶרְמוֹן הוּא...','הַר',['יָם','עִיר']]];
 building({id:'world',name:'הָעוֹלָם וְיִשְׂרָאֵל',color:'#4fae4f',bg:'valley',icon:()=>X.globe,blurb:'דְּגָלִים, יַבָּשׁוֹת וְהָאָרֶץ שֶׁלָּנוּ.',acts:[
-  {id:'world-flag',name:'דְּגָלִים',icon:()=>flag('il'),run:back=>quiz({id:'world-flag',title:'דְּגָלִים',bg:'valley',back,n:8,gen:()=>{const ks=Object.keys(FL);const k=pick(ks);const opts=shuffle([k,...shuffle(ks.filter(x=>x!==k)).slice(0,2)]);return {pr:`${flag(k)}<div class="qq">שֶׁל אֵיזוֹ מְדִינָה הַדֶּגֶל?</div>`,opts:opts.map(x=>FL[x][0]),ans:opts.indexOf(k),cls:'tx',key:k};}})},
-  {id:'world-ani',name:'אֵיפֹה הֵם גָּרִים?',icon:()=>X.globe,run:back=>quiz({id:'world-ani',title:'אֵיפֹה הֵם גָּרִים?',bg:'valley',back,n:7,gen:()=>{const [a,c,ds]=pick(ANI);const opts=shuffle([c,...ds]);return {pr:`<div class="bigw">${a}</div><div class="qq">בְּאֵיזוֹ יַבֶּשֶׁת חַי בַּעַל הַחַיִּים הַזֶּה בַּטֶּבַע?</div>`,opts,ans:opts.indexOf(c),cls:'tx',key:a};}})},
-  {id:'world-il',name:'הָאָרֶץ שֶׁלָּנוּ',icon:()=>flag('il'),run:back=>quiz({id:'world-il',title:'הָאָרֶץ שֶׁלָּנוּ',bg:'valley',back,n:7,gen:()=>{const [q,a,ds]=pick(ISR);const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}})}]});
+  {id:'world-flag',name:'דְּגָלִים',icon:()=>flag('il'),run:back=>quiz({id:'world-flag',pool:1,title:'דְּגָלִים',bg:'valley',back,n:8,gen:()=>{const ks=Object.keys(FL);const k=pick(ks);const opts=shuffle([k,...shuffle(ks.filter(x=>x!==k)).slice(0,2)]);return {pr:`${flag(k)}<div class="qq">שֶׁל אֵיזוֹ מְדִינָה הַדֶּגֶל?</div>`,opts:opts.map(x=>FL[x][0]),ans:opts.indexOf(k),cls:'tx',key:k};}})},
+  {id:'world-ani',name:'אֵיפֹה הֵם גָּרִים?',icon:()=>X.globe,run:back=>quiz({id:'world-ani',pool:1,title:'אֵיפֹה הֵם גָּרִים?',bg:'valley',back,n:7,gen:()=>{const [a,c,ds]=pick(ANI);const opts=shuffle([c,...ds]);return {pr:`<div class="bigw">${a}</div><div class="qq">בְּאֵיזוֹ יַבֶּשֶׁת חַי בַּעַל הַחַיִּים הַזֶּה בַּטֶּבַע?</div>`,opts,ans:opts.indexOf(c),cls:'tx',key:a};}})},
+  {id:'world-il',name:'הָאָרֶץ שֶׁלָּנוּ',icon:()=>flag('il'),run:back=>quiz({id:'world-il',pool:1,title:'הָאָרֶץ שֶׁלָּנוּ',bg:'valley',back,n:7,gen:()=>{const [q,a,ds]=pick(ISR);const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}})}]});
 /* Bedtime stories */
 const STORIES=[
  {t:'הַחֲתוּלָה וְהַכַּדּוּר הָאָדֹם',spr:['cat','ball'],gk:'sci',goal:'כדי לראות צריך אור',s:['לְנוֹעָה יֵשׁ חֲתוּלָה קְטַנָּה בְּשֵׁם מִיצִי.','מִיצִי אוֹהֶבֶת לְשַׂחֵק בְּכַדּוּר אָדֹם.','יוֹם אֶחָד הַכַּדּוּר הִתְגַּלְגֵּל מִתַּחַת לַמִּטָּה.','מִתַּחַת לַמִּטָּה הָיָה חֹשֶׁךְ, וּמִיצִי לֹא מָצְאָה אוֹתוֹ.','נוֹעָה הֵבִיאָה פָּנָס, וְהָאוֹר הֵאִיר מִתַּחַת לַמִּטָּה.','עִם אוֹר רוֹאִים! הִנֵּה הַכַּדּוּר! מִיצִי קָפְצָה מִשִּׂמְחָה.'],
@@ -3676,7 +3730,7 @@ const storyLv=()=>{try{const R=window.READBANK2;return R&&R.level?R.level('story
 let SS=null;   /* the story being played: {id, t0, lv, help, wrong, heard, log} */
 /* a story he listened to (whole or a line) is marked: only stories read alone move the story level up (read-bank2.js) */
 O.on('tlDone',id=>{if(SS&&SS.id===id){const c=T.S().tl[id];if(c){c.l=SS.heard?1:0;O.persist();}}});
-function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), title (html), name (quiz title), tp (plain title), goal, spr:[html,html], lines:[html], q:[{pr, say, a, ds}], back, qback} */
+function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), title (html), name (quiz title), tp (plain title), goal, spr:[html,html], lines:[html], q:[{pr, say, a, ds}], back, qback, end(err, heard): after the last question (#360)} */
   const lv=storyLv(),help=helpOf(lv);const ss=SS={id:o.id,t0:Date.now(),lv,help,wrong:false,heard:false,log:{t:o.tp,g:o.goal||'',lv,r:'a'}};
   if(window.DAYLOG&&DAYLOG.note)DAYLOG.note(o.act,ss.log);
   const shows=k=>(ss.wrong&&help.wrong.includes(k))||(help[k]!=null&&Date.now()-ss.t0>=D(help[k]*1000));
@@ -3696,7 +3750,7 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
     page(box,bk);s.scrollTop=0;};
   const questions=()=>{O.hush();T.readStop&&T.readStop();quiz({id:o.id,title:o.name,bg:'final',back:o.qback||o.back,n:o.q.length,
     gen:i=>{const q=o.q[i];/* the index, not a counter: "again" restarts at 0 (#350) */const opts=shuffle([q.a,...q.ds]);return {pr:`<div class="sent">${q.pr}</div>`,opts,ans:opts.indexOf(q.a),cls:'tx',say:q.say,key:q.pr};},
-    onWrong:()=>{ss.wrong=true;},side:{lbl:'📖 <span>לַסִּפּוּר</span>',open:peek}});};
+    onWrong:()=>{ss.wrong=true;},end:err=>{if(o.end)o.end(err,ss.heard);},side:{lbl:'📖 <span>לַסִּפּוּר</span>',open:peek}});};
   O.setScreen('sTal','final',o.back);T.hudT('סִפּוּר');const s=$('#sTal');s.innerHTML='';
   const go=h('button','bigbtn stgo',ICON.play+'<span>לַשְּׁאֵלוֹת</span>');go.onclick=questions;page(s,go);
   if(window.FRIEND&&FRIEND.readFirst){O.sayNow=T.spk(FRIEND.READFIRST);FRIEND.readFirst();}else O.sayNow='קְרָא אֶת הַסִּפּוּר, וְאַחַר כָּךְ עוֹנִים עַל שְׁאֵלוֹת.';}
@@ -3868,10 +3922,10 @@ function dayNight(back){O.setScreen('sTal','final',back);T.hudT('יוֹם וְל
     quiz({id:'sci-day',title:'יוֹם וְלַיְלָה',bg:'final',back,n:3,gen:i=>{const [q,a,ds]=Q[i];const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}});};}
 const bodyFig=(x,y)=>`<div class="bodyf">${O.AV()}<span class="arrow" style="left:${x}%;top:${y}%"></span></div>`;
 building({id:'lab',name:'הַמַּעְבָּדָה',color:'#3cb371',bg:'mount',icon:()=>X.flask,blurb:'נִסּוּיִים קְטַנִּים: מְנַחֲשִׁים, בּוֹדְקִים וְלוֹמְדִים.',acts:[
-  {id:'sci-float',name:'צָף אוֹ שׁוֹקֵעַ?',icon:()=>X.boat,run:back=>quiz({id:'sci-float',title:'צָף אוֹ שׁוֹקֵעַ?',bg:'sea',back,n:8,gen:()=>{const [n,k,f,g]=pick(FLOAT);const fm=g==='f';return {pr:`${tank(k)}<div class="qq">${n}: ${fm?'תָּצוּף אוֹ תִּשְׁקַע?':'יָצוּף אוֹ יִשְׁקַע?'}</div>`,opts:fm?['תָּצוּף','תִּשְׁקַע']:['יָצוּף','יִשְׁקַע'],ans:f?0:1,cls:'tx',key:n,reveal:el=>{const it=el.querySelector('#itm');if(it)it.classList.add(f?'floats':'sinks');sfx.plank();},explain:`${n} ${f?(fm?'צָפָה':'צָף'):(fm?'שׁוֹקַעַת':'שׁוֹקֵעַ')}!`};}})},
-  {id:'sci-mag',name:'מַגְנֵטִים',icon:()=>X.magnet,run:back=>quiz({id:'sci-mag',title:'מַגְנֵטִים',bg:'city',back,n:8,gen:()=>{const [n,k,m]=pick(MAG);return {pr:`<div class="magv"><span class="mg">${X.magnet}</span><span class="item" id="itm">${ALLSPR(k)}</span></div><div class="qq">הַאִם הַמַּגְנֵט יִמְשֹׁךְ אֶת ${n}?</div>`,opts:['כֵּן','לֹא'],ans:m?0:1,cls:'tx',key:n,reveal:el=>{const it=el.querySelector('#itm');if(it&&m)it.classList.add('pulled');},explain:m?'מַגְנֵט מוֹשֵׁךְ בַּרְזֶל וּפְלָדָה.':'מַגְנֵט לֹא מוֹשֵׁךְ עֵץ, אֶבֶן, פְּלַסְטִיק אוֹ אֹכֶל.'};}})},
-  {id:'sci-animals',name:'מִיּוּן בַּעֲלֵי חַיִּים',icon:()=>SPR.owl,run:back=>quiz({id:'sci-animals',title:'מִיּוּן בַּעֲלֵי חַיִּים',bg:'forest',back,n:8,gen:()=>{const [n,k,c,ex,fm]=pick(ANIMALS);return {pr:`<span class="pic">${ALLSPR(k)}</span><div class="qq">${n} ${fm?'הִיא':'הוּא'}...</div>`,opts:CLASSES,ans:CLASSES.indexOf(c),cls:'tx',key:n,explain:ex||''};}})},
-  {id:'sci-body',name:'גּוּף הָאָדָם',icon:()=>O.AV(),run:back=>quiz({id:'sci-body',title:'גּוּף הָאָדָם',bg:'valley',back,n:7,gen:()=>{const [n,[x,y]]=pick(BODY);const opts=shuffle([n,...shuffle(BODY.filter(b=>b[0]!==n)).slice(0,2).map(b=>b[0])]);return {pr:`${bodyFig(x,y)}<div class="qq">מָה מְסֻמָּן בַּחֵץ?</div>`,opts,ans:opts.indexOf(n),cls:'tx',key:n};}})},
+  {id:'sci-float',name:'צָף אוֹ שׁוֹקֵעַ?',icon:()=>X.boat,run:back=>quiz({id:'sci-float',pool:1,title:'צָף אוֹ שׁוֹקֵעַ?',bg:'sea',back,n:8,gen:()=>{const [n,k,f,g]=pick(FLOAT);const fm=g==='f';return {pr:`${tank(k)}<div class="qq">${n}: ${fm?'תָּצוּף אוֹ תִּשְׁקַע?':'יָצוּף אוֹ יִשְׁקַע?'}</div>`,opts:fm?['תָּצוּף','תִּשְׁקַע']:['יָצוּף','יִשְׁקַע'],ans:f?0:1,cls:'tx',key:n,reveal:el=>{const it=el.querySelector('#itm');if(it)it.classList.add(f?'floats':'sinks');sfx.plank();},explain:`${n} ${f?(fm?'צָפָה':'צָף'):(fm?'שׁוֹקַעַת':'שׁוֹקֵעַ')}!`};}})},
+  {id:'sci-mag',name:'מַגְנֵטִים',icon:()=>X.magnet,run:back=>quiz({id:'sci-mag',pool:1,title:'מַגְנֵטִים',bg:'city',back,n:8,gen:()=>{const [n,k,m]=pick(MAG);return {pr:`<div class="magv"><span class="mg">${X.magnet}</span><span class="item" id="itm">${ALLSPR(k)}</span></div><div class="qq">הַאִם הַמַּגְנֵט יִמְשֹׁךְ אֶת ${n}?</div>`,opts:['כֵּן','לֹא'],ans:m?0:1,cls:'tx',key:n,reveal:el=>{const it=el.querySelector('#itm');if(it&&m)it.classList.add('pulled');},explain:m?'מַגְנֵט מוֹשֵׁךְ בַּרְזֶל וּפְלָדָה.':'מַגְנֵט לֹא מוֹשֵׁךְ עֵץ, אֶבֶן, פְּלַסְטִיק אוֹ אֹכֶל.'};}})},
+  {id:'sci-animals',name:'מִיּוּן בַּעֲלֵי חַיִּים',icon:()=>SPR.owl,run:back=>quiz({id:'sci-animals',pool:1,title:'מִיּוּן בַּעֲלֵי חַיִּים',bg:'forest',back,n:8,gen:()=>{const [n,k,c,ex,fm]=pick(ANIMALS);return {pr:`<span class="pic">${ALLSPR(k)}</span><div class="qq">${n} ${fm?'הִיא':'הוּא'}...</div>`,opts:CLASSES,ans:CLASSES.indexOf(c),cls:'tx',key:n,explain:ex||''};}})},
+  {id:'sci-body',name:'גּוּף הָאָדָם',icon:()=>O.AV(),run:back=>quiz({id:'sci-body',pool:1,title:'גּוּף הָאָדָם',bg:'valley',back,n:7,gen:()=>{const [n,[x,y]]=pick(BODY);const opts=shuffle([n,...shuffle(BODY.filter(b=>b[0]!==n)).slice(0,2).map(b=>b[0])]);return {pr:`${bodyFig(x,y)}<div class="qq">מָה מְסֻמָּן בַּחֵץ?</div>`,opts,ans:opts.indexOf(n),cls:'tx',key:n};}})},
   {id:'sci-plant',name:'מָה צָרִיךְ צֶמַח?',icon:()=>SPR.flower,run:plant},
   {id:'sci-states',name:'קֶרַח, מַיִם וְאֵדִים',icon:()=>'<span style="font-size:34px">🧊</span>',run:states},
   {id:'sci-day',name:'יוֹם וְלַיְלָה',icon:()=>X.moon,run:dayNight},
@@ -4495,7 +4549,17 @@ O.on('tlDone',()=>{tEnd=Date.now();cntUp();});O.on('levelDone',()=>{tEnd=Date.no
 function cntUp(){if(O.isParentPlay)return;const s=T.S();s.cnt=s.cnt||{};const d=O.today();s.cnt[d]=(s.cnt[d]|0)+1;const ks=Object.keys(s.cnt).sort();ks.slice(0,Math.max(0,ks.length-30)).forEach(k=>delete s.cnt[k]);}
 const todayL=()=>{const l=LIM();return l.today&&l.today.d===O.today()?l.today:null;};
 /* today's limit: {min} or {n} or null */
-function limNow(){const t=todayL(),l=LIM();if(t){if(t.none)return null;if(t.min!=null)return {min:t.min|0};}return l.daily?{min:l.daily|0}:null;}
+function limNow(){const t=todayL(),l=LIM();if(t){if(t.none)return null;if(t.min!=null)return {min:effMin(t)};}return l.daily?{min:l.daily|0}:null;}
+/* #361: a grant ("he has X more", "+15") keeps what the giving device knew he had played (u) and what it gave (add, at).
+   A phone whose copy of his play time is behind (his saves failed) would otherwise end his time early. The device he plays on
+   notes what IT had played when the grant first reached it (save.tg[at], synced, max), and both devices count X from there.
+   The giving device notes nothing (its count is u); it remembers its own grants on this device only. */
+const GAVE='oren4-gave',gave=()=>{try{return JSON.parse(localStorage.getItem(GAVE))||[];}catch(e){return [];}};
+function effMin(t){if(t.add==null||!t.at)return t.min|0;const s=T.S(),g=s.tg=s.tg||{},sp=$('#sPar');
+  if(g[t.at]==null&&!parentOn&&!O.isParentPlay&&(!sp||sp.hidden)&&!gave().includes(t.at)){g[t.at]=usedMin();const ks=Object.keys(g).sort();ks.slice(0,Math.max(0,ks.length-10)).forEach(k=>delete g[k]);O.persist();}
+  return (t.min|0)+Math.max(0,(g[t.at]!=null?g[t.at]|0:t.u|0)-(t.u|0));}
+/* a grant of v minutes counted from u played minutes */
+function giveT(u,v){const at=Date.now();try{localStorage.setItem(GAVE,JSON.stringify(gave().concat(at).slice(-10)));}catch(e){}return {d:O.today(),min:u+v,add:v,u,at};}
 function limitToday(){const x=limNow();return x&&x.min?x.min:0;}
 /* what is left: {min:m}, or null without a limit */
 T.limLeft=()=>{const x=limNow();if(!x)return null;return {min:Math.max(0,x.min-usedMin())};};
@@ -4504,7 +4568,7 @@ T.timeLeft=()=>{const x=T.limLeft();return x&&x.min!=null?x.min:null;};
 const pnow=()=>{O.persist();O.famNow&&O.famNow();};
 /* "he has 0 more minutes" (#132): his device shows the gentle stop screen on its next sync */
 function stopNow(){LIM().today={d:O.today(),min:usedMin()};pnow();}
-function grant(v){const l=LIM(),x=limNow();const base=x&&x.min&&x.min>usedMin()?x.min:usedMin();l.today={d:O.today(),min:base+v};pnow();}
+function grant(v){const l=LIM(),x=limNow();const base=x&&x.min&&x.min>usedMin()?x.min:usedMin();l.today=giveT(base,v);pnow();}
 const pdOpen={};/* which "more" sections stay open when the panel redraws */
 const pdet=(box,key,title)=>{const d=document.createElement('details');d.className='pdet';d.innerHTML=`<summary>${title}</summary>`;const inner=h('div','pdin');d.appendChild(inner);if(pdOpen[key])d.open=true;d.addEventListener('toggle',()=>{pdOpen[key]=d.open;});box.appendChild(d);return inner;};
 function timeTab(box){const l=LIM(),x=limNow(),left=T.limLeft(),t=todayL();
@@ -4514,7 +4578,7 @@ function timeTab(box){const l=LIM(),x=limNow(),left=T.limLeft(),t=todayL();
   const mk=(row,n,fn,on)=>{const b=h('button','pchip big'+(on?' on':''),n);b.onclick=()=>{fn();sfx.ok&&sfx.ok(1);panel('time');};row.appendChild(b);return b;};
   const g=h('div','pbig');[['+15 דק׳',()=>grant(15)]].forEach(([n,f])=>{const b=h('button','bigbtn sm','<span>'+n+'</span>');b.onclick=()=>{f();sfx.ok&&sfx.ok(1);panel('time');};g.appendChild(b);});ts.appendChild(g);
   const more=pdet(ts,'tmore','עוד אפשרויות');
-  const pr=h('div','popt','<span>יֵשׁ לוֹ עוֹד:</span>');[20,30,45,60].forEach(v=>mk(pr,v+' דק׳',()=>{l.today={d:O.today(),min:usedMin()+v};pnow();},left&&left.min===v));
+  const pr=h('div','popt','<span>יֵשׁ לוֹ עוֹד:</span>');[20,30,45,60].forEach(v=>mk(pr,v+' דק׳',()=>{l.today=giveT(usedMin(),v);pnow();},left&&left.min===v));
   mk(pr,'ללא הגבלה',()=>{l.today={d:O.today(),none:1};pnow();},t&&t.none);if(t)mk(pr,'↺ כמו כל יום',()=>{l.today=null;pnow();});
   mk(pr,'⏹ לסיים עכשיו',stopNow).classList.add('bad');more.appendChild(pr);
   const ds=sec(pdet(box,'tdaily','🗓️ הגבלה קבועה לכל יום'),'הגבלה קבועה לכל יום','<div class="pnote">נספר רק זמן פעיל. אורן רואה למעלה כמה נשאר. בסוף הזמן — מסך "נתראה מחר"; אם אורן באמצע פעילות, הוא מסיים אותה (עד 5 דקות). שינוי מהטלפון שלכם מגיע למכשיר של אורן תוך כדקה.</div>');
@@ -4554,9 +4618,18 @@ function limCheck(){const left=T.limLeft(),bed=bedNow();const timeOver=!!(left&&
     timeUp(byTasks?'done':'time');return;}
   if(Date.now()-grace>5*60000||((tEnd>tEnd0||graceDone||!inAct())&&!ovOpen))timeUp(byTasks?'done':'time');}
 let tEnd0=0;
-/* spoken reminders: 10 and 2 minutes left, and the last activity */
-function warn(left){const d=O.today();const once=(k,f)=>{if(warned[d+k])return;warned[d+k]=1;f();};
-  [10,2].forEach(m=>{if(left.min<=m&&left.min>m-2)once('m'+m,()=>O.say(T.spk(`נִשְׁאֲרוּ לְךָ עוֹד ${m} דַּקּוֹת`)));});}
+/* spoken, calm (#361): every 10 minutes what is left (as words), a heads-up at 5 and at 1; said at a safe point:
+   right away outside an activity, else after his next answer (or when the activity ends), never in the middle of a question */
+const TENS=['','עֶשֶׂר','עֶשְׂרִים','שְׁלוֹשִׁים','אַרְבָּעִים','חֲמִשִּׁים','שִׁשִּׁים','שִׁבְעִים','שְׁמוֹנִים','תִּשְׁעִים'];
+const HEADS={5:'עוֹד חָמֵשׁ דַּקּוֹת נִגְמֹר. בּוֹא נְסַיֵּם אֶת מָה שֶׁהִתְחַלְנוּ.',1:'עוֹד דַּקָּה אַחַת נִגְמֹר. בּוֹא נְסַיֵּם אֶת מָה שֶׁהִתְחַלְנוּ.'};
+let tlPend='';
+const inQ=()=>inAct()||!$('#sTal').hidden;
+function tlSay(t){if(inQ())tlPend=t;else{tlPend='';O.say(T.spk(t));}}
+const tlSafe=()=>{if(!tlPend||lockEl)return;const t=tlPend;tlPend='';O.say(T.spk(t));};
+O.on('ans',tlSafe);O.on('tq',tlSafe);O.on('screen',()=>setTimeout(()=>{if(tlPend&&!inQ())tlSafe();},0));
+function warn(left){const d=O.today(),m=left.min;const once=(k,f)=>{if(warned[d+k])return;warned[d+k]=1;f();};
+  if(m>=4&&m<=5)once('h5',()=>tlSay(HEADS[5]));else if(m===1)once('h1',()=>tlSay(HEADS[1]));
+  else if(m>=10&&m%10===0&&TENS[m/10])once('l'+m,()=>tlSay(`נִשְׁאֲרוּ לָנוּ עוֹד ${TENS[m/10]} דַּקּוֹת`));}
 /* what is left, small, in the top bar on every screen */
 let pillEl=null;
 function pillText(left){return left.min<=0?'⏱️ 0':left.min===1?'⏱️ דַּקָּה אַחַת':`⏱️ ${left.min} דַּקּוֹת`;}
@@ -5490,7 +5563,7 @@ const list=ids=>(Array.isArray(ids)?ids:[ids]).filter(id=>DEF[id]);
 api.seen=id=>!!LC()[id];
 /* KNOW (#57): a known skill marks its lesson seen (skipped); a wrong answer later unmarks it (the lesson comes back) */
 api.mark=(id,on)=>{if(on)LC()[id]=1;else delete LC()[id];O.persist();};
-function run(ids,back,then){ids=ids.slice();if(!ids.length)return then();const id=ids.shift(),d=DEF[id],cards=d.cards;let i=0;
+function run(ids,back,then){ids=ids.slice();if(!ids.length)return then();const id=ids.shift(),d=DEF[id],cards=d.cards;let i=0;if(O.track)O.track('pop',{p:'card',id});
   O.setScreen('sTal',d.bg||'final',back);const s=$('#sTal');
   const show=()=>{const c=cards[i];T.hudT(d.title,T.progressBar(i,cards.length));s.innerHTML='';
     const wrap=h('div','tq lc');s.appendChild(wrap);
@@ -5653,9 +5726,9 @@ const RUNG=[{v:'a',n:'קָמָץ וּפַתָּח',say:'קָמָץ וּפַתָ�
 const learnedAt=r=>VO.slice(0,r+1);
 const poolAt=r=>WD.filter(w=>w.r<=r);
 const focusAt=r=>WD.filter(w=>w.r===r);
-/* a word chosen by the learning engine (LEARN.pickItem: wrong ones back on schedule, unseen first, no repeats) and marked seen; focus = the words of the newest rung, tried first 70% of the time */
+/* a word chosen by the learning engine (LEARN.pickItem: wrong ones back on schedule, unseen first, no repeats); the question carries bank + bkey, the quiz records the answer (#360); focus = the words of the newest rung, tried first 70% of the time */
 function lword(bank,pool,focus){const LN=window.LEARN;if(LN&&LN.pickItem&&pool.length>1)try{const ask=a=>{const r=LN.pickItem(bank,a.map(x=>({k:x.w})));return r&&{w:a.find(x=>x.w===r.item.k),why:r.why};};
-  let r=focus&&focus.length&&Math.random()<.7?ask(focus):null;if(!r||!r.w||r.why==='recycle')r=ask(pool);if(r&&r.w){LN.seen(bank,r.w.w,true,false);return r.w;}}catch(e){}
+  let r=focus&&focus.length&&Math.random()<.7?ask(focus):null;if(!r||!r.w||r.why==='recycle')r=ask(pool);if(r&&r.w)return r.w;}catch(e){}
   return focus&&focus.length&&Math.random()<.7?pick(focus):pick(pool);}
 /* question kinds: hs = hear a word, choose its first syllable · ss = see a syllable, choose the word · rw = hear a word, choose it */
 function sylOpts(w,learned){const a=w.s1;const out=[{s:a.s,v:a.v,b:w.base}];
@@ -5667,14 +5740,14 @@ function nikQ(r,i,n){const learned=learnedAt(r);const kind=i<n*.4?'hs':i<n*.75?'
   const pool=poolAt(r).filter(w=>w.s1);const focus=focusAt(r).filter(w=>w.s1);
   const w=lword('gp-nik',pool,focus);
   if(kind==='hs'){const os=sylOpts(w,learned);return {pr:`<div class="gp-ear">👂</div><div class="qq">בְּאֵיזוֹ הֲבָרָה מַתְחִילָה הַמִּלָּה?</div>`,opts:os.map(o=>o.s),ans:os.findIndex(o=>o.s===w.s1.s),cls:'tx big2',
-      play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו הברה מתחילה המילה',explain:`<span class="bigw">${hi(w)}</span>`,key:'hs'+w.w,chk:{t:'syl',w:w.w}};}
+      play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו הברה מתחילה המילה',explain:`<span class="bigw">${hi(w)}</span>`,bank:'gp-nik',bkey:w.w,key:'hs'+w.w,chk:{t:'syl',w:w.w}};}
   if(kind==='ss'){const same=pool.filter(x=>x!==w&&x.base===w.base&&x.s1.v!==w.s1.v&&!clash(x.s1.v,w.s1.v));
     const diff=pool.filter(x=>x!==w&&!sameSound(x.f,w.f));const ds=[];for(const x of [...shuffle(same),...shuffle(diff)]){if(ds.length>=2)break;if(!ds.includes(x)&&!ds.some(d=>d.w===x.w))ds.push(x);}
     const os=shuffle([w,...ds]);return {pr:`<div class="qq">אֵיזוֹ מִלָּה מַתְחִילָה כָּךְ?</div><div class="bigw gp-syl">${w.s1.s}</div>`,opts:os.map(x=>x.w),ans:os.indexOf(w),cls:'tx',
-      reveal:()=>sayW(w),explain:`<span class="bigw">${hi(w)}</span>`,key:'ss'+w.s1.s,chk:{t:'start',syl:w.s1.s,w:w.w}};}
+      reveal:()=>sayW(w),explain:`<span class="bigw">${hi(w)}</span>`,bank:'gp-nik',bkey:w.w,key:'ss'+w.s1.s,chk:{t:'start',syl:w.s1.s,w:w.w}};}
   const like=pool.filter(x=>x!==w&&(x.f===w.f||x.plain.length===w.plain.length));const ds=shuffle(like.length>=2?like:pool.filter(x=>x!==w)).slice(0,2);
   const os=shuffle([w,...ds]);return {pr:`<div class="gp-ear">👂</div><div class="qq">אֵיזוֹ מִלָּה שָׁמַעְתָּ?</div>`,opts:os.map(x=>x.w),ans:os.indexOf(w),cls:'tx',
-    play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'איזו מילה שמעת',explain:`${pic(w)}<span class="bigw">${w.w}</span>`,key:'rw'+w.w,chk:{t:'word',w:w.w}};}
+    play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'איזו מילה שמעת',explain:`${pic(w)}<span class="bigw">${w.w}</span>`,bank:'gp-nik',bkey:w.w,key:'rw'+w.w,chk:{t:'word',w:w.w}};}
 function nikRound(r,back){const n=8;T.quiz({id:'nik-'+(r+1),title:RUNG[r].n,bg:'city',back,n,gen:i=>nikQ(r,i,n),doneTitle:'עָלִיתָ בַּסֻּלָּם!'});}
 function nikIntro(r,back){O.setScreen('sTal','city',back);T.hudT('סֻלַּם הַנִּקּוּד');const R=RUNG[r];const s=$('#sTal');s.innerHTML='';
   const ex=shuffle(focusAt(r).filter(w=>w.s1)).slice(0,3);O.sayNow=R.n+'. כמו במילים: '+ex.map(w=>plainHe(w.w)).join(', ');
@@ -5692,9 +5765,9 @@ const LETTERS='בגדזחטיכלמנסעפצקרשת'.split('');
 function sndQ(L){const pool=WD.filter(w=>w.s1&&(L<3||w.s1.v!=='s'));const w=lword('gp-snd',pool);
   if(L<3){const k=L===1?3:4;const ds=[];for(const c of shuffle(LETTERS)){if(ds.length>=k-1)break;if(!sameSound(c,w.f)&&!ds.some(d=>sameSound(d,c)))ds.push(c);}
     const os=shuffle([w.f,...ds]);return {pr:`<div class="gp-ear">👂</div><div class="qq">בְּאֵיזוֹ אוֹת מַתְחִילָה הַמִּלָּה שֶׁשָּׁמַעְתָּ?</div>`,opts:os,ans:os.indexOf(w.f),cls:'tx big2'+(os.length===4?' gp4':''),
-      play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו אות מתחילה המילה ששמעת',explain:`${pic(w)}<span class="bigw">${hi(w)}</span>`,key:w.w,chk:{t:'letter',w:w.w}};}
+      play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו אות מתחילה המילה ששמעת',explain:`${pic(w)}<span class="bigw">${hi(w)}</span>`,bank:'gp-snd',bkey:w.w,key:w.w,chk:{t:'letter',w:w.w}};}
   const os=sylOpts(w,['a','i','o','u','e']);return {pr:`<div class="gp-ear">👂</div><div class="qq">בְּאֵיזוֹ הֲבָרָה מַתְחִילָה הַמִּלָּה שֶׁשָּׁמַעְתָּ?</div>`,opts:os.map(o=>o.s),ans:os.findIndex(o=>o.s===w.s1.s),cls:'tx big2',
-    play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו הברה מתחילה המילה ששמעת',explain:`${pic(w)}<span class="bigw">${hi(w)}</span>`,key:w.w,chk:{t:'syl',w:w.w}};}
+    play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו הברה מתחילה המילה ששמעת',explain:`${pic(w)}<span class="bigw">${hi(w)}</span>`,bank:'gp-snd',bkey:w.w,key:w.w,chk:{t:'syl',w:w.w}};}
 function sndRound(back,L0){const L=L0||level('snd',3);T.quiz({id:'snd-'+L,title:'מָה שׁוֹמְעִים בַּהַתְחָלָה?',bg:'city',back,n:8,gen:()=>sndQ(L)});}
 
 /* ===================== 7. SPELLING: hear a word, build it from letters ===================== */
@@ -6116,7 +6189,6 @@ const W_RAW={
 פְּ-סַנְ-תֵּר|פסנתר|music|🎹|piano
 דְּ-לַ-עַת|דלעת|food|🎃|pumpkin
 מִבְ-צָר|מבצר|building|🏰|fort
-חַלְ-לִית|חללית|space|🚀|spaceship
 בַּרְ-וָז|ברווז|animals|🦆|duck
 מְ-נוֹ-רָה|מנורה|home|💡|lamp
 תַּמְ-נוּן|תמנון|sea|🐙|octopus
@@ -6127,6 +6199,7 @@ const W_RAW={
 מִי-קְרוֹ-פוֹן|מיקרופון|music|🎤|microphone
 טֶ-לֶסְ-קוֹפּ|טלסקופ|space|🔭|telescope`,
 7:`כַּ-דּוּ-רֶ-גֶל|כדורגל|sport|⚽|soccer
+חֲ-לָ-לִית|חללית|space|🚀|spaceship
 כַּ-דּוּרְ-סַל|כדורסל|sport|🏀|basketball
 אֲ-בַ-טִּיחַ|אבטיח|food|🍉|watermelon
 חֲ-מוֹר|חמור|animals|-|donkey
@@ -6173,7 +6246,7 @@ const NEAR=[['כַּדּוּר','כַּדּוּרֶגֶל','שַׁעַר'],['ס�
  ['שֶׁמֶשׁ','בֹּקֶר'],['כּוֹכָב','חָלָל'],['עִיר','דִּירָה'],['חוֹף','אִי','יָם','שִׁמְשִׁיָּה'],['נָחָשׁ','תּוֹלַעַת'],['עֲנָבִים','זַיִת'],['גָּבִיעַ','אַלּוּף'],['גֶּשֶׁר','נַחַל'],
  ['קִשּׁוּט','חֲגִיגָה'],['צִיּוּר','תְּמוּנָה'],['מַחְבֶּרֶת','סֵפֶר','סִפְרִיָּה'],['מִכְתָּב','דַּף'],['מְנוֹרָה','פָּנָס'],['אֵשׁ','נֵר'],['דֹּב','דֻּבִּי'],['מַגָּף','נַעַל'],
  ['דּוֹלְפִין','לִוְיָתָן','כְּרִישׁ'],['גּוֹרִילָה','קוֹף'],['זְאֵב','כֶּלֶב'],['יוֹנָה','צִפּוֹר'],['תַּפּוּז','כָּתֹם'],['לִימוֹן','צָהֹב'],['שׁוֹקוֹלָד','חוּם'],['גַּן','בַּיִת'],
- ['חַלְלִית','מָטוֹס'],['עוּגָה','עוּגִיָּה'],['אֲבַטִּיחַ','מֶלוֹן'],['מִטְרִיָּה','שִׁמְשִׁיָּה'],['אֲגַם','נַחַל'],['גְּבִינָה','חָלָב'],['אָדֹם','עַגְבָנִיָּה','תּוּת'],
+ ['חֲלָלִית','מָטוֹס'],['עוּגָה','עוּגִיָּה'],['אֲבַטִּיחַ','מֶלוֹן'],['מִטְרִיָּה','שִׁמְשִׁיָּה'],['אֲגַם','נַחַל'],['גְּבִינָה','חָלָב'],['אָדֹם','עַגְבָנִיָּה','תּוּת'],
  ['יֶלֶד','אָח'],['אִמָּא','מוֹרָה'],['קֻבִּיָּה','אַרְגָּז']];
 const near=(a,b)=>NEAR.some(g=>g.includes(a.w)&&g.includes(b.w));
 
@@ -6235,7 +6308,7 @@ const S_RAW=[
 [3,'הַחֲתוּלָה שׁוֹתָה חָלָב מֵהַצַּלַּחַת.','החתולה שותה חלב מהצלחת.','מֵאֵיפֹה הַחֲתוּלָה שׁוֹתָה?','מאיפה החתולה שותה?','מֵהַצַּלַּחַת',['מֵהַכּוֹס','מֵהַבַּקְבּוּק']],
 [3,'רוֹן מְתוֹפֵף עַל תֹּף גָּדוֹל.','רון מתופף על תוף גדול.','עַל מָה רוֹן מְתוֹפֵף?','על מה רון מתופף?','@🥁',['@🎸','@🎹']],
 [3,'הָאוֹטוֹבּוּס הַצָּהֹב עוֹצֵר בַּתַּחֲנָה.','האוטובוס הצהוב עוצר בתחנה.','אֵיזֶה צֶבַע הָאוֹטוֹבּוּס?','איזה צבע האוטובוס?','צָהֹב',['יָרֹק','סָגֹל']],
-[3,'הַחַלְלִית טָסָה אֶל הַיָּרֵחַ.','החללית טסה אל הירח.','לְאָן טָסָה הַחַלְלִית?','לאן טסה החללית?','@moon',['@🏝️','@🏙️']],
+[3,'הַחֲלָלִית טָסָה אֶל הַיָּרֵחַ.','החללית טסה אל הירח.','לְאָן טָסָה הַחֲלָלִית?','לאן טסה החללית?','@moon',['@🏝️','@🏙️']],
 [3,'אוֹרֶן קוֹלֵעַ לַסַּל מֵרָחוֹק.','אורן קולע לסל מרחוק.','מִי קוֹלֵעַ לַסַּל?','מי קולע לסל?','אוֹרֶן',['אַבָּא','דָּנִי']],
 [3,'הָאַרְיֵה שׁוֹאֵג בְּקוֹל רָם.','האריה שואג בקול רם.','מִי שׁוֹאֵג?','מי שואג?','@🦁',['@🐰','@🐣']],
 [3,'בַּקַּיִץ אֲנַחְנוּ הוֹלְכִים לַחוֹף.','בקיץ אנחנו הולכים לחוף.','לְאָן הוֹלְכִים בַּקַּיִץ?','לאן הולכים בקיץ?','@🏖️',['@🏢','@🏪']],
@@ -6299,7 +6372,7 @@ const S_RAW=[
 [6,'בַּמּוּזֵאוֹן רָאִינוּ שֶׁלֶד שֶׁל דִּינוֹזָאוּר גָּדוֹל מְאוֹד.','במוזיאון ראינו שלד של דינוזאור גדול מאוד.','מָה רָאִינוּ בַּמּוּזֵאוֹן?','מה ראינו במוזיאון?','@🦕',['@🐘','@🐫']],
 [6,'מֵהַבֵּיצָה שֶׁל הַתַּרְנְגֹלֶת יָצָא גּוֹזָל צָהֹב וְקָטָן.','מהביצה של התרנגולת יצא גוזל צהוב וקטן.','מָה יָצָא מֵהַבֵּיצָה?','מה יצא מהביצה?','@🐣',['@🐄','@🐴']],
 [6,'אַחֲרֵי שֶׁסִּיַּמְנוּ לֶאֱכֹל, עָזַרְתִּי לְאַבָּא לִשְׁטֹף אֶת הַכֵּלִים.','אחרי שסיימנו לאכול, עזרתי לאבא לשטוף את הכלים.','מָה עָשִׂיתִי אַחֲרֵי הָאֹכֶל?','מה עשיתי אחרי האוכל?','שָׁטַפְתִּי כֵּלִים עִם אַבָּא',['הָלַכְתִּי לִישֹׁן','שִׂחַקְתִּי בַּחוּץ']],
-[6,'הַחַלְלִית שֶׁבָּנִינוּ מִקַּרְטוֹן הָיְתָה גְּבוֹהָה יוֹתֵר מֵאַבָּא.','החללית שבנינו מקרטון הייתה גבוהה יותר מאבא.','מִמָּה בָּנִינוּ אֶת הַחַלְלִית?','ממה בנינו את החללית?','מִקַּרְטוֹן',['מֵעֵץ','מִבַּרְזֶל']],
+[6,'הַחֲלָלִית שֶׁבָּנִינוּ מִקַּרְטוֹן הָיְתָה גְּבוֹהָה יוֹתֵר מֵאַבָּא.','החללית שבנינו מקרטון הייתה גבוהה יותר מאבא.','מִמָּה בָּנִינוּ אֶת הַחֲלָלִית?','ממה בנינו את החללית?','מִקַּרְטוֹן',['מֵעֵץ','מִבַּרְזֶל']],
 [6,'הַקּוֹף הַקָּטָן פָּחַד מֵהָרַעַם וְהִתְחַבֵּא אֵצֶל אִמָּא שֶׁלּוֹ.','הקוף הקטן פחד מהרעם והתחבא אצל אמא שלו.','לָמָּה הַקּוֹף הִתְחַבֵּא?','למה הקוף התחבא?','כִּי הוּא פָּחַד מֵהָרַעַם',['כִּי הוּא הָיָה רָעֵב','כִּי הוּא רָצָה לִישֹׁן']],
 [6,'בְּשַׁבָּת בַּבֹּקֶר כָּל הַמִּשְׁפָּחָה רָכְבָה עַל אוֹפַנַּיִם לַפַּארְק.','בשבת בבוקר כל המשפחה רכבה על אופניים לפארק.','עַל מָה רָכְבָה הַמִּשְׁפָּחָה?','על מה רכבה המשפחה?','@🚲',['@🐴','@🚌']],
 [6,'הַמּוֹרָה בִּקְּשָׁה מִכֻּלָּנוּ לְהָבִיא מָחָר עָלֶה מֵהַגִּנָּה.','המורה ביקשה מכולנו להביא מחר עלה מהגינה.','מָה צָרִיךְ לְהָבִיא מָחָר?','מה צריך להביא מחר?','@leaf',['@stone','@🌸']],
@@ -6345,8 +6418,8 @@ ST(1,'הַחֲתוּלָה עַל הַגַּג','החתולה על הגג',['cat
  [['lit','מָה הֵבִיא אַבָּא?','מה הביא אבא?','סֻלָּם',['כַּדּוּר','חָלָב']],['seq','מִיקָה עָלְתָה עַל הַגַּג',['אַבָּא הֵבִיא סֻלָּם','מִיקָה יָרְדָה']],
   ['les','לָמָּה מִיקָה לֹא יָרְדָה לְבַד?','למה מיקה לא ירדה לבד?','כִּי לַחֲתוּלִים קָשֶׁה לָרֶדֶת',['כִּי הִיא רָצְתָה לִישֹׁן','כִּי הִיא רָאֲתָה צִפּוֹר']]],
  ['sci','לחתולים קל לטפס למעלה וקשה לרדת למטה']),
-ST(1,'הַחַלְלִית מֵהַקַּרְטוֹן','החללית מהקרטון',['🚀','star'],
- ['אוֹרֶן מָצָא קַרְטוֹן גָּדוֹל.','הוּא צִיֵּר עָלָיו חַלּוֹן וְכוֹכָבִים.','עַכְשָׁו זוֹ חַלְלִית!','אוֹרֶן יָשַׁב בִּפְנִים וְסָפַר אָחוֹרָה: "שָׁלֹשׁ, שְׁתַּיִם, אַחַת... הַמְרָאָה!"'],
+ST(1,'הַחֲלָלִית מֵהַקַּרְטוֹן','החללית מהקרטון',['🚀','star'],
+ ['אוֹרֶן מָצָא קַרְטוֹן גָּדוֹל.','הוּא צִיֵּר עָלָיו חַלּוֹן וְכוֹכָבִים.','עַכְשָׁו זוֹ חֲלָלִית!','אוֹרֶן יָשַׁב בִּפְנִים וְסָפַר אָחוֹרָה: "שָׁלֹשׁ, שְׁתַּיִם, אַחַת... הַמְרָאָה!"'],
  ['אורן מצא קרטון גדול.','הוא צייר עליו חלון וכוכבים.','עכשיו זו חללית!','אורן ישב בפנים וספר אחורה: "שלוש, שתיים, אחת... המראה!"'],
  [['lit','מָה מָצָא אוֹרֶן?','מה מצא אורן?','קַרְטוֹן גָּדוֹל',['כַּדּוּר','סֵפֶר']],['seq','אוֹרֶן מָצָא קַרְטוֹן',['אוֹרֶן צִיֵּר כּוֹכָבִים','אוֹרֶן יָשַׁב בִּפְנִים']],
   ['les','אֵיךְ סוֹפְרִים אָחוֹרָה?','איך סופרים אחורה?','מֵהַמִּסְפָּר הַגָּדוֹל לַקָּטָן',['מֵהַמִּסְפָּר הַקָּטָן לַגָּדוֹל','בְּלִי מִסְפָּרִים']]],
@@ -6481,7 +6554,7 @@ ST(4,'הַשִּׁיר הַקָּשֶׁה','השיר הקשה',['🎹','note'],
   ['les','מָה עָזַר לְאוֹרֶן?','מה עזר לאורן?','לִלְמֹד קְצָת כָּל יוֹם',['לְנַגֵּן מַהֵר','לְהַפְסִיק לְנַגֵּן']]],
  ['value','דבר קשה לומדים קצת כל יום']),
 ST(4,'הַחֲלוֹם שֶׁל אוֹרֶן','החלום של אורן',['🧑‍🚀','🚀'],
- ['בַּלַּיְלָה אוֹרֶן חָלַם שֶׁהוּא אַסְטְרוֹנָאוּט.','הוּא לָבַשׁ חֲלִיפָה לְבָנָה וְעָלָה לַחַלְלִית.','הַחַלְלִית טָסָה לְמַעְלָה, מֵעַל הָעֲנָנִים.','בֶּחָלָל אוֹרֶן רִחֵף כְּמוֹ בַּלּוֹן.','מֵהַחַלּוֹן הוּא רָאָה אֶת כַּדּוּר הָאָרֶץ כָּחֹל, כִּי רֻבּוֹ מְכֻסֶּה בְּמַיִם.','פִּתְאוֹם שָׁמַע קוֹל: "אוֹרֶן, בֹּקֶר טוֹב!"','זֹאת הָיְתָה אִמָּא, וְהוּא הָיָה בַּמִּטָּה שֶׁלּוֹ.'],
+ ['בַּלַּיְלָה אוֹרֶן חָלַם שֶׁהוּא אַסְטְרוֹנָאוּט.','הוּא לָבַשׁ חֲלִיפָה לְבָנָה וְעָלָה לַחֲלָלִית.','הַחֲלָלִית טָסָה לְמַעְלָה, מֵעַל הָעֲנָנִים.','בֶּחָלָל אוֹרֶן רִחֵף כְּמוֹ בַּלּוֹן.','מֵהַחַלּוֹן הוּא רָאָה אֶת כַּדּוּר הָאָרֶץ כָּחֹל, כִּי רֻבּוֹ מְכֻסֶּה בְּמַיִם.','פִּתְאוֹם שָׁמַע קוֹל: "אוֹרֶן, בֹּקֶר טוֹב!"','זֹאת הָיְתָה אִמָּא, וְהוּא הָיָה בַּמִּטָּה שֶׁלּוֹ.'],
  ['בלילה אורן חלם שהוא אסטרונאוט.','הוא לבש חליפה לבנה ועלה לחללית.','החללית טסה למעלה, מעל העננים.','בחלל אורן ריחף כמו בלון.','מהחלון הוא ראה את כדור הארץ כחול, כי רובו מכוסה במים.','פתאום שמע קול: "אורן, בוקר טוב!"','זאת הייתה אמא, והוא היה במיטה שלו.'],
  [['lit','אֵיךְ רִחֵף אוֹרֶן בֶּחָלָל?','איך ריחף אורן בחלל?','כְּמוֹ בַּלּוֹן',['כְּמוֹ דָּג','כְּמוֹ אֶבֶן']],['seq','אוֹרֶן לָבַשׁ חֲלִיפָה',['אוֹרֶן רִחֵף בֶּחָלָל','אִמָּא אָמְרָה בֹּקֶר טוֹב']],
   ['les','לָמָּה כַּדּוּר הָאָרֶץ נִרְאֶה כָּחֹל?','למה כדור הארץ נראה כחול?','כִּי רֻבּוֹ מְכֻסֶּה בְּמַיִם',['כִּי צָבְעוּ אוֹתוֹ','כִּי הַחַלּוֹן כָּחֹל']]],
@@ -6595,7 +6668,7 @@ const ORDER_RAW=[
 [2,'אוֹרֶן בּוֹעֵט בַּכַּדּוּר הַגָּדוֹל.','אורן בועט בכדור הגדול.'],[2,'סַבְתָּא אוֹפָה עוּגָה טְעִימָה.','סבתא אופה עוגה טעימה.'],[2,'הֶחָתוּל יָשֵׁן עַל הַסַּפָּה.','החתול ישן על הספה.'],
 [2,'נוֹעָה מְנַגֶּנֶת בְּגִיטָרָה חֲדָשָׁה.','נועה מנגנת בגיטרה חדשה.'],[2,'הַקּוֹף אוֹכֵל בָּנָנָה צְהֻבָּה.','הקוף אוכל בננה צהובה.'],[2,'אֲנִי אוֹהֵב אֶת אִמָּא.','אני אוהב את אמא.'],
 [3,'אוֹרֶן שׂוֹחֶה בַּבְּרֵכָה עִם אַבָּא.','אורן שוחה בבריכה עם אבא.'],[3,'הַמּוֹרָה קוֹרֵאת לָנוּ סִפּוּר יָפֶה.','המורה קוראת לנו סיפור יפה.'],[3,'אֲנִי בּוֹנֶה מִגְדָּל גָּבוֹהַּ מִקֻּבִּיּוֹת.','אני בונה מגדל גבוה מקוביות.'],
-[3,'הַחַלְלִית טָסָה אֶל הַיָּרֵחַ הַלָּבָן.','החללית טסה אל הירח הלבן.'],[3,'סַבָּא נוֹתֵן לִי מַתָּנָה גְּדוֹלָה.','סבא נותן לי מתנה גדולה.'],[3,'הַכֶּלֶב שֶׁלִּי אוֹהֵב לְשַׂחֵק.','הכלב שלי אוהב לשחק.'],
+[3,'הַחֲלָלִית טָסָה אֶל הַיָּרֵחַ הַלָּבָן.','החללית טסה אל הירח הלבן.'],[3,'סַבָּא נוֹתֵן לִי מַתָּנָה גְּדוֹלָה.','סבא נותן לי מתנה גדולה.'],[3,'הַכֶּלֶב שֶׁלִּי אוֹהֵב לְשַׂחֵק.','הכלב שלי אוהב לשחק.'],
 [4,'אוֹרֶן זוֹרֵק אֶת הַכַּדּוּר אֶל הַסַּל.','אורן זורק את הכדור אל הסל.'],[4,'הַדֹּב הַגָּדוֹל אוֹהֵב לֶאֱכֹל דְּבַשׁ.','הדוב הגדול אוהב לאכול דבש.'],[4,'הַתִּינוֹק הַקָּטָן יָשֵׁן בַּמִּטָּה שֶׁלּוֹ.','התינוק הקטן ישן במיטה שלו.'],
 [4,'אִמָּא מְנַגֶּנֶת לִי שִׁיר בַּפְּסַנְתֵּר.','אמא מנגנת לי שיר בפסנתר.'],[4,'הַשּׁוֹעֵר תּוֹפֵס אֶת הַכַּדּוּר בַּיָּדַיִם.','השוער תופס את הכדור בידיים.'],[4,'הָאַסְטְרוֹנָאוּט רוֹאֶה אֶת כַּדּוּר הָאָרֶץ.','האסטרונאוט רואה את כדור הארץ.'],
 [5,'הַנְּמָלָה סוֹחֶבֶת עָלֶה גָּדוֹל אֶל הַקֵּן.','הנמלה סוחבת עלה גדול אל הקן.'],[5,'אוֹרֶן כּוֹתֵב מִכְתָּב יָפֶה לְסַבְתָּא שֶׁלּוֹ.','אורן כותב מכתב יפה לסבתא שלו.'],[5,'הַדּוֹלְפִין קוֹפֵץ גָּבוֹהַּ מֵעַל הַגַּלִּים.','הדולפין קופץ גבוה מעל הגלים.'],
@@ -6728,7 +6801,7 @@ function tiles(s,o,done){let k=0,err=0,miss=0;s.innerHTML='';const card=h('div',
 function build(back){const L=level('word');const pool=[];for(let t=0;pool.length<6&&t<200;t++){const w=lvPick(W,L,x=>x.syl.length>1,'rb-word',wk);if(!pool.includes(w))pool.push(w);}
   let i=0,err=0;O.setScreen('sTal','city',back);const s=$('#sTal');
   const run=()=>{const w=pool[i];T.hudT('בּוֹנִים מִלָּה',T.progressBar(i,pool.length));O.sayNow=T.spk(w.w);
-    tiles(s,{need:w.syl,tiles:w.syl,head:w.pic?pic(w.pic,1):'',play:()=>say(w.w),tip:UI.build,end:()=>say(w.w)},e=>{err+=e;i++;if(i<pool.length)run();else T.finishAct('rb2-build-'+L,err,pool.length,pool.length*2,back,()=>build(back));});
+    tiles(s,{need:w.syl,tiles:w.syl,head:w.pic?pic(w.pic,1):'',play:()=>say(w.w),tip:UI.build,end:()=>say(w.w)},e=>{err+=e;if(window.LEARN)try{LEARN.seen('rb-word',w.w,!e,false);}catch(x){}i++;if(i<pool.length)run();else T.finishAct('rb2-build-'+L,err,pool.length,pool.length*2,back,()=>build(back));});
     if(!w.pic)setTimeout(()=>say(w.w),D(300));};run();}
 function sent(back){const L=level('sent');T.quiz({id:'rb2-sent-'+L,title:'קוֹרְאִים מִשְׁפָּט',bg:'city',back,n:8,gen:()=>{const q=lvPick(R.sentences,L,null,'rb-sent',x=>x.t);const opts=shuffle([q.a,...q.ds]);
   return {pr:`<div class="sent">${nk(q.t,q.p)}</div><div class="qq">${nk(q.q,q.qp,1)}</div>`,opts:opts.map(ansHTML),ans:opts.indexOf(q.a),cls:q.a[0]==='@'?'picb':'tx',say:T.spk(q.q),key:q.t,bank:'rb-sent'};}});}
@@ -6737,13 +6810,15 @@ function sent(back){const L=level('sent');T.quiz({id:'rb2-sent-'+L,title:'קוֹ
 function nextStory(){const L=level('story');const at=R.stories.filter(x=>x.lv===L);
   if(window.LEARN){try{const r=LEARN.pickItem('rb-story',at.map(x=>({k:x.t,lv:x.lv})),{lv:L});const it=r&&at.find(x=>x.t===r.item.k);if(it)return it;}catch(e){}}
   return at.find(x=>st('rb2-st-'+x.id)<2)||pick(at);}
-function story(back,k){const sto=k!=null?R.stories[k]:nextStory();if(window.LEARN)try{LEARN.seen('rb-story',sto.t,true,false);}catch(e){}
+/* recorded once per story, after its questions (#360): any wrong answer, or the story read aloud to him → back after 1 day */
+function story(back,k){const sto=k!=null?R.stories[k]:nextStory();
   /* the shared story screen (talents.js, #355): read first, listen later; 📖 back to the story from every question */
   T.storyScreen({act:'story-new',id:'rb2-st-'+sto.id,title:nk(sto.t,sto.tp),name:sto.t,tp:sto.tp,goal:sto.goal,spr:sto.spr.map(x=>pic(x)),lines:sto.s.map((x,i)=>nk(x,sto.p[i])),
-    q:sto.q.map(([,q,qp,a,ds])=>({pr:nk(q,qp,1),say:T.spk(q),a,ds})),back});}
+    q:sto.q.map(([,q,qp,a,ds])=>({pr:nk(q,qp,1),say:T.spk(q),a,ds})),back,end:(err,heard)=>{if(window.LEARN)try{LEARN.seen('rb-story',sto.t,!err,heard);}catch(e){}}});}
 
 /* ---- writing: a mixed graded session (copy, dictation, missing letter, sentence order) ---- */
-function mixPlan(L){const ws=R.writing;const P=[];const add=(kind,arr)=>{const it=lvPick(arr,L);if(it)P.push([kind,it]);};
+const mixKey=(kind,it)=>kind+':'+(it.w||it.t);
+function mixPlan(L){const ws=R.writing;const P=[];const add=(kind,arr)=>{const it=lvPick(arr,L,null,'rb-write',x=>mixKey(kind,x));if(it)P.push([kind,it]);};
   if(L===1){for(let i=0;i<3;i++)add('copy',ws.copy);for(let i=0;i<3;i++)add('miss',ws.miss);}
   else{add('copy',ws.copy);add('dict',ws.dict);add('dict',ws.dict);add('miss',ws.miss);add('miss',ws.miss);const oL=Math.min(5,L-1);const o=pick(ws.order.filter(x=>x.lv===oL));if(o)P.push(['order',o]);}
   return P;}
@@ -6751,7 +6826,7 @@ const DIST='בגדזלמנרתפסקשצ'.split('');
 function extraLetters(need,n){const out=[];const last=need[need.length-1];if(R.FINAL[last]&&!need.includes(R.FINAL[last]))out.push(R.FINAL[last]);
   for(const c of shuffle(DIST)){if(out.length>=n)break;if(!need.some(x=>R.sameSound(x,c))&&!out.some(x=>R.sameSound(x,c)))out.push(c);}return out;}
 function mix(back){const L=level('mix');const plan=mixPlan(L);let i=0,err=0;O.setScreen('sTal','meadow',back);const s=$('#sTal');
-  const next=e=>{err+=e;i++;if(i<plan.length)run();else{T.setKey(null);T.finishAct('rb2-mix-'+L,err,plan.length*2,plan.length*2,back,()=>mix(back));}};
+  const next=e=>{const [kind,it]=plan[i];if(kind!=='order'&&window.LEARN)try{LEARN.seen('rb-write',mixKey(kind,it),!e,false);}catch(x){}err+=e;i++;if(i<plan.length)run();else{T.setKey(null);T.finishAct('rb2-mix-'+L,err,plan.length*2,plan.length*2,back,()=>mix(back));}};
   const run=()=>{const [kind,it]=plan[i];T.hudT('כּוֹתְבִים',T.progressBar(i,plan.length));
     if(kind==='copy'){O.sayNow=T.spk(it.w);tiles(s,{need:it.letters,tiles:[...it.letters,...extraLetters(it.letters,L<3?1:2)],head:`${pic(it.pic)}<div class="bigw">${it.w}</div>`,tip:UI.copy,big:1,fin:1,end:()=>say(it.w)},next);}
     else if(kind==='dict'){O.sayNow=T.spk(it.w);tiles(s,{need:it.letters,tiles:[...it.letters,...extraLetters(it.letters,2)],head:`${pic(it.pic)}<div class="gp-ear" style="font-size:44px">👂</div>`,play:()=>say(it.w),tip:UI.dict,big:1,fin:1,
@@ -7467,10 +7542,10 @@ function lesson(o){const cards=o.cards.filter(c=>c);if(!cards.length)return o.th
 const Q=(lv,q,a,ds,x)=>Object.assign({lv,q,a,ds},x||{});
 function pickQs(bank,L,n,id){const ok=bank.filter(q=>q.lv<=L),LN=window.LEARN;
   if(id&&LN&&LN.pickItem&&ok.length>n)try{/* the learning engine chooses (wrong ones back on schedule, unseen first, no repeats) */const bk='x2-'+id,items=ok.map(q=>({k:q.q,lv:q.lv})),got=[],ex=new Set();
-    while(got.length<n){const r=LN.pickItem(bk,items,{lv:L,upto:true,exclude:ex});if(!r)break;ex.add(r.item.k);got.push(ok.find(q=>q.q===r.item.k));LN.seen(bk,r.item.k,true,false);}
+    while(got.length<n){const r=LN.pickItem(bk,items,{lv:L,upto:true,exclude:ex});if(!r)break;ex.add(r.item.k);got.push(Object.assign({},ok.find(q=>q.q===r.item.k),{bank:bk}));}
     if(got.length===n)return got.sort((a,b)=>a.lv-b.lv);}catch(e){}
   const pool=shuffle(ok);pool.sort((a,b)=>(b.lv===L)-(a.lv===L));return pool.slice(0,Math.min(n,pool.length)).sort((a,b)=>a.lv-b.lv);}
-const mkQ=q=>{const opts=shuffle([q.a,...q.ds]);return {pr:`${q.art?`<div class="e2art sm">${q.art}</div>`:''}<div class="qq">${q.q}</div>`,opts:opts.map(x=>q.fmt?q.fmt(x):x),ans:opts.indexOf(q.a),cls:(q.cls||'tx')+' e2o',key:q.q+'|'+q.a,explain:q.ex||''};};
+const mkQ=q=>{const opts=shuffle([q.a,...q.ds]);return {pr:`${q.art?`<div class="e2art sm">${q.art}</div>`:''}<div class="qq">${q.q}</div>`,opts:opts.map(x=>q.fmt?q.fmt(x):x),ans:opts.indexOf(q.a),cls:(q.cls||'tx')+' e2o',key:q.q+'|'+q.a,explain:q.ex||'',bank:q.bank,bkey:q.q};};
 function runQuiz(o,list){STEP=null;T.quiz({id:o.id,title:o.title,bg:o.bg,back:o.back,n:list.length,gen:i=>typeof list[i]==='function'?list[i]():mkQ(list[i])});}
 /* a lesson + quiz activity: def = {id,name,icon,bg,title,cards:[{lv,art,t}],bank:[Q...],n} */
 function lessonAct(def){return Object.assign({},def,{run:back=>{const L=lvl(def.id),o={id:def.id,title:def.title||def.name,bg:def.bg,back};
@@ -8430,8 +8505,8 @@ const RC=[
  ['מָתַי הַחֲסִידוֹת חוֹזְרוֹת לְאֵירוֹפָּה?','מתי החסידות חוזרות לאירופה?','בָּאָבִיב',['בַּקַּיִץ','בַּחֹרֶף','בַּסְּתָו']],
  ['לָמָּה הַחֲסִידוֹת עָפוֹת לְאַפְרִיקָה?','למה החסידות עפות לאפריקה?','כִּי בַּחֹרֶף אֵין לָהֶן מַסְפִּיק אֹכֶל בְּאֵירוֹפָּה',['כִּי הֵן אוֹהֲבוֹת לָטוּס','כִּי בְּאַפְרִיקָה יוֹרֵד שֶׁלֶג','כִּי הֵן רוֹצוֹת לִרְאוֹת אֲנָשִׁים']]]},
 /* level 5 — a longer story: order, why, lesson */
-{lv:5,gk:'sci',goal:'צמח בלי מים נובל ומתייבש',les:1,t:'יַלְדֵי כִּתָּה ב׳ הֶחְלִיטוּ לְגַדֵּל גִּנַּת יְרָקוֹת בֶּחָצֵר. קֹדֶם הֵם נִקּוּ אֶת הָאֲדָמָה מֵאֲבָנִים. אַחַר כָּךְ הֵם שָׁתְלוּ חַסָּה, גֶּזֶר וּמְלָפְפוֹנִים. כָּל יוֹם שְׁנֵי יְלָדִים הִשְׁקוּ אֶת הַגִּנָּה. בְּשָׁבוּעַ אֶחָד הָיָה חַם מְאוֹד, וְהַיְּלָדִים שָׁכְחוּ לְהַשְׁקוֹת. הַחַסָּה הִתְחִילָה לִנְבֹּל, כִּי צֶמַח בְּלִי מַיִם מִתְיַבֵּשׁ. הַמּוֹרָה הִצִּיעָה לִתְלוֹת לוּחַ תּוֹרָנוּת עַל הַדֶּלֶת. מֵאָז אַף אֶחָד לֹא שָׁכַח, וּבְסוֹף הַשָּׁנָה כָּל הַכִּתָּה אָכְלָה סָלָט מֵהַגִּנָּה.',
- p:'ילדי כיתה ב׳ החליטו לגדל גינת ירקות בחצר. קודם הם ניקו את האדמה מאבנים. אחר כך הם שתלו חסה, גזר ומלפפונים. כל יום שני ילדים השקו את הגינה. בשבוע אחד היה חם מאוד, והילדים שכחו להשקות. החסה התחילה לנבול, כי צמח בלי מים מתייבש. המורה הציעה לתלות לוח תורנות על הדלת. מאז אף אחד לא שכח, ובסוף השנה כל הכיתה אכלה סלט מהגינה.',q:[
+{lv:5,gk:'sci',goal:'צמח בלי מים נובל ומתייבש',les:1,t:'יַלְדֵי כִּתָּה ב׳ הֶחְלִיטוּ לְגַדֵּל גִּנַּת יְרָקוֹת בֶּחָצֵר. קֹדֶם הֵם נִקּוּ אֶת הָאֲדָמָה מֵאֲבָנִים. אַחַר כָּךְ הֵם שָׁתְלוּ חַסָּה, גֶּזֶר וּמְלָפְפוֹנִים. כָּל יוֹם הִשְׁקוּ שְׁנֵי יְלָדִים אֶת הַגִּנָּה. בְּשָׁבוּעַ אֶחָד הָיָה חַם מְאוֹד, וְהַיְּלָדִים שָׁכְחוּ לְהַשְׁקוֹת. הַחַסָּה הִתְחִילָה לִנְבֹּל, כִּי צֶמַח בְּלִי מַיִם מִתְיַבֵּשׁ. הַמּוֹרָה הִצִּיעָה לִתְלוֹת לוּחַ תּוֹרָנוּת עַל הַדֶּלֶת. מֵאָז אַף אֶחָד לֹא שָׁכַח, וּבְסוֹף הַשָּׁנָה כָּל הַכִּתָּה אָכְלָה סָלָט מֵהַגִּנָּה.',
+ p:'ילדי כיתה ב׳ החליטו לגדל גינת ירקות בחצר. קודם הם ניקו את האדמה מאבנים. אחר כך הם שתלו חסה, גזר ומלפפונים. כל יום השקו שני ילדים את הגינה. בשבוע אחד היה חם מאוד, והילדים שכחו להשקות. החסה התחילה לנבול, כי צמח בלי מים מתייבש. המורה הציעה לתלות לוח תורנות על הדלת. מאז אף אחד לא שכח, ובסוף השנה כל הכיתה אכלה סלט מהגינה.',q:[
  ['מָה עָשׂוּ הַיְּלָדִים קֹדֶם?','מה עשו הילדים קודם?','נִקּוּ אֶת הָאֲדָמָה מֵאֲבָנִים',['שָׁתְלוּ גֶּזֶר','הִשְׁקוּ אֶת הַגִּנָּה','אָכְלוּ סָלָט']],
  ['לָמָּה הַחַסָּה הִתְחִילָה לִנְבֹּל?','למה החסה התחילה לנבול?','כִּי שָׁכְחוּ לְהַשְׁקוֹת',['כִּי הָיָה קַר מְאוֹד','כִּי הַיְּלָדִים קָטְפוּ אוֹתָהּ','כִּי הָיוּ בָּהּ חֲרָקִים']],
  ['בְּמָה עָזַר לוּחַ הַתּוֹרָנוּת?','במה עזר לוח התורנות?','כֻּלָּם זָכְרוּ מָתַי לְהַשְׁקוֹת',['שָׁתְלוּ יוֹתֵר יְרָקוֹת','הַדֶּלֶת הָיְתָה יָפָה יוֹתֵר','סָפְרוּ אֶת הַיְּלָדִים']],
@@ -8468,7 +8543,7 @@ const RC=[
  ['מָה אֶפְשָׁר לִלְמֹד מֵהַסִּפּוּר?','מה אפשר ללמוד מהסיפור?','גַּם אַחֲרֵי טָעוּת אֶפְשָׁר לְהַמְשִׁיךְ',['אָסוּר לִטְעוֹת אַף פַּעַם','פְּסַנְתֵּר זֶה קָשֶׁה מִדַּי','צָרִיךְ לְנַגֵּן מַהֵר']]]}
 ];
 /* common words (plain form) that lose their nikud first, at the "partial nikud" stage */
-const EASY=['של','את','על','עם','הוא','היא','הם','הן','לא','כן','יש','אין','גם','כי','אבל','אז','זה','זאת','מאוד','כל','הרבה','אני','לו','לה','להם','היה','הייתה','היו','רק','אחד','אחת','יום','בית','אמא','אבא','סבא','ילד','ילדים','מה','מי','איפה','למה','כמה','אחרי','לפני','ליד','מעל','קטן','גדול','חדש','הביתה','יחד','בוקר','ערב','לילה','היום','מים','עץ','דג','כלב','חתול','שם','אל','איך','מתי','לאן','ממה'];
+const EASY=['של','את','על','עם','הוא','היא','הם','הן','לא','כן','יש','אין','גם','כי','אבל','אז','זה','זאת','מאוד','כל','הרבה','אני','לו','לה','להם','היה','הייתה','היו','רק','אחד','אחת','יום','בית','אמא','אבא','סבא','ילד','ילדים','מה','מי','איפה','למה','כמה','אחרי','לפני','ליד','מעל','קטן','גדול','חדש','הביתה','יחד','בוקר','ערב','לילה','היום','מים','עץ','דג','כלב','חתול','אל','איך','מתי','לאן','ממה'];
 
 /* ---------- word analogies: [level, a, b, c, answer, [distractors], rule] ---------- */
 const ANA=[
@@ -8520,13 +8595,14 @@ const PICCAT={
  food:{w:['apple','cake','egg','carrot'],n:'אֹכֶל'},
  sky:{w:['sun','moon','star','cloud','rainbow'],n:'דְּבָרִים בַּשָּׁמַיִם'},
  ride:{w:['car','boat'],n:'כְּלֵי תַּחְבּוּרָה'},
- wear:{w:['hat','shoe'],n:'בְּגָדִים'},
+ wear:{w:['hat','shoe'],n:'דְּבָרִים שֶׁלּוֹבְשִׁים'},
  plant:{w:['tree','flower','leaf'],n:'צְמָחִים'}};
 const PICNO=[['food','plant'],['food','ani']];
-/* opposites: [word, opposite, kind] — kind = part of speech + a group; distractors come from the same part of speech but another group */
+/* opposites: [word, opposite, kind] — kind = part of speech + a group; distractors come from the same part of speech but another group
+   (כָּבֵד/קַל and רַךְ/קָשֶׁה share a5: קַל also means "easy", the opposite of קָשֶׁה) */
 const OPP=[['גָּדוֹל','קָטָן','a1'],['חַם','קַר','a2'],['יוֹם','לַיְלָה','n1'],['לְמַעְלָה','לְמַטָּה','d1'],['פָּתוּחַ','סָגוּר','a3'],['מָלֵא','רֵיק','a4'],
  ['אָרֹךְ','קָצָר','a1'],['כָּבֵד','קַל','a5'],['מָהִיר','אִטִּי','a6'],['שָׂמֵחַ','עָצוּב','a7'],['רָטֹב','יָבֵשׁ','a8'],['חָזָק','חַלָּשׁ','a9'],
- ['נָקִי','מְלֻכְלָךְ','a10'],['חָדָשׁ','יָשָׁן','a11'],['רָחוֹק','קָרוֹב','a12'],['לִפְנֵי','אַחֲרֵי','d2'],['יָמִין','שְׂמֹאל','d3'],['רַךְ','קָשֶׁה','a13'],
+ ['נָקִי','מְלֻכְלָךְ','a10'],['חָדָשׁ','יָשָׁן','a11'],['רָחוֹק','קָרוֹב','a12'],['לִפְנֵי','אַחֲרֵי','d2'],['יָמִין','שְׂמֹאל','d3'],['רַךְ','קָשֶׁה','a5'],
  ['גָּבוֹהַּ','נָמוּךְ','a1'],['אוֹר','חֹשֶׁךְ','n1'],['הַרְבֵּה','מְעַט','d4'],['רָעֵב','שָׂבֵעַ','a14'],['קָדִימָה','אָחוֹרָה','d1'],['צָעִיר','זָקֵן','a11'],
  ['פְּנִימָה','הַחוּצָה','d1'],['נִכְנָס','יוֹצֵא','v1'],['צוֹחֵק','בּוֹכֶה','v2'],['זוֹכֵר','שׁוֹכֵחַ','v3'],['קוֹנֶה','מוֹכֵר','v4'],['נוֹתֵן','לוֹקֵחַ','v4'],
  ['בֹּקֶר','עֶרֶב','n1'],['קַיִץ','חֹרֶף','n2'],['שֶׁקֶט','רַעַשׁ','n3'],['עוֹלֶה','יוֹרֵד','v1']];
@@ -8541,7 +8617,7 @@ const CAT={
  furn:['רָהִיטִים',['שֻׁלְחָן','כִּסֵּא','מִטָּה','אָרוֹן','סַפָּה']],
  music:['כְּלֵי נְגִינָה',['תֹּף','גִּיטָרָה','פְּסַנְתֵּר','חֲלִיל','כִּנּוֹר']],
  body:['חֶלְקֵי גּוּף',['יָד','רֶגֶל','אַף','אֹזֶן','עַיִן','פֶּה']],
- kitchen:['כְּלֵי מִטְבָּח',['סִיר','מַחֲבַת','כַּף','מַזְלֵג','סַכִּין','צַלַּחַת']]};
+ kitchen:['כְּלֵי מִטְבָּח',['סִיר','מַחֲבַת','קְעָרָה','מַזְלֵג','סַכִּין','צַלַּחַת']]};
 const CATNO=[['fruit','veg']];
 /* part of a whole: [part, whole, gender of part, [distractors]] */
 const PART=[['עָנָף','עֵץ','m',['דָּג','עָנָן','נַעַל']],['דַּף','סֵפֶר','m',['כַּדּוּר','כּוֹס','שָׁעוֹן']],['מָחוֹג','שָׁעוֹן','m',['מִטָּה','חָלָב','עָנָן']],
@@ -8562,7 +8638,7 @@ const ODD=[[['מָטוֹס','צִפּוֹר','פַּרְפַּר'],'נָחָשׁ
 
 /* ---------- sentence completion: [level, sentence with ___, answer, [distractors]] (two blanks: answer "a … b") ---------- */
 const SEN=[
-[1,'הֶחָתוּל שׁוֹתֶה ___.','חָלָב',['נַעַל','כִּסֵּא','שֶׁמֶשׁ']],
+[1,'הַתִּינוֹק שׁוֹתֶה ___.','חָלָב',['נַעַל','כִּסֵּא','שֶׁמֶשׁ']],
 [1,'הַצִּפּוֹר ___ בַּשָּׁמַיִם.','עָפָה',['שׂוֹחָה','כּוֹתֶבֶת','אוֹפָה']],
 [1,'בַּלַּיְלָה אֲנַחְנוּ ___ בַּמִּטָּה.','יְשֵׁנִים',['שׂוֹחִים','נוֹסְעִים','טָסִים']],
 [1,'דָּנָה ___ סֵפֶר.','קוֹרֵאת',['שׁוֹתָה','טָסָה','נוֹבַחַת']],
@@ -8584,12 +8660,12 @@ const SEN=[
 [2,'בַּקַּיִץ חַם, וּבַחֹרֶף ___.','קַר',['חַם','מָתוֹק','גָּבוֹהַּ']],
 [3,'רָצִיתִי לָצֵאת לְשַׂחֵק, ___ יָרַד גֶּשֶׁם.','אֲבָל',['כִּי','לָכֵן','וְגַם']],
 [3,'הָיָה לִי קַר, ___ לָבַשְׁתִּי מְעִיל.','לָכֵן',['אֲבָל','כִּי','אוֹ']],
-[3,'רוֹנִי שָׂמֵחַ ___ הַיּוֹם יוֹם הַהֻלֶּדֶת שֶׁלּוֹ.','כִּי',['אֲבָל','לָכֵן','אִם']],
+[3,'רוֹנִי שָׂמֵחַ ___ הַיּוֹם יוֹם הַהֻלֶּדֶת שֶׁלּוֹ.','כִּי',['אֲבָל','לָכֵן','אוֹ']],
 [3,'אִם לֹא נְמַהֵר, ___ לָאוֹטוֹבּוּס.','נְאַחֵר',['נַקְדִּים','נִצְחַק','נִשְׁתֶּה']],
 [3,'הָעוּגָה הָיְתָה טְעִימָה מְאוֹד, ___ אָכַלְנוּ אֶת כֻּלָּהּ.','לָכֵן',['אֲבָל','כִּי','בְּלִי']],
 [3,'הַכֶּלֶב רָטֹב ___ הוּא קָפַץ לַבְּרֵכָה.','כִּי',['אֲבָל','לָכֵן','אוֹ']],
 [3,'אֲנִי אוֹהֵב תַּפּוּחִים, ___ אֲנִי לֹא אוֹהֵב אֲגָסִים.','אֲבָל',['כִּי','לָכֵן','כְּמוֹ']],
-[3,'הַיֶּלֶד עָיֵף ___ הוּא שִׂחֵק כָּל הַיּוֹם.','כִּי',['אֲבָל','לָכֵן','אִם']],
+[3,'הַיֶּלֶד עָיֵף ___ הוּא שִׂחֵק כָּל הַיּוֹם.','כִּי',['אֲבָל','לָכֵן','בְּלִי']],
 [3,'דָּנָה רָצָה הֲכִי ___ וְנִצְּחָה בַּמֵּרוֹץ.','מַהֵר',['לְאַט','נָמוּךְ','שָׁקֵט']],
 [3,'הַחַלּוֹן הָיָה פָּתוּחַ, ___ נִכְנְסָה רוּחַ קָרָה.','לָכֵן',['אֲבָל','כִּי','בְּלִי']],
 [4,'הַשָּׁמַיִם מְלֵאִים עֲנָנִים שְׁחֹרִים. כְּדַאי לָקַחַת ___.','מִטְרִיָּה',['מִשְׁקְפֵי שֶׁמֶשׁ','מְנִיפָה','בֶּגֶד יָם']],
@@ -8625,9 +8701,10 @@ const B=window.THINK_BANK;
 let rnd=Math.random;
 const ri=(a,b)=>a+Math.floor(rnd()*(b-a+1));
 const pk=a=>a[Math.floor(rnd()*a.length)];
-/* a random item of a finite bank, chosen by the learning engine (LEARN.pickItem: wrong ones back on schedule, unseen first, no repeats) and marked seen; plain random without it */
-const bkey=x=>JSON.stringify(x).slice(0,80);
-function lpick(bank,arr){const LN=typeof window!=='undefined'&&window.LEARN;if(LN&&LN.pickItem&&arr.length>1){try{const r=LN.pickItem(bank,arr.map(x=>({k:bkey(x)})));const it=r&&arr.find(x=>bkey(x)===r.item.k);if(it){LN.seen(bank,r.item.k,true,false);return it;}}catch(e){}}return pk(arr);}
+/* a random item of a finite bank, chosen by the learning engine (LEARN.pickItem: wrong ones back on schedule, unseen first, no repeats); plain random without it.
+   The next mk() question carries {bank, bkey}; the screen records the first answer with LEARN.seen (#360) */
+const bkey=x=>JSON.stringify(x).slice(0,80);let LB=null;
+function lpick(bank,arr){LB=null;const LN=typeof window!=='undefined'&&window.LEARN;if(LN&&LN.pickItem&&arr.length>1){try{const r=LN.pickItem(bank,arr.map(x=>({k:bkey(x)})));const it=r&&arr.find(x=>bkey(x)===r.item.k);if(it){LB={bank,bkey:r.item.k};return it;}}catch(e){}}return pk(arr);}
 const shuf=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
 const L=t=>`<span class="ltr">${t}</span>`;
 const MAXLV=5;
@@ -8639,7 +8716,7 @@ const T_=o=>({t:'tile',v:tile(o)});
 const okey=o=>o.t==='tile'?'T'+['s','c','n','z','r','f'].map(k=>o.v[k]).join(','):o.t==='spr'?`S${o.v},${o.n|0},${o.z|0},${o.fl|0},${o.up|0}`:o.t[0]+String(o.v);
 /* final question: answer + distractors (already distinct), shuffled */
 function mk(sk,lv,o){const all=[o.ans,...o.ds];const keys=all.map(okey);if(new Set(keys).size!==keys.length)throw new Error('dup opts '+sk+lv+' '+keys);
-  const opts=shuf(all);return Object.assign({sk,lv},o,{opts,ans:opts.findIndex(x=>okey(x)===okey(o.ans)),ds:undefined});}
+  const opts=shuf(all);const lb=LB;LB=null;return Object.assign({sk,lv},lb,o,{opts,ans:opts.findIndex(x=>okey(x)===okey(o.ans)),ds:undefined});}
 const nOpts=lv=>lv<=2?3:4;
 
 /* ---------- shapes & colors ---------- */
@@ -8732,7 +8809,7 @@ function genAna(lv){
     const ans=tile(C);ch.forEach(k=>{ans[k]=Bt[k];});
     const ds=tileDs(ans,ch,(lv<=3?3:4)-1,[C]);
     return mk('ana',lv,{kind:'analogy',a:{t:'tile',v:A},b:{t:'tile',v:Bt},c:{t:'tile',v:C},ans:{t:'tile',v:ans},ds,text:'כְּמוֹ בַּזּוּג הָרִאשׁוֹן — מָה חָסֵר?',
-      rule:`בַּזּוּג הָרִאשׁוֹן הִשְׁתַּנָּה ${ch.map(k=>TRN[k]).join(' וְ')}. אוֹתוֹ דָּבָר בַּזּוּג הַשֵּׁנִי.`,key:'t'+[A,Bt,C].map(x=>okey({t:'tile',v:x})).join()});}
+      rule:`בַּזּוּג הָרִאשׁוֹן ${ch.length>1?'הִשְׁתַּנּוּ':/^[sn]$/.test(ch[0])?'הִשְׁתַּנְּתָה':'הִשְׁתַּנָּה'} ${ch.map(k=>TRN[k]).join(' וְ')}. אוֹתוֹ דָּבָר בַּזּוּג הַשֵּׁנִי.`,key:'t'+[A,Bt,C].map(x=>okey({t:'tile',v:x})).join()});}
   const lvB=lv===2?3:lv;const it=lpick('th-ana',B.ANA.filter(x=>x[0]===lvB));const [,a,b,c,ans,ds,rule]=it;const n=lv<=3?3:4;
   const dd=shuf([...new Set(ds.filter(d=>d!==ans))]).slice(0,n-1);
   return mk('ana',lv,{kind:'analogy',a:{t:'txt',v:a},b:{t:'txt',v:b},c:{t:'txt',v:c},ans:{t:'txt',v:ans},ds:dd.map(v=>({t:'txt',v})),text:'כְּמוֹ בַּזּוּג הָרִאשׁוֹן — מָה חָסֵר?',rule:'הַקֶּשֶׁר: '+rule,key:'w'+a+c});}
@@ -8752,8 +8829,10 @@ function belongs(lv){const [A]=catPair();const ws=shuf(B.CAT[A][1]);const shown=
   return mk('rel',lv,{kind:'words',html:`<div class="thw sm">${shown.join(' · ')}</div>`,text:'מָה עוֹד שַׁיָּךְ לַקְּבוּצָה?',ans:{t:'txt',v:a},ds:others.map(v=>({t:'txt',v})),rule:`כֻּלָּם ${B.CAT[A][0]}`,key:'be'+shown.join()});}
 function part(lv){const [p,w,g,ds]=lpick('th-rel',B.PART);
   return mk('rel',lv,{kind:'words',html:`<div class="thw">${p}</div>`,text:g==='f'?'הִיא חֵלֶק שֶׁל...':'הוּא חֵלֶק שֶׁל...',ans:{t:'txt',v:w},ds:shuf(ds).slice(0,nOpts(lv)-1).map(v=>({t:'txt',v})),rule:`${p} — חֵלֶק שֶׁל ${w}`,key:'pa'+p});}
+/* "and": וּ before ב/מ/פ or a letter with shva, else וְ */
+const vav=w=>/^[במפ]/.test(w)||/ְ/.test((/^.([֑-ׇ]*)/.exec(w)||[])[1]||'')?'וּ':'וְ';
 function syn(lv){const [w,s,ds]=lpick('th-rel',B.SYN);
-  return mk('rel',lv,{kind:'words',html:`<div class="thw">${w}</div>`,text:'אֵיזוֹ מִלָּה אוֹמֶרֶת כִּמְעַט אוֹתוֹ דָּבָר?',ans:{t:'txt',v:s},ds:shuf(ds).slice(0,nOpts(lv)-1).map(v=>({t:'txt',v})),rule:`${w} וְ${s} — כִּמְעַט אוֹתוֹ דָּבָר`,key:'sy'+w});}
+  return mk('rel',lv,{kind:'words',html:`<div class="thw">${w}</div>`,text:'אֵיזוֹ מִלָּה אוֹמֶרֶת כִּמְעַט אוֹתוֹ דָּבָר?',ans:{t:'txt',v:s},ds:shuf(ds).slice(0,nOpts(lv)-1).map(v=>({t:'txt',v})),rule:`${w} ${vav(s)}${s} — כִּמְעַט אוֹתוֹ דָּבָר`,key:'sy'+w});}
 function hardOdd(lv){const [three,odd,why]=lpick('th-rel',B.ODD);
   return mk('rel',lv,{kind:'words',html:'',text:'אֵיזוֹ מִלָּה לֹא שַׁיֶּכֶת?',ans:{t:'txt',v:odd},ds:three.map(v=>({t:'txt',v})),rule:`הַשְּׁאָר ${why}`,key:'ho'+odd});}
 function genRel(lv){const f=pk({1:[picOdd],2:[picOdd,opp,opp],3:[wordOdd,opp,belongs],4:[part,syn,wordOdd,belongs],5:[hardOdd,hardOdd,syn,part]}[lv]);return f(lv);}
@@ -8773,7 +8852,7 @@ function genMth(lv){const n=nOpts(lv);const N=pk(B.NAMES),O=pk(B.OBJS);const he=
   if(k==='more'){let a=ri(2,7),b=ri(2,7);while(b===a)b=ri(2,7);const [s1,s2]=shuf(FRUIT);
     return mk('mth',lv,{kind:'math',html:'',text:'אֵיפֹה יֵשׁ יוֹתֵר?',ans:spr(a>b?s1:s2,{n:Math.max(a,b)}),ds:[spr(a>b?s2:s1,{n:Math.min(a,b)})],rule:L(`${Math.max(a,b)} > ${Math.min(a,b)}`),key:'mo'+a+b});}
   const max=lv<=2?10:lv===3?20:100;
-  if(k==='add'){const a=ri(1,max-2),b=ri(1,max-a);return num(a+b,{kind:'math',html:`<div class="sent2">${N.l} הָיוּ ${a} ${O}. ${he?'הוּא קִבֵּל':'הִיא קִבְּלָה'} עוֹד ${b}. כַּמָּה ${O} יֵשׁ ${he?'לוֹ':'לָהּ'} עַכְשָׁו?</div>`,text:'',rule:L(`${a} + ${b} = ${a+b}`),cands:[a-b>=0?a-b:a+b+1,a+b+10],key:'ad'+a+b});}
+  if(k==='add'){const a=ri(2,max-2),b=ri(1,max-a);return num(a+b,{kind:'math',html:`<div class="sent2">${N.l} הָיוּ ${a} ${O}. ${he?'הוּא קִבֵּל':'הִיא קִבְּלָה'} עוֹד ${b}. כַּמָּה ${O} יֵשׁ ${he?'לוֹ':'לָהּ'} עַכְשָׁו?</div>`,text:'',rule:L(`${a} + ${b} = ${a+b}`),cands:[a-b>=0?a-b:a+b+1,a+b+10],key:'ad'+a+b});}
   if(k==='sub'){const a=ri(3,max),b=ri(1,a-1);return num(a-b,{kind:'math',html:`<div class="sent2">${N.l} הָיוּ ${a} ${O}. ${he?'הוּא נָתַן':'הִיא נָתְנָה'} ${b} ${he?'לְחָבֵר':'לַחֲבֵרָה'}. כַּמָּה ${O} נִשְׁאֲרוּ ${he?'לוֹ':'לָהּ'}?</div>`,text:'',rule:L(`${a} − ${b} = ${a-b}`),cands:[a+b],key:'su'+a+b});}
   if(k==='gt'||k==='lt'){const x=ri(4,max-3);const big=k==='gt';const a=big?ri(x+1,max):ri(0,x-1);const pool=shuf(Array.from({length:max+1},(_,i)=>i).filter(v=>big?v<=x:v>=x)).slice(0,n-1);
     return mk('mth',lv,{kind:'math',html:'',text:big?`אֵיזֶה מִסְפָּר גָּדוֹל מִ-${x}?`:`אֵיזֶה מִסְפָּר קָטָן מִ-${x}?`,ans:{t:'num',v:a},ds:pool.map(v=>({t:'num',v})),rule:L(big?`${a} > ${x}`:`${a} < ${x}`),key:k+x+a});}
@@ -8800,7 +8879,7 @@ const easyWord=p=>{const b=bare(p);return EASY.has(b)||(/^[והבלמשכ]/.test
 function nikud(t,p,stage){if(!stage||!p)return t;if(stage>=2)return p;const tw=t.split(' '),pw=p.split(' ');if(tw.length!==pw.length)return t;return tw.map((w,i)=>easyWord(pw[i])?pw[i]:w).join(' ');}
 /* a passage (not used recently) with its questions as ready options */
 function rcPick(lv,recent){const pool=B.RC.map((x,i)=>i).filter(i=>B.RC[i].lv===lv);const fresh=pool.filter(i=>!(recent||[]).includes(i));let i=pk(fresh.length?fresh:pool);
-  const LN=typeof window!=='undefined'&&window.LEARN;if(LN&&LN.pickItem&&pool.length){try{const r=LN.pickItem('rc',(fresh.length?fresh:pool).map(j=>({k:B.RC[j].p})));const j=r&&(fresh.length?fresh:pool).find(j=>B.RC[j].p===r.item.k);if(j!=null){i=j;LN.seen('rc',B.RC[j].p,true,false);}}catch(e){}}
+  const LN=typeof window!=='undefined'&&window.LEARN;if(LN&&LN.pickItem&&pool.length){try{const r=LN.pickItem('rc',(fresh.length?fresh:pool).map(j=>({k:B.RC[j].p})));const j=r&&(fresh.length?fresh:pool).find(j=>B.RC[j].p===r.item.k);if(j!=null)i=j;}catch(e){}}
   const P=B.RC[i];const n=nOpts(lv>=4?4:2);
   const qs=P.q.map(([q,qp,a,ds],k)=>{const o=x=>x[0]==='@'?spr(x.slice(1)):{t:'txt',v:x};return mk('rc',lv,{kind:'rc',text:q,textP:qp,ans:o(a),ds:shuf(ds).slice(0,n-1).map(o),key:'rc'+i+'-'+k});});
   return {i,P,qs};}
@@ -8847,7 +8926,7 @@ function mergeTh(dst,src){if(!src||typeof src!=='object')return dst||blankTh();d
 function skillStat(save,sk,now){const d=lastDays(14,now),w1=d.slice(0,7),w2=d.slice(7);const [a,o]=sumK(save,d,sk),[a1,o1]=sumK(save,w1,sk),[a2,o2]=sumK(save,w2,sk);
   let tr=0;if(a1>=4&&a2>=4){const x=o1/a1-o2/a2;tr=x>.08?1:x<-.08?-1:0;}return {n:a,acc:a?o/a:null,tr};}
 
-return {GEN,genSer,genShp,genMat,genAna,genRel,genSen,genMth,rcPick,nikud,easyWord,strip,bare,okey,tile,COL,COLN,SHP,level,answer,nkAnswer,blankTh,MAXLV,TEST,testPlan,testSkills,
+return {clearLB:()=>{LB=null;},GEN,genSer,genShp,genMat,genAna,genRel,genSen,genMth,rcPick,nikud,easyWord,strip,bare,okey,tile,COL,COLN,SHP,level,answer,nkAnswer,blankTh,MAXLV,TEST,testPlan,testSkills,
   lastDays,logDay,hit,sumK,skillStat,mergeLog,mergeTh,dkey,setRandom:f=>{rnd=f||Math.random;}};})();
 
 /* ======================= part 2: the game ======================= */
@@ -8907,12 +8986,12 @@ function openTracks(){const s=S();if((s.set||{}).all)return ORDER.slice();const 
 /* the shared quiz screen: card, options, a gentle explanation after a mistake */
 function round(o){/* o: {id, sk, title, bg, back, n, next(i) → q, again} */
   let i=0,err=0,gems=0;const qs=[];O.setScreen('sTal',o.bg||'mount',o.back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq thq');s.appendChild(wrap);
-  const render=()=>{let q;for(let t=0;t<30;t++){q=o.next(i);if(!qs.some(x=>x.key===q.key))break;}qs.push(q);let tries=0,lock=false,first=true;
+  const render=()=>{let q;for(let t=0;t<30;t++){C.clearLB();q=o.next(i);if(!qs.some(x=>x.key===q.key))break;}qs.push(q);let tries=0,lock=false,first=true;
     T.hudT(o.title,T.progressBar(i,o.n));O.sayNow=T.plainHe((q.say||'')+' '+(q.text||''));wrap.innerHTML='';
     const card=h('div','prq tqc',`${promptHTML(q)}${q.text?`<div class="qq">${q.text}</div>`:''}`);wrap.appendChild(card);if(T.rdQ&&q.text)T.rdQ(q,card);
     const row=h('div','chs n'+q.opts.length+(q.opts[0].t==='num'?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+optCls(op),optHTML(op));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');
-    const done=(ok)=>{if(!first)return;first=false;const ch=C.answer(TH(),o.sk,ok);hit(o.sk,ok);O.persist();if(ch===1)O.floatText(card,'🎉 עָלִיתָ שָׁלָב!');};
+    const done=(ok)=>{if(!first)return;first=false;if(q.bank&&window.LEARN)try{window.LEARN.seen(q.bank,q.bkey,ok,false);}catch(e){}const ch=C.answer(TH(),o.sk,ok);hit(o.sk,ok);O.persist();if(ch===1)O.floatText(card,'🎉 עָלִיתָ שָׁלָב!');};
     const explain=()=>{ex.hidden=false;ex.innerHTML=`<div class="cap"><div>${sprTok(q.rule)}</div>${q.ruleItems?`<div class="thser sm">${q.ruleItems.map(x=>`<span class="thi">${optHTML(x)}</span>`).join('')}</div>`:''}</div>`;
       const nb=h('button','bigbtn sm',O.ICON.play+'<span>הַמְשֵׁךְ</span>');nb.onclick=()=>{sfx.pop(1);next();};ex.appendChild(nb);setTimeout(()=>nb.focus(),50);T.setKey(e=>{if(e.key==='Enter'||e.key===' ')nb.click();});};
     function pickA(k,b){if(lock||b.disabled)return;
@@ -8928,7 +9007,7 @@ function track(sk,back){round({id:SK[sk].id,sk,title:SK[sk].n,bg:'mount',back,n:
 
 /* ---------- reading comprehension ---------- */
 function readRC(back){const th=TH();th.rcR=th.rcR||[];let lv=C.level(th,'rc');let pi=0,err=0,gems=0;const NP=lv<=2?3:2;O.setScreen('sTal','city',back);const s=$('#sTal');
-  let wrapNow=null;const passage=()=>{lv=C.level(TH(),'rc');const pick=C.rcPick(lv,th.rcR);th.rcR=[...th.rcR,pick.i].slice(-12);let qi=0;
+  let wrapNow=null;const passage=()=>{lv=C.level(TH(),'rc');const pick=C.rcPick(lv,th.rcR);th.rcR=[...th.rcR,pick.i].slice(-12);let qi=0,perr=0;
     const ask=()=>{const q=pick.qs[qi];const nk=TH().nk|0;let tries=0,lock=false,first=true;
       T.hudT('קוֹרְאִים וּמְבִינִים',T.progressBar(pi,NP));s.innerHTML='';const wrap=h('div','tq thq rcq');wrapNow=wrap;s.appendChild(wrap);
       const card=h('div','prq tqc');const ps=h('div','thp'+(nk?' nk':''),T.nikudText(pick.P.t,pick.P.p));
@@ -8941,11 +9020,11 @@ function readRC(back){const th=TH();th.rcR=th.rcR||[];let lv=C.level(th,'rc');le
       const done=ok=>{if(!first)return;first=false;const ch=C.answer(TH(),'rc',ok);hit('rc',ok);if(nk||ch.nk)hit('nk',ok);O.persist();if(ch.lv===1)O.floatText(card,'🎉 עָלִיתָ שָׁלָב!');else if(ch.nk===1)O.floatText(card,'🎉 קוֹרֵא גַּם בְּלִי נִקּוּד!');};
       function pickA(k,b){if(lock||b.disabled)return;
         if(k===q.ans){lock=true;done(tries===0);b.classList.add('ok');sfx.ok(qi);const g=tries?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);setTimeout(nextQ,D(tries?1600:900));return;}
-        tries++;err++;done(false);b.classList.add('bad');b.disabled=true;sfx.no();if(lv===3)addSay();
+        tries++;err++;perr++;done(false);b.classList.add('bad');b.disabled=true;sfx.no();if(lv===3)addSay();
         if(tries>=2){lock=true;row.children[q.ans].classList.add('show');setTimeout(nextQ,D(2400));}}
       T.setKey(e=>{if(/^[1-9]$/.test(e.key)){const b=row.children[+e.key-1];if(b)b.click();}});
       window.__think={q,get ans(){return q.ans;},wrap,i:qi};};
-    const nextQ=()=>{if(!wrapNow||!wrapNow.isConnected)return;qi++;if(qi<pick.qs.length)ask();else{pi++;if(pi<NP)passage();else{T.setKey(null);T.finishAct('read-rc',err,NP*3,gems,back,()=>readRC(back));}}};
+    const nextQ=()=>{if(!wrapNow||!wrapNow.isConnected)return;qi++;if(qi<pick.qs.length)ask();else{if(window.LEARN)try{window.LEARN.seen('rc',pick.P.p,!perr,false);}catch(e){}pi++;if(pi<NP)passage();else{T.setKey(null);T.finishAct('read-rc',err,NP*3,gems,back,()=>readRC(back));}}};
     ask();};
   passage();}
 
@@ -8958,7 +9037,7 @@ function challenge(back){const tl=testLv();if(!tl)return back();const plan=C.tes
     s.appendChild(h('div','whead',`<span class="gd">🏆</span><h1>אֶתְגַּר הָאַלּוּפִים</h1>`));
     s.appendChild(h('div','lsent',`${plan.length>1?`פֶּרֶק ${ci+1} מִתּוֹךְ ${plan.length}.<br>`:''}${ch.n} שְׁאֵלוֹת. יֵשׁ ${ch.sec/60} דַּקּוֹת.<br>קוֹרְאִים בְּעִיּוּן וּבוֹחֲרִים. אֶפְשָׁר לְדַלֵּג וְלַחְזֹר.`));
     const row=h('div','btnrow');const go=h('button','bigbtn',O.ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=()=>{sfx.pop(2);chapter(ch);};row.appendChild(go);s.appendChild(row);setTimeout(()=>go.focus(),100);};
-  function chapter(ch){const sks=C.testSkills(ch);const qs=sks.map(sk=>{if(sk!=='rc')return C.GEN[sk](C.level(TH(),sk));const p=C.rcPick(Math.min(C.level(TH(),'rc'),3));return Object.assign(O.pick(p.qs),{pt:p.P.t,pp:p.P.p});});
+  function chapter(ch){const sks=C.testSkills(ch);const qs=sks.map(sk=>{C.clearLB();if(sk!=='rc')return C.GEN[sk](C.level(TH(),sk));const p=C.rcPick(Math.min(C.level(TH(),'rc'),3));return Object.assign(O.pick(p.qs),{pt:p.P.t,pp:p.P.p});});
     const got=qs.map(()=>null);let i=0,left=ch.sec;const t0=Date.now();O.setScreen('sTal','final',()=>{clearInterval(iv);back();});
     const wrap=h('div','tq thq');s.innerHTML='';const bar=h('div','thtime','<i></i><span></span>');s.appendChild(bar);s.appendChild(wrap);
     const tick=()=>{left=Math.max(0,ch.sec-Math.round((Date.now()-t0)/1000));bar.firstChild.style.width=(left/ch.sec*100)+'%';bar.lastChild.textContent='⏳';bar.classList.toggle('low',left<=30);if(left<=0)finish();};
@@ -8971,7 +9050,7 @@ function challenge(back){const tl=testLv();if(!tl)return back();const plan=C.tes
     /* after the last question, go back to the ones that were skipped; finish when all are answered */
     const step=()=>{const open=qs.map((_,k)=>k).filter(k=>got[k]==null);if(!open.length)return finish();const nx=open.find(k=>k>i);i=nx!=null?nx:open[0];render();};
     let ended=false;function finish(){if(ended)return;ended=true;clearInterval(iv);T.setKey(null);
-      qs.forEach((q,k)=>{const good=got[k]===q.ans;tot++;if(good)ok++;if(got[k]!=null){hit(q.sk,good);}hit('tst',good);});O.persist();
+      qs.forEach((q,k)=>{const good=got[k]===q.ans;tot++;if(good)ok++;if(got[k]!=null){hit(q.sk,good);if(q.bank&&window.LEARN)try{window.LEARN.seen(q.bank,q.bkey,good,false);}catch(e){}}hit('tst',good);});O.persist();
       ci++;if(ci<plan.length)return pause();end();}
     tick();render();}
   const pause=()=>{s.innerHTML='';O.setScreen('sTal','final',back);s.appendChild(h('div','whead',`<span class="gd">⭐</span><h1>סִיַּמְתָּ פֶּרֶק!</h1>`));s.appendChild(h('div','lsent','נְשִׁימָה עֲמֻקָּה, מִתְמַתְּחִים... וּמַמְשִׁיכִים.'));
@@ -9320,7 +9399,7 @@ const WT=[
  {id:'pi-book',th:'piano',lv:[2,4],f:'a-b',g:x=>{const [a,b]=pair(x.lv);return [`בַּסֵּפֶר שֶׁל ${x.N} יֵשׁ ${x.c(a,'song')}. ${x.v('הוּא כְּבָר יוֹדֵעַ','הִיא כְּבָר יוֹדַעַת')} לְנַגֵּן ${x.c(b,'song')}. כַּמָּה שִׁירִים ${x.v('הוּא עוֹד לֹא יוֹדֵעַ','הִיא עוֹד לֹא יוֹדַעַת')}?`,a,b];}},
  {id:'pi-months',th:'piano',lv:[4,5],f:'a*b-c',g:x=>{const a=ri(2,4),b=ri(3,6),c=ri(2,a*b-1);return [`${x.N} ${x.v('לָמַד','לָמְדָה')} ${x.c(a,'song')} בְּכָל חֹדֶשׁ, בְּמֶשֶׁךְ ${x.c(b,'month')}. ${x.c(c,'song')} ${x.v('הוּא שָׁכַח','הִיא שָׁכְחָה')}. כַּמָּה שִׁירִים ${x.v('הוּא זוֹכֵר','הִיא זוֹכֶרֶת')} עַכְשָׁו?`,a,b,c];}},
  {id:'pi-test',th:'piano',lv:[3,4],f:'a-b',g:x=>{const a=pk([20,30,40,50,60]),b=ri(5,a-3);return [`לִפְנֵי הַהוֹפָעָה ${x.N} ${x.v('צָרִיךְ','צְרִיכָה')} לְהִתְאַמֵּן ${x.c(a,'minute')}. ${x.v('הוּא כְּבָר הִתְאַמֵּן','הִיא כְּבָר הִתְאַמְּנָה')} ${x.c(b,'minute')}. כַּמָּה דַּקּוֹת עוֹד ${x.v('חֲסֵרוֹת לוֹ','חֲסֵרוֹת לָהּ')}?`,a,b];}},
- {id:'pi-keys',th:'piano',lv:[3,5],f:'a+b',g:x=>{const a=ri(14,52),b=ri(10,36);return [`לַפְּסַנְתֵּר שֶׁל ${x.N} יֵשׁ ${x.c(a,'key')} לְבָנִים ${x.c(b,'key','וְ')} שְׁחֹרִים. כַּמָּה קְלִידִים יֵשׁ לַפְּסַנְתֵּר?`,a,b];}},
+ {id:'pi-keys',th:'piano',lv:[3,5],f:'a+b',g:x=>{const [a,b]=pk([[52,36],[36,25],[29,20],[22,15],[15,10]]);return [`לַפְּסַנְתֵּר שֶׁל ${x.N} יֵשׁ ${x.c(a,'key')} לְבָנִים ${x.c(b,'key','וְ')} שְׁחֹרִים. כַּמָּה קְלִידִים יֵשׁ לַפְּסַנְתֵּר?`,a,b];}},
  /* ---- building ---- */
  {id:'bl-add',th:'build',lv:[1,3],f:'a+b',g:x=>{const [a,b]=split(x.lv,3);return [`${x.N} ${x.v('בָּנָה','בָּנְתָה')} מִגְדָּל מִ-${B(a)} בְּלוֹקִים. ${x.v('הוּא הוֹסִיף','הִיא הוֹסִיפָה')} עוֹד ${x.c(b,'block')}. מִכַּמָּה בְּלוֹקִים בָּנוּי הַמִּגְדָּל עַכְשָׁו?`,a,b];}},
  {id:'bl-sub',th:'build',lv:[1,3],f:'a-b',g:x=>{const [a,b]=pair(x.lv);return [`בַּקֻּפְסָה הָיוּ ${x.c(a,'block')}. ${x.N} ${x.v('לָקַח','לָקְחָה')} ${x.c(b,'block')} לַבִּנְיָן. כַּמָּה בְּלוֹקִים נִשְׁאֲרוּ בַּקֻּפְסָה?`,a,b];}},
@@ -9374,7 +9453,7 @@ const CH={
    let t,u;do{u=ri(0,8);t=ri(u+1,9);}while(t+u>18);const s=t+u,d=t-u;return {kind:'digits2',p:{s,d},v:t*10+u,text:`אֲנִי מִסְפָּר דּוּ-סִפְרָתִי. סְכוּם הַסְּפָרוֹת שֶׁלִּי הוּא ${B(s)}, וְסִפְרַת הָעֲשָׂרוֹת גְּדוֹלָה בְּ-${B(d)} מִסִּפְרַת הָאֲחָדוֹת. מִי אֲנִי?`,ds:[u*10+t,t*10+u+1,s*10+d].filter(x=>x<100),key:'h'+s+d};},
  grow:lv=>{let seq,rule;if(lv<=3){const a=ri(1,10),d0=ri(1,2);seq=[a];for(let j=0;j<5;j++)seq.push(seq[j]+d0+j);rule='הַקְּפִיצָה גְּדֵלָה בְּ-1 כָּל פַּעַם';}
    else if(lv===4){const a=ri(10,30),x=ri(3,6),y=ri(1,x-1);seq=[a];for(let j=0;j<5;j++)seq.push(seq[j]+(j%2?-y:x));rule=`קָדִימָה ${x}, אָחוֹרָה ${y}, וְשׁוּב`;}
-   else{const a=ri(1,5),k=2;seq=[a];for(let j=0;j<4;j++)seq.push(seq[j]*k);rule='כָּל מִסְפָּר כָּפוּל 2 מֵהַקּוֹדֵם';}
+   else{const a=ri(1,5),k=2;seq=[a];for(let j=0;j<4;j++)seq.push(seq[j]*k);rule='כָּל מִסְפָּר גָּדוֹל פִּי 2 מֵהַקּוֹדֵם';}
    const v=seq.pop();return {kind:'grow',p:{seq},v,html:`<div class="lnx lnseq">${L(seq.join(', ')+', ?')}</div>`,text:'מָה הַמִּסְפָּר הַבָּא? חַפֵּשׂ אֶת הַחֻקִּיּוּת.',rule,ds:[v+1,v-1,2*seq[seq.length-1]-seq[seq.length-2]],key:'q'+seq.join(',')};},
  legs:lv=>{const a=ri(2,lv===5?6:4),b=ri(2,lv===5?6:4);return {kind:'legs',p:{a,b},v:4*a+2*b,text:`בֶּחָצֵר יֵשׁ ${count(a,'dog')} וְעוֹד ${count(b,'hen')}. לְכָל כֶּלֶב יֵשׁ ${B(4)} רַגְלַיִם, וּלְכָל תַּרְנְגֹלֶת יֵשׁ שְׁתֵּי רַגְלַיִם. כַּמָּה רַגְלַיִם יֵשׁ לְכֻלָּם בְּיַחַד?`,ds:[2*(a+b),4*(a+b),4*a+2*b+2],key:'l'+a+b};},
 };
@@ -9426,19 +9505,20 @@ function seen(st,bank,key,ok,helped){st=ensure(st);st.sn=st.sn||{};st.wr=st.wr||
   else if(w[h]&&w[h][0]<=t){const step=w[h][1]+1;if(step>3)delete w[h];else w[h]=[t+IV[step],step];}
   const ks=Object.keys(w);if(ks.length>WR_CAP)ks.sort((a,b)=>w[a][0]-w[b][0]).slice(0,ks.length-WR_CAP).forEach(k=>delete w[k]);
   if(!ks.length)delete st.wr[bank];return isNew;}
-/* items: [{k, lv?}] or keys · o: {lv: level filter, upto: ≤ lv, exclude: Set of keys, mastered: allow spot reviews}
-   order: a wrong item that is due → an unseen item at his level → (mastered) a 15% spot review → the oldest seen item */
-function pickItem(st,bank,items,o){st=ensure(st);o=o||{};const t=today();const ex=o.exclude||new Set();
+/* items: [{k, lv?}] or keys · o: {lv: level filter, upto: ≤ lv, exclude: Set of keys, mastered: allow spot reviews, held: Set of keys picked and not answered yet}
+   order: a wrong item that is due → an unseen item at his level → (mastered) a 15% spot review → the oldest seen item. A held item is skipped while others are left.
+   Picking records nothing: the pack calls seen() once, after the answer (#360). */
+function pickItem(st,bank,items,o){st=ensure(st);o=o||{};const t=today();const ex=o.exclude||new Set(),hd=o.held||new Set();
   const all=items.map(x=>typeof x==='object'?x:{k:x}).filter(x=>!ex.has(x.k));
   const atLv=o.lv==null?all:all.filter(x=>x.lv==null||(o.upto?x.lv<=o.lv:x.lv===o.lv));const pool=atLv.length?atLv:all;if(!pool.length)return null;
   const w=(st.wr||{})[bank]||{};const sn=snList(st,bank);const pos=new Map(sn.map((h,i)=>[h,i]));
-  const due=pool.filter(x=>{const e=w[hash(x.k)];return e&&e[0]<=t;}).sort((a,b)=>w[hash(a.k)][0]-w[hash(b.k)][0]);
+  const due=pool.filter(x=>{const e=w[hash(x.k)];return e&&e[0]<=t&&!hd.has(x.k);}).sort((a,b)=>w[hash(a.k)][0]-w[hash(b.k)][0]);
   if(due.length)return {item:due[0],why:'review'};
-  const fresh=pool.filter(x=>!pos.has(hash(x.k)));const old=pool.filter(x=>pos.has(hash(x.k))&&!w[hash(x.k)]);
+  const fresh=pool.filter(x=>!pos.has(hash(x.k))&&!hd.has(x.k));const old=pool.filter(x=>pos.has(hash(x.k))&&!w[hash(x.k)]&&!hd.has(x.k));
   if(o.mastered&&old.length&&rnd()<.15)return {item:pk(old),why:'spot'};
   if(fresh.length)return {item:pk(fresh),why:'new'};
-  const rec=pool.filter(x=>!w[hash(x.k)]||w[hash(x.k)][0]<=t);const src=rec.length?rec:pool;
-  return {item:src.slice().sort((a,b)=>pos.get(hash(a.k))-pos.get(hash(b.k)))[0],why:'recycle'};}
+  const rec=pool.filter(x=>(!w[hash(x.k)]||w[hash(x.k)][0]<=t)&&!hd.has(x.k));const src=rec.length?rec:pool;const at=x=>pos.has(hash(x.k))?pos.get(hash(x.k)):-1;
+  return {item:src.slice().sort((a,b)=>at(a)-at(b))[0],why:'recycle'};}
 /* unseen items left at his level, and how many weeks that is at his pace (new items a week, last 14 days; perWeek when no data) */
 function runwayOf(st,bank,items,o){st=ensure(st);o=o||{};const t=today();const sn=new Set(snList(st,bank));
   const all=items.map(x=>typeof x==='object'?x:{k:x});const atLv=o.lv==null?all:all.filter(x=>x.lv==null||(o.upto?x.lv<=o.lv:x.lv===o.lv));
@@ -9451,6 +9531,8 @@ function mergeSeen(dst,src){for(const b in src.sn||{}){dst.sn=dst.sn||{};const a
 
 /* ---------- the stateless API: works on the bound state (the game binds save.lrn; Node tests get a private one) ---------- */
 const BIND={};
+/* items picked in this page but not answered yet (bank → key → ms): one quiz does not ask the same item twice; forgotten after 20 minutes */
+const HELD={};const held=b=>{const m=HELD[b]||(HELD[b]=new Map());const t=nowFn();for(const [k,v] of m)if(t-v>12e5)m.delete(k);return m;};
 const S=()=>BIND.state?BIND.state():(BIND._st=ensure(BIND._st));
 const DRILL_IDS=['mm-ten','mm-dbl','mm-comp','mm-skip','mm-pv','wp','ch'];
 const drillCands=st=>DRILL_IDS.map(sk=>({skill:sk,step:'ln-math',dom:'math',topic:sk==='wp'?'word':sk==='ch'?'chal':'mental',frontier:!(st.k[sk]||{}).n,name:PAR[sk]}));
@@ -9470,8 +9552,8 @@ return {core,
   summary:()=>summary(S(),BIND.names||(sk=>PAR[sk]||sk)),
   state:()=>S(),
   bind:o=>{Object.assign(BIND,o);},
-  seen:(bank,key,ok,helped)=>{const r=seen(S(),bank,key,ok,helped);BIND.after&&BIND.after();return r;},
-  pickItem:(bank,items,o)=>pickItem(S(),bank,items,o),hash,
+  seen:(bank,key,ok,helped)=>{if(HELD[bank])HELD[bank].delete(key);const r=seen(S(),bank,key,ok,helped);BIND.after&&BIND.after();return r;},
+  pickItem:(bank,items,o)=>{const hd=held(bank);const r=pickItem(S(),bank,items,Object.assign({},o,{held:new Set([...hd.keys(),...((o&&o.held)||[])])}));if(r)hd.set(r.item.k,nowFn());return r;},hash,
   merge,zone,eff,acc,isDue,placeStart,placeStep,placeDone,placeResult,
   MM,MM_IDS,DRILL_IDS,PW,WT,WT_BY_LV,wordQ,solve,CH,CH_BY_LV,chalQ,PM,PW,paperQ,gen,count,NOUN,NAMES_M,NAMES_F,lp,vav,MATH_LADDER,KID,PAR,IV,QUICK,maxLv,dayNum,
   setRandom:f=>{rnd=f||Math.random;},setNow:f=>{nowFn=f||(()=>Date.now());}};})();
@@ -9691,6 +9773,7 @@ const E=t=>/^\d+$/.test(String(t))?String(t):`<span class="ltr">${t}</span>`;   
 const strip=s=>String(s==null?'':s).replace(/<svg[\s\S]*?<\/svg>/g,' ').replace(/<[^>]+>/g,' ').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&amp;/g,'&').replace(/\s+/g,' ').trim();
 const plain=s=>strip(s).replace(/[֑-ׇ]/g,'');
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const track=d=>{try{O().track&&O().track('help',d);}catch(e){}};/* #348 event log */
 const cfg={idle:25000,teachP:.5,keep:40};/* #347: teach-back only after a helped question, at most once a day (DB().tday) */
 
 /* ---------- speech: numbers and signs as words (voice only) ---------- */
@@ -9858,7 +9941,7 @@ register('add-make10',binX({topic:()=>'חיבור עם מעבר עשרת (השל
 
 const tensOnesSteps=(d,sign)=>{const ta=tens(d.l),tb=tens(d.r),oa=d.l%10,ob=d.r%10,add=sign==='+';const T=add?ta+tb:ta-tb,Ox=add?oa+ob:oa-ob,out=[];
   if(tb)out.push(`קֹדֶם הָעֲשָׂרוֹת: ${E(`${ta} ${sign} ${tb} = ${T}`)}`);
-  if(ob)out.push(`אַחַר כָּךְ הָאֲחָדוֹת: ${E(`${oa} ${sign} ${ob} = ${Ox}`)}`);
+  if(ob)out.push(`${tb?'אַחַר כָּךְ':'קֹדֶם'} הָאֲחָדוֹת: ${E(`${oa} ${sign} ${ob} = ${Ox}`)}`);
   if(add&&Ox>=10)out.push(`${E(Ox)} אֲחָדוֹת ← עוֹד עֶשֶׂרֶת!`);
   if(T&&Ox&&(tb||ob))out.push(`בְּיַחַד: ${E(`${T} + ${Ox} = ${d.res}`)}`);
   out.push(E(eqFull(d)));return out;};
@@ -9917,7 +10000,7 @@ register('sub-2d',binX({topic:()=>'חיסור עשרות ואחדות',tip:()=>'
   teach:()=>['הוֹרַדְתִּי עֲשָׂרוֹת וַאֲחָדוֹת','סָפַרְתִּי אָחוֹרָה','זָכַרְתִּי בְּעַל פֶּה']}));
 
 register('sub-cross',binX({topic:()=>'חיסור עם פריטה (מעבר עשרת)',tip:()=>'להוריד קודם את העשרות, אחר כך לרדת עד העשרת העגולה, ומשם את השאר',
-  hint:d=>d.r>=10?'טִיפּ: קֹדֶם תּוֹרִיד אֶת הָעֲשָׂרוֹת':`טִיפּ: קֹדֶם תֵּרֵד עַד ${E(tens(d.l))}`,
+  hint:d=>d.r>=10?'טִיפּ: קֹדֶם תּוֹרִיד אֶת הָעֲשָׂרוֹת':`טִיפּ: קֹדֶם תֵּרֵד עַד ${E(d.l%10===0?d.l-10:tens(d.l))}`,
   visual:d=>{const tr=tens(d.r),o=d.r%10,m=d.l-tr,hops=[];if(tr)hops.push({a:d.l,b:m,lbl:'−'+tr});const mo=m%10;if(mo){hops.push({a:m,b:tens(m),lbl:'−'+mo});hops.push({a:tens(m),b:d.res,lbl:'−'+(o-mo)});}else hops.push({a:m,b:d.res,lbl:'−'+o});
     return {cap:'קוֹפְצִים אָחוֹרָה בַּחֲלָקִים',svg:vLine(tens(d.res),d.l%10?tens(d.l)+10:d.l,hops,d.res)};},
   similar:d=>differ(()=>{if(d.r<10){let l;do{l=R(21,99);}while(l%10>8);return bin(l,'−',R(l%10+1,9));}const at=R(3,9),a1=R(0,8),b1=R(a1+1,9),bt=R(1,at-2);return bin(at*10+a1,'−',bt*10+b1);},d),
@@ -10089,7 +10172,7 @@ function arm(){if(!S)return;clearTimeout(S.idleT);const ms=+((((O().save||{}).se
   S.idleT=setTimeout(()=>{if(!S)return;if(S.ctx.mount&&!S.ctx.mount.isConnected)return stop();if(document.hidden||ovOpen()||S.busy)return arm();onIdle();},ms);}
 function onIdle(){if(!S)return;if(S.phase==='solo'){if(S.level===0)step(1);else arm();return;}
   if(S.level<(S.ex.reading?3:3))step(S.level+1);else arm();}
-function step(n){const st=S;if(!st)return;st.level=n;const ex=st.ex,d=st.d;
+function step(n){const st=S;if(!st)return;st.level=n;const ex=st.ex,d=st.d;if(n<=(ex.reading?3:4))track({h:ex.reading?['','sound','syllables','word'][n]||'parents':['','tip','picture','example','solo'][n],n,ty:d.type});
   if(n===1&&st.phase!=='solo'&&!st.key)st.key=recordStuck(st);
   if(ex.reading){
     if(n===1){const h=ex.hint(d);showPanel(1,`<div class="hlp-t">${h.t}</div>`,h.say);}
@@ -10125,14 +10208,14 @@ function example(){const st=S;const d2=simData(st);if(!d2)return parents();st.d2
 function solo(){const st=S;const q3=st.ctx.present?simHostQ(st,st.d2?keyOf(st.d2):null):null;
   if(!q3){st.phase='after';hidePanel();arm();return;}
   pend={q:q3,from:st};hidePanel();st.ctx.present(q3);}
-function parents(){const st=S;if(!st)return;st.busy=true;clearTimeout(st.idleT);hidePanel();const ex=st.ex,d=st.d;
+function parents(){const st=S;if(!st)return;track({h:'parents',ty:st.d&&st.d.type});st.busy=true;clearTimeout(st.idleT);hidePanel();const ex=st.ex,d=st.d;
   const show=ex.show?ex.show(d):'',showHTML=st.q&&st.q.k==='ch'?`<div class="hlp-intro">${st.q.pr}</div>`:show?(/[א-ת]/.test(show)?`<div class="hlp-intro">${show}</div>`:`<div class="hlp-q">${E(esc(show))}</div>`):'';
   const card=openOv(`<div class="hlp-f big bob">${pet()}</div><h2>בּוֹא נִקְרָא לְאַבָּא אוֹ לְאִמָּא, נִפְתֹּר יַחַד</h2>${showHTML}${ex.tip?`<div class="hlp-tip">להורה: ${esc(ex.tip(d))}</div>`:''}`,'hlp-par-call');
   if(!card)return;xBtn(card,()=>{closeOv();if(S===st){S.busy=false;stop();}});const row=el('btnrow');row.appendChild(btn('bigbtn','<span>פָּתַרְנוּ יַחַד!</span>',()=>{closeOv();const c=st.ctx;if(S===st){S.busy=false;stop();}if(c.done)c.done('parents');}));card.appendChild(row);
   say('בּוֹא נִקְרָא לְאַבָּא אוֹ לְאִמָּא, נִפְתֹּר יַחַד');try{O().sfx&&O().sfx.star&&O().sfx.star(0);}catch(e){}}
 function teach(st){const ex=st.ex;if(!ex.teach)return false;const opts=shuffle(ex.teach(st.d));
   const eq=st.d.l!=null&&st.d.op?E(eqFull(st.d)):'';const card=openOv(`<div class="hlp-h"><span class="hlp-f">${pet()}</span><h2>תַּסְבִּיר לִי, אֵיךְ עָשִׂיתָ?</h2></div>${eq?`<div class="hlp-q">${eq}</div>`:''}<div class="hlp-opts"></div>`,'hlp-tb');
-  if(!card)return false;xBtn(card,closeOv);const box=card.querySelector('.hlp-opts');DB().tday=today();persist();
+  if(!card)return false;try{O().track&&O().track('pop',{p:'tb'});}catch(e){}xBtn(card,closeOv);const box=card.querySelector('.hlp-opts');DB().tday=today();persist();
   const done=pick_=>{const db=DB();db.tb.push({d:today(),type:st.d.type,ex:plain(ex.show?ex.show(st.d):''),pick:plain(pick_)});db.tb=db.tb.slice(-30);persist();
     box.innerHTML=`<div class="hlp-thanks">אֵיזֶה הֶסְבֵּר יָפֶה!</div>`;card.querySelector('.hlp-aloud')&&card.querySelector('.hlp-aloud').remove();say('אֵיזֶה הֶסְבֵּר יָפֶה!');try{O().sfx.ok(3);}catch(e){}setTimeout(closeOv,D(1500));};
   opts.forEach(o=>box.appendChild(btn('chb tx hlp-opt',`<span>${o}</span>`,()=>done(o))));
@@ -10378,6 +10461,9 @@ step('health',()=>{if(W.HEALTH&&W.HEALTH.wrapRuns)W.HEALTH.wrapRuns();});
 
 /* day log: every activity run opens a log line (after all packs added theirs); path steps he did not reach yesterday */
 step('daylog',()=>{const D=W.DAYLOG;if(!D)return;D.wrap();D.pathLeft();});
+
+/* event log (#348): every activity run is a 'mission opened' event (after all packs added or replaced their runs) */
+step('evlog',()=>{if(!O.evMission)return;Object.values(T.ACT).forEach(a=>{if(!a.run||a.run._ev)return;const r=a.run;const f=back=>{O.evMission(a.id);return r(back);};f._ev=1;a.run=f;});});
 })();
 
 </script>
