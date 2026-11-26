@@ -103,3 +103,26 @@ assert any(a[:3] == ("issue", "comment", "3") and "OWNER ANSWER" in a[-1] for a 
 assert any(s[0] == "orchestrator" and "resume" in s[1] for s in h.sent), h.sent
 (R.RUNS / "3" / "where").unlink()
 print("ok qwin runner-managed cloud answer")
+
+# #281: claude is started through the bash wrapper (like worker windows), never as claude.CMD directly (Windows cannot spawn a .cmd)
+argv = h.t["question-3"]["argv"]
+i = argv.index(R.BASH)
+assert argv[i + 1] == "-c" and argv.index("--model") > i, argv
+print("ok qwin starts claude via bash")
+
+# #281: opening fails -> one retry; after 2 failures: no more retries, the orchestrator pushes the question once (text + link)
+class FailHerdr(FakeHerdr):
+    def hc(self, *a, **kw):
+        if a[0] == "run": self.calls.append(a); return 1, "spawn_failed cannot start claude.CMD"
+        return super().hc(*a, **kw)
+f = FailHerdr(); QW._hc = f.hc; QW.STATE = tmp / "qwin_fail.json"
+opened[:] = [{"key": "kf", "window": "#9", "source": "issue-9", "text": "צבע?", "url": "https://x/9"}]
+runs = lambda: sum(a[0] == "run" for a in f.calls)
+QW.tick(f.ts(), now=1); assert runs() == 1 and not f.sent
+QW.tick(f.ts(), now=61); assert runs() == 2, f.calls
+fb = [s for s in f.sent if s[0] == "orchestrator"]
+assert len(fb) == 1 and "PushNotification" in fb[0][1] and "צבע?" in fb[0][1] and "https://x/9" in fb[0][1], f.sent
+for k in range(5): QW.tick(f.ts(), now=121 + 60 * k)
+assert runs() == 2 and len([s for s in f.sent if s[0] == "orchestrator"]) == 1, (f.calls, f.sent)
+opened.clear(); QW.tick(f.ts(), now=999); assert QW.load() == {}          # answered: state cleaned up
+print("ok qwin open failure -> push via orchestrator once")

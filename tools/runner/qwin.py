@@ -65,7 +65,7 @@ def plan(open_qs, ts, st, now):
     busy = {n for n in live if (n or "").startswith("question-")} - {st[k]["name"] for k in close}
     start = []
     for q in open_qs:
-        if q["key"] in st: continue                     # one window per question, ever (no duplicates after a restart either)
+        if q["key"] in st and st[q["key"]].get("fails") != 1: continue   # one window per question, ever; #281: one retry after a failed open
         name = win_name(q)
         if name in busy or len(busy) >= MAX_WINDOWS: continue   # waits: same issue's earlier question, or 3 windows open
         busy.add(name); start.append(q)
@@ -112,11 +112,20 @@ def open_window(q, name):
     _hc("rm", name, timeout=30)                          # a finished terminal of that name (an earlier question)
     rc, out = _hc("run", "--bg", "--outlive-parent", "--name", name, "--cwd", R.CFG.get("main_checkout", str(R.ROOT)),
                   "--label", f"issue={issue_no(q)}", "--label", "role=question", *space_args(),
+                  # #281: through bash like worker windows (runner.agent): herdr cannot spawn claude.CMD directly on Windows
+                  R.BASH, "-c", 'export PATH="$1:$PATH"; shift; "$@"', "_", R.CFG["extra_path"],
                   shutil.which("claude") or "claude", "--model", "haiku", "--remote-control", f"oren-{name}",
                   "--permission-mode", "auto", "--allowedTools", *TOOLS, "--", prompt(q, name, qfile), timeout=60)
     if rc: log(f"could not open {name}: {out.strip()[:200]}"); return False
     pin(name, True)
     return True
+
+def fallback(q, name):
+    """#281: the window could not be opened twice: the orchestrator sends the phone push itself (once) and asks in its place."""
+    _hc("send", "orchestrator", f"QWIN FAILED: could not open {name} twice (see watchdog.log). Send ONE PushNotification to the owner now, in Hebrew: "
+        f"{q.get('text', '')} - {q.get('url', '')} . Relay his answer with: python tools/runner/qwin.py answer {q['key']} \"<answer>\". "
+        "Then fix the question window (issue).", timeout=30)
+    log(f"{name}: failed twice, push handed to the orchestrator")
 
 def tick(ts, now=None):
     """One watchdog pass: open/close/remind question windows."""
@@ -136,9 +145,12 @@ def tick(ts, now=None):
         st[k]["reminded"] = True; log(f"{st[k]['name']}: 2 h reminder")
     for q in start:
         name = win_name(q)
+        info = {"name": name, "since": now, "source": q.get("source", ""), "issue": issue_no(q), "text": q.get("text", "")}
         if open_window(q, name):
-            st[q["key"]] = {"name": name, "since": now, "source": q.get("source", ""), "issue": issue_no(q), "text": q.get("text", "")}
-            log(f"{name}: opened for {q['key']}")
+            st[q["key"]] = info; log(f"{name}: opened for {q['key']}"); continue
+        fails = st.get(q["key"], {}).get("fails", 0) + 1
+        st[q["key"]] = {**info, "fails": fails}         # 1 -> retried next tick; 2 -> no more retries (#281)
+        if fails >= 2: fallback(q, name)
     save(st)
 
 def session_of(n):
