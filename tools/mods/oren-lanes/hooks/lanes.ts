@@ -239,7 +239,9 @@ const hhmmIso = (iso: string) => {
 export function cloudRows(lanes: CloudLane[]): string[] {
   const out: string[] = []
   for (const c of activeCloud(lanes)) {
-    out.push(`☁ #${c.n} ${short(c.title)} — ${c.state}${c.manual ? ' · manual' : ''} · last ${hhmmIso(c.last)}${c.stale ? ' · STALE' : ''}`)
+    const prNo = /\/pull\/(\d+)/.exec(c.pr)?.[1]
+    const st = c.state === 'waiting review' && prNo ? `waiting review PR #${prNo}` : c.state   // #297: PR open + quiet, no RESULT line
+    out.push(`☁ #${c.n} ${short(c.title)} — ${st}${c.manual ? ' · manual' : ''} · last ${hhmmIso(c.last)}${c.stale ? ' · STALE' : ''}`)
     if (c.pr) out.push(`   PR ${c.pr}`)
     if (c.session) out.push(`   session ${c.session}`)
   }

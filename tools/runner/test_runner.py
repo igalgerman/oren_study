@@ -414,6 +414,8 @@ p = r.remote_worker_prompt(7, "core", bug=True)
 assert "#7" in p and "lane/7" in p and "FLOW.md" in p and "Fixes #7" in p and "gh issue comment 7" in p
 assert "RESULT: DONE" in p and "QUESTION:" in p and "diagnosing-bugs" in p
 assert "diagnosing-bugs" not in r.remote_worker_prompt(7, "core")
+# #297: the cloud prompt ENDS with the mandatory RESULT comment step
+assert "LAST STEP (mandatory)" in p and p.rstrip().endswith("not finished until that comment is on the issue.") and p.rindex("RESULT: DONE <PR url>") > p.rindex("gh pr create"), p
 # #219: Batch:/spec issues follow implement-spec (local and cloud prompts)
 assert "implement-spec.md" in r.remote_worker_prompt(7, "core") and "Batch:" in r.remote_worker_prompt(7, "core") and "spec" in r.worker_prompt(7, "core")
 assert "implement-spec.md" in r.worker_prompt(7, "core")
