@@ -1016,3 +1016,9 @@ assert _res.startswith("PARKED"), _res
 assert _sent and _sent[0][0] == "session_old" and "green" in _sent[0][1] and not _starts, (_sent, _starts)
 assert ("blocked", "ready-for-human") in [a for a, _ in _lab] and not r.pending_answer(11)
 print("ok #135 resume end to end")
+
+# 26 Nov: a gh timeout in issue_over never ends or kills a run
+import subprocess as _sp
+def _slow(cmd, **k): raise _sp.TimeoutExpired(cmd, 60)
+assert r.issue_over(5, 0, run_=_slow) is False
+print("ok issue_over timeout")

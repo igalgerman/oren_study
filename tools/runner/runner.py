@@ -390,7 +390,10 @@ _OVER_Q = ("query($o:String!,$r:String!,$n:Int!,$h:String!){repository(owner:$o,
 def issue_over(n, since, run_=None):
     """#234: ONE gh call: is issue #n closed, or lane/<n> merged after `since` (run start)? Any gh/parse error -> False (never end a run on an error)."""
     o, name = REPO.split("/", 1)
-    rc, out = (run_ or run)(["gh", "api", "graphql", "-f", f"query={_OVER_Q}", "-f", f"o={o}", "-f", f"r={name}", "-F", f"n={n}", "-f", f"h=lane/{n}"], timeout=60)
+    try:                                               # 26 Nov 14:48: a gh timeout here killed 3 runs at once; a slow GitHub is "not over yet"
+        rc, out = (run_ or run)(["gh", "api", "graphql", "-f", f"query={_OVER_Q}", "-f", f"o={o}", "-f", f"r={name}", "-F", f"n={n}", "-f", f"h=lane/{n}"], timeout=60)
+    except (subprocess.TimeoutExpired, OSError):
+        return False
     if rc: return False
     try:
         repo = json.loads(out)["data"]["repository"]
@@ -398,7 +401,7 @@ def issue_over(n, since, run_=None):
             return True
         p = remote.find_pr(n, run_ or run, "merged", fields="number,mergedAt")      # #246: a cloud worker's claude/* PR merged after the run start
         return bool(p) and run_over(None, [p.get("mergedAt")], since)
-    except (ValueError, KeyError, TypeError, IndexError, AttributeError):
+    except (ValueError, KeyError, TypeError, IndexError, AttributeError, subprocess.TimeoutExpired, OSError):
         return False
 
 def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=None):
