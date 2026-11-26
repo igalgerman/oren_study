@@ -4635,7 +4635,7 @@ setInterval(()=>{limCheck();const left=T.limLeft();/* a limit is active or locke
   if(O.family&&(lockEl||left)&&Date.now()-lastPull>(window.__pullGap!=null?window.__pullGap:lockEl?5000:20000)){lastPull=Date.now();O.famPull&&O.famPull();}},2000);
 T.limCheck=limCheck;
 /* --- voice --- *//* --- voice --- */
-const SAMPLE='שָׁלוֹם אוֹרֶן! הַיּוֹם נִלְמַד יַחַד. הֶחָתוּל יָשֵׁן עַל הַכִּסֵּא. כַּמָּה זֶה שָׁלוֹשׁ וְעוֹד אַרְבַּע? נָכוֹן, שֶׁבַע!';
+const SAMPLE='שָׁלוֹם אוֹרֶן! הַיּוֹם נִלְמַד יַחַד. הֶחָתוּל יָשֵׁן עַל הַכִּיסֵּא. כַּמָּה זֶה שָׁלוֹשׁ וְעוֹד אַרְבַּע? נָכוֹן, שֶׁבַע!';
 /* one fixed game voice (Google Kore at 0.9, chosen by the parents); no voice options */
 function voiceTab(box){const st=SET();const g=(window.__gv||{}).ok;
   const vc=sec(box,'בדיקת קול — דקה אחת',`<div class="vnow">${g?'קול: <b>Kore</b> — אותו קול בכל המכשירים':'קול: <b>הקול של המכשיר</b> (באתר המשחק: Kore — אותו קול בכל המכשירים)'}${st.voiceOk?' · <span class="pst ok">אושר ✓</span>':''}</div><div class="vsample">${SAMPLE}</div>`);
