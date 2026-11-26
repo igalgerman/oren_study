@@ -151,6 +151,27 @@ jobs:
           restore-keys: pregen-state-
       - name: Voice pregen
         run: node oren2/cf/tools/pregen.js
+      - name: Restore voice check state (#405)
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/oren-voicecheck
+          key: voicecheck-state-${{ github.run_id }}
+          restore-keys: voicecheck-state-
+      - name: Voice check (#405)
+        # pronunciation + nikud check over ALL kid sentences of the pregen list, resumable: each run checks the next ones
+        # (Gemini via the site, no secret here) and ends with the findings list in the job summary; never fails the job
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 50
+        env:
+          MAX_MIN: 40
+        run: node oren2/cf/tools/voicecheck.js
+      - name: Save voice check state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/oren-voicecheck
+          key: voicecheck-state-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Voice missing report
         # #400: read-only; count + first 20 kid sentences with no recording yet (log + job summary). A count is not a failure.
         if: always()

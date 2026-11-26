@@ -307,6 +307,23 @@ const path = require('path');
     const t = require('fs').readFileSync(path.join(L.ROOT, 'talents.js'), 'utf8');
     ok('the sentence with ישן writes כיסא in full (#86)', t.includes("'הֶחָתוּל יָשֵׁן עַל הַכִּיסֵּא.'") && !t.includes("'הֶחָתוּל יָשֵׁן עַל הַכִּסֵּא.'"));
     ok('every sentence with ישן writes כיסא in full, the voice sample too (#86)', !t.includes('יָשֵׁן עַל הַכִּסֵּא') && /const SAMPLE='[^']*יָשֵׁן עַל הַכִּיסֵּא/.test(t)); }
+  // #405 voicecheck over ALL kid sentences: every sentence of the pregen list is queued until it was checked (not only
+  // risky/new ones), a static pass lists the findings for every sentence, and the CI pregen job runs it (no PC cost)
+  { const vc = require(path.join(L.ROOT, 'cf', 'tools', 'voicecheck.js'));
+    const said = [{ t: 'שָׁלוֹם', v: 'he-IL-Chirp3-HD-Kore', r: 0.9 }, { t: 'יש 3 עפרונות', v: 'he-IL-Chirp3-HD-Kore', r: 0.9 }, { t: 'cat', v: 'en-US-Chirp3-HD-Despina', r: 0.85 }, { t: 'בַּיִת', v: 'he-IL-Chirp3-HD-Kore', r: 0.9 }];
+    const items = { ['he-IL-Chirp3-HD-Kore|0.90|בַּיִת']: { st: 'ok' } };
+    const q = vc.todo(said, items, false).map(x => x.t);
+    ok('voicecheck: every sentence not checked yet is queued, plain and English ones too', q.length === 3 && ['שָׁלוֹם', 'יש 3 עפרונות', 'cat'].every(t => q.includes(t)) && !q.includes('בַּיִת'), JSON.stringify(q));
+    ok('voicecheck --again: every sentence is queued', vc.todo(said, items, true).length === 4);
+    const ng = { 'עפרונות': 'm' }, has = (t, rule) => vc.lint(t, ng).some(f => f.rule === rule);
+    ok('voicecheck lint: a misspelling the voice misreads (שוה, למלה, כסא)', has('חלק שוה בשווה', 'spell') && has('איזו תמונה מתאימה למלה?', 'spell') && has('על הכסא', 'spell') && !has('חלק שווה בשווה', 'spell'));
+    ok('voicecheck lint: a number before a noun whose gender the voice does not know', has('יש 5 גלידות', 'num-noun') && !has('יש 5 עפרונות', 'num-noun') && !has('רבע של 12 הוא:', 'num-noun'));
+    ok('voicecheck lint: a homograph the parent picks on the listen page', has('הוא ספר עשרה כוכבים', 'risky') && !has('שָׁלוֹם', 'risky'));
+    const rep = vc.report(said, items, ng);
+    ok('voicecheck report: covers every sentence and lists the findings', /4 sentences/.test(rep) && /1 checked/.test(rep) && /3 to check/.test(rep), rep.slice(0, 300));
+    const wf = require('fs').readFileSync(path.join(L.ROOT, '..', '.github', 'workflows', 'deploy.yml'), 'utf8');
+    ok('CI pregen job runs voicecheck time-boxed with its state kept (no PC cost)', /node oren2\/cf\/tools\/voicecheck\.js/.test(wf) && /MAX_MIN/.test(wf) && /oren-voicecheck/.test(wf), '');
+    /*SRCFIX*/ }
   globalThis.fetch = realFetch;
   L.finish('worker', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT worker 0 1'); process.exitCode = 1; });

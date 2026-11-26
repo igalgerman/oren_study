@@ -16,7 +16,9 @@
    Usage:  node oren2/cf/tools/voicecheck.js           apply choices, check new sentences, update both pages
            node oren2/cf/tools/voicecheck.js --pages   only apply choices + update the listening page and the review
            node oren2/cf/tools/voicecheck.js --again   check every sentence again
-   Env: SITE, PER_MIN (default 8), WRITES (KV writes this script may use a day, default 250)                    */
+           node oren2/cf/tools/voicecheck.js --report  no network: coverage + static findings over every sentence (#405)
+   Runs in CI after pregen (deploy.yml, #405), state kept in the Actions cache: every sentence gets checked over the days.
+   Env: SITE, PER_MIN (default 8), WRITES (KV writes this script may use a day, default 250), MAX_MIN (stop after n min)                    */
 const path = require('path'), fs = require('fs'), os = require('os');
 const MAIN = require.main === module;   // required by tests: only the functions, no run
 if (MAIN && process.env.HTTPS_PROXY && !process.env.NODE_USE_ENV_PROXY) {   // Node's fetch reads the proxy only with this flag
@@ -26,7 +28,7 @@ if (MAIN && process.env.HTTPS_PROXY && !process.env.NODE_USE_ENV_PROXY) {   // N
 }
 const SITE = (process.env.SITE || 'https://oren-game.pages.dev').replace(/\/$/, '');
 const MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite']; let mi = 0; const VOICE = 'he-IL-Chirp3-HD-Kore', RATE = 0.9;
-const PER_MIN = +process.env.PER_MIN || 8, WRITES = +process.env.WRITES || 250;
+const PER_MIN = +process.env.PER_MIN || 8, WRITES = +process.env.WRITES || 250, MAX_MIN = +process.env.MAX_MIN || 0;
 const DIR = path.join(os.homedir(), '.cache', 'oren-voicecheck'); fs.mkdirSync(DIR, { recursive: true });
 const STATE = path.join(DIR, 'state.json'), LOG = path.join(DIR, 'log.txt');
 const PRE = path.join(os.homedir(), '.cache', 'oren-pregen');
@@ -261,9 +263,40 @@ async function check(it) {
   return { st: 'bad', n: want, note: note + ' — לבחירה בדף ההאזנה', pend: d.map(x => ({ word: x.word, want: x.want })) };
 }
 
-if (!MAIN) module.exports = { voteScope, variants, diff };
+/* #405: what to listen to = every sentence of the pregen list not checked yet (plain, English, not only risky/new ones) */
+const todo = (said, items, again) => said.filter(x => { const o = items[id(x)]; return again || !o || !o.st || o.st === 'err' || (o.st === 'fix' && !o.at); });
+/* #405: a static pass over every sentence (no network): what the voice is likely to misread.
+   spell = a spelling the voice reads wrong (fix it at the source); num-noun = a digit before a plural noun the worker's
+   number gender list (NG in make_worker.py) does not know, so the number may get the wrong gender; risky = a homograph
+   the parent picks on the listening page; latin = Latin letters inside a Hebrew sentence */
+const SPELL = { 'שוה': 'שווה', 'מלה': 'מילה', 'למלה': 'למילה', 'המלה': 'המילה', 'כסא': 'כיסא', 'הכסא': 'הכיסא', 'מידי': 'מדי' };
+function readNG() { const g = {}; try { const s = fs.readFileSync(path.join(__dirname, 'make_worker.py'), 'utf8');
+  for (const m of s.matchAll(/add\('([^']+)','([mf])'\)/g)) for (const w of m[1].split(' ')) g[w] = m[2]; } catch (e) {} return g; }
+function lint(t, ng) {
+  const out = [], P = plain(t), W = tokens(P);
+  for (const w of W) if (SPELL[w]) out.push({ rule: 'spell', word: w, fix: SPELL[w] });
+  for (const m of P.matchAll(/\d+\s+([א-ת]+)/g)) { const n = m[1]; if (/(ים|ות|יים)$/.test(n) && !ng[n]) out.push({ rule: 'num-noun', word: n }); }
+  const R = new Set(RISKY.map(r => r.w)); for (const w of W) if (R.has(w)) out.push({ rule: 'risky', word: w });
+  if (/[א-ת]/.test(P) && /[A-Za-z]/.test(P)) out.push({ rule: 'latin', word: (P.match(/[A-Za-z]+/) || [''])[0] });
+  return out.filter((f, i) => out.findIndex(g => g.rule === f.rule && g.word === f.word) === i);
+}
+/* the findings list (markdown): coverage of the pregen list, then each finding with its sentences */
+function report(said, items, ng) {
+  const he = said.filter(x => x.v.startsWith('he-')), done = said.filter(x => { const o = items[id(x)]; return o && ['ok', 'fix', 'bad'].includes(o.st); });
+  const F = {}; for (const x of he) for (const f of lint(x.t, ng)) { const k = f.rule + ' ' + f.word; (F[k] = F[k] || { ...f, s: [] }).s.push(x.t); }
+  const bad = said.filter(x => (items[id(x)] || {}).st === 'bad');
+  const L = [`voicecheck: ${said.length} sentences in the pregen list · ${done.length} checked · ${said.length - done.length} to check`, ''];
+  const names = { spell: 'spelling the voice misreads', 'num-noun': 'number before a noun of unknown gender', risky: 'homograph (parent picks on the listen page)', latin: 'Latin letters in Hebrew' };
+  for (const r of Object.keys(names)) { const G = Object.values(F).filter(f => f.rule === r).sort((a, b) => b.s.length - a.s.length); if (!G.length) continue;
+    L.push(`### ${names[r]} (${G.length})`); for (const f of G) L.push(`- ${f.word}${f.fix ? ' → ' + f.fix : ''} · ${f.s.length}× · e.g. ${f.s[0].slice(0, 90)}`); L.push(''); }
+  if (bad.length) { L.push(`### heard wrong (${bad.length})`); for (const x of bad) L.push(`- ${x.t.slice(0, 90)} — ${(items[id(x)] || {}).note || ''}`); L.push(''); }
+  return L.join('\n');
+}
+if (!MAIN) module.exports = { voteScope, variants, diff, todo, lint, report };
 else (async () => {
   try { SAID = JSON.parse(fs.readFileSync(path.join(PRE, 'said.json'), 'utf8')).map(item).filter(x => x.t); } catch (e) { log('no said.json — run pregen.js --collect first'); return; }
+  const rep = () => { const r = report(SAID, S.items, readNG()); console.log(r); if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, '## Voice check\n\n' + r + '\n'); };
+  if (arg('--report')) return rep();   // no network: the findings list over every sentence
   let made = {}; try { made = JSON.parse(fs.readFileSync(path.join(PRE, 'state.json'), 'utf8')).done || {}; } catch (e) {}
   DICT = (await call('/api/tts/fix')).j || {};
   let { marks, votes } = await applyVotes(); await bump(); DICT = (await call('/api/tts/fix')).j || DICT;
@@ -280,8 +313,7 @@ else (async () => {
     // 1. what to listen to: risky ones first (numbers, math words, what the parent flagged), made ones before not-yet-made
     const RISK = /עשרות|אחדות|מאות|ספר|עשר|שארית|כפול|חילוק|חיסור|חיבור|שווה|שוה|זוגי|חצי|רבע|שליש|ישן|פתח|שמה|אחר|שמונה/;
     const pr = x => (/\d/.test(x.t) ? 4 : 0) + (RISK.test(x.t) ? 3 : 0) + (tokens(x.t).length <= 2 ? 1 : 0) + (made[x.t] ? 2 : 0);
-    const Q = SAID.filter(x => { const o = S.items[id(x)]; return arg('--again') || !o || !o.st || o.st === 'err' || (o.st === 'fix' && !o.at); })
-      .sort((a, b) => pr(b) - pr(a));
+    const Q = todo(SAID, S.items, arg('--again')).sort((a, b) => pr(b) - pr(a));
     log(`voicecheck: ${Q.length} to check of ${SAID.length}; dictionary ${Object.keys(DICT).length} words; ${S.writes}/${WRITES} writes today`);
     // 2. the intended reading (Gemini vocalizes by meaning, 25 a call), just before those sentences are listened to
     const nikud = async k => { const L = Q.slice(k, k + 25).filter(x => x.v.startsWith('he-') && !S.nik[x.t]).map(x => x.t); if (!L.length) return;
@@ -289,6 +321,7 @@ else (async () => {
       if (Array.isArray(r) && r.length === L.length) L.forEach((t, q) => { if (typeof r[q] === 'string' && sameWords(t, r[q])) S.nik[t] = r[q]; }); save(); };
     let n = 0; const T0 = Date.now();
     for (const it of Q) {
+      if (MAX_MIN && Date.now() - T0 > MAX_MIN * 60000) throw new Stop(`time box of ${MAX_MIN} min used up`);   // CI: stop before the job's timeout
       if (n % 25 === 0) await nikud(n);
       n++; if (!made[it.t]) S.writes += 2;
       const r = await check(it); const o = S.items[id(it)] || {};
@@ -303,4 +336,5 @@ else (async () => {
   await bump(); await pages(votes, marks); await review();
   const c = {}; for (const x of Object.values(S.items)) c[x.st] = (c[x.st] || 0) + 1;
   log('done: ' + JSON.stringify(c) + ' · dictionary: ' + JSON.stringify(DICT));
+  rep();
 })().catch(e => { log('crashed: ' + (e && e.stack || e)); save(); process.exitCode = 1; });
