@@ -122,6 +122,10 @@ async function api(req,env,id){if(!/^[a-f0-9]{32}$/.test(id))return new Response
   try{const o=JSON.parse(t);if(!o||typeof o!=='object'||o.v!==4)throw 0;}catch(e){return new Response('{"error":"bad json"}',{status:400,headers:JH});}
   try{await kvPut(env,id,t);}catch(e){return J({error:'store',why:String(e&&e.message||e).slice(0,200)},503);}/* e.g. the daily write limit: the game shows the real reason (#129) */
   return new Response('{"ok":true}',{headers:JH});}
+ if(req.method==='DELETE'){/* live smoke check (#150) cleans up its test save; only a save marked smoke can be deleted, never a family save */
+  let o=null;try{o=JSON.parse(await kvGet(env,id));}catch(e){}if(!o||!o.smoke)return J({error:'only smoke saves'},403);
+  if(env.DB){await dbInit(env);await env.DB.prepare('DELETE FROM saves WHERE id=?').bind(id).run();}if(env.SAVES.delete)await env.SAVES.delete(id);
+  return J({ok:true});}
  return new Response('{"error":"method"}',{status:405,headers:JH});}
 /* /api/diag (#129): when all save retries fail, the game posts {fam,log,snap} (rolling sync log + DOM snapshot) for the orchestrator.
    D1 table diag (kept 30 days); no D1 or D1 refuses (e.g. its write limit) = KV key diag:<time>. GET (needs the DIAG_KEY secret) = newest 20 without snapshots, ?id= = one record; at most 200 records are kept. */
@@ -152,7 +156,7 @@ async function diag(req,env,u){
 const TTS_CAP=250000;const GAME_VOICE='he-IL-Chirp3-HD-Kore',GAME_RATE=0.9;const VOICES=/^(he-IL-((Standard|Wavenet)-[A-D]|Chirp3-HD-[A-Za-z]+)|en-US-Chirp3-HD-[A-Za-z]+)$/;
 async function sha(t){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');}
 async function tts(req,env,u){if(!env.GOOGLE_TTS_KEY)return new Response('{"ok":false,"why":"no key"}',{status:503,headers:JH});
- if(u.pathname==='/api/tts/status')return J({ok:true,ver:await ttsVer(env)});/* the game adds &k=ver to its audio URLs: a bump = fresh audio everywhere */
+ if(u.pathname==='/api/tts/status')return J({ok:true,ver:await ttsVer(env),d1:!!env.DB});/* the game adds &k=ver to its audio URLs: a bump = fresh audio everywhere */
  if(u.pathname==='/api/tts/ver'&&req.method==='POST'){const v=(await ttsVer(env,true))+1;await kvPut(env,'ttsver',String(v));verV=v;verAt=Date.now();return J({ok:true,ver:v});}
  if(u.pathname==='/api/tts/gm'){if(!env.GEMINI_KEY)return new Response('{"ok":false,"why":"no GEMINI_KEY"}',{status:503,headers:JH});const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',{headers:{'x-goog-api-key':env.GEMINI_KEY}});const j=await r.json();return new Response(JSON.stringify((j.models||[]).map(m=>m.name).filter(n=>/gemini/.test(n))),{status:r.status,headers:JH});}
  if(u.pathname==='/api/tts/verify'&&req.method==='POST'){/* Gemini listens to the stored audio and reports pronunciation */
