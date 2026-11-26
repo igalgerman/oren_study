@@ -187,12 +187,16 @@ function lesson(o){const cards=o.cards.filter(c=>c);if(!cards.length)return o.th
   show();}
 /* question bank → T.quiz. q = {lv, q, a, ds, art, ex, cls} */
 const Q=(lv,q,a,ds,x)=>Object.assign({lv,q,a,ds},x||{});
-function pickQs(bank,L,n){const pool=shuffle(bank.filter(q=>q.lv<=L));pool.sort((a,b)=>(b.lv===L)-(a.lv===L));return pool.slice(0,Math.min(n,pool.length)).sort((a,b)=>a.lv-b.lv);}
+function pickQs(bank,L,n,id){const ok=bank.filter(q=>q.lv<=L),LN=window.LEARN;
+  if(id&&LN&&LN.pickItem&&ok.length>n)try{/* the learning engine chooses (wrong ones back on schedule, unseen first, no repeats) */const bk='x2-'+id,items=ok.map(q=>({k:q.q,lv:q.lv})),got=[],ex=new Set();
+    while(got.length<n){const r=LN.pickItem(bk,items,{lv:L,upto:true,exclude:ex});if(!r)break;ex.add(r.item.k);got.push(ok.find(q=>q.q===r.item.k));LN.seen(bk,r.item.k,true,false);}
+    if(got.length===n)return got.sort((a,b)=>a.lv-b.lv);}catch(e){}
+  const pool=shuffle(ok);pool.sort((a,b)=>(b.lv===L)-(a.lv===L));return pool.slice(0,Math.min(n,pool.length)).sort((a,b)=>a.lv-b.lv);}
 const mkQ=q=>{const opts=shuffle([q.a,...q.ds]);return {pr:`${q.art?`<div class="e2art sm">${q.art}</div>`:''}<div class="qq">${q.q}</div>`,opts:opts.map(x=>q.fmt?q.fmt(x):x),ans:opts.indexOf(q.a),cls:(q.cls||'tx')+' e2o',key:q.q+'|'+q.a,explain:q.ex||''};};
 function runQuiz(o,list){STEP=null;T.quiz({id:o.id,title:o.title,bg:o.bg,back:o.back,n:list.length,gen:i=>typeof list[i]==='function'?list[i]():mkQ(list[i])});}
 /* a lesson + quiz activity: def = {id,name,icon,bg,title,cards:[{lv,art,t}],bank:[Q...],n} */
 function lessonAct(def){return Object.assign({},def,{run:back=>{const L=lvl(def.id),o={id:def.id,title:def.title||def.name,bg:def.bg,back};
-  lesson({...o,cards:def.cards.filter(c=>c.lv===L),then:()=>runQuiz(o,def.gen?def.gen(L):pickQs(def.bank,L,def.n||6))});}});}
+  lesson({...o,cards:def.cards.filter(c=>c.lv===L),then:()=>runQuiz(o,def.gen?def.gen(L):pickQs(def.bank,L,def.n||6,def.id))});}});}
 
 /* tap things in the right order. rounds = [{q, items:[{html,lbl}] in order, start, ex}] */
 function orderGame(o){let r=0,err=0,gems=0;O.setScreen('sTal',o.bg,o.back);const s=$('#sTal');
@@ -417,7 +421,7 @@ const YR_GK={id:'yr-gk',name:'יֶדַע כְּלָלִי',icon:()=>em('💡'),s
   Q(2,'מָה טָס בַּשָּׁמַיִם?','מָטוֹס',['אוֹטוֹבּוּס','רַכֶּבֶת']),
   Q(3,'כַּמָּה פְּעָמִים בַּיּוֹם כְּדַאי לְצַחְצֵחַ שִׁנַּיִם?','פַּעֲמַיִם',['אַף פַּעַם','פַּעַם בְּשָׁבוּעַ'],{art:em('🪥')}),Q(3,'מִי עוֹזֵר לְחַיּוֹת חוֹלוֹת?','וֵטֶרִינָר',['טַיָּס','סַפָּר'],{art:em('🐶')}),
   Q(3,'אָדֹם וְצָהֹב מְעֹרְבָּבִים יַחַד נוֹתְנִים...','כָּתֹם',['כָּחֹל','יָרֹק'],{art:em('🔴 + 🟡')}),Q(3,'מָה חוֹבְשִׁים עַל הָרֹאשׁ כְּשֶׁרוֹכְבִים עַל אוֹפַנַּיִם?','קַסְדָּה',['כּוֹבַע גֶּרֶב','מִשְׁקְפֵי שֶׁמֶשׁ'],{art:em('🚲')})],
- run:back=>{const L=lvl('yr-gk');runQuiz({id:'yr-gk',title:'יֶדַע כְּלָלִי',bg:'meadow',back},pickQs(YR_GK.bank,L,7));}};
+ run:back=>{const L=lvl('yr-gk');runQuiz({id:'yr-gk',title:'יֶדַע כְּלָלִי',bg:'meadow',back},pickQs(YR_GK.bank,L,7,'yr-gk'));}};
 
 /* ================= 🧱 BLOCK BUILDING ================= */
 const PLANS={1:[['RRR','R.R','RRR'],['.R.','RRR','.R.'],['R..','RR.','RRR'],['RRR','.R.','.R.']],
@@ -517,6 +521,6 @@ function kidTexts(){const out=[];const add=s=>{if(s)out.push(String(s));};
   [CITIES,SEAS,REGIONS,CONT,OCEANS,HOOD].forEach(m=>Object.values(m).forEach(v=>add(v[0])));Object.values(MYFL).forEach(v=>add(v[0]));Object.values(BN).forEach(add);return out;}
 window.EXPLORE2={register,BUILDINGS:BLD,GROUP_OF,SKILLS,kidTexts,ids:()=>BLD.flatMap(b=>b.acts.map(a=>a.id)),level:lvl,
   DATA:{PLANETS,HOL,HOL_ORDER,INV,CITIES:Object.fromEntries(Object.entries(CITIES).map(([k,v])=>[k,{n:v[0],ll:v[1],xy:cityPos(k)}])),SEAS,REGIONS,CONT:Object.keys(CONT),OCEANS,FCONT,CYC,PLANS,MIRR,HOOD,banks:()=>Object.fromEntries(BLD.flatMap(b=>b.acts).filter(a=>a.bank).map(a=>[a.id,a.bank]))},
-  gen:{NAT_GRP:L=>NAT_GRP.gen(L),YR_HOL:L=>YR_HOL.gen(L),countQ,viewQ,topView,frontView,mkQ},
+  gen:{pickQs,NAT_GRP:L=>NAT_GRP.gen(L),YR_HOL:L=>YR_HOL.gen(L),countQ,viewQ,topView,frontView,mkQ},
   step:()=>{if(STEP)return STEP();const q=window.__quiz;if(q&&q.wrap&&q.wrap.isConnected){const c=q.wrap.querySelector('.chs');if(c&&c.children[q.ans])c.children[q.ans].click();}}};
 })();
