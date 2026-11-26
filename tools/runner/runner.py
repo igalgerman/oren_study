@@ -552,6 +552,7 @@ def issue_over(n, since, run_=None):
         return False
 
 _FRESH = {}   # #364: file -> the newest loaded copy of that module
+_FRESH_FAILED = set()   # #379: files whose 'not reloaded yet' line is already in the log this run
 
 def _file_mtime(m):
     try: return Path(m.__file__).stat().st_mtime
@@ -571,12 +572,20 @@ def fresh(mod, log=None):
     import importlib, importlib.util
     try:
         if cur.__name__ == "__main__":
-            spec = importlib.util.spec_from_file_location(Path(f).stem, f)
-            new = importlib.util.module_from_spec(spec); spec.loader.exec_module(new)
+            name = Path(f).stem; old = sys.modules.get(name)
+            spec = importlib.util.spec_from_file_location(name, f)
+            new = importlib.util.module_from_spec(spec)
+            sys.modules[name] = new                       # #379: like a real import (runner.py looks itself up: sys.modules[__name__])
+            try: spec.loader.exec_module(new)
+            except BaseException:
+                if old is None: sys.modules.pop(name, None)
+                else: sys.modules[name] = old
+                raise
         else:
             new = importlib.reload(cur)
     except Exception as e:
-        if log: log(f"fresh: {Path(f).name} not reloaded yet ({e!r})")
+        if log and f not in _FRESH_FAILED: log(f"fresh: {Path(f).name} not reloaded yet ({e!r})")   # #379: once per file per run, not per poll
+        _FRESH_FAILED.add(f)
         return cur
     new._loaded_mtime = t; _FRESH[f] = new
     if log: log(f"fresh: reloaded {Path(f).name} (a merged fix applies to this run now)")

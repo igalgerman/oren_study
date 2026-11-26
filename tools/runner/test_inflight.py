@@ -46,6 +46,32 @@ write("zz_script", "X = 2\nif __name__ == '__main__': raise SystemExit('ran main
 assert r.fresh(fake_main).X == 2 and r.fresh(fake_main).X == 2                     # the copy is kept for the next polls
 print("ok fresh copy of a script")
 
+# ---- #379: a script that looks itself up in sys.modules (runner.py:  sys.modules[__name__]) reloads, no KeyError spam ----
+p = write("zz_selfref", "import sys\nME = sys.modules[__name__]\nX = 1\n")
+fake_main = types.ModuleType("__main__"); fake_main.__file__ = str(p); fake_main.X = 1
+logs = []
+assert r.fresh(fake_main, logs.append) is fake_main
+write("zz_selfref", "import sys\nME = sys.modules[__name__]\nX = 2\n", 40)
+new = r.fresh(fake_main, logs.append)
+assert new.X == 2 and new.ME is new, logs                                          # reloaded, the copy finds itself
+assert not any("KeyError" in m for m in logs), logs
+print("ok script that looks itself up reloads")
+
+# ---- #379: a file that stays broken -> ONE 'not reloaded yet' line, not one per poll ----
+p = write("zz_broken", "X = 1\n")
+import zz_broken
+logs = []
+r.fresh(zz_broken, logs.append)
+write("zz_broken", "X = (\n", 50)
+for _ in range(5): assert r.fresh(zz_broken, logs.append).X == 1
+assert sum("not reloaded yet" in m for m in logs) == 1, logs
+write("zz_broken", "X = 3\n", 60)
+assert r.fresh(zz_broken, logs.append).X == 3
+write("zz_broken", "X = (\n", 70)
+for _ in range(3): r.fresh(zz_broken, logs.append)
+assert sum("not reloaded yet" in m for m in logs) == 1, logs                       # once per file per run
+print("ok broken file logged once")
+
 # ---- the runner's own wait loops go through fresh() (status, review status, issue_over) ----
 src = (Path(r.__file__)).read_text(encoding="utf-8")
 body = src[src.index("def process_locked"):src.index("def close_windows")]
