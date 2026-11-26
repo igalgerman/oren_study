@@ -2792,6 +2792,8 @@ body:has(#dlg:not([hidden])) .toast{top:74px;bottom:auto}
 .hlock h2{margin:0;font-size:32px;line-height:1.35}.hlock .sub{font-family:var(--read);font-size:22px;line-height:1.6}
 body.hlocked #ov{position:fixed;z-index:100}
 .hfr{display:flex;align-items:flex-end;justify-content:center;gap:12px}.hfr .hav svg{width:104px;height:104px}.hfr .hk{font-size:66px;line-height:1}
+.hcd{font-size:34px;font-weight:900;direction:ltr;min-height:40px;color:var(--ink-soft)}
+.hlock.hrem .hk{font-size:110px}.hlock.hrem .sub{margin-bottom:-6px}
 .hcnt{font-size:56px;font-weight:900;line-height:1;color:#3a8fc4}
 .hlock .hback[disabled]{cursor:default;background:linear-gradient(to left,var(--ok) var(--p,0%),#b9c2c9 var(--p,0%));box-shadow:inset -6px -6px 0 rgba(0,0,0,.15),0 7px 0 rgba(0,0,0,.3)}
 .hlock .hback.ready{animation:pop .35s ease-out both}
@@ -3331,6 +3333,16 @@ svg.tl{width:60px;height:60px;display:block}
 .dlnow.on{background:#e3f6e3;font-weight:700}
 .dlrow .dli{display:inline-block;width:1.2em;text-align:center}
 .dlrow.dl-q,.dlrow.dl-s{opacity:.75}
+
+/* AGAIN (#39): the home button and the list of big tiles by day */
+.againbtn{display:flex;align-items:center;gap:10px;font-size:22px;font-weight:900;padding:10px 22px;background:#fff;border-bottom:6px solid #3a8fc4;box-shadow:0 5px 0 rgba(0,0,0,.2)}
+.againbtn .agic{font-size:34px;line-height:1}.againbtn:active{transform:translateY(3px)}
+.again{display:flex;flex-direction:column;gap:22px;width:min(960px,100%);margin:0 auto}
+.agday{display:flex;flex-direction:column;gap:10px}
+.aghead{display:flex;align-items:center;gap:10px}.aghead .agpic{font-size:44px;line-height:1}
+.aghead .agt{font-size:26px;font-weight:900;color:#fff;-webkit-text-stroke:5px var(--ink);paint-order:stroke fill}
+.agday .dall{width:100%}
+@media (max-width:760px){.agday .dall{grid-template-columns:repeat(2,1fr)}.agday .dall .dcard{width:auto;min-height:140px}}
 </style>
 <script>
 /* ===== עִיר הַכִּשְׁרוֹנוֹת — talents city (injected into index.html by build) ===== */
@@ -4695,6 +4707,7 @@ function home(){const S0=T.S();
     const more=h('button','dmore','🔍 <span>מַשֶּׁהוּ אַחֵר</span>');more.onclick=()=>{sfx.pop(2);other();};s.appendChild(h('div','dpick')).appendChild(more);}
   /* the round doors live inside "something else"; on home only when there is no daily path */
   if(!d)s.appendChild(doorsEl());
+  if(window.AGAIN)window.AGAIN.button(s);
   const pb=h('button','parbtn','🔒');pb.title='כניסת הורים';pb.setAttribute('aria-label','כניסת הורים');pb.onclick=()=>window.TAL_parentGate();s.appendChild(pb);
   T.checkMsg&&T.checkMsg();}
 function doorsEl(){const doors=h('div','doors2');
@@ -5079,6 +5092,7 @@ H.blocking=()=>!!document.querySelector('.hlock');
 /* an activity has ended once its result window was closed, the screen changed, or (no result window) after a moment */
 const endSeen=()=>{if(!pend||pend.ready)return;if(vis('#ov')||vis('#dlg'))pend.ov=1;else if(pend.ov||performance.now()-pend.at>2500)pend.ready=1;};
 H.check=()=>{endSeen();if(off()||H.blocking()||!safeBase())return;const r=day(),t=now();
+  if(remCheck(t))return;
   const open=MEALS.find(([k])=>r.meals[k]&&!r.meals[k].e);if(open)return showMeal(open[0]);
   const atEnd=!!pend&&!!pend.ready,menu=['sHome','sMap','sKing'].includes(scr()),notPlay=!vis('#sPlay');
   const m=mealDue();if(m&&(atEnd||menu||(notPlay&&t-mealAt(m,t)>5*60000)))return showMeal(m);
@@ -5122,6 +5136,29 @@ function showMeal(k){const r=day(),t=now();const m=r.meals[k]=r.meals[k]||{s:t};
   if(O.musicStop)O.musicStop();say('הִגִּיעַ זְמַן לֶאֱכֹל! נַמְשִׁיךְ אַחֲרֵי הָאֹכֶל.');return el;}
 H.showMeal=showMeal;
 
+/* ---------- a reminder from the parent (#46): T.S().set.rem = {k:'toilet'|'water'|'eat', at, t, ok}
+   Synced like the other family settings. Shown when it is due, at the end of what Oren is doing (waits at most a minute), until "ok". */
+const REM={toilet:{e:'🚽',p:'🚽 שירותים',t:'הִגִּיעַ הַזְּמַן לָלֶכֶת לַשֵּׁרוּתִים!'},water:{e:'💧',p:'💧 לשתות מים',t:'הִגִּיעַ הַזְּמַן לִשְׁתּוֹת מַיִם!'},eat:{e:'🍽️',p:'🍽️ לאכול',t:'הִגִּיעַ הַזְּמַן לֶאֱכֹל!'}};
+const REM_BY='אַבָּא אוֹ אִמָּא מַזְכִּירִים:',REM_WAIT=60000,REM_OLD=2*3600e3;
+H.remTexts=()=>Object.values(REM).map(x=>REM_BY+' '+x.t);
+let remSince=null;
+const inAct=()=>vis('#sPlay')||(vis('#sTal')&&!!cur);
+function remCheck(t){const m=(T.S().set||{}).rem;if(!m||m.ok||!REM[m.k]||t<m.at||t-m.at>REM_OLD){remSince=null;return false;}
+  if(!remSince||remSince.t!==m.t)remSince={t:m.t,at:t};
+  if(inAct()&&!(pend&&pend.ready)&&t-remSince.at<REM_WAIT)return false;
+  showRem(m);return true;}
+function showRem(m){const x=REM[m.k];
+  const el=lock('hrem',`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">${x.e}</span></div><div class="sub">${REM_BY}</div><h2>${x.t}</h2>`);
+  const btn=h('button','bigbtn huge hback','<span>בְּסֵדֶר!</span>');el.firstChild.appendChild(btn);
+  btn.onclick=()=>{m.ok=1;O.persist();sfx.win&&sfx.win();close();after();};
+  sfx.star&&sfx.star(0);say(REM_BY+' '+x.t);return el;}
+let remWhen=0;
+function remPanel(box,sec,re){const m=(T.S().set||{}).rem;
+  const s=sec(box,'🔔 תזכורת לאורן','<div class="pnote">אורן יראה תמונה גדולה וישמע אותה בקול — בסוף מה שהוא עושה עכשיו (עד דקה המתנה).</div>');
+  if(m&&REM[m.k]&&now()-m.at<REM_OLD)s.appendChild(h('div','pstat',`${REM[m.k].p} · ${m.ok?'אורן ראה ✓':now()<m.at?'תופיע ב-'+hm(m.at):'ממתינה לסוף הפעילות'}`));
+  const w=h('div','popt','<span>מתי:</span>');[[0,'עכשיו'],[5,'5 דק׳'],[10,'10 דק׳'],[15,'15 דק׳'],[30,'30 דק׳']].forEach(([v,n])=>{const b=h('button','pchip'+(remWhen===v?' on':''),n);b.onclick=()=>{remWhen=v;re&&re();};w.appendChild(b);});s.appendChild(w);
+  const g=h('div','pbig');Object.entries(REM).forEach(([k,x])=>{const b=h('button','bigbtn sm','<span>'+x.p+'</span>');b.onclick=()=>{const t=now();T.S().set.rem={k,at:t+remWhen*60000,t};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);re&&re();};g.appendChild(b);});s.appendChild(g);}
+
 /* two big cards of other domains Oren did least today */
 function cards(ex){const r=day();return DOMS.filter(d=>d.id!==ex&&!H.resting(d.id)&&enabled(d.id)).map(d=>[d,(r.dom[d.id]|0)+Math.random()]).sort((a,b)=>a[1]-b[1]).slice(0,2).map(x=>x[0]);}
 function goDom(dm){close();sfx.pop&&sfx.pop(3);
@@ -5155,7 +5192,7 @@ H.decorate=decorate;
 document.addEventListener('click',e=>{if(bypass||off())return;const el=e.target.closest&&e.target.closest('[data-hrest]');if(!el||el.closest('.hlock')||!H.resting(el.dataset.hrest))return;e.stopPropagation();e.preventDefault();sfx.pop&&sfx.pop(1);showRest(el.dataset.hrest,el);},true);
 
 /* ---------- parent panel (no nikud) ---------- */
-H.panel=(box,sec,re)=>{const c=cfg(),r=day();
+H.panel=(box,sec,re)=>{const c=cfg(),r=day();remPanel(box,sec,re);
   const s1=sec(box,'הפסקות, ארוחות והחלפת נושא','<div class="pnote">בסוף פעילות (אף פעם לא באמצע שאלה): כל כמה דקות פעילות — הפסקה של כחצי דקה עם החבר, בסבב: מים, שירותים, תנועה, מנוחת עיניים. בזמן ארוחה המשחק עוצר עד "אכלתי" (לפחות 10 דקות, או סיסמת הורה). אחרי הרבה זמן באותו תחום — החבר מציע תחום אחר, והתחום נח עד מחר.</div>');
   const tg=h('div','popt','<span>תזכורות:</span>');[['water','💧 מים'],['toilet','🚽 שירותים'],['move','🤸 תנועה'],['eyes','👀 עיניים'],['meal','🍽️ ארוחות']].forEach(([k,n])=>{const b=h('button','pchip'+(c.off[k]?'':' on'),n);b.onclick=()=>{H.setCfg('off',{[k]:c.off[k]?0:1});re&&re();};tg.appendChild(b);});s1.appendChild(tg);
   const iv=h('div','popt','<span>הפסקה כל:</span>');[15,20,30].forEach(v=>{const b=h('button','pchip'+(c.brk===v?' on':''),v+' דק׳');b.onclick=()=>{H.setCfg('brk',v);re&&re();};iv.appendChild(b);});s1.appendChild(iv);
@@ -9843,7 +9880,7 @@ TP.grid=grid;TP.nudge=nudge;
 
 /* ===== DAY LOG: everything Oren did, for the parent (also from another house, in real time through the family save) =====
    save.alog[day].e = [[min, id, stars, ok, n, helped, o], ...]   min = minutes after midnight when it started,
-     ok/n = right on the first try / questions, o: 'c' done · 'q' left in the middle · 's' a path step he did not reach · 'b' stopped for a break
+     ok/n = right on the first try / questions, o: 'c' done · 'q' left in the middle · 'x' opened and closed at once (only for Oren's "again" list) · 's' a path step he did not reach · 'b' stopped for a break
    save.now = {id, t}  the activity being played and the last moment something happened (ms) — "playing now" for the parent.
    Detailed entries are kept for 14 days (think.js keeps the day counts for 35). Parent text has no nikud. */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;
@@ -9864,7 +9901,7 @@ DL.add=add;
 let cur=null;
 const now=t=>{if(O.isParentPlay)return;S().now={id:cur?cur.id:null,t:t||Date.now()};};
 function begin(id){if(O.isParentPlay)return;if(cur&&!cur.end)end(cur.brk?'b':'q');cur={id,t:Date.now(),d:day(),ok:0,n:0,help:0};now();}
-function end(o,st){const c=cur;if(!c||c.end)return;c.end=1;if(o!=='c'&&!c.n&&Date.now()-c.t<15000){cur=null;return;}   /* opened and closed at once: not worth a line */
+function end(o,st){const c=cur;if(!c||c.end)return;c.end=1;if(o!=='c'&&!c.n&&Date.now()-c.t<15000)o='x';   /* opened and closed at once: 'x' — kept for Oren's "again" list, not shown to the parent */
   add(c.d,[minOf(c.t),c.id,st|0,c.ok,c.n,c.help,o]);now();cur=null;O.persist();}
 DL.begin=begin;DL.end=end;DL.cur=()=>cur;
 /* a round that ends again and again ("again"): each finish is its own line */
@@ -9896,7 +9933,7 @@ DL.nameOf=id=>{if(id==='math')return 'מסע החשבון';
   const a=T.ACT[id];return a?plain(a.name):id;};
 DL.domOf=id=>{if(id==='math'||/^lv:/.test(id))return 'חשבון';const a=T.ACT[id];if(!a||!a.b)return '';const g=(T.GROUPS||[]).find(x=>x.ids.includes(a.b.id));return g?GN()[g.id]:plain(a.b.name);};
 const ICO={c:'✓',q:'✗',s:'⏭',b:'⏸'},WHY={c:'',q:'יצא באמצע',s:'לא הגיע',b:'הפסקה'};
-DL.rows=d=>{const L=((O.realSave.alog||{})[d]||{}).e||[];return L.slice().sort((a,b)=>a[0]-b[0]);};
+DL.rows=d=>{const L=((O.realSave.alog||{})[d]||{}).e||[];return L.filter(e=>e[6]!=='x').sort((a,b)=>a[0]-b[0]);};
 DL.rowHTML=e=>{const [m,id,st,ok,n,hp,o]=e;const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`${ok}/${n} נכון בניסיון ראשון`:'',hp?`עזרה ×${hp}`:'',WHY[o]].filter(Boolean).join(' · ');
   return `<div class="prow dlrow dl-${o}"><span class="pn"><b class="dli">${ICO[o]||''}</b> ${o==='s'?'':hhmm(m)+' · '}${DL.nameOf(id)} <small>${DL.domOf(id)}</small></span><span class="pc">${res}</span></div>`;};
 /* the top line of the summary: playing now / last played */
@@ -9921,6 +9958,37 @@ DL.panel=(box,sec)=>{const s=sec(box,'מה אורן עשה','<div class="dlnowbo
 DL.nowBox=box=>{const d=document.createElement('div');d.className='dlnowbox';d.innerHTML=DL.nowLine();box.appendChild(d);};
 /* redraw the live parts (called after each family pull while the parent panel is open) */
 DL.refresh=()=>{document.querySelectorAll('.dlnowbox').forEach(e=>{e.innerHTML=DL.nowLine();});document.querySelectorAll('.dllog[data-d]').forEach(e=>{e.innerHTML=rowsHTML(e.dataset.d);});};
+})();
+
+/* ===== AGAIN (#39): one big button on home → one list of big tiles: what Oren did and what he closed by mistake.
+   Read from the day log (save.alog[day].e, kept 14 days, family-merged): newest first, one block per day with a picture,
+   each thing once a day. Tap a tile: it opens again. No typing, no search, no voice. ===== */
+(()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;
+const A=window.AGAIN={};const h=O.h,$=O.$;
+const pad=n=>String(n).padStart(2,'0');
+const dstr=x=>x.getFullYear()+'-'+pad(x.getMonth()+1)+'-'+pad(x.getDate());
+const WD=['יוֹם רִאשׁוֹן','יוֹם שֵׁנִי','יוֹם שְׁלִישִׁי','יוֹם רְבִיעִי','יוֹם חֲמִישִׁי','יוֹם שִׁשִּׁי','שַׁבָּת'];
+const ago=n=>{const x=new Date();x.setDate(x.getDate()-n);return dstr(x);};
+function dayHead(d){if(d===ago(0))return ['☀️','הַיּוֹם'];if(d===ago(1))return ['🌙','אֶתְמוֹל'];return ['📅',WD[new Date(d+'T12:00').getDay()]];}
+/* what a log id opens; null when it is gone or turned off */
+function target(id){
+  if(/^lv:/.test(id)){const lv=O.ALLLV.find(l=>l.id===id.slice(3));const off=(T.S().set.offW||{});if(!lv||off[lv.w.id])return null;
+    return {ic:lv.w.icon(),n:lv.u.name,c:lv.w.color,run:()=>O.startLevel(lv)};}
+  const a=T.ACT[id];if(!a||!T.dailyPool().includes(id))return null;return {ic:a.icon(),n:a.name,c:a.b.color,run:()=>a.run(O.showMap)};}
+/* [[day, [ids newest first]], ...] newest day first */
+function list(){const log=O.save.alog||{};return Object.keys(log).sort().reverse().map(d=>{const e=(log[d]||{}).e||[];const seen=new Set(),ids=[];
+    e.map((x,i)=>[x,i]).filter(([x])=>x&&x[6]!=='s').sort((p,q)=>(q[0][0]-p[0][0])||(q[1]-p[1])).forEach(([x])=>{const id=x[1];if(seen.has(id)||!target(id))return;seen.add(id);ids.push(id);});
+    return [d,ids];}).filter(([,ids])=>ids.length);}
+A.list=list;
+A.button=s=>{if(!list().length)return;const b=h('button','againbtn','<span class="agic">🔁</span><b>עוֹד פַּעַם</b>');b.onclick=()=>{O.sfx.pop(2);open();};
+  (s.querySelector('.dpick')||s.appendChild(h('div','dpick'))).appendChild(b);};
+function open(){O.setScreen('sTal','meadow',O.showMap);O.hud('');O.sayNow='';const s=$('#sTal');s.innerHTML='';
+  s.appendChild(h('div','whead','<span class="gd">🔁</span><h1>עוֹד פַּעַם</h1>'));const box=h('div','again');
+  list().forEach(([d,ids])=>{const [pic,t]=dayHead(d);const day=h('div','agday',`<div class="aghead"><span class="agpic">${pic}</span><b class="agt">${t}</b></div>`);const g=h('div','dall');
+    ids.forEach(id=>{const x=target(id);const b=h('button','dcard agtile',`<span class="dic">${x.ic}</span><b>${x.n}</b>`);b.dataset.id=id;b.style.setProperty('--dc',x.c);b.onclick=()=>{O.sfx.pop(3);x.run();};g.appendChild(b);});
+    day.appendChild(g);box.appendChild(day);});
+  s.appendChild(box);}
+A.open=open;
 })();
 
 /* ===== WIRING: plugs the content packs into the game. Loaded last by build_talents.py, after every pack. =====

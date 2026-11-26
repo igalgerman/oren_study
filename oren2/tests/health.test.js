@@ -134,6 +134,51 @@ const SH = process.env.HSHOTS; if (SH) fs.mkdirSync(SH, { recursive: true });
     ok('interval chip saves', await p.evaluate(() => window.HEALTH.cfg().brk === 30));
     await p.evaluate(() => window.OREN.showMap()); await sleep(200);
   }
+  // ---------- #46: a reminder from the parent (bathroom / water / eat), now or in X minutes ----------
+  await p.evaluate(() => { window.__says = []; const O = window.OREN, s0 = O.say; O.say = t => { window.__says.push(String(t)); return s0 && s0(t); }; });
+  const rem = () => p.evaluate(() => { const e = document.querySelector('.hlock.hrem'); if (!e) return null; return { h2: (e.querySelector('h2') || {}).textContent, ok: !!e.querySelector('.hback'), dis: (e.querySelector('.hback') || {}).disabled, k: (e.querySelector('.hk') || {}).textContent }; });
+  ok('three fixed reminder sentences, with nikud', await p.evaluate(() => { const t = window.HEALTH.remTexts(); return t.length === 3 && t.every(s => /[ְ-ּ]/.test(s)); }));
+  if (BUILT) {
+    await p.evaluate(() => window.TAL.parentPanel('day')); await sleep(400);
+    const rs = p.locator('#sPar .psec', { hasText: 'תזכורת לאורן' });
+    const rp = await rs.evaluate(s => ({ big: [...s.querySelectorAll('.bigbtn')].map(b => b.textContent.trim()), chips: [...s.querySelectorAll('.pchip')].map(b => b.textContent.trim()), inputs: s.querySelectorAll('input,textarea').length })).catch(() => null);
+    ok('parent panel: 3 reminder buttons, "now" or in X minutes, no free text', rp && rp.big.length === 3 && rp.chips[0] === 'עכשיו' && rp.chips.length >= 3 && !rp.inputs, JSON.stringify(rp));
+    await rs.locator('.pchip', { hasText: /^5 דק׳$/ }).click(); await sleep(200);
+    await p.locator('#sPar .psec', { hasText: 'תזכורת לאורן' }).locator('.bigbtn', { hasText: 'מים' }).click(); await sleep(300);
+    const sr = await p.evaluate(() => ({ r: window.TAL.S().set.rem, now: window.HEALTH.clock() }));
+    ok('parent sends "water in 5 minutes"', sr.r && sr.r.k === 'water' && sr.r.at === sr.now + 5 * 60000 && !sr.r.ok, JSON.stringify(sr));
+    ok('the panel says when it will show', /תופיע ב-/.test(await p.locator('#sPar .psec', { hasText: 'תזכורת לאורן' }).textContent()));
+    await shot('parent-reminder');
+    await p.evaluate(() => window.OREN.showMap()); await sleep(200);
+  } else await p.evaluate(() => { window.TAL.S().set.rem = { k: 'water', at: window.HEALTH.clock() + 5 * 60000, t: window.HEALTH.clock() }; });
+  await p.evaluate(() => window.HEALTH.check()); await sleep(200); ok('a later reminder waits for its time', !(await rem()));
+  await clock(5 * 60000); await p.evaluate(() => window.HEALTH.check()); await sleep(600); l = await rem();
+  ok('at its time, at home: a big picture with the sentence', l && l.k === '💧' && /לִשְׁתּוֹת מַיִם/.test(l.h2) && l.ok && !l.dis, JSON.stringify(l));
+  ok('the game voice reads it', await p.evaluate(() => window.__says.some(s => /מַיִם/.test(s))));
+  await shot('reminder-water');
+  await pressBack(); await sleep(400);
+  ok('ok dismisses it, and it is marked seen', !(await rem()) && await p.evaluate(() => window.TAL.S().set.rem.ok === 1));
+  await p.evaluate(() => window.HEALTH.check()); await sleep(200); ok('and it does not come back', !(await rem()));
+  // it does not interrupt: during an activity it waits for the end
+  await p.evaluate(id => window.TAL.ACT[id].run(() => window.OREN.showMap()), rid); await sleep(200);
+  await p.evaluate(() => { const t = window.HEALTH.clock(); window.TAL.S().set.rem = { k: 'toilet', at: t, t }; window.HEALTH.check(); }); await sleep(300);
+  await clock(30000); await p.evaluate(() => window.HEALTH.check()); await sleep(300);
+  ok('reminder "now" does not interrupt an activity', !(await rem()));
+  await p.evaluate(id => window.TAL.finishAct(id, 0, 5, 0, () => window.OREN.showMap()), rid); await sleep(600);
+  ok('not over the result window', !(await rem()));
+  await p.locator('#ov .bigbtn:not(.plain)').click(); await sleep(500); l = await rem();
+  ok('it shows when the activity ends', l && l.k === '🚽' && /לַשֵּׁרוּתִים/.test(l.h2), JSON.stringify(l));
+  await pressBack(); await sleep(400); if (await lock()) { await clock(31000); await sleep(400); await pressBack(); await sleep(400); }
+  // ... but at most about a minute
+  await p.evaluate(id => window.TAL.ACT[id].run(() => window.OREN.showMap()), rid); await sleep(200);
+  await p.evaluate(() => { const t = window.HEALTH.clock(); window.TAL.S().set.rem = { k: 'eat', at: t, t }; window.HEALTH.check(); }); await sleep(300);
+  await clock(61000); await p.evaluate(() => window.HEALTH.check()); await sleep(400); l = await rem();
+  ok('after about a minute it shows even in an activity', l && l.k === '🍽️' && /לֶאֱכֹל/.test(l.h2), JSON.stringify(l));
+  await pressBack(); await sleep(300); await p.evaluate(() => window.OREN.showMap()); await sleep(300);
+  if (await lock()) { await clock(31000); await sleep(400); await pressBack(); await sleep(400); }
+  // an old reminder (device was off for hours) is not shown
+  await p.evaluate(() => { const t = window.HEALTH.clock() - 3 * 3600e3; window.TAL.S().set.rem = { k: 'water', at: t, t }; window.HEALTH.check(); }); await sleep(300);
+  ok('a reminder from hours ago is skipped', !(await rem()));
   // ---------- tomorrow ----------
   await setClock('2026-11-26T09:00:00'); await p.evaluate(() => { const r = window.HEALTH.day(); r.on = 60; });
   const rv = await p.evaluate(() => ({ rest: window.HEALTH.resting('read'), sci: window.HEALTH.resting('sci'), review: window.HEALTH.review() }));

@@ -4,6 +4,8 @@
 .hlock h2{margin:0;font-size:32px;line-height:1.35}.hlock .sub{font-family:var(--read);font-size:22px;line-height:1.6}
 body.hlocked #ov{position:fixed;z-index:100}
 .hfr{display:flex;align-items:flex-end;justify-content:center;gap:12px}.hfr .hav svg{width:104px;height:104px}.hfr .hk{font-size:66px;line-height:1}
+.hcd{font-size:34px;font-weight:900;direction:ltr;min-height:40px;color:var(--ink-soft)}
+.hlock.hrem .hk{font-size:110px}.hlock.hrem .sub{margin-bottom:-6px}
 .hcnt{font-size:56px;font-weight:900;line-height:1;color:#3a8fc4}
 .hlock .hback[disabled]{cursor:default;background:linear-gradient(to left,var(--ok) var(--p,0%),#b9c2c9 var(--p,0%));box-shadow:inset -6px -6px 0 rgba(0,0,0,.15),0 7px 0 rgba(0,0,0,.3)}
 .hlock .hback.ready{animation:pop .35s ease-out both}
