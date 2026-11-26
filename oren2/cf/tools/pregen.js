@@ -97,16 +97,16 @@ async function collect() {
     for (const g of ['balloon', 'soccer', 'basket', 'swim', 'mole', 'frog']) { await ev(`(()=>{window.TAL_arcade(()=>{});window.__arc.start('${g}');})()`, 1200); await ev(`window.__arc.finish(9)`, 300); }
     await ev(`window.TAL.callParents('כְּדֵי לִקְרֹא בְּקוֹל צָרִיךְ אִשּׁוּר שֶׁל הוֹרֶה לַמִּיקְרוֹפוֹן.')`); await ev(`window.TAL.breakTime&&window.TAL.breakTime()`);
     await ev(`(()=>{window.TAL.parentPanel('voice');const b=[...document.querySelectorAll('#sPar button')].find(x=>/השמיעו|דוגמה/.test(x.textContent));b&&b.click();})()`, 300);
-    // static pass: finite data through the client's own text path (fullSpell, first 400 chars)
+    // static pass: finite data through the client's own text path (fullSpell, then the same 400-char parts, #401)
     const stat = await p.evaluate(D => { const O = window.OREN, T = window.TAL, out = [], sp = s => String(s).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-      const add = s => { if (s && /[א-ת]/.test(s)) out.push(window.__fullSpell(s).slice(0, 400)); };
+      const add = s => { if (s && /[א-ת]/.test(s)) out.push(...window.__ttsParts(window.__fullSpell(s))); };   // #401: the same parts the game asks for
       (D.INTRO || []).forEach(x => add(x[1])); add('אוֹרֶן, אַתָּה אַלּוּף הַחֶשְׁבּוֹן שֶׁל אֶרֶץ הַבְּלוֹקִים!');
       O.WORLDS.forEach(w => { (w.intro || []).forEach(add); (w.outro || []).forEach(add); add(w.say); });
       (D.QUESTS || []).forEach(q => { add(q.e + ' ' + q.a); add(sp(q.z)); add(q.t); });
       (T.TOG || []).forEach(a => add(sp(typeof a.kid === 'function' ? a.kid('') : a.kid))); Object.values(T.RW || {}).forEach(r => add(sp(r.t)));
       (T.WORDS || []).forEach(w => add(sp(w.w)));
       /* English words and letters (eng-word, eng-listen, eng-letter) in the English game voice */
-      (T.WORDS || []).filter(w => w.en).forEach(w => [w.en, w.en[0].toUpperCase() + '. ' + w.en].forEach(t => out.push({ t: sp(t), v: 'en-US-Chirp3-HD-Despina', r: 0.85 })));
+      (T.WORDS || []).filter(w => w.en).forEach(w => [w.en, w.en[0].toUpperCase() + '. ' + w.en].forEach(t => window.__ttsParts(sp(t)).forEach(t => out.push({ t, v: 'en-US-Chirp3-HD-Despina', r: 0.85 }))));
       ['זמן לנוח. כל הכבוד היום, אורן! נתראה מחר.', 'הזמן של היום נגמר. כל הכבוד היום, אורן! נתראה מחר.', 'עוד דקה אחת לסיום היום', ...[2, 3, 4, 5].map(n => `עוד ${n} דקות לסיום היום`)].forEach(add);
       (D.SENT || []).forEach(s => { add(s[0]); add(s[1]); });
       (D.STORIES || []).forEach(st => { add(st.t); st.s.forEach(add); st.q.forEach(q => add(q[0])); });
@@ -119,7 +119,7 @@ async function collect() {
       tryf(() => W.HELP.allTexts().forEach(s => add(sp(s))));
       tryf(() => W.LESSONS.speakList().forEach(s => add(sp(s))));
       tryf(() => W.HEALTH.remTexts().forEach(add));
-      tryf(() => W.ENGLISH2.speakList().forEach(t => { t = sp(t); if (/[א-ת]/.test(t)) add(t); else if (t) out.push({ t, v: 'en-US-Chirp3-HD-Despina', r: 0.85 }); }));
+      tryf(() => W.ENGLISH2.speakList().forEach(t => { t = sp(t); if (/[א-ת]/.test(t)) add(t); else if (t) window.__ttsParts(t).forEach(t => out.push({ t, v: 'en-US-Chirp3-HD-Despina', r: 0.85 })); }));
       return out; }, DATA);
     (await p.evaluate(() => window.__said)).concat(stat).forEach(x => { const c = norm(x); if (c) SAID.set(idOf(c), c); });
     console.log('collected', SAID.size, 'so far (' + (vp.isMobile ? 'phone' : 'desktop') + ')'); await ctx.close(); }

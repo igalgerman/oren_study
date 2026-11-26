@@ -10,3 +10,4 @@ help-phone 90             # same file on the phone viewport: ~67 s
 regressions 60            # #356 walks all ~114 activities, taps back on each: ~42 s under load
 playthrough-desktop 300   # FULL=1 only: plays every world level by level
 playthrough-phone 300     # FULL=1 only: same on the phone viewport
+voice-stop 60             # #401 adds a 1200-char text spoken in parts: ~10 s
