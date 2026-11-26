@@ -1,6 +1,8 @@
 """#330 End-to-end canary: a broken step of the flow is found by the system, not by the owner.
-Every EVERY_H (and after a merge that touches tools/runner or tools/mods) the watchdog opens ONE tiny issue (label canary, express,
-P3, pack, ready-for-agent: append one line to tools/runner/.canary.md) and lets the normal flow run it. #450: 'express' gives it its
+Every EVERY_H (and after a merge that touches tools/runner or tools/mods) the watchdog runs ONE tiny issue (label canary, express,
+P3, pack, ready-for-agent: append one line to tools/runner/.canary.md) and lets the normal flow run it.
+#538: at most one run per canary_minutes (config, default 60), never on a governor STOP or while a P0 waits for a lane. The issue is
+ONE rolling issue (TITLE): each run reopens it, sets its body to the new line, makes it ready again and comments; its PR touches only FILE. #450: 'express' gives it its
 own express lane, so all normal lanes busy never delay it; it never starts on a governor STOP, and its 'start' clock waits meanwhile:
   start (in-progress or a PR) -> PR -> review (a VERDICT comment) -> merge -> issue closed.
 Each step has a deadline (STEPS, minutes), counted from the time the step before it was seen done (start: from the opening).
@@ -21,6 +23,8 @@ sys.path.insert(0, str(HERE))
 import runner as R
 
 EVERY_H = 6
+GAP_MIN = int(R.CFG.get("canary_minutes", 60))   # #538: never two canary runs closer than this
+TITLE = "Canary: rolling end-to-end flow check (#330, #538)"
 STEPS = (("start", 10), ("pr", 30), ("review", 20), ("merge", 20), ("close", 20))   # minutes per step
 GIVE_UP_H = 3
 CHECK_S = 120                   # GitHub is read at most this often while a canary runs
@@ -31,10 +35,11 @@ WATCH = ("tools/runner", "tools/mods", f":(exclude){FILE}")   # the canary's own
 STATE = R.RUNS / "canary.json"
 
 # ---------- pure ----------
-def due(st, now, changed_at):
-    """-> why a new canary starts now, or None."""
+def due(st, now, changed_at, gap_min=None):
+    """-> why a new canary starts now, or None. #538: never within gap_min (canary_minutes) of the last start."""
     if st.get("run"): return None
     if not st.get("started"): return "first run"
+    if now - st["started"] < (GAP_MIN if gap_min is None else gap_min) * 60: return None
     if changed_at and changed_at > st["started"]: return "tools/runner or tools/mods changed"
     if now - st["started"] >= EVERY_H * 3600: return f"every {EVERY_H} h"
     return None
@@ -66,6 +71,11 @@ def late(run, now):
         return (s, mins) if now - t > mins * 60 else None
     return None
 
+def p0_waiting(issues):
+    """#538: open P0 issues waiting for a lane (ready-for-agent, not running) -> their numbers; the canary gives them the slot."""
+    names = lambda i: {l["name"] if isinstance(l, dict) else l for l in i.get("labels", [])}
+    return [i["number"] for i in issues if {"P0", "ready-for-agent"} <= names(i) and "in-progress" not in names(i)]
+
 def hhmm(t): return time.strftime("%H:%M", time.localtime(t))
 
 def line(st):
@@ -85,7 +95,7 @@ def line(st):
 def issue_body(stamp):
     return (f"Canary (#330): an automatic end-to-end check of the flow, opened by the watchdog. Do not change it by hand.\n\n"
             f"Append this one line at the end of `{FILE}`:\n\n`canary {stamp}`\n\n"
-            f"## Acceptance\n- `{FILE}` ends with the line `canary {stamp}`; no other file changes.\n"
+            f"## Acceptance\n- `{FILE}` ends with the line `canary {stamp}`; the PR touches only `{FILE}` (no other file changes).\n"
             f"- Tests: none (one text line); CI runs as usual.\n\nOut of scope: everything else.\n")
 
 def budget_problems(cache):
@@ -197,24 +207,45 @@ def _json(rc, out, default):
     try: return json.loads(out) if rc == 0 and out.strip() else default
     except ValueError: return default
 
+LABELS = f"{LABEL},express,P3,pack,ready-for-agent"
+
 def _open(run, st, now, why, log):
-    """Close leftover canaries, open a new one. -> True when opened."""
+    """#538: reuse the ONE rolling canary issue (reopen, new body, ready again, a comment), or create it the first time.
+    Other open canary issues (the old one-per-run ones) are closed. -> True when this run started."""
     if not st.get("label"):
         run(["gh", "label", "create", LABEL, "--repo", R.REPO, "--force", "--color", "bfd4f2", "--description", "end-to-end flow check (#330)"])
         st["label"] = True
-    rc, out = run(["gh", "issue", "list", "--repo", R.REPO, "--label", LABEL, "--state", "open", "--json", "number"])
+    rc, out = run(["gh", "issue", "list", "--repo", R.REPO, "--label", LABEL, "--state", "all", "--limit", "200", "--json", "number,state,title"])
     if rc: log("GitHub unreadable, canary not opened"); return False
-    for i in _json(rc, out, []):
-        run(["gh", "issue", "close", str(i["number"]), "--repo", R.REPO, "--reason", "not planned", "--comment", "Leftover canary, closed by the next one (#330)."])
+    found = _json(rc, out, [])
+    roll = min((i for i in found if i.get("title") == TITLE), key=lambda i: i["number"], default=None)
+    for i in found:
+        if i.get("state") == "OPEN" and i is not roll:
+            run(["gh", "issue", "close", str(i["number"]), "--repo", R.REPO, "--reason", "not planned", "--comment", "Leftover canary, closed by the next one (#330)."])
     stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(now))
-    rc, out = run(["gh", "issue", "create", "--repo", R.REPO, "--title", f"Canary {stamp}", "--label", f"{LABEL},express,P3,pack,ready-for-agent",
-                   "--body", issue_body(stamp)])
-    try: n = int(out.strip().rstrip("/").rsplit("/", 1)[-1]) if rc == 0 else 0
-    except ValueError: n = 0
-    if not n: log(f"canary not opened: {out.strip()[:200]}"); return False
-    st["run"], st["started"] = {"n": n, "opened": now, "at": {}, "alarmed": []}, now
-    log(f"#{n} opened ({why})")
+    if roll:
+        n = roll["number"]
+        if roll.get("state") != "OPEN": run(["gh", "issue", "reopen", str(n), "--repo", R.REPO])
+        rc, out = run(["gh", "issue", "edit", str(n), "--repo", R.REPO, "--body", issue_body(stamp), "--add-label", LABELS,
+                       "--remove-label", "in-progress,blocked"])
+        if rc: log(f"canary #{n} not reused: {out.strip()[:200]}"); return False
+        run(["gh", "issue", "comment", str(n), "--repo", R.REPO, "--body", f"Canary run {stamp} ({why}): append `canary {stamp}` to `{FILE}` (see the body)."])
+    else:
+        rc, out = run(["gh", "issue", "create", "--repo", R.REPO, "--title", TITLE, "--label", LABELS, "--body", issue_body(stamp)])
+        try: n = int(out.strip().rstrip("/").rsplit("/", 1)[-1]) if rc == 0 else 0
+        except ValueError: n = 0
+        if not n: log(f"canary not opened: {out.strip()[:200]}"); return False
+    st["run"], st["started"] = {"n": n, "opened": now, "since": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), "at": {}, "alarmed": []}, now
+    log(f"#{n} run started ({why})")
     return True
+
+def _blocked(run, stopped):
+    """#538: why no canary may start now (governor STOP, a P0 waiting for a lane), or '' when it may."""
+    if stopped(): return "governor STOP"
+    rc, out = run(["gh", "issue", "list", "--repo", R.REPO, "--state", "open", "--label", "P0", "--limit", "100", "--json", "number,title,labels"])
+    if rc: return "GitHub unreadable"
+    w = p0_waiting(_json(rc, out, []))
+    return f"P0 #{w[0]} waiting" if w else ""
 
 def p0_title(step): return f"Canary: step '{step}' of the flow is broken"
 
@@ -236,7 +267,7 @@ def _check(run, st, now, say, log, stopped=gov_stop):
     rc, out = run(["gh", "issue", "view", str(n), "--repo", R.REPO, "--json", "state,labels"])
     issue = _json(rc, out, None)
     if issue is None: return                                   # GitHub unreadable: next tick
-    pr = remote.find_pr(n, run, state="all", fields="number,state")
+    pr = remote.find_pr(n, run, state="all", fields="number,state", since=r.get("since"))   # #538: the rolling issue's earlier PRs are not this run's
     verdict = ""
     if pr:
         pv = _json(*run(["gh", "pr", "view", str(pr["number"]), "--repo", R.REPO, "--json", "comments"]), {})
@@ -273,7 +304,7 @@ def tick(run=_sh, say=_say, log=_log, now=None, st=None, changed=last_tool_chang
     if now - st.get("checked", 0) >= CHECK_S:
         st["checked"] = now
         if st.get("run"): _check(run, st, now, say, log, stopped)
-        if not st.get("run") and (why := due(st, now, changed())): _open(run, st, now, why, log)
+        if not st.get("run") and (why := due(st, now, changed())) and not _blocked(run, stopped): _open(run, st, now, why, log)
     side(st, now)
     _save(st)
     return st

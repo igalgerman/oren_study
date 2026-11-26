@@ -21,7 +21,7 @@ Every minute it checks, deterministically:
       label owner -> an owner question (popup)
   5d. #306 desks.py: keeps the two cloud sessions 'Oren inbox (cloud)' / 'Oren ask (cloud)' alive and every status_minutes
       writes the session links + dashboard.py --text into ONE pinned issue (edited in place, nothing committed)
-  5d. #330 canary.py: every 6 h (and after a merge into tools/runner or tools/mods) ONE tiny canary issue runs the whole flow;
+  5d. #330 canary.py: every 6 h (and after a merge into tools/runner or tools/mods; #538: at most once per canary_minutes) ONE rolling canary issue runs the whole flow;
       a step past its deadline -> alarm to the orchestrator + inspector, NEEDS-ATTENTION on panel/dashboard; side paths hourly
   5f. #293 pcload.py, every 2 min: CPU / free RAM / heavy process counts; an overload -> alarm with the top 3 processes by RAM and who
       started them, to the orchestrator + inspector (once per 30 min per cause); .runs/pc.json for the panel/dashboard. Never kills.
