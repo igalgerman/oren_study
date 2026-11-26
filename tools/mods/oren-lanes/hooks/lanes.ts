@@ -206,6 +206,11 @@ export const isCloud = (i: Issue) => (i.labels ?? []).some(x => x.name === 'clou
 /** #136: a row of `python tools/runner/remote.py cloud`. last = ISO UTC of the newest comment/commit. */
 export type CloudLane = { n: number; title: string; state: string; line?: string; last: string; stale: boolean; pr: string; session: string }
 
+/** #236: cloud lanes = open issues labelled cloud + the rows of `remote.py cloud` (in-progress issues whose run is remote). */
+export function cloudCount(issues: Issue[], lanes: CloudLane[]): number {
+  return new Set([...issues.filter(isCloud).map(i => i.number), ...lanes.map(c => c.n)]).size
+}
+
 const hhmmIso = (iso: string) => {
   const t = Date.parse(iso)
   return Number.isNaN(t) ? '-' : new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(t))

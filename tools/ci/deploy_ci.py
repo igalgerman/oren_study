@@ -59,6 +59,13 @@ def plan(event, run_sha, main_sha, green_sha, attempted):
     if attempted(sha): return "", f"{sha} was already deployed (or tried)"
     return sha, "newest green main" if event == "schedule" else "tests green on the newest main"
 
+def guard(event, sha, main_sha, green_sha):
+    """Pure: -> (still current?, why). Run in the deploy job right before anything goes live: a run that waited (or was planned long ago)
+    must not put an older sha over a newer one. workflow_run: sha must still be the newest main; schedule: the newest green main. Manual: always deploys."""
+    if event == "workflow_dispatch": return True, "manual run"
+    want = main_sha if event == "workflow_run" else green_sha
+    return sha == want, "still the newest" if sha == want else f"{sha} is no longer the newest ({want} is); not deploying it"
+
 def attempted_cache(sha):
     """A deploy of `sha` was tried: the deploy job saves the Actions cache key deploy-attempt-<sha> before deploy.sh (needs actions: read)."""
     key = "deploy-attempt-" + sha
@@ -88,6 +95,12 @@ def main(argv, attempted=attempted_cache):
         sha, why = plan(e("EVENT", ""), e("RUN_SHA", ""), e("MAIN_SHA", ""), e("GREEN_SHA", ""), attempted)
         _append("GITHUB_OUTPUT", f"sha={sha}\n")
         text = (f"Deploy {sha}: {why}\n" if sha else f"Skipped: {why}\n"); _append("GITHUB_STEP_SUMMARY", text); print(text)
+        return 0
+    if argv == ["guard"]:
+        e = os.environ.get
+        ok, why = guard(e("EVENT", ""), e("PLAN_SHA", ""), e("MAIN_SHA", ""), e("GREEN_SHA", ""))
+        _append("GITHUB_OUTPUT", f"current={str(ok).lower()}\n")
+        text = f"Guard: {why}\n"; _append("GITHUB_STEP_SUMMARY", text); print(text)
         return 0
     print(__doc__); return 2
 

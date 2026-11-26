@@ -252,3 +252,13 @@ test('#136 cloud issues stay out of the local lane rows; local rows unchanged', 
   expect(v.lanes[0]).toBe('● #1 local one — building')
   expect(v.lanes.some(s => s.includes('#2'))).toBe(false)
 })
+
+import { cloudCount } from './lanes'
+
+test('#236 cloud count = labelled cloud issues + live remote lanes from remote.py cloud (no double count)', () => {
+  const L = (...n: string[]) => n.map(name => ({ name }))
+  const lane = (n: number) => ({ n, title: 't', state: 'working', last: '', stale: false, pr: '', session: '' })
+  const issues = [{ number: 9, title: 'a', labels: L('in-progress', 'cloud') }, { number: 208, title: 'b', labels: L('in-progress') }]
+  expect(cloudCount(issues, [lane(9), lane(208), lane(207), lane(192)])).toBe(4)
+  expect(cloudCount(issues, [])).toBe(1)
+})

@@ -73,3 +73,15 @@ assert d.main(["plan"], attempted=never) == 0 and "sha=b" in open(outp).read() a
 open(outp, "w").close()
 assert d.main(["plan"], attempted=always) == 0 and "sha=\n" in open(outp).read() and "Skipped" in open(summ).read()
 print("ok plan")
+
+# guard (deploy job, before the marker/deploy): an older planned sha never overwrites a newer one
+assert d.guard("workflow_run", "b", "b", "b")[0] is True
+ok, why = d.guard("workflow_run", "a", "b", "a"); assert not ok and "no longer" in why, why
+assert d.guard("schedule", "b", "c", "b")[0] is True                          # newest green main, even while main's newest tests run
+assert d.guard("schedule", "a", "c", "b")[0] is False                         # a newer green commit appeared while this run waited
+assert d.guard("workflow_dispatch", "c", "c", "b")[0] is True
+os.environ.update(EVENT="schedule", PLAN_SHA="a", MAIN_SHA="c", GREEN_SHA="b"); open(outp, "w").close()
+assert d.main(["guard"]) == 0 and "current=false" in open(outp).read()
+os.environ.update(PLAN_SHA="b"); open(outp, "w").close()
+assert d.main(["guard"]) == 0 and "current=true" in open(outp).read()
+print("ok guard")

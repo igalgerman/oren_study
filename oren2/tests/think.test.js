@@ -168,4 +168,28 @@ ok(!bankBad.length, `word banks consistent: ${B.ANA.length} analogies, ${B.SEN.l
   ok(p[5].length === 3 && p[5].every(c => c.n === 6 && c.sks.every(s => sk.includes(s))), 'test level 6: three chapters from open skills');
   const s = C.testSkills(p[4][0]); ok(s.length === 10 && sk.every(k => s.includes(k)), 'chapter mixes all open skills'); ok(C.testPlan(0, sk).length === 0, 'level 0 = closed'); }
 
-require('./lib').finish('think', out);
+/* ---------- 8. the compare question in the page: the sign the kid sees is the sign the button holds (#208) ---------- */
+(async () => {
+  const L = require('./lib'); const { chromium } = require('playwright');
+  const b = await chromium.launch(); const p = await (await b.newContext(L.VIEWPORT)).newPage();
+  await p.addInitScript(() => { try { localStorage.clear(); } catch (e) {} window.__fast = true; });
+  await p.goto(L.URL); await L.noCoach(p);
+  await p.evaluate(() => { const C = window.THINK; C.GEN.ser = () => { let q; do q = C.genMth(4); while (!/^cm/.test(q.key)); return q; }; window.TAL.ACT['think-ser'].run(() => window.OREN.showMap()); });
+  const btns = await p.$$('#sTal .chs .chb');
+  const vals = await p.evaluate(() => window.__think.q.opts.map(o => o.v));
+  // which way does the drawn sign point? ink in the middle row sits right for ">" and left for "<"
+  const seen = [];
+  for (const [k, el] of btns.entries()) {
+    if (vals[k] === '=') continue;
+    const png = (await (await el.$('.tht')).screenshot()).toString('base64');
+    seen.push([vals[k], await p.evaluate(async src => { const im = new Image(); im.src = 'data:image/png;base64,' + src; await im.decode();
+      const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data, bg = [d[0], d[1], d[2]]; let sx = 0, n = 0, x0 = 1e9, x1 = -1;
+      for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) { const i = (y * c.width + x) * 4; if (Math.abs(d[i] - bg[0]) + Math.abs(d[i + 1] - bg[1]) + Math.abs(d[i + 2] - bg[2]) > 150) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); } }
+      const ym = c.height / 2 | 0; for (let y = ym - 1; y <= ym + 1; y++) for (let x = x0; x <= x1; x++) { const i = (y * c.width + x) * 4; if (Math.abs(d[i] - bg[0]) + Math.abs(d[i + 1] - bg[1]) + Math.abs(d[i + 2] - bg[2]) > 150) { sx += x; n++; } }
+      return n ? (sx / n > (x0 + x1) / 2 ? '>' : '<') : '?'; }, png)]);
+  }
+  ok(seen.length === 2 && seen.every(([v, s]) => v === s), 'compare question: each sign button shows the sign it holds (not mirrored) ' + JSON.stringify(seen));
+  await b.close();
+  require('./lib').finish('think', out);
+})();

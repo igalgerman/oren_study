@@ -3,7 +3,7 @@ import type { Register } from 'claude-code'
 
 import type { OrenLanesData } from '../types/index'
 import {
-  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, flowRows, laneReasons, view, statsLines, parseMaxCore, parseLocalLanes, parseRemoteLanes, cloudRows, isCloud,
+  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, flowRows, laneReasons, view, statsLines, parseMaxCore, parseLocalLanes, parseRemoteLanes, cloudRows, cloudCount,
 } from './lanes'
 import type { CloudLane, Issue, View, Win } from './lanes'
 
@@ -78,10 +78,12 @@ export const register: Register = on => {
         let localMax = 3, remoteMax = 0
         try { const t = (await $.fs.read(CONFIG)) as string; maxCore = parseMaxCore(t); localMax = parseLocalLanes(t); remoteMax = parseRemoteLanes(t) } catch { /* defaults */ }
         let cloud: string[] = []
+        let lanesCloud: CloudLane[] = []
         try {   // #136: one row per cloud lane, state from tools/runner/remote.py
           const r = await $.process.run([PY, REMOTE, 'cloud'], { timeoutMs: 120000 })
           if (r.exitCode !== 0) throw new Error(`remote.py exit ${r.exitCode}`)
-          cloud = cloudRows(JSON.parse(r.stdout) as CloudLane[])
+          lanesCloud = JSON.parse(r.stdout) as CloudLane[]
+          cloud = cloudRows(lanesCloud)
         } catch (err) {
           errors.push(`cloud lanes unavailable: ${trunc(String(err), 60)}`)
         }
@@ -120,7 +122,7 @@ export const register: Register = on => {
           updatedAt: prevData.updatedAt,
         } : {
           windows, groups: groupIssues(issues), lastLog, errors, usage, flow, done, lanes: laneReasons(issues, windows, 3, maxCore), view: vw, stats, observer,
-          localMax, remoteMax, cloudCount: issues.filter(isCloud).length, cloud,
+          localMax, remoteMax, cloudCount: cloudCount(issues, lanesCloud), cloud,
           updatedAt: await $.clock.now(),
         }
         await update($, dataAtom, () => data)
