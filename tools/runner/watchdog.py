@@ -767,10 +767,12 @@ def run_mtime(n):
     try: return max([d.stat().st_mtime] + [f.stat().st_mtime for f in d.iterdir()])
     except OSError: return None
 
-def stuck_runs(ts, mtimes, now, stuck_hours, st):
+def stuck_runs(ts, mtimes, now, stuck_hours, st, held=None):
     """Pure (#248): -> (alarms [(n, text)], stuck_lanes [n]). First alarm when .runs/<n> is unchanged for stuck_hours; if it is STILL
-    unchanged STUCK_AGAIN_MIN later: reported again once, and counted as a stuck lane (until it moves or the window is gone)."""
+    unchanged STUCK_AGAIN_MIN later: reported again once, and counted as a stuck lane (until it moves or the window is gone).
+    #521: held = issue numbers still labelled in-progress (None = unknown): a run whose issue lost it was requeued -> dropped."""
     live = {int(m.group(1)) for t in ts if t.get("state") == "live" for m in [re.match(r"^run-(\d+)$", t.get("name") or "")] if m}
+    if held is not None: live &= set(held)
     for n in [n for n in st if n not in live]: st.pop(n)
     alarms = []
     for n in sorted(live):
@@ -785,10 +787,17 @@ def stuck_runs(ts, mtimes, now, stuck_hours, st):
             alarms.append((n, f"run-{n} is STILL stuck {int((now - s['at']) / 60)} min after the first alarm: counted as a stuck lane"))
     return alarms, sorted(n for n, s in st.items() if s["again"])
 
+def in_progress_nums():
+    """#521: open issues labelled in-progress (from the gh cache); None when GitHub can't be read (then nothing is dropped)."""
+    rc, out = R.gh("issue", "list", "--state", "open", "--label", "in-progress", "--limit", "200", "--json", "number")
+    try: return None if rc else {int(i["number"]) for i in json.loads(out or "[]")}
+    except (ValueError, KeyError, TypeError): return None
+
 def stuck_tick(ts, now=None):
     now = now or time.time()
     nums = [int(m.group(1)) for t in ts if t.get("state") == "live" for m in [re.match(r"^run-(\d+)$", t.get("name") or "")] if m]
-    alarms, lanes = stuck_runs(ts, {n: run_mtime(n) for n in nums}, now, float(R.CFG.get("stuck_hours", 2)), _stuck)
+    held = in_progress_nums() if nums else None
+    alarms, lanes = stuck_runs(ts, {n: run_mtime(n) for n in nums}, now, float(R.CFG.get("stuck_hours", 2)), _stuck, held)
     for n, text in alarms: log("#248 " + text)
     if alarms: tell("STUCK RUN (watchdog #248): " + " · ".join(t for _, t in alarms))
     try: (R.RUNS / "stuck_lanes.json").write_text(json.dumps(lanes), encoding="utf-8")

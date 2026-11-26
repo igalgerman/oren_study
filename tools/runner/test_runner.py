@@ -1104,6 +1104,33 @@ assert al == [] and lanes == [8]
 al, lanes = W.stuck_runs(_sr, {8: 7300.0 + 9000, 9: 16000.0}, 7300.0 + 9001, 2, _stt)   # it moved: cleared
 assert al == [] and lanes == []
 print("ok stuck escalation (#248)")
+# #521: a requeued run (no live run-<n> terminal, or its issue lost in-progress) is dropped: no STILL-stuck alarm, no stuck lane
+_st5 = {5: {"m": 0.0, "at": 7300.0, "again": False}}
+al, lanes = W.stuck_runs([], {5: 0.0}, 7300.0 + 1800, 2, _st5)                                   # no live terminal
+assert al == [] and lanes == [] and 5 not in _st5, (al, lanes, _st5)
+_st5 = {5: {"m": 0.0, "at": 7300.0, "again": False}}
+_v5 = [{"name": "run-5", "state": "live", "virtual": True}]                                       # poller still lists it
+al, lanes = W.stuck_runs(_v5, {5: 0.0}, 7300.0 + 1800, 2, _st5, held=set())                       # but in-progress is gone
+assert al == [] and lanes == [] and 5 not in _st5, (al, lanes, _st5)
+_st5 = {5: {"m": 0.0, "at": 7300.0, "again": False}}
+al, lanes = W.stuck_runs(_v5, {5: 0.0}, 7300.0 + 1800, 2, _st5, held={5})                         # still in-progress: alarm
+assert [n for n, _ in al] == [5] and lanes == [5], (al, lanes)
+_st5 = {5: {"m": 0.0, "at": 7300.0, "again": False}}
+al, lanes = W.stuck_runs(_v5, {5: 0.0}, 7300.0 + 1800, 2, _st5, held=None)                        # labels unreadable: as before
+assert [n for n, _ in al] == [5]
+# stuck_tick end to end with fakes: stuck_lanes.json loses run-5, nothing told
+_sv = (W.tell, W.run_mtime, W.R.gh, dict(W._stuck)); _told5 = []
+W.tell = _told5.append; W.run_mtime = lambda n: 0.0
+W.R.gh = lambda *a, **k: (0, _json.dumps([]))                                                    # no issue is in-progress
+W._stuck.clear(); W._stuck[5] = {"m": 0.0, "at": 7300.0, "again": True}
+(W.R.RUNS / "stuck_lanes.json").write_text("[5]", encoding="utf-8")
+W.stuck_tick(_v5, now=7300.0 + 1800)
+assert _told5 == [] and _json.loads((W.R.RUNS / "stuck_lanes.json").read_text(encoding="utf-8")) == [] and 5 not in W._stuck
+W._stuck.clear(); W._stuck[5] = {"m": 0.0, "at": 7300.0, "again": True}
+W.stuck_tick([], now=7300.0 + 1800)                                                               # no live terminal
+assert _told5 == [] and _json.loads((W.R.RUNS / "stuck_lanes.json").read_text(encoding="utf-8")) == []
+W.tell, W.run_mtime, W.R.gh = _sv[:3]; W._stuck.clear(); W._stuck.update(_sv[3])
+print("ok requeued run dropped from stuck lanes (#521)")
 # #135: a cloud QUESTION parks the issue (lane freed, owner asked); the owner's answer resumes the same session
 import json
 _saved = {k: getattr(r, k) for k in ("gh", "set_labels", "tell_orchestrator")}
