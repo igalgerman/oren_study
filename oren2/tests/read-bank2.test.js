@@ -138,14 +138,17 @@ ST.forEach(st => {
   textPlain(st.t, st.tp, 'title');
   chk(!oldTitles.includes(st.t) && !gapTitles.includes(st.t), 'title already used: ' + st.t);
   chk(st.spr.length === 2 && st.spr.every(picOK), 'story pictures: ' + st.t);
-  chk(st.q.length === 3 && st.q.map(q => q[0]).join() === 'lit,seq,inf', `3 questions lit/seq/inf: ${st.t}`);
+  chk(st.q.length >= 2 && st.q.length <= 3 && st.q.every(q => ['lit', 'seq', 'inf', 'les'].includes(q[0])), `2-3 questions (lit/seq/inf/les): ${st.t}`);
+  chk(st.q.some(q => q[0] === 'les'), `a lesson question ("why / what did we learn"): ${st.t}`);
+  chk(['sci', 'math', 'value', 'word'].includes(st.gk), `goal kind sci/math/value/word: ${st.t} (${st.gk})`);
+  chk(typeof st.goal === 'string' && /[א-ת]/.test(st.goal) && !NIK.test(st.goal) && st.goal.length <= 60, `one learning goal, parent text without nikud: ${st.t}`);
   st.q.forEach(([, q, qp, a, ds]) => { textPlain(q, qp, 'story question'); const o = [a, ...ds]; chk(o.length === 3 && new Set(o).size === 3, `3 different answers: ${q}`);
     o.forEach(x => chk(NIK.test(x) || /^\d+$/.test(x), 'nikud in answer ' + x)); });
 });
 chk(new Set(ST.map(s => s.t)).size === ST.length, 'duplicate story titles');
 const avgS = L => { const a = ST.filter(s => s.lv === L); return a.reduce((t, s) => t + s.s.length, 0) / a.length; };
 for (let L = 2; L <= 5; L++) chk(avgS(L) > avgS(L - 1), `stories get longer: level ${L}`);
-flush('stories: 3-10 sentences, graded, plain aligned word by word, 3 questions with one answer');
+flush('stories: 3-10 sentences, graded, plain aligned word by word, a learning goal (#355), 2-3 questions with one answer, one about the lesson');
 /* nothing copied from the other banks */
 global.window = {}; let thinkTexts = [];
 try { require(path.join(ROOT, 'think-bank.js')); thinkTexts = window.THINK_BANK.RC.map(r => r.t); } catch (e) { }
