@@ -338,6 +338,9 @@ assert nums(r.select([_e(1, ["pack", "blocked"]), _e(2, ["pack"], )], 3, 2, 1)) 
 assert r.CFG["express_lanes"] == 1
 print("ok express")
 
+# runner must not call "python3" directly: on Windows it is only a bash shim / Store alias -> FileNotFoundError after every CI merge (#79, #72, #41)
+assert '["python3"' not in (r.HERE / "runner.py").read_text(encoding="utf-8")
+print("ok no-python3")
 # #65: model from the issue's model:* label
 assert r.model_of([]) == "sonnet" and r.model_of(["pack", "P1"]) == "sonnet"     # no label = config default
 assert r.model_of(["model:opus"]) == "opus" and r.model_of(["model:haiku", "pack"]) == "haiku"

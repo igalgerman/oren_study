@@ -1,6 +1,6 @@
 """Ask the owner questions in Hebrew in a browser page. Usage: ask.py questions.json [--timeout-min N]"""
 import html, json, os, sys, threading, time, webbrowser
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer  # threads: an idle browser pre-connect must not block the page
 
 CSS = """
 :root{--bg:#f4f5f7;--card:#fff;--fg:#1b1d21;--line:#c9ced6;--sel:#dff3e4;--acc:#1f9d4c;--bad:#d93025}
@@ -107,7 +107,7 @@ def main():
             self.wfile.write(b"ok")
             done.set()
 
-    srv = HTTPServer(("127.0.0.1", 0), H)
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     url = "http://127.0.0.1:%d/" % srv.server_port
     print(url, file=sys.stderr, flush=True)
