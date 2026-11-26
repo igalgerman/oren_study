@@ -145,7 +145,7 @@ def select(issues, max_parallel, max_core=1, express_lanes=0, core_held=0):
     exp_free = max(0, express_lanes - exp_active)
     slots = max_parallel - (len(active) - min(exp_active, express_lanes))
     ready = [i for i in issues if "ready-for-agent" in i["labels"]
-             and "in-progress" not in i["labels"] and "blocked" not in i["labels"] and "manual" not in i["labels"]
+             and "in-progress" not in i["labels"] and "blocked" not in i["labels"] and "manual" not in i["labels"] and "later" not in i["labels"]
              and not any(b in open_nums for b in blockers(i.get("body")))]
     chosen = []
     for i in sorted(ready, key=queue_key):   # #437: express, P0, tier, bug, P1..P3, oldest
