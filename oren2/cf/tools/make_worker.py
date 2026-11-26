@@ -94,7 +94,81 @@ function heNum(t){if(!/\d/.test(t))return t;
   const nx=/^\s+([א-ת][א-ת׳"']*)/.exec(all.slice(off+x.length));const g=nx&&NG[nx[1]];
   const w=heNumWords(d,g==='m',!!g);return w==null?x:(pre||'')+w;});}
 '''
-js='''const HTML=%s;const LISTEN=%s;%sconst MAN=%s;const SW=%s;const IC={'/icon-192.png':'%s','/icon-512.png':'%s'};
+SHOTSJS=r'''/* #462 session screenshots, the session review page and the weekly 'where Oren got stuck' digest (all on the #348 event log).
+   A batch may carry sh:[{i,d}] = up to 8 small JPEG data URLs, each linked to event i of that session; they go into the SAME evlog row
+   (columns sh = the JSON, si = their event ids, ns = how many): still one D1 write per batch. Caps: 30 per session and 100 per day, the
+   oldest dropped (the pages show only those; the hourly prune clears rows with none left), deleted after 14 days.
+   GET /api/log/review?day=YYYY-MM-DD = the day's sessions as timelines with their screenshots (owner only: the DIAG_KEY as ?key=, the
+   x-admin-key header, or the cookie the page sets after one ?key= visit). GET /api/log/digest?days=7 = the 5 places Oren got stuck most
+   (wrong answers, 30 s silences, errors) as text with a screenshot link each (&fmt=json for JSON); same key. Never linked from the game. */
+const SHOT_SES=30,SHOT_DAY=100,SHOT_DAYS=14,SHOT_MAX=8,SHOT_LEN=60000,SHOT_RE=/^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/;
+function shotClean(sh){if(!Array.isArray(sh))return [];const out=[],seen=new Set();
+ for(const s of sh.slice(-SHOT_MAX)){if(!s||!Number.isInteger(s.i)||s.i<1||seen.has(s.i)||typeof s.d!=='string'||s.d.length>SHOT_LEN||!SHOT_RE.test(s.d))continue;seen.add(s.i);out.push({i:s.i,d:s.d});}return out;}
+/* how many of each row's shots are kept (its newest ones): newest rows first, at most 30 per session and 100 per day, none after 14 days */
+function shotQuota(rows,now){const per={},day={},Q=new Map();
+ for(const r of [...rows].sort((a,b)=>b.id-a.id)){const n=+r.ns||0;if(!n)continue;if(r.at<now-SHOT_DAYS*864e5){Q.set(r.id,0);continue;}
+  const s=String(r.sid),d=evDay(r.at,+r.tz||0),k=Math.max(0,Math.min(n,SHOT_SES-(per[s]|0),SHOT_DAY-(day[d]|0)));per[s]=(per[s]|0)+k;day[d]=(day[d]|0)+k;Q.set(r.id,k);}
+ return Q;}
+const keptOf=(list,k)=>k>0?list.slice(-k):[];
+async function shotPrune(env,now){const R=((await env.DB.prepare('SELECT id,sid,at,tz,ns FROM evlog WHERE ns>0').all()).results)||[];const Q=shotQuota(R,now);
+ const drop=R.filter(r=>Q.get(r.id)===0).map(r=>r.id);
+ for(let k=0;k<drop.length;k+=90){const ids=drop.slice(k,k+90);await env.DB.prepare('UPDATE evlog SET sh=NULL,si=NULL,ns=0 WHERE id IN ('+ids.map(()=>'?').join(',')+')').bind(...ids).run();}}
+async function evAuth(req,u,env){if(!env.DIAG_KEY)return false;const c=/(?:^|;\s*)dk=([^;]+)/.exec(req.headers.get('cookie')||'');
+ let k=req.headers.get('x-admin-key')||u.searchParams.get('key')||'';if(!k&&c)try{k=decodeURIComponent(c[1]);}catch(e){}
+ return !!k&&(await sha(k))===(await sha(env.DIAG_KEY));}
+const hx=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+const hm=(t,tz,sec)=>new Date(t-tz*6e4).toISOString().slice(11,sec?19:16);
+const KL={ss:'session start',se:'session end',scr:'screen',mis:'mission opened',q:'question',ans:'answer',help:'help used',pop:'popup',err:'error',cerr:'console error',cwarn:'warning',idle:'no answer for 30 s',sync:'sync failed',retry:'retry'};
+const KHIDE=new Set(['tap','vis','lf','perf','au','voice']);
+function evSessions(rows,day,now){const S={},Q=shotQuota(rows,now),ses=sid=>S[sid]||(S[sid]={sid,ev:[],shot:new Map(),tz:0});
+ for(const r of rows){let L=[];try{L=JSON.parse(r.ev)||[];}catch(e){}const tz=+r.tz||0;
+  for(const e of L){const t=+e.t||r.at;if(evDay(t,tz)!==day)continue;const x=ses(String(e.osid||r.sid));x.tz=tz;x.ev.push(Object.assign({},e,{t}));}
+  if(r.ns>0&&r.sh){let sh=[];try{sh=JSON.parse(r.sh)||[];}catch(e){}for(const s of keptOf(sh,Q.get(r.id)))ses(String(r.sid)).shot.set(s.i,s.d);}}
+ return Object.values(S).filter(x=>x.ev.length).map(x=>{x.ev.sort((a,b)=>a.t-b.t||a.i-b.i);let min=0;for(let k=1;k<x.ev.length;k++){const g=x.ev[k].t-x.ev[k-1].t;if(g<=12e4)min+=g/6e4;}
+  x.min=Math.round(min);x.missions=x.ev.filter(e=>e.k==='mis').length;x.errors=x.ev.filter(e=>e.k==='err'||e.k==='cerr').length;
+  x.right=x.ev.filter(e=>e.k==='ans'&&e.ok).length;x.wrong=x.ev.filter(e=>e.k==='ans'&&!e.ok).length;x.t0=x.ev[0].t;return x;}).sort((a,b)=>a.t0-b.t0);}
+const RCSS='body{margin:0;background:#f6f2e8;font:15px/1.4 system-ui,Arial,sans-serif;color:#222}main{max-width:760px;margin:auto;padding:12px 16px}h1{font-size:20px;margin:6px 0}'
+ +'form{display:flex;gap:8px;margin:8px 0 12px}input,button{font:inherit;padding:6px 10px;border-radius:8px;border:1px solid #bbb}button{background:#3a8fc4;color:#fff;border:0}'
+ +'.ses{background:#fff;border-radius:14px;padding:10px 12px;margin:12px 0}.sum{font-weight:600}.tl{list-style:none;margin:8px 0 0;padding:0;border-inline-start:3px solid #ddd}'
+ +'.tl li{padding:5px 10px;border-bottom:1px solid #f0ede4;overflow-wrap:anywhere}.tl time{color:#777;margin-inline-end:8px;font-variant-numeric:tabular-nums}.tl .s{color:#3a8fc4;margin-inline-end:6px}'
+ +'.tl .ok{color:#2e8b3d}.tl .bad{color:#c0392b}.tl li.err{color:#c0392b;background:#fdecea}.tl img{display:block;max-width:100%;width:480px;margin:6px 0;border-radius:8px;border:1px solid #ddd}'
+ +'.none{color:#777}';
+function evDetail(e){const k=e.k;if(k==='ans')return e.ok?'<span class="ok">right</span>':'<span class="bad">wrong</span>';if(k==='mis')return hx(e.m||'');if(k==='help')return hx(e.h||'');
+ if(k==='pop')return hx(e.p||'');if(k==='err'||k==='cerr'||k==='cwarn')return hx(e.msg||'');if(k==='scr')return hx((e.from||'')+' > '+(e.s||''));if(k==='se')return hx((e.dur|0)+' s');if(k==='ss')return hx([e.dev,e.os,e.br].filter(Boolean).join(' '));return '';}
+function reviewHtml(day,list,key){const ses=list.map(x=>'<section class="ses" id="s'+hx(x.sid)+'"><div class="sum">'+hm(x.t0,x.tz)+' · '+x.min+' min · '+x.missions+' missions · '
+  +x.right+' right / '+x.wrong+' wrong · '+x.errors+' errors · '+x.shot.size+' screenshots</div><ol class="tl">'
+  +x.ev.filter(e=>!KHIDE.has(e.k)||x.shot.has(e.i)).map(e=>{const d=x.shot.get(e.i),err=e.k==='err'||e.k==='cerr';
+   return '<li class="k-'+hx(e.k)+(err?' err':'')+'" id="s'+hx(x.sid)+'-'+(e.i|0)+'"><time>'+hm(e.t,x.tz,1)+'</time><span class="s">'+hx(e.s||'')+'</span><b>'+hx(KL[e.k]||e.k)+'</b> '+evDetail(e)
+    +(d?'<img alt="screenshot" src="'+d+'">':'')+'</li>';}).join('')+'</ol></section>').join('');
+ return '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Oren sessions '+hx(day)+'</title><style>'+RCSS+'</style><main>'
+  +'<h1>Sessions</h1><form method="get"><input type="date" name="day" value="'+hx(day)+'">'+(key?'<input type="hidden" name="key" value="'+hx(key)+'">':'')+'<button>Show</button></form>'
+  +(ses||'<p class="none">No sessions on this day.</p>')+'</main></html>';}
+const HTMLH={'content-type':'text/html; charset=utf-8','cache-control':'no-store','referrer-policy':'no-referrer','x-content-type-options':'nosniff'};
+async function evReview(req,env,u){if(!(await evAuth(req,u,env)))return new Response('unauthorized',{status:401,headers:{'content-type':'text/plain'}});
+ if(!env.DB)return J({error:'no db'},503);await evInit(env);const now=Date.now();let day=u.searchParams.get('day')||'';
+ if(!/^\d{4}-\d\d-\d\d$/.test(day)){const r=await env.DB.prepare('SELECT tz FROM evlog ORDER BY id DESC LIMIT 1').first();day=evDay(now,r?+r.tz||0:0);}
+ const t=Date.parse(day+'T00:00:00Z');const rows=((await env.DB.prepare('SELECT id,sid,at,tz,ev,sh,ns FROM evlog WHERE at>=? AND at<? ORDER BY id').bind(t-864e5,t+2*864e5).all()).results)||[];
+ const key=u.searchParams.get('key')||'',hd=Object.assign({},HTMLH);if(key)hd['set-cookie']='dk='+encodeURIComponent(key)+'; Path=/api/log; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax';
+ return new Response(reviewHtml(day,evSessions(rows,day,now),key),{headers:hd});}
+/* the places Oren got stuck most: a mission (or a screen) scored by wrong answers + 2 x silences + 3 x errors */
+function evDigest(rows,days,now,origin){const from=now-days*864e5,P={},E=new Map(),Q=shotQuota(rows,now);
+ for(const r of rows){let L=[];try{L=JSON.parse(r.ev)||[];}catch(e){}const tz=+r.tz||0;
+  for(const e of L){const t=+e.t||r.at;if(t<from)continue;const place=String(e.m||e.s||'?'),sid=String(e.osid||r.sid);
+   const p=P[place]||(P[place]={place,wrong:0,silence:0,errors:0,score:0,shot:null,_sh:[]});
+   if(e.k==='ans'&&!e.ok)p.wrong++;else if(e.k==='idle')p.silence++;else if(e.k==='err'||e.k==='cerr')p.errors++;
+   E.set(sid+':'+e.i,{p,k:e.k,day:evDay(t,tz),t,sid,i:e.i});}}
+ for(const r of rows){if(!(r.ns>0)||!r.si)continue;const ids=String(r.si).split(',').map(Number);for(const i of keptOf(ids,Q.get(r.id))){const x=E.get(r.sid+':'+i);if(x)x.p._sh.push(x);}}
+ const top=Object.values(P).map(p=>{p.score=p.wrong+2*p.silence+3*p.errors;const s=p._sh.sort((a,b)=>((b.k==='ans'||b.k==='idle'||b.k==='err')-(a.k==='ans'||a.k==='idle'||a.k==='err'))||b.t-a.t)[0];
+  p.shot=s?origin+'/api/log/review?day='+s.day+'#s'+s.sid+'-'+s.i:null;delete p._sh;return p;}).filter(p=>p.score>0).sort((a,b)=>b.score-a.score).slice(0,5);
+ return top;}
+const digestText=(top,days)=>'Where Oren got stuck most (last '+days+' days)\n'+(top.length?top.map((p,k)=>(k+1)+'. '+p.place+' - '+p.wrong+' wrong, '+p.silence+' silences (30 s), '+p.errors+' errors - '+(p.shot||'no screenshot')).join('\n'):'nothing yet')+'\n';
+async function evDigestReq(req,env,u){if(!(await evAuth(req,u,env)))return J({error:'unauthorized'},401);if(!env.DB)return J({error:'no db'},503);await evInit(env);
+ const now=Date.now(),days=Math.max(1,Math.min(30,Math.round(+u.searchParams.get('days')||7)));
+ const rows=((await env.DB.prepare('SELECT id,sid,at,tz,ev,si,ns FROM evlog WHERE at>=? ORDER BY id').bind(now-(days+1)*864e5).all()).results)||[];
+ const top=evDigest(rows,days,now,u.origin);
+ if(u.searchParams.get('fmt')==='json')return J({days,top});return new Response(digestText(top,days),{headers:{'content-type':'text/plain; charset=utf-8','cache-control':'no-store'}});}
+'''
+js='''const HTML=%s;const LISTEN=%s;%s%sconst MAN=%s;const SW=%s;const IC={'/icon-192.png':'%s','/icon-512.png':'%s'};
 const JH={'content-type':'application/json','cache-control':'no-store'};
 /* Storage (#71): Cloudflare D1 (free ~100k row writes a day) instead of Workers KV (1k writes a day). Reads: D1 first, then the old KV
    data (copied to D1 on read); writes: D1 only. No D1 binding (tests, old deploys) = plain KV. Tables: saves(id,data,updated),
@@ -160,8 +234,10 @@ const EVMAX=400;let evPruneAt=0;
 function evClean(e){if(!e||typeof e!=='object'||Array.isArray(e)||typeof e.k!=='string'||!/^[a-z]{1,12}$/.test(e.k))return null;const o={};let n=0;
  for(const [k,v] of Object.entries(e)){if(n>=20||!/^[a-z]{1,8}$/i.test(k))continue;
   if(typeof v==='number'&&isFinite(v))o[k]=v;else if(typeof v==='boolean')o[k]=v?1:0;else if(typeof v==='string')o[k]=v.slice(0,160);else continue;n++;}return o;}
-async function evInit(env){if(env.DB.exec)await env.DB.exec("CREATE TABLE IF NOT EXISTS evlog(id INTEGER PRIMARY KEY AUTOINCREMENT,fam TEXT,sid TEXT,at INTEGER,tz INTEGER,n INTEGER,ev TEXT);CREATE INDEX IF NOT EXISTS evlog_at ON evlog(at);");}
-async function evPrune(env,now){evPruneAt=now;try{await env.DB.prepare('DELETE FROM evlog WHERE at<?').bind(now-30*864e5).run();}catch(e){}}
+let evCols=false;/* #462: screenshot columns sh, si, ns (added once per worker start to an older table) */
+async function evInit(env){if(env.DB.exec)await env.DB.exec("CREATE TABLE IF NOT EXISTS evlog(id INTEGER PRIMARY KEY AUTOINCREMENT,fam TEXT,sid TEXT,at INTEGER,tz INTEGER,n INTEGER,ev TEXT,sh TEXT,si TEXT,ns INTEGER DEFAULT 0);CREATE INDEX IF NOT EXISTS evlog_at ON evlog(at);");
+ if(!evCols){evCols=true;for(const c of ['sh TEXT','si TEXT','ns INTEGER DEFAULT 0'])try{await env.DB.prepare('ALTER TABLE evlog ADD COLUMN '+c).run();}catch(e){}}}
+async function evPrune(env,now){evPruneAt=now;try{await env.DB.prepare('DELETE FROM evlog WHERE at<?').bind(now-30*864e5).run();}catch(e){}try{await shotPrune(env,now);}catch(e){}}
 const evDay=(t,tz)=>new Date(t-tz*6e4).toISOString().slice(0,10);
 function evSummary(rows,days,now){const tz0=rows.length?+rows[rows.length-1].tz||0:0,from=evDay(now-(days-1)*864e5,tz0),D={},S={};
  const day=k=>D[k]||(D[k]={day:k,sessions:0,min:0,events:0,taps:0,screens:0,questions:0,right:0,wrong:0,missions:{},help:{},popups:{},errors:0,warnings:0,syncFail:0,retries:0,audioFail:0,longFrames:0,dropped:0,voice:{google:0,browser:0,claude:0,share:null},_s:{}});
@@ -181,14 +257,15 @@ function evSummary(rows,days,now){const tz0=rows.length?+rows[rows.length-1].tz|
   const v=d.voice,n=v.google+v.browser+v.claude;v.share=n?Math.round(v.google/n*100)/100:null;
   for(const x of Object.values(d.missions)){x.ms=x._n?Math.round(x._ms/x._n):0;delete x._ms;delete x._n;}return d;});}
 async function evlog(req,env,u){const now=Date.now();
- if(u.pathname==='/api/log'){if(req.method!=='POST')return J({error:'method'},405);const t=await req.text();if(t.length>64000)return J({error:'too big'},413);let o;
+ if(u.pathname==='/api/log'){if(req.method!=='POST')return J({error:'method'},405);const t=await req.text();if(t.length>600000)return J({error:'too big'},413);let o;
   try{o=JSON.parse(t);if(!o||!isId(String(o.fam))||!/^[a-z0-9]{4,16}$/.test(String(o.sid))||!Array.isArray(o.ev)||!o.ev.length||o.ev.length>EVMAX)throw 0;}catch(e){return J({error:'bad request'},400);}
+  if(JSON.stringify(o.ev).length>64000)return J({error:'too big'},413);const sh=shotClean(o.sh);/* #462 screenshots ride in this row */
   const ev=o.ev.map(evClean).filter(Boolean);if(!ev.length)return J({error:'bad request'},400);
   if(!env.DB)return J({error:'no db'},503);await evInit(env);
   const fam=(await sha(String(o.fam))).slice(0,6),tz=Math.max(-900,Math.min(900,Math.round(+o.tz||0)));/* only a short hash of the family id, as in /api/diag */
-  await env.DB.prepare('INSERT INTO evlog(fam,sid,at,tz,n,ev) VALUES(?,?,?,?,?,?)').bind(fam,String(o.sid),now,tz,ev.length,JSON.stringify(ev)).run();
+  await env.DB.prepare('INSERT INTO evlog(fam,sid,at,tz,n,ev,sh,si,ns) VALUES(?,?,?,?,?,?,?,?,?)').bind(fam,String(o.sid),now,tz,ev.length,JSON.stringify(ev),sh.length?JSON.stringify(sh):null,sh.length?sh.map(x=>x.i).join(','):null,sh.length).run();
   if(now-evPruneAt>36e5)await evPrune(env,now);
-  return J({ok:true,n:ev.length});}
+  return J({ok:true,n:ev.length,sh:sh.length});}
  if(u.pathname==='/api/log/summary'){if(req.method!=='GET')return J({error:'method'},405);
   const days=Math.max(1,Math.min(30,Math.round(+u.searchParams.get('days')||7))),raw=Math.max(0,Math.min(500,Math.round(+u.searchParams.get('raw')||0)));
   if(raw){const key=req.headers.get('x-admin-key')||'';if(!env.DIAG_KEY||(await sha(key))!==(await sha(env.DIAG_KEY)))return J({error:'unauthorized'},401);}
@@ -197,6 +274,8 @@ async function evlog(req,env,u){const now=Date.now();
   const out={days:evSummary(rows,days,now)};
   if(raw){const R=[];for(let i=rows.length-1;i>=0&&R.length<raw;i--){let L=[];try{L=JSON.parse(rows[i].ev)||[];}catch(e){}for(let j=L.length-1;j>=0&&R.length<raw;j--)R.push(Object.assign({sid:L[j].osid||rows[i].sid},L[j]));}out.raw=R;}
   return J(out);}
+ if(u.pathname==='/api/log/review'){if(req.method!=='GET')return J({error:'method'},405);return evReview(req,env,u);}
+ if(u.pathname==='/api/log/digest'){if(req.method!=='GET')return J({error:'method'},405);return evDigestReq(req,env,u);}
  return J({error:'not found'},404);}
 /* Google voice (game voice: Chirp3-HD Kore at 0.9), every sentence created once and kept forever in KV,
    plus a monthly character cap far below Google's free tier. */
@@ -484,7 +563,7 @@ export default{async fetch(req,env,ctx){const u=new URL(req.url);const p=u.pathn
  if(IC[p])return new Response(b64(IC[p]),{headers:{'content-type':'image/png','cache-control':'public, max-age=86400'}});
  if(p==='/'||p==='/index.html')return new Response(HTML,{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-cache','x-content-type-options':'nosniff','referrer-policy':'no-referrer'}});
  return new Response('Not found',{status:404});}};
-'''%(json.dumps(html,ensure_ascii=False),json.dumps(LISTEN,ensure_ascii=False),NUMJS,json.dumps(man,ensure_ascii=False),json.dumps(sw,ensure_ascii=False),i192,i512)
+'''%(json.dumps(html,ensure_ascii=False),json.dumps(LISTEN,ensure_ascii=False),NUMJS,SHOTSJS,json.dumps(man,ensure_ascii=False),json.dumps(sw,ensure_ascii=False),i192,i512)
 out=d/'dist';out.mkdir(exist_ok=True)
 (out/'_worker.js').write_text(js,encoding='utf-8')
 print('worker',len(js.encode()))

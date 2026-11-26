@@ -143,6 +143,28 @@ const EMIT=await p.evaluate(()=>/tlDone/.test(String(window.TAL.record)));   /* 
  const mic=await p.evaluate(async()=>{const H=window.__fakeH;const T=window.TAL;let said='';for(let k=0;k<3;k++){said+=' '+T.plainHe(window.__race.w.w);H.p({text:said});await new Promise(r=>setTimeout(r,30));}H.p({text:said+' בלה'});return window.__race.count;});
  ok('word race with the microphone counts each word it hears',mic===3,'count '+mic);await p.evaluate(()=>window.__race.end());await sleep(200);await closeOv();
 
+ /* ---------- rhymes (#419): 25+ sets with pictures, one rhyming choice, a round of 5 ---------- */
+ const R=await p.evaluate(()=>{const G=window.GAPS,bad=[];const NIK=/[֑-ׇ]/;if(!G.RHY)return {bad:['no RHY'],n:0};
+   const fam={};G.RHY.forEach(s=>{if(!s.spr||!window.TAL.ALLSPR(s.spr))bad.push('picture '+s.w);if(!s.r.length)bad.push('no rhyme '+s.w);
+     [s.w,...s.r].forEach(w=>{if(!NIK.test(w))bad.push('no nikud '+w);if(fam[w]&&fam[w]!==s.f)bad.push('two families '+w);fam[w]=s.f;});});
+   const seen=new Set();for(let t=0;t<400;t++){const q=G.rhyQ();const s=G.RHY.find(x=>x.w===q.chk.w);seen.add(q.chk.w);
+     if(q.opts.length<2||q.opts.length>3)bad.push('opts '+q.opts.length);if(new Set(q.opts).size!==q.opts.length)bad.push('dup '+q.opts);
+     if(!s.r.includes(q.opts[q.ans]))bad.push('answer '+q.chk.w+' '+q.opts[q.ans]);
+     q.opts.forEach((o,k)=>{if(k!==q.ans&&fam[o]===s.f)bad.push('two rhymes '+q.chk.w+' '+o);});
+     if(!q.play||!q.auto)bad.push('no voice');if(!/<svg/.test(q.pr))bad.push('no picture '+q.chk.w);}
+   const sl=G.speakList();G.RHY.forEach(s=>{if(!sl.includes('מָה מִתְחָרֵז עִם '+s.w)||!s.r.every(a=>sl.includes(a)))bad.push('pregen '+s.w);});
+   const act=window.TAL.ACT['read-rhyme'];if(!act||act.b.id!=='read')bad.push('not in the library');
+   return {bad,n:G.RHY.length,seen:seen.size};});
+ ok(`rhymes: ${R.n} sets, each with a picture, nikud and exactly one rhyming choice`,R.n>=25&&!R.bad.length,R.bad.slice(0,6).join(' | '));
+ ok('rhymes: rounds differ (many sets come up)',R.seen>=20,R.seen);
+ const pg=fs.readFileSync(path.join(L.ROOT,'cf','tools','pregen.js'),'utf8');ok('rhymes: every sentence is in the voice pregen',/GAPS\.speakList\(\)/.test(pg));
+ await p.evaluate(()=>{window.__fast=false;window.__rsaid=[];const O=window.OREN,o=O.say;O.say=t=>window.__rsaid.push(t);window.__rsayOld=o;window.TAL.ACT['read-rhyme'].run(()=>window.OREN.showMap());});await sleep(400);
+ await p.evaluate(()=>{const q=window.__quiz;q.wrap.querySelector('.hintbtn').click();});await sleep(5200);await shot('rhyme');
+ const rv=await p.evaluate(()=>{const said=window.__rsaid,o=[...document.querySelectorAll('#sTal .chs .chb')].map(b=>b.textContent);return {said,o,pic:!!document.querySelector('#sTal .gp-rhy svg')};});
+ ok('rhymes: the voice reads the word and then each choice; the picture shows',rv.pic&&/^מָה מִתְחָרֵז עִם /.test(rv.said[0]||'')&&rv.o.every(x=>rv.said.includes(x)),JSON.stringify(rv));
+ await p.evaluate(()=>{window.OREN.say=window.__rsayOld;window.__fast=true;});
+ let qmax=0;done=await quizLoop(80,async()=>{const v=await p.evaluate(()=>window.__quiz?window.__quiz.i:-1);qmax=Math.max(qmax,v);});const rr=await tl('read-rhyme');ok('rhymes: a round of 5 finishes and records read-rhyme',done&&qmax===4&&rr&&rr.s===3,JSON.stringify([qmax,rr]));await closeOv();
+
  /* ---------- final letters + stories render ---------- */
  const finOK=await p.evaluate(()=>{const G=window.GAPS;return G.FINALS.every(f=>G.finNote(f[0]).includes(f[0])&&G.finNote(f[0]).includes(f[2]))&&G.finNote('א')==='';});ok('final-letter note for ך ם ן ף ץ',finOK);
  const traced=await p.evaluate(()=>{const ab=window.TAL.WRITE&&window.TAL.WRITE.AB;return ab?['ך','ם','ן','ף','ץ'].every(l=>ab.some(x=>x[0]===l)):null;});

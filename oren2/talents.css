@@ -412,6 +412,14 @@ body.pplay .dlg,body.pplay .overlay{padding-bottom:78px}
 /* stories: compact lines; the buttons sit in normal flow under the last line, never over the text (#355) */
 .story{margin:0 12px}.sl{margin:0;padding:4px 8px;line-height:1.75}
 .story+.btnrow{margin:6px 0 4px}
+/* #420: "words we will meet" above the story; a tapped word lights up */
+.sthw{width:min(820px,100%);margin:0 12px 10px;box-sizing:border-box;background:var(--paper);padding:10px 14px;box-shadow:0 6px 0 rgba(0,0,0,.18);text-align:center}
+.sthwt{font-weight:900;font-size:20px;margin-bottom:8px}
+.sthwr{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.hwt{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:96px;padding:8px 12px;border:0;border-radius:14px;background:#fff;box-shadow:0 4px 0 rgba(0,0,0,.18);cursor:pointer;font:inherit}
+.hwt:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.18)}
+.hwp{font-size:40px;line-height:1.1}.hww{font-size:24px;font-weight:800}
+.story .sl .rw{cursor:pointer}.story.noline .sl .rw{cursor:default}
 /* read first, listen later (#355): the per-line 🔊 waits for its time */
 .story.noline .sl .rdb{display:none}.story.noline .sl{cursor:default}
 .stpeek{display:flex;flex-direction:column;align-items:center;gap:10px;width:100%}

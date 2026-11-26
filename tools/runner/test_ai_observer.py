@@ -102,6 +102,7 @@ print("ok cloud lanes")
 
 # ---------- #289: the AI observer runs as a cloud scheduled task; the PC only relays its comment (no claude -p here) ----------
 A.STATE = tmp / "ai_observer.cloud.json"
+A.LAUNCH = lambda *a, **kw: {"ok": True}; A.OWNER_POST = lambda w, q: "url"   # #525: never a real cloud start / owner post here
 claude = FakeClaude(out="OBSERVER: never used")
 A.RUN = claude
 # round 2 of #485: gh has no `lastComment` JSON field (rc=1 on every call) and `--json comments` stops at 100. The fakes return
@@ -170,3 +171,54 @@ t30 = _cal.timegm(time.strptime("2026-11-30T10:30:00", "%Y-%m-%dT%H:%M:%S"))
 A.run_if_due(told150.append, lambda s: None, now=t30, where="cloud", gh=GH(), api=API(old + [C150]))
 assert len(told150) == 1 and "#150 the newest" in told150[0], told150
 print("ok #289 cloud AI observer relay")
+
+# ---------- #525: the triggers never ran. Silence -> ONE owner note (owner_q, also Telegram), at most every 12 h; until a
+# trigger-made comment is seen the watchdog starts the observer prompt itself as a cloud job every hour (remote.launch) ----------
+A.STATE = tmp / "ai_observer.525.json"
+posts, starts = [], []
+A.OWNER_POST = lambda window, q: posts.append((window, q)) or "url"
+def LAUNCH(ok=True):
+    def launch(n, task, cwd, name=None, model=None, desk=False):
+        starts.append({"task": task, "name": name, "desk": desk, "model": model}); return {"ok": ok}
+    return launch
+A.LAUNCH = LAUNCH()
+NOISSUE = lambda *a: (0, "[]")                                    # the ai-observer issue does not exist (the real 27 Nov state)
+t0 = _cal.timegm(time.strptime("2026-11-27T00:00:00", "%Y-%m-%dT%H:%M:%S"))
+told = []
+A.relay(told.append, lambda s: None, t0, gh=NOISSUE, api=API([]))
+assert len(starts) == 1 and starts[0]["name"] == "cloud-observer" and starts[0]["desk"] is True, starts      # fallback started at once
+assert "cloud-tasks.md" in starts[0]["task"] and "AI observer" in starts[0]["task"] and A.FALLBACK_MARK in starts[0]["task"]
+assert posts == []                                                                # not silent 3 h yet
+A.relay(told.append, lambda s: None, t0 + 30 * 60, gh=NOISSUE, api=API([]))
+assert len(starts) == 1                                                           # once an hour, not every relay
+A.relay(told.append, lambda s: None, t0 + 3600, gh=NOISSUE, api=API([]))
+assert len(starts) == 2                                                           # the next hour: again
+A.relay(told.append, lambda s: None, t0 + 3 * 3600, gh=NOISSUE, api=API([]))
+assert len(posts) == 1 and posts[0][1].startswith("QUESTION: cloud AI observer silent since "), posts
+assert "log in again (/login) or check claude.ai/code -> Scheduled" in posts[0][1]
+since = time.strftime("%H:%M", time.localtime(t0)); assert f"silent since {since} " in posts[0][1], posts
+for k in range(1, 12):                                                            # dedupe: not again within 12 h
+    A.relay(told.append, lambda s: None, t0 + 3 * 3600 + k * 3600 - 60, gh=NOISSUE, api=API([]))
+assert len(posts) == 1, posts
+A.relay(told.append, lambda s: None, t0 + 15 * 3600 + 60, gh=NOISSUE, api=API([]))
+assert len(posts) == 2 and posts[1][0] != posts[0][0], posts                      # 12 h later: once more (a new key, not swallowed)
+# fallback-made comments do not prove the trigger: the fallback keeps running and the owner note keeps its 12 h repeat
+FB = {"created_at": "2026-11-27T16:00:00Z", "body": A.FALLBACK_MARK + "\nno problems"}
+n0 = len(starts)
+A.relay(told.append, lambda s: None, t0 + 17 * 3600, gh=GH(), api=API([FB]))
+assert len(starts) == n0 + 1 and not A.load_state().get("proven")
+# a trigger-made comment (no marker) -> proven: the fallback stops by itself, and no owner note while it keeps posting
+TR = {"created_at": "2026-11-27T17:30:00Z", "body": "no problems"}
+A.relay(told.append, lambda s: None, t0 + 18 * 3600, gh=GH(), api=API([FB, TR]))
+assert A.load_state().get("proven") is True
+for k in range(1, 6): A.relay(told.append, lambda s: None, t0 + 18 * 3600 + k * 3600, gh=GH(), api=API([]))
+assert len(starts) == n0 + 1, starts                                              # off for good
+np = len(posts)
+A.relay(told.append, lambda s: None, t0 + 30 * 3600, gh=GH(), api=API([]))       # trigger silent again 3 h+: owner note again
+assert len(posts) == np + 1 and "silent since " + time.strftime("%H:%M", time.localtime(t0 + 17.5 * 3600)) in posts[-1][1], posts
+# a failed cloud start is retried at the next relay (not an hour later)
+A.STATE = tmp / "ai_observer.525b.json"; starts.clear(); A.LAUNCH = LAUNCH(ok=False)
+A.relay(told.append, lambda s: None, t0, gh=NOISSUE, api=API([]))
+A.LAUNCH = LAUNCH(); A.relay(told.append, lambda s: None, t0 + A.RELAY_MIN * 60, gh=NOISSUE, api=API([]))
+assert len(starts) == 2, starts
+print("ok #525 silent -> owner note + hourly cloud fallback")
