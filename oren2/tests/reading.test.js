@@ -110,6 +110,7 @@ async function stories(b) {
   const vis = async p => { await L.sleep(150); return p.evaluate(() => { const pg = [...document.querySelectorAll('#sTal .story')].pop(); const rd = [...document.querySelectorAll('#sTal .strd')].pop();
     const rdb = pg.querySelector('.sl .rdb'); return { line: !!rdb && rdb.offsetParent !== null, all: !!rd && !rd.hidden && rd.offsetParent !== null }; }); };
   const toQ = p => p.evaluate(() => document.querySelector('#sTal .stgo').click());
+  /* 100 ms is enough only because this part runs __fast (the 400 ms tap guard is D(400) = 27 ms); without __fast wait 450 ms */
   const wrongTap = async p => { await L.sleep(100); return p.evaluate(() => { const q = window.__quiz; const bs = [...q.wrap.querySelectorAll('.chs .chb')]; const w = bs.find((x, k) => k !== q.ans); w.click(); return bs.indexOf(w); }); };   /* #436: taps in the first 400 ms of a new question are ignored */
   // 1. buttons under the last line, never over the text, before and after scrolling (laptop and phone)
   for (const [nm, vp] of [['1366x768', { viewport: { width: 1366, height: 768 } }], ['390x844', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }]]) {
