@@ -1141,7 +1141,7 @@ function mergeIn(o){if(!o||typeof o!=='object')return;
   if(o.set&&(+o.setT||0)>(+save.setT||0)){save.set=o.set;save.setT=o.setT;lastSetJ=JSON.stringify(save.set);}
   for(const x of (o.iss||[])){if(!x||!x.d||!x.k)continue;save.iss=save.iss||[];const e=save.iss.find(y=>y.d===x.d&&y.k===x.k);if(e)e.n=Math.max(e.n|0,x.n|0);else save.iss.push(x);}if(save.iss)save.iss=save.iss.sort((a,b)=>a.d<b.d?-1:1).slice(-30);
   for(const k of ['prof','bdg','last'])if(o[k]&&!save[k])save[k]=o[k];
-  for(const m of ['dom','rw','coach','cnt'])for(const [k,v] of Object.entries(o[m]||{})){save[m]=save[m]||{};save[m][k]=Math.max(+save[m][k]||0,+v||0);}
+  for(const m of ['dom','rw','coach','cnt','tg'])for(const [k,v] of Object.entries(o[m]||{})){save[m]=save[m]||{};save[m][k]=Math.max(+save[m][k]||0,+v||0);}
   if(o.lrn&&window.LEARN&&window.LEARN.core)save.lrn=window.LEARN.core.merge(save.lrn,o.lrn);
   if(o.kn&&window.KNOW)save.kn=window.KNOW.core.merge(save.kn,o.kn);
   if(o.help&&typeof o.help==='object'){const hp=save.help=save.help||{items:{},tb:[],t:0};hp.items=hp.items||{};for(const [k,v] of Object.entries(o.help.items||{})){const c=hp.items[k];if(!c||(v.n|0)>(c.n|0)||((v.n|0)===(c.n|0)&&String(v.last||'')>String(c.last||'')))hp.items[k]=v;}
