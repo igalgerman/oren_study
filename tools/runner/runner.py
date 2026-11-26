@@ -47,7 +47,7 @@ def blockers(body):
     """Issue numbers in 'Blocked by: #1, #2' lines."""
     out = []
     for line in (body or "").splitlines():
-        if line.strip().lower().startswith("blocked by"):
+        if line.lstrip(" 	-*>").lower().startswith("blocked by"):
             out += [int(x) for x in re.findall(r"#(\d+)", line)]
     return out
 
@@ -216,6 +216,48 @@ def run(cmd, cwd=None, env=None, input=None, log=None, timeout=None):
             f.write(f"\n$ {' '.join(map(str, cmd))[:300]}\n{out}\n[exit {p.returncode}]\n")
     return p.returncode, out
 
+MAIN_CHECKOUT = Path(CFG.get("main_checkout", str(ROOT)))   # the checkout the watchdog/runner/panel import code from
+
+def is_dirty(status):
+    """Pure: True when `git status --porcelain` shows tracked changes (untracked files '??' are fine)."""
+    return any(l.strip() and not l.startswith("??") for l in status.splitlines())
+
+def sync_decision(branch, into, dirty, behind):
+    """Pure: ('pull', '') | ('skip', reason). reason '' = nothing to report."""
+    if behind <= 0: return ("skip", "")
+    if branch != into: return ("skip", f"main checkout is on {branch}, not {into}")
+    if dirty: return ("skip", "main checkout has uncommitted changes")
+    return ("pull", "")
+
+def sync_main(log=None):
+    """Fast-forward the main checkout to origin/main when that is harmless. Returns a message ('' = nothing to say); never raises."""
+    try:
+        g = lambda *a: run(["git", "-C", str(MAIN_CHECKOUT), *a], timeout=120)
+        rc, out = g("fetch", "-q", REMOTE)
+        if rc: return f"sync failed: fetch rc {rc} {out.strip()[:200]}"
+        branch = g("rev-parse", "--abbrev-ref", "HEAD")[1].strip()
+        behind = int(g("rev-list", "--count", f"HEAD..{REMOTE}/{BRANCH}")[1].strip() or 0)
+        act, why = sync_decision(branch, BRANCH, is_dirty(g("status", "--porcelain")[1]), behind)
+        if act == "pull":
+            rc, out = g("merge", "-q", "--ff-only", f"{REMOTE}/{BRANCH}")
+            return f"main checkout fast-forwarded ({behind} commits)" if rc == 0 else f"sync failed: ff-only rc {rc} {out.strip()[:200]}"
+        return f"sync skipped ({behind} behind): {why}" if why else ""
+    except Exception as e:
+        return f"sync error: {e!r}"
+
+def remove_worktree(wt, log=None):
+    """Remove a lane worktree. oren2/node_modules is a JUNCTION to the real modules: take the junction off alone first
+    (rmdir, never /s, never rmtree: that would delete the real modules), then remove the worktree and any leftover folder (#82)."""
+    wt = Path(wt)
+    nm = wt / "oren2" / "node_modules"
+    if os.path.isjunction(nm):
+        run(["cmd", "/c", "rmdir", str(nm)])
+    elif nm.is_symlink():
+        nm.unlink()
+    run(["git", "worktree", "remove", "--force", str(wt)], cwd=ROOT, log=log)
+    if wt.exists() and not (wt / ".git").exists():       # half-made worktree (no checkout): leftovers only, safe now the junction is gone
+        shutil.rmtree(wt, ignore_errors=True)
+
 def gh(*args, **kw):
     return run(["gh", *args, "--repo", REPO], **kw)
 
@@ -311,16 +353,6 @@ def space_args():
             pass
     return ["--label", f"herdr.space={_SPACE}"] if _SPACE else []
 
-def show(name):
-    """Fallback when no Herdr space was found: give the terminal its own tab (herdr-app do terminal.keep).
-    config: show = false turns it off."""
-    app = HERDR_APP
-    if not CFG.get("show", True) or not Path(app).exists() or space_args(): return   # already in a space via its label
-    addr = hc_json("get", name, "--json").get("address")
-    for _ in range(6):               # the app learns a new terminal a moment late ("no running terminal"): retry
-        if addr and run([app, "do", "terminal.keep", "--terminal", addr, "--place", "tab"], timeout=30)[0] == 0: return
-        time.sleep(2)
-
 def hc(*args, timeout=300):
     return run([HC, *args], timeout=timeout)
 
@@ -359,7 +391,6 @@ def agent(name, prompt, cwd, tools, log, marker, n, role):
                "--allowedTools", *tools, "--", prompt + INTERACTIVE_NOTE]
         rc, out = run(cmd, log=log)
         if rc: raise Blocked(f"cannot start terminal {name}: {out.strip()[:200]}")
-    show(name)
     deadline, screen = time.time() + 3 * 3600, ""
     waiting = marker_since = None; last_check = 0
     try:
@@ -585,7 +616,7 @@ def process_locked(issue):
             pass                                             # parked earlier: re-attach to its windows and worktree, change nothing
         else:
             if (wt.exists() or run(["git", "rev-parse", "--verify", f"lane/{n}"], cwd=ROOT)[0] == 0) and not pushed:   # leftovers of an unfinished try
-                run(["git", "worktree", "remove", "--force", str(wt)], cwd=ROOT, log=log)
+                remove_worktree(wt, log)
                 run(["git", "branch", "-D", f"lane/{n}"], cwd=ROOT, log=log)
             if not wt.exists():                              # lane.sh continues from origin/lane/<n> when pushed work exists (never deleted)
                 rc, _ = run([BASH, "tools/lane.sh", str(n), BRANCH], cwd=ROOT, env={"REMOTE": REMOTE}, log=log)
@@ -652,9 +683,11 @@ def process_locked(issue):
         with FileLock("integrate", wait=True):
             stat(n, lane, "merged")
             dep = deploy_main(log) if CFG.get("ci_merge", True) and find_pr_merged(n) else deploy_text(log)
+        m = sync_main(log)                       # result logged (review of #47)
+        if m: log_line(m)
         gh("issue", "close", str(n), "--comment", f"Merged to {BRANCH}, tests green, {dep}.")
         set_labels(n, remove=["in-progress"])
-        run(["git", "worktree", "remove", "--force", str(wt)], cwd=ROOT, log=log)
+        remove_worktree(wt, log)
         close_windows(n)
         stat(n, lane, "deployed")
         return f"DONE {dep}"

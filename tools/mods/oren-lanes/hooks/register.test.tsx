@@ -8,6 +8,8 @@ test('blocked-by parsing', () => {
   expect(parseBlockers('Blocked by: #7, #9\ntext')).toEqual([7, 9])
   expect(parseBlockers('**Blocked by:** #3')).toEqual([3])
   expect(parseBlockers('see #4 only')).toEqual([])
+  expect(parseBlockers('- Blocked by: #23')).toEqual([23])
+  expect(parseBlockers('> * Blocked by: #5, #6')).toEqual([5, 6])
   expect(parseBlockers(null)).toEqual([])
 })
 

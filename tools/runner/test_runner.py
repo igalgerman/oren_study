@@ -24,6 +24,10 @@ print("ok")
 # blocked-by: #3 waits while #1 is open; starts when #1 is gone
 from runner import select as _sel, blockers as _bl
 assert _bl("x\nBlocked by: #1, #2\n") == [1, 2]
+assert _bl("- Blocked by: #23") == [23]
+assert _bl("  * blocked by: #4, #5") == [4, 5]
+assert _bl("> Blocked by: #6") == [6]
+assert _bl("see Blocked by #7 in text") == []
 _q = [{"number": 1, "labels": ["core"], "createdAt": "1"},
       {"number": 3, "labels": ["core", "ready-for-agent"], "createdAt": "3", "body": "Blocked by: #1"},
       {"number": 4, "labels": ["pack", "ready-for-agent"], "createdAt": "4", "body": ""}]
@@ -164,6 +168,60 @@ r.CFG["pregen"] = True; _calls.clear()
 assert r.deploy_text(None).startswith("deployed ok https://") and any("pregen.js" in " ".join(map(str, c)) for c in _calls)
 r.run, r.env_file = _orig_run, _orig_env; r.CFG["pregen"] = False
 print("ok deploy")
+# sync_decision: keep the main checkout up to date with origin/main (#47)
+assert r.sync_decision("main", "main", False, 3) == ("pull", "")
+assert r.sync_decision("main", "main", False, 0) == ("skip", "")                 # already current: nothing to say
+assert r.sync_decision("main", "main", True, 3)[0] == "skip" and "uncommitted" in r.sync_decision("main", "main", True, 3)[1]
+assert r.sync_decision("lane/9", "main", False, 3)[0] == "skip" and "lane/9" in r.sync_decision("lane/9", "main", False, 3)[1]
+# git status lines: untracked files are fine, tracked edits are dirty
+assert r.is_dirty("?? tools/x.txt\n?? y\n") is False
+assert r.is_dirty(" M tools/runner/runner.py\n?? y\n") is True
+assert r.is_dirty("") is False
+print("ok sync-main")
+
+
+# #16: space lookup (mock herdr-app), pin/unpin, NEEDS YOU line, terminal.keep workaround is gone
+import json as _json
+_ran = []
+def _mock_run(out):
+    def f(cmd, **kw):
+        _ran.append(list(map(str, cmd))); return (0, out)
+    return f
+_orig_run16 = r.run
+r.run = _mock_run(_json.dumps({"spaces": [{"id": "s1", "name": "other"}, {"id": "s2", "name": r.CFG.get("herdr_space", "Oren_study_orech")}]}))
+r._SPACE = None
+assert r.space_args() == ["--label", "herdr.space=s2"]; assert len(_ran) == 1
+r.space_args(); assert len(_ran) == 1                                                       # cached
+r.run = _mock_run(_json.dumps({"spaces": [{"id": "s1", "name": "other"}]})); r._SPACE = None
+assert r.space_args() == []                                                                   # no such space: no label
+r.run = _mock_run("not json"); r._SPACE = None
+assert r.space_args() == []                                                                   # bad output: no label, no crash
+r.run = _orig_run16; r._SPACE = None
+assert not hasattr(r, "show")                                                                 # terminal.keep workaround removed
+
+_orig_run_w, _orig_app = W.R.run, W.R.HERDR_APP
+W.R.run = _mock_run(""); W.R.HERDR_APP = sys.executable
+_ran.clear(); W.pin({"address": "t:1"}, True)
+assert _ran[-1][1:] == ["do", "terminal.pin", "--terminal", "t:1", "--pinned", "true"], _ran
+W.pin({"address": "t:1"}, False); assert _ran[-1][-1] == "false"
+n = len(_ran); W.pin({}, True); assert len(_ran) == n                                         # no address: nothing to pin
+W.R.HERDR_APP = r"C:\no\such\herdr-app.exe"; W.pin({"address": "t:1"}, True); assert len(_ran) == n   # app missing: nothing
+W.R.run, W.R.HERDR_APP = _orig_run_w, _orig_app
+assert W.needs_you_line("issue-16", "QUESTION: a or b?", "tail") == "NEEDS YOU: #16 a or b?"
+assert W.needs_you_line("review-7", "", "x\nlast line") == "NEEDS YOU: #7 (waiting for an answer) last line"
+assert W.needs_you_line("intake", "QUESTION: ok?", "") == "NEEDS YOU: intake ok?"
+print("ok herdr-leftovers")
+# remove_worktree: the node_modules junction goes alone, the real modules survive; a half-made worktree is cleaned (#82)
+import tempfile, subprocess, os
+from pathlib import Path as _P
+_t = _P(tempfile.mkdtemp()); _real = _t / "real_modules"; _real.mkdir(); (_real / "keep.txt").write_text("x")
+_wt = _t / "wt-x"; (_wt / "oren2").mkdir(parents=True)
+subprocess.run(["cmd", "/c", "mklink", "/J", str(_wt / "oren2" / "node_modules"), str(_real)], capture_output=True, check=True)
+assert os.path.isjunction(_wt / "oren2" / "node_modules")
+r.remove_worktree(_wt)
+assert not _wt.exists() and (_real / "keep.txt").exists()
+import shutil; shutil.rmtree(_t, ignore_errors=True)
+print("ok remove-worktree")
 
 # CI merge decisions (#74)
 def _ck(*b): return [{"name": f"c{i}", "bucket": x} for i, x in enumerate(b)]
