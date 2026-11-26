@@ -1177,7 +1177,7 @@ function famRef(id){const url='/api/save/'+id;return {
     FAM.last=Date.now();const r=await fetch(url,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(body),keepalive:JSON.stringify(body).length<60000});if(!r.ok)throw new Error('http '+r.status);}};}
 /* the parent changed the time limit: send it now, not after the 25 s save delay (#34) */
 async function famNow(){if(!FAM.on||kidSave)return;cloud.dirty=true;FAM.force=true;try{await cloudFlush();}finally{FAM.force=false;}}
-async function famPull(){if(!FAM.on||kidSave)return;try{const snap=await cloud.ref.get();if(snap.exists){const before=JSON.stringify([save.set,save.gems]);mergeIn(snap.data());updateGems();if(before!==JSON.stringify([save.set,save.gems]))emit('synced');}}catch(e){}}
+async function famPull(){if(!FAM.on||kidSave)return;try{const snap=await cloud.ref.get();if(snap.exists){const before=JSON.stringify([save.set,save.gems,save.time]);mergeIn(snap.data());updateGems();if(before!==JSON.stringify([save.set,save.gems,save.time]))emit('synced');}}catch(e){}}
 async function cloudInit(){
   try{for(let i=0;i<40&&!window.__site&&!(window.claude&&window.claude.use);i++)await new Promise(r=>setTimeout(r,100));
     if(!window.claude||!window.claude.use){if(!/^https?:$/.test(location.protocol)||window.__noFamily)return;
@@ -3464,8 +3464,9 @@ O.on('kingdomScene',sc=>{if(!window.TAL_noHome&&!sc.querySelector('.kmine')){con
 /* ---------- time tracking (body breaks, meals and topic switching live in health.js) ---------- */
 let lastAct=Date.now(),session=0;
 ['pointerdown','keydown'].forEach(ev=>addEventListener(ev,()=>{lastAct=Date.now();},true));
-setInterval(()=>{if(document.hidden||Date.now()-lastAct>60000||$('#hud').hidden)return;const s=S();const d=today();s.time[d]=(s.time[d]|0)+15;session+=15;
-  if(session%60===0)O.persist();},15000);
+/* every tick is saved (and so sent to the family save): the phone shows the full play time (#41) */
+function timeTick(){if(document.hidden||Date.now()-lastAct>60000||$('#hud').hidden)return;const s=S();const d=today();s.time[d]=(s.time[d]|0)+15;session+=15;O.persist();}
+O.timeTick=timeTick;setInterval(timeTick,15000);
 const breakTime=()=>window.HEALTH&&window.HEALTH.breakNow();
 
 /* exports for other chunks */

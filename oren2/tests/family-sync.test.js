@@ -28,6 +28,12 @@ const FIX='a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0',OLD='0123456789abcdef0123456789abcd
  const ra=await A.evaluate(()=>({lim:(window.TAL.S().set.lim||{}).daily,pw:!!window.TAL.S().set.pw,g:window.OREN.save.gems}));
  ok('parent change on B reaches A and is not overwritten by A playing',ra.lim===45&&ra.pw&&ra.g===40,JSON.stringify(ra));
  await B.evaluate(()=>window.OREN.famPull());await sleep(800);ok('B sees A latest gems',await B.evaluate(()=>window.OREN.save.gems)===40);
+ // #41: play time reaches the parent's phone after ONE 15 s tick (not only every 60 s)
+ await A.evaluate(()=>{document.querySelector('#hud').hidden=false;window.OREN.timeTick();});await sleep(2500);
+ const tA=await A.evaluate(()=>{const d=window.OREN.today();return [d,window.TAL.S().time[d]|0];});
+ ok('one play tick is uploaded to the family save',tA[1]>=15&&((JSON.parse(KV.get(fid)).time||{})[tA[0]]|0)===tA[1],JSON.stringify(tA));
+ await B.evaluate(()=>{window.__synced=0;window.OREN.on('synced',()=>window.__synced++);});await B.evaluate(()=>window.OREN.famPull());await sleep(800);
+ {const r=await B.evaluate(a=>({t:window.TAL.S().time[a[0]]|0,sy:window.__synced,sv:(window.OREN.save.time||{})[a[0]]|0}),tA);ok('phone B gets the play time',r.t>=tA[1],JSON.stringify(r)+JSON.stringify(tA));}
  // parent sandbox on B must not reach the server
  const before=KV.get(fid);await B.evaluate(()=>{window.TAL.parentPanel('try');});await B.locator('#sPar .bigbtn',{hasText:'כניסה למשחק כהורה'}).click();await sleep(300);await B.evaluate(()=>{window.OREN.save.gems=999;window.OREN.persist();});await sleep(2000);
  ok('parent sandbox never uploads',JSON.parse(KV.get(fid)).gems!==999);
