@@ -12,6 +12,8 @@ Every minute it checks, deterministically:
   5c. every tick (#262): an open PR that conflicts with main and has auto-merge or a review PASS -> a resolve run (window resolve-<n>, conflicts.py)
   5c. #219 nightly.py: once a day at retro_hour ONE read-only headless Sonnet retro + handoff (issue 'Daily retro <date>', handoff PR);
       batch trigger: tells the inbox to run /batch once a day, and early when >= 8 ready P2/P3 issues share a lane
+  5d. #282 parked.py (hourly): batch members of a closed batch get ready-for-agent back; polish lists ready (P3) at 5 notes / 24 h;
+      later/manual 2 h+ with no owner question and no run/PR -> 'parked without owner question: #n'; night report of every parked issue's reason
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
   4b. orchestrator / inbox / inspector terminal finished (#140)                -> removed by address and started again (recover.py commands)
@@ -255,6 +257,11 @@ def observer_tick():
 def ai_observer_tick():
     import ai_observer; ai_observer.run_if_due(tell, log)   # #203: hourly AI check (thread; not reloaded: that would reset its never-two guard)
 
+def parked_tick():
+    try:
+        import parked; parked.tick(tell, log)      # #282: hourly guard inside (state in .runs/parked.json)
+    except Exception as e: log(f"parked tick error: {e!r}")
+
 def nightly_tick():
     import nightly   # #219: not reloaded (that would reset its never-two guard)
     nightly.retro_if_due(tell, log)
@@ -338,7 +345,7 @@ def alarm_tick():
         if t in new: _alarm["sent"][k] = now
     tell("IDLE ALARM (watchdog): " + " · ".join(new))
 
-RELOAD = ("remote", "owner_q", "freeze", "stats", "recover", "conflicts")   # #229: reloaded on change, before runner.py (observer/ai_observer keep in-memory guards: not reloaded)
+RELOAD = ("remote", "owner_q", "freeze", "stats", "recover", "conflicts", "parked")   # #229: reloaded on change, before runner.py (observer/ai_observer keep in-memory guards: not reloaded)
 
 def parse_args(argv):
     """#229: unknown flags (and --help) end here, before the loop."""
@@ -417,6 +424,7 @@ def tick():
     observer_tick()
     ai_observer_tick()
     nightly_tick()
+    parked_tick()
     sync_tick()
     alarm_tick()
     trends_tick()

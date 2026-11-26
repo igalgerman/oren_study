@@ -13,7 +13,7 @@ ev = [{"ts": now - 3600, "issue": 1, "event": "start"}, {"ts": now - 1800, "issu
       {"ts": now - 600, "issue": 0, "event": "deploy", "ok": True}]
 m = D.model(issues, prs, ev, now)
 assert m["open"] == 6 and m["by_prio"] == {"P0": 1, "P1": 1, "P2": 2, "P3": 0, "-": 2}, m["by_prio"]
-assert {k: [r["n"] for r in v] for k, v in m["by_state"].items()} == {"running": [1], "needs_you": [2], "blocked": [3], "waiting": [4], "ready": [5], "other": [6]}, m["by_state"]
+assert {k: [r["n"] for r in v] for k, v in m["by_state"].items()} == {"running": [1], "needs_you": [2], "blocked": [3], "batch": [], "manual": [], "later": [], "waiting": [4], "ready": [5], "other": [6]}, m["by_state"]
 assert (m["closed_24h"], m["closed_7d"], m["closed_total"], m["merged_24h"], m["open_prs"]) == (1, 2, 2, 1, 1), (m["closed_24h"], m["closed_7d"], m["closed_total"], m["merged_24h"], m["open_prs"])
 assert len(m["days"]) == 14 and m["days"][0]["label"] == "13 Nov" and m["days"][-1]["closed"] == 1 and m["days"][-1]["open_end"] == 6, m["days"][-1]
 t = D.text(m)
@@ -152,3 +152,16 @@ m4 = D.model(ic4, prs, ev, now, "", cl4)
 assert m4["cloud_n"] == 1 and 13 not in [r["n"] for r in m4["running"]], (m4["cloud_n"], m4["running"])
 assert m4["lanes"] == f"local 1/{D.R.CFG.get('local_lanes', 3)} · cloud 1/{D.R.CFG.get('remote_lanes', 0)}", m4["lanes"]
 print("ok dashboard remote lanes")
+# #282: batch members count under their batch; manual and later get their own counts, not 'not triaged'
+bi = [I(60, "OPEN", ["ready-for-agent", "P2"], body="- [ ] #61 a\n- [ ] #62 b").__or__({"title": "Batch: x (#61, #62)"}),
+      I(61, "OPEN", ["P2"]), I(62, "OPEN", ["P2"]), I(63, "OPEN", ["manual"]), I(64, "OPEN", ["later", "P3"]), I(65, "OPEN", []),
+      I(70, "CLOSED", ["P2"], cl="2026-11-26T07:00:00Z").__or__({"title": "Batch: y (#71)"}), I(71, "OPEN", ["P2"])]
+mb = D.model(bi, prs, ev, now)
+got = {k: [r["n"] for r in v] for k, v in mb["by_state"].items()}
+assert got["batch"] == [61, 62] and got["manual"] == [63] and got["later"] == [64] and got["other"] == [65, 71], got   # #71: its batch is closed
+assert mb["batches"] == {60: [61, 62]}, mb["batches"]
+tb = D.text(mb)
+assert "in a batch 2 (#60: 2)" in tb and "manual 1" in tb and "later 1" in tb and "not triaged / other 2" in tb, tb
+assert mb["plan"][61] == "in batch #60" and mb["plan"][63] == "manual" and mb["plan"][64] == "later", mb["plan"]
+assert "In a batch" in D.page(mb)
+print("ok dashboard #282")

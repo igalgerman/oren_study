@@ -12,9 +12,11 @@ import runner as R          # gh(), blockers(), CFG
 import stats as S           # pipeline timings from stats.jsonl
 import trends as T          # stuck reasons from runner.log
 import remote as RM         # cloud lanes (#136)
+import parked as PK         # batch membership (#282)
 
 OUT = R.RUNS / "dashboard.html"
 STATES = [("running", "Running now"), ("needs_you", "Needs you"), ("blocked", "Blocked"),
+          ("batch", "In a batch"), ("manual", "Manual"), ("later", "Later"),
           ("waiting", "Waiting for another issue"), ("ready", "Ready to start"), ("other", "Not triaged / other")]
 STEP = {"start": "building", "worker_done": "in review", "review_fix": "fixing review notes", "fix_done": "in review",
         "review_pass": "merging (CI)", "resolve": "resolving a conflict", "merged": "deploying"}
@@ -23,11 +25,15 @@ def epoch(iso):
     try: return calendar.timegm(time.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S"))
     except (TypeError, ValueError): return None
 
-def state_of(i, open_nums):
+def state_of(i, open_nums, in_batch=()):
+    """in_batch: members of an open, ready/running batch issue (#282)."""
     l = set(i["labels"])
     if "in-progress" in l: return "running"
     if l & {"ready-for-human", "needs-triage", "needs-info"}: return "needs_you"
     if "blocked" in l: return "blocked"
+    if i["number"] in in_batch and "ready-for-agent" not in l: return "batch"
+    if "manual" in l: return "manual"
+    if "later" in l: return "later"
     if any(b != i["number"] and b in open_nums for b in R.blockers(i.get("body"))): return "waiting"
     if "ready-for-agent" in l: return "ready"
     return "other"
@@ -58,12 +64,16 @@ def model(issues, prs, events, now, log_text="", cloud=()):
     open_nums = {i["number"] for i in op}
     closed_at = {i["number"]: epoch(i.get("closedAt")) for i in issues if i["state"] == "CLOSED"}
     created = {i["number"]: epoch(i.get("createdAt")) for i in issues}
-    rows = sorted(({"n": i["number"], "title": i["title"], "state": state_of(i, open_nums), "prio": prio_of(i),
+    by_n = {i["number"]: i for i in issues}
+    in_batch = {n: b for n, b in PK.batch_members(issues).items() if b in by_n and PK.batch_ok(by_n[b])}   # #282
+    rows = sorted(({"n": i["number"], "title": i["title"], "state": state_of(i, open_nums, in_batch), "prio": prio_of(i), "batch": in_batch.get(i["number"]),
                     "age_h": (now - (created[i["number"]] or now)) / 3600,
                     "blockers": [b for b in R.blockers(i.get("body")) if b in open_nums and b != i["number"]]} for i in op),
                   key=lambda r: (r["prio"], r["n"]))
     by_state = {k: [r for r in rows if r["state"] == k] for k, _ in STATES}
     by_prio = {p: sum(r["prio"] == p for r in rows) for p in ("P0", "P1", "P2", "P3", "-")}
+    batches = {}
+    for r in by_state["batch"]: batches.setdefault(r["batch"], []).append(r["n"])
     within = lambda t, h: t is not None and t > now - h * 3600
     merged = [epoch(p.get("mergedAt")) for p in prs if p.get("mergedAt")]
     first = min([c for c in created.values() if c] + [now])
@@ -114,7 +124,7 @@ def model(issues, prs, events, now, log_text="", cloud=()):
     return {
         "plan": eta_plan(rows, running, t, fc, now),
         "now": now, "open": len(op), "cloud": list(cloud), "cloud_done": cloud_done, "cloud_n": len(cloud_n),
-        "lanes": f"local {len(running)}/{R.CFG.get('local_lanes', 3)} · cloud {len(cloud_n)}/{R.CFG.get('remote_lanes', 0)}", "by_state": by_state, "by_prio": by_prio, "rows": rows, "running": running,
+        "lanes": f"local {len(running)}/{R.CFG.get('local_lanes', 3)} · cloud {len(cloud_n)}/{R.CFG.get('remote_lanes', 0)}", "by_state": by_state, "by_prio": by_prio, "batches": batches, "rows": rows, "running": running,
         "closed_24h": sum(within(c, 24) for c in closed_at.values()), "closed_7d": sum(within(c, 168) for c in closed_at.values()),
         "closed_total": len(closed_at), "opened_24h": sum(within(c, 24) for c in created.values()),
         "merged_24h": sum(within(m, 24) for m in merged), "merged_7d": sum(within(m, 168) for m in merged),
@@ -144,8 +154,9 @@ def eta_plan(rows, running, t, fc, now, lanes=None):
         sec = max(600, b - (r["for_s"] or 0)) + rv + wait if r["step"] == "building" else left.get(r["step"], mg / 2)
         out[r["n"]] = (now + sec, now + sec * 1.5)
     for r in rows:
-        if r["state"] in ("needs_you", "blocked", "other"):
-            out[r["n"]] = {"needs_you": "waits for you", "blocked": "blocked", "other": "not triaged"}[r["state"]]
+        if r["state"] in ("needs_you", "blocked", "other", "manual", "later"):
+            out[r["n"]] = {"needs_you": "waits for you", "blocked": "blocked", "other": "not triaged", "manual": "manual", "later": "later"}[r["state"]]
+        elif r["state"] == "batch": out[r["n"]] = f"in batch #{r['batch']}"
     fast, slow = max(fc["c6"], fc["c24"]), min(fc["c6"], fc["c24"]) or max(fc["c6"], fc["c24"])
     lanes = lanes or int(R.CFG.get("max_parallel", 3))
     busy = [v[0] - now for v in out.values() if isinstance(v, tuple)]
@@ -215,7 +226,8 @@ def conflicts_line(prs):
 def text(m):
     s, tr, fc = m["by_state"], m["truth"], m["fc"]
     lines = [f"Open issues: {m['open']}  (P0 {m['by_prio']['P0']}, P1 {m['by_prio']['P1']}, P2 {m['by_prio']['P2']}, P3 {m['by_prio']['P3']}, no priority {m['by_prio']['-']})",
-             "  " + " · ".join(f"{name.lower()} {len(s[k])}" for k, name in STATES),
+             "  " + " · ".join(f"{name.lower()} {len(s[k])}" + (" (" + ", ".join(f"#{b}: {len(v)}" for b, v in sorted(m.get("batches", {}).items())) + ")" if k == "batch" and s[k] else "")
+                              for k, name in STATES),
              f"Last 24 h: closed {m['closed_24h']}, new {m['opened_24h']}; PRs merged {m['merged_24h']} ({m['merged_7d']} in 7 days); open PRs {m['open_prs']}",
              f"Speed: closing {fc['c6']:.1f}/h (last 6 h), {fc['c24']:.1f}/h (24 h); new issues {fc['o6']:.1f}/h, {fc['o24']:.1f}/h",
              f"Forecast (estimate, {m['history_h']:.0f} h of history): " + fc_text(fc, m["now"], "all open issues"),
