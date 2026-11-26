@@ -27,13 +27,15 @@ export NODE_OPTIONS="--require ./tests/mute.js ${NODE_OPTIONS:-}"
 rm -rf tests/.tmp && mkdir -p tests/.tmp/logs
 node -e "const L=require('./tests/lib.js');" || exit 1          # writes tests/.tmp/t.html
 key(){ local k="${1// /-}"; echo "${k//\//-}"; }      # suite name as in logs, budget.txt, quarantine.txt ("parent desktop" -> parent-desktop)
+budget_of(){ awk -v s="$1" '/^[[:space:]]*#/{next} $1=="default"{d=$2} $1==s{b=$2} END{print (b!="" ? b : (d!="" ? d : 60))}' "$BUDGET" 2>/dev/null || echo 60; }
+# hard timeout 120 s; a suite whose budget is 120+ s (tests/budget.txt says why) gets budget + 30 s, so its budget is the real limit
 run_one(){ local s="$1"; local file="${s%% *}"; local arg=""; [ "$s" != "$file" ] && arg="${s#* }"
-  local log="tests/.tmp/logs/$(key "$s").log" t0=$(date +%s); timeout 120 node "tests/$file.test.js" $arg >"$log" 2>&1; echo $? >"$log.code"
+  local to=120 b; b=$(budget_of "$(key "$s")"); [ "$b" -ge 120 ] && to=$(( b + 30 ))
+  local log="tests/.tmp/logs/$(key "$s").log" t0=$(date +%s); timeout "$to" node "tests/$file.test.js" $arg >"$log" 2>&1; echo $? >"$log.code"
   echo $(( $(date +%s) - t0 )) >"$log.secs"; }
-export -f key
+export -f key budget_of; export BUDGET
 export -f run_one
 printf '%s\n' "${SUITES[@]}" | xargs -P "${JOBS:-6}" -I{} bash -c 'run_one "$@"' _ {}
-budget_of(){ awk -v s="$1" '/^[[:space:]]*#/{next} $1=="default"{d=$2} $1==s{b=$2} END{print (b!="" ? b : (d!="" ? d : 60))}' "$BUDGET" 2>/dev/null || echo 60; }
 # check <suite>: sets p f secs bud st (ok | FAILED | SLOW = passed but over its budget)
 check(){ local k; k=$(key "$1"); local log="tests/.tmp/logs/$k.log" line code; line=$(grep '^RESULT' "$log" 2>/dev/null | tail -1); code=$(cat "$log.code" 2>/dev/null || echo 1)
   if [ -n "$line" ]; then read -r _ _ p f <<<"$line"; else p=0; f='-'; fi
