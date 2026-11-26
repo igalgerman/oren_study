@@ -1,6 +1,7 @@
 """#220 question windows with fakes: one window per question, no duplicates, max 3, closed after the answer, 2 h reminder, answer relayed.
 Run: python3 tools/runner/test_qwin.py"""
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
+os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 import json, sys, tempfile
 from pathlib import Path
 sys.argv.append("--dry-run")

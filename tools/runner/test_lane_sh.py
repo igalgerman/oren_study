@@ -1,5 +1,6 @@
 """#302: tools/lane.sh must not fail on leftovers of an earlier try. Run: python3 tools/runner/test_lane_sh.py"""
 import os, shutil, subprocess, sys, tempfile
+os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 from pathlib import Path
 HERE = Path(__file__).resolve().parent
 LANE = HERE.parent / "lane.sh"

@@ -1,5 +1,6 @@
 # Unit test for remote.py with a fake CLI: python tools/runner/test_remote.py
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
+os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 import json
 import remote as r
 

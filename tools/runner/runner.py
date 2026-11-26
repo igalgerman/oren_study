@@ -1256,8 +1256,10 @@ def pregen_cmd():
 
 def start_pregen(log=None, popen=None):
     """#175: voice pregen in the background, OUTSIDE the merge lock (it can take 30 min); one at a time; never blocks an issue.
-    -> 'started' / 'already running' / 'off' / 'failed: ...'."""
-    if not CFG.get("pregen", False): return "off"
+    -> 'started' / 'already running' / 'off' / 'off (test)' / 'failed: ...'."""
+    if CFG.get("deploy_in_ci", True) or not CFG.get("pregen", False): return "off"   # #325: CI pregens after each deploy; the PC never does
+    if popen is None and (os.environ.get("OREN_TEST") == "1" or RUNS.resolve() != (HERE / ".runs").resolve()):
+        return "off (test)"                                  # #325: a test never launches the real node pregen.js
     try:                                                     # #301: nothing here may raise into process(): a failure is a note, never a block
         lock = FileLock("pregen")
         if lock.held_by_other(): return "already running"
@@ -1265,7 +1267,7 @@ def start_pregen(log=None, popen=None):
         RUNS.mkdir(exist_ok=True)
         out = open(RUNS / "pregen.log", "a", encoding="utf-8")
         out.write(f"\n=== pregen {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n"); out.flush()
-        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)   # #325: no DETACHED_PROCESS: a console-less node gives every child (Chrome) a visible window
         p = (popen or subprocess.Popen)(pregen_cmd(), cwd=str(MAIN_CHECKOUT), env=env, stdout=out, stderr=subprocess.STDOUT, creationflags=flags | no_window())
         lock.path.write_text(str(p.pid))                     # held while that process lives (FileLock checks the pid)
         if log: log_to(log, f"voice pregen started in the background (pid {p.pid}, .runs/pregen.log)")

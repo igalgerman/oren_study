@@ -1,5 +1,6 @@
 """#219 nightly retro + handoff + batch trigger with a fake claude and a fake gh. Run: python3 tools/runner/test_nightly.py"""
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
+os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 import base64, json, subprocess, sys, threading, time
 from pathlib import Path
 sys.argv.append("--dry-run")

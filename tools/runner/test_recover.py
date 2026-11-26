@@ -1,5 +1,6 @@
 # Tests for recover (#140), fake hc/gh/herdr: python tools/runner/test_recover.py
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
+os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 import json, os, sys, tempfile, time
 from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
