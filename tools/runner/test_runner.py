@@ -1309,3 +1309,9 @@ assert _src.count("live_hint(n, pr)") >= 2                                      
 print("ok #453 live checks keep the issue open")
 assert _pregen_popens == [], _pregen_popens          # #325: no test path launched the real pregen.js
 print("ok #325 no real pregen under tests")
+
+# 26 Nov (#453): an issue labelled 'later' (only a live/owner check left) never gets a worker, even with ready-for-agent
+_iss = [{"number": 900, "labels": ["ready-for-agent", "later", "pack", "P2"], "createdAt": "2026-11-26T00:00:00Z", "body": ""},
+        {"number": 901, "labels": ["ready-for-agent", "pack", "P2"], "createdAt": "2026-11-26T00:00:01Z", "body": ""}]
+assert [c["number"] for c in r.select(_iss, 4, 3, 0)] == [901]
+print("ok later skipped")
