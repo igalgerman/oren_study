@@ -328,11 +328,14 @@ function pic(w,cls){const p=(E2.WORD[w]||{}).pic||'';const c=cls?' '+cls:'';
 const heOf=w=>(E2.WORD[w]||{}).he||'';
 
 /* ---------- voice ---------- */
-let TOK=0;
-const en=t=>{try{O.sayLang(t,'en');}catch(e){}};
+let TOK=0,SLOWT=-1;
+/* #425: a second tap on the same 🔊 soon after the first says the English slowly (no new button); SLOWT = the token of that slow replay */
+const SLOWMS=2500,isSlow=()=>SLOWT===TOK;
+const twice=fn=>{let last=0;return ()=>{const now=Date.now(),s=now-last<SLOWMS;last=s?0:now;SLOWT=s?TOK+1:-1;fn();};};/* fn starts one new voice token (++TOK) */
+const en=t=>{try{O.sayLang(t,'en',isSlow());}catch(e){}};
 const he=t=>{try{O.say(t);}catch(e){}};
 const speaking=()=>{try{const g=window.__gv;if(g&&g.audio&&!g.audio.paused&&!g.audio.ended)return true;}catch(e){}try{return !!(window.speechSynthesis&&speechSynthesis.speaking);}catch(e){return false;}};
-const estMs=(t,lang)=>lang==='en'?(320+75*String(t).length)/.85:(250+65*T.plainHe(t).length)/.9;
+const estMs=(t,lang)=>lang==='en'?(320+75*String(t).length)/(isSlow()?.7:.85):(250+65*T.plainHe(t).length)/.9;
 /* wait until the voice is done (or about the time it should take) */
 async function waitSay(t,lang,tok){const est=D(estMs(t,lang)),t0=Date.now();let on=false;
   for(;;){if(tok!==TOK)return false;const el=Date.now()-t0,sp=speaking();if(sp)on=true;if(on&&!sp&&el>D(250))break;if(!on&&el>=est)break;if(el>est*3+D(1500))break;await sleep(Math.max(10,D(90)));}return tok===TOK;}
@@ -380,6 +383,11 @@ function teachView(c){
   if(c.kind==='sight')return {head:'מִלָּה שֶׁרוֹאִים הַרְבֵּה!',body:`<div class="e2word">${L_(c.w)}</div><div class="e2he">${L_(c.ex)} = ${c.exHe}</div>`};
   return {head:'הַקְשֵׁב, וְאָז אֱמֹר בְּקוֹל',body:`<div class="e2sit">${E2.PH[c.p].emo}</div><div class="e2phr">${L_(c.p)}</div><div class="e2he">${E2.PH[c.p].he}</div>`,honor:1};}
 
+/* #54 a short Hebrew clue for the help button ('' = wrong options go away) */
+const CLUE={read:'הַקְשֵׁב לַמִּלָּה וּבְחַר אֶת הַתְּמוּנָה שֶׁלָּהּ.',sent:'הַקְשֵׁב לַמִּשְׁפָּט וְחַפֵּשׂ בּוֹ אֶת הַמִּלָּה שֶׁל הַתְּמוּנָה.'};
+function clueOf(q){if(CLUE[q.type])return CLUE[q.type];
+  if(q.type==='sound'&&E2.LET[q.L].he)return `${q.end?'בַּסּוֹף':'בַּהַתְחָלָה'} יֵשׁ צְלִיל כְּמוֹ <b class="e2heL">${E2.LET[q.L].he}</b>.`;return '';}
+
 /* ---------- one round of a level ---------- */
 const NAMES=['eng-voc','eng-abc','eng-read','eng-talk','eng-song'];
 const ACTN={'eng-voc':'מִלִּים','eng-abc':'אוֹתִיּוֹת וּצְלִילִים','eng-read':'קוֹרְאִים','eng-talk':'מְדַבְּרִים','eng-song':'שִׁירִים'};
@@ -399,18 +407,17 @@ function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save
     if(st.t==='teach')return renderTeach(st.c);renderQ(st.s);}
   function renderTeach(c){const v=teachView(c);window.__e2q=null;E2.touch(save,c.items,d);O.persist();cur={ans:0};
     const card=h('div','prq tqc e2teach',`<div class="e2head">${v.head}</div>${v.body}`);
-    const pb=h('button','hintbtn',ICON.say+'<span>שׁוּב</span>');pb.onclick=()=>speakTeach(c,card,v);card.appendChild(pb);wrap.appendChild(card);
+    const pb=h('button','hintbtn',ICON.say+'<span>שׁוּב</span>');pb.onclick=twice(()=>speakTeach(c,card,v));card.appendChild(pb);wrap.appendChild(card);
     const row=h('div','chs');const go=h('button','chb e2go',v.honor?'🗣️ <span>אָמַרְתִּי!</span>':ICON.play+'<span>הַמְשֵׁךְ</span>');
     go.onclick=()=>{if(go.disabled)return;go.disabled=true;sfx.pop(2);if(v.honor){O.floatText(go,'⭐');O.addGems(1,go);gems+=1;}setTimeout(next,D(v.honor?700:250));};row.appendChild(go);wrap.appendChild(row);
     O.sayNow=T.plainHe(v.head);card.classList.add('flashin');setTimeout(()=>{if(card.isConnected)speakTeach(c,card,v);},D(350));}
   async function speakTeach(c,card,v){const tok=++TOK;
     if(v.tiles){const ts=[...card.querySelectorAll('.e2t')];for(const t of ts){if(tok!==TOK)return;ts.forEach(x=>x.classList.remove('on'));t.classList.add('on');await sleep(D(450));}if(tok!==TOK)return;ts.forEach(x=>x.classList.add('on'));}
     en(c.say);await waitSay(c.say,'en',tok);if(tok===TOK)card.querySelectorAll('.e2t').forEach(x=>x.classList.remove('on'));}
-  function renderQ(step){const q=E2.gen(save,step);window.__e2q=q;const v=qView(q);let tries=0,lock=false,hinted=false;cur={ans:q.ans};
+  function renderQ(step){const q=E2.gen(save,step);window.__e2q=q;const v=qView(q);let tries=0,lock=false,hinted=false,fin=false;cur={ans:q.ans};
     const card=h('div','prq tqc',v.pr);
     const playIt=()=>{if(v.seq)return playSeq();if(v.play)return talk(v.play);};
-    if(v.play||v.seq){const pb=h('button','hintbtn',ICON.say+`<span>${v.seq?'שׁוּב':'הַשְׁמַע'}</span>`);pb.onclick=()=>playIt();card.appendChild(pb);}
-    if(v.hint){const hb=h('button','hintbtn lsn',ICON.say+'<span>עֶזְרָה</span>');hb.onclick=()=>{hinted=true;if(v.karaoke){const tok=++TOK;karaoke(card.querySelector('.e2sent'),v.hint,tok);}else talk([['en',v.hint]]);};card.appendChild(hb);}
+    if(v.play||v.seq){const pb=h('button','hintbtn',ICON.say+`<span>${v.seq?'שׁוּב':'הַשְׁמַע'}</span>`);pb.onclick=twice(()=>playIt());card.appendChild(pb);}
     wrap.appendChild(card);
     const row=h('div','chs'+(q.opts[0].t==='let'||q.opts[0].t==='en'?' ltr':'')+(q.opts.length===4?' e2g4':''));
     q.opts.forEach((o,k)=>{const b=h('button','chb '+optCls(q),optHTML(o));b.onclick=()=>pick(k,b);row.appendChild(b);});wrap.appendChild(row);
@@ -423,13 +430,17 @@ function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save
     if(!v.noAuto)setTimeout(async()=>{if(!card.isConnected)return;if(first&&v.ask){await talk([['he',v.ask]]);if(!card.isConnected)return;}playIt();},D(350));
     else if(first&&v.ask)setTimeout(()=>{if(card.isConnected)talk([['he',v.ask]]);},D(350));
     const settle=r=>{const k=q.k;const p=res[k];res[k]=p==='bad'||r==='bad'?'bad':p==='hint'||r==='hint'?'hint':'ok';E2.mark(save,k,res[k],b0[k]|0,d);O.persist();};
-    const reveal=()=>{if(v.explain){ex.hidden=false;ex.innerHTML=`<div class="cap"><div class="e2ex">${v.explain}</div></div>`;}
-      if(v.afterK){const tok=++TOK;karaoke(card.querySelector('.e2sent'),q.s,tok);}else if(v.after)talk(v.after);};
+    const sayAfter=()=>{if(v.afterK){const tok=++TOK;karaoke(card.querySelector('.e2sent'),q.s,tok);}else if(v.after)talk(v.after);};
+    const reveal=()=>{if(v.explain){ex.hidden=false;ex.innerHTML=`<div class="cap"><div class="e2ex">${v.explain}</div></div>`;}sayAfter();};
+    /* #54 the one help button: tap 1 = the spoken clue + a short Hebrew clue, tap 2 = the answer + its explanation (the question ends like after two mistakes) */
+    const HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,before:ex,explain:v.explain?`<div class="e2ex">${v.explain}</div>`:'',
+      clue:()=>{hinted=true;if(v.hint){if(v.karaoke){const tok=++TOK;karaoke(card.querySelector('.e2sent'),v.hint,tok);}else talk([['en',v.hint]]);}else playIt();return clueOf(q);},
+      reveal:()=>{if(lock)return;lock=true;hush();if(!fin)err++;settle('bad');nq++;sayAfter();setTimeout(next,D(4200));}}):null;
     function pick(k,b){if(lock||b.disabled)return;
       if(k===q.ans){lock=true;hush();b.classList.add('ok');sfx.ok(i);const g=tries||hinted?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);
         if(!tries&&T.skHit)T.skHit(NAMES[lv],!hinted);if(!tries&&KN)KN.hit(NAMES[lv],!hinted);settle(tries?'bad':hinted?'hint':'ok');nq++;reveal();setTimeout(next,D(v.after||v.afterK?2600:1700));return;}
       if(!tries&&T.skHit)T.skHit(NAMES[lv],false);if(!tries&&KN)KN.hit(NAMES[lv],false);tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();
-      if(tries>=2){lock=true;hush();settle('bad');nq++;row.children[q.ans].classList.add('show');reveal();setTimeout(next,D(3000));}}
+      if(tries>=2){if(HB&&HB.el.isConnected){fin=true;HB.answer();return;}lock=true;hush();settle('bad');nq++;row.children[q.ans].classList.add('show');reveal();setTimeout(next,D(3000));}}
     }
   function next(){if(!wrap.isConnected)return;i++;if(i>=steps.length){T.setKey(null);const t=doneTitle(before,snapshot());T.finishAct(id,err,Math.max(1,nq),gems,back,()=>round(lv,back),t);}else render();}
   T.setKey(e=>{if(/^[1-9]$/.test(e.key)){const r=wrap.querySelector('.chs');const b=r&&r.children[+e.key-1];if(b)b.click();}});
@@ -439,7 +450,7 @@ function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save
 
 /* ---------- songs ---------- */
 /* one action: the song he has sung the least (a newly opened song first) */
-function songs(back){hush();const list=E2.openSongs(O.save);if(!list.length){he('עוֹד אֵין שִׁיר. קֹדֶם לוֹמְדִים מִלִּים!');if(back)back();return;}const g=E2.st(O.save).g;const min=Math.min(...list.map(x=>g[x.th]|0));return sing(list.find(x=>(g[x.th]|0)===min),back);}
+function songs(back){hush();const list=E2.openSongs(O.save);if(!list.length){he('עוֹד אֵין שִׁיר. קֹדֶם לוֹמְדִים מִלִּים!');const s=$('#sTal');if(s)s.innerHTML='';if(back)back();return;}const g=E2.st(O.save).g;const min=Math.min(...list.map(x=>g[x.th]|0));return sing(list.find(x=>(g[x.th]|0)===min),back);}
 function sing(song,back){hush();O.setScreen('sTal','sea',back);T.hudT('אַנְגְּלִית: '+song.he);O.sayNow='הקשב ושיר איתי';const s=$('#sTal');s.innerHTML='';
   const wrap=h('div','tq e2');s.appendChild(wrap);
   const card=h('div','prq tqc e2song',`<div class="e2head">${song.he}</div><div class="e2q">הַקְשֵׁב וְשִׁיר אִתִּי</div>${song.l.map(l=>`<div class="e2line">${wordsHTML(l)}</div>`).join('')}`);wrap.appendChild(card);

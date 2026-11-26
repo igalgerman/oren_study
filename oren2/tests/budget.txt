@@ -7,6 +7,8 @@ explore2-phone 90         # same file on the phone viewport: ~70 s
 edge-cases 90             # real-speed level transitions and timers: ~68 s
 help-desktop 90           # every generated question's explainer: ~68 s
 help-phone 90             # same file on the phone viewport: ~67 s
+helpbtn-desktop 90        # #54 walks all ~114 activities twice (help button: clue, answer, offered after 2 wrong) + the math kinds: ~35 s
+helpbtn-phone 90          # same file on the phone viewport
 regressions 75            # #356 walks all ~114 activities, taps back on each + #59 counts each round's questions: ~53 s under load
 playthrough-desktop 300   # FULL=1 only: plays every world level by level
 playthrough-phone 300     # FULL=1 only: same on the phone viewport
@@ -21,6 +23,8 @@ friend-phone 60           # same file on the phone viewport
 shots 90                  # #462 screenshots: worker + fake D1, then the real page (six moments, busy/offline, a played level, review page desktop + phone): ~40 s alone
 pday 90                   # #359 two devices through a fake save server: plan changes, skips, undo, offline queue, skip-now waiting for an answer: ~45 s alone
 network 60                # #434 slow network (throttled) + offline (service worker, voice from the device, save after reconnect): ~18 s alone
+english2-desktop 60       # #425 adds the second-tap slow replay check (~3 s): ~39 s under load
+english2-phone 60         # same file on the phone viewport: ~38 s
 reading 60                # 42 checks: reading mode + #355 stories + #420 story words (card, tap, next-day practice, pregen): ~27 s under load
 gaps-desktop 90           # #419 adds the rhymes checks (400 generated questions, voice timing ~5 s, a round of 5): ~38 s alone
 gaps-phone 90             # same file on the phone viewport

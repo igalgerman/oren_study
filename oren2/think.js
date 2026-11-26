@@ -297,13 +297,17 @@ function round(o){/* o: {id, sk, title, bg, back, n, next(i) → q, again} */
     const row=h('div','chs n'+q.opts.length+(q.opts[0].t==='num'?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+optCls(op),optHTML(op));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');
     const done=(ok)=>{if(!first)return;first=false;if(q.bank&&window.LEARN)try{window.LEARN.seen(q.bank,q.bkey,ok,false);}catch(e){}const ch=C.answer(TH(),o.sk,ok);hit(o.sk,ok);O.persist();if(ch===1)O.floatText(card,'🎉 עָלִיתָ שָׁלָב!');};
-    const explain=()=>{ex.hidden=false;ex.innerHTML=`<div class="cap"><div>${sprTok(q.rule)}</div>${q.ruleItems?`<div class="thser sm">${q.ruleItems.map(x=>`<span class="thi">${optHTML(x)}</span>`).join('')}</div>`:''}</div>`;
+    const ruleHTML=()=>`<div>${sprTok(q.rule)}</div>${q.ruleItems?`<div class="thser sm">${q.ruleItems.map(x=>`<span class="thi">${optHTML(x)}</span>`).join('')}</div>`:''}`;
+    /* only: the help box already shows the answer with the rule, so the explanation box holds just 'continue' */
+    const explain=(only)=>{ex.hidden=false;ex.innerHTML=only?'':`<div class="cap">${ruleHTML()}</div>`;
       const nb=h('button','bigbtn sm',O.ICON.play+'<span>הַמְשֵׁךְ</span>');nb.onclick=()=>{sfx.pop(1);next();};ex.appendChild(nb);setTimeout(()=>nb.focus(),50);T.setKey(e=>{if(e.key==='Enter'||e.key===' ')nb.click();});};
+    /* #54 one help button: clue (elimination), then the answer with the rule (the question ends like after two mistakes) */
+    const HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,explain:ruleHTML,before:ex,reveal:()=>{if(lock)return;lock=true;err++;done(false);explain(true);}}):null;
     function pickA(k,b){if(lock||b.disabled)return;
-      if(k===q.ans){lock=true;done(tries===0);if(T.rdA)T.rdA(q,tries,b);b.classList.add('ok');sfx.ok(i);const g=tries?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);
+      if(k===q.ans){lock=true;done(tries===0);if(T.rdA)T.rdA(q,tries,b);b.classList.add('ok');sfx.ok(i);const g=tries||(HB&&HB.step)?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);
         if(tries)explain();else setTimeout(next,D(900));return;}
       tries++;err++;done(false);b.classList.add('bad');b.disabled=true;sfx.no();
-      if(tries>=2||q.opts.length<=2){lock=true;row.children[q.ans].classList.add('show');explain();}}
+      if(tries>=2||q.opts.length<=2){lock=true;row.children[q.ans].classList.add('show');if(HB&&HB.el.isConnected){HB.answer();explain(true);}else explain();}}
     T.setKey(e=>{if(/^[1-9]$/.test(e.key)){const b=row.children[+e.key-1];if(b)b.click();}});
     window.__think={q,get ans(){return q.ans;},wrap,i};};
   function next(){if(!wrap.isConnected)return;i++;if(i>=o.n){T.setKey(null);T.finishAct(o.id,err,o.n,gems,o.back,o.again);}else render();}
@@ -323,10 +327,12 @@ function readRC(back){const th=TH();th.rcR=th.rcR||[];let lv=C.level(th,'rc');le
       if(!qi)setTimeout(()=>{if(wrap.isConnected)O.say(INSTR);},D(400));
       const row=h('div','chs n'+q.opts.length);q.opts.forEach((op,k)=>{const b=h('button','chb '+optCls(op),optHTML(op));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
       const done=ok=>{if(!first)return;first=false;const ch=C.answer(TH(),'rc',ok);hit('rc',ok);if(nk||ch.nk)hit('nk',ok);O.persist();if(ch.lv===1)O.floatText(card,'🎉 עָלִיתָ שָׁלָב!');else if(ch.nk===1)O.floatText(card,'🎉 קוֹרֵא גַּם בְּלִי נִקּוּד!');};
+      /* #54 one help button: clue (elimination), then the answer (the question ends like after two mistakes) */
+      const HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,reveal:()=>{if(lock)return;lock=true;err++;perr++;done(false);setTimeout(nextQ,D(4200));}}):null;
       function pickA(k,b){if(lock||b.disabled)return;
-        if(k===q.ans){lock=true;done(tries===0);b.classList.add('ok');sfx.ok(qi);const g=tries?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);setTimeout(nextQ,D(tries?1600:900));return;}
+        if(k===q.ans){lock=true;done(tries===0);b.classList.add('ok');sfx.ok(qi);const g=tries||(HB&&HB.step)?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);setTimeout(nextQ,D(tries?1600:900));return;}
         tries++;err++;perr++;done(false);b.classList.add('bad');b.disabled=true;sfx.no();if(lv===3)addSay();
-        if(tries>=2){lock=true;row.children[q.ans].classList.add('show');setTimeout(nextQ,D(2400));}}
+        if(tries>=2){lock=true;row.children[q.ans].classList.add('show');if(HB&&HB.el.isConnected)HB.answer();setTimeout(nextQ,D(HB?4200:2400));}}
       T.setKey(e=>{if(/^[1-9]$/.test(e.key)){const b=row.children[+e.key-1];if(b)b.click();}});
       window.__think={q,get ans(){return q.ans;},wrap,i:qi};};
     const nextQ=()=>{if(!wrapNow||!wrapNow.isConnected)return;qi++;if(qi<pick.qs.length)ask();else{if(window.LEARN)try{window.LEARN.seen('rc',pick.P.p,!perr,false);}catch(e){}pi++;if(pi<NP)passage();else{T.setKey(null);T.finishAct('read-rc',err,NP*3,gems,back,()=>readRC(back));}}};
@@ -349,8 +355,10 @@ function challenge(back){const tl=testLv();if(!tl)return back();const plan=C.tes
     const iv=setInterval(()=>{if(!wrap.isConnected){clearInterval(iv);return;}tick();},1000);
     const render=()=>{const q=qs[i];T.hudT('אֶתְגַּר הָאַלּוּפִים',T.progressBar(i,qs.length));wrap.innerHTML='';
       const card=h('div','prq tqc',`${q.pt?`<div class="thp${TH().nk?' nk':''}">${T.nikudText(q.pt,q.pp)}</div>`:''}${promptHTML(q)}${q.text?`<div class="qq">${q.pt?T.nikudText(q.text,q.textP,true):q.text}</div>`:''}`);wrap.appendChild(card);
-      const row=h('div','chs n'+q.opts.length+(q.opts[0].t==='num'?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+optCls(op)+(got[i]===k?' pick':''),optHTML(op));b.onclick=()=>{sfx.pop(1);got[i]=k;b.classList.add('pick');setTimeout(()=>step(1),D(250));};row.appendChild(b);});wrap.appendChild(row);
+      const row=h('div','chs n'+q.opts.length+(q.opts[0].t==='num'?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+optCls(op)+(got[i]===k?' pick':''),optHTML(op));b.onclick=()=>{if(got[i]===-1)return;sfx.pop(1);got[i]=k;b.classList.add('pick');setTimeout(()=>step(1),D(250));};row.appendChild(b);});wrap.appendChild(row);
       const nav=h('div','thnav');const skip=h('button','plink',got[i]==null?'דַּלֵּג ←':'הַבָּא ←');skip.onclick=()=>step(1);nav.appendChild(skip);wrap.appendChild(nav);
+      /* #54 one help button: clue (elimination), then the answer — that question counts as not solved, and the test moves on */
+      if(window.HELP&&HELP.mc)HELP.mc(wrap,{row,ans:q.ans,before:nav,reveal:()=>{got[i]=-1;setTimeout(()=>{if(wrap.isConnected&&!ended&&qs[i]===q)step(1);},D(4200));}});
       T.setKey(e=>{if(/^[1-9]$/.test(e.key)){const b=row.children[+e.key-1];if(b)b.click();}});window.__think={q,get ans(){return q.ans;},wrap,i,test:true};};
     /* after the last question, go back to the ones that were skipped; finish when all are answered */
     const step=()=>{const open=qs.map((_,k)=>k).filter(k=>got[k]==null);if(!open.length)return finish();const nx=open.find(k=>k>i);i=nx!=null?nx:open[0];render();};

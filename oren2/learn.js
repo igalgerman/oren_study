@@ -473,13 +473,17 @@ function askQ(wrap,q,i,n,title,onAns){T.hudT(title,T.progressBar(i,n));wrap.inne
   const row=h('div','chs ltr');let tries=0,lock=false;
   q.opts.forEach((v,k)=>{const b=h('button','chb num',String(v));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
   const exb=h('div','hintbox');exb.hidden=true;wrap.appendChild(exb);card.classList.add('flashin');
-  const showEx=()=>{if(q.chart){const c=card.querySelector('.lnhc');if(c)c.outerHTML=hundred(q.chart,true);}exb.hidden=false;exb.innerHTML=`<div class="cap">${q.tip?`<div>💡 ${q.tip}</div>`:''}${q.ex||''}</div>`;
+  /* only: the help box already shows the answer with the explanation, so the explanation box holds just 'continue' */
+  const showEx=(only)=>{if(q.chart){const c=card.querySelector('.lnhc');if(c)c.outerHTML=hundred(q.chart,true);}exb.hidden=false;exb.innerHTML=only?'':`<div class="cap">${q.tip?`<div>💡 ${q.tip}</div>`:''}${q.ex||''}</div>`;
     const nb=h('button','bigbtn',O.ICON.play+'<span>הַמְשֵׁךְ</span>');nb.onclick=()=>{sfx.pop(1);onAns(null);};exb.appendChild(nb);setTimeout(()=>nb.focus(),50);T.setKey(e=>{if(e.key==='Enter'||e.key===' ')nb.click();});};
+  /* #54 one help button: the strategy tip as the clue, then the answer with its explanation (the question ends like after two mistakes) */
+  const HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,clue:q.tip,explain:q.ex||(q.tip?'💡 '+q.tip:''),before:exb,
+    reveal:()=>{if(lock)return;lock=true;if(tries===0)onAns({ok:false,first:true,ms:Date.now()-t0},true);tries++;showEx(true);}}):null;
   function pickA(k,b){if(lock||b.disabled)return;const ms=Date.now()-t0;
-    if(k===q.ans){lock=true;if(tries===0)onAns({ok:true,first:true,ms},true);b.classList.add('ok');sfx.ok(i);const g=tries?1:2;O.addGems(g,b);O.floatText(b,'+'+g);
+    if(k===q.ans){lock=true;if(tries===0)onAns({ok:true,first:true,ms},true);b.classList.add('ok');sfx.ok(i);const g=tries||(HB&&HB.step)?1:2;O.addGems(g,b);O.floatText(b,'+'+g);
       if(tries){showEx();}else{if(q.chart){const c=card.querySelector('.lnhc');if(c)c.outerHTML=hundred(q.chart,true);}setTimeout(()=>onAns(null),D(q.chart?1500:900));}return;}
     if(tries===0)onAns({ok:false,first:true,ms},true);tries++;b.classList.add('bad');b.disabled=true;sfx.no();
-    if(tries>=2){lock=true;row.children[q.ans].classList.add('show');showEx();}}
+    if(tries>=2){lock=true;row.children[q.ans].classList.add('show');if(HB&&HB.el.isConnected){HB.answer();showEx(true);}else showEx();}}
   T.setKey(e=>{if(/^[1-9]$/.test(e.key)){const b=row.children[+e.key-1];if(b)b.click();}});
   window.__learn={q,get ans(){return q.ans;},wrap,i};}
 

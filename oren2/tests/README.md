@@ -38,6 +38,7 @@ Needs Node and the `playwright` package with Chromium (no npm install inside the
 | family-sync | website mode: fresh devices share one fixed family save (no codes or links), old per-device id merged once, settings/progress sync through a fake `/api/save` |
 | health | body breaks (water, toilet, movement, eyes) at the end of an activity, meal pauses by the clock, topic switching and resting doors, parent settings and log, family merge |
 | timelimit | what is left in the top bar, spoken reminders, finish-the-current-activity grace, count-based limits, the parent's "⏱️ היום" block, a grant from the parent's phone unlocking Oren's device |
+| helpbtn (desktop/phone) | #54 one help button on every question of every pack and the math levels: tap 1 = clue, tap 2 = answer + explanation, offered by itself after 2 wrong; texts with nikud and in pregen |
 | worker | the Cloudflare `_worker.js` bundle: page, icons, manifest, save API (GET/PUT/400/404/405/413), Google voice cache and `/api/tts/pregen` (fake Google) |
 | instructions | every activity (and the code-robot level, piano song and typing lesson behind a menu) speaks a short instruction when it opens (#55) |
 | eventlog | #348 game event log: `track()` batches to `/api/log` (one D1 row per batch), session cap, capped offline buffer, no retry loop, `/api/log/summary` (daily summary, raw events with the admin key), 30-day prune; plays two questions through the real worker |

@@ -108,17 +108,24 @@ const KIND={
     wrap.appendChild(card);O.sayNow=q.say||T.plainHe(q.pr);if(T.rdQ&&!q.play)T.rdQ(q,card);
     const row=h('div','chs'+(q.opts.length===4?' g4':''));q.opts.forEach((op,k)=>{const b=h('button','chb tx '+(q.cls||''),op);b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
     if(q.play&&q.auto)setTimeout(()=>{if(card.isConnected)q.play();},D(400));
+    /* #54 one help button: tap 1 = a clue (or two options go away), tap 2 = the answer with a short explanation; the question ends there */
+    const HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,clue:q.clue,explain:q.explain,reveal:()=>{if(lock)return;lock=true;if(q.after)q.after();done(2,false,null);}}):null;
     function pickA(k,b){if(lock||b.disabled)return;
-      if(k===q.ans){if(T.rdA&&!q.play)T.rdA(q,tries,b);lock=true;b.classList.add('ok');sfx.ok(tries);if(q.after)q.after();done(tries,!tries,b);return;}
+      if(k===q.ans){if(T.rdA&&!q.play)T.rdA(q,tries,b);lock=true;b.classList.add('ok');sfx.ok(tries);if(q.after)q.after();done(tries,!tries&&!(HB&&HB.step),b);return;}
       tries++;b.classList.add('bad');b.disabled=true;sfx.no();
-      if(tries>=2||q.opts.length<=2){lock=true;row.children[q.ans].classList.add('show');if(q.after)q.after();done(Math.max(tries,2),false,null);}}
+      if(tries>=2||q.opts.length<=2){lock=true;row.children[q.ans].classList.add('show');if(q.after)q.after();if(HB)HB.answer();done(Math.max(tries,2),false,null);}}
     return {ans:()=>q.ans,solve:()=>row.children[q.ans].click()};},
   /* see the note -> press it on the piano */
   piano(q,wrap,done){let tries=0,lock=false;const card=h('div','prq tqc',`${staffSVG([{i:q.i,d:'q'}],{clef:q.clef,minW:200})}<div class="qq">נַגֵּן אֶת הַתָּו הַזֶּה בַּפְּסַנְתֵּר.</div>`);wrap.appendChild(card);O.sayNow='נגן את התו הזה בפסנתר.';
-    const target=midiOf(q.i);const kb=keyboard(q.clef==='bass'?48:60,q.names,(m,k)=>{play(m);if(lock)return;
-      if(m===target){lock=true;flash(k,'ok');sfx.ok(tries);done(tries,!tries,k);return;}
-      tries++;flash(k,'bad');if(tries>=2){lock=true;const c=kb.children[kb.idx(target)];c.classList.add('show');setTimeout(()=>play(target),D(500));done(2,false,null);}});
-    wrap.appendChild(kb);keyMap(kb);return {ans:()=>kb.idx(target),solve:()=>kb.children[kb.idx(target)].click()};},
+    const target=midiOf(q.i);let HB=null;const kb=keyboard(q.clef==='bass'?48:60,q.names,(m,k)=>{play(m);if(lock)return;
+      if(m===target){lock=true;flash(k,'ok');sfx.ok(tries);done(tries,!tries&&!(HB&&HB.step),k);return;}
+      tries++;flash(k,'bad');if(tries>=2)end();});
+    const end=()=>{lock=true;const c=kb.children[kb.idx(target)];c.classList.add('show');setTimeout(()=>play(target),D(500));if(HB)HB.answer();done(2,false,null);};
+    wrap.appendChild(kb);keyMap(kb);
+    /* #54 one help button: tap 1 = the note's name, tap 2 = its key glows, counted up from דּוֹ */
+    if(window.HELP&&HELP.button)HB=HELP.button(wrap,{get ans(){return kb.idx(target);},clue:()=>`${HM.note} <b>${nameOf(q.i)}</b>. ${HM.find}`,
+      answer:()=>{if(!lock)end();return `<div>${HELP.BT.ans}: <b class="hq-a">${nameOf(q.i)}</b></div><div class="hq-x">${countUp(q.i)}</div>`;}});
+    return {ans:()=>kb.idx(target),solve:()=>kb.children[kb.idx(target)].click()};},
   /* a short melody on the staff, played note by note */
   melody(q,wrap,done){const notes=parseMel(q.song);let pos=0,err=0,miss=0,lock=false;
     const card=h('div','prq tqc m2mel');wrap.appendChild(card);
@@ -127,12 +134,18 @@ const KIND={
       const svg=(r,ri,minW)=>staffSVG(r.map((n,j)=>Object.assign({},n,{bar:j<r.length-1?n.bar:0})),{time:ri===0,end:ri===rows.length-1,minW,fill:1});
       const maxW=Math.max(...rows.map((r,ri)=>+svg(r,ri).match(/data-w="([\d.]+)"/)[1]));
       card.innerHTML=rows.map((r,ri)=>svg(r,ri,maxW)).join('')+`<div class="qq">נַגֵּן אֶת הַתָּוִים לְפִי הַסֵּדֶר, מִשְּׂמֹאל לְיָמִין ➡️</div>`;};
-    draw();O.sayNow='נגן את התווים לפי הסדר, משמאל לימין.';
+    draw();O.sayNow='נגן את התווים לפי הסדר, משמאל לימין.';let HB=null;
+    const tune=()=>{let t0=.5;notes.forEach(n=>{play(midiOf(n.i),.4*BEATS[n.d],.8,t0);t0+=.42*BEATS[n.d];});};
     const kb=keyboard(60,q.names,(m,k)=>{play(m,.45);if(lock)return;const t=midiOf(notes[pos].i);
       if(m===t){flash(k,'ok');pos++;miss=0;kb.querySelectorAll('.show').forEach(x=>x.classList.remove('show'));
-        if(pos>=notes.length){lock=true;draw();sfx.ok(2);let t0=.5;notes.forEach(n=>{play(midiOf(n.i),.4*BEATS[n.d],.8,t0);t0+=.42*BEATS[n.d];});done(err,!err,k);return;}draw();return;}
-      err++;miss++;flash(k,'bad');if(miss>=2)kb.children[kb.idx(t)].classList.add('show');});
+        if(pos>=notes.length){lock=true;draw();sfx.ok(2);tune();done(err,!err&&!(HB&&HB.step),k);return;}draw();return;}
+      err++;miss++;flash(k,'bad');if(miss>=2){if(HB&&!HB.step)HB.offer();else kb.children[kb.idx(t)].classList.add('show');}});
     wrap.appendChild(kb);keyMap(kb);
+    /* #54 one help button: tap 1 = the next key glows, tap 2 = the whole tune plays by itself with the note names */
+    if(window.HELP&&HELP.button)HB=HELP.button(wrap,{get ans(){return pos<notes.length?kb.idx(midiOf(notes[pos].i)):-1;},
+      clue:()=>{if(pos>=notes.length)return '';kb.children[kb.idx(midiOf(notes[pos].i))].classList.add('show');return `${HM.next} <b>${nameOf(notes[pos].i)}</b>`;},
+      answer:()=>{if(!lock){lock=true;pos=notes.length;draw();kb.children[kb.idx(midiOf(notes[notes.length-1].i))].classList.add('show');tune();done(Math.max(err,2),false,null);}
+        return `<div class="hq-x">${HM.tune} <b class="hq-a">${notes.map(n=>nameOf(n.i)).join(' ')}</b></div>`;}});
     return {ans:()=>pos<notes.length?kb.idx(midiOf(notes[pos].i)):undefined,solve:()=>{while(!lock)kb.children[kb.idx(midiOf(notes[pos].i))].click();}};},
   /* listen to the rhythm, then tap it on the drum */
   tap(q,wrap,done){const pat=q.pat,on=onsets(pat);let tries=0,taps=[],t0=0,phase='idle';const beat=60/72*1000;
@@ -158,26 +171,37 @@ const KIND={
 /* computer keyboard: A S D F G H J K = white keys from the lowest */
 function keyMap(kb){const ws=[...kb.querySelectorAll('.mw')];T.setKey(e=>{const k='ASDFGHJK'.indexOf((e.code||'').replace('Key',''));if(k>=0&&ws[k]&&!e.repeat){e.preventDefault();ws[k].click();}});}
 
+/* #54 the help button texts (kid-facing) */
+const HM={note:'הַתָּו הוּא',find:'חַפֵּשׂ אוֹתוֹ בַּפְּסַנְתֵּר.',next:'הַתָּו הַבָּא:',tune:'כָּךְ מְנַגְּנִים:',up:'סוֹפְרִים מִדּוֹ לְמַעְלָה:',down:'סוֹפְרִים מִדּוֹ לְמַטָּה:',
+  hi:'הַצְּלִיל הַשֵּׁנִי גָּבוֹהַּ יוֹתֵר, כְּמוֹ לַעֲלוֹת בְּמַדְרֵגוֹת.',lo:'הַצְּלִיל הַשֵּׁנִי נָמוּךְ יוֹתֵר, כְּמוֹ לָרֶדֶת בְּמַדְרֵגוֹת.',
+  hlClue:'הַקְשֵׁב שׁוּב: הַצְּלִיל הַשֵּׁנִי עוֹלֶה אוֹ יוֹרֵד?',same:'שְׁנֵי הַצְּלִילִים שָׁוִים בְּדִיּוּק.',diff:'הַצְּלִיל הַשֵּׁנִי שׁוֹנֶה מֵהָרִאשׁוֹן.',
+  sameClue:'הַקְשֵׁב שׁוּב: הַאִם שְׁנֵי הַצְּלִילִים שָׁוִים?',whClue:'הַקְשֵׁב שׁוּב: כַּמָּה רָחוֹק הוּא מִדּוֹ?',
+  w:'עִגּוּל רֵיק, בְּלִי מַקֵּל: תָּו שָׁלֵם, אַרְבַּע פְּעָמוֹת.',h:'עִגּוּל רֵיק עִם מַקֵּל: תָּו חֲצִי, שְׁתֵּי פְּעָמוֹת.',
+  q:'עִגּוּל מָלֵא עִם מַקֵּל: תָּו רֶבַע, פְּעָמָה אַחַת.',e:'עִגּוּל מָלֵא, מַקֵּל וְדֶגֶל: שְׁמִינִית, חֲצִי פְּעָמָה.'};
+window.HELP_TEXTS=(window.HELP_TEXTS||[]).concat(Object.values(HM));
+/* "count up from do": דּוֹ · רֶה · מִי (or down for the bass notes) */
+const countUp=i=>{const st=i>=0?1:-1,out=[];for(let k=0;k!==i+st;k+=st)out.push(nameOf(k));return `${i>=0?HM.up:HM.down} ${out.join(' · ')}`;};
+
 /* ---------- question sets per level ---------- */
 const noteBtn=(i,clef)=>`<span class="m2opt">${staffSVG([{i,d:'q'}],{clef,minW:120,cls:'mini'})}<b>${nameOf(i)}</b></span>`;
 function readQs(){const L0=READ[ST().read-1];const qs=[];let last=null;
   for(let n=0;n<QN;n++){const rv=rev('read'),L=rv?READ[rv.lv[1]-1]:L0;let i;do i=pick(L.pool);while(i===last&&L.pool.length>1);last=i;
     if(n%2===0){const right=nameOf(i);const names=[...new Set(L.pool.map(nameOf))].filter(x=>x!==right);const opts=shuffle([right,...shuffle(names).slice(0,L.opts-1)]);
-      qs.push({k:'choice',pr:`${staffSVG([{i,d:'q'}],{clef:L.clef,minW:200})}<div class="qq">אֵיזֶה תָּו זֶה?</div>`,opts,ans:opts.indexOf(right),after:()=>play(midiOf(i)),key:'r'+n,rv:rv&&rv.id});}
+      qs.push({k:'choice',pr:`${staffSVG([{i,d:'q'}],{clef:L.clef,minW:200})}<div class="qq">אֵיזֶה תָּו זֶה?</div>`,opts,ans:opts.indexOf(right),explain:countUp(i),after:()=>play(midiOf(i)),key:'r'+n,rv:rv&&rv.id});}
     else qs.push({k:'piano',i,clef:L.clef,names:L.names,rv:rv&&rv.id});}
   return qs;}
 function earQs(){const kind=EAR[ST().ear-1];const qs=[];
   for(let n=0;n<QN;n++){
     if(kind==='hl-big'||kind==='hl-small'){const a=rand(60,67);const b=a+(Math.random()<.5?-1:1)*(kind==='hl-big'?rand(7,12):rand(2,4));const opts=['גָּבוֹהַּ יוֹתֵר ⬆️','נָמוּךְ יוֹתֵר ⬇️'];
-      qs.push({k:'choice',pr:`<div class="m2ear">🎵 🎵</div><div class="qq">הַקְשֵׁב לִשְׁנֵי צְלִילִים. הַשֵּׁנִי גָּבוֹהַּ יוֹתֵר אוֹ נָמוּךְ יוֹתֵר?</div>`,opts,ans:b>a?0:1,play:()=>{play(a,.6);play(b,.6,1,.8);},auto:1,playLbl:'שׁוּב',say:'הקשב לשני צלילים. השני גבוה יותר או נמוך יותר?',a,b});}
+      qs.push({k:'choice',pr:`<div class="m2ear">🎵 🎵</div><div class="qq">הַקְשֵׁב לִשְׁנֵי צְלִילִים. הַשֵּׁנִי גָּבוֹהַּ יוֹתֵר אוֹ נָמוּךְ יוֹתֵר?</div>`,opts,ans:b>a?0:1,explain:b>a?HM.hi:HM.lo,clue:()=>{play(a,.6);play(b,.6,1,1.4);return HM.hlClue;},play:()=>{play(a,.6);play(b,.6,1,.8);},auto:1,playLbl:'שׁוּב',say:'הקשב לשני צלילים. השני גבוה יותר או נמוך יותר?',a,b});}
     else if(kind==='same'){const a=rand(60,69);const same=n%2===0?Math.random()<.5:Math.random()<.5;const b=same?a:a+(Math.random()<.5?-1:1)*rand(2,5);const opts=['אוֹתוֹ צְלִיל','צְלִיל אַחֵר'];
-      qs.push({k:'choice',pr:`<div class="m2ear">🎵 🎵</div><div class="qq">הַקְשֵׁב לִשְׁנֵי צְלִילִים. אוֹתוֹ צְלִיל אוֹ צְלִיל אַחֵר?</div>`,opts,ans:same?0:1,play:()=>{play(a,.6);play(b,.6,1,.8);},auto:1,playLbl:'שׁוּב',say:'הקשב לשני צלילים. אותו צליל או צליל אחר?',a,b});}
+      qs.push({k:'choice',pr:`<div class="m2ear">🎵 🎵</div><div class="qq">הַקְשֵׁב לִשְׁנֵי צְלִילִים. אוֹתוֹ צְלִיל אוֹ צְלִיל אַחֵר?</div>`,opts,ans:same?0:1,explain:same?HM.same:HM.diff,clue:()=>{play(a,.6);play(b,.6,1,1.4);return HM.sameClue;},play:()=>{play(a,.6);play(b,.6,1,.8);},auto:1,playLbl:'שׁוּב',say:'הקשב לשני צלילים. אותו צליל או צליל אחר?',a,b});}
     else{const pool=kind==='which2'?[0,4]:[0,2,4];const x=pick(pool);const opts=pool.map(i=>noteBtn(i));
-      qs.push({k:'choice',pr:`<div class="m2ear">🎹</div><div class="qq">קֹדֶם דּוֹ, וְאַחֲרָיו תָּו סוֹדִי. אֵיזֶה תָּו הוּא?</div>`,opts,ans:pool.indexOf(x),cls:'m2pic',play:()=>{play(60,.6);play(midiOf(x),.7,1,1.1);},auto:1,playLbl:'שׁוּב',say:'קודם דו, ואחריו תו סודי. איזה תו הוא?',a:60,b:midiOf(x)});}}
+      qs.push({k:'choice',pr:`<div class="m2ear">🎹</div><div class="qq">קֹדֶם דּוֹ, וְאַחֲרָיו תָּו סוֹדִי. אֵיזֶה תָּו הוּא?</div>`,opts,ans:pool.indexOf(x),cls:'m2pic',explain:countUp(x),clue:pool.length<3?()=>{play(60,.6);play(midiOf(x),.7,1,1.4);return HM.whClue;}:undefined,play:()=>{play(60,.6);play(midiOf(x),.7,1,1.1);},auto:1,playLbl:'שׁוּב',say:'קודם דו, ואחריו תו סודי. איזה תו הוא?',a:60,b:midiOf(x)});}}
   return qs;}
 function rhyQs(){const L0=RHY[ST().rhy-1];const qs=[];
   for(let n=0;n<L0.nq;n++){const rv=rev('rhy'),L=rv?RHY[rv.lv[1]-1]:L0;const v=L.vals[n%L.vals.length];const byBeats=n>=L.vals.length;const opts=shuffle(L.vals.map(x=>byBeats?VALB[x]:VALN[x]));const right=byBeats?VALB[v]:VALN[v];
-    qs.push({k:'choice',pr:`${staffSVG([{i:0,d:v}],{one:true,minW:160})}<div class="qq">${byBeats?'כַּמָּה פְּעָמוֹת נִמְשָׁךְ הַתָּו הַזֶּה?':'אֵיזֶה תָּו זֶה?'}</div>`,opts,ans:opts.indexOf(right),cls:byBeats?'m2num':'',key:'v'+n,rv:rv&&rv.id});}
+    qs.push({k:'choice',pr:`${staffSVG([{i:0,d:v}],{one:true,minW:160})}<div class="qq">${byBeats?'כַּמָּה פְּעָמוֹת נִמְשָׁךְ הַתָּו הַזֶּה?':'אֵיזֶה תָּו זֶה?'}</div>`,opts,ans:opts.indexOf(right),explain:HM[v],cls:byBeats?'m2num':'',key:'v'+n,rv:rv&&rv.id});}
   shuffle(L0.pats.slice()).slice(0,8-L0.nq).forEach(p=>qs.push({k:'tap',pat:p}));
   return qs;}
 function melQs(){const L=MEL[ST().mel-1];return L.songs.map(song=>({k:'melody',song,names:L.names,items:parseMel(song).length}));}

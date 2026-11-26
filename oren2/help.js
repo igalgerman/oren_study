@@ -499,7 +499,31 @@ function right(){if(!S)return {solo:true,star:true};const st=S;const solo=st.lev
   S=null;return {solo,star:solo};}
 function stop(keepPend){if(S){clearTimeout(S.idleT);clearTimeout(S.exT);hidePanel();if(ovOwn&&!ov().querySelector('.hlp-tb'))closeOv();}S=null;if(!keepPend)pend=null;}
 
-const HELP=window.HELP={register,classify,start,wrong,right,stop,due,stuckList,parentHTML,cfg,
+/* ---------- #54 the help button: ONE big button on every question.
+   tap 1 = a small clue, tap 2 = the answer with a short explanation. After 2 wrong answers the host calls offer() (clue by itself)
+   or answer() (when its question ends there). button(host,o): o = {clue()→html|'' , answer()→html, before}; mc(host,o) for choice rows:
+   o = {row, ans, clue (text), explain (html), reveal()} — clue without text: wrong options go away until two are left. ---------- */
+const BT={lbl:'עֶזְרָה',clue:'רֶמֶז',offer:'צָרִיךְ עֶזְרָה? הִנֵּה רֶמֶז',elim:'הוֹרַדְתִּי תְּשׁוּבוֹת שֶׁלֹּא מַתְאִימוֹת.',again:'הַקְשֵׁב שׁוּב לַשְּׁאֵלָה וְחַשֵּׁב.',ans:'הַתְּשׁוּבָה הִיא'};
+function button(host,o){if(!host)return null;o=o||{};(host.isConnected?document:host).querySelectorAll('.helpq').forEach(x=>x.remove());/* a late timer of a closed screen never takes the live button away */
+  const w=el('helpq'),box=el('helpbox');const b=btn('helpbtn','<span class="hq-i" aria-hidden="true">?</span><span>'+BT.lbl+'</span>',()=>tap(false));
+  box.hidden=true;w.append(b,box);if(o.before&&o.before.parentNode===host)host.insertBefore(w,o.before);else host.appendChild(w);
+  let n=0;const show=(html,voice)=>{box.hidden=false;box.innerHTML=html;box.classList.remove('in');void box.offsetWidth;box.classList.add('in');say(voice||html);};
+  function tap(auto){if(n>=2||!w.isConnected)return;n++;track({h:'btn',n,auto:auto?1:0});
+    if(n===1){let c='';try{c=o.clue?o.clue():'';}catch(e){}const head=auto?BT.offer:BT.clue;show(`<b>${head}:</b> ${c||BT.again}`);}
+    else{let e='';try{e=o.answer?o.answer():'';}catch(x){}b.disabled=true;w.classList.remove('offer');w.classList.add('done');show(e||BT.ans);}}
+  const api={el:w,box,btn:b,o,tap:()=>tap(false),offer(){if(n===0&&w.isConnected){w.classList.add('offer');tap(true);}},answer(){if(n<2&&w.isConnected){n=1;tap(true);}},get step(){return n;},get ans(){return o.ans;}};
+  w._help=api;return api;}
+function elim(row,ans){const bs=[...row.children].filter((x,k)=>k!==ans&&!x.disabled);if(row.children.length<=2||bs.length<1)return false;
+  shuffle(bs).slice(0,Math.max(0,bs.length-1)).forEach(x=>{x.disabled=true;x.classList.add('gone');});return bs.length>1;}
+function mc(host,o){o=o||{};const rowOf=()=>typeof o.row==='function'?o.row():o.row,ansOf=()=>typeof o.ans==='function'?o.ans():o.ans;
+  return button(host,{before:o.before,get ans(){return ansOf();},
+    clue:()=>{const t=typeof o.clue==='function'?o.clue():o.clue;if(t)return t;const row=rowOf();if(row&&elim(row,ansOf()))return BT.elim;return '';},
+    answer:()=>{const row=rowOf(),a=row&&row.children[ansOf()];if(a)a.classList.add('show');const lbl=a?a.innerHTML:'';try{o.reveal&&o.reveal();}catch(e){}
+      const x=typeof o.explain==='function'?o.explain():o.explain;return `<div>${BT.ans}: <b class="hq-a">${lbl}</b></div>${x?`<div class="hq-x">${x}</div>`:''}`;}});}
+/* packs (loaded before this file) put their fixed help texts in window.HELP_TEXTS, so pregen has them */
+const allTexts=()=>Object.values(BT).concat([BT.clue+': '+BT.elim,BT.clue+': '+BT.again,BT.offer+': '+BT.elim,BT.offer+': '+BT.again],[...new Set(window.HELP_TEXTS||[])]);
+
+const HELP=window.HELP={register,classify,start,wrong,right,stop,due,stuckList,parentHTML,cfg,button,mc,allTexts,BT,
   explain:(q,ctx)=>{const d=q&&q.type&&REG[q.type]?q:classify(q,ctx);if(!d)return null;const ex=REG[d.type];return {d,ex,topic:ex.topic(d,ctx),tip:ex.tip&&ex.tip(d),hint:ex.hint(d,ctx),visual:ex.visual&&ex.visual(d,ctx),
     example:ex.example&&(ex.reading?null:ex.example(d)),similar:ex.similar&&ex.similar(d),teach:ex.teach&&ex.teach(d),show:ex.show&&ex.show(d),whole:ex.whole&&ex.whole(d)};},
   teachLog:()=>DB().tb.slice(),get state(){return S?{type:S.d.type,level:S.level,phase:S.phase,wrong:S.wrong}:null;},
