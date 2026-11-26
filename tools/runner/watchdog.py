@@ -294,7 +294,7 @@ def parked_tick():
     parked.tick(tell=tell, log=log)
 
 def desks_tick():
-    import desks; desks.run_if_due(log)   # #306: cloud inbox + ask sessions, pinned links + live status (thread; not reloaded: never-two guard)
+    import desks; desks.run_if_due(log)   # #306: cloud inbox + ask sessions, pinned links + live status (thread; its never-two lock survives a reload)
 
 SYNC_MIN = int(R.CFG.get("sync_minutes", 3))
 _sync = {"last": 0.0, "msg": ""}
@@ -414,9 +414,23 @@ def reload_all(log, here=None, keep=KEEP):
     """#300: reload every loaded tools/runner module (not `keep`) in dependency order. Raises on a failed reload
     (the caller keeps the old stamps, so the next tick retries). -> the names reloaded."""
     order = [n for n in dep_order(local_modules(here), here) if n not in keep]
-    for n in order: importlib.reload(sys.modules[n])
+    for n in order:
+        t = _mtime(sys.modules[n])                    # read before the reload: a write during it is seen next tick
+        importlib.reload(sys.modules[n]); sys.modules[n]._loaded_mtime = t
     if order: log("reloaded " + ", ".join(f"{n}.py" for n in order))
     return order
+
+def _mtime(m):
+    try: return Path(m.__file__).stat().st_mtime
+    except (OSError, TypeError, AttributeError): return None
+
+def fresh(log, here=None, keep=KEEP):
+    """#300 (reopened): at the start of EVERY tick: a loaded tools/runner module older than its file (or never stamped)
+    -> reload_all. In the tick, not only in loop(): a running loop() never picks up its own new code, so a watchdog
+    started before a fix kept stale stats/remote forever. -> the names reloaded."""
+    if all(getattr(sys.modules[n], "_loaded_mtime", None) == _mtime(sys.modules[n])
+           for n in local_modules(here) if n not in keep): return []
+    return reload_all(log, here, keep)
 
 def stamps(here=None):
     """#300: mtime of every .py in tools/runner (a merge touches several at once)."""
@@ -482,6 +496,7 @@ def tick():
     """One watchdog pass (main() calls it on the newest loaded copy of this file)."""
     try: (R.RUNS / "watchdog.beat").write_text(str(int(time.time())), encoding="utf-8")   # #171: liveness for the dashboard
     except OSError: pass
+    fresh(log)          # #300: never run a step against a module older than its file
     ts = windows()
     check_windows(ts)
     OQ.answers_tick(tell)
