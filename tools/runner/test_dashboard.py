@@ -175,3 +175,15 @@ tp = D.text(mp)
 assert "in a batch 2" in tp and "not triaged / other 1" in tp and "In batches: #40 (#41 #42)" in tp, tp
 assert "In a batch" in D.page(mp)
 print("dashboard #282 OK")
+# #280: 'not triaged' counts only the leftovers (no live state); an open PR or an open owner question is a live state
+lf = [I(50, "OPEN", []), I(51, "OPEN", []), I(52, "OPEN", ["later"]), I(53, "OPEN", ["needs-triage"]), I(54, "OPEN", ["later"])]
+lprs = [{"number": 60, "state": "OPEN", "mergedAt": None, "headRefName": "lane/51", "title": "x", "body": ""}]
+ml = D.model(lf, lprs, ev, now, qnums={52})
+assert [r["n"] for r in ml["by_state"]["other"]] == [50], ml["by_state"]
+assert [r["n"] for r in ml["by_state"]["aside"]] == [51], ml["by_state"]
+assert ml["leftovers"] == [50, 53, 54], ml["leftovers"]
+ml["questions"] = [{"key": "k", "window": "#52", "text": "q", "url": "u", "at": "2026-11-25T02:00:00Z"}]
+tl = D.text(ml)
+assert "Not triaged (no live state, #280): 3 (#50 #53 #54)" in tl, tl
+assert "waiting for owner 30h" in tl, tl
+print("dashboard #280 OK")

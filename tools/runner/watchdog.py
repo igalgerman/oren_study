@@ -14,7 +14,10 @@ Every minute it checks, deterministically:
       batch trigger: tells the inbox to run /batch once a day, and early when >= 8 ready P2/P3 issues share a lane
   5d. #282 parked.py, once an hour: closed batch -> its open members get ready-for-agent back; a polish list at 5 notes or 24 h -> ready-for-agent P3;
       later/manual 2 h+ with no owner question, run, PR or future date -> 'parked without owner question: #n' to the orchestrator; night report at retro_hour
-  5d. #241 due.py, every 10 min: an open issue's 'Due: YYYY-MM-DD HH:MM' passed -> one 'Due reached' comment, the orchestrator told,
+  5d. #280 stuck.py, every 10 min: an open issue with no live state (ready-for-agent, run, PR, open batch, owner question) for 6 h
+      -> ONE 'STUCK ISSUES' note to the orchestrator (it pushes the owner); an owner question 4 h old -> one more push,
+      24 h old -> its recommended option when it says 'skip is safe', else 'waiting for owner Nh' on the dashboard
+  5e. #241 due.py, every 10 min: an open issue's 'Due: YYYY-MM-DD HH:MM' passed -> one 'Due reached' comment, the orchestrator told,
       label owner -> an owner question (popup)
   5d. #306 desks.py: keeps the two cloud sessions 'Oren inbox (cloud)' / 'Oren ask (cloud)' alive and every status_minutes
       writes the session links + dashboard.py --text into ONE pinned issue (edited in place, nothing committed)
@@ -299,6 +302,10 @@ def parked_tick():
     import parked
     parked.tick(tell=tell, log=log)
 
+def issues_stuck_tick():
+    """#280: no issue sits without a live state; owner questions re-pushed at 4 h, the 24 h rule."""
+    import stuck
+    stuck.tick(tell=tell, log=log)
 def due_tick():
     """#241, every 10 min: a passed 'Due:' line in an open issue -> one 'Due reached' comment + the orchestrator (+ owner popup)."""
     import due
@@ -555,6 +562,7 @@ def tick():
     parked_tick()       # #282
     due_tick()          # #241
     garden_tick()       # #187
+    issues_stuck_tick() # #280
     desks_tick()
     sync_tick()
     alarm_tick()
