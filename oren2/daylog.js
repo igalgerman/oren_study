@@ -1,6 +1,6 @@
 /* ===== DAY LOG: everything Oren did, for the parent (also from another house, in real time through the family save) =====
    save.alog[day].e = [[min, id, stars, ok, n, helped, o], ...]   min = minutes after midnight when it started,
-     ok/n = right on the first try / questions, o: 'c' done · 'q' left in the middle · 's' a path step he did not reach · 'b' stopped for a break
+     ok/n = right on the first try / questions, o: 'c' done · 'q' left in the middle · 'x' opened and closed at once (only for Oren's "again" list) · 's' a path step he did not reach · 'b' stopped for a break
    save.now = {id, t}  the activity being played and the last moment something happened (ms) — "playing now" for the parent.
    Detailed entries are kept for 14 days (think.js keeps the day counts for 35). Parent text has no nikud. */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;
@@ -21,7 +21,7 @@ DL.add=add;
 let cur=null;
 const now=t=>{if(O.isParentPlay)return;S().now={id:cur?cur.id:null,t:t||Date.now()};};
 function begin(id){if(O.isParentPlay)return;if(cur&&!cur.end)end(cur.brk?'b':'q');cur={id,t:Date.now(),d:day(),ok:0,n:0,help:0};now();}
-function end(o,st){const c=cur;if(!c||c.end)return;c.end=1;if(o!=='c'&&!c.n&&Date.now()-c.t<15000){cur=null;return;}   /* opened and closed at once: not worth a line */
+function end(o,st){const c=cur;if(!c||c.end)return;c.end=1;if(o!=='c'&&!c.n&&Date.now()-c.t<15000)o='x';   /* opened and closed at once: 'x' — kept for Oren's "again" list, not shown to the parent */
   add(c.d,[minOf(c.t),c.id,st|0,c.ok,c.n,c.help,o]);now();cur=null;O.persist();}
 DL.begin=begin;DL.end=end;DL.cur=()=>cur;
 /* a round that ends again and again ("again"): each finish is its own line */
@@ -53,7 +53,7 @@ DL.nameOf=id=>{if(id==='math')return 'מסע החשבון';
   const a=T.ACT[id];return a?plain(a.name):id;};
 DL.domOf=id=>{if(id==='math'||/^lv:/.test(id))return 'חשבון';const a=T.ACT[id];if(!a||!a.b)return '';const g=(T.GROUPS||[]).find(x=>x.ids.includes(a.b.id));return g?GN()[g.id]:plain(a.b.name);};
 const ICO={c:'✓',q:'✗',s:'⏭',b:'⏸'},WHY={c:'',q:'יצא באמצע',s:'לא הגיע',b:'הפסקה'};
-DL.rows=d=>{const L=((O.realSave.alog||{})[d]||{}).e||[];return L.slice().sort((a,b)=>a[0]-b[0]);};
+DL.rows=d=>{const L=((O.realSave.alog||{})[d]||{}).e||[];return L.filter(e=>e[6]!=='x').sort((a,b)=>a[0]-b[0]);};
 DL.rowHTML=e=>{const [m,id,st,ok,n,hp,o]=e;const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`${ok}/${n} נכון בניסיון ראשון`:'',hp?`עזרה ×${hp}`:'',WHY[o]].filter(Boolean).join(' · ');
   return `<div class="prow dlrow dl-${o}"><span class="pn"><b class="dli">${ICO[o]||''}</b> ${o==='s'?'':hhmm(m)+' · '}${DL.nameOf(id)} <small>${DL.domOf(id)}</small></span><span class="pc">${res}</span></div>`;};
 /* the top line of the summary: playing now / last played */
