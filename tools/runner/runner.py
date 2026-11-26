@@ -434,7 +434,7 @@ def agent(name, prompt, cwd, tools, log, marker, n, role, model=MODEL):
     if not live(name):
         # bash wrapper only puts the python3 shim on PATH; the prompt goes after `--` ("--allowedTools" is variadic)
         cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), "--label", f"issue={n}", "--label", f"role={role}", *space_args(), *parent_args(),
-               BASH, "-c", 'export PATH="$1:$PATH"; shift; exec "$@"', "_", CFG["extra_path"],
+               BASH, "-c", 'export PATH="$1:$PATH"; shift; "$@"', "_", CFG["extra_path"],
                *(["env", "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1"] if code_mode(n) else []),   # Code Mode trial (owner, 26 Nov)
                shutil.which("claude") or "claude", "--model", model, "--permission-mode", "auto",
                "--allowedTools", *tools, "--", prompt + INTERACTIVE_NOTE]

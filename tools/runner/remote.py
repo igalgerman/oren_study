@@ -37,10 +37,11 @@ def parse_start(out):
 
 def start(n, task, cwd, run=sh):
     """cwd must be a checkout whose current commit is on GitHub (e.g. the main checkout): the session starts there."""
+    task = task.replace('"', "'")                             # double quotes break the Windows argv to bash ('file not found')
     name = f"remote-{n}"
     run([HC, "rm", name])                                        # leftover finished terminal of an earlier start
     rc, out = run([HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), "--label", f"issue={n}",
-                   "--label", "role=remote", BASH, "-c", f'unset {TOKEN_VAR}; exec "$0" --cloud "$1"', CLAUDE, task])
+                   "--label", "role=remote", BASH, "-c", f'unset {TOKEN_VAR}; "$0" --cloud "$1"', CLAUDE, task])
     if rc:
         return {"ok": False, "session": "", "url": "", "error": out.strip()[:300] or f"hc run exit {rc}"}
     run([HC, "wait", name, "--timeout", "180", "--json"])
