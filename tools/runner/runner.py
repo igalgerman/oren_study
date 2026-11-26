@@ -76,22 +76,31 @@ def has_acceptance(body):
     """#186: the issue body has an '## Acceptance' heading (checkable points + tests + Out of scope)."""
     return bool(ACCEPT_RE.search(body or ""))
 
-def no_acceptance(issues):
-    """#186: ready issues the runner would start but that have no '## Acceptance' section."""
-    return [i for i in issues if "ready-for-agent" in i["labels"] and "in-progress" not in i["labels"]
-            and "manual" not in i["labels"] and not has_acceptance(i.get("body"))]
+ACCEPT_EXEMPT = ("express", "bug", "P0")                      # #186: urgent work keeps flowing without the list
 
-def refuse_no_acceptance(issues):
-    """#186: no worker starts without an Acceptance section: label needs-info (the intake writes it), tell the orchestrator.
-    -> the same list with those issues relabelled (they stay in it, so a 'Blocked by' on them still waits)."""
-    bad = no_acceptance(issues)
-    for i in bad:
-        n = i["number"]
-        set_labels(n, add=["needs-info"], remove=["ready-for-agent"])
-        gh("issue", "comment", str(n), "--body", "Runner: not started, the body has no `## Acceptance` section (3-7 checkable points + the tests "
-           "that prove them, and `Out of scope`). Labelled needs-info: triage writes it, then sets ready-for-agent again.")
-        tell_orchestrator(f"Runner: #{n} has no ## Acceptance section; labelled needs-info (triage writes it).")
-    return [demote(i) if i in bad else i for i in issues]
+def no_acceptance(issues):
+    """#186: ready issues the runner would start but that have no '## Acceptance' section (P0, express and bug issues are exempt)."""
+    return [i for i in issues if "ready-for-agent" in i["labels"] and "in-progress" not in i["labels"]
+            and "manual" not in i["labels"] and not any(l in ACCEPT_EXEMPT for l in i["labels"]) and not has_acceptance(i.get("body"))]
+
+def acceptance_line(issues):
+    return "add Acceptance lists: " + " ".join(f"#{i['number']}" for i in issues)
+
+def acceptance_due(last, now, every=3600):
+    """Pure (#186): at most one batched inbox line per hour."""
+    return not last or now - last >= every
+
+def ask_acceptance(bad, now=None):
+    """#186: no worker starts these issues, and nothing is relabelled one by one: at most once per hour ONE line to the inbox window."""
+    now = time.time() if now is None else now
+    mark = RUNS / "acceptance_ask.txt"
+    try: last = float(mark.read_text().strip())
+    except (OSError, ValueError): last = 0
+    if not bad or not acceptance_due(last, now): return False
+    if USE_HERDR: hc("send", "inbox", acceptance_line(bad), timeout=30)
+    try: RUNS.mkdir(exist_ok=True); mark.write_text(str(now))
+    except OSError: pass
+    return True
 
 def demote(i):
     return {**i, "labels": [l for l in i["labels"] if l != "ready-for-agent"] + ["needs-info"]}
@@ -200,25 +209,103 @@ def deploy_needed(deployed_sha, main_sha):
     """Pure (#74): batching. PRs merged one after another are deployed ONCE: the first deploy after the last merge covers all of them."""
     return bool(main_sha) and deployed_sha != main_sha
 
-def ci_fix_prompt(n, names):
-    return (f"Issue #{n}: the CI check(s) {', '.join(names) or '(see the PR)'} failed on lane/{n} even after one rerun. "
-            f"Use `gh run list --branch lane/{n}` and `gh run view <id> --log-failed`, fix the real cause in this worktree, "
-            f"run the affected suites locally, commit, and `git push {REMOTE} lane/{n}`. Never force-push, never push to {BRANCH}. "
+def push_ref(n, br):
+    """#246: what a worker in the local worktree (branch lane/<n>) pushes: lane/<n>, or HEAD:<the PR's claude/* head>."""
+    return f"lane/{n}" if br in (None, f"lane/{n}") else f"HEAD:{br}"
+
+def ci_fix_prompt(n, names, br=None):
+    br = br or f"lane/{n}"
+    return (f"Issue #{n}: the CI check(s) {', '.join(names) or '(see the PR)'} failed on {br} even after one rerun. "
+            f"Use `gh run list --branch {br}` and `gh run view <id> --log-failed`, fix the real cause in this worktree, "
+            f"run the affected suites locally, commit, and `git push {REMOTE} {push_ref(n, br)}`. Never force-push, never push to {BRANCH}. "
             "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
 
-def resolve_prompt(n, files):
-    return (f"Issue #{n}: merging lane/{n} into {BRANCH} failed because {BRANCH} moved on" + (f" (conflicting files: {', '.join(files)})" if files else "") + ". "
+def resolve_prompt(n, files, br=None):
+    br = br or f"lane/{n}"
+    return (f"Issue #{n}: merging {br} into {BRANCH} failed because {BRANCH} moved on" + (f" (conflicting files: {', '.join(files)})" if files else "") + ". "
             f"In this worktree run `git fetch {REMOTE} && git merge -X renormalize {REMOTE}/{BRANCH}`, resolve the conflicts keeping BOTH sides' intent, "
             "run `python3 build_talents.py` (in oren2/) and the full tests (`oren2/tests/run.sh`; rerun a flaky suite alone once), commit, "
-            f"and `git push {REMOTE} lane/{n}`. Never force-push, never rewrite {BRANCH}, never push to {BRANCH}. "
+            f"and `git push {REMOTE} {push_ref(n, br)}`. Never force-push, never rewrite {BRANCH}, never push to {BRANCH}. "
             "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
 
 LOCAL_LANES = int(CFG.get("local_lanes", 1))
 REMOTE_LANES = int(CFG.get("remote_lanes", 0))
 
 def total_lanes():
-    """#133: lanes in total = local + remote (replaces max_parallel)."""
+    """#133: lanes in total = local + remote (replaces max_parallel). #239: remote = the governor's last count (.runs/governor.json, < 15 min old)."""
+    try:
+        gv = json.loads((RUNS / "governor.json").read_text(encoding="utf-8"))
+        if time.time() - gv["at"] < 15 * 60: return LOCAL_LANES + (0 if gv["stop"] else int(gv["lanes"]))
+    except Exception: pass
     return LOCAL_LANES + REMOTE_LANES
+
+# #239 usage governor: cloud lane count follows the 5h window (the panel writes .runs/usage.json every refresh)
+GOV = {"target": float(CFG.get("governor_target", 90)), "min": int(CFG.get("governor_min", 2)), "max": int(CFG.get("governor_max", 8)),
+       "stop": float(CFG.get("governor_stop", 93)), "pace": float(CFG.get("governor_pace", 3.5)), "week_cap": int(CFG.get("governor_week_cap", 4)),
+       "stale_s": 15 * 60, "fallback": REMOTE_LANES}
+
+def _ts(iso):
+    try: return datetime.fromisoformat(str(iso).replace("Z", "+00:00")).timestamp()
+    except Exception: return None
+
+def gov_pace(hist, now, reset, default):
+    """Pure (#239): 5h % used per hour per busy remote lane over the last hour of samples [{at, pct, reset, busy}] of the SAME window. Too little data -> default."""
+    s = [h for h in hist if now - 3600 <= h["at"] <= now and h.get("reset") == reset]
+    if len(s) < 2 or s[-1]["at"] - s[0]["at"] < 600: return default
+    busy = sum(h.get("busy", 0) for h in s) / len(s)
+    if busy < 0.5: return default
+    return max(0.0, (s[-1]["pct"] - s[0]["pct"]) / ((s[-1]["at"] - s[0]["at"]) / 3600) / busy)
+
+def governor(usage, hist, now, g=None):
+    """Pure (#239): usage.json dict (or None) + samples + now -> {lanes, stop, pct, projected, reset, why}.
+    Most remote lanes in [min, max] whose projection at the 5h reset stays <= target (min when even that is above); 5h >= stop -> no new run;
+    week above its even pace +10 pts -> at most week_cap lanes; usage missing or older than 15 min -> config remote_lanes."""
+    g = {**GOV, **(g or {})}
+    at = _ts((usage or {}).get("at"))
+    if not usage or at is None or now - at > g["stale_s"] or usage.get("five_h_pct") is None:
+        return {"lanes": g["fallback"], "stop": False, "pct": None, "projected": None, "reset": None, "why": "no fresh usage: config remote_lanes"}
+    pct = float(usage["five_h_pct"]); reset = _ts(usage.get("five_h_reset")) or now
+    hours = max(0.0, (reset - now) / 3600)
+    pace = gov_pace(hist, now, usage.get("five_h_reset"), g["pace"])
+    proj = lambda n: pct + pace * n * hours
+    lanes = max([n for n in range(g["min"], g["max"] + 1) if proj(n) <= g["target"]] or [g["min"]])
+    why = f"pace {pace:.1f}%/h per lane"
+    wk, wreset = usage.get("week_pct"), _ts(usage.get("week_reset"))
+    if wk is not None and wreset is not None:
+        even = 100 * min(1.0, max(0.0, 1 - (wreset - now) / (7 * 86400)))
+        if float(wk) > even + 10 and lanes > g["week_cap"]:
+            lanes = g["week_cap"]; why += f"; week {float(wk):.0f}% > even {even:.0f}%+10: cap {g['week_cap']}"
+    stop = pct >= g["stop"]
+    if stop: why = f"5h {pct:.0f}% >= {g['stop']:.0f}%: no new run"
+    return {"lanes": lanes, "stop": stop, "pct": pct, "projected": proj(lanes), "reset": reset, "why": why}
+
+def governor_text(gv):
+    """'governor: N lanes (5h X% -> ~Y% at HH:MM)' (local time)."""
+    if gv["pct"] is None: return f"governor: {gv['lanes']} lanes ({gv['why']})"
+    s = f"governor: {0 if gv['stop'] else gv['lanes']} lanes (5h {gv['pct']:.0f}% -> ~{min(100, gv['projected']):.0f}% at {time.strftime('%H:%M', time.localtime(gv['reset']))})"
+    return s + (" · STOP" if gv["stop"] else "")
+
+def governor_pass(remote_busy, now=None):
+    """Read .runs/usage.json, keep a sample in .runs/usage_hist.jsonl, write .runs/governor.json. Returns the governor dict; never raises."""
+    now = now or time.time()
+    try: usage = json.loads((RUNS / "usage.json").read_text(encoding="utf-8"))
+    except Exception: usage = None
+    hist = []
+    try:
+        for l in (RUNS / "usage_hist.jsonl").read_text(encoding="utf-8").splitlines()[-300:]:
+            try: hist.append(json.loads(l))
+            except Exception: pass
+    except Exception: pass
+    gv = governor(usage, hist, now)
+    if DRY: return gv
+    try:
+        RUNS.mkdir(exist_ok=True)
+        if gv["pct"] is not None:
+            hist = [h for h in hist if now - h.get("at", 0) < 2 * 3600] + [{"at": now, "pct": gv["pct"], "reset": usage.get("five_h_reset"), "busy": remote_busy}]
+            (RUNS / "usage_hist.jsonl").write_text("".join(json.dumps(h) + "\n" for h in hist), encoding="utf-8")
+        (RUNS / "governor.json").write_text(json.dumps({**gv, "text": governor_text(gv), "at": now}), encoding="utf-8")
+    except Exception: pass
+    return gv
 
 def assign_where(chosen, local_busy, remote_busy, local_lanes, remote_lanes):
     """Pure (#133): chosen issues (in priority order) -> [(issue, 'local'|'remote')]. A free local lane first, then a free remote slot; the rest wait."""
@@ -242,7 +329,7 @@ def remote_worker_prompt(n, lane, bug=False):
         base += "This is a BUG: use the mattpocock-skills:diagnosing-bugs skill, then tdd: reproduce it with a failing test, then fix it; say the root cause in the PR body.\n"
     return base + (f"Work on branch lane/{n} (create it from {BRANCH}). Follow the worker rules in FLOW.md: run the tests you touched, commit "
                    f"(not the built oren2/index.html or oren2/cf/public/index.html), `git push -u {REMOTE} lane/{n}`, and open a PR to {BRANCH} "
-                   f"with `gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Fixes #{n}`. Never deploy, never force-push, never push to {BRANCH}.\n"
+                   f"with `gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Fixes #{n}` (if you may only push claude/* branches, use your claude/* branch instead; the runner finds the PR by `Fixes #{n}`). Never deploy, never force-push, never push to {BRANCH}.\n"
                    f"You have no terminal the owner can see, so report ONLY through an issue comment: when finished post `gh issue comment {n} --repo {REPO} --body \"RESULT: DONE <PR url>\"`; "
                    f"if blocked post `RESULT: STUCK <why>`; if you need the owner post `QUESTION: <short question, with options>` and stop. "
                    "The comment must have that line on its own line.")
@@ -262,8 +349,11 @@ def issue_over(n, since, run_=None):
     if rc: return False
     try:
         repo = json.loads(out)["data"]["repository"]
-        return run_over((repo.get("issue") or {}).get("state"), [x.get("mergedAt") for x in (repo.get("pullRequests") or {}).get("nodes") or []], since)
-    except (ValueError, KeyError, TypeError):
+        if run_over((repo.get("issue") or {}).get("state"), [x.get("mergedAt") for x in (repo.get("pullRequests") or {}).get("nodes") or []], since):
+            return True
+        p = remote.find_pr(n, run_ or run, "merged", fields="number,mergedAt")      # #246: a cloud worker's claude/* PR merged after the run start
+        return bool(p) and run_over(None, [p.get("mergedAt")], since)
+    except (ValueError, KeyError, TypeError, IndexError, AttributeError):
         return False
 
 def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=None):
@@ -710,16 +800,17 @@ def remote_review(n, pr, round1, start, get_verdict, sleep, clock, timeout_s=360
         return f"remote reviewer posted no VERDICT in {timeout_s // 60} min ({s.get('url', '')})", ""
     return st.get("body") or st["line"], st["line"]
 
-def remote_fix_prompt(n, review_text):
-    return (f"Fix round for issue #{n} in {REPO}: the reviewer of the PR on branch lane/{n} asked for fixes. If you are not on that branch: "
-            f"`git fetch {REMOTE} lane/{n} && git checkout lane/{n}`; read CLAUDE.md and FLOW.md. Fix exactly these points (new commit, "
-            f"`git push {REMOTE} lane/{n}`, no new PR, never force-push, never push to {BRANCH}), run the tests you touched, then post an issue comment on #{n} "
+def remote_fix_prompt(n, review_text, br=None):
+    br = br or f"lane/{n}"
+    return (f"Fix round for issue #{n} in {REPO}: the reviewer of the PR on branch {br} asked for fixes. If you are not on that branch: "
+            f"`git fetch {REMOTE} {br} && git checkout {br}`; read CLAUDE.md and FLOW.md. Fix exactly these points (new commit, "
+            f"`git push {REMOTE} {br}`, no new PR, never force-push, never push to {BRANCH}), run the tests you touched, then post an issue comment on #{n} "
             "with `RESULT: DONE <PR url>` (or `RESULT: STUCK <why>`, or `QUESTION: <question, options>` and stop) on its own line:\n---\n"
             + review_text[-6000:] + "\n---")
 
-def remote_fix(n, session, review_text, send, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None):
+def remote_fix(n, session, review_text, send, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None, br=None):
     """#134: FIX for a cloud worker: the points go to its session (send); no session or send failed -> a new cloud fix session. -> marker line."""
-    text = remote_fix_prompt(n, review_text)
+    text = remote_fix_prompt(n, review_text, br)
     if not (session and send(session, text).get("ok")):
         s = start(n, text, CFG.get("main_checkout", "."))
         if not s.get("ok"):
@@ -730,6 +821,69 @@ def remote_fix(n, session, review_text, send, start, get_status, sleep, clock, t
     if st["state"] == "timeout":
         return f"RESULT: STUCK remote fix silent for {timeout_s // 3600}h"
     return st["line"]
+
+def remote_resume(n, lane, bug, session, answer, send, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None):
+    """#135: the owner answered the cloud worker's QUESTION: the answer goes to the same session (send); no session or send failed ->
+    a new cloud session that reads the issue thread and continues lane/<n>. -> marker line, like remote_worker."""
+    text = (f"OWNER ANSWER to your QUESTION on #{n}: {answer}\nContinue the issue with this answer. Report on the issue as before, on its own line: "
+            "`RESULT: DONE <PR url>`, `RESULT: STUCK <why>`, or `QUESTION: <short question, with options>` and stop.")
+    if not (session and send(session, text).get("ok")):
+        s = start(n, remote_worker_prompt(n, lane, bug) + f"\nThe owner already answered a QUESTION on this issue (read its comments): {answer}\n"
+                  f"If lane/{n} is on GitHub, continue it (`git fetch {REMOTE} lane/{n} && git checkout lane/{n}`; no second PR).", CFG.get("main_checkout", "."))
+        if not s.get("ok"):
+            return f"RESULT: STUCK remote resume start failed: {s.get('error', '?')}"
+        if on_start: on_start(s)
+    st = wait_remote(get_status, sleep, clock, timeout_s, poll_s, ended)
+    if st["state"] == "ended": raise Ended("cloud resume")
+    if st["state"] == "timeout":
+        return f"RESULT: STUCK remote worker silent for {timeout_s // 3600}h after the owner's answer"
+    return st["line"]
+
+def park_remote(n, line):
+    """#135: the cloud session posted QUESTION: on the issue: park it (lane freed), the question goes to the owner, the orchestrator is told."""
+    set_labels(n, add=["blocked", "ready-for-human"], remove=["in-progress"])
+    gh("issue", "comment", str(n), "--body", "Parked (cloud): the cloud session waits for the owner (its question is above). The lane is free.\n\n"
+       "Answer here on the issue (or through the question window / the orchestrator): the runner sends the answer to the same session and the issue resumes.")
+    try:
+        import owner_q; owner_q.post(f"remote-{n}", line)          # 'needs you': questions issue -> question window, panel, dashboard
+    except Exception: pass
+    tell_orchestrator(f"#{n} parked: its cloud session asks the owner: {line[:300]} - a question window asks him; "
+                      f"his answer posted on #{n} resumes the session by itself (watchdog, within a minute).")
+    raise Parked(f"cloud session of #{n}: {line[:200]}")
+
+def answer_file(n):
+    return RUNS / str(n) / "answer.json"
+
+def pending_answer(n):
+    return answer_file(n).exists()
+
+def take_answer(n):
+    """The stored owner answer for the resumed run (read once), or None."""
+    try: a = json.loads(answer_file(n).read_text(encoding="utf-8")).get("answer")
+    except (OSError, ValueError): return None
+    answer_file(n).unlink(missing_ok=True)
+    return a
+
+def resume_remote(n, answer):
+    """#135: unpark a cloud issue: keep the answer for the next run (it sends it to the session), labels back, the next pass starts it."""
+    (RUNS / str(n)).mkdir(parents=True, exist_ok=True)
+    answer_file(n).write_text(json.dumps({"answer": answer}, ensure_ascii=False), encoding="utf-8")
+    set_labels(n, remove=["blocked", "ready-for-human"])
+    gh("issue", "comment", str(n), "--body", redact("Runner: the owner answered; the cloud session gets the answer and the issue resumes."))
+    tell_orchestrator(f"#{n} unparked: the owner answered ({answer[:200]}); the runner resumes its cloud session.")
+
+def resume_answered():
+    """#135 watchdog tick: parked cloud issues (blocked + ready-for-human, run in the cloud) whose QUESTION has an answer -> resume. -> numbers."""
+    rc, out = gh("issue", "list", "--state", "open", "--label", "blocked", "--label", "ready-for-human", "--limit", "50", "--json", "number,comments")
+    try: issues = json.loads(out) if rc == 0 and out.strip() else []
+    except ValueError: return []
+    done = []
+    for i in issues:
+        if where_of(i["number"]) != "remote": continue
+        a = remote.answer_after_question(i.get("comments") or [])
+        if a:
+            resume_remote(i["number"], a); done.append(i["number"])
+    return done
 
 def post_polish(n, lane, pr, notes):
     """BLUE notes: one line each (with the PR link) on the ONE rolling 'Polish backlog (<lane>)' issue; created when missing. Never one issue per note."""
@@ -778,11 +932,12 @@ def block(n, why, log):
     tell_orchestrator(f"STUCK #{n}: {why[:300]} — decide: unblock, split, or ask the owner")
 
 def find_pr(n):
-    rc, out = gh("pr", "list", "--head", f"lane/{n}", "--state", "open", "--json", "number")
-    try:
-        return json.loads(out)[0]["number"]
-    except (ValueError, IndexError, KeyError):
-        return None
+    """Open PR number of issue n: lane/<n>, or a cloud worker's claude/* PR (#246, remote.pr_for)."""
+    return remote.pr_for(n, run=run)[0]
+
+def branch_of(n):
+    """#246: head branch of issue n's open PR (lane/<n> when there is none)."""
+    return remote.pr_for(n, run=run)[1] or f"lane/{n}"
 
 def deploy_text(log):
     if CFG.get("deploy_in_ci", True):                      # #192: .github/workflows/deploy.yml deploys + pregens every green push to main
@@ -835,8 +990,8 @@ def log_to(log, text):
 def ci_integrate(n, wt, log, over=None):
     """CI-based integrate (#74): update the lane with main, push, wait for the PR checks, `gh pr merge --squash`. -> (rc, out) like integrate.sh:
     0 merged, 2 conflict, 4 no PR, 5 push failed, 6 CI red after one rerun, 7 CI timeout / merge failed (blocked, real reason in out)."""
-    pr = find_pr(n)
-    if not pr: return 4, "no open PR for lane/%d" % n
+    pr, br = remote.pr_for(n, run=run)                           # #246: the head may be a cloud worker's claude/* branch
+    if not pr: return 4, "no open PR for issue #%d" % n
     mergeable = gh("pr", "view", str(pr), "--json", "mergeable", "-q", ".mergeable", log=log)[1].strip()
     if needs_branch_update(mergeable):                           # #166: only a real conflict updates the branch
         run(["git", "fetch", "-q", REMOTE], cwd=wt, log=log)
@@ -845,16 +1000,16 @@ def ci_integrate(n, wt, log, over=None):
             files = run(["git", "diff", "--name-only", "--diff-filter=U"], cwd=wt, log=log)[1].split()
             run(["git", "merge", "--abort"], cwd=wt, log=log)
             return 2, "CONFLICTS (fix by hand, or send back to the lane):\n" + "\n".join(files)
-        if run(["git", "rev-parse", "HEAD"], cwd=wt)[1] != run(["git", "rev-parse", f"{REMOTE}/lane/{n}"], cwd=wt)[1]:
-            if run(["git", "push", "-q", REMOTE, f"lane/{n}"], cwd=wt, log=log)[0]: return 5, "push failed"
+        if run(["git", "rev-parse", "HEAD"], cwd=wt)[1] != run(["git", "rev-parse", f"{REMOTE}/{br}"], cwd=wt)[1]:
+            if run(["git", "push", "-q", REMOTE, f"HEAD:{br}"], cwd=wt, log=log)[0]: return 5, "push failed"
             time.sleep(20)                                           # let GitHub start the new run
     def get_checks():
         try: return json.loads(gh("pr", "checks", str(pr), "--json", "name,bucket", log=log)[1] or "[]")
         except ValueError: return []
     def stamp():
-        return run(["gh", "run", "list", "--repo", REPO, "--branch", f"lane/{n}", "--limit", "1", "--json", "databaseId,status,attempt", "-q", ".[0]|[.databaseId,.status,.attempt]|join(\":\")"], log=log)[1].strip()
+        return run(["gh", "run", "list", "--repo", REPO, "--branch", br, "--limit", "1", "--json", "databaseId,status,attempt", "-q", ".[0]|[.databaseId,.status,.attempt]|join(\":\")"], log=log)[1].strip()
     def rerun():
-        rid = run(["gh", "run", "list", "--repo", REPO, "--branch", f"lane/{n}", "--limit", "1", "--json", "databaseId", "-q", ".[0].databaseId"], log=log)[1].strip()
+        rid = run(["gh", "run", "list", "--repo", REPO, "--branch", br, "--limit", "1", "--json", "databaseId", "-q", ".[0].databaseId"], log=log)[1].strip()
         if rid.isdigit(): run(["gh", "run", "rerun", rid, "--failed", "--repo", REPO], log=log)
     def merge():
         with FileLock("integrate", wait=True, note=f"#{n} CI merge"):                   # #166: the lock covers only the merge itself
@@ -868,9 +1023,7 @@ def ci_integrate(n, wt, log, over=None):
     return 7, "CI " + ("timed out" if res[0] == "timeout" else "green but `gh pr merge` failed")
 
 def find_pr_merged(n):
-    rc, out = gh("pr", "list", "--head", f"lane/{n}", "--state", "merged", "--json", "number")
-    try: return bool(json.loads(out))
-    except ValueError: return False
+    return remote.pr_for(n, run=run, state="merged")[0] is not None     # #246: lane/<n> or claude/* head
 
 def deploy_main(log):
     """After CI merges (#74): bring the integrate checkout to main, rebuild, commit the built files if changed, deploy ONCE (skipped when this sha is already deployed)."""
@@ -919,6 +1072,7 @@ def set_where(n, where):
 
 def process(issue, where="local"):
     n = issue["number"]
+    if pending_answer(n): where = "remote"          # #135: resumed after the owner's answer: its session is in the cloud
     try:
         with FileLock(f"issue-{n}"):
             if lane_of(issue["labels"]) == "core":
@@ -956,6 +1110,10 @@ def process_locked(issue, where="local"):
                         if not rc: break
                         remove_worktree(wt, log); run(["git", "branch", "-D", f"lane/{n}"], cwd=ROOT, log=log)
                     if rc: raise Blocked("lane.sh failed twice (see run.log)")
+                    br = branch_of(n)                            # #246: a cloud worker's PR on claude/*: the worktree takes that branch's work
+                    if br != f"lane/{n}":
+                        run(["git", "fetch", "-q", REMOTE, br], cwd=wt, log=log)
+                        if run(["git", "reset", "-q", "--hard", f"{REMOTE}/{br}"], cwd=wt, log=log)[0]: raise Blocked(f"cannot check out {br}")
 
 
         def save_session(s):                             # #134: FIX points go back to this cloud session; freeze reads it too
@@ -963,11 +1121,18 @@ def process_locked(issue, where="local"):
         def utc():
             return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         over = lambda: issue_over(n, started)                   # #234: every wait loop ends the run when the issue is closed / PR merged
-        def remote_question(res):                        # the session already posted it on the issue: park, the owner answers there
-            if res.startswith("QUESTION:"):
-                set_labels(n, add=["blocked", "ready-for-human"], remove=["in-progress"])
-                raise Parked(f"cloud session of #{n}: {res[:200]}")
-        if where == "remote":                            # #133: the cloud worker needs no worktree here; it is made after the review (resolve uses it, #134)
+        def remote_question(res):                        # the session already posted it on the issue: park, the owner answers there (#135)
+            if res.startswith("QUESTION:"): park_remote(n, res)
+        def saved_session():
+            try: return json.loads((d / "remote.json").read_text(encoding="utf-8")).get("session", "")
+            except (OSError, ValueError): return ""
+        answer = take_answer(n) if where == "remote" else None
+        if answer:                                       # #135: parked on a QUESTION, the owner answered: same session continues
+            res = remote_resume(n, lane, "bug" in issue["labels"], saved_session(), answer, remote.send, remote.start,
+                                lambda: remote.status(n, since=started), time.sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over)
+            remote_question(res)
+            out = res
+        elif where == "remote":                          # #133: the cloud worker needs no worktree here; it is made after the review (resolve uses it, #134)
             res = remote_worker(n, lane, "bug" in issue["labels"], remote.start, lambda: remote.status(n, since=started),
                                 time.sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over)
             remote_question(res)
@@ -987,7 +1152,7 @@ def process_locked(issue, where="local"):
         verdict = ""; red = ""
         for rnd in range(1, FIX_ROUNDS + 2):
             pr = find_pr(n)
-            if not pr: raise Blocked("worker said DONE but no open PR for lane/%d" % n)
+            if not pr: raise Blocked("worker said DONE but no open PR for #%d (lane/%d, the RESULT line's PR, or a PR body 'Fixes #%d')" % (n, n, n))
             if where == "remote":                  # #134: the reviewer is a cloud session too; its VERDICT is a PR comment
                 since = utc()
                 rv, verdict = remote_review(n, pr, red, remote.start, lambda: remote.review_status(pr, since=since), time.sleep, time.time, 3600, 60, ended=over)
@@ -1014,10 +1179,8 @@ def process_locked(issue, where="local"):
             red = text or rv[-1500:]
             if where == "remote":                  # #134: FIX goes back to the cloud worker session (or a new cloud fix session)
                 since = utc()
-                try: sess = json.loads((d / "remote.json").read_text(encoding="utf-8")).get("session", "")
-                except (OSError, ValueError): sess = ""
-                res = remote_fix(n, sess, rv, remote.send, remote.start, lambda: remote.status(n, since=since), time.sleep, time.time,
-                                 3 * 3600, 60, on_start=save_session, ended=over)
+                res = remote_fix(n, saved_session(), rv, remote.send, remote.start, lambda: remote.status(n, since=since), time.sleep, time.time,
+                                 3 * 3600, 60, on_start=save_session, ended=over, br=branch_of(n))
                 remote_question(res)
             else:
                 out, res = agent(f"issue-{n}-fix" + ("" if rnd == 1 else str(rnd)), worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / f"worker{rnd + 1}.log", "RESULT:", n, "worker", wm, over=over)
@@ -1033,7 +1196,7 @@ def process_locked(issue, where="local"):
                 kind["ci"] = rc == 6
                 return rc, out
             with FileLock("integrate", wait=True, note=f"#{n} local merge"):          # fallback: local merge + full suite
-                rc, out = run([BASH, "tools/integrate.sh", f"lane/{n}", BRANCH], cwd=ROOT,
+                rc, out = run([BASH, "tools/integrate.sh", branch_of(n), BRANCH], cwd=ROOT,
                               env={"REMOTE": REMOTE, "JOBS": "4", "RUNNER": "1"}, log=log, timeout=3600)
                 if rc:
                     run(["git", "merge", "--abort"], cwd=INTEG, log=log)
@@ -1042,7 +1205,7 @@ def process_locked(issue, where="local"):
         def resolve(files):
             rounds[0] += 1
             stat(n, lane, "resolve")
-            o, r_ = agent(f"issue-{n}-resolve{rounds[0]}", ci_fix_prompt(n, files) if kind["ci"] else resolve_prompt(n, files), wt, WORKER_TOOLS, d / f"resolve{rounds[0]}.log", "RESULT:", n, "worker", wm, over=over)
+            o, r_ = agent(f"issue-{n}-resolve{rounds[0]}", ci_fix_prompt(n, files, branch_of(n)) if kind["ci"] else resolve_prompt(n, files, branch_of(n)), wt, WORKER_TOOLS, d / f"resolve{rounds[0]}.log", "RESULT:", n, "worker", wm, over=over)
             return r_.startswith("RESULT: DONE")
         outcome = integrate_with_resolve(integrate, resolve, 2)
         if outcome[0] == "giveup":
@@ -1149,17 +1312,21 @@ def main():
     if rc: print("gh failed:", out); return 1
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
     refused = no_acceptance(issues)                         # #186: no Acceptance section -> not started
-    issues = [demote(i) if i in refused else i for i in issues] if DRY else refuse_no_acceptance(issues)
-    chosen = [c for c in select(issues, total_lanes(), MAX_CORE, EXPRESS) if not FileLock(f"issue-{c['number']}").held_by_other()]
+    issues = [demote(i) if i in refused else i for i in issues]
+    if refused and not DRY: ask_acceptance(refused)
     busy = [i["number"] for i in issues if "in-progress" in i["labels"]]
     remote_busy = sum(where_of(b) == "remote" for b in busy)
-    wmap = {c["number"]: w for c, w in assign_where(chosen, len(busy) - remote_busy, remote_busy, LOCAL_LANES, REMOTE_LANES)}
+    gv = governor_pass(remote_busy)                     # #239: remote lane count from the 5h usage
+    remote_lanes = gv["lanes"]
+    chosen = [] if gv["stop"] else [c for c in select(issues, LOCAL_LANES + remote_lanes, MAX_CORE, EXPRESS) if not FileLock(f"issue-{c['number']}").held_by_other()]
+    wmap = {c["number"]: w for c, w in assign_where(chosen, len(busy) - remote_busy, remote_busy, LOCAL_LANES, remote_lanes)}
     chosen = [c for c in chosen if c["number"] in wmap]
     cutoff = CFG["stuck_hours"] * 3600
     stuck = [i for i in issues if "in-progress" in i["labels"] and not FileLock(f"issue-{i['number']}").held_by_other()
              and (time.time() - datetime.fromisoformat(i["updatedAt"].replace("Z", "+00:00")).timestamp()) > cutoff]
     if DRY:
         print(f"[dry-run] repo={REPO} branch={BRANCH} model={MODEL} local_lanes={LOCAL_LANES} remote_lanes={REMOTE_LANES} max_core={MAX_CORE}")
+        print(f"[dry-run] {governor_text(gv)}; {gv['why']}")
         print(f"[dry-run] open issues: {len(issues)}; in-progress: {sum('in-progress' in i['labels'] for i in issues)}")
         for i in refused: print(f"[dry-run] would refuse #{i['number']} (no ## Acceptance section -> needs-info)")
         for c in chosen: print(f"[dry-run] would start #{c['number']} ({lane_of(c['labels'])}): {c['title']}")

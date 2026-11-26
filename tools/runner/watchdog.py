@@ -243,6 +243,9 @@ def check_control(ts):
 def qwin_tick(ts):
     import qwin; importlib.reload(qwin); qwin.tick(ts)   # #220: one pinned question window per open owner question
 
+def resume_tick():
+    for n in R.resume_answered(): log(f"#{n}: owner answered the cloud question -> unparked, the next pass resumes its session (#135)")
+
 def observer_tick():
     import observer; observer.run_if_due()      # acting observer (observer.py)
 
@@ -387,6 +390,7 @@ def tick():
     check_windows(ts)
     OQ.answers_tick(tell)
     qwin_tick(ts)
+    resume_tick()
     check_lanes(ts)
     check_intake(ts)
     all_ts = R.hc_json("ls", "--all", "--json").get("terminals", []) or ts
