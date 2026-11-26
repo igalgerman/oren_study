@@ -730,6 +730,11 @@ def process_locked(issue):
         block(n, str(e), log); return f"BLOCKED: {e}"
     except Exception as e:                      # any crash: never leave the issue in-progress
         stat(n, lane, "blocked")
+        try:                                    # full traceback in run.log: a bare FileNotFoundError(2, ...) names no file (#158)
+            import traceback
+            with open(log, "a", encoding="utf-8") as f:
+                f.write(f"\n[runner crash] sys.executable={sys.executable!r}\n{traceback.format_exc()}\n")
+        except Exception: pass
         block(n, f"runner error: {e!r}", log); return f"BLOCKED: runner error {e!r}"
 
 def close_windows(n):
