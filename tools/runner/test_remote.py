@@ -98,3 +98,8 @@ f = Fake(("issue list", 0, json.dumps([iss])), ("pr list", 0, "[]"), ("branches/
 assert r.cloud(run=f, now=NOW)[0]["last"] == "2026-11-26T11:55:00Z"                       # no PR yet: the lane branch's last commit
 assert r.cloud(run=Fake(("issue list", 1, "error")), now=NOW) == []
 print("ok cloud")
+# extra issues (where=remote, no cloud label) join the cloud rows; closed ones are dropped
+i203 = {"number": 203, "title": "t203", "createdAt": "2026-11-26T11:00:00Z", "state": "OPEN", "comments": []}
+f = Fake(("issue list", 0, "[]"), ("issue view 203", 0, json.dumps(i203)), ("issue view 9", 0, json.dumps({**i203, "number": 9, "state": "CLOSED"})), ("pr list", 0, "[]"))
+assert [x["n"] for x in r.cloud(run=f, now=NOW, extra=["203", "9"])] == [203]
+print("ok cloud extra")

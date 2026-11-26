@@ -15,12 +15,13 @@ export type OrenLanesData = {
   flow?: string[]
   done?: string
   lanes?: string[]
-  view?: { lanes: string[]; you: string[]; orch?: string[]; next: string[]; done: string[] }
+  view?: { lanes: string[]; next: string[]; done: string[] }
   stats?: string[]
   observer?: string
   localMax?: number
   cloudCount?: number
   cloud?: string[]
+  needs?: string[]
   errors: string[]
   updatedAt: number
 }

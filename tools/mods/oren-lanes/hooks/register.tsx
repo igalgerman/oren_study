@@ -3,9 +3,9 @@ import type { Register } from 'claude-code'
 
 import type { OrenLanesData } from '../types/index'
 import {
-  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, flowRows, laneReasons, view, statsLines, parseMaxCore, parseLocalLanes, cloudRows, isCloud,
+  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, flowRows, laneReasons, view, statsLines, parseMaxCore, parseLocalLanes, cloudRows, isCloud, remoteFromStats, needsRows,
 } from './lanes'
-import type { CloudLane, Issue, View, Win } from './lanes'
+import type { CloudLane, Issue, Needs, View, Win } from './lanes'
 
 const PANE = 'oren-lanes'
 const HC = 'C:/Users/97254/AppData/Local/Programs/herdr-core/hc.exe'
@@ -16,6 +16,7 @@ const CONFIG = 'C:/work/Oren_study/a/tools/runner/config.toml'
 const STATS = 'C:/work/Oren_study/a/tools/runner/.runs/stats.jsonl'
 const PY = 'C:\\Users\\97254\\miniforge3\\python.exe'
 const REMOTE = 'C:/work/Oren_study/a/tools/runner/remote.py'
+const OWNER_Q = 'C:/work/Oren_study/a/tools/runner/owner_q.py'
 const ROOT = /^c:[\\/]+work[\\/]+oren_study([\\/]|$)/i
 const DATA = { plugin: 'oren-lanes', key: 'data' } as const
 // an atom, so every refresh REDRAWS the pane (a plain $.state.get in render did not subscribe)
@@ -71,19 +72,31 @@ export const register: Register = on => {
         }
 
         let stats: string[] = []
-        try { stats = statsLines((await $.fs.read(STATS)) as string, Date.now() / 1000) } catch { /* no stats yet */ }
+        let remote: number[] = []
+        try { const t = (await $.fs.read(STATS)) as string; stats = statsLines(t, Date.now() / 1000); remote = remoteFromStats(t) } catch { /* no stats yet */ }
         let observer = ''
         try { observer = ((await $.fs.read(OBSERVER)) as string).trim() } catch { /* no observer run yet */ }
         let maxCore = 1
         let localMax = 3
         try { const t = (await $.fs.read(CONFIG)) as string; maxCore = parseMaxCore(t); localMax = parseLocalLanes(t) } catch { /* defaults */ }
+        // started remote by the runner and still running (a later local start overrides: remoteFromStats keeps the last start)
+        remote = remote.filter(n => issues.some(i => i.number === n && (i.labels ?? []).some(x => x.name === 'in-progress')))
         let cloud: string[] = []
         try {   // #136: one row per cloud lane, state from tools/runner/remote.py
-          const r = await $.process.run([PY, REMOTE, 'cloud'], { timeoutMs: 120000 })
+          const extra = remote.map(String)
+          const r = await $.process.run([PY, REMOTE, 'cloud', ...extra], { timeoutMs: 120000 })
           if (r.exitCode !== 0) throw new Error(`remote.py exit ${r.exitCode}`)
           cloud = cloudRows(JSON.parse(r.stdout) as CloudLane[])
         } catch (err) {
           errors.push(`cloud lanes unavailable: ${trunc(String(err), 60)}`)
+        }
+        let needs: string[] = []
+        try {   // #136: open owner questions (#205) + blocked / ready-for-human / needs-info issues with their reason
+          const r = await $.process.run([PY, OWNER_Q, 'needs'], { timeoutMs: 120000 })
+          if (r.exitCode !== 0) throw new Error(`owner_q.py exit ${r.exitCode}`)
+          needs = needsRows(JSON.parse(r.stdout) as Needs)
+        } catch (err) {
+          errors.push(`needs-you list unavailable: ${trunc(String(err), 60)}`)
         }
         let flow: string[] = []
         let vw: View | undefined
@@ -94,7 +107,7 @@ export const register: Register = on => {
           const prs = pr.exitCode === 0 ? (JSON.parse(pr.stdout) as { headRefName: string }[]).map(p => p.headRefName) : []
           const closed = cl.exitCode === 0 ? (JSON.parse(cl.stdout) as Issue[]) : []
           flow = flowRows(issues, closed, windows, prs)
-          vw = view(issues, closed, windows, prs, 3, maxCore)
+          vw = view(issues, closed, windows, prs, localMax, maxCore, remote)
           const dayAgo = Date.now() - 24 * 3600 * 1000
           const today = closed.filter(c => Date.parse((c as { closedAt?: string }).closedAt ?? '') > dayAgo).length
           const g = groupIssues(issues)
@@ -120,7 +133,7 @@ export const register: Register = on => {
           updatedAt: prevData.updatedAt,
         } : {
           windows, groups: groupIssues(issues), lastLog, errors, usage, flow, done, lanes: laneReasons(issues, windows, 3, maxCore), view: vw, stats, observer,
-          localMax, cloudCount: issues.filter(isCloud).length, cloud,
+          localMax, cloudCount: issues.filter(i => isCloud(i) || remote.includes(i.number)).length, cloud, needs,
           updatedAt: await $.clock.now(),
         }
         await update($, dataAtom, () => data)
@@ -160,17 +173,16 @@ export const register: Register = on => {
     const summary = (d.done ?? '').replace(/ · left .*/, '').replace(/^backlog /, 'Backlog ')
     return (
       <Box flexDirection="column">
-        <Text bold>{trunc(summary || 'Backlog …', width)}</Text>
+        <Text bold>NEEDS YOU / BLOCKED</Text>
+        {(d.needs ?? []).length ? (d.needs ?? []).map(s => s.startsWith('   ') ? <Text dimColor>{s}</Text>
+          : <Text color={s.startsWith('⛔') ? 'red' : 'yellow'}>{trunc(s, width)}</Text>) : dim('nothing waits for you')}
+        <Box marginTop={1}><Text bold>{trunc(summary || 'Backlog …', width)}</Text></Box>
         {d.usage ? dim('Usage ' + d.usage) : null}
         {(d.done ?? '').includes('⚠') ? <Text color="yellow">{trunc('⚠ Lanes running out of work — add to the backlog (/idea, /task)', width)}</Text> : null}
         {d.errors.map(dim)}
-        {v && head('LANES')}
+        {head('LANES')}
         {v && v.lanes.map(line)}
-        {(d.cloudCount ?? 0) > 0 && head(`CLOUD LANES ${d.cloudCount}`)}
-        {(d.cloud ?? []).map(s => s.startsWith('☁') ? (s.includes(' · STALE') ? <Text color="red">{trunc(s, width)}</Text> : line(s)) : <Text dimColor>{s}</Text>)}
-        {v && v.you.length > 0 && head('YOUR LANE — needs you')}
-        {v && v.you.map(s => <Text color="yellow">{trunc(s, width)}</Text>)}
-        {v && (v.orch ?? []).map(dim)}
+        {(d.cloud ?? []).map(s => s.startsWith('   ') ? <Text dimColor>{s}</Text> : s.includes(' · STALE') ? <Text color="red">{trunc(s, width)}</Text> : line(s))}
         {v && v.next.length > 0 && head('UP NEXT')}
         {v && v.next.slice(0, 6).map(dim)}
         {v && v.next.length > 6 ? dim(`… and ${v.next.length - 6} more`) : null}

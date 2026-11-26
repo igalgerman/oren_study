@@ -6,6 +6,7 @@ Usage:
   python tools/runner/owner_q.py ask <window|#n> "<question>"   # the orchestrator's own question (prints the comment url)
   python tools/runner/owner_q.py open                           # open questions: key, window, text, url
   python tools/runner/owner_q.py answered <KEY> "<answer>"       # mark answered (after relaying the answer)
+  python tools/runner/owner_q.py needs                          # JSON for the panel: open questions + blocked/ready-for-human/needs-info issues with reason
 """
 import hashlib, json, re, sys
 from pathlib import Path
@@ -145,6 +146,28 @@ def answers_tick(tell, gh=None):
     if seen != len(cs) or "seen" not in s:
         s = _state(); s["seen"] = len(cs); _save(s)
 
+NEEDS = ("blocked", "ready-for-human", "needs-info")
+
+def reason_of(comments):
+    """Pure: the reason an issue waits = the first real line of its last comment ('' when none)."""
+    for c in reversed(comments or []):
+        for l in (c.get("body") or "").splitlines():
+            l = re.sub(r"<!--.*?-->|\*\*|`", "", l).strip(" -#>")
+            if l and not l.startswith("_Generated") and l != "---": return l[:160]
+    return ""
+
+def needs(gh=None):
+    """Open questions (#205) and issues labelled blocked / ready-for-human / needs-info, each with its reason and url."""
+    gh = gh or GH
+    seen, issues = set(), []
+    for lbl in NEEDS:
+        rc, out = gh("issue", "list", "--state", "open", "--label", lbl, "--limit", "50", "--json", "number,title,url,labels,comments")
+        for i in (json.loads(out or "[]") if rc == 0 else []):
+            if i["number"] in seen: continue
+            seen.add(i["number"])
+            issues.append({"n": i["number"], "title": i["title"], "url": i.get("url", ""), "label": lbl, "reason": reason_of(i.get("comments"))})
+    return {"questions": open_list(gh) or [], "issues": sorted(issues, key=lambda i: (NEEDS.index(i["label"]), i["n"]))}
+
 def main(argv):
     sys.stdout.reconfigure(encoding="utf-8")
     if len(argv) == 3 and argv[0] == "ask":
@@ -154,6 +177,8 @@ def main(argv):
         qs = open_list()
         if qs is None: print("could not read GitHub (gh)"); return 1
         print("\n".join(f"{q['key']}  {q['window']}  {q['text']}  {q['url']}" for q in qs) or "no open questions"); return 0
+    if argv == ["needs"]:
+        print(json.dumps(needs(), ensure_ascii=False)); return 0
     if len(argv) in (2, 3) and argv[0] == "answered":
         ok = mark_answered(argv[1], argv[2] if len(argv) == 3 else "")
         print("marked answered" if ok else "could not mark (gh)"); return 0 if ok else 1

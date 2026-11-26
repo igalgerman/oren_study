@@ -108,23 +108,22 @@ test('readable view', () => {
     { number: 10, title: 'voice', labels: lab('ready-for-human') },
     { number: 11, title: 'math ideas', labels: lab('core', 'needs-triage') },
   ], [{ number: 3, title: 'Batch B' }], [{ name: 'review-4', state: 'live/working' }], ['lane/4'])
-  expect(v.lanes[0]).toBe('● #4 Batch C — review')
-  expect(v.lanes[1]).toMatch(/^○ free — /)
-  expect(v.you).toEqual(['! #10 voice — your task', '? #11 math ideas — answer questions'])
-  expect(v.orch).toEqual([])
+  expect(v.lanes[0]).toBe('LOCAL #4 Batch C — review')
+  expect(v.lanes[1]).toMatch(/^LOCAL free — /)
   expect(v.next).toEqual(['[P2] #5 G1-G8  (after #4)'])
   expect(v.done).toEqual(['✓ #3 Batch B'])
 })
 
-test('blocked + needs-orchestrator stays out of your lane', () => {
+test('#136 up next: no owner-waiting, blocked or cloud issues, and no "(ready)" reason', () => {
   const lab = (...n: string[]) => n.map(name => ({ name }))
   const v = view([
-    { number: 22, title: 'deploy', labels: lab('blocked', 'needs-orchestrator') },
-    { number: 23, title: 'parked q', labels: lab('blocked', 'ready-for-human') },
-    { number: 24, title: 'old blocked', labels: lab('blocked') },
+    { number: 22, title: 'deploy', labels: lab('ready-for-agent', 'blocked', 'needs-orchestrator') },
+    { number: 23, title: 'parked q', labels: lab('ready-for-agent', 'ready-for-human') },
+    { number: 24, title: 'asks', labels: lab('ready-for-agent', 'needs-info') },
+    { number: 25, title: 'in cloud', labels: lab('ready-for-agent', 'cloud') },
+    { number: 26, title: 'free', labels: lab('ready-for-agent') },
   ], [], [], [])
-  expect(v.you).toEqual(['! #23 parked q — your task'])
-  expect(v.orch).toEqual(['orchestrator handling: #22 #24'])
+  expect(v.next).toEqual(['[P2] #26 free'])
 })
 
 test('up next shows priority and sorts bug, then P0-P3, then number', () => {
@@ -137,8 +136,8 @@ test('up next shows priority and sorts bug, then P0-P3, then number', () => {
     { number: 5, title: 'bugfix', labels: lab('ready-for-agent', 'bug', 'P3') },
   ], [], [], [])
   expect(v.next).toEqual([
-    '[P3] #5 bugfix  (ready)', '[P0] #4 urgent  (ready)', '[P1] #3 high  (ready)',
-    '[P2] #2 normal  (ready)', '[P3] #1 low  (ready)',
+    '[P3] #5 bugfix', '[P0] #4 urgent', '[P1] #3 high',
+    '[P2] #2 normal', '[P3] #1 low',
   ])
 })
 
@@ -164,25 +163,26 @@ test('express lane shows as ⚡ and express issues go first in up next', () => {
     { number: 6, title: 'approved', labels: lab('ready-for-agent', 'express', 'P3') },
   ], [], [], [])
   expect(v.lanes.length).toBe(4)
-  expect(v.lanes[3]).toBe('⚡ #4 fast one — building')
+  expect(v.lanes[3]).toBe('LOCAL ⚡ #4 fast one — building')
   expect(v.lanes.slice(0, 3).some(l => l.includes('#4'))).toBe(false)
-  expect(v.next).toEqual(['⚡ [P3] #6 approved  (ready)', '[P0] #5 normal  (ready)'])
+  expect(v.next).toEqual(['⚡ [P3] #6 approved', '[P0] #5 normal'])
 })
 
 test('no express issue: no ⚡ line', () => {
   const v = view([], [], [], [])
-  expect(v.lanes.some(l => l.startsWith('⚡'))).toBe(false)
+  expect(v.lanes.some(l => l.includes('⚡'))).toBe(false)
 })
 
 test('model label shows in up next and lanes, e.g. [P1·opus]', () => {
   const lab = (...n: string[]) => n.map(name => ({ name }))
-  const v = view([
+  const open = [
     { number: 1, title: 'ui', labels: lab('ready-for-agent', 'P1', 'model:opus') },
     { number: 2, title: 'plain', labels: lab('ready-for-agent', 'P2') },
     { number: 3, title: 'busy', labels: lab('in-progress', 'P1', 'model:fable') },
-  ], [], [], [])
-  expect(v.next).toEqual(['[P1·opus] #1 ui  (ready)', '[P2] #2 plain  (ready)'])
-  expect(v.lanes[0]).toBe('1. #3 running [fable] · busy')
+  ]
+  const v = view(open, [], [], [])
+  expect(v.next).toEqual(['[P1·opus] #1 ui', '[P2] #2 plain'])
+  expect(laneReasons(open, [])[0]).toBe('1. #3 running [fable] · busy')
 })
 
 import { parseMaxCore } from './lanes'
@@ -210,16 +210,7 @@ test('core lanes follow max_core', () => {
   expect(laneReasons(three, [], 3, 2)[2]).toMatch(/#7 ready but only 2 core at a time/)
 })
 
-test('your lane shows the open intake window', () => {
-  const lab = (...n: string[]) => n.map(name => ({ name }))
-  const open = [{ number: 8, title: 'Idea about maps', labels: lab('needs-triage') }, { number: 9, title: 'Other', labels: lab('needs-info') }]
-  const v = view(open, [], [{ name: 'intake-8', state: 'live/working' }], [])
-  expect(v.you[0]).toBe('▶ #8 Idea about maps — intake window open')
-  expect(v.you[1]).toMatch(/^\? #9 /)
-  expect(v.lanes.some(l => l.includes('#8'))).toBe(false)
-})
-
-import { cloudRows, parseLocalLanes } from './lanes'
+import { cloudRows, parseLocalLanes, needsRows, remoteFromStats } from './lanes'
 
 test('#136 lanes line: local X/Y from config local_lanes, cloud = open issues labelled cloud', () => {
   expect(parseLocalLanes('local_lanes = 0   # all in the cloud\nremote_lanes = 4')).toBe(0)
@@ -234,20 +225,42 @@ test('#136 one row per cloud lane: state, last activity HH:MM (Israel), STALE, P
     { n: 152, title: 'Other', state: 'done', last: '2026-11-26T10:05:00Z', stale: false, pr: 'https://github.com/x/y/pull/201', session: '' },
   ])
   expect(rows).toEqual([
-    '☁ #140 Cloud thing — working · last 11:41 · STALE',
+    'CLOUD #140 Cloud thing — working · last 11:41 · STALE',
     '   session https://claude.ai/code/session_01A',
-    '☁ #152 Other — done · last 12:05',
+    'CLOUD #152 Other — done · last 12:05',
     '   PR https://github.com/x/y/pull/201',
   ])
   expect(cloudRows([])).toEqual([])
 })
 
-test('#136 cloud issues stay out of the local lane rows; local rows unchanged', () => {
+test('#136 every lane is LOCAL or CLOUD: label cloud or runner where=remote leave the local rows; local rows follow local_lanes', () => {
   const L = (...n: string[]) => n.map(name => ({ name }))
-  const v = view([
+  const open = [
     { number: 1, title: 'local one', labels: L('in-progress') },
     { number: 2, title: 'cloud one', labels: L('in-progress', 'cloud') },
-  ], [], [{ name: 'issue-1', state: 'live/working' }], [])
-  expect(v.lanes[0]).toBe('● #1 local one — building')
-  expect(v.lanes.some(s => s.includes('#2'))).toBe(false)
+    { number: 3, title: 'runner remote', labels: L('in-progress') },
+  ]
+  const v = view(open, [], [{ name: 'issue-1', state: 'live/working' }], [], 2, 1, [3])
+  expect(v.lanes).toEqual(['LOCAL #1 local one — building', expect.stringMatching(/^LOCAL free — /)])
+  expect(view(open, [], [], [], 0, 1, [1, 3]).lanes).toEqual([])     // local_lanes = 0: no local rows at all
+})
+
+test('#136 runner stats: last start event decides local or remote', () => {
+  const ev = (issue: number, where?: string, event = 'start') => JSON.stringify({ ts: 1, issue, event, ...(where ? { where } : {}) })
+  expect(remoteFromStats([ev(3, 'remote'), ev(4, 'local'), ev(5, 'remote'), ev(5, 'local'), ev(6), ev(7, 'remote', 'worker_done'), 'junk'].join('\n'))).toEqual([3])
+})
+
+test('#136 NEEDS YOU / BLOCKED: open questions first, then blocked / ready-for-human / needs-info with reason and link', () => {
+  expect(needsRows({
+    questions: [{ window: '#185', text: 'צבע כחול או ירוק?', url: 'https://github.com/x/y/issues/205#c1' }],
+    issues: [
+      { n: 191, title: 'Runner error', url: 'https://github.com/x/y/issues/191', label: 'blocked', reason: 'Runner: BLOCKED: TimeoutExpired' },
+      { n: 115, title: 'Token', url: 'https://github.com/x/y/issues/115', label: 'ready-for-human', reason: '' },
+    ],
+  })).toEqual([
+    '? #185 צבע כחול או ירוק?', '   https://github.com/x/y/issues/205#c1',
+    '⛔ #191 Runner error — Runner: BLOCKED: TimeoutExpired', '   https://github.com/x/y/issues/191',
+    '! #115 Token — ready-for-human', '   https://github.com/x/y/issues/115',
+  ])
+  expect(needsRows({ questions: [], issues: [] })).toEqual([])
 })

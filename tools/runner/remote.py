@@ -3,7 +3,7 @@
   python tools/runner/remote.py start <n> "<task>"     -> JSON {ok, session, url, error}
   python tools/runner/remote.py status <n>             -> JSON {state: working|done|stuck|question, line, pr}
   python tools/runner/remote.py send <session> "<text>" -> JSON {ok, error}
-  python tools/runner/remote.py cloud                  -> JSON list, one per open issue labelled cloud (#136):
+  python tools/runner/remote.py cloud [n ...]          -> JSON list, one per open issue labelled cloud, plus issues n (#136):
       {n, title, state, line, last, stale, pr, session}  last = ISO UTC of the newest comment/commit
 
 start needs a TTY (`claude --cloud` refuses piped output), so it runs inside a herdr terminal.
@@ -101,13 +101,17 @@ def _epoch(iso):
     try: return calendar.timegm(time.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S"))
     except ValueError: return 0
 
-def cloud(run=sh, now=None):
-    """All open issues labelled cloud (until #133's config lands this label marks cloud work)."""
+def cloud(run=sh, now=None, extra=()):
+    """All open issues labelled cloud, plus `extra` (issues the runner started remote, where=remote)."""
     import time
     now = time.time() if now is None else now
     rc, out = run(["gh", "issue", "list", "--repo", REPO, "--state", "open", "--label", "cloud", "--limit", "50",
                    "--json", "number,title,createdAt,comments"])
     issues = json.loads(out) if rc == 0 and out.strip() else []
+    for n in sorted({int(x) for x in extra} - {i["number"] for i in issues}):
+        rc, out = run(["gh", "issue", "view", str(n), "--repo", REPO, "--json", "number,title,createdAt,comments,state"])
+        i = json.loads(out) if rc == 0 and out.strip() else None
+        if i and i.get("state", "OPEN") == "OPEN": issues.append(i)
     rc, out = run(["gh", "pr", "list", "--repo", REPO, "--state", "all", "--limit", "200", "--json", "number,url,headRefName,commits"])
     prs = {p["headRefName"]: p for p in (json.loads(out) if rc == 0 and out.strip() else [])}
     rows = []
@@ -130,8 +134,8 @@ def main(argv):
             res["posted"] = owner_q.post(f"remote-{argv[1].lstrip('#')}", res["line"])
     elif len(argv) == 3 and argv[0] == "send":
         res = send(argv[1], argv[2])
-    elif argv == ["cloud"]:
-        print(json.dumps(cloud(), ensure_ascii=False)); return 0
+    elif argv[:1] == ["cloud"]:
+        print(json.dumps(cloud(extra=[a.lstrip("#") for a in argv[1:]]), ensure_ascii=False)); return 0
     else:
         print(__doc__); return 2
     print(json.dumps(res, ensure_ascii=False))

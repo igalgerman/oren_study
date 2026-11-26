@@ -206,14 +206,37 @@ const hhmmIso = (iso: string) => {
   return Number.isNaN(t) ? '-' : new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(t))
 }
 
-/** #136: per cloud lane a '☁ #n title — state · HH:MM' line (+ ' · STALE'), then the PR and session links on their own lines. */
+/** #136: per cloud lane a 'CLOUD #n title — state · last HH:MM' line (+ ' · STALE'), then the PR and session links on their own lines. */
 export function cloudRows(lanes: CloudLane[]): string[] {
   const out: string[] = []
   for (const c of lanes) {
-    out.push(`☁ #${c.n} ${short(c.title)} — ${c.state} · last ${hhmmIso(c.last)}${c.stale ? ' · STALE' : ''}`)
+    out.push(`CLOUD #${c.n} ${short(c.title)} — ${c.state} · last ${hhmmIso(c.last)}${c.stale ? ' · STALE' : ''}`)
     if (c.pr) out.push(`   PR ${c.pr}`)
     if (c.session) out.push(`   session ${c.session}`)
   }
+  return out
+}
+
+/** #136: issue numbers whose last runner start was in the cloud (stats.jsonl start events with where=remote). */
+export function remoteFromStats(text: string): number[] {
+  const where = new Map<number, string>()
+  for (const l of text.split('\n')) {
+    try { const e = JSON.parse(l) as StatEvent & { where?: string }; if (e.event === 'start') where.set(e.issue, e.where ?? 'local') } catch { /* skip */ }
+  }
+  return [...where].filter(([, w]) => w === 'remote').map(([n]) => n).sort((a, b) => a - b)
+}
+
+export type OwnerQuestion = { window: string; text: string; url: string }
+export type NeedsIssue = { n: number; title: string; url: string; label: string; reason: string }
+export type Needs = { questions: OwnerQuestion[]; issues: NeedsIssue[] }
+
+/** #136: NEEDS YOU / BLOCKED rows: open owner questions (#205) first, then blocked / ready-for-human / needs-info issues
+ *  with their reason (last comment line); each followed by its link on an indented line. */
+export function needsRows(d: Needs): string[] {
+  const mark: Record<string, string> = { blocked: '⛔', 'ready-for-human': '!', 'needs-info': '?' }
+  const out: string[] = []
+  for (const q of d.questions) { out.push(`? ${q.window ? q.window + ' ' : ''}${q.text}`); if (q.url) out.push(`   ${q.url}`) }
+  for (const i of d.issues) { out.push(`${mark[i.label] ?? '!'} #${i.n} ${short(i.title)} — ${i.reason || i.label}`); if (i.url) out.push(`   ${i.url}`) }
   return out
 }
 
@@ -241,12 +264,13 @@ export function laneReasons(open: Issue[], wins: Win[], max = 3, maxCore = 1): s
   return rows
 }
 
-export type View = { lanes: string[]; you: string[]; orch: string[]; next: string[]; done: string[] }
+export type View = { lanes: string[]; next: string[]; done: string[] }
 
 const short = (t: string, n = 34) => (t.length > n ? t.slice(0, n - 1) + '…' : t)
 
-/** The readable panel: 3 lanes (what runs + which step, or why free), your lane, up next, last done. */
-export function view(open: Issue[], closed: Issue[], wins: Win[], prBranches: string[], max = 3, maxCore = 1): View {
+/** The readable panel: LOCAL lanes (what runs + which step, or why free), up next, last done.
+ *  Cloud lanes (label cloud, or `remote` = started remote by the runner) are not here: cloudRows() shows them. */
+export function view(open: Issue[], closed: Issue[], wins: Win[], prBranches: string[], max = 3, maxCore = 1, remote: number[] = []): View {
   const lab = (i: Issue) => new Set((i.labels ?? []).map(x => x.name))
   const live = new Set(wins.filter(isLive).map(w => w.name))
   const has = (re: RegExp) => [...live].some(n => re.test(n))
@@ -259,22 +283,17 @@ export function view(open: Issue[], closed: Issue[], wins: Win[], prBranches: st
     return 'building'
   }
   const exp = (i: Issue) => lab(i).has('express')
-  const running = open.filter(i => lab(i).has('in-progress') && !isCloud(i)).sort((a, b) => a.number - b.number)   // #136: cloud lanes have their own rows
+  const cloud = (i: Issue) => isCloud(i) || remote.includes(i.number)
+  const running = open.filter(i => lab(i).has('in-progress') && !cloud(i)).sort((a, b) => a.number - b.number)   // #136: cloud lanes have their own rows
   const expRun = running.filter(exp)[0]   // #72: one extra lane for owner-approved issues
-  const lanes = running.filter(i => i !== expRun).slice(0, max).map(i => `● #${i.number} ${short(i.title)} — ${step(i.number)}`)
+  const lanes = running.filter(i => i !== expRun).slice(0, max).map(i => `LOCAL #${i.number} ${short(i.title)} — ${step(i.number)}`)
   const why = laneReasons(open, wins, max, maxCore).filter(x => x.includes(' free — ')).map(x => x.replace(/^\d+\. free — /, ''))
-  while (lanes.length < max) lanes.push(`○ free — ${why[0] ?? 'nothing ready'}`)
-  if (expRun) lanes.push(`⚡ #${expRun.number} ${short(expRun.title)} — ${step(expRun.number)}`)
-  // owner's lane: only ready-for-human and needs-triage. blocked + needs-orchestrator is the orchestrator's job (separate dim line)
-  const you = open.filter(i => lab(i).has('ready-for-human') || lab(i).has('needs-triage') || lab(i).has('needs-info'))
-    .map(i => (has(new RegExp(`^intake-?${i.number}(-|$)`)) ? `▶ #${i.number} ${short(i.title)} — intake window open`
-      : lab(i).has('needs-triage') || lab(i).has('needs-info') ? `? #${i.number} ${short(i.title)} — answer questions`
-      : `! #${i.number} ${short(i.title)} — your task`)).sort((a, b) => +!a.startsWith('▶') - +!b.startsWith('▶'))
-  const orchNums = open.filter(i => (lab(i).has('blocked') || lab(i).has('needs-orchestrator')) && !lab(i).has('ready-for-human') && !lab(i).has('needs-triage')).map(i => `#${i.number}`)
-  const orch = orchNums.length ? [`orchestrator handling: ${orchNums.join(' ')}`] : []
-  const next = open.filter(i => lab(i).has('ready-for-agent') && !lab(i).has('in-progress') && !lab(i).has('blocked'))
+  while (lanes.length < max) lanes.push(`LOCAL free — ${why[0] ?? 'nothing ready'}`)
+  if (expRun) lanes.push(`LOCAL ⚡ #${expRun.number} ${short(expRun.title)} — ${step(expRun.number)}`)
+  // #136: only what can really start next (owner-waiting and cloud issues are shown elsewhere), and no reason that can go stale
+  const next = open.filter(i => { const l = lab(i); return l.has('ready-for-agent') && !['in-progress', 'blocked', 'ready-for-human', 'needs-info'].some(x => l.has(x)) && !cloud(i) })
     .sort((a, b) => (+!exp(a) - +!exp(b)) || (+!lab(a).has('bug') - +!lab(b).has('bug')) || prio(a) - prio(b) || a.number - b.number)
-    .map(i => { const w = parseBlockers(i.body).filter(b => b !== i.number && openNums.has(b)); return `${exp(i) ? '⚡ ' : ''}[P${prio(i)}${modelOf(lab(i)) ? '·' + modelOf(lab(i)) : ''}] #${i.number} ${short(i.title)}${w.length ? '  (after #' + w.join(', #') + ')' : '  (ready)'}` })
+    .map(i => { const w = parseBlockers(i.body).filter(b => b !== i.number && openNums.has(b)); return `${exp(i) ? '⚡ ' : ''}[P${prio(i)}${modelOf(lab(i)) ? '·' + modelOf(lab(i)) : ''}] #${i.number} ${short(i.title)}${w.length ? '  (after #' + w.join(', #') + ')' : ''}` })
   const done = closed.slice(0, 3).map(i => lab(i).has('needs-triage') ? `→ #${i.number} ${short(i.title)} (split into tasks)` : `✓ #${i.number} ${short(i.title)}`)
-  return { lanes, you, orch, next, done }
+  return { lanes, next, done }
 }
