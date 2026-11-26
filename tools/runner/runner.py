@@ -336,19 +336,32 @@ def pid_alive(pid):
     return f" {pid} " in out
 
 class FileLock:
-    """Cross-process lock: lock file holding our pid; stale (dead pid) locks are taken over. wait=0: give up at once."""
-    def __init__(self, name, wait=0):
-        self.path, self.wait = RUNS / f"{name}.lock", wait
-    def held_by_other(self):
+    """Cross-process lock: lock file holding our pid (+ #181: a note and the time taken); stale (dead pid) locks are taken over.
+    wait=0: give up at once."""
+    def __init__(self, name, wait=0, note=""):
+        self.path, self.wait, self.note = RUNS / f"{name}.lock", wait, note
+    def info(self):
+        """-> (pid, note, since) of the current holder, or None. Old files hold only a pid."""
         try:
-            return pid_alive(int(self.path.read_text().strip()))
-        except (OSError, ValueError):
-            return False
+            parts = self.path.read_text(encoding="utf-8").split("\n")
+            pid = int(parts[0].strip())
+        except (OSError, ValueError, IndexError):
+            return None
+        note = parts[1].strip() if len(parts) > 1 else ""
+        try: since = float(parts[2])
+        except (IndexError, ValueError):
+            try: since = self.path.stat().st_mtime
+            except OSError: since = time.time()
+        return pid, note, since
+    def held_by_other(self):
+        i = self.info()
+        return bool(i) and pid_alive(i[0])
     def __enter__(self):
         RUNS.mkdir(exist_ok=True)
         while True:
             try:
-                fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY); os.write(fd, str(os.getpid()).encode()); os.close(fd)
+                fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, f"{os.getpid()}\n{self.note}\n{time.time():.0f}".encode()); os.close(fd)
                 return self
             except FileExistsError:
                 if not self.held_by_other():
@@ -722,11 +735,11 @@ def process_locked(issue):
         kind = {"ci": False}
         def integrate():
             if CFG.get("ci_merge", True) and find_pr(n):     # #74: CI decides, no local full suite
-                with FileLock("integrate", wait=True):
+                with FileLock("integrate", wait=True, note=f"#{n} CI merge"):
                     rc, out = ci_integrate(n, wt, log)
                     kind["ci"] = rc == 6
                     return rc, out
-            with FileLock("integrate", wait=True):          # fallback: local merge + full suite
+            with FileLock("integrate", wait=True, note=f"#{n} local merge"):   # fallback: local merge + full suite
                 rc, out = run([BASH, "tools/integrate.sh", f"lane/{n}", BRANCH], cwd=ROOT,
                               env={"REMOTE": REMOTE, "JOBS": "4", "RUNNER": "1"}, log=log, timeout=3600)
                 if rc:
@@ -747,7 +760,7 @@ def process_locked(issue):
             return "BLOCKED: merge conflicts after 2 resolve rounds"
         if outcome[0] == "failed":
             raise Blocked(outcome[2] if outcome[1] == 7 else f"integrate.sh exit {outcome[1]}")
-        with FileLock("integrate", wait=True):
+        with FileLock("integrate", wait=True, note=f"#{n} deploy"):
             stat(n, lane, "merged")
             dep = deploy_main(log) if CFG.get("ci_merge", True) and find_pr_merged(n) else deploy_text(log)
         if dep.startswith("deployed"): start_pregen(log)    # #175: after the lock, in the background
