@@ -12,6 +12,8 @@ Every minute it checks, deterministically:
   5c. every tick (#262): an open PR that conflicts with main and has auto-merge or a review PASS -> a resolve run (window resolve-<n>, conflicts.py)
   5c. #219 nightly.py: once a day at retro_hour ONE read-only headless Sonnet retro + handoff (issue 'Daily retro <date>', handoff PR);
       batch trigger: tells the inbox to run /batch once a day, and early when >= 8 ready P2/P3 issues share a lane
+  5d. #282 parked.py, once an hour: closed batch -> its open members get ready-for-agent back; a polish list at 5 notes or 24 h -> ready-for-agent P3;
+      later/manual 2 h+ with no owner question, run, PR or future date -> 'parked without owner question: #n' to the orchestrator; night report at retro_hour
   5d. #306 desks.py: keeps the two cloud sessions 'Oren inbox (cloud)' / 'Oren ask (cloud)' alive and every status_minutes
       writes the session links + dashboard.py --text into ONE pinned issue (edited in place, nothing committed)
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
@@ -114,6 +116,24 @@ def check_windows(ts):
         else:
             idle_since.pop(name, None); told.pop(name, None)
 
+PASS_BACKOFF_S = 300   # #284: the same ready issues as the last start -> no new pass for 5 min (the pass started nothing for them)
+
+def pass_decision(pass_held, key, last, now, backoff=PASS_BACKOFF_S):
+    """Pure (#284): (start?, why). pass_held: a runner pass holds the 'pass' lock; key: the ready issue numbers;
+    last: {'ts', 'key'} of the watchdog's last start or None."""
+    if pass_held: return False, "a runner pass is running"
+    if last and list(last.get("key") or []) == list(key) and now - float(last.get("ts", 0)) < backoff:
+        return False, f"back off: same ready issues {list(key)} as the pass started {int(now - float(last['ts']))}s ago"
+    return True, ""
+
+def last_pass_start():
+    try: return json.loads((R.RUNS / "pass_start.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError): return None
+
+def note_pass_start(key, now):
+    R.RUNS.mkdir(parents=True, exist_ok=True)
+    (R.RUNS / "pass_start.json").write_text(json.dumps({"ts": now, "key": list(key)}), encoding="utf-8")
+
 def check_lanes(ts):
     import freeze
     if freeze.is_frozen(R.RUNS): return     # #139: frozen, start no runner pass
@@ -121,7 +141,12 @@ def check_lanes(ts):
     rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: return
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
-    if not R.select(issues, R.total_lanes(), R.MAX_CORE, R.EXPRESS): return
+    ready = R.select(issues, R.total_lanes(), R.MAX_CORE, R.EXPRESS)
+    if not ready: return
+    key, now = tuple(sorted(i["number"] for i in ready)), time.time()
+    ok, why = pass_decision(R.FileLock("pass").held_by_other(), key, last_pass_start(), now)   # #284/#250: one pass alive at a time
+    if not ok: return
+    note_pass_start(key, now)
     orch = R.hc_json("get", "orchestrator", "--json").get("address", "")
     name = f"run-pass-{int(time.time()) % 100000}"
     cmd = [R.HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(R.ROOT), "--label", "role=runner"]
@@ -264,6 +289,12 @@ def nightly_tick():
     nightly.retro_if_due(tell, log)
     nightly.batch_tick(lambda t: R.hc("send", "inbox", t, timeout=30)[0], log)
     nightly.prune_if_due(log)   # #304
+    nightly.night_report_if_due(tell, log)   # #282
+
+def parked_tick():
+    """#282, once an hour: orphaned batch members / due polish lists get ready-for-agent; parked later/manual -> the orchestrator."""
+    import parked
+    parked.tick(tell=tell, log=log)
 
 def desks_tick():
     import desks; desks.run_if_due(log)   # #306: cloud inbox + ask sessions, pinned links + live status (thread; not reloaded: never-two guard)
@@ -497,6 +528,7 @@ def tick():
     observer_tick()
     ai_observer_tick()
     nightly_tick()
+    parked_tick()       # #282
     desks_tick()
     sync_tick()
     alarm_tick()

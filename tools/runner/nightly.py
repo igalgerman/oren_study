@@ -8,7 +8,8 @@
    - refreshes the UPDATE section of INSPECTOR_HANDOFF.md (config inspector_handoff, outside the repo)
    - refreshes the '## Handoff (nightly)' section of ORCHESTRATOR.md through a PR on branch nightly/handoff-<date> (never a direct push).
 2. Batch trigger: tells the inbox to run /batch once a day, and early when >= BATCH_MIN P2/P3 ready, unbatched issues share a lane.
-3. Prune (#304): once a day removes .runs/<n> of issues closed > PRUNE_HOURS (stats.jsonl and other root files stay).
+3. Night report (#282): once a day at retro_hour, every open issue that is not ready-for-agent with its reason (parked.py); none = ALARM.
+4. Prune (#304): once a day removes .runs/<n> of issues closed > PRUNE_HOURS (stats.jsonl and other root files stay).
 Usage: python tools/runner/nightly.py retro   (one retro run now)
 """
 import base64, calendar, json, re, shutil, subprocess, sys, threading, time
@@ -184,7 +185,7 @@ def command():
 
 def ask_claude(prompt):
     try:
-        p = RUN(command(), input=prompt, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=TIMEOUT_S, cwd=str(R.ROOT))
+        p = RUN(command(), input=prompt, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=TIMEOUT_S, cwd=str(R.ROOT), creationflags=R.no_window())
     except subprocess.TimeoutExpired: return False, f"timeout after {TIMEOUT_S // 60} min"
     except OSError as e: return False, f"could not start claude: {e!r}"
     if p.returncode: return False, f"claude exit {p.returncode}: {((p.stderr or '') + (p.stdout or '')).strip()[:200]}"
@@ -259,6 +260,27 @@ def retro_if_due(tell, log, hour=None, now=None):
         finally: _running["v"] = False
     threading.Thread(target=work, daemon=True).start()
     return True
+
+def parked_data():
+    """(all issues, open PRs, issues with an open owner question) for the night report, or None when GitHub is unreadable."""
+    import parked
+    got, qs = parked.fetch(R.gh), parked.owner_q_issues()
+    return None if got is None or qs is None else (*got, qs)
+
+def night_report_if_due(tell, log, hour=None, now=None, data=parked_data):
+    """#282, every watchdog tick: once a day at retro_hour (0 = off) tell the orchestrator every open issue that is not
+    ready-for-agent with its reason (batch #N / later until X / waiting for owner question / ...); no reason = ALARM."""
+    import parked
+    hour = int(R.CFG.get("retro_hour", 23)) if hour is None else hour
+    now = now or time.time()
+    st = load_state()
+    if not retro_due(time.localtime(now), hour, st.get("parked_day")): return None
+    d = data()
+    if d is None: log("night report: GitHub unreadable"); return None
+    st["parked_day"] = time.strftime("%Y-%m-%d", time.localtime(now)); save_state(st)
+    text = parked.night_report(*d, now)
+    tell(text); log(text[:300])
+    return text
 
 def batch_tick(send, log, issues=None, now=None):
     """Watchdog hook: tell the inbox to run /batch when batch_due says so. send(text) -> rc. -> message sent or None."""

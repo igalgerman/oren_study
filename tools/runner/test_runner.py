@@ -498,7 +498,20 @@ assert r.start_pregen(popen=_P) == "started" and _P.calls == [r.pregen_cmd()]
 assert r.start_pregen(popen=_P) == "already running" and len(_P.calls) == 1      # lock holds our (live) pid
 (r.RUNS / "pregen.lock").unlink(missing_ok=True)
 r.CFG["pregen"] = False; assert r.start_pregen(popen=_P) == "off"
+# #301: a pregen failure is a note, never a block: nothing in start_pregen may raise (lock check, log file, Popen)
+r.CFG["pregen"] = True; (r.RUNS / "pregen.lock").unlink(missing_ok=True)
+def _boom(*a, **k): raise TimeoutError("pregen.js 1800")
+assert r.start_pregen(popen=_boom).startswith("failed:")
+_hb = r.FileLock.held_by_other; r.FileLock.held_by_other = lambda self: _boom()
+assert r.start_pregen(popen=_P).startswith("failed:")
+r.FileLock.held_by_other = _hb
+assert r.pregen_note("started") == "" and r.pregen_note("off") == "" and r.pregen_note("already running") == ""
+assert r.pregen_note("failed: x").startswith(" Note: voice pregen did not start (failed: x)")
 r.CFG["pregen"] = _old
+# #301: no code path waits on pregen: pregen_cmd is only used by the detached Popen, and its result only becomes a note
+_src0 = (r.HERE / "runner.py").read_text(encoding="utf-8")
+assert _src0.count("pregen_cmd()") == 2 and "(popen or subprocess.Popen)(pregen_cmd()" in _src0
+assert "pre = start_pregen(log) if dep.startswith(\"deployed\") else \"\"" in _src0 and "{dep}.{pregen_note(pre)}" in _src0
 _src = (r.HERE / "runner.py").read_text(encoding="utf-8")
 _blk = _src.split('with FileLock("integrate", wait=True, note=f"#{n} deploy"):\n            stat(n, lane, "merged")', 1)[1].split("\n        m = sync_main", 1)[0]
 assert "pregen.js" not in _src.split("def deploy_text", 1)[1].split("def pregen_cmd", 1)[0] and "start_pregen(log)" in _blk
@@ -1053,3 +1066,32 @@ import subprocess as _sp
 def _slow(cmd, **k): raise _sp.TimeoutExpired(cmd, 60)
 assert r.issue_over(5, 0, run_=_slow) is False
 print("ok issue_over timeout")
+
+# #302: block reasons name the real failure (not 'integrate.sh exit N'); ci_merge never falls back to the local integrate.sh
+assert r.integrate_failure(6, "CI RED\ntests") == "CI red: tests"
+assert r.integrate_failure(4, "no open PR for issue #12") == "merge step failed: no open PR for issue #12"
+assert r.integrate_failure(7, "CI green but `gh pr merge` failed: GraphQL: Head branch was modified") == "CI green but `gh pr merge` failed: GraphQL: Head branch was modified"
+assert r.integrate_failure(3, "") == "merge step failed (exit 3, no output)"
+assert "integrate.sh exit" not in _src.split("def process_locked", 1)[1].split("def close_windows", 1)[0]
+_int = _src.split("def integrate():", 1)[1].split("def resolve(", 1)[0]
+assert 'if CFG.get("ci_merge", True):' in _int and "find_pr(n)" not in _int   # ci_merge=true + no PR found: rc 4, not the local full suite
+# #302: `gh pr merge` fails on a green PR because GitHub's auto-merge merged it a moment earlier -> merged, not blocked
+def _ci_race(merge_out, final_state):
+    st = {"merged": False}
+    def g(*a, **k):
+        if a[:2] == ("pr", "view"):
+            if "isDraft,labels" in a: return 0, '{"isDraft":false,"labels":[]}'
+            if "mergeable" in a and "-q" in a: return 0, "MERGEABLE"
+            return 0, '{"state":"%s","mergeable":"MERGEABLE"}' % (final_state if st["merged"] else "OPEN")
+        if a[:2] == ("pr", "checks"): return 0, '[{"name":"tests","bucket":"pass"}]'
+        if a[:2] == ("pr", "merge") and "--auto" in a: return 1, "auto-merge is not allowed"
+        if a[:2] == ("pr", "merge") and "--squash" in a: st["merged"] = True; return 1, merge_out
+        return 0, ""
+    saved = r.gh, r.run, r.remote.pr_for, r.time.sleep
+    r.gh, r.run, r.remote.pr_for, r.time.sleep = g, (lambda *a, **k: (0, "")), (lambda n, run=None, state="open": (104, "lane/104")), (lambda s: None)
+    try: return r.ci_integrate(104, "wt", None, None, "abc")
+    finally: r.gh, r.run, r.remote.pr_for, r.time.sleep = saved
+assert _ci_race("Pull request #104 was already merged", "MERGED")[0] == 0
+_res = _ci_race("GraphQL: Head branch was modified. Review and try the merge again.", "OPEN")
+assert _res[0] == 7 and "Head branch was modified" in _res[1], _res                     # the real gh text is in the reason
+print("ok #302 merge failures")
