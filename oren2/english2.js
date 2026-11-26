@@ -1,14 +1,15 @@
 /* ===== ENGLISH 2: a gradual beginner English program for the 'eng' building =====
    Part 1 (window.ENGLISH2) is pure: content, mastery + spaced review, round planning and question generators. It runs in Node (tests).
    Part 2 hooks it into the game. ENGLISH2.register() replaces the acts of the 'eng' building (the building id stays 'eng').
-   Five acts = five levels, each opens by mastery of an earlier one:
-     eng-voc  words by themes (hear -> picture, picture -> heard word)          always open
-     eng-abc  26 letters: upper/lower case, letter name, first sound           after 3 word themes
+   Five acts = five levels, each opens by mastery of an earlier one. Letters and sounds are the first path (#58):
+     eng-abc  26 letters: upper/lower case, letter name, first sound           always open (first)
+     eng-voc  words by themes (hear -> picture, picture -> heard word)          after the first letter group
      eng-read CVC words, sight words, tiny sentences                           after 3 letter groups
      eng-talk short phrases: hear, say aloud (honor button), meaning            after 5 word themes
      eng-song a short chant per theme, words light up                           after 2 word themes (each song after its theme)
    Progress: save.en2 = {i:{itemKey:[box,dueDay]}, u:{unitId:1}, g:{theme:timesSung}}. box 0..5; an item is known at box>=2.
-   A unit is done (sticky) when every new group in it was taught and 80% of its items are known. */
+   A unit is done (sticky) when every new group in it was taught and 80% of its items are known.
+   Taught words (#58): a question shows or says only English words already taught on a card (taught(), words()). */
 window.ENGLISH2=(()=>{'use strict';
 let rnd=Math.random;
 const pk=a=>a[Math.floor(rnd()*a.length)];
@@ -148,7 +149,8 @@ const teaches=g=>!/^x:/.test(g);
 const groupItems=(u,g)=>u.items.filter(k=>groupOf(k)===g);
 const groupsOf=u=>uniq(u.items.map(groupOf));
 /* when a level opens: [level, units done needed] ; the parent switch "all open" (set.all) opens everything */
-const OPEN=[null,[0,3],[1,3],[0,5],[0,2]];
+const OPEN=[[1,1],null,[1,3],[0,5],[0,2]];
+const PREV=[1,null,1,2];   /* knowing this level opens the next one (#57) */
 const SKILLS={'eng-voc':'אנגלית: אוצר מילים','eng-abc':'אנגלית: אותיות וצלילים','eng-read':'אנגלית: קריאה ראשונה','eng-talk':'אנגלית: דיבור','eng-song':'אנגלית: שירים ודקלומים'};
 
 /* ---------- progress, mastery, spaced review ---------- */
@@ -167,10 +169,21 @@ function unitDone(save,u){const E=st(save);if(E.u[u.id])return true;if(u.lv===4)
 const doneUnits=(save,lv)=>LEVELS[lv].units.filter(u=>unitDone(save,u)).length;
 /* a level also opens when Oren already knows the level before it (#57: 3 right in a row, or the parent said so) */
 const knowsLv=(save,lv)=>!!(save.kn&&save.kn.k&&(save.kn.k[LEVELS[lv].id]||{}).ok);
-function levelOpen(save,lv){if(lv===0||(save.set&&save.set.all))return true;if(lv<4&&knowsLv(save,lv-1))return true;const [from,n]=OPEN[lv];return doneUnits(save,from)>=n;}
+function levelOpen(save,lv){if(lv===1||(save.set&&save.set.all))return true;if(lv<4&&knowsLv(save,PREV[lv]))return true;const [from,n]=OPEN[lv];return doneUnits(save,from)>=n;}
 const songOpen=(save,th)=>levelOpen(save,4)&&(unitDone(save,UNIT['v-'+th])||!!(save.set&&save.set.all));
 const openSongs=save=>SONGS.filter(s=>songOpen(save,s.th));
 const curUnit=(save,lv)=>LEVELS[lv].units.find(u=>!unitDone(save,u))||null;
+/* the English words already taught on a card: words, reading words, sight words, phrases, and each letter's main keyword */
+function taught(save){const T=new Set();Object.keys(st(save).i).forEach(k=>{const c=k[0],v=k.slice(2);
+  if(c==='v'||c==='r'||c==='w'||c==='p')T.add(v);else if((c==='n'||c==='c'||c==='s')&&LET[v])T.add(LET[v].kw[0]);});return T;}
+const sentWords=s=>s.replace(/[.!?,]/g,'').split(' ').map(w=>w==='I'?w:w.toLowerCase());
+/* the English words a question shows or says (pictures are not words) */
+function words(q){const o=q.opts.filter(x=>x.t==='en').map(x=>x.v);
+  switch(q.type){case 'hear':case 'read':case 'sound':return [q.w];case 'say':case 'spell':case 'sight':return uniq([q.w,...o]);
+    case 'sent':return sentWords(q.s);case 'mean':return [q.p];case 'sit':return uniq([q.p,...o]);}return [];}
+/* a word card for every word of the new sentences not taught yet (mom, dad) */
+function sentTeach(save,keys){const T=taught(save);return uniq(keys.filter(k=>/^x:/.test(k)).flatMap(k=>sentWords(k.slice(2)))).filter(w=>!T.has(w)&&WORD[w])
+  .map(w=>WORD[w].th?'v:'+w:CVCW.includes(w)?'r:'+w:null).filter(Boolean);}
 
 /* ---------- a round: teach cards for new groups, then about 8 questions ---------- */
 const ROUND=8;
@@ -194,7 +207,7 @@ function plan(save,lv,d){const L=LEVELS[lv];if(d==null)d=day();const E=st(save);
   /* new and still-learning items come back once more (the other way round) while there is room */
   const again=[...freshItems,...learn].filter(k=>!/^[ncs]:|^x:/.test(k));for(let i=0;qs.length<ROUND&&i<again.length;i++)add(again[i],1);
   const rest=shuf(old.filter(k=>!qs.some(q=>q.k===k)));while(qs.length<6&&rest.length)add(rest.pop(),0);
-  return {lv,unit:cur,teach:fresh.filter(teaches),qs:spread(shuf(qs))};}
+  const ord=spread(shuf(qs));return {lv,unit:cur,teach:[...(lv===2?sentTeach(save,ord.map(q=>q.k)):[]),...fresh.filter(teaches)],qs:ord};}
 /* no item twice in a row */
 function spread(a){const left=a.slice(),out=[];while(left.length){const last=out.length?out[out.length-1].k:null;
   const cnt=k=>left.filter(x=>x.k===k).length;const ok=left.filter(x=>x.k!==last);const pool=ok.length?ok:left;const top=Math.max(...pool.map(x=>cnt(x.k)));
@@ -209,15 +222,14 @@ function mk(q,ans,ds){const all=[ans,...ds];const keys=all.map(okey);if(new Set(
 /* n distractor words for word w from pool: distinct picture, no clash, seen first */
 function distract(save,w,pool,n,pref){const ws=[w];const out=[];const ok=x=>x!==w&&!ws.includes(x)&&!out.includes(x)&&!out.some(y=>clash(x,y))&&!clash(x,w)&&WORD[x]&&![w,...out].some(y=>WORD[y].pic===WORD[x].pic);
   const tiers=pref||[pool];for(const tier of tiers){for(const x of shuf(tier)){if(out.length>=n)break;if(ok(x))out.push(x);}if(out.length>=n)break;}return out;}
-const vWords=save=>Object.keys(WORD).filter(w=>WORD[w].th&&seen(save,'v:'+w));
-function genVoc(save,k,pass){const w=k.slice(2),b=box(save,k),th=WORD[w].th;
-  const same=THEMES.find(t=>t.id===th).w.map(x=>x[0]);const sameSeen=same.filter(x=>seen(save,'v:'+x));
-  const others=vWords(save).filter(x=>{const t=WORD[x].th;return t!==th&&t!=='colors'&&t!=='num1'&&t!=='num2';});
+function genVoc(save,k,pass){const w=k.slice(2),b=box(save,k),th=WORD[w].th;const T=taught(save);
+  const same=THEMES.find(t=>t.id===th).w.map(x=>x[0]);const sameSeen=same.filter(x=>T.has(x));
+  const others=[...T].filter(x=>{const t=WORD[x]&&WORD[x].th;return t&&t!==th&&t!=='colors'&&t!=='num1'&&t!=='num2';});
   const plain=th==='colors'||th==='num1'||th==='num2';
-  const pref=[sameSeen,same,...(plain?[]:[others])];
-  const type=pass===1?'say':b>=1&&rnd()<.5?'say':'hear';
-  const n=type==='say'?3:b>=2?4:3;
-  const ds=distract(save,w,same,n-1,pref);
+  let type=pass===1?'say':b>=1&&rnd()<.5?'say':'hear';
+  /* 'say' shows English words: only taught ones (#58); too few → 'hear' (pictures) */
+  let ds=type==='say'?distract(save,w,same,2,[sameSeen,...(plain?[]:[others])]):[];if(type==='say'&&ds.length<2)type='hear';
+  if(type==='hear')ds=distract(save,w,same,b>=2?3:2,[sameSeen,same,...(plain?[]:[others])]);
   if(type==='hear')return mk({k,lv:0,type,w},{t:'pic',w},ds.map(x=>({t:'pic',w:x})));
   return mk({k,lv:0,type,w},{t:'en',v:w},ds.map(x=>({t:'en',v:x})));}
 function genAbc(save,k){const kind=k[0],L=k.slice(2),b=box(save,k);const seenL=AZ.filter(x=>seen(save,'n:'+x)&&x!==L);
@@ -227,33 +239,35 @@ function genAbc(save,k){const kind=k[0],L=k.slice(2),b=box(save,k);const seenL=A
   if(kind==='c'){const up=b%2===0;const target=up?L.toLowerCase():L;const set=up?LOOK.lower:LOOK.upper;const look=(set.find(g=>g.includes(target))||[]).filter(x=>x!==target).map(x=>x.toUpperCase());
     const ds=fill([...shuf(look),...shuf(seenL),...shuf(AZ)],2);
     return mk({k,lv:1,type:'case',L,up,show:up?L:L.toLowerCase()},{t:'let',v:target},ds.map(x=>({t:'let',v:up?x.toLowerCase():x})));}
-  const kw=b===0?LET[L].kw[0]:lkw(L);const inWord=kw.toUpperCase().replace(/[^A-Z]/g,'').split('');
+  const kw=b===0?LET[L].kw[0]:lkw(L,taught(save));const inWord=kw.toUpperCase().replace(/[^A-Z]/g,'').split('');
   const bad=[...inWord,...(SOUNDMATE[L]||[])];const n=b>=2?4:3;
   const ds=fill([...shuf(seenL),...shuf(AZ)],n-1,bad);
   return mk({k,lv:1,type:'sound',L,w:kw,end:LET[L].end},{t:'let',v:L},ds.map(x=>({t:'let',v:x})));}
 /* a keyword of letter L chosen by the learning engine (unseen first, no repeats); plain random without it */
-function lkw(L){const kws=LET[L].kw;const LN=typeof window!=='undefined'&&window.LEARN;if(LN&&LN.pickItem&&kws.length>1){try{const r=LN.pickItem('eng-kw',kws.map(w=>({k:L+':'+w})));const w=r&&r.item.k.slice(2);if(w&&kws.includes(w)){LN.seen('eng-kw',r.item.k,true,false);return w;}}catch(e){}}return pk(kws);}
+function lkw(L,T){const kws=LET[L].kw.filter((w,i)=>!i||!T||T.has(w));const LN=typeof window!=='undefined'&&window.LEARN;if(LN&&LN.pickItem&&kws.length>1){try{const r=LN.pickItem('eng-kw',kws.map(w=>({k:L+':'+w})));const w=r&&r.item.k.slice(2);if(w&&kws.includes(w)){LN.seen('eng-kw',r.item.k,true,false);return w;}}catch(e){}}return pk(kws);}
 const CVCW=CVC.flatMap(([v,ws])=>ws);const vowelOf=w=>(CVC.find(([v,ws])=>ws.includes(w))||[''])[0];
 const diff1=(a,b)=>a.length===b.length&&[...a].filter((c,i)=>c!==b[i]).length===1;
 function genRead(save,k,pass){const kind=k[0],v=k.slice(2),b=box(save,k);
   if(kind==='r'){const vw=vowelOf(v);const same=CVCW.filter(x=>vowelOf(x)===vw),other=CVCW.filter(x=>vowelOf(x)!==vw);
     const type=b>=1&&(pass===1||rnd()<.4)?'spell':'read';
     if(type==='read'){const ds=distract(save,v,CVCW,2,b>=1?[same,other]:[other,same]);return mk({k,lv:2,type,w:v},{t:'pic',w:v},ds.map(x=>({t:'pic',w:x})));}
-    const near=CVCW.filter(x=>diff1(x,v));const ds=distract(save,v,CVCW,2,[near,same,other]);
+    const T=taught(save),tw=a=>a.filter(x=>T.has(x));const near=CVCW.filter(x=>diff1(x,v));const ds=distract(save,v,CVCW,2,[tw(near),tw(same),tw(other)]);
+    if(ds.length<2){const dr=distract(save,v,CVCW,2,b>=1?[same,other]:[other,same]);return mk({k,lv:2,type:'read',w:v},{t:'pic',w:v},dr.map(x=>({t:'pic',w:x})));}
     return mk({k,lv:2,type,w:v},{t:'en',v},ds.map(x=>({t:'en',v:x})));}
-  if(kind==='w'){const sw=SIGHT.map(s=>s[0]);const seenW=sw.filter(x=>x!==v&&seen(save,'w:'+x));const ds=[...shuf(seenW),...shuf(sw.filter(x=>x!==v&&!seenW.includes(x)))].slice(0,2);
+  if(kind==='w'){const sw=SIGHT.map(s=>s[0]);const seenW=sw.filter(x=>x!==v&&seen(save,'w:'+x));const ds=shuf(seenW).slice(0,2);
     return mk({k,lv:2,type:'sight',w:v},{t:'en',v},ds.map(x=>({t:'en',v:x})));}
   const s=SENT.find(x=>x[0]===v);return mk({k,lv:2,type:'sent',s:v,he:s[1],w:s[2]},{t:'pic',w:s[2]},s[3].map(x=>({t:'pic',w:x})));}
 function genTalk(save,k,pass){const p=k.slice(2),b=box(save,k);const all=PHRASES.map(x=>x[0]).filter(x=>x!==p&&!pclash(x,p));
   const seenP=all.filter(x=>seen(save,'p:'+x));const pool=[...shuf(seenP),...shuf(all.filter(x=>!seenP.includes(x)))];
   const ds=[];for(const x of pool){if(ds.length>=2)break;if(!ds.some(y=>pclash(x,y)||PH[x].he===PH[y].he||PH[x].emo===PH[y].emo)&&PH[x].emo!==PH[p].emo&&PH[x].he!==PH[p].he)ds.push(x);}
-  const type=b>=1&&(pass===1||rnd()<.5)?'sit':'mean';
+  /* 'sit' offers English phrases: only taught ones (#58); too few → 'mean' */
+  const dsT=ds.filter(x=>seenP.includes(x));const type=b>=1&&dsT.length>=2&&(pass===1||rnd()<.5)?'sit':'mean';
   if(type==='mean')return mk({k,lv:3,type,p},{t:'he',v:PH[p].he,emo:PH[p].emo},ds.map(x=>({t:'he',v:PH[x].he,emo:PH[x].emo})));
-  return mk({k,lv:3,type,p,sit:PH[p].sit},{t:'en',v:p},ds.map(x=>({t:'en',v:x})));}
+  return mk({k,lv:3,type,p,sit:PH[p].sit},{t:'en',v:p},dsT.map(x=>({t:'en',v:x})));}
 function gen(save,step){const k=step.k;const c=k[0];
   if(c==='v')return genVoc(save,k,step.pass);if(c==='n'||c==='c'||c==='s')return genAbc(save,k);if(c==='r'||c==='w'||c==='x')return genRead(save,k,step.pass);return genTalk(save,k,step.pass);}
 /* a teach card: what it shows and says */
-function teachCard(g){if(g.startsWith('L:')){const L=g.slice(2),x=LET[L];return {g,kind:'letter',L,l:x.l,he:x.he,w:x.kw[0],end:x.end,say:sayIsFor(L,x.kw[0]),items:['n:'+L,'c:'+L,'s:'+L]};}
+function teachCard(g){if(g.startsWith('L:')){const L=g.slice(2),x=LET[L];return {g,kind:'letter',L,l:x.l,he:x.he,w:x.kw[0],mean:WORD[x.kw[0]].he,end:x.end,say:sayIsFor(L,x.kw[0]),items:['n:'+L,'c:'+L,'s:'+L]};}
   const c=g[0],v=g.slice(2);
   if(c==='v')return {g,kind:'word',w:v,say:v,items:[g]};
   if(c==='r')return {g,kind:'cvc',w:v,say:v,items:[g]};
@@ -271,7 +285,7 @@ function speakList(){const out=[];const add=s=>out.push(s);
 /* ---------- parents (no nikud) ---------- */
 function levelOf(id){return levelText(null,id);}
 function levelText(save,id){save=save||api.save;if(!save)return '';const lv=LV(id);if(lv<0)return '';const L=LEVELS[lv];
-  if(!levelOpen(save,lv)){const [from,n]=OPEN[lv];return `נפתח אחרי ${n} ${from===0?'נושאי מילים':'קבוצות אותיות'}`;}
+  if(!levelOpen(save,lv)){const [from,n]=OPEN[lv];return n===1?'נפתח אחרי קבוצת האותיות הראשונה':`נפתח אחרי ${n} ${from===0?'נושאי מילים':'קבוצות אותיות'}`;}
   if(lv===4){const o=openSongs(save);return `${o.length}/${SONGS.length} שירים פתוחים`;}
   const items=L.units.flatMap(u=>u.items);const kn=items.filter(k=>known(save,k)).length;const cu=curUnit(save,lv);
   return `${doneUnits(save,lv)}/${L.units.length} יחידות · ${kn}/${items.length} פריטים ידועים${cu?' · עכשיו: '+cu.p:' · הכל נלמד, חזרות'}`;}
@@ -285,7 +299,7 @@ function merge(save,o){if(!o||!o.en2)return;const E=st(save),F=o.en2;
 
 let UI=null,SAVE=null;      /* the game sets the live save (Part 2); tests pass one */
 const api={THEMES,WORD,EXTRA,CLASH,clash,LETTERS,LET,AZ,LGROUPS,SOUNDMATE,LOOK,CVC,CVCW,SIGHT,SENT,PHRASES,PH,PCLASH,PUNITS,SONGS,SONG,LEVELS,UNIT,ITEM_UNIT,OPEN,SKILLS,INT,
-  day,st,box,seen,known,touch,mark,unitDone,doneUnits,levelOpen,songOpen,openSongs,curUnit,plan,gen,teachCard,groupOf,groupsOf,okey,sayIsFor,speakList,levelOf,levelText,report,merge,
+  day,st,box,seen,known,taught,words,touch,mark,unitDone,doneUnits,levelOpen,songOpen,openSongs,curUnit,plan,gen,teachCard,groupOf,groupsOf,okey,sayIsFor,speakList,levelOf,levelText,report,merge,
   setRng:f=>{rnd=f||Math.random;},set save(s){SAVE=s;},get save(){return SAVE;},set ui(u){UI=u;},
   register:()=>{if(UI)UI.register();}};
 return api;
@@ -361,7 +375,7 @@ function teachView(c){
   if(c.kind==='word')return {head:'מִלָּה חֲדָשָׁה!',body:`${pic(c.w,'big')}<div class="e2word">${L_(c.w)}</div><div class="e2he">${heOf(c.w)}</div>`};
   if(c.kind==='letter'){const kw=c.w;const hi=c.end?kw.slice(0,-1)+`<b>${kw.slice(-1)}</b>`:`<b>${kw[0]}</b>${kw.slice(1)}`;
     const snd=c.he?`נִשְׁמַעַת כְּמוֹ <b class="e2heL">${c.he}</b>, `:'נִשְׁמַעַת ';
-    return {head:'אוֹת חֲדָשָׁה!',body:`${letBig(c.L,c.l)}<div class="e2kw">${pic(kw)}<span class="e2word sm">${L_(hi)}</span></div><div class="e2q">הָאוֹת ${L_(c.L)} ${snd}כְּמוֹ ${c.end?'בַּסּוֹף':'בַּהַתְחָלָה'} שֶׁל ${L_(kw)}</div>`};}
+    return {head:'אוֹת חֲדָשָׁה!',body:`${letBig(c.L,c.l)}<div class="e2kw">${pic(kw)}<span class="e2word sm">${L_(hi)}</span></div><div class="e2he e2mean">${c.mean}</div><div class="e2q">הָאוֹת ${L_(c.L)} ${snd}כְּמוֹ ${c.end?'בַּסּוֹף':'בַּהַתְחָלָה'} שֶׁל ${L_(kw)}</div>`};}
   if(c.kind==='cvc')return {head:'מְחַבְּרִים צְלִילִים לְמִלָּה',body:`${tiles(c.w)}${pic(c.w,'big')}<div class="e2he">${L_(c.w)} = ${heOf(c.w)}</div>`,tiles:1};
   if(c.kind==='sight')return {head:'מִלָּה שֶׁרוֹאִים הַרְבֵּה!',body:`<div class="e2word">${L_(c.w)}</div><div class="e2he">${L_(c.ex)} = ${c.exHe}</div>`};
   return {head:'הַקְשֵׁב, וְאָז אֱמֹר בְּקוֹל',body:`<div class="e2sit">${E2.PH[c.p].emo}</div><div class="e2phr">${L_(c.p)}</div><div class="e2he">${E2.PH[c.p].he}</div>`,honor:1};}
@@ -452,10 +466,10 @@ const ABC=back=>round(1,back);
 const KN=window.KNOW;
 if(KN)KN.area('english',{name:'אנגלית',skills:NAMES.slice(0,4).map(id=>({id,track:'eng',lesson:LN&&id==='eng-abc'?'eng-abc':undefined})),
   asks:[{id:'eng-voc',q:'מכיר מילים בסיסיות באנגלית',skills:['eng-voc']},{id:'eng-abc',q:'מכיר את האותיות באנגלית והצלילים שלהן',skills:['eng-abc']},{id:'eng-read',q:'קורא מילים קצרות באנגלית',skills:['eng-read']}]});
-const runLv=(lv,back)=>(lv>=1&&lv<=3&&KN&&KN.stepped(NAMES[lv]))?runLv(lv-1,back):lv===4?songs(back):lv===1&&LN?LN.first('eng-abc',back,()=>ABC(back)):round(lv,back);
+const runLv=(lv,back)=>(lv>=2&&lv<=3&&KN&&KN.stepped(NAMES[lv]))?runLv(lv-1,back):lv===4?songs(back):lv===1&&LN?LN.first('eng-abc',back,()=>ABC(back)):round(lv,back);
 const ACTS=NAMES.map((id,lv)=>({id,name:ACTN[id],icon:ICONS[id],avail:()=>lv===4?E2.openSongs(O.save).length>0:E2.levelOpen(O.save,lv),run:back=>runLv(lv,back)}));
 function register(){const b=T.BUILD.find(x=>x.id==='eng');if(!b||b._e2)return;b._e2=1;
-  b.acts.forEach(a=>{if(T.ACT[a.id]===a)delete T.ACT[a.id];});b.acts=ACTS.slice();ACTS.forEach(a=>{a.b=b;T.ACT[a.id]=a;});
+  b.acts.forEach(a=>{if(T.ACT[a.id]===a)delete T.ACT[a.id];});b.acts=[ACTS[1],ACTS[0],...ACTS.slice(2)];   /* letters and sounds first (#58) */ACTS.forEach(a=>{a.b=b;T.ACT[a.id]=a;});
   b.blurb='לוֹמְדִים אַנְגְּלִית צַעַד אַחַר צַעַד. לוֹחֲצִים עַל הָרַמְקוֹל כְּדֵי לִשְׁמֹעַ.';}
 E2.ui={register};
 E2.screens={round,songs,sing,pic,ACTS};
