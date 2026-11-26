@@ -1171,7 +1171,7 @@ def process_locked(issue, where="local"):
         if outcome[0] == "giveup":
             stat(n, lane, "blocked")
             files = outcome[1]
-            set_labels(n, add=["blocked", "ready-for-human"], remove=["in-progress"])
+            set_labels(n, add=stuck_labels(), remove=["in-progress"])     # #262: the orchestrator resolves, never the owner
             gh("issue", "comment", str(n), "--body", redact("Runner: merge conflicts not resolved after 2 rounds. Conflicting files: " + (", ".join(files) or "(see log)")))
             return "BLOCKED: merge conflicts after 2 resolve rounds"
         if outcome[0] == "failed":
@@ -1215,6 +1215,32 @@ def close_windows(n):
     for t in (f"issue-{n}", f"issue-{n}-fix", f"issue-{n}-resolve1", f"issue-{n}-resolve2", f"review-{n}", f"review-{n}-2", f"review-{n}-3", f"issue-{n}-fix2"):
         hc("kill", t, timeout=30); hc("rm", t, timeout=30)
 
+def resolve_pr(n, k):
+    """#262 (started by the watchdog as terminal resolve-<n>): issue n's open PR conflicts with main although it has auto-merge or a PASS.
+    One resolve round k with the normal resolve worker (window issue-<n>-resolve<k>) in the worktree wt-<n>. -> its RESULT line (or STUCK <why>).
+    The watchdog judges the round by GitHub (still dirty with the same head = failed) and counts the rounds."""
+    d = RUNS / str(n); d.mkdir(parents=True, exist_ok=True)
+    log = d / f"conflict{k}.log"
+    pr, br = remote.pr_for(n, run=run)
+    if not pr: return "STUCK no open PR"
+    wt = Path(CFG["worktree_prefix"] + str(n))
+    try:
+        if not wt.exists():
+            with FileLock("lane", wait=True):
+                if run([BASH, "tools/lane.sh", str(n), BRANCH], cwd=ROOT, env={"REMOTE": REMOTE}, log=log)[0]: return "STUCK lane.sh failed"
+        if run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=wt)[1].strip(): return f"STUCK {wt} has uncommitted changes"
+        run(["git", "fetch", "-q", REMOTE, br], cwd=wt, log=log)
+        if run(["git", "rev-list", "--count", f"{REMOTE}/{br}..HEAD"], cwd=wt)[1].strip() not in ("", "0") and br == f"lane/{n}":
+            return f"STUCK {wt} has commits that are not pushed"
+        if run(["git", "reset", "-q", "--hard", f"{REMOTE}/{br}"], cwd=wt, log=log)[0]: return f"STUCK cannot check out {br}"
+        stat(n, "", "resolve", by="watchdog", round=k)
+        name = f"issue-{n}-resolve{k}"
+        _, res = agent(name, resolve_prompt(n, [], br), wt, WORKER_TOOLS, log, "RESULT:", n, "worker")
+        if res.startswith("RESULT: DONE") and USE_HERDR: hc("kill", name, timeout=30); hc("rm", name, timeout=30)
+        return res or "STUCK no RESULT line"
+    except (Blocked, Parked, Ended) as e:
+        return f"STUCK {e}"
+
 # ---------- main ----------
 def issue_by_number(n):
     rc, out = gh("issue", "view", str(n), "--json", "number,labels,createdAt,state,title")
@@ -1256,6 +1282,11 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     if USE_HERDR and not TERM:        # started from run.cmd / a shell: re-launch inside a herdr terminal and return at once
         return launch_self()
+    if args and "--resolve-pr" in sys.argv:   # #262: the watchdog's resolve run for a conflicting PR (terminal resolve-<n>)
+        n, k = int(args[0].lstrip("#")), int(next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--round=")), "1"))
+        res = resolve_pr(n, k)
+        log_line(f"{now()} #{n}: conflict resolve round {k}: {res}")
+        print(f"ISSUE {n}: {res}"); return 0
     if args:   # run.cmd <issue>: run that one issue now (ignores the queue label and the parallel cap)
         n = int(args[0].lstrip("#"))
         issue = issue_by_number(n)

@@ -206,6 +206,10 @@ def fc_text(fc, now, what):
         return f"{what}: not shrinking (new issues arrive as fast as old ones close); with no new issues ≈ {dur(fc['gross'][0] * 3600)}"
     return f"{what}: no closed issues yet to measure"
 
+def conflicts_line(prs):
+    """#262: open PRs GitHub reports as conflicting with main (written by the watchdog each tick)."""
+    return f"PRs with conflicts: {len(prs)}" + (" (" + ", ".join(f"#{n}" for n in prs) + ")" if prs else "")
+
 def text(m):
     s, tr, fc = m["by_state"], m["truth"], m["fc"]
     lines = [f"Open issues: {m['open']}  (P0 {m['by_prio']['P0']}, P1 {m['by_prio']['P1']}, P2 {m['by_prio']['P2']}, P3 {m['by_prio']['P3']}, no priority {m['by_prio']['-']})",
@@ -222,6 +226,7 @@ def text(m):
     if tr["stuck"]: lines.append("Top stuck reasons (24 h): " + "; ".join(f"{k} ({len(v)})" for k, v in tr["stuck"][:3]))
     sl = m.get("stuck_lanes") or []     # #248: runs unchanged past stuck_hours and still stuck 30 min after the alarm
     if sl: lines.append(f"STUCK LANES: {len(sl)} (" + ", ".join(f"run-{n}" for n in sl) + ")")
+    lines.append(conflicts_line(m.get("pr_conflicts") or []))
     lines.append("Lanes: " + m["lanes"] + (" · " + m["governor"] if m.get("governor") else ""))
     for c in m["cloud"]:
         lines.append(f"  cloud #{c['n']} {c['title'][:40]} — {c['state']} · last {hhmm(epoch(c['last'])) if epoch(c['last']) else '-'}"
@@ -630,6 +635,8 @@ def gather():
     m["questions"] = owner_q.open_list() or []            # #193
     try: m["stuck_lanes"] = json.loads((R.RUNS / "stuck_lanes.json").read_text(encoding="utf-8"))   # #248 (written by the watchdog)
     except Exception: m["stuck_lanes"] = []
+    try: m["pr_conflicts"] = json.loads((R.RUNS / "pr_conflicts.json").read_text(encoding="utf-8"))   # #262 (written by the watchdog)
+    except Exception: m["pr_conflicts"] = []
     m["governor"] = governor_line()                         # #239
     return m
 
