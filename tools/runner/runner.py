@@ -1009,20 +1009,37 @@ def sync_decision(branch, into, dirty, behind):
     if dirty: return ("skip", "main checkout has uncommitted changes")
     return ("pull", "")
 
-def sync_main(log=None):
-    """Fast-forward the main checkout to origin/main when that is harmless. Returns a message ('' = nothing to say); never raises."""
+def dirty_files(status):
+    """Pure (#326): the tracked changed paths of `git status --porcelain` (untracked '??' left out)."""
+    return [l[3:].strip() for l in status.splitlines() if l.strip() and not l.startswith("??")]
+
+def sync_main(log=None, info=None):
+    """Fast-forward the main checkout to origin/main when that is harmless. Returns a message ('' = nothing to say); never raises.
+    #326: `info` (a dict) gets act (pull|none|skip|fail|net), behind, why, dirty (files), and after a pull old/new head + changed files."""
+    info = {} if info is None else info
+    info.update(act="net", behind=None)
     try:
         g = lambda *a: run(["git", "-C", str(MAIN_CHECKOUT), *a], timeout=120)
         rc, out = g("fetch", "-q", REMOTE)
         if rc: return f"sync failed: fetch rc {rc} {out.strip()[:200]}"
         branch = g("rev-parse", "--abbrev-ref", "HEAD")[1].strip()
         behind = int(g("rev-list", "--count", f"HEAD..{REMOTE}/{BRANCH}")[1].strip() or 0)
-        act, why = sync_decision(branch, BRANCH, is_dirty(g("status", "--porcelain")[1]), behind)
+        dirty = dirty_files(g("status", "--porcelain")[1])
+        act, why = sync_decision(branch, BRANCH, bool(dirty), behind)
+        info.update(behind=behind, why=why, dirty=dirty, act="skip" if why else "none")
         if act == "pull":
+            old = g("rev-parse", "HEAD")[1].strip()
             rc, out = g("merge", "-q", "--ff-only", f"{REMOTE}/{BRANCH}")
-            return f"main checkout fast-forwarded ({behind} commits)" if rc == 0 else f"sync failed: ff-only rc {rc} {out.strip()[:200]}"
+            if rc:
+                info.update(act="fail", why=f"ff-only rc {rc} {out.strip()[:200]}")
+                return f"sync failed: ff-only rc {rc} {out.strip()[:200]}"
+            new = g("rev-parse", "HEAD")[1].strip()
+            info.update(act="pull", old=old, new=new,
+                        changed=[l.strip() for l in g("diff", "--name-only", old, new)[1].splitlines() if l.strip()])
+            return f"main checkout fast-forwarded ({behind} commits)"
         return f"sync skipped ({behind} behind): {why}" if why else ""
     except Exception as e:
+        info["act"] = "fail"; info.setdefault("why", repr(e))
         return f"sync error: {e!r}"
 
 def remove_worktree(wt, log=None):
