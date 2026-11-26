@@ -3,7 +3,7 @@ import type { Register } from 'claude-code'
 
 import type { OrenLanesData } from '../types/index'
 import {
-  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, usageJson, governorLine, flowRows, laneReasons, view, statsLines, parseMaxCore, parseLocalLanes, parseRemoteLanes, cloudRows, cloudCount, cloudDone,
+  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, usageJson, governorLine, flowRows, laneReasons, view, statsLines, parseMaxCore, parseLocalLanes, parseRemoteLanes, cloudRows, cloudCount, cloudDone, DESKS,
 } from './lanes'
 import type { CloudLane, Issue, View, Win } from './lanes'
 
@@ -122,6 +122,8 @@ export const register: Register = on => {
         } catch { /* no reading */ }
         let governor = ''
         try { governor = governorLine((await $.fs.read(GOVERNOR)) as string) } catch { /* no runner pass yet */ }
+        let desks = ''
+        try { desks = governorLine((await $.fs.read(DESKS)) as string) } catch { /* #306: desks.py did not run yet */ }
 
         const prev = (await $.state.get(LIVE)).value ?? []
         const hcOk = !errors.some(x => x.startsWith('windows'))
@@ -133,11 +135,11 @@ export const register: Register = on => {
         const prevData = await read($, dataAtom)
         const ghFailed = errors.some(x => x.startsWith('backlog'))
         const data: OrenLanesData = ghFailed && prevData ? {
-          ...prevData, windows, usage, governor, stats, observer, lastLog, localMax, remoteMax,
+          ...prevData, windows, usage, governor, desks, stats, observer, lastLog, localMax, remoteMax,
           errors: [`GitHub slow — showing data from ${new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(prevData.updatedAt))}`],
           updatedAt: prevData.updatedAt,
         } : {
-          windows, groups: groupIssues(issues), lastLog, errors, usage, governor, flow, done, lanes: laneReasons(issues, windows, 3, maxCore), view: vw, stats, observer,
+          windows, groups: groupIssues(issues), lastLog, errors, usage, governor, desks, flow, done, lanes: laneReasons(issues, windows, 3, maxCore), view: vw, stats, observer,
           localMax, remoteMax, cloudCount: cloudCount(issues, lanesCloud), cloud,
           updatedAt: await $.clock.now(),
         }
@@ -181,6 +183,7 @@ export const register: Register = on => {
         <Text bold>{trunc(summary || 'Backlog …', width)}</Text>
         {d.usage ? dim('Usage ' + d.usage) : null}
         {d.governor ? dim(d.governor) : null}
+        {d.desks ? (d.desks.includes('down') ? <Text color="red">{trunc(d.desks, width)}</Text> : dim(d.desks)) : null}
         {(d.done ?? '').includes('⚠') ? <Text color="yellow">{trunc('⚠ Lanes running out of work — add to the backlog (/idea, /task)', width)}</Text> : null}
         {d.errors.map(dim)}
         {v && head('LANES')}

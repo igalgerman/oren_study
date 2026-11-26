@@ -68,3 +68,14 @@ Same limits as local: 2 fix rounds, then blocked. The local worktree is made onl
 5. The next runner pass starts the issue again (always remote): `remote_resume` sends the answer to the saved session
    (`remote.json`); no session or the send fails -> a new cloud session that reads the thread and continues `lane/<n>`. Then review/merge as usual.
 qwin does not send the answer itself for these issues (no double send); a cloud issue the runner does not manage still gets it from qwin directly.
+
+## Cloud desks: inbox + ask from the phone (#306)
+`tools/runner/desks.py` (called by the watchdog every minute, in a thread; test `test_desks.py`). Two long-lived cloud sessions:
+`Oren inbox (cloud)` (creates issues from the owner's Hebrew/English messages, one backlog, no duplicates) and
+`Oren ask (cloud)` (read-only status answers in Hebrew). Their prompts are `desks.prompt()`.
+- ONE pinned issue `Oren cloud: phone links + live status` (label `manual`): the two session links + `dashboard.py --text`,
+  body edited in place every `status_minutes` (10; 0 = off). Nothing is committed. The ask session reads it.
+- Keep-alive: a desk without a session is started (`remote.start(..., name="desk-<role>")`, window `desk-<role>`, label `role=desk`);
+  every `desk_probe_hours` (12) a short `PING` goes to it (`remote.send`); no `ok` from the send = ended -> a new session, links updated.
+  A refused start is retried after 30 min. State: `.runs/desks_state.json`; panel/dashboard line: `.runs/desks.json` (`cloud desks: inbox ok · ask down`).
+- Subscription only (`claude --cloud`, `claude -p --cloud`): no paid API.
