@@ -436,6 +436,14 @@ _src = (r.HERE / "runner.py").read_text(encoding="utf-8")
 _blk = _src.split('with FileLock("integrate", wait=True, note=f"#{n} deploy"):\n            stat(n, lane, "merged")', 1)[1].split("\n        m = sync_main", 1)[0]
 assert "pregen.js" not in _src.split("def deploy_text", 1)[1].split("def pregen_cmd", 1)[0] and "start_pregen(log)" in _blk
 print("ok pregen outside the merge lock")
+# #166: merge straight on green; update the branch only on a real conflict; lock only around `gh pr merge`
+assert r.needs_branch_update("CONFLICTING") and not r.needs_branch_update("MERGEABLE") and not r.needs_branch_update("UNKNOWN") and not r.needs_branch_update("")
+_src = (r.HERE / "runner.py").read_text(encoding="utf-8")
+_ci = _src.split("def ci_integrate", 1)[1].split("def find_pr_merged", 1)[0]
+assert "needs_branch_update" in _ci and 'FileLock("integrate"' in _ci.split("def merge():", 1)[1]
+_ib = _src.split("def integrate():", 1)[1].split("rounds = [0]", 1)[0]
+assert _ib.index("kind[\"ci\"] = rc == 6") < _ib.index("FileLock(\"integrate\"")   # CI path takes no lock; only the fallback does
+print("ok #166 merge on green, lock only around gh pr merge")
 # #181 merge lock watch: the lock says who/why/since; dead holders cleared; held > 20 min -> alarm
 r.RUNS.mkdir(exist_ok=True)
 _lk = r.FileLock("test181", note="#5 deploy"); _lk.path.unlink(missing_ok=True)
