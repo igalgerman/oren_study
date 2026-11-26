@@ -135,16 +135,30 @@ def ci_verdict(checks):
 def failed_checks(checks):
     return [c.get("name", "?") for c in checks or [] if c.get("bucket") in ("fail", "cancel")]
 
-def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_reruns=1, stamp=None, max_stale=10):
+def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_reruns=1, stamp=None, max_stale=10, mark=None, state=None, grace=4):
     """Pure decision loop (#74): wait for the PR checks, then merge. Red -> rerun the failed jobs once (flaky), still red -> send back to the worker.
     stamp() = run id/status/attempt of the latest run: after a rerun, red is ignored until it changes (the old failed run is still shown for a while).
     merge() -> True | False | 'conflict' (#160: main moved after green CI -> the caller resolves and retries).
+    #185: mark() (called once, only after the review passed) = GitHub auto-merge -> 'auto' | 'merged' (clean status: merged directly) | 'conflict' | False;
+    state() -> 'merged' | 'conflict' | 'open'. With auto set, GitHub merges on green; the runner merges directly only if it stays green+open for `grace` polls.
     Returns ('merged',) | ('red', [names]) | ('timeout',) | ('conflict',) | ('merge-failed',)."""
     waited, reruns, old, stale = 0, 0, None, 0
+    auto = False
+    if mark:
+        m = mark()
+        if m == "merged": return ("merged",)
+        if m == "conflict": return ("conflict",)
+        auto = m == "auto"
     while True:
+        if state:
+            s = state()
+            if s == "merged": return ("merged",)
+            if s == "conflict": return ("conflict",)
         checks = get_checks()
         v = ci_verdict(checks)
         if v == "green":
+            if auto and grace > 0:
+                grace -= 1; sleep(poll_s); waited += poll_s; continue     # GitHub merges it itself in a moment
             m = merge()
             return ("merged",) if m is True else ("conflict",) if m == "conflict" else ("merge-failed",)
         if v == "red":
@@ -162,6 +176,26 @@ def merge_conflict(text):
     """Pure (#160): does a failed `gh pr merge` output mean 'main moved, PR now conflicts'?"""
     t = (text or "").lower()
     return "conflict" in t or "not mergeable" in t or "cannot be cleanly created" in t
+
+def auto_refused_clean(text):
+    """Pure (#185): GitHub refuses `gh pr merge --auto` for a PR that is already green and clean ('clean status') -> merge directly."""
+    return "clean status" in (text or "").lower()
+
+def pr_state(js):
+    """Pure (#185): `gh pr view --json state,mergeable` -> 'merged' | 'conflict' | 'open'."""
+    try: d = json.loads(js or "{}")
+    except ValueError: return "open"
+    if (d.get("state") or "").upper() == "MERGED": return "merged"
+    return "conflict" if (d.get("mergeable") or "").upper() == "CONFLICTING" else "open"
+
+def pick_pr(prs, n):
+    """Pure (#185): the PR of issue n: head lane/<n> first, else a claude/* (cloud or hand) PR whose body closes #n."""
+    for p in prs or []:
+        if p.get("headRefName") == f"lane/{n}": return p["number"]
+    close = re.compile(rf"\b(fix(e[sd])?|close[sd]?|resolve[sd]?)\s+#{n}\b", re.I)
+    for p in prs or []:
+        if (p.get("headRefName") or "").startswith("claude/") and close.search(p.get("body") or ""): return p["number"]
+    return None
 
 def needs_branch_update(mergeable):
     """Pure (#166): update the lane with main only when GitHub says the PR really conflicts; otherwise merge straight on green (one CI run, not two)."""
@@ -714,12 +748,17 @@ def block(n, why, log):
     gh("issue", "comment", str(n), "--body", redact(f"Runner blocked: {why}\n\nLast log lines:\n```\n{tail[-2500:]}\n```"))
     tell_orchestrator(f"STUCK #{n}: {why[:300]} — decide: unblock, split, or ask the owner")
 
+def list_prs(st):
+    rc, out = gh("pr", "list", "--state", st, "--limit", "100", "--json", "number,headRefName,body")
+    try: return json.loads(out) if rc == 0 else []
+    except ValueError: return []
+
 def find_pr(n):
-    rc, out = gh("pr", "list", "--head", f"lane/{n}", "--state", "open", "--json", "number")
-    try:
-        return json.loads(out)[0]["number"]
-    except (ValueError, IndexError, KeyError):
-        return None
+    return pick_pr(list_prs("open"), n)                          # #185: lane/<n> or a claude/* PR that closes #n
+
+def disable_auto(pr, log=None):
+    """#185: take a PR's auto-merge off (a FIX verdict, or the runner gave up on it); harmless when it was never set."""
+    if pr: gh("pr", "merge", str(pr), "--disable-auto", log=log)
 
 def deploy_text(log):
     if CFG.get("deploy_in_ci", True):                      # #192: .github/workflows/deploy.yml deploys + pregens every green push to main
@@ -774,7 +813,10 @@ def ci_integrate(n, wt, log):
     0 merged, 2 conflict, 4 no PR, 5 push failed, 6 CI red after one rerun, 7 CI timeout / merge failed (blocked, real reason in out)."""
     pr = find_pr(n)
     if not pr: return 4, "no open PR for lane/%d" % n
+    head = gh("pr", "view", str(pr), "--json", "headRefName", "-q", ".headRefName", log=log)[1].strip() or f"lane/{n}"
     mergeable = gh("pr", "view", str(pr), "--json", "mergeable", "-q", ".mergeable", log=log)[1].strip()
+    if needs_branch_update(mergeable) and head != f"lane/{n}":   # #185: a cloud/hand branch is not in our worktree -> orchestrator fix task
+        return 7, f"PR #{pr} ({head}) conflicts with {BRANCH}: the orchestrator resolves it (merge {BRANCH} in, push)"
     if needs_branch_update(mergeable):                           # #166: only a real conflict updates the branch
         run(["git", "fetch", "-q", REMOTE], cwd=wt, log=log)
         rc, out = run(["git", "merge", "--no-edit", "-X", "renormalize", f"{REMOTE}/{BRANCH}"], cwd=wt, log=log)
@@ -789,24 +831,30 @@ def ci_integrate(n, wt, log):
         try: return json.loads(gh("pr", "checks", str(pr), "--json", "name,bucket", log=log)[1] or "[]")
         except ValueError: return []
     def stamp():
-        return run(["gh", "run", "list", "--repo", REPO, "--branch", f"lane/{n}", "--limit", "1", "--json", "databaseId,status,attempt", "-q", ".[0]|[.databaseId,.status,.attempt]|join(\":\")"], log=log)[1].strip()
+        return run(["gh", "run", "list", "--repo", REPO, "--branch", head, "--limit", "1", "--json", "databaseId,status,attempt", "-q", ".[0]|[.databaseId,.status,.attempt]|join(\":\")"], log=log)[1].strip()
     def rerun():
-        rid = run(["gh", "run", "list", "--repo", REPO, "--branch", f"lane/{n}", "--limit", "1", "--json", "databaseId", "-q", ".[0].databaseId"], log=log)[1].strip()
+        rid = run(["gh", "run", "list", "--repo", REPO, "--branch", head, "--limit", "1", "--json", "databaseId", "-q", ".[0].databaseId"], log=log)[1].strip()
         if rid.isdigit(): run(["gh", "run", "rerun", rid, "--failed", "--repo", REPO], log=log)
-    def merge():
-        with FileLock("integrate", wait=True, note=f"#{n} CI merge"):                   # #166: the lock covers only the merge itself
-            rc_, o_ = gh("pr", "merge", str(pr), "--squash", log=log)
+    def merge():                                                 # #185: no lock: GitHub merges atomically; the deploy keeps its own lock
+        rc_, o_ = gh("pr", "merge", str(pr), "--squash", log=log)
         return True if rc_ == 0 else ("conflict" if merge_conflict(o_) else False)
-    res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp)
+    def mark():                                                  # #185: only reached after VERDICT PASS (process() calls us after the review loop)
+        rc_, o_ = gh("pr", "merge", str(pr), "--auto", "--squash", log=log)
+        if rc_ == 0: return "auto"
+        if auto_refused_clean(o_):                               # already green and clean: GitHub refuses --auto -> merge directly
+            m = merge(); return "merged" if m is True else m
+        return "conflict" if merge_conflict(o_) else False
+    def state():
+        return pr_state(gh("pr", "view", str(pr), "--json", "state,mergeable", log=log)[1])
+    res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp, mark=mark, state=state)
     if res[0] == "merged": return 0, "merged PR #%d" % pr
+    disable_auto(pr, log)                                        # #185: not merged -> a later (unreviewed) push must not auto-merge
     if res[0] == "red": return 6, "CI RED\n" + "\n".join(res[1])
     if res[0] == "conflict": return 2, "CONFLICT: main moved after green CI (gh pr merge reports merge conflicts)"
     return 7, "CI " + ("timed out" if res[0] == "timeout" else "green but `gh pr merge` failed")
 
 def find_pr_merged(n):
-    rc, out = gh("pr", "list", "--head", f"lane/{n}", "--state", "merged", "--json", "number")
-    try: return bool(json.loads(out))
-    except ValueError: return False
+    return pick_pr(list_prs("merged"), n) is not None
 
 def deploy_main(log):
     """After CI merges (#74): bring the integrate checkout to main, rebuild, commit the built files if changed, deploy ONCE (skipped when this sha is already deployed)."""
@@ -942,6 +990,7 @@ def process_locked(issue, where="local"):
                 raise Parked(f"owner question: {text[:200]}")
             if kind != "fix":
                 raise Blocked(verdict or "reviewer gave no VERDICT line" + (f": {rv[:300]}" if where == "remote" else ""))
+            disable_auto(pr, log)                  # #185: FIX after a (hand) auto-merge mark: never merge the unfixed PR
             stat(n, lane, "review_fix")
             if rnd == FIX_ROUNDS + 1:
                 stat(n, lane, "blocked")

@@ -495,7 +495,7 @@ print("ok pregen outside the merge lock")
 assert r.needs_branch_update("CONFLICTING") and not r.needs_branch_update("MERGEABLE") and not r.needs_branch_update("UNKNOWN") and not r.needs_branch_update("")
 _src = (r.HERE / "runner.py").read_text(encoding="utf-8")
 _ci = _src.split("def ci_integrate", 1)[1].split("def find_pr_merged", 1)[0]
-assert "needs_branch_update" in _ci and 'FileLock("integrate"' in _ci.split("def merge():", 1)[1]
+assert "needs_branch_update" in _ci and "FileLock" not in _ci          # #185: no lock for merging (GitHub merges); deploy keeps its lock
 _ib = _src.split("def integrate():", 1)[1].split("rounds = [0]", 1)[0]
 assert _ib.index("kind[\"ci\"] = rc == 6") < _ib.index("FileLock(\"integrate\"")   # CI path takes no lock; only the fallback does
 print("ok #166 merge on green, lock only around gh pr merge")
@@ -570,3 +570,39 @@ assert W.orch_decision("done", [213], _st, _n + 31 * 60) == "escalate"
 _st["escalated"] = _n + 31 * 60
 assert W.orch_decision("done", [213], _st, _n + 40 * 60) == "nudge"              # no second escalation within 2 h
 print("ok watch the checker")
+# #185: GitHub auto-merge after PASS. mark() = `gh pr merge --auto --squash` (or a direct merge when GitHub says 'clean status');
+# state() = merged|conflict|open from `gh pr view`. The runner only waits for MERGED, then deploys.
+assert r.auto_refused_clean("GraphQL: Pull request Pull request is in clean status (enablePullRequestAutoMerge)")
+assert not r.auto_refused_clean("auto-merge enabled") and not r.auto_refused_clean("")
+assert r.pr_state('{"state":"MERGED","mergeable":"UNKNOWN"}') == "merged"
+assert r.pr_state('{"state":"OPEN","mergeable":"CONFLICTING"}') == "conflict"
+assert r.pr_state('{"state":"OPEN","mergeable":"MERGEABLE"}') == "open" and r.pr_state("not json") == "open"
+def _am(seq, states, mark_res="auto", merge_ok=True, **kw):
+    it, st, log = iter(seq), iter(states), []
+    out = r.ci_merge(lambda: next(it), lambda: log.append("rerun"), lambda: log.append("merge") or merge_ok, lambda s: log.append("sleep"),
+                     mark=lambda: log.append("mark") or mark_res, state=lambda: next(st), **kw)
+    return out, log
+assert _am([_ck("pending")], ["merged"]) == (("merged",), ["mark"])                          # GitHub merged it itself: no runner merge
+assert _am([_ck("pending"), _ck("pass")], ["open", "merged"]) == (("merged",), ["mark", "sleep"])
+assert _am([], [], mark_res="merged") == (("merged",), ["mark"])                              # 'clean status' -> direct merge inside mark
+assert _am([], [], mark_res="conflict")[0] == ("conflict",)
+assert _am([_ck("pending")], ["conflict"])[0] == ("conflict",)                                # main moved while waiting -> resolve path
+assert _am([_ck("fail"), _ck("fail")], ["open", "open"])[0] == ("red", ["c0"])                # red after one rerun: back to the worker
+assert _am([_ck("pass")] * 9, ["open"] * 9, grace=2)[1] == ["mark", "sleep", "sleep", "merge"] # auto set but GitHub idle: direct merge after a grace
+assert _am([_ck("pass")], ["open"], mark_res=False)[1] == ["mark", "merge"]                   # mark failed: merge on green (old way)
+assert _am([_ck("pending")] * 99, ["open"] * 99, timeout_s=60, poll_s=30)[0] == ("timeout",)
+# PR of an issue: lane/<n> first, else a claude/* (cloud/hand) PR that closes #n
+_prs = [{"number": 5, "headRefName": "claude/x", "body": "Fixes #12"}, {"number": 6, "headRefName": "lane/12", "body": ""},
+        {"number": 7, "headRefName": "claude/y", "body": "Closes #9\nsee #120"}, {"number": 8, "headRefName": "feature", "body": "Fixes #3"}]
+assert r.pick_pr(_prs, 12) == 6 and r.pick_pr(_prs[:1], 12) == 5 and r.pick_pr(_prs, 9) == 7
+assert r.pick_pr(_prs, 3) is None and r.pick_pr(_prs, 1) is None and r.pick_pr(_prs, 120) is None and r.pick_pr([], 1) is None
+# order: --auto only after the review passed; a FIX verdict disables it; no lock around merging; failure disables auto
+_src = (r.HERE / "runner.py").read_text(encoding="utf-8")
+_ci = _src.split("def ci_integrate", 1)[1].split("def find_pr_merged", 1)[0]
+assert '"--auto"' in _ci and "auto_refused_clean" in _ci and "disable_auto(pr, log)" in _ci and "FileLock" not in _ci
+_proc = _src.split("verdict = \"\"; red = \"\"", 1)[1]
+assert _proc.index('stat(n, lane, "review_pass")') < _proc.index("ci_integrate(")
+_fix = _proc.split('stat(n, lane, "review_fix")', 1)[0].rsplit("if kind != \"fix\":", 1)[1]
+assert "disable_auto(pr, log)" in _fix
+assert '"--auto"' not in _src.split("def ci_integrate", 1)[0]                                 # nothing marks a PR before the review
+print("ok #185 auto-merge after PASS")
