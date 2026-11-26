@@ -48,14 +48,14 @@ def mk(d, terms, issues, herdr=True, sp=None):
     def relabel(n): log["relabel"].append(n); log["order"].append(f"relabel {n}")
     def rm(a): log["rm"].append(a); state["terms"] = [t for t in state["terms"] if t.get("address") != a]
     deps = dict(runs=Path(d), alive=lambda p: False, boot=0, herdr_up=lambda: herdr, start_herdr=lambda: log["order"].append("herdr"),
-                terminals=lambda: state["terms"], rm=rm, spaces=lambda: {"Oren control": "c1", "Oren workers": "w1"} if sp is None else sp,
-                control_space="Oren control", worker_space="Oren workers", start=start, issues=lambda: issues,
+                terminals=lambda: state["terms"], rm=rm, spaces=lambda: {"oren": "c1", "oren-workers": "w1"} if sp is None else sp,
+                control_space="oren", worker_space="oren-workers", start=start, issues=lambda: issues,
                 where=lambda n: "remote" if n == 6 else "local", lock_held=lambda n: (Path(d) / f"issue-{n}.lock").exists(),
                 reset_merge=lambda n: (log["reset"].append(n), "merge reset" if n == 5 else "")[1], relabel=relabel,
                 unfreeze=unfreeze, comment=log["comment"].append, tell=log["tell"].append)
     return deps, log
 
-# after a restart: Herdr started, finished terminals removed, the 3 control windows in 'Oren control' in order, dead issues relabelled,
+# after a restart: Herdr started, finished terminals removed, the 3 control windows in 'oren' in order, dead issues relabelled,
 # frozen removed before, watchdog last, one comment + one line to the orchestrator
 with tempfile.TemporaryDirectory() as d:
     (Path(d) / "frozen").write_text("x"); (Path(d) / "freeze.json").write_text("{}")
@@ -83,15 +83,45 @@ with tempfile.TemporaryDirectory() as d:
 # a missing space is reported; GitHub down: no issue reset, still frozen, no comment, the orchestrator is told
 with tempfile.TemporaryDirectory() as d:
     (Path(d) / "frozen").write_text("x")
-    deps, log = mk(d, [], None, sp={"Oren workers": "w1"})
+    deps, log = mk(d, [], None, sp={"oren-workers": "w1"})
     rc.recover(deps)
     assert log["start"][0] == ("orchestrator", "") and (Path(d) / "frozen").exists() and log["comment"] == [] and log["relabel"] == []
-    assert "not reachable" in log["tell"][0] and "'Oren control' not found" in log["tell"][0]
+    assert "not reachable" in log["tell"][0] and "'oren' not found" in log["tell"][0]
 
 # --install: at-logon task for this user, 1 min delay, runs recover.cmd
 c = rc.install_cmd(r"C:\work\a\tools\recover.cmd", r"PC\owner")
 assert c[:2] == ["schtasks", "/Create"] and c[c.index("/SC") + 1] == "ONLOGON" and c[c.index("/TN") + 1] == "Oren recover"
 assert c[c.index("/RU") + 1] == r"PC\owner" and c[c.index("/TR") + 1] == r'"C:\work\a\tools\recover.cmd"' and "/DELAY" in c
+
+# #25: the space names the owner asked for (26 Nov): ONE space 'oren' (orchestrator, inbox, inspector), workers in 'oren-workers'
+import tomllib
+cfg = tomllib.loads((Path(__file__).resolve().parent / "config.toml").read_text(encoding="utf-8"))
+assert cfg["control_space"] == "oren" and cfg["herdr_space"] == "oren-workers", cfg
+
+# #25: tools/orchestrator.cmd (double-click) = open_oren: Herdr up, the 3 tabs of 'oren' in order, watchdog with no tab (no space),
+# nothing else (no issue resets, no terminals removed); a second double-click starts nothing twice
+def mk_open(terms, herdr=True, sp=None):
+    log = {"start": [], "order": []}
+    def start(name, sid): log["start"].append((name, sid)); return 0
+    deps = dict(herdr_up=lambda: herdr, start_herdr=lambda: log["order"].append("herdr"), terminals=lambda: terms,
+                spaces=lambda: {"oren": "c1", "oren-workers": "w1"} if sp is None else sp,
+                control_space="oren", worker_space="oren-workers", start=start)
+    return deps, log
+deps, log = mk_open([], herdr=False)
+lines = rc.open_oren(deps)
+assert log["order"] == ["herdr"]
+assert log["start"] == [("orchestrator", "c1"), ("inbox", "c1"), ("inspector", "c1"), ("watchdog", "")], log["start"]
+assert "started orchestrator" in lines and "started watchdog" in lines, lines
+deps, log = mk_open([T(n, "live", f"t:{k}") for k, n in enumerate(["orchestrator", "inbox", "inspector", "watchdog"])])
+assert rc.open_oren(deps) == [] and log["start"] == []
+deps, log = mk_open([T("orchestrator", "live", "t:1")], sp={})      # spaces not made in Herdr yet: said plainly, windows still start
+lines = rc.open_oren(deps)
+assert [s for s, _ in log["start"]] == ["inbox", "inspector", "watchdog"]
+assert any("'oren' not found" in l for l in lines) and any("'oren-workers' not found" in l for l in lines), lines
+
+cmd = (Path(__file__).resolve().parents[1] / "orchestrator.cmd").read_text(encoding="utf-8")
+assert "recover.py\" --open" in cmd and "attach orchestrator" in cmd, cmd
+assert "--name watchdog" not in cmd and "--name orchestrator" not in cmd   # started by open_oren (one place), not twice
 
 # watchdog: a finished control window is removed by address and started again
 sys.argv.append("--dry-run")

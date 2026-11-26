@@ -64,3 +64,14 @@ p = subprocess.run(["bash", "tests/localguard.test.sh"], cwd=str(HERE.parent.par
 assert p.returncode == 0 and "PASS localguard" in p.stdout, (p.stdout, p.stderr)
 
 print("ok")
+
+# 5. quiet.py wrapper (#305): exit code, stdout and stderr pass through; a missing binary -> 127
+Q = str(HERE / "quiet.py")
+p = subprocess.run([sys.executable, Q, sys.executable, "-c", "print('x'); import sys; sys.stderr.write('e'); sys.exit(3)"],
+                   capture_output=True, text=True)
+assert p.returncode == 3, p.returncode
+assert p.stdout.strip() == "x", p.stdout
+assert p.stderr == "e", p.stderr
+p = subprocess.run([sys.executable, Q, "no-such-binary-xyz"], capture_output=True)
+assert p.returncode == 127
+print("quiet ok")
