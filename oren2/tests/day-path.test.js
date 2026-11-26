@@ -12,7 +12,7 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  let n=0;while(await p.locator('.tour').count()&&n<30){await p.locator('.tour').click({position:{x:5,y:5}});n++;await sleep(120);}
  ok('tour: 3 short steps, one tap each, then gone',n===3&&await p.locator('.tour').count()===0,'taps '+n);
  await home();await sleep(1200);ok('tour shows only once',await p.locator('.tour').count()===0&&await p.evaluate(()=>window.TAL.S().coach.tour===1));
- await p.locator('#sHome .hpair').click();await sleep(300);ok('tapping the friend replays the tour',await p.locator('.tour').count()===1);
+ await p.locator('#sHome .hpair').click();await sleep(300);ok('tapping the friend opens two choices',await p.locator('#ov .tpch .bigbtn').count()===2);await p.locator('#ov .tpch .bigbtn').first().click();await sleep(300);ok('the first choice replays the tour',await p.locator('.tour').count()===1);
  await p.evaluate(()=>window.OREN.showMap());await sleep(200);ok('leaving home ends the tour',await p.locator('.tour').count()===0);
  await L.noCoach(p);
  // --- the day choice, from enabled parts only ---
