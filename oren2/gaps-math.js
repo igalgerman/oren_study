@@ -79,8 +79,8 @@ const len1=i=>{const off=i>=3&&mm(.6);const s=off?rand(1,4):0;const L=off?rand(2
 function penSVG(x,L,col){const w=L*18;return `<svg viewBox="0 0 200 44" aria-hidden="true"><rect x="${x}" y="12" width="8" height="20" fill="#ff9cc2" stroke="#1d2631" stroke-width="2"/><rect x="${x+8}" y="12" width="${w-24}" height="20" fill="${col}" stroke="#1d2631" stroke-width="2"/><path d="M${x+w-16} 12 L${x+w} 22 L${x+w-16} 32Z" fill="#e9c8a0" stroke="#1d2631" stroke-width="2"/></svg>`;}
 function longQ(hard){let Ls;do{Ls=[0,0,0].map(()=>rand(3,10));}while(new Set(Ls).size<3);const long=mm(.5);const cols=shuffle(COL.slice()).slice(0,3);
   const opts=Ls.map((L,k)=>penSVG(hard?rand(2,190-L*18):2,L,cols[k]));const v=long?Math.max(...Ls):Math.min(...Ls);
-  return ch(`<div class="qq">אֵיזֶה עִפָּרוֹן הֲכִי ${long?'אָרֹךְ':'קָצָר'}?</div>`,opts,Ls.indexOf(v),hard?'מִסְתַּכְּלִים גַּם עַל הַהַתְחָלָה וְגַם עַל הַסּוֹף':'כֻּלָּם מַתְחִילִים בְּאוֹתוֹ מָקוֹם. מִי מַגִּיעַ הֲכִי רָחוֹק?',
-    long?'הֶאָרֹךְ תּוֹפֵס הֲכִי הַרְבֵּה מָקוֹם':'הַקָּצָר תּוֹפֵס הֲכִי מְעַט מָקוֹם','pen',{t:'long',Ls,ask:long?'long':'short'});}
+  return ch(`<div class="qq">אֵיזֶה עִפָּרוֹן הֲכִי ${long?'אָרֹךְ':'קָצָר'}?</div>`,opts,Ls.indexOf(v),hard?'מִסְתַּכְּלִים גַּם עַל הַהַתְחָלָה וְגַם עַל הַסּוֹף':`כֻּלָּם מַתְחִילִים בְּאוֹתוֹ מָקוֹם. ${long?'מִי מַגִּיעַ הֲכִי רָחוֹק?':'מִי נִגְמָר הֲכִי מֻקְדָּם?'}`,
+    long?'הָאָרֹךְ תּוֹפֵס הֲכִי הַרְבֵּה מָקוֹם':'הַקָּצָר תּוֹפֵס הֲכִי מְעַט מָקוֹם','pen',{t:'long',Ls,ask:long?'long':'short'});}
 /* heavier / lighter: a balance scale */
 const CUBE=c=>`<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M4 10 L12 3 L37 3 L30 10Z" fill="${c}" opacity=".7" stroke="#1d2631" stroke-width="2"/><path d="M30 10 L37 3 L37 30 L30 37Z" fill="${c}" opacity=".85" stroke="#1d2631" stroke-width="2"/><rect x="4" y="10" width="26" height="27" fill="${c}" stroke="#1d2631" stroke-width="2.5"/></svg>`;
 function scaleSVG(cl,cr,leftDown){const th=(leftDown?1:-1)*13*Math.PI/180,R=70,cx=100,cy=34;const L=[cx-R*Math.cos(th),cy+R*Math.sin(th)],Rr=[cx+R*Math.cos(th),cy-R*Math.sin(th)];

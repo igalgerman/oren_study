@@ -113,7 +113,7 @@ function genAna(lv){
     const ans=tile(C);ch.forEach(k=>{ans[k]=Bt[k];});
     const ds=tileDs(ans,ch,(lv<=3?3:4)-1,[C]);
     return mk('ana',lv,{kind:'analogy',a:{t:'tile',v:A},b:{t:'tile',v:Bt},c:{t:'tile',v:C},ans:{t:'tile',v:ans},ds,text:'כְּמוֹ בַּזּוּג הָרִאשׁוֹן — מָה חָסֵר?',
-      rule:`בַּזּוּג הָרִאשׁוֹן הִשְׁתַּנָּה ${ch.map(k=>TRN[k]).join(' וְ')}. אוֹתוֹ דָּבָר בַּזּוּג הַשֵּׁנִי.`,key:'t'+[A,Bt,C].map(x=>okey({t:'tile',v:x})).join()});}
+      rule:`בַּזּוּג הָרִאשׁוֹן ${ch.length>1?'הִשְׁתַּנּוּ':/^[sn]$/.test(ch[0])?'הִשְׁתַּנְּתָה':'הִשְׁתַּנָּה'} ${ch.map(k=>TRN[k]).join(' וְ')}. אוֹתוֹ דָּבָר בַּזּוּג הַשֵּׁנִי.`,key:'t'+[A,Bt,C].map(x=>okey({t:'tile',v:x})).join()});}
   const lvB=lv===2?3:lv;const it=lpick('th-ana',B.ANA.filter(x=>x[0]===lvB));const [,a,b,c,ans,ds,rule]=it;const n=lv<=3?3:4;
   const dd=shuf([...new Set(ds.filter(d=>d!==ans))]).slice(0,n-1);
   return mk('ana',lv,{kind:'analogy',a:{t:'txt',v:a},b:{t:'txt',v:b},c:{t:'txt',v:c},ans:{t:'txt',v:ans},ds:dd.map(v=>({t:'txt',v})),text:'כְּמוֹ בַּזּוּג הָרִאשׁוֹן — מָה חָסֵר?',rule:'הַקֶּשֶׁר: '+rule,key:'w'+a+c});}
@@ -133,8 +133,10 @@ function belongs(lv){const [A]=catPair();const ws=shuf(B.CAT[A][1]);const shown=
   return mk('rel',lv,{kind:'words',html:`<div class="thw sm">${shown.join(' · ')}</div>`,text:'מָה עוֹד שַׁיָּךְ לַקְּבוּצָה?',ans:{t:'txt',v:a},ds:others.map(v=>({t:'txt',v})),rule:`כֻּלָּם ${B.CAT[A][0]}`,key:'be'+shown.join()});}
 function part(lv){const [p,w,g,ds]=lpick('th-rel',B.PART);
   return mk('rel',lv,{kind:'words',html:`<div class="thw">${p}</div>`,text:g==='f'?'הִיא חֵלֶק שֶׁל...':'הוּא חֵלֶק שֶׁל...',ans:{t:'txt',v:w},ds:shuf(ds).slice(0,nOpts(lv)-1).map(v=>({t:'txt',v})),rule:`${p} — חֵלֶק שֶׁל ${w}`,key:'pa'+p});}
+/* "and": וּ before ב/מ/פ or a letter with shva, else וְ */
+const vav=w=>/^[במפ]/.test(w)||/ְ/.test((/^.([֑-ׇ]*)/.exec(w)||[])[1]||'')?'וּ':'וְ';
 function syn(lv){const [w,s,ds]=lpick('th-rel',B.SYN);
-  return mk('rel',lv,{kind:'words',html:`<div class="thw">${w}</div>`,text:'אֵיזוֹ מִלָּה אוֹמֶרֶת כִּמְעַט אוֹתוֹ דָּבָר?',ans:{t:'txt',v:s},ds:shuf(ds).slice(0,nOpts(lv)-1).map(v=>({t:'txt',v})),rule:`${w} וְ${s} — כִּמְעַט אוֹתוֹ דָּבָר`,key:'sy'+w});}
+  return mk('rel',lv,{kind:'words',html:`<div class="thw">${w}</div>`,text:'אֵיזוֹ מִלָּה אוֹמֶרֶת כִּמְעַט אוֹתוֹ דָּבָר?',ans:{t:'txt',v:s},ds:shuf(ds).slice(0,nOpts(lv)-1).map(v=>({t:'txt',v})),rule:`${w} ${vav(s)}${s} — כִּמְעַט אוֹתוֹ דָּבָר`,key:'sy'+w});}
 function hardOdd(lv){const [three,odd,why]=lpick('th-rel',B.ODD);
   return mk('rel',lv,{kind:'words',html:'',text:'אֵיזוֹ מִלָּה לֹא שַׁיֶּכֶת?',ans:{t:'txt',v:odd},ds:three.map(v=>({t:'txt',v})),rule:`הַשְּׁאָר ${why}`,key:'ho'+odd});}
 function genRel(lv){const f=pk({1:[picOdd],2:[picOdd,opp,opp],3:[wordOdd,opp,belongs],4:[part,syn,wordOdd,belongs],5:[hardOdd,hardOdd,syn,part]}[lv]);return f(lv);}
@@ -154,7 +156,7 @@ function genMth(lv){const n=nOpts(lv);const N=pk(B.NAMES),O=pk(B.OBJS);const he=
   if(k==='more'){let a=ri(2,7),b=ri(2,7);while(b===a)b=ri(2,7);const [s1,s2]=shuf(FRUIT);
     return mk('mth',lv,{kind:'math',html:'',text:'אֵיפֹה יֵשׁ יוֹתֵר?',ans:spr(a>b?s1:s2,{n:Math.max(a,b)}),ds:[spr(a>b?s2:s1,{n:Math.min(a,b)})],rule:L(`${Math.max(a,b)} > ${Math.min(a,b)}`),key:'mo'+a+b});}
   const max=lv<=2?10:lv===3?20:100;
-  if(k==='add'){const a=ri(1,max-2),b=ri(1,max-a);return num(a+b,{kind:'math',html:`<div class="sent2">${N.l} הָיוּ ${a} ${O}. ${he?'הוּא קִבֵּל':'הִיא קִבְּלָה'} עוֹד ${b}. כַּמָּה ${O} יֵשׁ ${he?'לוֹ':'לָהּ'} עַכְשָׁו?</div>`,text:'',rule:L(`${a} + ${b} = ${a+b}`),cands:[a-b>=0?a-b:a+b+1,a+b+10],key:'ad'+a+b});}
+  if(k==='add'){const a=ri(2,max-2),b=ri(1,max-a);return num(a+b,{kind:'math',html:`<div class="sent2">${N.l} הָיוּ ${a} ${O}. ${he?'הוּא קִבֵּל':'הִיא קִבְּלָה'} עוֹד ${b}. כַּמָּה ${O} יֵשׁ ${he?'לוֹ':'לָהּ'} עַכְשָׁו?</div>`,text:'',rule:L(`${a} + ${b} = ${a+b}`),cands:[a-b>=0?a-b:a+b+1,a+b+10],key:'ad'+a+b});}
   if(k==='sub'){const a=ri(3,max),b=ri(1,a-1);return num(a-b,{kind:'math',html:`<div class="sent2">${N.l} הָיוּ ${a} ${O}. ${he?'הוּא נָתַן':'הִיא נָתְנָה'} ${b} ${he?'לְחָבֵר':'לַחֲבֵרָה'}. כַּמָּה ${O} נִשְׁאֲרוּ ${he?'לוֹ':'לָהּ'}?</div>`,text:'',rule:L(`${a} − ${b} = ${a-b}`),cands:[a+b],key:'su'+a+b});}
   if(k==='gt'||k==='lt'){const x=ri(4,max-3);const big=k==='gt';const a=big?ri(x+1,max):ri(0,x-1);const pool=shuf(Array.from({length:max+1},(_,i)=>i).filter(v=>big?v<=x:v>=x)).slice(0,n-1);
     return mk('mth',lv,{kind:'math',html:'',text:big?`אֵיזֶה מִסְפָּר גָּדוֹל מִ-${x}?`:`אֵיזֶה מִסְפָּר קָטָן מִ-${x}?`,ans:{t:'num',v:a},ds:pool.map(v=>({t:'num',v})),rule:L(big?`${a} > ${x}`:`${a} < ${x}`),key:k+x+a});}

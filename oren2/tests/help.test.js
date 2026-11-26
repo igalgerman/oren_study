@@ -70,6 +70,12 @@ const shot = async (page, name) => { if (!process.env.SHOTS) return; fs.mkdirSyn
     return { n, covered, types, plain: Object.keys(plainTypes).length, words, bad: [...new Set(bad)].slice(0, 25), cnt: new Set(bad).size };
   });
   ok(r.cnt === 0, `explainers: ${r.covered}/${r.n} generated questions explained, types ${JSON.stringify(r.types)}` + (r.cnt ? ' — ' + r.bad.join(' | ') : ''));
+  const hx = await page.evaluate(() => { const T = h => { const d = document.createElement('div'); d.innerHTML = String(h); return d.textContent; };   // #210
+    const s = HELP.explain({ k: 'bin', l: 40, op: '−', r: 7, res: 33, miss: 'res', ans: 33 }); const h = T(typeof s.hint === 'string' ? s.hint : s.hint.t);
+    const a = HELP.explain({ k: 'bin', l: 43, op: '+', r: 5, res: 48, miss: 'res', ans: 48 }); const st = a.example.steps.map(T);
+    return { h, type: a.d.type, st }; });
+  ok(/30/.test(hx.h) && !/40/.test(hx.h), '40 − 7: the tip says go down to 30, not to 40 (where he already is) ' + hx.h);
+  ok(hx.st.some(x => /^קֹדֶם הָאֲחָדוֹת/.test(x)) && !hx.st.some(x => /^אַחַר כָּךְ/.test(x)), '43 + 5: no tens line, so the ones line starts with קֹדֶם ' + hx.type + ' ' + hx.st.join(' / '));
   ok(r.plain >= 14, `${r.plain} dedicated math explainers in use`);
   ok(r.words >= 20, `reading: ${r.words} words with first sound + syllables`);
   ok(await page.evaluate(() => { const s = HELP._speech('<span class="ltr">8 + 5 = ?</span>'); const t = HELP._speech('הַשָּׁעָה 3:30. עַד 10: 3 + 7 = 10. 12 : 3 = ?'); return /שמונה ועוד חמש שווה כמה/.test(s) && /שלוש וחצי/.test(t) && /עשר, שלוש ועוד שבע/.test(t.replace(':',',')) && /שתים עשרה חלקי שלוש שווה כמה/.test(t) && !/\d/.test(s + t); }), 'voice text: numbers and signs spoken as words');

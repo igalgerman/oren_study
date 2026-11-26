@@ -88,6 +88,9 @@ ok(pk.length === 0, `generators: answers re-solved independently, options valid 
 
 /* ---------- 2. Hebrew: templates, gender agreement, numbers, nikud ---------- */
 ok(C.WT.length >= 40, 'at least 40 word-problem templates', C.WT.length);
+{ const real = ['52,36', '36,25', '29,20', '22,15', '15,10']; const seen = new Set(); let badK = [];   // #210: a real piano has fewer black keys than white
+  for (let lv = 3; lv <= 5; lv++) for (let i = 0; i < 60; i++) { const q = C.wordQ(lv, 'pi-keys'); const k = q.nums.join(','); seen.add(k); if (!real.includes(k)) badK.push(k); }
+  ok(!badK.length && seen.size >= 3, 'piano keys: only real white/black pairs (fewer black than white)', [...new Set(badK)].join(' ') + ' seen ' + [...seen].join(' ')); }
 const th = {}; C.WT.forEach(t => th[t.th] = (th[t.th] || 0) + 1);
 ok(['soccer', 'basket', 'swim', 'piano', 'build', 'space'].every(k => th[k] >= 5), 'every theme he loves has ≥5 templates', JSON.stringify(th));
 ok([1, 2, 3, 4, 5].every(lv => C.WT_BY_LV(lv).length >= 12), 'every level has ≥12 templates', [1, 2, 3, 4, 5].map(lv => C.WT_BY_LV(lv).length).join(','));

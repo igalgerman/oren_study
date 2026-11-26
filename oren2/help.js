@@ -194,7 +194,7 @@ register('add-make10',binX({topic:()=>'חיבור עם מעבר עשרת (השל
 
 const tensOnesSteps=(d,sign)=>{const ta=tens(d.l),tb=tens(d.r),oa=d.l%10,ob=d.r%10,add=sign==='+';const T=add?ta+tb:ta-tb,Ox=add?oa+ob:oa-ob,out=[];
   if(tb)out.push(`קֹדֶם הָעֲשָׂרוֹת: ${E(`${ta} ${sign} ${tb} = ${T}`)}`);
-  if(ob)out.push(`אַחַר כָּךְ הָאֲחָדוֹת: ${E(`${oa} ${sign} ${ob} = ${Ox}`)}`);
+  if(ob)out.push(`${tb?'אַחַר כָּךְ':'קֹדֶם'} הָאֲחָדוֹת: ${E(`${oa} ${sign} ${ob} = ${Ox}`)}`);
   if(add&&Ox>=10)out.push(`${E(Ox)} אֲחָדוֹת ← עוֹד עֶשֶׂרֶת!`);
   if(T&&Ox&&(tb||ob))out.push(`בְּיַחַד: ${E(`${T} + ${Ox} = ${d.res}`)}`);
   out.push(E(eqFull(d)));return out;};
@@ -253,7 +253,7 @@ register('sub-2d',binX({topic:()=>'חיסור עשרות ואחדות',tip:()=>'
   teach:()=>['הוֹרַדְתִּי עֲשָׂרוֹת וַאֲחָדוֹת','סָפַרְתִּי אָחוֹרָה','זָכַרְתִּי בְּעַל פֶּה']}));
 
 register('sub-cross',binX({topic:()=>'חיסור עם פריטה (מעבר עשרת)',tip:()=>'להוריד קודם את העשרות, אחר כך לרדת עד העשרת העגולה, ומשם את השאר',
-  hint:d=>d.r>=10?'טִיפּ: קֹדֶם תּוֹרִיד אֶת הָעֲשָׂרוֹת':`טִיפּ: קֹדֶם תֵּרֵד עַד ${E(tens(d.l))}`,
+  hint:d=>d.r>=10?'טִיפּ: קֹדֶם תּוֹרִיד אֶת הָעֲשָׂרוֹת':`טִיפּ: קֹדֶם תֵּרֵד עַד ${E(d.l%10===0?d.l-10:tens(d.l))}`,
   visual:d=>{const tr=tens(d.r),o=d.r%10,m=d.l-tr,hops=[];if(tr)hops.push({a:d.l,b:m,lbl:'−'+tr});const mo=m%10;if(mo){hops.push({a:m,b:tens(m),lbl:'−'+mo});hops.push({a:tens(m),b:d.res,lbl:'−'+(o-mo)});}else hops.push({a:m,b:d.res,lbl:'−'+o});
     return {cap:'קוֹפְצִים אָחוֹרָה בַּחֲלָקִים',svg:vLine(tens(d.res),d.l%10?tens(d.l)+10:d.l,hops,d.res)};},
   similar:d=>differ(()=>{if(d.r<10){let l;do{l=R(21,99);}while(l%10>8);return bin(l,'−',R(l%10+1,9));}const at=R(3,9),a1=R(0,8),b1=R(a1+1,9),bt=R(1,at-2);return bin(at*10+a1,'−',bt*10+b1);},d),
