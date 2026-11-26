@@ -41,7 +41,7 @@ def parse_start(out):
     err = next((l for l in lines if "rror" in l or "fail" in l), lines[-1] if lines else "no output")
     return {"ok": False, "session": "", "url": "", "error": err}
 
-def start(n, task, cwd, run=sh, name=None):
+def start(n, task, cwd, run=sh, name=None, model=None):
     """cwd must be a checkout whose current commit is on GitHub (e.g. the main checkout): the session starts there.
     name (#306): a session that is not an issue's worker (the cloud desks) -> window <name>, label role=desk."""
     task = task.replace('"', "'")                             # double quotes break the Windows argv to bash ('file not found')
@@ -49,7 +49,7 @@ def start(n, task, cwd, run=sh, name=None):
     name = name or f"remote-{n}"
     run([HC, "rm", name])                                        # leftover finished terminal of an earlier start
     rc, out = run([HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), *labels,
-                   BASH, "-c", f'unset {TOKEN_VAR}; "$0" --cloud "$1"', CLAUDE, task])
+                   BASH, "-c", f'unset {TOKEN_VAR}; "$0" ' + (f"--model {model} " if model else "") + '--cloud "$1"', CLAUDE, task])   # model: #303
     if rc:
         return {"ok": False, "session": "", "url": "", "error": out.strip()[:300] or f"hc run exit {rc}"}
     run([HC, "wait", name, "--timeout", "180", "--json"])
