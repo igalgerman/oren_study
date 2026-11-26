@@ -70,7 +70,7 @@ export function fromCache(text: string, nowMs: number): { issues: Issue[]; close
   const c = JSON.parse(text)
   const age = Math.round(nowMs / 1000 - (c.ts ?? 0))
   if (age > GH_MAX_AGE_S) throw new Error(`GitHub cache ${age} s old (watchdog not reading?)`)
-  const issues = (c.open ?? []).map((i: any) => ({ number: i.number, title: i.title, body: i.body, labels: i.labels, createdAt: i.createdAt }))
+  const issues = (c.open ?? []).map((i: any) => ({ number: i.number, title: i.title, body: i.body, labels: i.labels, ...(i.createdAt !== undefined ? { createdAt: i.createdAt } : {}) }))
   const prs: Pr[] = (c.prs ?? []).filter((p: any) => p.state === 'OPEN').map((p: any) => ({
     number: p.number, headRefName: p.headRefName, createdAt: p.createdAt, isDraft: p.isDraft, mergeable: p.mergeable,
     autoMergeRequest: p.autoMergeRequest, closingIssuesReferences: p.closingIssuesReferences, statusCheckRollup: p.statusCheckRollup,
