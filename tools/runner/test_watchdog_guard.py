@@ -14,7 +14,7 @@ import runner as R, stats
 assert R.RUNS == Path(os.environ["RUNNER_RUNS"]), R.RUNS
 assert stats.LOG == R.RUNS / "stats.jsonl", stats.LOG
 # ... and every test sets it before it imports a runner module
-IMPORT = re.compile(r"^\s*(import|from)\s+(runner|watchdog|owner_q|qwin|ai_observer|dashboard|trends|recover|freeze|remote|stats|observer)\b", re.M)
+IMPORT = re.compile(r"^\s*(import|from)\s+(runner|watchdog|owner_q|qwin|ai_observer|dashboard|trends|recover|freeze|remote|stats|observer|conflicts)\b", re.M)
 for t in sorted(HERE.glob("test_*.py")):
     src = t.read_text(encoding="utf-8")
     m, s = IMPORT.search(src), src.find('os.environ["RUNNER_RUNS"]')

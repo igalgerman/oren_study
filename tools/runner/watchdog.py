@@ -9,6 +9,7 @@ Every minute it checks, deterministically:
   3c. owner lane: no intake window open + a needs-triage/needs-info issue -> opens ONE `intake-<n>` (oldest issue), `NEEDS YOU: intake-<n> is open`
   5. every observer_minutes: observer.py applies deterministic rules (make_ready, rerun, fix Blocked-by lines) within limits
   5b. every ai_observer_minutes (#203): ai_observer.py, ONE read-only headless Sonnet check in a thread; new findings -> the orchestrator
+  5c. every tick (#262): an open PR that conflicts with main and has auto-merge or a review PASS -> a resolve run (window resolve-<n>, conflicts.py)
   5c. #219 nightly.py: once a day at retro_hour ONE read-only headless Sonnet retro + handoff (issue 'Daily retro <date>', handoff PR);
       batch trigger: tells the inbox to run /batch once a day, and early when >= 8 ready P2/P3 issues share a lane
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
@@ -149,7 +150,7 @@ def check_intake(ts):
     log(f"owner lane: opened {name} (rc {rc})")
     if rc == 0: tell(f"NEEDS YOU: {name} is open")
 
-FINISHED_RE = re.compile(r"^(run|issue|review|intake)-|^watchdog|^flowtest")
+FINISHED_RE = re.compile(r"^(run|issue|review|intake|resolve)-|^watchdog|^flowtest")
 IDLE_MIN = 15      # a live issue/review/intake window done/idle this long, with no live run-<n>, only holds RAM
 PARKED_MIN = 60    # #123: a parked (blocked) issue's done/idle windows, after this long
 quiet_since = {}   # live window name -> first time seen done/idle
@@ -331,7 +332,7 @@ def alarm_tick():
         if t in new: _alarm["sent"][k] = now
     tell("IDLE ALARM (watchdog): " + " · ".join(new))
 
-RELOAD = ("remote", "owner_q", "freeze", "stats", "recover")   # #229: reloaded on change, before runner.py (observer/ai_observer keep in-memory guards: not reloaded)
+RELOAD = ("remote", "owner_q", "freeze", "stats", "recover", "conflicts")   # #229: reloaded on change, before runner.py (observer/ai_observer keep in-memory guards: not reloaded)
 
 def parse_args(argv):
     """#229: unknown flags (and --help) end here, before the loop."""
@@ -406,6 +407,7 @@ def tick():
     cleanup(all_ts)
     reap_tick(ts)       # #248
     stuck_tick(ts)
+    conflicts_tick(ts)  # #262
     observer_tick()
     ai_observer_tick()
     nightly_tick()
@@ -415,6 +417,21 @@ def tick():
     ai_tick()
     lock_tick()
     orch_idle_tick()
+
+# ---------- #262: a green/approved PR that conflicts with main gets a resolve run by itself ----------
+def resolve_cmd(a):
+    """hc command for one resolve run: terminal resolve-<n> runs `runner.py <n> --resolve-pr --round=<k>` (the runner's resolve worker)."""
+    name = f"resolve-{a['n']}"
+    return [R.HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(R.ROOT), "--label", f"issue={a['n']}", "--label", "role=runner",
+            *R.parent_args(), sys.executable, str(HERE / "runner.py"), str(a["n"]), "--resolve-pr", f"--round={a['round']}", f"--term={name}"]
+
+def conflicts_tick(ts):
+    import conflicts
+    def start(a):
+        rc, out = R.run(resolve_cmd(a))
+        log(f"#262 PR #{a['pr']} conflicts with main: " + (f"resolve round {a['round']} started (resolve-{a['n']})" if rc == 0 else f"could not start resolve-{a['n']}: {out.strip()[:200]}"))
+        return rc == 0
+    conflicts.tick(conflicts.busy(ts), review_passed, R.gh, start, tell, R.RUNS / "conflicts.json")
 
 # ---------- #248: backstop: a lane is never held for a closed issue or a silent run ----------
 REAP_GRACE_MIN, STUCK_AGAIN_MIN = 10, 30
