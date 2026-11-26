@@ -8,6 +8,8 @@ const today=O.today;
 const L_=t=>`<span class="ltr">${t}</span>`;
 const nb=n=>`<b>${n}</b>`;
 const plainHe=s=>String(s).replace(/<[^>]+>/g,' ').replace(/[֑-ׇ]/g,'').replace(/\s+/g,' ').trim();
+/* what the voice says: full spelling (מִלָּה → מילה), not nikud just stripped (מלה), #405 */
+const spoken=s=>window.__fullSpell?window.__fullSpell(String(s).replace(/\d/g,d=>String.fromCharCode(0xE000+ +d))).replace(/[\uE000-\uE009]/g,c=>c.charCodeAt(0)-0xE000):plainHe(s);   /* digits stay digits: the voice worker reads them (gender, + − ×) */
 /* text for the voice: keep the nikud (the voice layer turns it into full spelling) */
 const spk=s=>String(s).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
 
@@ -87,7 +89,7 @@ function quiz(o){const qs=[],seen=new Set();let t=0;const LN=window.LEARN,pb=o.p
   let i=0,err=0,gems=0,lock=false,tries=0;O.setScreen('sTal',o.bg||'valley',o.back);
   const bk=O.hereTake&&O.hereTake('tq:'+o.id);if(bk){i=Math.min(Math.max(0,bk.i|0),qs.length-1);err=bk.err|0;gems=bk.gems|0;}/* #44: reopened mid-quiz = the same place */
   const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq');s.appendChild(wrap);
-  const render=()=>{const q=qs[i];tries=0;lock=false;if(O.hereProg)O.hereProg('tq:'+o.id,{i,err,gems});if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||plainHe(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
+  const render=()=>{const q=qs[i];tries=0;lock=false;if(O.hereProg)O.hereProg('tq:'+o.id,{i,err,gems});if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||spoken(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
     wrap.innerHTML='';const card=h('div','prq tqc',q.pr);if(q.play){const pb=h('button','hintbtn',ICON.say+`<span>${q.playLbl||'הַשְׁמַע'}</span>`);pb.onclick=q.play;card.appendChild(pb);}
     wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});const row=h('div','chs'+(q.ltr?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>{if(!(O.tapTooSoon&&O.tapTooSoon()))pickA(k,b);};row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');if(o.side){const sb=h('button','bigbtn plain sm qside',o.side.lbl);sb.onclick=()=>o.side.open(wrap);wrap.appendChild(sb);}if(q.auto&&q.play)setTimeout(()=>{if(qs[i]===q)q.play();},D(350));};
