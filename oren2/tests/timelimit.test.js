@@ -76,14 +76,14 @@ const srv = http.createServer((q, r) => { const m = /^\/api\/save\/([a-f0-9]{32}
   await lim({ stopDone: 0, daily: 30 }); await used(31); await lim({}); const td = await dlgBtns(); ok('time-lock parent dialog keeps +10/+20/+30', ['+10 דק׳', '+20 דק׳', '+30 דק׳'].every(x => td.includes(x)) && !td.includes('להמשיך לשחק היום'), JSON.stringify(td));
   await p.locator('#ov .bigbtn', { hasText: '+20' }).click(); await sleep(300); await lim({ daily: 0, today: null }); await p.evaluate(() => document.querySelectorAll('.tyay').forEach(e => e.remove()));
   // the parent's block
-  await p.evaluate(() => { document.querySelectorAll('.tlock').forEach(e => e.remove()); document.body.classList.remove('tlocked'); window.TAL.parentPanel('day'); }); await sleep(300);
+  await p.evaluate(() => { document.querySelectorAll('.tlock').forEach(e => e.remove()); document.body.classList.remove('tlocked'); window.TAL.parentPanel('time'); }); await sleep(300);
   const pb = await p.evaluate(() => { const s = document.querySelector('#sPar .pbody .psec'); return { h: s && s.querySelector('h3').textContent, chips: s ? [...s.querySelectorAll('.pchip')].map(x => x.textContent) : [], big: s ? [...s.querySelectorAll('.pbig .bigbtn')].map(x => x.textContent).join('|') : '' }; });
   ok('parent: "⏱️ היום" block first: two big buttons, the rest folded', pb.h === '⏱️ היום' && ['ללא הגבלה', '⏹ לסיים עכשיו'].every(c => pb.chips.includes(c)) && pb.big === '+15 דק׳', JSON.stringify(pb));
   if (process.env.HSHOTS) await p.screenshot({ path: path.join(process.env.HSHOTS, 'parent-today-' + L.variant + '.png') });
   if (process.env.HSHOTS) { await p.evaluate(() => document.querySelectorAll('#sPar details.pdet').forEach(d => d.open = true)); await p.evaluate(() => { const c = [...document.querySelectorAll('#sPar .pchip')].find(x => x.textContent.includes('לעצור אותו')); c && c.scrollIntoView({ block: 'center' }); }); await sleep(200); await p.screenshot({ path: path.join(process.env.HSHOTS, 'parent-switch-' + L.variant + '.png') }); }
   ok('parent: no task-count buttons', !pb.chips.some(c => /משימות$/.test(c)) && !pb.big.includes('משימה'), JSON.stringify(pb));
   const tog = () => p.evaluate(() => { const c = [...document.querySelectorAll('#sPar .pchip')].find(x => x.textContent.includes('לעצור אותו כשסיים את משימות היום')); if (!c) return null; const on = c.classList.contains('on'); c.click(); return on; });
-  await lim({ stopDone: 0 }); await p.evaluate(() => window.TAL.parentPanel('day')); await sleep(300); const t1 = await tog(); ok('parent: "stop when tasks done" is OFF by default and turns ON', t1 === false && await p.evaluate(() => window.TAL.S().set.lim.stopDone === 1), String(t1));
+  await lim({ stopDone: 0 }); await p.evaluate(() => window.TAL.parentPanel('time')); await sleep(300); const t1 = await tog(); ok('parent: "stop when tasks done" is OFF by default and turns ON', t1 === false && await p.evaluate(() => window.TAL.S().set.lim.stopDone === 1), String(t1));
   await sleep(200); ok('parent: and OFF again', (await tog()) === true && await p.evaluate(() => !window.TAL.S().set.lim.stopDone));
   await ctx.close();
   // ---------- two devices: the parent's phone grants, Oren's device unlocks ----------
@@ -96,13 +96,13 @@ const srv = http.createServer((q, r) => { const m = /^\/api\/save\/([a-f0-9]{32}
     await A.evaluate(() => window.TAL.limCheck()); ok('Oren\'s device: locked (5 minutes, 10 played)', await A.evaluate(() => !!document.querySelector('.tlock')));
     const B = await (await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })).newPage(); await B.addInitScript(() => { window.__fast = true; window.__famGap = 60000; window.__pullGap = 300; }); /* the phone's normal save delay must not slow a grant (#34) */ B.on('pageerror', e => errs.push('B ' + e.message));
     await B.goto(BASE); await B.waitForFunction(() => window.OREN && window.OREN.family && window.TAL.S().set.lim && window.TAL.S().set.lim.daily === 5, null, { timeout: 20000 }).catch(() => { }); await L.noCoach(B);
-    await B.evaluate(() => window.TAL.parentPanel('day')); await sleep(400);
+    await B.evaluate(() => window.TAL.parentPanel('time')); await sleep(400);
     await B.waitForTimeout(500); await B.locator('#sPar .pbig .bigbtn', { hasText: '+15 דק׳' }).click();
     const got = await A.waitForFunction(() => !document.querySelector('.tlock:not(.tyay)') && !!document.querySelector('.tyay'), null, { timeout: 6000 }).then(() => true).catch(() => false);
     ok('the parent\'s phone grants +15: Oren\'s device unlocks by itself, with the happy note', got, await A.evaluate(() => JSON.stringify(window.TAL.S().set.lim)));
     ok('and the top bar shows the new time', await A.evaluate(() => { const e = document.querySelector('#hud .tpill'); return !!e && !e.hidden && /15 דַּקּוֹת/.test(e.textContent); }));
     // #45: 'he has X minutes' REPLACES what is left: end now (stopper), then 30 -> stopper goes, 30 left (not 30 + old)
-    const chip = (t) => B.evaluate(() => window.TAL.parentPanel('day')).then(() => sleep(300)).then(() => B.evaluate(() => { const d = document.querySelector('#sPar details.pdet'); if (d) d.open = true; })).then(() => B.locator('#sPar .pchip', { hasText: t }).first().click());
+    const chip = (t) => B.evaluate(() => window.TAL.parentPanel('time')).then(() => sleep(300)).then(() => B.evaluate(() => { document.querySelectorAll('#sPar details[open] details.pdet').forEach(d => { d.open = true; }); })).then(() => B.locator('#sPar .pchip', { hasText: t }).first().click());
     await chip('לסיים עכשיו');
     ok('parent ends the day: his device locks', await A.waitForFunction(() => !!document.querySelector('.tlock:not(.tyay)'), null, { timeout: 6000 }).then(() => true).catch(() => false));
     await chip('30 דק׳');
@@ -128,7 +128,7 @@ const srv = http.createServer((q, r) => { const m = /^\/api\/save\/([a-f0-9]{32}
     await A.unroute('**/api/save/*'); await A.evaluate(() => { dispatchEvent(new Event('online')); });
     const same = await B.waitForFunction(a => { window.OREN.famPull(); return Math.abs(window.TAL.timeLeft() - a) <= 1 && Math.floor((window.TAL.S().time[window.OREN.today()] | 0) / 60) >= 45; }, aLeft, { timeout: 8000, polling: 500 }).then(() => true).catch(() => false);
     ok('the parent panel shows the same minutes left as his device (±1)', same, JSON.stringify(await B.evaluate(() => [window.TAL.timeLeft(), window.TAL.S().set.lim.today, window.TAL.S().tg])));
-    await B.evaluate(() => window.TAL.parentPanel('day')); await sleep(300);
+    await B.evaluate(() => window.TAL.parentPanel('time')); await sleep(300);
     const st = await B.evaluate(() => (document.querySelector('#sPar .pstat') || {}).textContent || '');
     ok('the panel line says the same "נשאר"', new RegExp('נשאר: (' + aLeft + '|' + (aLeft - 1) + ') דק׳').test(st), st);
   }

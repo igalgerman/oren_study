@@ -7,7 +7,7 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  await p.evaluate(()=>{const O=window.OREN,T=window.TAL;O.save.story.intro=1;O.save.gems=7;T.S().prof={an:'cat',col:'#3a8fc4',love:'art'};T.S().set.hide={lab:1};O.save.s['add-0-0']=2;O.showMap();});await sleep(300);
  await p.click('#sHome .parbtn');await p.fill('#pw1','abcd');await p.fill('#pw2','abcd');await p.keyboard.press('Enter');await sleep(300);
  await p.waitForFunction(()=>!document.querySelector('#sPar').hidden&&document.querySelector('#sPar').textContent.includes('בדקתם את הקול'),null,{timeout:8000}).catch(()=>{});
- ok('summary nudges to check voice',(await p.textContent('#sPar')).includes('בדקתם את הקול'));
+ await p.evaluate(()=>window.TAL.parentPanel('more'));ok('#359: "הגדרות ועוד" nudges to check voice',(await p.textContent('#sPar')).includes('בדקתם את הקול'));
  await p.evaluate(()=>window.TAL.parentPanel('voice'));await sleep(200);ok('voice check section',(await p.textContent('#sPar')).includes('בדיקת קול'));
  const fv=await p.evaluate(()=>{const t=document.querySelector('#sPar').textContent;const G=window.__gv,A0=window.Audio,ok0=G.ok;let u='';
    window.Audio=function(x){u=x;return {play:()=>Promise.resolve(),pause(){}};};G.ok=true;window.__fast=false;

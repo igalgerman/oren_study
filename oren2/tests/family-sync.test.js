@@ -53,7 +53,7 @@ const FIX='a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0',OLD='0123456789abcdef0123456789abcd
   const n1=await cnt();
   ok('outage: the newest data is saved once, retries add no extra writes',JSON.parse(KV.get(fid)).gems===65&&FAILN===0&&oks-o0===1&&puts-p0===4,JSON.stringify({g:JSON.parse(KV.get(fid)).gems,FAILN,ok:oks-o0,puts:puts-p0}));
   ok('outage: counted once, not once per retry or per new save',n1-n0===1,n0+'->'+n1);
-  await A.evaluate(()=>window.TAL.parentPanel('sum'));await sleep(300);
+  await A.evaluate(()=>window.TAL.parentPanel('iss'));await sleep(300);
   const pc=await A.evaluate(()=>[...document.querySelectorAll('#sPar .piss .prow')].filter(r=>r.textContent.includes('השמירה לענן')).map(r=>r.querySelector('.pc').textContent));
   ok('parent panel shows the real failure count',pc.length===1&&pc[0]==='×'+n1,JSON.stringify(pc));
   await A.evaluate(()=>window.TAL.closePanel?window.TAL.closePanel():window.OREN.showMap());await sleep(200);
