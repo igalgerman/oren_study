@@ -168,6 +168,15 @@ ok(!bankBad.length, `word banks consistent: ${B.ANA.length} analogies, ${B.SEN.l
   ok(p[5].length === 3 && p[5].every(c => c.n === 6 && c.sks.every(s => sk.includes(s))), 'test level 6: three chapters from open skills');
   const s = C.testSkills(p[4][0]); ok(s.length === 10 && sk.every(k => s.includes(k)), 'chapter mixes all open skills'); ok(C.testPlan(0, sk).length === 0, 'level 0 = closed'); }
 
+/* ---------- 7b. analogies: no two options look nearly the same (#7): a size-only difference is small vs big (x2), never normal vs big ---------- */
+{ const probs = [];
+  for (let lv = 1; lv <= 5; lv++) for (let i = 0; i < N; i++) { const q = C.genAna(lv); if (q.opts[0].t === 'txt') continue;
+    const get = o => o.t === 'tile' ? o.v : o, ks = q.opts[0].t === 'tile' ? ATTR : ['v', 'n', 'z', 'fl', 'up'];
+    for (let a = 0; a < q.opts.length; a++) for (let b2 = a + 1; b2 < q.opts.length; b2++) { const A = get(q.opts[a]), Bq = get(q.opts[b2]);
+      const diff = ks.filter(k => A[k] !== Bq[k]);
+      if (diff.length === 1 && diff[0] === 'z' && Math.abs((A.z ?? 1) - (Bq.z ?? 1)) < 2 && probs.length < 3) probs.push(`lv${lv} ${tk(q.opts[a])} ~ ${tk(q.opts[b2])}`); } }
+  ok(!probs.length, 'analogy options: a size-only difference is always small vs big ' + probs.join(' | ')); }
+
 /* ---------- 8. the compare question in the page: the sign the kid sees is the sign the button holds (#208) ---------- */
 (async () => {
   const L = require('./lib'); const { chromium } = require('playwright');
@@ -190,6 +199,13 @@ ok(!bankBad.length, `word banks consistent: ${B.ANA.length} analogies, ${B.SEN.l
       return n ? (sx / n > (x0 + x1) / 2 ? '>' : '<') : '?'; }, png)]);
   }
   ok(seen.length === 2 && seen.every(([v, s]) => v === s), 'compare question: each sign button shows the sign it holds (not mirrored) ' + JSON.stringify(seen));
+  // the "small → big" analogy: in the answer buttons the big picture is drawn at least twice as wide as the small one (#7)
+  const sz = await p.evaluate(() => { const C = window.THINK; C.GEN.ana = () => { let q; do q = C.genAna(1); while (!/big$/.test(q.key)); return q; };
+    document.querySelector('#ov').hidden = true; window.TAL.ACT['think-ana'].run(() => window.OREN.showMap());
+    const q = window.__think.q; const btns = [...document.querySelectorAll('#sTal .chs .chb')];
+    const w = z => { const k = q.opts.findIndex(o => (o.n | 0) === 1 && o.z === z); return k < 0 ? 0 : btns[k].querySelector('.ths svg').getBoundingClientRect().width; };
+    return { s: w(0), b: w(2) }; });
+  ok(sz.s > 0 && sz.b >= 2 * sz.s, 'analogy "small → big": the big option is drawn at least x2 the small one ' + JSON.stringify(sz));
   await b.close();
   require('./lib').finish('think', out);
 })();

@@ -8,7 +8,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import remote
+import remote, ghcache
 ROOT = HERE.parent.parent                      # repo checkout (tools/runner/../..)
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # #229: tests point this at a temp dir
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -318,7 +318,55 @@ def gov_pace(hist, now, reset, default):
     if busy < 0.5: return default
     return max(0.0, (s[-1]["pct"] - s[0]["pct"]) / ((s[-1]["at"] - s[0]["at"]) / 3600) / busy)
 
-def governor(usage, hist, now, g=None):
+WASTED = ("blocked", "ended", "retry")           # #245: a run that ended without a merged PR (stuck/stale/crash, closed elsewhere, transient)
+
+def gov_windows(hist, events, now):
+    """Pure (#245): usage samples [{at, pct, reset, lanes}] + stats events [{ts, event}] -> one dict per 5h window, oldest first:
+    {reset, done, used (max %), lanes (avg), merged, wasted, eff = merged PRs per 10% used (None below 1%)}."""
+    by = {}
+    for h in hist:
+        t = _ts(h.get("reset"))
+        if t is not None: by.setdefault(round(t / 60) * 60, []).append(h)
+    out = []
+    for reset in sorted(by):
+        s, start = by[reset], reset - 5 * 3600
+        used = max(float(h.get("pct") or 0) for h in s)
+        ln = [h["lanes"] for h in s if h.get("lanes") is not None]
+        inw = [e for e in events if start <= e.get("ts", 0) < reset]
+        merged = sum(e.get("event") == "merged" for e in inw)
+        out.append({"reset": reset, "done": reset <= now, "used": used, "lanes": sum(ln) / len(ln) if ln else None,
+                    "merged": merged, "wasted": sum(e.get("event") in WASTED for e in inw), "eff": merged / (used / 10) if used >= 1 else None})
+    return out
+
+def lane_gate(proposed, prev, wins):
+    """Pure (#245): -> (lanes, reason or None). More lanes than now only while the last finished window's efficiency did not drop
+    when its lanes went up (review/merge is the bottleneck then: more lanes only burn usage)."""
+    if prev is None or proposed <= prev: return proposed, None
+    done = [w for w in wins if w["done"] and w["eff"] is not None and w["lanes"] is not None]
+    if len(done) >= 2:
+        a, b = done[-2], done[-1]
+        if b["lanes"] > a["lanes"] and b["eff"] < a["eff"]:
+            return prev, (f"hold {prev}: efficiency {a['eff']:.2f} -> {b['eff']:.2f} merged/10% while lanes {a['lanes']:.0f} -> {b['lanes']:.0f}")
+    return proposed, None
+
+def eff_text(wins):
+    """#245: ' · efficiency E merged/10% (last L) · wasted W (last V)' for the current window (and the last finished one); '' without data."""
+    if not wins: return ""
+    cur = None if wins[-1]["done"] else wins[-1]
+    last = next((w for w in reversed(wins) if w["done"]), None)
+    main, other = (cur, last) if cur else (last, None)
+    f = lambda w: "-" if w["eff"] is None else f"{w['eff']:.2f}"
+    s = f" · efficiency {f(main)}" + (" merged/10%" if main["eff"] is not None else "") + (f" (last {f(other)})" if other else "")
+    return s + f" · wasted {main['wasted']}" + (f" (last {other['wasted']})" if other else "")
+
+def eff_fields(wins):
+    """#245: governor.json fields for the panel: eff/wasted of the current window, eff_last/wasted_last of the last finished one."""
+    cur = wins[-1] if wins and not wins[-1]["done"] else None
+    last = next((w for w in reversed(wins) if w["done"]), None)
+    return {"eff": cur and cur["eff"], "wasted": cur["wasted"] if cur else 0,
+            "eff_last": last and last["eff"], "wasted_last": last["wasted"] if last else None}
+
+def governor(usage, hist, now, g=None, prev=None, wins=None):
     """Pure (#239): usage.json dict (or None) + samples + now -> {lanes, stop, pct, projected, reset, week_pct, week_projected, week_reset, why}.
     Most remote lanes in [min, max] whose projection at the 5h reset stays <= target (min when even that is above); 5h >= stop -> no new run;
     #274 week: projected week % at its reset (linear at the pace so far) below week_target -> max lanes, above -> at most week_cap
@@ -346,6 +394,8 @@ def governor(usage, hist, now, g=None):
                 lanes = g["max"]; why += f"; week ~{wproj:.0f}% < {g['week_target']:.0f}%: behind, {lanes} lanes"
             elif wproj > g["week_target"] and lanes > g["week_cap"]:
                 lanes = g["week_cap"]; why += f"; week ~{wproj:.0f}% > {g['week_target']:.0f}%: ahead, cap {lanes}"
+    lanes, held = lane_gate(lanes, prev, wins or [])     # #245: add lanes only while efficiency holds
+    if held: why += "; " + held
     stop = pct >= g["stop"]
     if stop: why = f"5h {pct:.0f}% >= {g['stop']:.0f}%: no new run"
     if fresh: why = "new 5h window"
@@ -371,20 +421,30 @@ def governor_pass(remote_busy, now=None):
     now = now or time.time()
     try: usage = json.loads((RUNS / "usage.json").read_text(encoding="utf-8"))
     except Exception: usage = None
-    hist = []
-    try:
-        for l in (RUNS / "usage_hist.jsonl").read_text(encoding="utf-8").splitlines()[-300:]:
-            try: hist.append(json.loads(l))
-            except Exception: pass
-    except Exception: pass
-    gv = governor(usage, hist, now)
+    def jsonl(name, tail):
+        out = []
+        try:
+            for l in (RUNS / name).read_text(encoding="utf-8").splitlines()[-tail:]:
+                try: out.append(json.loads(l))
+                except Exception: pass
+        except Exception: pass
+        return out
+    hist = jsonl("usage_hist.jsonl", 5000)
+    events = [e for e in jsonl("stats.jsonl", 5000) if e.get("ts", 0) > now - 16 * 3600]   # #245
+    wins = gov_windows(hist, events, now)
+    try: prev = int(json.loads((RUNS / "governor.json").read_text(encoding="utf-8"))["lanes"])
+    except Exception: prev = None
+    gv = governor(usage, hist, now, prev=prev, wins=wins)
     if DRY: return gv
     try:
         RUNS.mkdir(exist_ok=True)
-        if gv["pct"] is not None:
-            hist = [h for h in hist if now - h.get("at", 0) < 2 * 3600] + [{"at": now, "pct": gv["pct"], "reset": usage.get("five_h_reset"), "busy": remote_busy}]
+        if gv["pct"] is not None:                    # #245: 16 h of samples = the current and the last two 5h windows
+            hist = [h for h in hist if now - h.get("at", 0) < 16 * 3600] + [{"at": now, "pct": gv["pct"], "reset": usage.get("five_h_reset"), "busy": remote_busy, "lanes": gv["lanes"]}]
             (RUNS / "usage_hist.jsonl").write_text("".join(json.dumps(h) + "\n" for h in hist), encoding="utf-8")
-        (RUNS / "governor.json").write_text(json.dumps({**gv, "text": governor_text(gv), "at": now}), encoding="utf-8")
+            wins = gov_windows(hist, events, now)
+        (RUNS / "governor.json").write_text(json.dumps({**gv, **eff_fields(wins), "text": governor_text(gv) + eff_text(wins), "at": now}), encoding="utf-8")
+        if prev is not None and gv["lanes"] != prev:
+            log_line(f"{datetime.fromtimestamp(now).astimezone():%Y-%m-%d %H:%M:%S} governor: lanes {prev} -> {gv['lanes']} ({gv['why']})")     # #245: the reason of every lane change
     except Exception: pass
     return gv
 
@@ -397,7 +457,8 @@ def assign_where(chosen, local_busy, remote_busy, local_lanes, remote_lanes):
         elif "express" in i.get("labels", []): out.append((i, "remote" if remote_lanes > 0 else "local"))   # #72: select() gave it the extra express slot: all lanes busy still starts it
     return out
 
-ACCEPT = ("Build exactly the issue's `## Acceptance` list (every point, with the tests it names) and nothing in its `Out of scope` (#186).")
+ACCEPT = ("Build exactly the issue's `## Acceptance` list (every point, with the tests it names) and nothing in its `Out of scope` (#186). "
+          "New tests: add the test to an existing suite unless a new one is clearly needed; give it a budget line in oren2/tests/budget.txt (#187).")
 SPEC = ("A 'Batch:' issue (title starts with Batch:) or an issue labelled 'spec': follow docs/agents/skills/implement-spec.md "
         "(one branch, sub-agents in parallel for independent parts, integrate, test once, one PR).\n")
 
@@ -431,6 +492,9 @@ _OVER_Q = ("query($o:String!,$r:String!,$n:Int!,$h:String!){repository(owner:$o,
 
 def issue_over(n, since, run_=None):
     """#234: ONE gh call: is issue #n closed, or lane/<n> merged after `since` (run start)? Any gh/parse error -> False (never end a run on an error)."""
+    if run_ is None:
+        known = ghcache.issue_over_cached(n, since)     # #329: from the shared cache when it knows; else the GraphQL check
+        if known is not None: return known
     o, name = REPO.split("/", 1)
     try:                                               # 26 Nov 14:48: a gh timeout here killed 3 runs at once; a slow GitHub is "not over yet"
         rc, out = (run_ or run)(["gh", "api", "graphql", "-f", f"query={_OVER_Q}", "-f", f"o={o}", "-f", f"r={name}", "-F", f"n={n}", "-f", f"h=lane/{n}"], timeout=60)
@@ -716,13 +780,15 @@ def is_transient(e):
 def run(cmd, cwd=None, env=None, input=None, log=None, timeout=None):
     e = dict(os.environ); e.update(env or {})
     e["PATH"] = CFG["extra_path"].replace("/c/", "C:/", 1) + os.pathsep + e["PATH"]
-    p = subprocess.run(cmd, cwd=cwd, env=e, input=input, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace", timeout=timeout, creationflags=no_window())
-    out = redact((p.stdout or "") + (p.stderr or ""))
+    def raw():
+        p = subprocess.run(cmd, cwd=cwd, env=e, input=input, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=timeout, creationflags=no_window())
+        return p.returncode, redact((p.stdout or "") + (p.stderr or ""))
+    rc, out = ghcache.call(list(map(str, cmd)), raw)     # #329: gh reads from the shared cache, rate limits retried
     if log:
         with open(log, "a", encoding="utf-8") as f:
-            f.write(f"\n$ {' '.join(map(str, cmd))[:300]}\n{out}\n[exit {p.returncode}]\n")
-    return p.returncode, out
+            f.write(f"\n$ {' '.join(map(str, cmd))[:300]}\n{out}\n[exit {rc}]\n")
+    return rc, out
 
 MAIN_CHECKOUT = Path(CFG.get("main_checkout", str(ROOT)))   # the checkout the watchdog/runner/panel import code from
 
@@ -880,8 +946,9 @@ def space_args():
         _SPACE = ""
         try:
             rc, out = run([HERDR_APP, "ls"], timeout=30)
-            for sp in json.loads(out).get("spaces", []):
-                if sp.get("name") == CFG.get("herdr_space", "oren-workers"): _SPACE = sp["id"]
+            import recover                            # #331: falls back to the old 'Oren workers' space, never makes a new one
+            _SPACE = recover.pick_space({sp.get("name"): sp.get("id") for sp in json.loads(out).get("spaces", [])},
+                                        CFG.get("herdr_space", "oren-workers"))
         except Exception:
             pass
     return ["--label", f"herdr.space={_SPACE}"] if _SPACE else []
@@ -1256,8 +1323,10 @@ def pregen_cmd():
 
 def start_pregen(log=None, popen=None):
     """#175: voice pregen in the background, OUTSIDE the merge lock (it can take 30 min); one at a time; never blocks an issue.
-    -> 'started' / 'already running' / 'off' / 'failed: ...'."""
-    if not CFG.get("pregen", False): return "off"
+    -> 'started' / 'already running' / 'off' / 'off (test)' / 'failed: ...'."""
+    if CFG.get("deploy_in_ci", True) or not CFG.get("pregen", False): return "off"   # #325: CI pregens after each deploy; the PC never does
+    if popen is None and (os.environ.get("OREN_TEST") == "1" or RUNS.resolve() != (HERE / ".runs").resolve()):
+        return "off (test)"                                  # #325: a test never launches the real node pregen.js
     try:                                                     # #301: nothing here may raise into process(): a failure is a note, never a block
         lock = FileLock("pregen")
         if lock.held_by_other(): return "already running"
@@ -1265,7 +1334,7 @@ def start_pregen(log=None, popen=None):
         RUNS.mkdir(exist_ok=True)
         out = open(RUNS / "pregen.log", "a", encoding="utf-8")
         out.write(f"\n=== pregen {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n"); out.flush()
-        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)   # #325: no DETACHED_PROCESS: a console-less node gives every child (Chrome) a visible window
         p = (popen or subprocess.Popen)(pregen_cmd(), cwd=str(MAIN_CHECKOUT), env=env, stdout=out, stderr=subprocess.STDOUT, creationflags=flags | no_window())
         lock.path.write_text(str(p.pid))                     # held while that process lives (FileLock checks the pid)
         if log: log_to(log, f"voice pregen started in the background (pid {p.pid}, .runs/pregen.log)")
@@ -1702,7 +1771,11 @@ def main():
         print(f"ISSUE {n}: {res}"); return 0
     if args:   # run.cmd <issue>: run that one issue now (ignores the queue label and the parallel cap)
         n = int(args[0].lstrip("#"))
-        issue = issue_by_number(n)
+        try: issue = issue_by_number(n)
+        except SystemExit as e:
+            if not ghcache.rate_limited(str(e)): raise
+            set_labels(n, remove=["in-progress"])        # #329: GitHub rate limit at start: back to ready at once, never blocked
+            log_line(f"{now()} #{n}: not started (GitHub rate limit), back to ready"); return 0
         if DRY:
             print(f"[dry-run] would run #{n} ({lane_of(issue['labels'])}): {issue['title']}"
                   + ("; core: waits for any running core issue" if lane_of(issue["labels"]) == "core" else "")); return 0

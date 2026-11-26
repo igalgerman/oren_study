@@ -118,7 +118,7 @@ def pin(name, on):
 
 def space_args():
     import recover
-    sid = recover.spaces(R).get(recover.control_space(R), "")
+    sid = recover.pick_space(recover.spaces(R), recover.control_space(R))   # #331: old 'Oren control' too
     return ["--label", f"herdr.space={sid}"] if sid else []
 
 def open_window(q, name):

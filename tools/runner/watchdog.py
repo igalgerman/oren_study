@@ -16,6 +16,7 @@ Every minute it checks, deterministically:
       later/manual 2 h+ with no owner question, run, PR or future date -> 'parked without owner question: #n' to the orchestrator; night report at retro_hour
   5d. #306 desks.py: keeps the two cloud sessions 'Oren inbox (cloud)' / 'Oren ask (cloud)' alive and every status_minutes
       writes the session links + dashboard.py --text into ONE pinned issue (edited in place, nothing committed)
+  5e. #187 once a week: tools/test_garden.py (test trim proposal: ONE issue 'Test trim proposal (week N)'; it never deletes a test)
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
   7. #304: a network error (sync, or a tick that raised a network/timeout error) is retried next tick and only logged + told to the
      orchestrator on the NET_ALARM-th in a row; nightly.prune_if_due removes .runs/<n> of issues closed > 24 h once a day
@@ -527,6 +528,7 @@ def tick():
     try: (R.RUNS / "watchdog.beat").write_text(str(int(time.time())), encoding="utf-8")   # #171: liveness for the dashboard
     except OSError: pass
     fresh(log)          # #300: never run a step against a module older than its file
+    ghcache_tick()      # #329: the ONE GitHub reader (every reader below uses its cache)
     ts = windows()
     check_windows(ts)
     OQ.answers_tick(tell)
@@ -544,6 +546,7 @@ def tick():
     ai_observer_tick()
     nightly_tick()
     parked_tick()       # #282
+    garden_tick()       # #187
     desks_tick()
     sync_tick()
     alarm_tick()
@@ -746,6 +749,30 @@ def ai_tick():
         except Exception as e: log(f"ai assessment error: {e!r}")
         finally: _ai["running"] = False
     threading.Thread(target=work, daemon=True).start()
+
+_GH_BUSY = threading.Event()
+def ghcache_tick(start=None):
+    """#329: refresh .runs/gh_cache.json (one batched GraphQL query) in a thread: a slow or rate-limited GitHub never holds the tick.
+    Never two at once; skipped when the cache is younger than 50 s."""
+    import ghcache
+    c = ghcache.load()
+    if _GH_BUSY.is_set() or (c and time.time() - c.get("ts", 0) < 50): return False
+    _GH_BUSY.set()
+    def work():
+        try: ghcache.refresh(lambda cmd: R.run(cmd, timeout=120))
+        except Exception as e: log(f"gh cache refresh failed: {e}"[:300])      # old cache stays; readers fall back to gh when it is stale
+        finally: _GH_BUSY.clear()
+    (start or (lambda f: threading.Thread(target=f, daemon=True).start()))(work)
+    return True
+
+def garden_tick():
+    """#187, once a week: the test gardener (its own process; it opens/updates ONE 'Test trim proposal' issue, never deletes a test)."""
+    if R.DRY: return
+    sys.path.insert(0, str(HERE.parent))
+    import test_garden
+    try:
+        if test_garden.run_if_due(R.RUNS / "garden.last"): log("test gardener started (weekly, #187)")
+    except OSError as e: log(f"test gardener could not start: {e!r} (next try in a week; run python3 tools/test_garden.py by hand)")
 
 def trends_tick():
     """#155: hourly patterns over 24 h (repeated BLOCKED reasons, finish/fix rates); reloaded so merged fixes apply."""

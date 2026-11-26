@@ -35,7 +35,7 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  ok('#36 slow audio is waited for, not replaced',fw.slow.urls===1&&fw.slow.fb===0,JSON.stringify(fw));
  await p.locator('#sPar .bigbtn',{hasText:'אוקי'}).click();await sleep(200);ok('voice approved saved',await p.evaluate(()=>!!window.TAL.S().set.voiceOk));
  await p.evaluate(()=>window.TAL.parentPanel('try'));await sleep(200);await L.shot(p,{path:L.SHOTDIR+'/try.png',fullPage:true});
- await p.locator('#sPar .bigbtn',{hasText:'כניסה למשחק כהורה'}).click();await sleep(400);
+ await p.locator('#sPar .bigbtn',{hasText:'לשחק כהורה'}).click();await sleep(400);
  const r1=await p.evaluate(()=>({mode:window.OREN.isParentPlay,bar:!document.querySelector('.pbar2').hidden,gems:window.OREN.save.gems,home:!document.querySelector('#sHome').hidden}));
  ok('parent sandbox active with bar, own gems',r1.mode&&r1.bar&&r1.gems===500&&r1.home,JSON.stringify(r1));await L.shot(p,{path:L.SHOTDIR+'/pplay.png'});
  const r2=await p.evaluate(async()=>{const T=window.TAL,O=window.OREN;T.openGroup(T.GROUPS[1]);await new Promise(r=>setTimeout(r,200));const lab=[...document.querySelectorAll('#sTal .bld .nm')].some(e=>e.textContent.replace(/[\u0591-\u05C7]/g,'').replace(/^ה/,'')==='מעבדה'||/^מעבדה /.test(e.textContent.replace(/[֑-ׇ]/g,'')));window.__dbg=JSON.stringify({names:[...document.querySelectorAll('#sTal .bld .nm')].map(e=>e.textContent),hide:T.S().set.hide,pp:O.isParentPlay});

@@ -12,7 +12,7 @@ permissions:
 jobs:
   shard:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 12      # #187: a shard takes ~2-4 min; RUN_BUDGET below fails it at 8
     strategy:
       fail-fast: false
       matrix:
@@ -33,13 +33,25 @@ jobs:
       - name: Shard split check
         working-directory: oren2
         run: bash tests/shard.test.sh
+      - name: Time budget check
+        working-directory: oren2
+        run: bash tests/budget.test.sh
       - name: Run suites (shard ${{ matrix.shard }}/6)
         working-directory: oren2
         env:
           SUITES_SHARD: ${{ matrix.shard }}/6
           RETRY_ALONE: '1'      # a suite that fails under load is rerun alone once (#60)
           JOBS: '3'
+          RUN_BUDGET: '480'     # #187: the whole shard over 8 min fails (per-suite budgets: tests/budget.txt; table in the step summary)
         run: bash tests/run.sh
+      - name: Keep suite times for the test gardener (tools/test_garden.py)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: times-${{ matrix.shard }}
+          path: oren2/tests/.tmp/times.tsv
+          retention-days: 35
+          if-no-files-found: ignore
   tools:
     # Runner / watchdog / ask / panel tests (#152): python + node, no install, < 1 min.
     runs-on: ubuntu-latest

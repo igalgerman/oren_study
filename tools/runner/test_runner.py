@@ -1,5 +1,12 @@
 # Unit test for the selection logic: python tools/runner/test_runner.py
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
+os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
+import subprocess as _sp; _real_popen = _sp.Popen; _pregen_popens = []
+class _NoPregenPopen(_real_popen):                 # #325: fail if any test path launches the real node pregen.js
+    def __init__(self, args, *a, **k):
+        if "pregen.js" in " ".join(map(str, args if isinstance(args, (list, tuple)) else [args])): _pregen_popens.append(args); raise RuntimeError("test launched real pregen.js")
+        super().__init__(args, *a, **k)
+_sp.Popen = _NoPregenPopen
 import sys; sys.argv.append("--dry-run")
 import runner as r
 def I(n, labels, t=None): return {"number": n, "labels": labels, "createdAt": t or f"2026-01-{n:02d}"}
@@ -284,6 +291,8 @@ assert r.space_args() == ["--label", "herdr.space=s2"]; assert len(_ran) == 1
 r.space_args(); assert len(_ran) == 1                                                       # cached
 r.run = _mock_run(_json.dumps({"spaces": [{"id": "s1", "name": "other"}]})); r._SPACE = None
 assert r.space_args() == []                                                                   # no such space: no label
+r.run = _mock_run(_json.dumps({"spaces": [{"id": "s1", "name": "other"}, {"id": "s3", "name": "Oren workers"}]})); r._SPACE = None
+assert r.space_args() == ["--label", "herdr.space=s3"]                                        # #331: 'oren-workers' not made yet -> old 'Oren workers'
 r.run = _mock_run("not json"); r._SPACE = None
 assert r.space_args() == []                                                                   # bad output: no label, no crash
 r.run = _orig_run16; r._SPACE = None
@@ -419,6 +428,8 @@ assert "LAST STEP (mandatory)" in p and p.rstrip().endswith("not finished until 
 # #219: Batch:/spec issues follow implement-spec (local and cloud prompts)
 assert "implement-spec.md" in r.remote_worker_prompt(7, "core") and "Batch:" in r.remote_worker_prompt(7, "core") and "spec" in r.worker_prompt(7, "core")
 assert "implement-spec.md" in r.worker_prompt(7, "core")
+for p in (r.worker_prompt(7, "pack"), r.remote_worker_prompt(7, "pack")):   # #187: new tests go into an existing suite, a new suite gets a budget line
+    assert "existing suite unless a new one is clearly needed" in p and "oren2/tests/budget.txt" in p
 assert "docs/agents/skills/diagnosing-bugs.md" in r.remote_worker_prompt(7, "core", bug=True) and "docs/agents/skills/diagnosing-bugs.md" in r.worker_prompt(7, "core", bug=True)
 import recover as _rc; assert "docs/agents/skills/writing-for-agents.md" in _rc.INBOX_PROMPT
 print("ok #219 skill docs")
@@ -502,11 +513,21 @@ print("ok #134 remote reviewer")
 # #175: voice pregen runs in the background AFTER the merge lock, one at a time, never blocking an issue
 import os as _os
 class _P:
-    def __init__(self, *a, **k): self.pid = _os.getpid(); _P.calls.append(a[0])
+    def __init__(self, *a, **k): self.pid = _os.getpid(); _P.calls.append(a[0]); _P.kw = k
 _P.calls = []
 r.RUNS.mkdir(exist_ok=True); (r.RUNS / "pregen.lock").unlink(missing_ok=True)
-_old = r.CFG.get("pregen"); r.CFG["pregen"] = True
+_old = r.CFG.get("pregen"); _oldci = r.CFG.get("deploy_in_ci")
+# #325: CI deploys + pregens, so the PC never does: 'off' unless deploy_in_ci = false AND pregen = true
+r.CFG["pregen"] = True; r.CFG.pop("deploy_in_ci", None); assert r.start_pregen(popen=_P) == "off" and _P.calls == []
+r.CFG["deploy_in_ci"] = True; assert r.start_pregen(popen=_P) == "off" and _P.calls == []
+r.CFG["deploy_in_ci"] = False
+# #325: under tests (OREN_TEST=1 or a temp RUNS) a real Popen is never used
+assert os.environ.get("OREN_TEST") == "1" and r.start_pregen() == "off (test)" and _pregen_popens == []
+os.environ.pop("OREN_TEST"); assert r.start_pregen() == "off (test)" and _pregen_popens == []   # RUNS is a temp dir
+os.environ["OREN_TEST"] = "1"
 assert r.start_pregen(popen=_P) == "started" and _P.calls == [r.pregen_cmd()]
+# #325: no visible console: CREATE_NO_WINDOW on Windows and never DETACHED_PROCESS (a detached node gives each child its own window)
+assert _P.kw["creationflags"] & 0x00000008 == 0 and (_P.kw["creationflags"] & 0x08000000) == (r.no_window() & 0x08000000)
 assert r.start_pregen(popen=_P) == "already running" and len(_P.calls) == 1      # lock holds our (live) pid
 (r.RUNS / "pregen.lock").unlink(missing_ok=True)
 r.CFG["pregen"] = False; assert r.start_pregen(popen=_P) == "off"
@@ -520,6 +541,8 @@ r.FileLock.held_by_other = _hb
 assert r.pregen_note("started") == "" and r.pregen_note("off") == "" and r.pregen_note("already running") == ""
 assert r.pregen_note("failed: x").startswith(" Note: voice pregen did not start (failed: x)")
 r.CFG["pregen"] = _old
+if _oldci is None: r.CFG.pop("deploy_in_ci", None)
+else: r.CFG["deploy_in_ci"] = _oldci
 # #301: no code path waits on pregen: pregen_cmd is only used by the detached Popen, and its result only becomes a note
 _src0 = (r.HERE / "runner.py").read_text(encoding="utf-8")
 assert _src0.count("pregen_cmd()") == 2 and "(popen or subprocess.Popen)(pregen_cmd()" in _src0
@@ -764,6 +787,53 @@ assert r.total_lanes() == r.LOCAL_LANES + 7
 assert r.total_lanes() == r.LOCAL_LANES
 (r.RUNS / "governor.json").unlink()
 print("ok governor lanes")
+# #245 efficiency = merged PRs per 10% of a 5h window; wasted runs per window; add lanes only while efficiency holds
+_W1, _W2, _W3 = _now - 6 * 3600, _now - 3600, _now + 4 * 3600          # resets: two finished windows + the current one
+_hh = [{"at": _W1 - 4 * 3600, "pct": 10, "reset": _iso(_W1), "busy": 2, "lanes": 2}, {"at": _W1 - 600, "pct": 40, "reset": _iso(_W1), "busy": 2, "lanes": 2},
+       {"at": _W2 - 4 * 3600, "pct": 30, "reset": _iso(_W2), "busy": 4, "lanes": 4}, {"at": _W2 - 600, "pct": 80, "reset": _iso(_W2), "busy": 4, "lanes": 4},
+       {"at": _now - 60, "pct": 10, "reset": _iso(_W3), "busy": 4, "lanes": 4}]
+_ev = ([{"ts": _W1 - 3600 - k, "issue": 10 + k, "event": "merged"} for k in range(4)]                    # W1: 4 merged / 40% -> 1.00
+       + [{"ts": _W2 - 3600 - k, "issue": 20 + k, "event": "merged"} for k in range(6)]                 # W2: 6 merged / 80% -> 0.75
+       + [{"ts": _W2 - 100, "issue": 30, "event": e} for e in ("blocked", "ended", "retry", "parked", "start", "review_fix")]   # W2: 3 wasted
+       + [{"ts": _now - 30, "issue": 40, "event": "merged"}, {"ts": _now - 20, "issue": 41, "event": "blocked"}])            # W3 (now)
+_ws = r.gov_windows(_hh, _ev, _now)
+assert [w["done"] for w in _ws] == [True, True, False], _ws
+assert [w["used"] for w in _ws] == [40, 80, 10] and [w["merged"] for w in _ws] == [4, 6, 1] and [w["wasted"] for w in _ws] == [0, 3, 1], _ws
+assert abs(_ws[0]["eff"] - 1.0) < 1e-9 and abs(_ws[1]["eff"] - 0.75) < 1e-9 and abs(_ws[2]["eff"] - 1.0) < 1e-9 and [w["lanes"] for w in _ws] == [2, 4, 4], _ws
+assert r.gov_windows([{"at": _now - 60, "pct": 0.5, "reset": _iso(_W3)}], [], _now)[0]["eff"] is None   # < 1% used: no efficiency yet
+assert r.gov_windows([], _ev, _now) == [] and r.gov_windows([{"at": _now, "pct": 5, "reset": None}], [], _now) == []
+# add-lane rule: lanes went 2 -> 4 and efficiency dropped 1.00 -> 0.75 -> hold at the current count
+n_, why_ = r.lane_gate(6, 4, _ws); assert n_ == 4 and "1.00 -> 0.75" in why_ and "2 -> 4" in why_, why_
+assert r.lane_gate(3, 4, _ws) == (3, None) and r.lane_gate(4, 4, _ws) == (4, None)                      # fewer / same lanes: always
+assert r.lane_gate(6, None, _ws) == (6, None)                                                            # no earlier count
+_up = [dict(_ws[0]), {**_ws[1], "eff": 1.2}, _ws[2]]; assert r.lane_gate(6, 4, _up) == (6, None)          # efficiency held: add
+_flat = [{**_ws[0], "lanes": 4}, _ws[1], _ws[2]]; assert r.lane_gate(6, 4, _flat) == (6, None)            # drop without more lanes: add
+assert r.lane_gate(6, 4, _ws[1:]) == (6, None)                                                          # one finished window: too little data
+# the governor applies the rule (projection follows the held count); a stop / fallback is unchanged
+g = r.governor(_u(5, 1), [], _now, _G, prev=4, wins=_ws); assert g["lanes"] == 4 and "hold 4" in g["why"] and abs(g["projected"] - (5 + 3.5 * 4)) < 1e-9, g
+assert r.governor(_u(5, 1), [], _now, _G, prev=4, wins=_up)["lanes"] == 8
+assert r.governor(None, [], _now, _G, prev=2, wins=_ws)["lanes"] == 4
+# shown on the panel and dashboard (both print governor.json's text)
+t = r.eff_text(_ws); assert t == " · efficiency 1.00 merged/10% (last 0.75) · wasted 1 (last 3)", t
+assert r.eff_text([]) == "" and r.eff_text([{**_ws[2], "eff": None}]) == " · efficiency - · wasted 1", r.eff_text([{**_ws[2], "eff": None}])
+# governor_pass: reads stats.jsonl, keeps 'lanes' in the samples, logs the reason of each lane change
+_dry = r.DRY; r.DRY = False
+(r.RUNS / "usage.json").write_text(_json.dumps({**_u(5, 1), "at": _iso(_time.time() - 30), "five_h_reset": _iso(_time.time() + 3600)}))
+(r.RUNS / "governor.json").write_text(_json.dumps({"lanes": 3, "stop": False, "at": _time.time()}))
+(r.RUNS / "stats.jsonl").write_text("")
+(r.RUNS / "usage_hist.jsonl").write_text("")
+g = r.governor_pass(2)
+_log = (r.RUNS / "runner.log").read_text(encoding="utf-8")
+assert f"governor: lanes 3 -> {g['lanes']} (" in _log and g["lanes"] != 3, _log
+assert _json.loads((r.RUNS / "usage_hist.jsonl").read_text().splitlines()[-1])["lanes"] == g["lanes"]
+assert " · efficiency " in _json.loads((r.RUNS / "governor.json").read_text())["text"]
+_gj = _json.loads((r.RUNS / "governor.json").read_text()); assert _gj["wasted"] == 0 and "eff" in _gj and "eff_last" in _gj, _gj   # #245 fields for the panel
+assert r.eff_fields(_ws) == {"eff": 1.0, "wasted": 1, "eff_last": 0.75, "wasted_last": 3} and r.eff_fields([]) == {"eff": None, "wasted": 0, "eff_last": None, "wasted_last": None}
+n_log = _log.count("governor: lanes"); r.governor_pass(2)                                                # no change -> no new line
+assert (r.RUNS / "runner.log").read_text(encoding="utf-8").count("governor: lanes") == n_log
+r.DRY = _dry
+for _f in ("usage.json", "governor.json", "stats.jsonl", "usage_hist.jsonl"): (r.RUNS / _f).unlink()
+print("ok #245 efficiency governor")
 # #234: a run ends as DONE when its issue is closed or its lane PR is merged elsewhere (every wait loop checks, one gh call per poll)
 _S0 = "2026-11-26T12:00:00Z"                         # run start
 assert r.run_over("CLOSED", [], _S0) and r.run_over("OPEN", ["2026-11-26T12:30:00Z"], _S0)
@@ -1133,3 +1203,5 @@ assert _ci_race("Pull request #104 was already merged", "MERGED")[0] == 0
 _res = _ci_race("GraphQL: Head branch was modified. Review and try the merge again.", "OPEN")
 assert _res[0] == 7 and "Head branch was modified" in _res[1], _res                     # the real gh text is in the reason
 print("ok #302 merge failures")
+assert _pregen_popens == [], _pregen_popens          # #325: no test path launched the real pregen.js
+print("ok #325 no real pregen under tests")
