@@ -105,6 +105,13 @@ assert _al[0][1] == "2 lane(s) free for 20 min while work is ready" and _al[1][1
 assert _al[2][1] == "#5 blocked for 3.0 h (waits for the owner)", _al
 assert [k for k, _ in W.idle_alarms(_iss, [], _now, _now - 5 * 60, 3)] == ["bl5"]   # free only 5 min: no alarm yet
 print("ok idle alarm")
+# #123: closed wins over blocked; parked windows go after PARKED_MIN idle, never while waiting on a prompt
+_pk = [{"name": "review-41", "state": "live", "status": "done", "marker": True},
+       {"name": "issue-48-fix", "state": "live", "status": "done", "marker": True},
+       {"name": "issue-49", "state": "live", "status": "blocked", "marker": False}]
+assert W.leftovers(_pk, closed={41}, blocked={41, 48, 49}) == ["review-41"]
+assert W.leftovers(_pk, closed=set(), blocked={41, 48, 49}, old={"issue-48-fix"}) == ["issue-48-fix"]
+print("ok parked windows")
 
 # regression: a finished run-2 next to a live run-2 must not close anything (the live one is working)
 assert W.leftovers([{"name": "run-2", "state": "finished"}, {"name": "run-2", "state": "live", "status": ""}], set(), set()) == []
