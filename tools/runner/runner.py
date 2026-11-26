@@ -637,6 +637,9 @@ def ask_owner(n, pr, question, flag):
     """PURPLE: the question goes to the owner via the orchestrator (never to the worker); on hold the issue is parked."""
     gh("issue", "comment", str(n), "--body", redact(f"Reviewer PURPLE question for the owner ({flag}, PR #{pr}): {question}"))
     if flag == "hold": set_labels(n, add=["blocked", "ready-for-human"], remove=["in-progress"])
+    try:                                                  # #220: into the questions issue -> a question window asks the owner
+        import owner_q; owner_q.post(f"review-{n}", "QUESTION: " + question)
+    except Exception: pass
     tell_orchestrator(f"#{n} owner question ({flag}): {question[:300]} - ask the owner in Hebrew (tools/ask), post his answer on the issue")
 
 def set_labels(n, add=(), remove=()):
