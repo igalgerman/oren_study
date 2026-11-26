@@ -186,6 +186,29 @@ assert r.deploy_needed("a", "b") and not r.deploy_needed("b", "b") and r.deploy_
 assert r.conflict_files("CI RED\nc0\n") == ["c0"]
 assert r.integrate_with_resolve(iter([(6, "CI RED\nc0\n"), (0, "ok")]).__next__, lambda f: f == ["c0"], 2)[0] == "merged"
 assert "c0" in r.ci_fix_prompt(7, ["c0"]) and "RESULT: DONE" in r.ci_fix_prompt(7, [])
-assert r.nightly_due(0, 30 * 3600, 3, 3) and not r.nightly_due(0, 30 * 3600, 3, 2) and not r.nightly_due(15 * 3600, 30 * 3600, 3, 5)
 assert r.CFG["ci_merge"] is True
+# rerun race: after the rerun the old failed run may still show; red is judged only once the run stamp changed
+def _race(stamps, checks):
+    it, st, log = iter(checks), iter(stamps), []
+    out = r.ci_merge(lambda: next(it), lambda: log.append("rerun"), lambda: True, lambda s: None, stamp=lambda: next(st))
+    return out, log
+assert _race(["a", "a", "a", "b"], [_ck("fail"), _ck("fail"), _ck("pending"), _ck("pass")])[0] == ("merged",)       # old red ignored
+assert _race(["a", "a", "b", "b"], [_ck("fail"), _ck("fail"), _ck("fail"), _ck("fail")])[0] == ("red", ["c0"])       # new run red: judged
+assert _race(["a", "a", "a", "a"] + ["a"] * 20, [_ck("fail")] * 30)[0] == ("red", ["c0"])                          # stamp never changes: bounded
+# deploy_main writes deployed.sha only when the text says "deployed" (not "not deployed: no token")
+import tempfile; from pathlib import Path
+_t = Path(tempfile.mkdtemp()); (_t / ".git").mkdir()
+_o = (r.run, r.INTEG, r.RUNS, r.deploy_text)
+r.run = lambda cmd, **kw: (0, "abc123" + chr(10)) if "rev-parse" in cmd else (0, "")
+r.INTEG, r.RUNS = _t, _t
+(_t / "oren2").mkdir()
+r.deploy_text = lambda log: "not deployed: no token"
+assert r.deploy_main(None) == "not deployed: no token" and not (_t / "deployed.sha").exists()
+r.deploy_text = lambda log: "deployed ok https://x"
+assert r.deploy_main(None).startswith("deployed") and (_t / "deployed.sha").read_text() == "abc123"
+r.run, r.INTEG, r.RUNS, r.deploy_text = _o
+# CI timeout / failed merge (rc 7) -> blocked with the real reason, no resolve round
+_n = {"r": 0}
+def _res(f): _n["r"] += 1; return True
+assert r.integrate_with_resolve(lambda: (7, "CI timed out"), _res, 2) == ("failed", 7, "CI timed out") and _n["r"] == 0
 print("ok ci-merge")

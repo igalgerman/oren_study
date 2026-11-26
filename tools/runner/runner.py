@@ -110,18 +110,22 @@ def ci_verdict(checks):
 def failed_checks(checks):
     return [c.get("name", "?") for c in checks or [] if c.get("bucket") in ("fail", "cancel")]
 
-def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_reruns=1):
+def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_reruns=1, stamp=None, max_stale=10):
     """Pure decision loop (#74): wait for the PR checks, then merge. Red -> rerun the failed jobs once (flaky), still red -> send back to the worker.
+    stamp() = run id/status/attempt of the latest run: after a rerun, red is ignored until it changes (the old failed run is still shown for a while).
     Returns ('merged',) | ('red', [names]) | ('timeout',) | ('merge-failed',)."""
-    waited, reruns = 0, 0
+    waited, reruns, old, stale = 0, 0, None, 0
     while True:
         checks = get_checks()
         v = ci_verdict(checks)
         if v == "green":
             return ("merged",) if merge() else ("merge-failed",)
         if v == "red":
+            if reruns and stamp and old is not None and stamp() == old and stale < max_stale:
+                stale += 1; sleep(poll_s); waited += poll_s; continue      # still the old failed run: not judged yet
             if reruns >= max_reruns:
                 return ("red", failed_checks(checks))
+            old = stamp() if stamp else None
             reruns += 1; rerun(); sleep(poll_s); waited += poll_s; continue
         if waited >= timeout_s:
             return ("timeout",)
@@ -130,10 +134,6 @@ def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_rer
 def deploy_needed(deployed_sha, main_sha):
     """Pure (#74): batching. PRs merged one after another are deployed ONCE: the first deploy after the last merge covers all of them."""
     return bool(main_sha) and deployed_sha != main_sha
-
-def nightly_due(last_ts, now_ts, hour, now_hour):
-    """Pure (#74): the local full suite runs once a day, from `hour` local time on (later if missed)."""
-    return now_hour >= hour and now_ts - last_ts >= 20 * 3600
 
 def ci_fix_prompt(n, names):
     return (f"Issue #{n}: the CI check(s) {', '.join(names) or '(see the PR)'} failed on lane/{n} even after one rerun. "
@@ -493,7 +493,7 @@ def deploy_text(log):
 
 def ci_integrate(n, wt, log):
     """CI-based integrate (#74): update the lane with main, push, wait for the PR checks, `gh pr merge --squash`. -> (rc, out) like integrate.sh:
-    0 merged, 2 conflict, 4 no PR, 5 push failed / merge failed / CI timeout, 6 CI red after one rerun."""
+    0 merged, 2 conflict, 4 no PR, 5 push failed, 6 CI red after one rerun, 7 CI timeout / merge failed (blocked, real reason in out)."""
     pr = find_pr(n)
     if not pr: return 4, "no open PR for lane/%d" % n
     run(["git", "fetch", "-q", REMOTE], cwd=wt, log=log)
@@ -508,14 +508,16 @@ def ci_integrate(n, wt, log):
     def get_checks():
         try: return json.loads(gh("pr", "checks", str(pr), "--json", "name,bucket", log=log)[1] or "[]")
         except ValueError: return []
+    def stamp():
+        return run(["gh", "run", "list", "--repo", REPO, "--branch", f"lane/{n}", "--limit", "1", "--json", "databaseId,status,attempt", "-q", ".[0]|[.databaseId,.status,.attempt]|join(\":\")"], log=log)[1].strip()
     def rerun():
         rid = run(["gh", "run", "list", "--repo", REPO, "--branch", f"lane/{n}", "--limit", "1", "--json", "databaseId", "-q", ".[0].databaseId"], log=log)[1].strip()
         if rid.isdigit(): run(["gh", "run", "rerun", rid, "--failed", "--repo", REPO], log=log)
     def merge(): return gh("pr", "merge", str(pr), "--squash", log=log)[0] == 0
-    res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60)
+    res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp)
     if res[0] == "merged": return 0, "merged PR #%d" % pr
     if res[0] == "red": return 6, "CI RED\n" + "\n".join(res[1])
-    return 5, "CI " + res[0]
+    return 7, "CI " + ("timed out" if res[0] == "timeout" else "green but `gh pr merge` failed")
 
 def find_pr_merged(n):
     rc, out = gh("pr", "list", "--head", f"lane/{n}", "--state", "merged", "--json", "number")
@@ -539,7 +541,7 @@ def deploy_main(log):
     if not deploy_needed(mark.read_text().strip() if mark.exists() else "", sha):
         return "already deployed with an earlier PR (batch)"
     dep = deploy_text(log)
-    mark.write_text(sha)
+    if dep.startswith("deployed"): mark.write_text(sha)       # never mark a sha that was not deployed (no token)
     return dep
 
 MAX_CORE = int(CFG.get("max_core", 1))
@@ -646,7 +648,7 @@ def process_locked(issue):
             gh("issue", "comment", str(n), "--body", redact("Runner: merge conflicts not resolved after 2 rounds. Conflicting files: " + (", ".join(files) or "(see log)")))
             return "BLOCKED: merge conflicts after 2 resolve rounds"
         if outcome[0] == "failed":
-            raise Blocked(f"integrate.sh exit {outcome[1]}")
+            raise Blocked(outcome[2] if outcome[1] == 7 else f"integrate.sh exit {outcome[1]}")
         with FileLock("integrate", wait=True):
             stat(n, lane, "merged")
             dep = deploy_main(log) if CFG.get("ci_merge", True) and find_pr_merged(n) else deploy_text(log)
