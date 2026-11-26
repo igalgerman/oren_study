@@ -70,14 +70,14 @@ const STUB = () => {
   // 5. answering correctly without hearing counts as "solo" and moves him up a level
   await p.evaluate(() => { const T = window.TAL; T.S().set.rdMode = 'auto'; T.S().rd = { lvl: 1, solo: 24 }; T.ACT['read-sent'].run(() => {}); });
   await p.waitForSelector('.tqc .qq .rdb');
-  await p.evaluate(() => { const q = window.__quiz; q.wrap.querySelector('.chs').children[q.ans].click(); });
+  await p.waitForFunction(() => !(window.OREN.tapTooSoon && window.OREN.tapTooSoon()), null, { polling: 50 }); await p.evaluate(() => { const q = window.__quiz; q.wrap.querySelector('.chs').children[q.ans].click(); });   /* #436: taps in the first 400 ms of a new question are ignored */
   const rd = await p.evaluate(() => window.TAL.S().rd);
   ok('solo answer counted, level goes up 1 → 2', rd.solo === 25 && rd.lvl === 2, JSON.stringify(rd));
   // after hearing the question, a correct answer is not solo
   await p.evaluate(() => { window.TAL.ACT['read-sent'].run(() => {}); });
   await p.waitForSelector('.tqc .qq .rdb');
   await p.evaluate(() => document.querySelector('.tqc .qq .rdb').click()); await L.sleep(100);
-  await p.evaluate(() => { const q = window.__quiz; q.wrap.querySelector('.chs').children[q.ans].click(); });
+  await p.waitForFunction(() => !(window.OREN.tapTooSoon && window.OREN.tapTooSoon()), null, { polling: 50 }); await p.evaluate(() => { const q = window.__quiz; q.wrap.querySelector('.chs').children[q.ans].click(); });   /* #436: taps in the first 400 ms of a new question are ignored */
   ok('heard first → not solo', await p.evaluate(() => window.TAL.S().rd.solo === 25));
   // 6. stories: 🔊 on every line; "read to me" reads line by line
   await p.evaluate(() => window.TAL.ACT['story-0'].run(() => {}));
@@ -110,7 +110,8 @@ async function stories(b) {
   const vis = async p => { await L.sleep(150); return p.evaluate(() => { const pg = [...document.querySelectorAll('#sTal .story')].pop(); const rd = [...document.querySelectorAll('#sTal .strd')].pop();
     const rdb = pg.querySelector('.sl .rdb'); return { line: !!rdb && rdb.offsetParent !== null, all: !!rd && !rd.hidden && rd.offsetParent !== null }; }); };
   const toQ = p => p.evaluate(() => document.querySelector('#sTal .stgo').click());
-  const wrongTap = p => p.evaluate(() => { const q = window.__quiz; const bs = [...q.wrap.querySelectorAll('.chs .chb')]; const w = bs.find((x, k) => k !== q.ans); w.click(); return bs.indexOf(w); });
+  /* 100 ms is enough only because this part runs __fast (the 400 ms tap guard is D(400) = 27 ms); without __fast wait 450 ms */
+  const wrongTap = async p => { await L.sleep(100); return p.evaluate(() => { const q = window.__quiz; const bs = [...q.wrap.querySelectorAll('.chs .chb')]; const w = bs.find((x, k) => k !== q.ans); w.click(); return bs.indexOf(w); }); };   /* #436: taps in the first 400 ms of a new question are ignored */
   // 1. buttons under the last line, never over the text, before and after scrolling (laptop and phone)
   for (const [nm, vp] of [['1366x768', { viewport: { width: 1366, height: 768 } }], ['390x844', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }]]) {
     const { ctx, p, errs } = await open(vp);
@@ -155,7 +156,7 @@ async function stories(b) {
   r = await band(5, fast(25));
   ok('top level: no read to me at all; the per-line 🔊 only after a wrong answer', !r[0].line && !r[0].all && !r[1].line && !r[1].all && r[2].line && !r[2].all, JSON.stringify(r));
   // 4. day log: read alone / listened, the level and the goal; only stories read alone move the level up
-  const finish = () => p.evaluate(async () => { for (let k = 0; k < 3; k++) { const q = window.__quiz; q.wrap.querySelector('.chs').children[q.ans].click(); await new Promise(r => setTimeout(r, 250)); } });
+  const finish = () => p.evaluate(async () => { await new Promise(r => setTimeout(r, 100)); for (let k = 0; k < 3; k++) { const q = window.__quiz; q.wrap.querySelector('.chs').children[q.ans].click(); await new Promise(r => setTimeout(r, 250)); } });
   const lv1 = await p.evaluate(() => window.READBANK2.stories.filter(s => s.lv === 1).map(s => s.id));
   await p.evaluate(() => { const T = window.TAL; T.S().tl = {}; window.OREN.realSave.alog = {}; });
   for (const k of lv1.slice(0, 2)) { await run(p, k, null); await p.evaluate(() => document.querySelector('#sTal .strd').click()); await toQ(p); await finish(); }

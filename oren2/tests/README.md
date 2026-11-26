@@ -41,6 +41,7 @@ Needs Node and the `playwright` package with Chromium (no npm install inside the
 | worker | the Cloudflare `_worker.js` bundle: page, icons, manifest, save API (GET/PUT/400/404/405/413), Google voice cache and `/api/tts/pregen` (fake Google) |
 | instructions | every activity (and the code-robot level, piano song and typing lesson behind a menu) speaks a short instruction when it opens (#55) |
 | eventlog | #348 game event log: `track()` batches to `/api/log` (one D1 row per batch), session cap, capped offline buffer, no retry loop, `/api/log/summary` (daily summary, raw events with the admin key), 30-day prune; plays two questions through the real worker |
+| network | #434 the real website on a slow network (throttled) and with no network: the game opens, the recorded voice plays from the device for lines heard before (service worker), a save made offline waits and is sent when the network returns; CI / cloud only like every suite |
 | kidtext | #422 all kid text (every Hebrew string with nikud in the sources) + every level generator (30 seeds) + every Talents City activity screen (12 runs): no bare word in kid text, no "1" + plural, no וְ before shva, no feminine verb to the kid; false positives in `ALLOW` (with reasons), real ones in `KNOWN` (fixed in the findings issue) |
 | playthrough (FULL=1) | plays every world level by level on a viewport, extras, layout overflow |
 
