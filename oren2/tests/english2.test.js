@@ -144,23 +144,29 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
 /* rounds, mastery, unlocking, spaced review */
 {
   const save = freshSave(); let d = E.day();
-  const p0 = E.plan(save, 0, d);
-  ok(p0.teach.length === 4 && p0.teach.every(g => g.startsWith('v:')) && p0.qs.length === 8, 'first word round: 4 new words taught, 8 questions', JSON.stringify({ t: p0.teach, n: p0.qs.length }));
-  ok(p0.qs.every((q, i) => i === 0 || q.k !== p0.qs[i - 1].k), 'no word twice in a row');
-  ok(p0.unit.id === 'v-colors' && !E.levelOpen(save, 1) && !E.levelOpen(save, 2) && !E.levelOpen(save, 3) && !E.levelOpen(save, 4), 'start: colours, only words open');
-  /* play rounds: all first-try right, a new day every 2 rounds */
+  /* #58: letters and sounds are the first English path; words open after the first letter group */
+  ok(E.levelOpen(save, 1) && !E.levelOpen(save, 0) && !E.levelOpen(save, 2) && !E.levelOpen(save, 3) && !E.levelOpen(save, 4), 'start: only letters and sounds open (first path)');
   const play = (lv, rounds, wrongEvery) => { let n = 0; for (let r = 0; r < rounds; r++) { const P = E.plan(save, lv, d); P.teach.forEach(g => E.touch(save, E.teachCard(g).items, d));
       const b0 = {}; P.qs.forEach(q => { if (!(q.k in b0)) b0[q.k] = E.box(save, q.k); }); const res = {};
       P.qs.forEach(q => { n++; const r1 = wrongEvery && n % wrongEvery === 0 ? 'bad' : 'ok'; res[q.k] = res[q.k] === 'bad' || r1 === 'bad' ? 'bad' : 'ok'; E.mark(save, q.k, res[q.k], b0[q.k], d); });
       if (r % 2) d++; } };
+  const pl = E.plan(save, 1, d);
+  ok(pl.teach.length === 2 && pl.teach.every(g => /^L:[SATPIN]$/.test(g)) && pl.qs.length >= 6 && pl.qs.every(q => /^[ncs]:[SATPIN]$/.test(q.k)), 'first letter round: 2 letters of s a t p i n, their name/case/sound', JSON.stringify(pl));
+  const lcB = E.teachCard('L:B');
+  ok(lcB.w === 'ball' && lcB.say === 'B is for ball.' && lcB.he === 'בּ' && lcB.mean === 'כַּדּוּר', 'letter card: the voice reads the word, its Hebrew meaning is shown', JSON.stringify(lcB));
+  let r0 = 0; while (E.doneUnits(save, 1) < 1 && r0 < 40) { play(1, 1); r0++; }
+  ok(E.levelOpen(save, 0) && !E.levelOpen(save, 2), `words open after the first letter group (${r0} rounds)`);
+  const p0 = E.plan(save, 0, d);
+  ok(p0.teach.length === 4 && p0.teach.every(g => g.startsWith('v:')) && p0.qs.length === 8, 'first word round: 4 new words taught, 8 questions', JSON.stringify({ t: p0.teach, n: p0.qs.length }));
+  ok(p0.qs.every((q, i) => i === 0 || q.k !== p0.qs[i - 1].k), 'no word twice in a row');
+  ok(p0.unit.id === 'v-colors', 'words start with colours');
+  /* play rounds: all first-try right, a new day every 2 rounds */
   let r1 = 0; while (E.doneUnits(save, 0) < 3 && r1 < 40) { play(0, 1); r1++; }
   ok(r1 >= 6 && r1 <= 20, `3 word themes need a sensible number of rounds (${r1})`);
-  ok(E.levelOpen(save, 1) && E.levelOpen(save, 4) && !E.levelOpen(save, 2) && !E.levelOpen(save, 3), 'after 3 themes: letters + songs open, reading/talk still closed');
+  ok(E.levelOpen(save, 1) && E.levelOpen(save, 4) && !E.levelOpen(save, 3), 'after 3 themes: songs open, talk still closed');
   ok(E.openSongs(save).map(s => s.th).join(',') === E.LEVELS[0].units.filter(u => E.unitDone(save, u)).map(u => u.id.slice(2)).join(','), 'songs open only for finished themes');
   d += 3; const pr = E.plan(save, 0, d); const oldKeys = new Set(E.LEVELS[0].units.filter(u => E.unitDone(save, u)).flatMap(u => u.items));
   ok(pr.qs.some(q => oldKeys.has(q.k)), 'spaced review: later rounds bring back words of finished themes');
-  const pl = E.plan(save, 1, d);
-  ok(pl.teach.length === 2 && pl.teach.every(g => /^L:[SATPIN]$/.test(g)) && pl.qs.length >= 6 && pl.qs.every(q => /^[ncs]:[SATPIN]$/.test(q.k)), 'first letter round: 2 letters of s a t p i n, their name/case/sound', JSON.stringify(pl));
   let r2 = 0; while (E.doneUnits(save, 1) < 3 && r2 < 60) { play(1, 1); r2++; }
   ok(E.levelOpen(save, 2) && r2 < 40, `reading opens after 3 letter groups (${r2} rounds)`);
   /* mistakes slow things down but never block */
@@ -181,6 +187,27 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
   const as = freshSave(); as.set.all = 1; ok([0, 1, 2, 3, 4].every(lv => E.levelOpen(as, lv)) && E.openSongs(as).length === E.SONGS.length, 'parent "all open" opens every level and song');
 }
 
+/* #58: every English word a question shows or says was taught before (on a card) */
+{
+  const save = freshSave(); let d = E.day(); const bad = [], seenT = {}; let nq = 0, n = 0;
+  for (let r = 0; r < 900 && !(E.unitDone(save, E.UNIT['r-sent']) && E.unitDone(save, E.UNIT['p-me'])); r++) {
+    const open = [1, 0, 2, 3].filter(x => E.levelOpen(save, x) && E.curUnit(save, x)); const lvr = open.length ? open[r % open.length] : 0;
+    const P = E.plan(save, lvr, d); P.teach.forEach(g => E.touch(save, E.teachCard(g).items, d));
+    const b0 = {}; P.qs.forEach(q => { if (!(q.k in b0)) b0[q.k] = E.box(save, q.k); }); const res = {};
+    P.qs.forEach(st => { const q = E.gen(save, st); nq++; seenT[q.type] = 1; const T = E.taught(save);
+      E.words(q).forEach(w => { if (!T.has(w)) bad.push(q.type + ':' + w + ' (' + q.k + ')'); });
+      n++; const r1 = n % 7 === 0 ? 'bad' : 'ok'; res[st.k] = res[st.k] === 'bad' || r1 === 'bad' ? 'bad' : 'ok'; E.mark(save, st.k, res[st.k], b0[st.k], d); });
+    if (r % 2) d++;
+  }
+  ok(E.unitDone(save, E.UNIT['r-sent']) && E.unitDone(save, E.UNIT['p-me']) && ['say', 'sound', 'spell', 'sight', 'sent', 'sit'].every(t => seenT[t]), `played through to sentences (${nq} questions, types ${Object.keys(seenT).join(',')})`);
+  ok(!bad.length, 'no question uses an untaught English word', [...new Set(bad)].slice(0, 10).join(' | '));
+  /* reading done but the family words never taught: new sentences with mom/dad get their word cards first */
+  const sv = freshSave(), dd = E.day(); E.LEVELS[2].units.slice(0, 6).forEach(u => { u.items.forEach(k => { E.st(sv).i[k] = [2, dd + 9]; }); E.st(sv).u[u.id] = 1; });
+  E.SENT.slice(0, 5).forEach(s => { E.st(sv).i['x:' + s[0]] = [2, dd + 9]; });
+  const ps = E.plan(sv, 2, dd); const hasMom = ps.qs.some(q => /mom|dad/.test(q.k));
+  ok(hasMom && ps.teach.includes('v:mom') && ps.teach.includes('v:dad') && E.teachCard('v:mom').kind === 'word', 'a sentence word not taught yet (mom, dad) gets its word card first', JSON.stringify(ps.teach));
+}
+
 /* ======================= Part 2: the screens (Playwright) ======================= */
 (async () => {
   let chromium; try { ({ chromium } = require('playwright')); } catch (e) { ok(false, 'playwright missing'); return L.finish('english2', out); }
@@ -199,11 +226,13 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
   const overflow = () => p.evaluate(() => { const e = document.scrollingElement; return e.scrollWidth - innerWidth; });
   const info = () => p.evaluate(() => { const T = window.TAL, b = T.BUILD.find(x => x.id === 'eng'); return { acts: b.acts.map(a => a.id), vis: b.acts.filter(a => !a.avail || a.avail()).map(a => a.id), act: Object.keys(T.ACT).filter(k => /^eng/.test(k)) }; });
   const i0 = await info();
-  ok(i0.acts.join() === 'eng-voc,eng-abc,eng-read,eng-talk,eng-song' && i0.act.join() === i0.acts.join(), 'register(): the eng building has the 5 new acts (old ones gone from ACT)', JSON.stringify(i0));
-  ok(i0.vis.join() === 'eng-voc', 'a new player sees only "words"', JSON.stringify(i0.vis));
+  ok(i0.acts.join() === 'eng-abc,eng-voc,eng-read,eng-talk,eng-song' && i0.act.slice().sort().join() === i0.acts.slice().sort().join(), 'register(): the eng building has the 5 new acts (old ones gone from ACT)', JSON.stringify(i0));
+  ok(i0.vis.join() === 'eng-abc', 'a new player sees only "letters and sounds" (first path, #58)', JSON.stringify(i0.vis));
   await p.evaluate(() => window.TAL.openBuilding(window.TAL.BUILD.find(x => x.id === 'eng'))); await L.sleep(200);
   ok((await p.$$eval('#sTal .acts .actc', a => a.length)) === 1, 'building screen: one act card'); await shot('01-building-new');
-  /* play a real round with clicks */
+  /* play a real round with clicks (letters open words; then a word round) */
+  await p.evaluate(() => { const E = window.ENGLISH2, s = window.OREN.save, d = E.day(); E.LEVELS[1].units[0].items.forEach(k => { E.st(s).i[k] = [2, d + 3]; }); });
+  ok((await info()).vis.join() === 'eng-abc,eng-voc', 'after the first letter group: words appear');
   await p.evaluate(() => window.TAL.ACT['eng-voc'].run(() => window.TAL.openBuilding(window.TAL.BUILD.find(x => x.id === 'eng')))); await L.sleep(150);
   const t1 = await p.evaluate(() => ({ kind: window.__e2.step.t, head: document.querySelector('#sTal .e2head') && document.querySelector('#sTal .e2head').textContent, btn: document.querySelectorAll('#sTal .chs .chb').length }));
   ok(t1.kind === 'teach' && t1.btn === 1, 'round starts with a teach card, one button', JSON.stringify(t1)); await shot('02-teach-word');
@@ -233,7 +262,9 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
       for (let k = 0; k < 120; k++) { if (await ovOpen()) break;
         const st = await p.evaluate(() => { const s = window.__e2.step; if (!s) return null; if (s.t === 'teach') return 'teach-' + s.c.kind; const c = document.querySelector('#sTal .tqc'); return 'q'; });
         const qt = st === 'q' ? await p.evaluate(() => window.__e2q && window.__e2q.type) : st;
-        if (qt && !wantShots.has(qt)) { wantShots.add(qt); const of = await overflow(); ok(of <= 1, `${label} ${qt}: fits the screen`, 'overflow ' + of); await shot(`${label}-${qt}`); }
+        if (qt && !wantShots.has(qt)) { wantShots.add(qt); const of = await overflow(); ok(of <= 1, `${label} ${qt}: fits the screen`, 'overflow ' + of);
+          if (qt === 'teach-letter') { const lm = await p.evaluate(() => { const c = window.__e2.step.c, m = document.querySelector('#sTal .e2teach .e2mean'); return { m: m && m.textContent, he: window.ENGLISH2.WORD[c.w].he, w: c.w }; });
+            ok(lm.m && lm.m.trim() === lm.he, 'letter card shows the word with its Hebrew meaning', JSON.stringify(lm)); } await shot(`${label}-${qt}`); }
         await answer(false); await L.sleep(50); }
       const st = await p.evaluate(id => (window.TAL.S().tl[id] || {}).s | 0, ['eng-voc', 'eng-abc', 'eng-read', 'eng-talk'][lv]);
       if (r === 0) ok(st > 0, `${label}: round finished and recorded`);
@@ -272,8 +303,8 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
   ok(second === E.SONGS[1].he, 'next time: the next song not sung yet', second);
   /* gradual unlocking in the UI (fresh save): words only -> after 3 themes letters + songs */
   await p.evaluate(() => { const O = window.OREN, E = window.ENGLISH2; O.save.set = { brk: 0, hide: {} }; O.save.en2 = {}; O.save.kn = {}; const d = E.day();
-    E.LEVELS[0].units.slice(0, 3).forEach(u => u.items.forEach(k => { E.st(O.save).i[k] = [2, d + 3]; })); });
-  const i2 = await info(); ok(i2.vis.join() === 'eng-voc,eng-abc,eng-song', 'after 3 themes: letters and songs appear', JSON.stringify(i2.vis));
+    E.LEVELS[0].units.slice(0, 3).forEach(u => u.items.forEach(k => { E.st(O.save).i[k] = [2, d + 3]; })); E.LEVELS[1].units[0].items.forEach(k => { E.st(O.save).i[k] = [2, d + 3]; }); });
+  const i2 = await info(); ok(i2.vis.join() === 'eng-abc,eng-voc,eng-song', 'after 3 themes: songs appear', JSON.stringify(i2.vis));
   /* songs with no open song: no crash, back to the building (the card is hidden anyway) */
   const ns = await p.evaluate(() => { const O = window.OREN; const keep = O.save.en2; O.save.en2 = {}; let backed = 0; window.ENGLISH2.screens.songs(() => { backed = 1; }); const card = !window.TAL.ACT['eng-song'].avail(); O.save.en2 = keep; return { backed, card }; });
   ok(ns.backed && ns.card, 'songs() with no open song goes back; songs card hidden', JSON.stringify(ns));
