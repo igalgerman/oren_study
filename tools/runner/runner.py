@@ -8,7 +8,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import remote, ghcache
+import remote, ghcache, ghauth
 ROOT = HERE.parent.parent                      # repo checkout (tools/runner/../..)
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # #229: tests point this at a temp dir
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -203,13 +203,14 @@ def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_rer
     ended() True (#234: PR merged / issue closed elsewhere) -> ('ended',).
     #185: mark() (called once, only after the review passed) = GitHub auto-merge -> 'auto' | 'merged' (clean status: merged directly) | 'conflict' | False;
     state() -> 'merged' | 'conflict' | 'open'. With auto set, GitHub merges on green; the runner merges directly only if it stays green+open for `grace` polls.
-    Returns ('merged',) | ('red', [names]) | ('timeout',) | ('conflict',) | ('merge-failed',) | ('ended',)."""
+    #344: merge()/mark() -> 'moved' (the head changed after the review) -> ('moved',): the caller checks the new head.
+    Returns ('merged',) | ('red', [names]) | ('timeout',) | ('conflict',) | ('merge-failed',) | ('ended',) | ('moved',)."""
     waited, reruns, old, stale = 0, 0, None, 0
     auto = False
     if mark:
         m = mark()
         if m == "merged": return ("merged",)
-        if m == "conflict": return ("conflict",)
+        if m in ("conflict", "moved"): return (m,)
         auto = m == "auto"
     while True:
         if ended and ended():
@@ -224,7 +225,7 @@ def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_rer
             if auto and grace > 0:
                 grace -= 1; sleep(poll_s); waited += poll_s; continue     # GitHub merges it itself in a moment
             m = merge()
-            return ("merged",) if m is True else ("conflict",) if m == "conflict" else ("merge-failed",)
+            return ("merged",) if m is True else (m,) if m in ("conflict", "moved") else ("merge-failed",)
         if v == "red":
             if reruns and stamp and old is not None and stamp() == old and stale < max_stale:
                 stale += 1; sleep(poll_s); waited += poll_s; continue      # still the old failed run: not judged yet
@@ -235,6 +236,46 @@ def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_rer
         if waited >= timeout_s:
             return ("timeout",)
         sleep(poll_s); waited += poll_s
+
+def head_modified(text):
+    """Pure (#344): a failed `gh pr merge --match-head-commit` because the PR head moved after the review."""
+    return "head branch was modified" in (text or "").lower()
+
+def _marker_ranges(text):
+    """(start, end) 1-based line ranges of the <<<<<<< ... >>>>>>> conflict regions in a file."""
+    out, start = [], None
+    for i, l in enumerate(text.splitlines(), 1):
+        if l.startswith("<<<<<<<"): start = i
+        elif l.startswith(">>>>>>>") and start: out.append((start, i)); start = None
+    return out
+
+def head_moved(git, reviewed, head, main_ref):
+    """Pure decision over git(args) -> (rc, stdout) (#344): how did the PR head move after the reviewed sha?
+    'same' | 'main' (only merges of main; a merge's own edits only inside its conflict regions) | 'code' (anything else: re-review)."""
+    if head == reviewed: return "same"
+    if git(["merge-base", "--is-ancestor", reviewed, head])[0]: return "code"       # history rewritten (force-push)
+    rc, out = git(["rev-list", "--parents", head, "^" + reviewed, "^" + main_ref])  # the commits the lane got, without main's own
+    if rc: return "code"
+    for line in out.split("\n"):
+        if not line.strip(): continue
+        m, *parents = line.split()
+        if len(parents) < 2: return "code"                                         # a normal commit = new code
+        if any(git(["merge-base", "--is-ancestor", p, main_ref])[0] for p in parents[1:]): return "code"   # merged something that is not main
+        rc, mt = git(["merge-tree", "--write-tree", "--name-only", parents[0], *parents[1:]])
+        if rc not in (0, 1) or not mt.strip(): return "code"
+        auto, *rest = mt.split("\n")
+        conflicted = set(x for x in rest[:rest.index("")] if x) if "" in rest else set(x for x in rest if x)
+        rc, changed = git(["diff", "--name-only", auto.strip(), m])
+        if rc: return "code"
+        for f in [x for x in changed.split("\n") if x]:
+            if f not in conflicted: return "code"                                  # an edit in a file git merged by itself
+            regions = _marker_ranges(git(["show", f"{auto.strip()}:{f}"])[1])
+            rc, d = git(["diff", "-U0", auto.strip(), m, "--", f])
+            for h in re.findall(r"^@@ -(\d+)(?:,(\d+))? ", d, re.M):
+                a, b = int(h[0]), int(h[1] or 1)
+                lo, hi = (a, a) if b == 0 else (a, a + b - 1)
+                if not any(s <= lo and hi <= e for s, e in regions): return "code"   # a hunk outside the conflict markers
+    return "main"
 
 def merge_conflict(text):
     """Pure (#160): does a failed `gh pr merge` output mean 'main moved, PR now conflicts'?"""
@@ -510,6 +551,45 @@ def issue_over(n, since, run_=None):
     except (ValueError, KeyError, TypeError, IndexError, AttributeError, subprocess.TimeoutExpired, OSError):
         return False
 
+_FRESH = {}   # #364: file -> the newest loaded copy of that module
+
+def _file_mtime(m):
+    try: return Path(m.__file__).stat().st_mtime
+    except (OSError, TypeError, AttributeError): return None
+
+def fresh(mod, log=None):
+    """#364: a run in flight never kept its start-time code: -> the newest copy of mod. The file changed on disk since it was
+    loaded -> reloaded (runner.py running as __main__: a fresh copy is imported, never re-run as a script). A half-written
+    file -> the old copy this poll (logged), retried at the next poll. First look only stamps the module."""
+    f = getattr(mod, "__file__", None)
+    cur = _FRESH.get(f, mod)
+    t = _file_mtime(cur)
+    if t is None: return cur
+    if getattr(cur, "_loaded_mtime", None) is None:
+        cur._loaded_mtime = t; return cur
+    if t == cur._loaded_mtime: return cur
+    import importlib, importlib.util
+    try:
+        if cur.__name__ == "__main__":
+            spec = importlib.util.spec_from_file_location(Path(f).stem, f)
+            new = importlib.util.module_from_spec(spec); spec.loader.exec_module(new)
+        else:
+            new = importlib.reload(cur)
+    except Exception as e:
+        if log: log(f"fresh: {Path(f).name} not reloaded yet ({e!r})")
+        return cur
+    new._loaded_mtime = t; _FRESH[f] = new
+    if log: log(f"fresh: reloaded {Path(f).name} (a merged fix applies to this run now)")
+    return new
+
+def fresh_remote():
+    """#364: the status helpers (remote.py, and ghcache.py under it) as they are on disk now."""
+    fresh(ghcache, log_line); return fresh(remote, log_line)
+
+def fresh_self():
+    """#364: this runner's own helpers (issue_over) as runner.py is on disk now."""
+    return fresh(sys.modules[__name__], log_line)
+
 def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=None):
     """Pure loop (#133): poll the GitHub-based status until it is done/stuck/question. Returns that status dict, or {'state': 'timeout'}.
     ended() True (#234: issue closed / lane PR merged elsewhere) -> {'state': 'ended'}."""
@@ -686,6 +766,26 @@ def auto_resume(issues, lookup, set_labels, comment, tell):
         out.append((n, step))
     return out
 
+# #364: watchdog safety net: a run waiting on a worker whose PR is quiet NET_QUIET_MIN with no VERDICT resumes at review.
+NET_QUIET_MIN = 20
+PHASES = ("start", "worker_done", "review_fix", "fix_done", "review_pass")
+
+def run_phase(events, n):
+    """Pure: the last pipeline event of issue n in the stats events ('' = none). start/review_fix = a worker is awaited;
+    worker_done/fix_done = a review is running."""
+    return next((e["event"] for e in sorted(events, key=lambda e: e.get("ts", 0), reverse=True)
+                 if e.get("issue") == n and e.get("event") in PHASES), "")
+
+def net_due(pj, phase, now, quiet_min=NET_QUIET_MIN):
+    """Pure: `gh pr view --json number,state,isDraft,mergeable,headRefOid,createdAt,commits,comments` of the run's PR -> True when
+    a worker is awaited (phase) but the PR exists quiet_min+, has no new commit for quiet_min, and its head has no VERDICT."""
+    if phase not in ("start", "review_fix") or not pj or pj.get("isDraft") or (pj.get("state") or "OPEN") != "OPEN": return False
+    info = pr_resume_info(pj)
+    if resume_step(info["mergeable"], info["verdict"]) != "review": return False
+    head = max((c.get("committedDate", "") for c in pj.get("commits") or []), default="")
+    old = lambda iso: remote._epoch(iso or "") > 0 and now - remote._epoch(iso) >= quiet_min * 60
+    return old(pj.get("createdAt")) and old(head)
+
 def open_pr_resumes(chosen, lookup):
     """#295: before a pass starts issue n, look up its open PR (lookup(n) -> pr_resume_info or None). PR open -> no new worker:
     store the resume step (review/fix/resolve/merge, #264 path); a PURPLE owner question -> not started. A stored step or a
@@ -799,6 +899,7 @@ def run(cmd, cwd=None, env=None, input=None, log=None, timeout=None):
     e["PATH"] = CFG["extra_path"].replace("/c/", "C:/", 1) + os.pathsep + e["PATH"]
     cap = ghcache.tick_cap(); timeout = tick_timeout(timeout)
     is_gh = bool(cmd) and str(cmd[0]) == "gh"
+    ghauth.apply(cmd, e)                                 # #363: gh runs as the GitHub App (own rate limits); claude/git keep the owner login
     def raw():
         if cap and is_gh and ghcache._TICK.gh_down: return 124, "skipped: gh timed out earlier in this watchdog tick"
         try:
@@ -1142,9 +1243,14 @@ def remote_review_prompt(n, pr, round1=""):
 
 REVIEW_START_RETRY_S = (60, 300)                   # #322: waits before the 2nd and 3rd cloud reviewer start
 
-def remote_review(n, pr, round1, start, get_verdict, sleep, clock, timeout_s=3600, poll_s=60, ended=None):
+def rereview_prompt(n, pr, old, new):
+    """#344: one quick cloud re-review after the head moved past the PASS with more than merges of main."""
+    return (remote_review_prompt(n, pr) + f"\nThis is a quick re-review: the PR passed review at {old}; its head is now {new}. Check only the commits after "
+            f"{old[:7]} (`gh api repos/{REPO}/compare/{old}...{new}`), not the whole PR again: a RED only if those commits broke something or miss the issue.")
+
+def remote_review(n, pr, round1, start, get_verdict, sleep, clock, timeout_s=3600, poll_s=60, ended=None, task=None):
     """#134: the reviewer as a cloud session; get_verdict() = remote.review_status of this round. -> (comment, VERDICT line) like agent(); '' line = none."""
-    task = remote_review_prompt(n, pr, round1)
+    task = task or remote_review_prompt(n, pr, round1)
     s = start(n, task, CFG.get("main_checkout", "."))
     for wait in REVIEW_START_RETRY_S:              # #322: a transient start failure (timeout) is retried, never a local reviewer
         if s.get("ok"): break
@@ -1372,15 +1478,20 @@ def pregen_note(res):
     return f" Note: voice pregen did not start ({res}); it is resumable, run it again later." if res.startswith("failed") else ""
 
 def log_to(log, text):
+    if not log: return
     try:
         with open(log, "a", encoding="utf-8") as f: f.write(text + "\n")
     except OSError: pass
 
 def ci_integrate(n, wt, log, over=None, sha=""):
     """CI-based integrate (#74): update the lane with main, push, wait for the PR checks, `gh pr merge --squash`. -> (rc, out) like integrate.sh:
-    0 merged, 2 conflict, 4 no PR, 5 push failed, 6 CI red after one rerun, 7 CI timeout / merge failed (blocked, real reason in out)."""
+    0 merged (or already merged), 2 conflict, 4 no PR, 5 push failed, 6 CI red after one rerun, 7 CI timeout / merge failed (blocked, real reason in out),
+    8 the head moved after the review with more than merges of main (#344: process() re-reviews the new head)."""
     pr, br = remote.pr_for(n, run=run)                           # #246: the head may be a cloud worker's claude/* branch
-    if not pr: return 4, "no open PR for issue #%d" % n
+    if not pr:
+        mpr, _ = remote.pr_for(n, run=run, state="merged")       # #344: already merged (by hand / auto-merge) = done, not blocked
+        if mpr: return 0, "PR #%s already merged" % mpr
+        return 4, "no open PR for issue #%d" % n
     if not sha: return 7, f"PR #{pr}: no reviewed head sha, refusing to merge"
     why = merge_refusal(gh("pr", "view", str(pr), "--json", "isDraft,labels", log=log)[1])
     if why:                                                      # #185: never auto-merge a draft / no-automerge / blocked PR
@@ -1413,17 +1524,28 @@ def ci_integrate(n, wt, log, over=None, sha=""):
         rc_, o_ = gh("pr", "merge", str(pr), "--squash", "--match-head-commit", sha, log=log)
         if rc_ == 0 or state() == "merged": return True          # #302: GitHub's auto-merge may have merged it a moment earlier
         why["merge"] = " ".join(o_.split())[:160]
-        return "conflict" if merge_conflict(o_) else False
+        return "moved" if head_modified(o_) else "conflict" if merge_conflict(o_) else False
     def mark():                                                  # #185: only reached after VERDICT PASS (process() calls us after the review loop)
         if refused(): return False
         rc_, o_ = gh("pr", "merge", str(pr), "--auto", "--squash", "--match-head-commit", sha, log=log)
         if rc_ == 0: return "auto"
         if auto_refused_clean(o_):                               # already green and clean: GitHub refuses --auto -> merge directly
             m = merge(); return "merged" if m is True else m
-        return "conflict" if merge_conflict(o_) else False
+        return "moved" if head_modified(o_) else "conflict" if merge_conflict(o_) else False
     def state():
         return pr_state(gh("pr", "view", str(pr), "--json", "state,mergeable", log=log)[1])
-    res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp, ended=over, mark=mark, state=state)
+    def git(a): return run(["git", *a], cwd=wt)
+    for _ in range(4):                                           # #344: the head moved after the PASS (a merge of main by the #262 resolver or the worker)
+        cur = gh("pr", "view", str(pr), "--json", "headRefOid", "-q", ".headRefOid", log=log)[1].strip()
+        if re.fullmatch(r"[0-9a-f]{40}", cur) and cur != sha:       # a gh error text is not a moved head
+            run(["git", "fetch", "-q", REMOTE, BRANCH, br], cwd=wt, log=log)
+            if head_moved(git, sha, cur, f"{REMOTE}/{BRANCH}") != "main":
+                disable_auto(pr, log)
+                return 8, f"HEAD MOVED after the review: {cur[:7]} has new commits since the reviewed {sha[:7]} that are not only merges of main; re-review"
+            log_to(log, f"[runner] #344: head {sha[:7]} -> {cur[:7]} is only a merge of main: counts as reviewed, waiting for CI on it")
+            sha = cur
+        res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp, ended=over, mark=mark, state=state)
+        if res[0] != "moved": break
     if res[0] == "ended": raise Ended("CI merge")
     if res[0] == "merged": return 0, "merged PR #%d" % pr
     disable_auto(pr, log)                                        # #185: not merged -> a later (unreviewed) push must not auto-merge
@@ -1552,7 +1674,7 @@ def process_locked(issue, where="local"):
             (d / "remote.json").write_text(json.dumps({"session": s.get("session", ""), "url": s.get("url", "")}), encoding="utf-8")
         def utc():
             return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        over = lambda: issue_over(n, started)                   # #234: every wait loop ends the run when the issue is closed / PR merged
+        over = lambda: fresh_self().issue_over(n, started)                   # #234: every wait loop ends the run when the issue is closed / PR merged
         def remote_question(res):                        # the session already posted it on the issue: park, the owner answers there (#135)
             if res.startswith("QUESTION:"): park_remote(n, res)
         def saved_session():
@@ -1568,12 +1690,12 @@ def process_locked(issue, where="local"):
             gh("issue", "comment", str(n), "--body", f"Runner: resuming at {step} (no new worker).")
         elif answer:                                       # #135: parked on a QUESTION, the owner answered: same session continues
             res = remote_resume(n, lane, "bug" in issue["labels"], saved_session(), answer, remote.send, remote.start,
-                                lambda: remote.status(n, since=started), time.sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over)
+                                lambda: fresh_remote().status(n, since=started), time.sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over)
             remote_question(res)
             out = res
         elif where == "remote":                          # #133: the cloud worker needs no worktree here; it is made after the review (resolve uses it, #134)
             try:
-                res = remote_worker(n, lane, "bug" in issue["labels"], remote.start, lambda: remote.status(n, since=started),
+                res = remote_worker(n, lane, "bug" in issue["labels"], remote.start, lambda: fresh_remote().status(n, since=started),
                                     time.sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over,
                                     comment=lambda b: gh("issue", "comment", str(n), "--body", b))
                 remote_question(res)
@@ -1613,7 +1735,7 @@ def process_locked(issue, where="local"):
                 rv = verdict = red0 or f"VERDICT: FIX see the last VERDICT comment on PR #{pr}"
             elif where == "remote":                  # #134: the reviewer is a cloud session too; its VERDICT is a PR comment
                 since = utc()
-                rv, verdict = remote_review(n, pr, red, remote.start, lambda: remote.review_status(pr, since=since), time.sleep, time.time, 3600, 60, ended=over)
+                rv, verdict = remote_review(n, pr, red, remote.start, lambda: fresh_remote().review_status(pr, since=since), time.sleep, time.time, 3600, 60, ended=over)
             else:
                 rv, verdict = agent(f"review-{n}" + ("" if rnd == 1 else f"-{rnd}"), review_prompt(n, pr, red), wt, READ_TOOLS,
                                     d / f"review{rnd}.log", "VERDICT:", n, "reviewer", rm, over=over)
@@ -1641,7 +1763,7 @@ def process_locked(issue, where="local"):
             red = text or rv[-1500:]
             if where == "remote":                  # #134: FIX goes back to the cloud worker session (or a new cloud fix session)
                 since = utc()
-                res = remote_fix(n, saved_session(), rv, remote.send, remote.start, lambda: remote.status(n, since=since), time.sleep, time.time,
+                res = remote_fix(n, saved_session(), rv, remote.send, remote.start, lambda: fresh_remote().status(n, since=since), time.sleep, time.time,
                                  3 * 3600, 60, on_start=save_session, ended=over, br=branch_of(n), model=fix_model(rnd, wm) if rnd >= FIX_ROUNDS else None)
                 remote_question(res)
             else:
@@ -1670,6 +1792,26 @@ def process_locked(issue, where="local"):
             o, r_ = agent(f"issue-{n}-resolve{rounds[0]}", ci_fix_prompt(n, files, branch_of(n)) if kind["ci"] else resolve_prompt(n, files, branch_of(n)), wt, WORKER_TOOLS, d / f"resolve{rounds[0]}.log", "RESULT:", n, "worker", wm, over=over)
             return r_.startswith("RESULT: DONE")
         outcome = integrate_with_resolve(integrate, resolve, 2)
+        if outcome[0] == "failed" and outcome[1] == 8:            # #344: new code after the PASS -> one quick cloud re-review of the new head, never STUCK for it
+            pr = find_pr(n)
+            new = gh("pr", "view", str(pr), "--json", "headRefOid", "-q", ".headRefOid")[1].strip() if pr else ""
+            if not new: raise Blocked(integrate_failure(outcome[1], outcome[2]))
+            stat(n, lane, "rereview")
+            since = utc()
+            rv, verdict = remote_review(n, pr, "", remote.start, lambda: fresh_remote().review_status(pr, since=since), time.sleep, time.time, 3600, 60,
+                                        ended=over, task=rereview_prompt(n, pr, reviewed["sha"], new))
+            (d / "rereview.out").write_text(redact(rv), encoding="utf-8")
+            kind_, text_, extra_ = parse_verdict(verdict)
+            if kind_ == "notes": post_polish(n, lane, pr, text_)
+            if kind_ == "purple":
+                ask_owner(n, pr, text_, extra_)
+                if extra_ != "merge-safe": raise Parked(f"owner question: {text_[:200]}")
+            if kind_ not in ("pass", "notes", "purple"):
+                disable_auto(pr, log)
+                raise Blocked(f"re-review of the moved head {new[:7]}: " + (verdict or "reviewer gave no VERDICT line"))
+            stat(n, lane, "review_pass", colour="rereview")
+            reviewed["sha"] = new
+            outcome = integrate_with_resolve(integrate, resolve, 2)
         if outcome[0] == "giveup":
             stat(n, lane, "blocked")
             files = outcome[1]
@@ -1890,6 +2032,9 @@ def run_pass():
     log_line(f"{now()} pass: started={sum(r == 'started' for _, r in results) if results else len(chosen)} stuck={len(stuck)} " + " ".join(f"#{n}:{r}" for n, r in results))
     for n, r in results: print(f"ISSUE {n}: {r}")
     return 0
+
+for _m in (remote, ghcache, sys.modules[__name__]):     # #364: the code this run started with; fresh() reloads when a file is newer
+    if getattr(_m, "_loaded_mtime", None) is None: _m._loaded_mtime = _file_mtime(_m)
 
 if __name__ == "__main__":
     sys.exit(main())

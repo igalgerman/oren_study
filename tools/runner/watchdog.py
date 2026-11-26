@@ -2,7 +2,7 @@
 Every minute it checks, deterministically:
   1. a worker/reviewer/intake window waiting for an answer (status blocked)  -> tells the orchestrator (once per new screen; also a worker whose last line is QUESTION:)
      and posts the question in the pinned issue 'Questions for the owner' (owner_q.py, #193; once per window+question); an owner reply there -> tells the orchestrator
-  1b. every open owner question -> ONE pinned window question-<n> (qwin.py, #220): Hebrew page (tools/ask) + phone push, first answer wins, relayed
+  1b. every open owner question (qwin.py, #220/#368): python starts the Hebrew page (tools/ask) and reads its answer; after 2 min a pinned window question-<n> sends the phone push; first answer wins, relayed
   2. a worker/reviewer that stopped without its RESULT:/VERDICT: line for 10 min -> tells the orchestrator
   3. free lanes + ready issues but no runner pass running                       -> starts a runner pass
   3b. a window waiting for the owner longer than park_minutes (the runner parks it itself; this is the fallback): issue gets blocked + ready-for-human, lane freed
@@ -14,6 +14,11 @@ Every minute it checks, deterministically:
       batch trigger: tells the inbox to run /batch once a day, and early when >= 8 ready P2/P3 issues share a lane
   5d. #282 parked.py, once an hour: closed batch -> its open members get ready-for-agent back; a polish list at 5 notes or 24 h -> ready-for-agent P3;
       later/manual 2 h+ with no owner question, run, PR or future date -> 'parked without owner question: #n' to the orchestrator; night report at retro_hour
+  5d. #280 stuck.py, every 10 min: an open issue with no live state (ready-for-agent, run, PR, open batch, owner question) for 6 h
+      -> ONE 'STUCK ISSUES' note to the orchestrator (it pushes the owner); an owner question 4 h old -> one more push,
+      24 h old -> its recommended option when it says 'skip is safe', else 'waiting for owner Nh' on the dashboard
+  5e. #241 due.py, every 10 min: an open issue's 'Due: YYYY-MM-DD HH:MM' passed -> one 'Due reached' comment, the orchestrator told,
+      label owner -> an owner question (popup)
   5d. #306 desks.py: keeps the two cloud sessions 'Oren inbox (cloud)' / 'Oren ask (cloud)' alive and every status_minutes
       writes the session links + dashboard.py --text into ONE pinned issue (edited in place, nothing committed)
   5e. #187 once a week: tools/test_garden.py (test trim proposal: ONE issue 'Test trim proposal (week N)'; it never deletes a test)
@@ -30,6 +35,7 @@ from pathlib import Path
 
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
+import ghauth     # #363: GitHub App token for the bots
 import runner as R   # config, gh(), select(), hc paths
 import owner_q as OQ # #193: the pinned 'Questions for the owner' issue
 
@@ -283,10 +289,10 @@ def observer_tick():
     import observer; observer.run_if_due()      # acting observer (observer.py)
 
 def ai_observer_tick():
-    import ai_observer; ai_observer.run_if_due(tell, log)   # #203: hourly AI check (thread; not reloaded: that would reset its never-two guard)
+    import ai_observer; ai_observer.run_if_due(tell, log)   # #203: hourly AI check (thread; its never-two guard survives a reload)
 
 def nightly_tick():
-    import nightly   # #219: not reloaded (that would reset its never-two guard)
+    import nightly   # #219 (its never-two guard survives a reload, #345)
     nightly.retro_if_due(tell, log)
     nightly.batch_tick(lambda t: R.hc("send", "inbox", t, timeout=30)[0], log)
     nightly.prune_if_due(log)   # #304
@@ -296,6 +302,15 @@ def parked_tick():
     """#282, once an hour: orphaned batch members / due polish lists get ready-for-agent; parked later/manual -> the orchestrator."""
     import parked
     parked.tick(tell=tell, log=log)
+
+def issues_stuck_tick():
+    """#280: no issue sits without a live state; owner questions re-pushed at 4 h, the 24 h rule."""
+    import stuck
+    stuck.tick(tell=tell, log=log)
+def due_tick():
+    """#241, every 10 min: a passed 'Due:' line in an open issue -> one 'Due reached' comment + the orchestrator (+ owner popup)."""
+    import due
+    due.tick(tell=tell, log=log)
 
 def desks_tick():
     import desks; desks.run_if_due(log)   # #306: cloud inbox + ask sessions, pinned links + live status (thread; its never-two lock survives a reload)
@@ -402,7 +417,7 @@ def alarm_tick():
         if t in new: _alarm["sent"][k] = now
     tell("IDLE ALARM (watchdog): " + " · ".join(new))
 
-KEEP = ("observer", "ai_observer", "nightly")   # #229: in-memory never-two guards: never reloaded (they use R in place, which is reloaded)
+KEEP = ()   # #345: empty; the never-two guards (observer/ai_observer/nightly `_running`, desks `_busy`) survive a reload
 
 def local_modules(here=None):
     """#300: names of the loaded modules that live in tools/runner (except watchdog itself / __main__)."""
@@ -503,19 +518,18 @@ def main():
 def loop(once):
     log("watchdog started")
     W = sys.modules[__name__]
-    st, force, seen = stamps(), False, set()
+    st, seen = stamps(), set()                # #345: the per-file stamps of the LAST clean reload
     while True:
         try:
             now = stamps()
-            if now != st or force:            # #300: a merged fix (any tools/runner file) or a half-updated tick: reload ALL, in dependency order, then watchdog.py
+            if now != st:                     # #300: a merged fix (any tools/runner file): reload ALL, in dependency order, then watchdog.py
                 reload_all(log)
                 W = reload_self(W); log("reloaded watchdog.py")
-                st, force = now, False        # only after a clean reload: a failed one is retried next tick
+                st = now                      # only after a clean reload: a failed one is retried next tick
             W.tick()
             _net["tick"] = 0
-        except AttributeError as e:           # #300: new code calling an old module: log once, full reload next tick
-            if repr(e) not in seen: seen.add(repr(e)); log(f"error: {e!r} (full reload)")
-            force = True
+        except AttributeError as e:           # #345: log once; no forced reload (that looped every tick); a real file change reloads
+            if repr(e) not in seen: seen.add(repr(e)); log(f"error: {e!r}")
         except Exception as e:
             k, alarm = net_streak(_net, "tick", repr(e))   # #304: a passing network/timeout error: quiet until NET_ALARM in a row
             if alarm: net_alarm("tick", f"error: {e!r}")
@@ -542,12 +556,15 @@ def tick():
         cleanup(all_ts)
         reap_tick(ts)       # #248
         stuck_tick(ts)
+        net_due_tick(ts)    # #364
         conflicts_tick(ts)  # #262
         observer_tick()
         ai_observer_tick()
         nightly_tick()
         parked_tick()       # #282
+        due_tick()          # #241
         garden_tick()       # #187
+        issues_stuck_tick() # #280
         desks_tick()
         sync_tick()
         alarm_tick()
@@ -611,6 +628,51 @@ def reap_tick(ts, now=None, gh=None, hc=None, say=None, holder=None):
         say(f"WATCHDOG (#248): closed run-{n} (issue #{n} is closed, the lane was held for nothing)")
         done.append((addr, n))
     return done
+
+NET_EVERY_S = 300
+_netq = {"at": 0.0}
+
+def net_tick(ts, now=None, gh=None, hc=None, say=None, events=None, find_pr=None):
+    """#364 safety net: a live run-<n> that waits on its worker (stats phase start/review_fix) while its PR has been quiet
+    R.NET_QUIET_MIN+ min with no VERDICT -> kill the run window, store 'resume at review' (#264 path) and give the issue
+    back to the queue (the next pass starts the review, no new worker). Once per PR head. -> [n]."""
+    import stats
+    now, gh, hc, say = now or time.time(), gh or R.gh, hc or R.hc, say or tell
+    events = stats.read_events(R.RUNS / "stats.jsonl") if events is None else events
+    find_pr = find_pr or R.find_pr
+    done = []
+    for t in ts:
+        m = re.match(r"^run-(\d+)$", t.get("name") or "")
+        if not m or t.get("state") != "live" or not t.get("address"): continue
+        n = int(m.group(1))
+        phase = R.run_phase(events, n)
+        if phase not in ("start", "review_fix"): continue
+        pr = find_pr(n)
+        if not pr: continue
+        rc, out = gh("pr", "view", str(pr), "--json", "number,state,isDraft,mergeable,headRefOid,createdAt,commits,comments")
+        try: pj = json.loads(out) if rc == 0 else {}
+        except ValueError: continue
+        if not R.net_due(pj, phase, now): continue
+        mark = R.RUNS / str(n) / "net_head"
+        try:
+            if mark.read_text(encoding="utf-8").strip() == pj.get("headRefOid", ""): continue
+        except OSError: pass
+        hc("kill", t["address"], timeout=30)
+        R.set_resume(n, "review")
+        mark.write_text(pj.get("headRefOid", ""), encoding="utf-8")
+        gh("issue", "edit", str(n), "--remove-label", "in-progress", "--add-label", "ready-for-agent")
+        gh("issue", "comment", str(n), "--body", f"Runner (watchdog #364): PR #{pr} quiet {R.NET_QUIET_MIN}+ min with no VERDICT while the run "
+           "still waited on its worker; the run is ended and the next pass resumes at review (no new worker).")
+        log(f"#364 run-{n}: PR #{pr} quiet, no VERDICT -> resume at review")
+        say(f"WATCHDOG (#364): run-{n} waited on a quiet PR #{pr}; resumed at review")
+        done.append(n)
+    return done
+
+def net_due_tick(ts, now=None):
+    now = now or time.time()
+    if now - _netq["at"] < NET_EVERY_S: return []
+    _netq["at"] = now
+    return net_tick(ts, now)
 
 def run_mtime(n):
     """Newest change in .runs/<n> (the dir and its files); None when there is no such dir."""
@@ -760,7 +822,8 @@ def ghcache_tick(start=None):
     if _GH_BUSY.is_set() or (c and time.time() - c.get("ts", 0) < 50): return False
     _GH_BUSY.set()
     def work():
-        try: ghcache.refresh(lambda cmd: R.run(cmd, timeout=120))
+        owner = (lambda cmd: R.run(cmd, env={ghauth.OWNER: "1"}, timeout=120)) if ghauth.app_cfg(R.CFG) else None   # #363: owner budget too
+        try: ghcache.refresh(lambda cmd: R.run(cmd, timeout=120), run_owner=owner)
         except Exception as e: log(f"gh cache refresh failed: {e}"[:300])      # old cache stays; readers fall back to gh when it is stale
         finally: _GH_BUSY.clear()
     (start or (lambda f: threading.Thread(target=f, daemon=True).start()))(work)

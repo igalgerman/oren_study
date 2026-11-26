@@ -507,7 +507,7 @@ assert "silent" in r.remote_fix(7, "s", "FIX x", lambda s, x: {"ok": True}, _st,
 assert r.remote_fix(7, "s", "FIX x", lambda s, x: {"ok": True}, _st, lambda: {"state": "question", "line": "QUESTION: a?"}, sl, lambda: 0) == "QUESTION: a?"
 # process_locked: remote issues use the cloud reviewer and cloud fix; local ones keep the herdr agent
 _pl = (r.HERE / "runner.py").read_text(encoding="utf-8").split("def process_locked", 1)[1].split("def close_windows", 1)[0]
-assert "remote.review_status(pr, since=since)" in _pl and "remote_fix(" in _pl and 'agent(f"review-{n}"' in _pl
+assert "fresh_remote().review_status(pr, since=since)" in _pl and "remote_fix(" in _pl and 'agent(f"review-{n}"' in _pl
 assert _pl.index('if where == "remote": prep_worktree()') > _pl.index("remote_fix(")          # worktree made after the last cloud fix
 print("ok #134 remote reviewer")
 # #175: voice pregen runs in the background AFTER the merge lock, one at a time, never blocking an issue
@@ -1203,5 +1203,15 @@ assert _ci_race("Pull request #104 was already merged", "MERGED")[0] == 0
 _res = _ci_race("GraphQL: Head branch was modified. Review and try the merge again.", "OPEN")
 assert _res[0] == 7 and "Head branch was modified" in _res[1], _res                     # the real gh text is in the reason
 print("ok #302 merge failures")
+# #344: no open PR but a merged one -> rc 0; no PR at all -> still 4
+def _ci_nopr(merged):
+    saved = r.gh, r.run, r.remote.pr_for
+    r.gh, r.run = (lambda *a, **k: (0, "")), (lambda *a, **k: (0, ""))
+    r.remote.pr_for = lambda n, run=None, state="open": (345, "x") if (state == "merged" and merged) else (None, None)
+    try: return r.ci_integrate(344, "wt", None, None, "abc")
+    finally: r.gh, r.run, r.remote.pr_for = saved
+assert _ci_nopr(True)[0] == 0 and "already merged" in _ci_nopr(True)[1]
+assert _ci_nopr(False)[0] == 4
+print("ok #344 already merged PR is done")
 assert _pregen_popens == [], _pregen_popens          # #325: no test path launched the real pregen.js
 print("ok #325 no real pregen under tests")

@@ -44,26 +44,40 @@ write("zz_low", "def a(): return 1\ndef new(): return 41\n", 10)
 W.reload_all(logs.append, d, keep=("zz_keep",))
 assert zz_top.c() == 84, zz_top.c()   # 41 + 41 + 2: the fixed file is loaded
 
-# --- the loop: a changed module reloads everything; an AttributeError is logged once and forces a full reload ---
+# --- #345, the loop: reload only when a file changed since the LAST reload; an AttributeError is logged once and
+# does NOT reload again and again (before: nightly was never reloaded -> prune_if_due missing -> full reload every tick)
 calls, reloads = [], []
 W.log = lambda m: calls.append(m)
 def fake_reload_all(log, here=None, keep=None):
-    reloads.append(1); return ["x"]
+    reloads.append(1); log("reloaded x.py"); return ["x"]
 W.reload_all = fake_reload_all
 W.reload_self = lambda w: w
+fake = {"a.py": 1.0, "b.py": 1.0}
+W.stamps = lambda here=None: dict(fake)
 n = [0]
 def tick():
     n[0] += 1
-    if n[0] in (1, 2): raise AttributeError("module 'remote' has no attribute 'cloud'")
+    if n[0] == 6: fake["b.py"] = 2.0                                  # one real change, seen by the next tick
+    if n[0] in (1, 2, 3): raise AttributeError("module 'nightly' has no attribute 'prune_if_due'")
     calls.append("ok")
 W.tick = tick
 def sleep(_):
-    if n[0] >= 4: raise SystemExit
+    if n[0] >= 10: raise SystemExit
 W.time.sleep = sleep
 try: W.loop(False)
 except SystemExit: pass
-errs = [m for m in calls if "no attribute 'cloud'" in m]
+errs = [m for m in calls if "prune_if_due" in m]
 assert len(errs) == 1, calls                                       # logged once, not every minute
-assert len(reloads) >= 1, reloads                                  # and it triggered a full reload
-assert calls.count("ok") == 2, calls
-print("ok full reload (#300)")
+assert len(reloads) == 1, reloads                                  # only the one real change reloaded (no loop)
+assert len([m for m in calls if m.startswith("reloaded")]) == 2, calls   # x.py + watchdog.py, once
+assert calls.count("ok") == 7, calls
+
+# --- #345: the never-two guards survive a reload, so no module has to be kept stale ---
+import importlib, nightly, observer, ai_observer
+for m in (nightly, observer, ai_observer):
+    g = m._running; g["v"] = True
+    importlib.reload(m)
+    assert m._running is g and m._running["v"] is True, m.__name__
+    g["v"] = False
+assert not W.KEEP, W.KEEP                                          # every tools/runner module picks up merged code
+print("ok full reload (#300, #345)")
