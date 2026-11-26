@@ -105,10 +105,13 @@ function sndRound(back,L0){const L=L0||level('snd',3);T.quiz({id:'snd-'+L,title:
 
 /* ===================== 7. SPELLING: hear a word, build it from letters ===================== */
 const FINAL={'ך':'כ','ם':'מ','ן':'נ','ף':'פ','ץ':'צ'};
+/* #54 the help button texts on the spelling screen */
+const SPH={next:'הָאוֹת הַבָּאָה',by:'אוֹת אַחֲרֵי אוֹת, מִיָּמִין לִשְׂמֹאל:',fin:'בְּסוֹף מִלָּה כּוֹתְבִים אוֹת סוֹפִית'};
+window.HELP_TEXTS=(window.HELP_TEXTS||[]).concat(Object.values(SPH));
 const spLen=(w,L)=>{const n=w.plain.length;return L===1?n<=3:L===2?n===4:n>=5;};
 function spell(back,L0){const L=L0||level('spell',3);const pool=shuffle(WD.filter(w=>spLen(w,L))).slice(0,6);let i=0,err=0,gems=0,lets=0;
   O.setScreen('sTal','meadow',back);const s=$('#sTal');
-  const run=()=>{const w=pool[i];const need=[...w.plain];let k=0,miss=0;T.hudT('כּוֹתְבִים מִלִּים',T.progressBar(i,pool.length));O.sayNow=T.spk(w.w);s.innerHTML='';lets+=need.length;
+  const run=()=>{const w=pool[i];const need=[...w.plain];let k=0,miss=0,HB=null;T.hudT('כּוֹתְבִים מִלִּים',T.progressBar(i,pool.length));O.sayNow=T.spk(w.w);s.innerHTML='';lets+=need.length;
     const card=h('div','prq tqc gp-sp',`<div class="qq">שׁוֹמְעִים וְכוֹתְבִים</div>${pic(w)}<div class="slots">${need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
     const pb=h('button','hintbtn',ICON.say+'<span>הַשְׁמַע</span>');pb.onclick=()=>sayW(w);card.appendChild(pb);s.appendChild(card);
     const extra=[];const last=need[need.length-1];if(L>1&&FINAL[last]&&!need.includes(FINAL[last]))extra.push(FINAL[last]);
@@ -118,12 +121,22 @@ function spell(back,L0){const L=L0||level('spell',3);const pool=shuffle(WD.filte
     s.appendChild(row);s.appendChild(fb);
     function tap(b){if(b.disabled||k>=need.length)return;const c=b.dataset.c;
       if(c===need[k]){const sl=card.querySelectorAll('.slot2')[k];sl.textContent=c;sl.classList.add('on');b.disabled=true;b.classList.add('ok');k++;miss=0;sfx.pop(k);fb.textContent='';row.querySelectorAll('.show').forEach(x=>x.classList.remove('show'));
-        if(k===need.length){const g=2;gems+=g;O.addGems(g,card);sfx.ok(i);O.floatText(card,'+2');card.querySelector('.slots').outerHTML=`<div class="bigw gp-done">${w.w}</div>`;sayW(w);
-          setTimeout(()=>{if(!card.isConnected)return;i++;if(i<pool.length)run();else{T.setKey(null);T.finishAct('spell-'+L,err,lets,gems,back,()=>spell(back,L));}},D(1500));}}
-      else{err++;miss++;sfx.no();b.classList.remove('shake');void b.offsetWidth;b.classList.add('shake');
-        if(k===need.length-1&&FINAL[need[k]]===c)fb.innerHTML=`בְּסוֹף מִלָּה כּוֹתְבִים <b>${need[k]}</b> (אוֹת סוֹפִית)`;
-        if(miss>=2){const t=[...row.children].find(x=>!x.disabled&&x.dataset.c===need[k]);if(t)t.classList.add('show');}}}
-    T.setKey(e=>{const c=T.TYPE&&T.TYPE.keyOf(e);if(!c||c===' ')return;const b=[...row.children].find(x=>!x.disabled&&x.dataset.c===c)||[...row.children].find(x=>!x.disabled);if(b&&b.dataset.c===c)b.click();else if(b){err++;miss++;sfx.no();}});
+        if(k===need.length)complete(HB&&HB.step?1:2);}
+      else wrong(b);}
+    const nextT=()=>k<need.length?[...row.children].find(x=>!x.disabled&&x.dataset.c===need[k]):null;
+    function complete(g){gems+=g;if(g){O.addGems(g,card);O.floatText(card,'+'+g);}sfx.ok(i);card.querySelector('.slots').outerHTML=`<div class="bigw gp-done">${w.w}</div>`;sayW(w);
+      setTimeout(()=>{if(!card.isConnected)return;i++;if(i<pool.length)run();else{T.setKey(null);T.finishAct('spell-'+L,err,lets,gems,back,()=>spell(back,L));}},D(g?1500:4200));}
+    function wrong(b){err++;miss++;sfx.no();if(b){b.classList.remove('shake');void b.offsetWidth;b.classList.add('shake');
+        if(k===need.length-1&&FINAL[need[k]]===b.dataset.c)fb.innerHTML=`בְּסוֹף מִלָּה כּוֹתְבִים <b>${need[k]}</b> (אוֹת סוֹפִית)`;}
+      if(miss>=2){if(HB&&!HB.step)HB.offer();else{const t=nextT();if(t)t.classList.add('show');}}}
+    /* #54 one help button: tap 1 = the next letter glows, tap 2 = the whole word letter by letter (a mistake, no gems) */
+    if(window.HELP&&HELP.button){HB=HELP.button(s,{before:fb,get ans(){const t=nextT();return t?[...row.children].indexOf(t):-1;},
+      clue:()=>{const t=nextT();if(!t)return '';t.classList.add('show');return `${SPH.next}: <b>${need[k]}</b>`;},
+      answer:()=>{if(k<need.length){err++;while(k<need.length){const t=nextT();if(t){t.disabled=true;t.classList.add('ok');}k++;}fb.textContent='';complete(0);}
+        const fin=FINAL[need[need.length-1]]?`<div>${SPH.fin}: <b>${need[need.length-1]}</b></div>`:'';
+        return `<div>${HELP.BT.ans}: <b class="hq-a">${w.w}</b></div><div class="hq-x">${SPH.by} ${need.join(' · ')}${fin}</div>`;}});
+      HB.wrong=()=>wrong(null);}
+    T.setKey(e=>{const c=T.TYPE&&T.TYPE.keyOf(e);if(!c||c===' ')return;const b=[...row.children].find(x=>!x.disabled&&x.dataset.c===c)||[...row.children].find(x=>!x.disabled);if(b&&b.dataset.c===c)b.click();else if(b)wrong(null);});
     window.__spell={get need(){return need;},get k(){return k;},row};
     setTimeout(()=>{if(card.isConnected)sayW(w);},D(350));};
   run();}
