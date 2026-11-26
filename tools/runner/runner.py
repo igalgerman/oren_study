@@ -1400,10 +1400,13 @@ def log_to(log, text):
 
 def ci_integrate(n, wt, log, over=None, sha=""):
     """CI-based integrate (#74): update the lane with main, push, wait for the PR checks, `gh pr merge --squash`. -> (rc, out) like integrate.sh:
-    0 merged, 2 conflict, 4 no PR, 5 push failed, 6 CI red after one rerun, 7 CI timeout / merge failed (blocked, real reason in out),
+    0 merged (or already merged), 2 conflict, 4 no PR, 5 push failed, 6 CI red after one rerun, 7 CI timeout / merge failed (blocked, real reason in out),
     8 the head moved after the review with more than merges of main (#344: process() re-reviews the new head)."""
     pr, br = remote.pr_for(n, run=run)                           # #246: the head may be a cloud worker's claude/* branch
-    if not pr: return 4, "no open PR for issue #%d" % n
+    if not pr:
+        mpr, _ = remote.pr_for(n, run=run, state="merged")       # #344: already merged (by hand / auto-merge) = done, not blocked
+        if mpr: return 0, "PR #%s already merged" % mpr
+        return 4, "no open PR for issue #%d" % n
     if not sha: return 7, f"PR #{pr}: no reviewed head sha, refusing to merge"
     why = merge_refusal(gh("pr", "view", str(pr), "--json", "isDraft,labels", log=log)[1])
     if why:                                                      # #185: never auto-merge a draft / no-automerge / blocked PR

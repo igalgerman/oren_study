@@ -1203,5 +1203,15 @@ assert _ci_race("Pull request #104 was already merged", "MERGED")[0] == 0
 _res = _ci_race("GraphQL: Head branch was modified. Review and try the merge again.", "OPEN")
 assert _res[0] == 7 and "Head branch was modified" in _res[1], _res                     # the real gh text is in the reason
 print("ok #302 merge failures")
+# #344: no open PR but a merged one -> rc 0; no PR at all -> still 4
+def _ci_nopr(merged):
+    saved = r.gh, r.run, r.remote.pr_for
+    r.gh, r.run = (lambda *a, **k: (0, "")), (lambda *a, **k: (0, ""))
+    r.remote.pr_for = lambda n, run=None, state="open": (345, "x") if (state == "merged" and merged) else (None, None)
+    try: return r.ci_integrate(344, "wt", None, None, "abc")
+    finally: r.gh, r.run, r.remote.pr_for = saved
+assert _ci_nopr(True)[0] == 0 and "already merged" in _ci_nopr(True)[1]
+assert _ci_nopr(False)[0] == 4
+print("ok #344 already merged PR is done")
 assert _pregen_popens == [], _pregen_popens          # #325: no test path launched the real pregen.js
 print("ok #325 no real pregen under tests")
