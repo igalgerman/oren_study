@@ -52,3 +52,17 @@ assert "Oversight: who watches the system" in pg and "STOPPED?" in pg     # obse
 assert "<b>Good:</b>" in pg and "AI assessment" in pg and "&lt;b&gt;x&lt;/b&gt;" in pg and "may be wrong" in pg
 m2["ai"] = None; assert "Not written yet" in D.page(m2)
 print("ok dashboard ai/oversight")
+# #136 cloud lanes: lanes line, one row per cloud lane, STALE, not in "Running now"
+ic = issues + [I(11, "OPEN", ["in-progress", "cloud", "P0"]), I(12, "OPEN", ["cloud"])]
+cl = [{"n": 11, "title": "t11", "state": "working", "line": "", "last": "2026-11-26T06:30:00Z", "stale": True, "pr": "", "session": "https://claude.ai/code/session_01A"},
+      {"n": 12, "title": "t12", "state": "done", "line": "RESULT: DONE", "last": "2026-11-26T07:50:00Z", "stale": False, "pr": "https://github.com/x/y/pull/201", "session": ""}]
+m3 = D.model(ic, prs, ev, now, "", cl)
+assert m3["lanes"] == f"local 1/{D.R.CFG.get('local_lanes', 3)} · cloud 2", m3["lanes"]
+assert [r["n"] for r in m3["running"]] == [1], m3["running"]
+t3 = D.text(m3)
+assert "Lanes: local 1/" in t3 and "cloud #11 t11 — working · last " in t3 and " · STALE · https://claude.ai/code/session_01A" in t3, t3
+assert "cloud #12 t12 — done" in t3 and "STALE" not in t3.split("cloud #12")[1].split("\n")[0], t3
+pg3 = D.page(m3)
+assert "Cloud lanes" in pg3 and '<a href="https://github.com/x/y/pull/201">PR</a>' in pg3 and ">session</a>" in pg3 and "STALE" in pg3
+assert "Cloud lanes" not in D.page(m)
+print("ok dashboard cloud")
