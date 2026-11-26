@@ -43,6 +43,7 @@ const shot = async (page, name) => { if (!process.env.SHOTS) return; fs.mkdirSyn
     window.HELP.cfg.idle = 600000; O4.playLevel(lv, [q(), q(), q()]);
     const hintBtn = [...document.querySelectorAll('#sPlay button')].some(x => /רֶמֶז/.test(x.textContent));
     const wrong = () => { const bx = document.querySelector('#sPlay .ans'); const box = O4.play; box.boxes[0].val = '5'; document.querySelector('#sPlay .key[data-k="go"]').click(); };
+    await new Promise(r => setTimeout(r, 450));   /* #436: taps in the first 400 ms of a new question are ignored */
     wrong(); await new Promise(r => setTimeout(r, 700)); const one = !!document.querySelector('.hlp');
     wrong(); await new Promise(r => setTimeout(r, 700)); const two = !!document.querySelector('.hlp');
     return { hintBtn, one, two };
