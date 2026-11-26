@@ -1363,35 +1363,54 @@ function fullSpell(str){/* words the rules cannot know (Israeli spelling), also 
   return out.replace(/(^|[.!?:]\s*)([\u05D0-\u05EA]+)/g,(m,p1,w)=>p1+(CMD[w]||w));}
 window.__fullSpell=fullSpell;
 const withNikud=s=>String(s).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
-function browserSay(t,lang){if(!('speechSynthesis' in window))return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(lang==='en'?plain(t):fullSpell(t));u.lang=lang==='en'?'en-US':'he-IL';const v=lang==='en'?enVoice:heVoice;if(v)u.voice=v;u.rate=lang==='en'?.85:.92;u.pitch=1.05;u.onstart=()=>duck(true);u.onend=u.onerror=()=>duck(false);speechSynthesis.speak(u);}
+/* voice stats (#36): every sentence is counted per day by voice (google / claude / browser); every browser-voice use is one event with
+   its reason, the text, GV.ms and the host. Sent in ONE batch about once a minute and when the page is hidden (never per sentence) to
+   /api/tts/stats on the family site (from the Claude artifact too); the parent page is https://oren-game.pages.dev/api/tts/stats */
+const VS={n:{},ev:[],tm:0,own:null,wait:60000};
+const ARTIFACT=/claude\.ai|claudeusercontent/.test(location.host);
+const voiceWhy=()=>ARTIFACT?'artifact-host':/^https?:$/.test(location.protocol)&&!window.__noFamily?'status-failed':'no-site';
+function voiceLog(how,why,t,lang){try{const d=today(),n=VS.n[d]=VS.n[d]||{google:0,claude:0,browser:0};n[how]++;
+  if(how==='browser'){VS.ev.push({d,r:why,k:String(t||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,60),ms:GV.ms,h:location.host||location.protocol,l:lang==='en'?'en':'he'});if(VS.ev.length>100)VS.ev.shift();}
+  if(!VS.tm)VS.tm=setTimeout(voiceFlush,VS.wait);}catch(e){}}
+function voiceFlush(){clearTimeout(VS.tm);VS.tm=0;const days=VS.n,ev=VS.ev;if(!Object.keys(days).length)return;VS.n={};VS.ev=[];
+  if(!ARTIFACT&&(!/^https?:$/.test(location.protocol)||window.__noFamily))return;
+  const url=(ARTIFACT?'https://oren-game.pages.dev':'')+'/api/tts/stats',body=JSON.stringify({days,ev});
+  try{if(navigator.sendBeacon&&navigator.sendBeacon(url,body))return;}catch(e){}try{fetch(url,{method:'POST',body,mode:'no-cors',keepalive:true}).catch(()=>{});}catch(e){}}
+window.__vs=VS;window.__voiceFlush=voiceFlush;
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')voiceFlush();});addEventListener('pagehide',voiceFlush);
+function browserSay(t,lang,why){if(!('speechSynthesis' in window))return;voiceLog('browser',why||voiceWhy(),t,lang);speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(lang==='en'?plain(t):fullSpell(t));u.lang=lang==='en'?'en-US':'he-IL';const v=lang==='en'?enVoice:heVoice;if(v)u.voice=v;u.rate=lang==='en'?.85:.92;u.pitch=1.05;u.onstart=()=>duck(true);u.onend=u.onerror=()=>duck(false);VS.own=u;speechSynthesis.speak(u);}
 /* Google voice on the family website: one fixed voice on every device (chosen by the parents in blind tests),
    each sentence made in advance by cf/tools/pregen.js and cached by the server */
 const GVOICE='he-IL-Chirp3-HD-Kore',GRATE=0.9;
-const GV={ok:false,audio:null,ver:0,pending:false,wait:null,ms:8000};/* ver: the voice-fix version from the server; part of every audio URL so fixed sentences are fetched again. pending/wait: the status check is still running (#36) */
-GV.wait=(async()=>{if(!/^https?:$/.test(location.protocol)||/claude\.ai|claudeusercontent/.test(location.host)||window.__noFamily)return;
-  GV.pending=true;
-  for(let i=0;i<3&&!GV.ok;i++){/* a slow or failed first try must not leave Oren on the browser voice for the whole visit */
+const GV={ok:false,audio:null,ver:0,pending:false,wait:null,ms:8000,at:0,again:20000,site:/^https?:$/.test(location.protocol)&&!ARTIFACT&&!window.__noFamily};/* ver: the voice-fix version from the server; part of every audio URL so fixed sentences are fetched again. pending/wait: the status check is still running (#36) */
+GV.check=async n=>{GV.pending=true;
+  for(let i=0;i<n&&!GV.ok;i++){/* a slow or failed first try must not leave Oren on the browser voice for the whole visit */
     try{const r=await fetch('/api/tts/status',{cache:'no-store'});GV.ok=r.ok;try{const j=await r.json();GV.ver=+j.ver||0;}catch(e){}}catch(e){}
-    if(!GV.ok&&i<2)await new Promise(r=>setTimeout(r,1500));}
-  GV.pending=false;})();
+    if(!GV.ok&&i<n-1)await new Promise(r=>setTimeout(r,1500));}
+  GV.at=Date.now();GV.pending=false;};
+GV.wait=GV.site?GV.check(3):Promise.resolve();
 window.__gv=GV;
 const GEN={v:'en-US-Chirp3-HD-Despina',r:0.85};/* English: one fixed Google voice too, chosen by the parents */
 const useGoogle=lang=>(lang==='he'||lang==='en')&&GV.ok;
 function googleSay(t,lang,again){const en=lang==='en';try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}try{speechSynthesis.cancel();}catch(e){}
   const url='/api/tts?t='+encodeURIComponent((en?plain(t):fullSpell(t)).slice(0,400))+'&v='+(en?GEN.v:GVOICE)+'&r='+(en?GEN.r:GRATE)+'&k='+GV.ver;
   const a=new Audio(url);GV.audio=a;let go=false;
-  const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;try{a.pause();}catch(e){}GV.audio=null;if(!again){logIssue('voice',(why||'stop')+' (retry)');googleSay(t,lang,1);return;}browserSay(t,en?'en':'he');if(why)logIssue('voice',why);};
+  const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;try{a.pause();}catch(e){}GV.audio=null;
+    if(!again&&why!=='no-audio'&&why!=='blocked'){logIssue('voice',why+' (retry)');googleSay(t,lang,1);return;}browserSay(t,en?'en':'he',why);if(why!=='blocked')logIssue('voice',why);};
   const tm=setTimeout(()=>{if(!go)fall('timeout');},GV.ms);/* the browser voice only after a retry and a long wait (#36) */
-  a.onplaying=()=>{go=true;clearTimeout(tm);};a.onplay=()=>duck(true);a.onended=()=>{duck(false);if(GV.audio===a)GV.audio=null;};
-  a.onerror=()=>fall('error');a.play().catch(e=>fall(e&&e.name==='NotAllowedError'?null:'error'));}
+  a.onplaying=()=>{if(!go)voiceLog('google','',t,lang);go=true;clearTimeout(tm);};a.onplay=()=>duck(true);a.onended=()=>{duck(false);if(GV.audio===a)GV.audio=null;};
+  a.onerror=()=>fall(a.error&&a.error.code===4?'no-audio':'audio-error');/* 4: not audio, e.g. the server answered 429/502 (not made yet) */
+  a.play().catch(e=>fall(e&&e.name==='NotAllowedError'?'blocked':e&&e.name==='NotSupportedError'?'no-audio':'audio-error'));}
 function say(t,lang){if(!t||window.__fast)return;const stamp=window.__autoSaid=Date.now();lang=lang||'he';
   if(GV.pending){const g=GV.wait;g.then(()=>{if(window.__autoSaid===stamp)say(t,lang);});return;}
+  if(!GV.ok&&GV.site&&Date.now()-GV.at>=GV.again)GV.wait=GV.check(1);/* the status failed earlier: check again in the background, the next sentences get Google back */
   if(useGoogle(lang)){googleSay(t,lang);return;}
   if(useClaude(lang)){try{speechSynthesis.cancel();}catch(e){}const txt=(lang==='he'?withNikud(t):plain(t)).slice(0,1900);
-    TTS.ns.speak(txt,{language:lang,rate:lang==='en'?.9:.95}).catch(e=>{const c=e&&(e.code||e.reason);if(c==='not_granted'||c==='unavailable'){TTS.blocked=true;return;}if(c==='stopped')return;browserSay(t,lang);});return;}
+    TTS.ns.speak(txt,{language:lang,rate:lang==='en'?.9:.95}).then(()=>voiceLog('claude','',t,lang)).catch(e=>{const c=e&&(e.code||e.reason);if(c==='not_granted'||c==='unavailable'){TTS.blocked=true;return;}if(c==='stopped')return;browserSay(t,lang);});return;}
   browserSay(t,lang);}
 window.__tts=TTS;
-if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pickVoice;setTimeout(pickVoice,1500);}else $('#voiceNote').hidden=false;
+if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pickVoice;setTimeout(pickVoice,1500);
+  try{const ss=speechSynthesis,sp=ss.speak.bind(ss);ss.speak=u=>{if(u&&u!==VS.own)voiceLog('browser','direct-call',u.text,/^en/i.test(u.lang||'')?'en':'he');VS.own=null;return sp(u);};}catch(e){}}else $('#voiceNote').hidden=false;
 /* auto-read: when a screen, story panel, lesson step or question sets its instruction (sayNow), it is read once by
    itself after the screen settles (300 ms). Skipped when something was already said meanwhile, on parent screens, when the
    parents turned it off, and while reading practice wants Oren to read first (window.__noAuto, set by reading.js). 🔊 replays. */

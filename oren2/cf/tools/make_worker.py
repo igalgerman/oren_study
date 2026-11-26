@@ -155,7 +155,7 @@ async function diag(req,env,u){
    plus a monthly character cap far below Google's free tier. */
 const TTS_CAP=250000;const GAME_VOICE='he-IL-Chirp3-HD-Kore',GAME_RATE=0.9;const VOICES=/^(he-IL-((Standard|Wavenet)-[A-D]|Chirp3-HD-[A-Za-z]+)|en-US-Chirp3-HD-[A-Za-z]+)$/;
 async function sha(t){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');}
-async function tts(req,env,u){if(!env.GOOGLE_TTS_KEY)return new Response('{"ok":false,"why":"no key"}',{status:503,headers:JH});
+async function tts(req,env,u){if(u.pathname==='/api/tts/stats')return vstats(req,env,u);if(!env.GOOGLE_TTS_KEY)return new Response('{"ok":false,"why":"no key"}',{status:503,headers:JH});
  if(u.pathname==='/api/tts/status')return J({ok:true,ver:await ttsVer(env),d1:!!env.DB});/* the game adds &k=ver to its audio URLs: a bump = fresh audio everywhere */
  if(u.pathname==='/api/tts/ver'&&req.method==='POST'){const v=(await ttsVer(env,true))+1;await kvPut(env,'ttsver',String(v));verV=v;verAt=Date.now();return J({ok:true,ver:v});}
  if(u.pathname==='/api/tts/gm'){if(!env.GEMINI_KEY)return new Response('{"ok":false,"why":"no GEMINI_KEY"}',{status:503,headers:JH});const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',{headers:{'x-goog-api-key':env.GEMINI_KEY}});const j=await r.json();return new Response(JSON.stringify((j.models||[]).map(m=>m.name).filter(n=>/gemini/.test(n))),{status:r.status,headers:JH});}
@@ -281,6 +281,8 @@ const monthKey=()=>'ttsuse:'+new Date().toISOString().slice(0,7);
    written once per batch (pregen, queue) and at most every 5th single sentence. When it is used up /api/tts answers 429
    and the game plays the browser voice for audio that is not made yet. */
 const dayBudget=env=>+env.TTS_DAY_BUDGET||600;
+const GAME_SHARE=100;/* #36: the background (queue, pregen) stops this many before the budget, so a sentence the game meets is still made */
+const bgBudget=env=>dayBudget(env)-GAME_SHARE;
 const dayKey=()=>'ttsday:'+new Date().toISOString().slice(0,10);
 const dayUsed=async env=>+(await kvGet(env,dayKey()))||0;
 const dayPut=(env,n)=>kvPut(env,dayKey(),String(n),{expirationTtl:172800});
@@ -348,7 +350,7 @@ async function pregen(req,env){if(req.method!=='POST')return new Response('{"err
  for(const x of L){const c=qClean(x);if(c==null){out.push(typeof x==='string'||!x.t.trim()?'empty':'bad voice');continue;}const i=qItem(c),text=i[0],voice=i[1],rate=+i[2];
   const key=await ttsKey(voice,rate,text);
   if(await kvGet(env,key,'arrayBuffer')){out.push('hit');continue;}
-  if(du+made>=dayBudget(env)){out.push('budget');continue;}
+  if(du+made>=bgBudget(env)){out.push('budget');continue;}
   if(used+text.length>TTS_CAP){out.push('cap');continue;}
   const bin=await synth(env,voice,rate,text);if(!bin.length){out.push('google '+bin.status);continue;}
   await kvPut(env,key,bin);used+=text.length;made++;out.push('new');}
@@ -356,6 +358,30 @@ async function pregen(req,env){if(req.method!=='POST')return new Response('{"err
  if(made)await dayPut(env,du+made);
  return new Response(JSON.stringify({ok:true,res:out,used,cap:TTS_CAP}),{headers:JH});}
 const J=(o,s)=>new Response(JSON.stringify(o),{status:s||200,headers:JH});
+/* #36 voice stats: the game counts every spoken sentence per day by voice (google / claude / browser) and records each use of the
+   browser voice with its reason; it POSTs them in one batch (a beacon, text/plain, also from the Claude artifact) about once a minute.
+   Kept per day in 'vstat:YYYY-MM-DD' = {n:{google,claude,browser},r:{reason:n},ev:[last 50]}. GET = the parent's page, ?json = data. */
+const VS_WHY=/^(status-failed|artifact-host|no-site|timeout|audio-error|no-audio|blocked|direct-call)$/,VS_DAY=/^\\d{4}-\\d\\d-\\d\\d$/,VS_HOW=['google','claude','browser'];
+const esc=x=>String(x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
+async function vstats(req,env,u){const bad=()=>J({error:'bad request'},400);
+ if(req.method==='POST'){const t=await req.text();if(t.length>30000)return J({error:'too big'},413);let o;
+  try{o=JSON.parse(t);if(!o||!o.days||typeof o.days!=='object'||Array.isArray(o.days)||Object.keys(o.days).length>3||(o.ev!=null&&(!Array.isArray(o.ev)||o.ev.length>100)))throw 0;}catch(e){return bad();}
+  const add={},day=d=>add[d]=add[d]||{n:{google:0,claude:0,browser:0},r:{},ev:[]};
+  for(const [d,c] of Object.entries(o.days)){if(!VS_DAY.test(d)||!c||typeof c!=='object')return bad();const x=day(d);
+   for(const k of VS_HOW){const v=c[k]==null?0:+c[k];if(!Number.isInteger(v)||v<0||v>5000)return bad();x.n[k]+=v;}}
+  for(const e of o.ev||[]){if(!e||!VS_DAY.test(String(e.d))||!VS_WHY.test(String(e.r)))return bad();const x=day(e.d);x.r[e.r]=(x.r[e.r]|0)+1;
+   x.ev.push({at:Date.now(),r:e.r,k:String(e.k||'').slice(0,60),ms:+e.ms|0,h:String(e.h||'').slice(0,60),l:e.l==='en'?'en':'he'});}
+  for(const [d,x] of Object.entries(add)){const k='vstat:'+d;let s=null;try{s=JSON.parse(await kvGet(env,k));}catch(e){}if(!s||!s.n)s={n:{google:0,claude:0,browser:0},r:{},ev:[]};
+   for(const h of VS_HOW)s.n[h]=(s.n[h]|0)+x.n[h];for(const [r,n] of Object.entries(x.r))s.r[r]=(s.r[r]|0)+n;s.ev=s.ev.concat(x.ev).slice(-50);
+   await kvPut(env,k,JSON.stringify(s),{expirationTtl:90*86400});}
+  return new Response('{"ok":true}',{headers:{...JH,'access-control-allow-origin':'*'}});}
+ if(req.method!=='GET')return J({error:'method'},405);
+ const L=[];for(let i=-1;i<14;i++){const d=new Date(Date.now()-i*864e5).toISOString().slice(0,10);let s=null;try{s=JSON.parse(await kvGet(env,'vstat:'+d));}catch(e){}
+  if(!s||!s.n)continue;const total=VS_HOW.reduce((a,h)=>a+(s.n[h]|0),0);L.push({d,total,browserPct:total?Math.round(1000*(s.n.browser|0)/total)/10:0,...s});}
+ if(u.searchParams.has('json'))return J(L);
+ const rows=L.map(x=>'<tr><td>'+x.d+'</td><td><b>'+x.browserPct+'%%</b></td><td>'+x.total+'</td><td>'+(x.n.google|0)+'</td><td>'+(x.n.browser|0)+'</td><td>'+(x.n.claude|0)+'</td><td>'+Object.entries(x.r).map(([r,n])=>esc(r)+' ×'+n).join(', ')+'</td></tr>').join('');
+ const ev=L.flatMap(x=>x.ev.map(e=>({d:x.d,...e}))).slice(0,60).map(e=>'<tr><td>'+e.d+'</td><td>'+esc(e.r)+'</td><td dir="rtl">'+esc(e.k)+'</td><td>'+esc(e.h)+'</td><td>'+(e.ms|0)+'</td></tr>').join('');
+ return new Response('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Voice stats</title><style>body{font:15px system-ui,sans-serif;margin:16px;background:#fff;color:#222}table{border-collapse:collapse;margin:8px 0 20px}td,th{border:1px solid #ccc;padding:4px 8px;text-align:left}.sc{overflow-x:auto}</style></head><body><h1>Game voice: Google vs browser</h1><p>Per day: sentences spoken and how many by the Google game voice, Claude&#39;s voice and the browser (backup) voice, with the reasons for the browser voice.</p><div class="sc"><table><tr><th>Day</th><th>Browser share</th><th>Sentences</th><th>Google</th><th>Browser</th><th>Claude</th><th>Reasons</th></tr>'+(rows||'<tr><td colspan="7">No data yet</td></tr>')+'</table></div><h2>Latest browser-voice uses</h2><div class="sc"><table><tr><th>Day</th><th>Reason</th><th>Sentence</th><th>Host</th><th>Wait ms</th></tr>'+ev+'</table></div></body></html>',{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store'}});}
 /* Automatic pregen queue (no cron, no person): cf/tools/pregen.js POSTs the sentences the server does not have yet
    (JSON array of texts, or {t,v,r}) to /api/tts/queue. Ordinary visits (the page, /api/save) then make a few in the
    background with ctx.waitUntil: at most QN new per batch, a batch at most every QGAP ms (Google: 20 a minute, shared
@@ -385,7 +411,7 @@ async function qRun(env){if(!env.GOOGLE_TTS_KEY)return;const now=Date.now();if(n
  for(const x of s.q){if(made>=QN||s.n>=QDAY||looked>=4*QN)break;looked++;const i=qItem(x),t=i[0],v=i[1],r=+i[2];
   const key=await ttsKey(v,r,t);
   if(await kvGet(env,key,'arrayBuffer')){done.add(qId(x));continue;}
-  if(du+made>=dayBudget(env)||used+t.length>TTS_CAP)break;
+  if(du+made>=bgBudget(env)||used+t.length>TTS_CAP)break;
   const bin=await synth(env,v,r,t);if(!bin.length){if(bin.status===400)done.add(qId(x));else break;continue;}/* 400: Google will never make it */
   await kvPut(env,key,bin);used+=t.length;made++;s.n++;done.add(qId(x));}
  if(used!==u0)await kvPut(env,month,String(used),{expirationTtl:60*60*24*62});
