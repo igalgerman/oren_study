@@ -124,17 +124,21 @@ async function api(req,env,id){if(!/^[a-f0-9]{32}$/.test(id))return new Response
   return new Response('{"ok":true}',{headers:JH});}
  return new Response('{"error":"method"}',{status:405,headers:JH});}
 /* /api/diag (#129): when all save retries fail, the game posts {fam,log,snap} (rolling sync log + DOM snapshot) for the orchestrator.
-   D1 table diag (kept 30 days); no D1 or D1 refuses (e.g. its write limit) = KV key diag:<time>. GET = newest 20 without snapshots, ?id= = one record. */
+   D1 table diag (kept 30 days); no D1 or D1 refuses (e.g. its write limit) = KV key diag:<time>. GET (needs the DIAG_KEY secret) = newest 20 without snapshots, ?id= = one record; at most 200 records are kept. */
 async function diag(req,env,u){
- if(req.method==='POST'){const t=await req.text();if(t.length>200000)return J({error:'too big'},413);let o;
+ if(req.method==='POST'){const t=await req.text();if(t.length>20000)return J({error:'too big'},413);let o;
   try{o=JSON.parse(t);if(!o||!isId(String(o.fam))||!Array.isArray(o.log)||typeof o.snap!=='string')throw 0;}catch(e){return J({error:'bad request'},400);}
-  const at=Date.now(),log=JSON.stringify(o.log.slice(-50));
+  const at=Date.now(),log=JSON.stringify(o.log.slice(-50)),fam=(await sha(String(o.fam))).slice(0,6);/* only a short hash of the family id is kept: the id itself is the save secret */
   if(env.DB)try{if(env.DB.exec)await env.DB.exec("CREATE TABLE IF NOT EXISTS diag(id INTEGER PRIMARY KEY AUTOINCREMENT,fam TEXT,at INTEGER,log TEXT,snap TEXT);");
-   const r=await env.DB.prepare('INSERT INTO diag(fam,at,log,snap) VALUES(?,?,?,?)').bind(o.fam,at,log,o.snap).run();
-   try{await env.DB.prepare('DELETE FROM diag WHERE at<?').bind(at-30*864e5).run();}catch(e){}
+   const r=await env.DB.prepare('INSERT INTO diag(fam,at,log,snap) VALUES(?,?,?,?)').bind(fam,at,log,o.snap).run();
+   try{await env.DB.prepare('DELETE FROM diag WHERE at<?').bind(at-30*864e5).run();await env.DB.prepare('DELETE FROM diag WHERE id NOT IN (SELECT id FROM diag ORDER BY id DESC LIMIT 200)').bind().run();}catch(e){}
    return J({ok:true,id:String(r&&r.meta&&r.meta.last_row_id||at)});}catch(e){}
-  try{const k='diag:'+at;await env.SAVES.put(k,JSON.stringify({fam:o.fam,at,log,snap:o.snap}),{expirationTtl:30*86400});return J({ok:true,id:k});}catch(e){return J({error:'store'},503);}}
+  try{const k='diag:'+at;await env.SAVES.put(k,JSON.stringify({fam,at,log,snap:o.snap}),{expirationTtl:30*86400});
+   try{const old=((await env.SAVES.list({prefix:'diag:'})).keys||[]).map(x=>x.name).sort().reverse().slice(200);for(const x of old)await env.SAVES.delete(x);}catch(e){}
+   return J({ok:true,id:k});}catch(e){return J({error:'store'},503);}}
  if(req.method!=='GET')return J({error:'method'},405);
+ const key=req.headers.get('x-admin-key')||u.searchParams.get('key')||'';/* GET = parent/admin only: env DIAG_KEY (a secret set in Cloudflare); unset = always refused */
+ if(!env.DIAG_KEY||key!==env.DIAG_KEY)return J({error:'unauthorized'},401);
  const id=u.searchParams.get('id');const out=x=>({id:String(x.id),fam:x.fam,at:x.at,log:JSON.parse(x.log||'[]'),snap:x.snap,snapLen:x.snapLen});
  if(id){let x=null;if(/^diag:\\d+$/.test(id)){const v=await env.SAVES.get(id);if(v)x={id,...JSON.parse(v)};}
   else if(env.DB&&/^\\d+$/.test(id))try{x=await env.DB.prepare('SELECT id,fam,at,log,snap FROM diag WHERE id=?').bind(+id).first();}catch(e){}

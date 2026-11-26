@@ -4,7 +4,7 @@ const path = require('path');
 (async () => {
   const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + n + (i ? ' — ' + i : ''));
   const m = await import(require('url').pathToFileURL(path.join(L.ROOT, 'cf', 'dist', '_worker.js')).href);
-  const kv = new Map(); const env = { SAVES: { get: async k => kv.get(k) || null, put: async (k, v) => { kv.set(k, v); }, list: async o => ({ keys: [...kv.keys()].filter(k => k.startsWith(o.prefix)).map(name => ({ name })) }) } };
+  const kv = new Map(); const env = { DIAG_KEY: 'sekret', SAVES: { get: async k => kv.get(k) || null, put: async (k, v) => { kv.set(k, v); }, delete: async k => { kv.delete(k); }, list: async o => ({ keys: [...kv.keys()].filter(k => k.startsWith(o.prefix)).map(name => ({ name })) }) } };
   const f = (u, o) => m.default.fetch(new Request('https://oren.test' + u, o), env);
   const id = 'ab'.repeat(16);
   const home = await f('/'); const html = await home.text();
@@ -30,10 +30,19 @@ const path = require('path');
     ok('diag: oversized report rejected', (await f('/api/diag', { method: 'POST', body: JSON.stringify({ ...D, snap: 'a'.repeat(210000) }) })).status === 413);
     const r = await f('/api/diag', { method: 'POST', body: JSON.stringify(D) }); const j = await r.json();
     ok('diag stored', r.status === 200 && j.ok && !!j.id, JSON.stringify(j));
-    const l = await (await f('/api/diag')).json();
-    ok('diag list for the orchestrator (log, no snapshot)', l.length === 1 && l[0].fam === id && l[0].log[0].st === 503 && l[0].snap === undefined && l[0].snapLen === D.snap.length, JSON.stringify(l));
-    const one = await (await f('/api/diag?id=' + encodeURIComponent(l[0].id))).json();
+    const H = { headers: { 'x-admin-key': 'sekret' } };
+    ok('diag GET without the key is refused (401)', (await f('/api/diag')).status === 401 && (await f('/api/diag?id=1')).status === 401 && (await f('/api/diag', { headers: { 'x-admin-key': 'wrong' } })).status === 401);
+    const noKey = await m.default.fetch(new Request('https://oren.test/api/diag', H), { ...env, DIAG_KEY: undefined });
+    ok('diag GET is refused when no key is configured', noKey.status === 401);
+    ok('diag GET also accepts ?key=', (await f('/api/diag?key=sekret')).status === 200);
+    ok('diag POST over 20 KB rejected', (await f('/api/diag', { method: 'POST', body: JSON.stringify({ ...D, snap: 'a'.repeat(21000) }) })).status === 413);
+    const l = await (await f('/api/diag', H)).json();
+    ok('diag list for the orchestrator (log, no snapshot)', l.length === 1 && l[0].fam.length === 6 && !JSON.stringify(l).includes(id) && l[0].log[0].st === 503 && l[0].snap === undefined && l[0].snapLen === D.snap.length, JSON.stringify(l));
+    const one = await (await f('/api/diag?id=' + encodeURIComponent(l[0].id), H)).json();
     ok('diag one record with its snapshot', one.snap === D.snap && one.log.length === 1, JSON.stringify(one).slice(0, 200));
+    for (let i = 0; i < 205; i++) kv.set('diag:' + (1000000000000 + i), '{}');
+    await f('/api/diag', { method: 'POST', body: JSON.stringify(D) });
+    ok('diag KV fallback keeps only the newest 200', [...kv.keys()].filter(k => k.startsWith('diag:')).length === 200);
     [...kv.keys()].filter(k => k.startsWith('diag:')).forEach(k => kv.delete(k)); }
   // Google voice: cache, game voice default, pregen (fake Google)
   env.GOOGLE_TTS_KEY = 'k'; const calls = []; const realFetch = globalThis.fetch;
@@ -230,12 +239,12 @@ const path = require('path');
     const T = { tts_audio: new Map(), saves: new Map(), meta: new Map() }; const kv2 = new Map();
     const tb = q => /tts_audio/.test(q) ? 'tts_audio' : /saves/.test(q) ? 'saves' : 'meta'; const DG = [];
     const DB = { prepare: q => /diag/.test(q) ? { bind: (...a) => ({
-      run: async () => { if (/^INSERT/.test(q)) DG.push({ id: DG.length + 1, fam: a[0], at: a[1], log: a[2], snap: a[3] }); return { meta: { last_row_id: DG.length } }; },
+      run: async () => { if (/^DELETE.*NOT IN/.test(q)) DG.splice(0, Math.max(0, DG.length - 200)); if (/^INSERT/.test(q)) DG.push({ id: DG.length + 1, fam: a[0], at: a[1], log: a[2], snap: a[3] }); return { meta: { last_row_id: DG.length } }; },
       first: async () => DG.find(x => x.id === +a[0]) || null,
       all: async () => ({ results: DG.slice().reverse().map(x => ({ id: x.id, fam: x.fam, at: x.at, log: x.log, snapLen: x.snap.length })) }) }) } : ({ bind: (...a) => ({
       first: async () => { const r = T[tb(q)].get(a[0]); return r === undefined ? null : r; },
       run: async () => { const t = tb(q); T[t].set(a[0], t === 'tts_audio' ? { bin: a[1] } : t === 'saves' ? { data: a[1] } : { v: a[1] }); return {}; } }) }) };
-    const env2 = { DB, SAVES: { get: async (k, t) => kv2.get(k) || null, put: async (k, v) => { kv2.set(k, v); } }, GOOGLE_TTS_KEY: 'k' };
+    const env2 = { DB, SAVES: { get: async (k, t) => kv2.get(k) || null, put: async (k, v) => { kv2.set(k, v); } }, GOOGLE_TTS_KEY: 'k', DIAG_KEY: 'sekret' };
     const g = (u, o) => m.default.fetch(new Request('https://oren.test' + u, o), env2);
     const id2 = 'cd'.repeat(16);
     ok('D1: save goes to D1, not KV', (await g('/api/save/' + id2, { method: 'PUT', body: JSON.stringify({ v: 4, gems: 3 }) })).status === 200 && JSON.parse(T.saves.get(id2).data).gems === 3 && kv2.size === 0);
@@ -248,8 +257,9 @@ const path = require('path');
     const v2 = await g('/api/tts?t=' + encodeURIComponent('דִּין') + '&r=0.9');
     ok('D1: second request is a D1 hit', v2.status === 200 && calls.length === nc2 + 1 && Buffer.from(await v2.arrayBuffer()).toString().startsWith('MP3'));
     const dr = await g('/api/diag', { method: 'POST', body: JSON.stringify({ fam: id2, log: [{ t: 1, ep: 'PUT /api/save', st: 503, rt: 4, e: 'store' }], snap: '<body>y</body>' }) });
-    ok('D1: diag record goes to the diag table', dr.status === 200 && DG.length === 1 && DG[0].fam === id2 && JSON.parse(DG[0].log)[0].st === 503 && kv2.size === k0);
-    const dl = await (await g('/api/diag')).json(); const d1 = await (await g('/api/diag?id=' + dl[0].id)).json();
+    ok('D1: diag record goes to the diag table', dr.status === 200 && DG.length === 1 && DG[0].fam.length === 6 && DG[0].fam !== id2 && JSON.parse(DG[0].log)[0].st === 503 && kv2.size === k0);
+    const KH = { headers: { 'x-admin-key': 'sekret' } }; ok('D1: diag GET without key refused', (await g('/api/diag')).status === 401);
+    const dl = await (await g('/api/diag', KH)).json(); const d1 = await (await g('/api/diag?id=' + dl[0].id, KH)).json();
     ok('D1: diag list and one record read back', dl.length === 1 && dl[0].snapLen === 14 && d1.snap === '<body>y</body>', JSON.stringify(dl));
     const key = [...T.tts_audio.keys()][0]; const bytes = T.tts_audio.get(key).bin; T.tts_audio.clear(); kv2.set(key, bytes);
     const v3 = await g('/api/tts?t=' + encodeURIComponent('דִּין') + '&r=0.9');
