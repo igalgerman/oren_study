@@ -19,6 +19,7 @@ OWNER = R.REPO.split("/")[0]
 STATE = R.RUNS / "owner_q.json"
 GH = R.gh             # tests swap in a fake gh
 KEY_RE = re.compile(r"<!-- owner-q:([0-9a-f]{12}) -->")
+MARK = "<!-- owner_q -->"  # #211: every post of this tool (same GitHub account as the owner) -> never counted as his answer
 OPT_RE = re.compile(r"^\s*[❯>›]?\s*(\d+[.)]\s+\S.*)$")
 
 def key_of(window, question):
@@ -39,7 +40,7 @@ def body(key, window, question, tail=""):
     head = f"**{ref}**" + (f" (חלון `{window}`)" if window and window != ref else "") if ref else f"חלון `{window}`"
     q = re.sub(r"^QUESTION:\s*", "", question).strip() or ("(מחכה לתשובה) " + (tail.strip().splitlines() or [""])[-1].strip())
     opts = options_of(question, tail)
-    return (f"<!-- owner-q:{key} -->\n{head}\n\n**שאלה:** {q}\n"
+    return (f"{MARK}<!-- owner-q:{key} -->\n{head}\n\n**שאלה:** {q}\n"
             + ("".join(f"\n- {o}" for o in opts) + "\n" if opts else "")
             + "\nענה כאן בתגובה (או לאורקסטרטור). אחרי שהתשובה הועברה: `ANSWERED owner-q:" + key + "`")
 
@@ -127,11 +128,12 @@ def open_list(gh=None):
 def mark_answered(key, answer="", gh=None):
     gh = gh or GH
     n = find_issue(gh)
-    return bool(n) and gh("issue", "comment", str(n), "--body", f"ANSWERED owner-q:{key} {answer}".strip())[0] == 0
+    return bool(n) and gh("issue", "comment", str(n), "--body", f"ANSWERED owner-q:{key} {answer}".strip() + "\n" + MARK)[0] == 0
 
 def new_answers(cs, seen):
-    """Pure: comments after the first `seen` that are not question posts or ANSWERED lines = the owner's replies."""
-    return [c for c in cs[seen:] if not KEY_RE.search(c.get("body") or "") and not (c.get("body") or "").lstrip().startswith("ANSWERED")]
+    """Pure: comments after the first `seen` without the tool's marks (MARK, question key, ANSWERED line) = the owner's replies."""
+    tool = lambda b: MARK in b or KEY_RE.search(b) or b.lstrip().startswith("ANSWERED")
+    return [c for c in cs[seen:] if not tool(c.get("body") or "")]
 
 def answers_tick(tell, gh=None):
     """Watchdog: the owner replied in the questions issue -> tell the orchestrator (reply + open questions) so it relays the answer."""

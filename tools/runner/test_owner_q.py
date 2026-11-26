@@ -99,3 +99,14 @@ m["questions"] = OQ.open_questions(cs); m["ov"] = D.oversight("", now, now, "", 
 assert "Needs you (question): #9 לכמה גילאים?" in D.text(m) and cs[2]["url"] in D.text(m), D.text(m)
 pg = D.page(m); assert "Needs you: open questions" in pg and "לכמה גילאים?" in pg and f'href="{cs[2]["url"]}"' in pg
 print("ok owner_q open/answered/dashboard")
+# #211: the tool posts under the owner's own account -> its posts carry a hidden marker and are never counted as his answer
+told.clear()
+assert OQ.post("orchestrator", "QUESTION: NEEDS YOU: add the Cloudflare token as a GitHub secret", gh=g)
+assert OQ.mark_answered(qs[2]["key"], "done", gh=g)
+assert all(OQ.MARK in c["body"] for c in cs[-2:]), cs[-2:]
+OQ.answers_tick(told.append, gh=g); assert told == [], told
+cs.append({"body": OQ.MARK + "\nNEEDS YOU (blocks deploys): a tool note without a key", "url": "u", "reactionGroups": []})
+OQ.answers_tick(told.append, gh=g); assert told == [], told
+cs.append({"body": "כן, הוספתי", "url": "u", "reactionGroups": []})                      # a real owner reply (no marker)
+OQ.answers_tick(told.append, gh=g); assert len(told) == 1 and "כן, הוספתי" in told[0] and "Cloudflare" not in told[0].split("Open questions:")[0], told
+print("ok owner_q #211 own posts are not answers")
