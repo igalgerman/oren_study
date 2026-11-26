@@ -787,6 +787,19 @@ def waiting_reviews(prs, now):
         if t >= ORCH_WAIT_MIN: out.append(p["number"])
     return sorted(out)
 
+def run_owned(prs, ts, parked=frozenset()):
+    """Pure (#471): -> {PR numbers} whose issue has a LIVE run-<n> window that is not parked (issue labelled blocked).
+    Such a PR is the runner's (it reviews and merges it): the #225 nudge must not send the orchestrator to it (race #464/#245/#302).
+    PR -> issue: branch lane/<n>, or the body says Fixes/Closes/Refs #n (cloud claude/* branches)."""
+    import remote
+    live = {int(m.group(1)) for t in ts if t.get("state") == "live" for m in [re.match(r"^run-(\d+)$", t.get("name") or "")] if m}
+    live -= set(parked)
+    out = set()
+    for p in prs:
+        m = re.match(r"^lane/(\d+)$", p.get("headRefName") or "")
+        if (m and int(m.group(1)) in live) or any(remote.fixes(p.get("body"), n) for n in live): out.add(p["number"])
+    return out
+
 def orch_decision(state, waiting, st, now):
     """Pure: -> 'reset' | 'nudge' | 'escalate' | None. state = orchestrator terminal state; st = _orch-like dict."""
     idle = state in ("done", "idle", "blocked")
@@ -796,15 +809,20 @@ def orch_decision(state, waiting, st, now):
     if now - st["nudged"] >= ORCH_NUDGE_EVERY_MIN * 60: return "nudge"
     return None
 
-def orch_idle_tick(now=None):
+def orch_idle_tick(now=None, ts=None):
     now = now or time.time()
     d = R.hc_json("get", "orchestrator", "--json") or {}
     stt = d.get("status") or {}
     state = stt.get("state") if isinstance(stt, dict) else stt
     if not d or d.get("state") != "live": return                      # gone/finished: the #140 restart check handles it
-    rc, out = R.gh("pr", "list", "--state", "open", "--json", "number,isDraft,autoMergeRequest,statusCheckRollup,updatedAt,createdAt")
+    rc, out = R.gh("pr", "list", "--state", "open", "--json", "number,isDraft,autoMergeRequest,statusCheckRollup,updatedAt,createdAt,headRefName,body")
     if rc: return
-    waiting = waiting_reviews(json.loads(out), now)
+    prs = json.loads(out)
+    rc2, out2 = R.gh("issue", "list", "--state", "open", "--label", "blocked", "--limit", "200", "--json", "number")
+    try: parked = {i["number"] for i in json.loads(out2)} if rc2 == 0 else set()
+    except (ValueError, KeyError, TypeError): parked = set()
+    owned = run_owned(prs, windows() if ts is None else ts, parked)   # #471: a live run reviews/merges its own PR
+    waiting = [n for n in waiting_reviews(prs, now) if n not in owned]
     act = orch_decision(state, waiting, _orch, now)
     if act == "reset":
         _orch.update(nudged=0.0, first=0.0); return
