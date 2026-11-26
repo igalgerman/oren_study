@@ -34,9 +34,10 @@ def prompt(role, issue):
                 "For every new task, idea or bug: 1) search open AND closed issues first (one backlog, no duplicates): if it exists, comment on it "
                 "(or reopen it) instead of a new issue. 2) Otherwise create ONE issue in English, written the way docs/agents/skills/writing-for-agents.md says: "
                 "a short title, what and why, an ## Acceptance section (3-7 checkable points + the tests that prove them, and Out of scope); labels: one priority "
-                "(P0 urgent, P1, P2 normal, P3 low), a lane (pack for tooling and pack files; core only for the game core files in FLOW.md Lanes), "
+                "(P0 urgent, P1, P2 normal, P3 low), one tier (tier-1 = fixes / anything that blocks or breaks current work, the system or Oren's play today, "
+                "no label needed; tier-2 = new features and improvements the owner adds; tier-3 = nice-to-have, polish, later ideas; unsure -> tier-2), a lane (pack for tooling and pack files; core only for the game core files in FLOW.md Lanes), "
                 "the model label docs/agents/models.md says, ready-for-agent, and bug for a bug; add a line Blocked by: #n when it overlaps an open issue. "
-                "Kid-facing text in Hebrew with correct nikud. 3) Reply to him in short Hebrew: the issue number and one line of what you wrote. "
+                "Kid-facing text in Hebrew with correct nikud. 3) Reply to him in short Hebrew: the issue number, one line of what you wrote, and the tier with a one-line reason. "
                 f"A status question: answer it briefly from GitHub, or point him to '{ASK_TITLE}' (pinned issue #{issue}). "
                 "Never change code, never open a PR, never close issues. A PING from the PC is a keep-alive: reply ok and do nothing else.")
     return (f"You are '{ASK_TITLE}', a READ-ONLY helper for the owner of the Oren game backlog (repo igalgerman/oren_study). "

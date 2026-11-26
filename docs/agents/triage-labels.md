@@ -36,4 +36,5 @@ The owner's lane (panel "YOUR LANE") shows only `ready-for-human` and `needs-tri
 ## Priority labels
 
 `P0` urgent, `P1` high, `P2` normal (default when missing), `P3` low. Tiers (#437): `tier-1` (default, no label), `tier-2`, `tier-3` — a later round of work; the owner's 26 Nov game picks are `tier-2`.
+The inbox picks the tier of every new issue (like the P-level): `tier-1` (no label) = fixes / anything that blocks or breaks current work, the system or Oren's play today; `tier-2` = new features and improvements the owner adds; `tier-3` = nice-to-have, polish, later ideas; unsure -> `tier-2`. Its reply to the owner states the tier and a one-line reason.
 The runner starts `express`, then P0 (any tier), then tier 1→3, then bugs, then P1→P3, then the oldest; the panel shows `Pn` (and `T2`/`T3`) in UP NEXT.
