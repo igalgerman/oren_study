@@ -23,6 +23,8 @@ Every minute it checks, deterministically:
       writes the session links + dashboard.py --text into ONE pinned issue (edited in place, nothing committed)
   5d. #330 canary.py: every 6 h (and after a merge into tools/runner or tools/mods) ONE tiny canary issue runs the whole flow;
       a step past its deadline -> alarm to the orchestrator + inspector, NEEDS-ATTENTION on panel/dashboard; side paths hourly
+  5f. #293 pcload.py, every 2 min: CPU / free RAM / heavy process counts; an overload -> alarm with the top 3 processes by RAM and who
+      started them, to the orchestrator + inspector (once per 30 min per cause); .runs/pc.json for the panel/dashboard. Never kills.
   5e. #187 once a week: tools/test_garden.py (test trim proposal: ONE issue 'Test trim proposal (week N)'; it never deletes a test)
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
   7. #304: a network error (sync, or a tick that raised a network/timeout error) is retried next tick and only logged + told to the
@@ -317,6 +319,9 @@ def due_tick():
 def canary_tick():
     import canary; canary.tick(say=lambda t: (tell(t), R.hc("send", "inspector", t, timeout=30)), log=lambda m: log("canary: " + m))   # #330
 
+def pc_tick(ts):
+    import pcload; pcload.tick(ts, send=lambda w, m: R.hc("send", w, m, timeout=30), log=log)   # #293: reports only, never kills
+
 def desks_tick():
     import desks; desks.run_if_due(log)   # #306: cloud inbox + ask sessions, pinned links + live status (thread; its never-two lock survives a reload)
 
@@ -602,6 +607,7 @@ def tick():
         step("stuck_tick", stuck_tick, ts)
         step("net_due_tick", net_due_tick, ts) # #364
         step("conflicts_tick", conflicts_tick, ts)  # #262
+        step("pc_tick", pc_tick, ts)                # #293
         for name, fn in (("observer_tick", observer_tick), ("ai_observer_tick", ai_observer_tick), ("nightly_tick", nightly_tick),
                          ("parked_tick", parked_tick), ("due_tick", due_tick), ("garden_tick", garden_tick),   # #282 #241 #187
                          ("issues_stuck_tick", issues_stuck_tick), ("desks_tick", desks_tick), ("canary_tick", canary_tick),   # #280 #330

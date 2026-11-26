@@ -224,6 +224,18 @@ def conflicts_line(prs):
     """#262: open PRs GitHub reports as conflicting with main (written by the watchdog each tick)."""
     return f"PRs with conflicts: {len(prs)}" + (" (" + ", ".join(f"#{n}" for n in prs) + ")" if prs else "")
 
+def pc_line(d, now):
+    """#293: .runs/pc.json (pcload.py, written by the watchdog) -> 'PC: CPU x% · RAM y% free' (+ ' · ALARM'; '(stale)' when old)."""
+    import pcload
+    if not d.get("text"): return ""
+    if now - float(d.get("at", 0)) >= pcload.FRESH_S: return d["text"] + " (stale)"
+    return d["text"] + (" · ALARM" if d.get("alarm") else "")
+
+def pc_div(t, e=html.escape):
+    """#293: the page's PC line, red when alarmed."""
+    if not t: return ""
+    return f'<div class="sub"{' style="color:var(--bad)"' if "ALARM" in t else ""}>{e(t)}</div>'
+
 def text(m):
     s, tr, fc = m["by_state"], m["truth"], m["fc"]
     lines = [f"Open issues: {m['open']}  (P0 {m['by_prio']['P0']}, P1 {m['by_prio']['P1']}, P2 {m['by_prio']['P2']}, P3 {m['by_prio']['P3']}, no priority {m['by_prio']['-']})",
@@ -239,6 +251,7 @@ def text(m):
     d = m["last_deploy"]
     if m.get("github"): lines.append(m["github"])                     # #329: calls/min, graphql/core left, alarm < 20%
     if m.get("canary"): lines.append("Canary: " + m["canary"])          # #330: flow ok HH:MM | NEEDS-ATTENTION ...
+    if m.get("pc"): lines.append(m["pc"])                               # #293: PC: CPU x% · RAM y% free (· ALARM)
     lines.append("Last deploy: " + (f"{hhmm(d['ts'])} {'ok' if d.get('ok') else 'FAILED'}" if d else "no record yet") + f" · deploys 24 h: {tr['deploys_ok']} ok, {tr['deploys_fail']} failed")
     if tr["stuck"]: lines.append("Top stuck reasons (24 h): " + "; ".join(f"{k} ({len(v)})" for k, v in tr["stuck"][:3]))
     sl = m.get("stuck_lanes") or []     # #248: runs unchanged past stuck_hours and still stuck 30 min after the alarm
@@ -515,7 +528,7 @@ def page(m):
             f'<title>Oren game: status {hhmm(now)}</title><style>{CSS}</style></head><body><main>'
             f'<h1>Oren game: work status</h1><div class="sub">Updated {time.strftime("%a %d %b %H:%M", time.localtime(now))} (Israel time). '
             f'For fresh numbers run tools\\dashboard.cmd again.</div>'
-            f'{top}<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}{" · " + e(m["governor"]) if m.get("governor") else ""}</div>{f'<div class="sub">{e(m["github"])}</div>' if m.get("github") else ""}{f'<div class="sub">Canary: {e(m["canary"])}</div>' if m.get("canary") else ""}{qcard}{needs}{bottom}{timeline}{cloud}{_health_card(m)}{_ai_card(m)}'
+            f'{top}<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}{" · " + e(m["governor"]) if m.get("governor") else ""}</div>{f'<div class="sub">{e(m["github"])}</div>' if m.get("github") else ""}{f'<div class="sub">Canary: {e(m["canary"])}</div>' if m.get("canary") else ""}{pc_div(m.get('pc'), e)}{qcard}{needs}{bottom}{timeline}{cloud}{_health_card(m)}{_ai_card(m)}'
             f'<h2 class="more">More details</h2><div class="sub">Everything else is here. Click a line to open it.</div>'
             f'{lists}{recent}{truth}{charts}{speed}{_ov_card(m)}{how}</main></body></html>')
 
@@ -703,6 +716,7 @@ def gather():
     except Exception: m["desks"] = ""
     try: m["canary"] = json.loads((R.RUNS / "canary.json").read_text(encoding="utf-8")).get("text", "")   # #330 (written by canary.py)
     except Exception: m["canary"] = ""
+    import pcload; m["pc"] = pc_line(pcload.load(), now)    # #293 (written by the watchdog)
     return m
 
 def ai_tick(log=print):
