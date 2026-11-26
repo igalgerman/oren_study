@@ -7,6 +7,12 @@ never the paid API, never `claude -p` on the PC). Config: `ai_observer_where = "
   and sends new `OBSERVER:` lines to the orchestrator (6 h repeat filter, owner findings to #193). Silent 3 h -> one note.
 - `nightly.cloud_retro`: from `retro_hour` on it looks for the issue `Daily retro <date>` and writes the inspector handoff
   (`inspector_handoff`, outside the repo) and the ORCHESTRATOR.md handoff PR. None 2 h after `retro_hour` -> one note.
+- #525 (the triggers never ran, 27 Nov): no trigger-made observer comment for 3 h -> ONE owner note through `owner_q`
+  (also Telegram): 'cloud AI observer silent since HH:MM - log in again (/login) or check claude.ai/code -> Scheduled', at most
+  every 12 h. Until one trigger-made comment is seen, the watchdog itself starts the AI observer prompt below every hour as a
+  cloud job (`remote.launch`, window `cloud-observer`, no runner lane), and the retro prompt once a day when no
+  `Daily retro <date>` exists 2 h after `retro_hour` (window `cloud-retro`). A fallback run starts its comment / issue body
+  with the line `<!-- fallback #525 -->`, so it never counts as proof that the trigger works.
 
 Two scheduled tasks (fresh session per run, created once; manage them at claude.ai/code -> Scheduled):
 - `Oren AI observer (hourly)`: every hour. Prompt: "Follow docs/agents/cloud-tasks.md, section AI observer, in igalgerman/oren_study."

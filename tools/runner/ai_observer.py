@@ -7,7 +7,9 @@ The AI observer never edits, merges, labels or comments by itself.
 #289: `ai_observer_where = "cloud"` (default): the check runs as an hourly CLOUD scheduled task (docs/agents/cloud-tasks.md, the
 subscription, no claude on the PC). It posts its lines as a comment on the open issue labelled `ai-observer` ('AI observer (cloud)');
 the watchdog only relays the newest comment (REST `gh api .../comments?since=`) when unseen, through the same path (.last file, 6 h repeat filter, orchestrator, #193).
-Silent for SILENT_H h -> one note to the orchestrator. "local" = the old headless run on the PC.
+Silent for SILENT_H h -> one note to the orchestrator.
+#525: no trigger-made comment for 3 h -> one owner note (owner_q, Telegram), every 12 h at most; until one is seen the watchdog
+starts the observer prompt itself as an hourly cloud job (remote.launch, window cloud-observer; its comment starts FALLBACK_MARK). "local" = the old headless run on the PC.
 Usage: python tools/runner/ai_observer.py   (one local run now, prints the findings)
 """
 import json, re, shutil, subprocess, sys, threading, time
@@ -182,13 +184,54 @@ def relay(tell, log, now, gh=None, api=None):
         found = report(True, last.get("body"), tell, log, now, head="AI OBSERVER (hourly cloud task, read-only):")
         st = load_state()
     newest = max(_epoch(last.get("created_at")) if last else 0, _epoch(st.get("cloud_seen")))
-    st.setdefault("relay_since", now); save_state(st)             # the first relay is no 'silent' alarm
+    st.setdefault("relay_since", now)                               # the first relay is no 'silent' alarm
+    trig = [c.get("created_at") or "" for c in readable if FALLBACK_MARK not in (c.get("body") or "")]   # #525: made by the trigger
+    if trig:
+        st["proven"] = True; st["trigger_seen"] = max([st.get("trigger_seen", "")] + trig)
+    save_state(st)
     if now - max(newest, st.get("silent_told", 0), st["relay_since"]) >= SILENT_H * 3600:
         st["silent_told"] = now; save_state(st)
         tell(f"AI OBSERVER: the cloud scheduled task has been silent for {SILENT_H}+ h (no comment on the '{CLOUD_TITLE}' issue). "
              "Check the scheduled task (docs/agents/cloud-tasks.md).")
         log("ai observer (cloud): silent")
+    owner_note(now); fallback(now, log)                             # #525 (after the state writes above)
     return last
+
+# ---------- #525: the triggers never ran (no ai-observer issue at all on 27 Nov) ----------
+FALLBACK_MARK = "<!-- fallback #525 -->"   # the first line of a comment made by the runner's own fallback run (not the trigger)
+OWNER_SILENT_H, OWNER_REPEAT_H, FALLBACK_MIN = 3, 12, 60
+FALLBACK_PROMPT = ("Follow docs/agents/cloud-tasks.md, section AI observer, in igalgerman/oren_study. This is the runner's fallback "
+                   f"run (#525: the scheduled task does not run): make the first line of your comment exactly {FALLBACK_MARK}")
+OWNER_POST = None   # (window, question) -> owner_q.post; tests swap in a fake
+LAUNCH = None       # remote.launch; tests swap in a fake
+
+def owner_note(now):
+    """No trigger-made comment for OWNER_SILENT_H h (or none ever since the watchdog started relaying) -> ONE note to the owner
+    through owner_q (#193; qwin also sends it to Telegram, #440), at most every OWNER_REPEAT_H h."""
+    st = load_state()
+    since = _epoch(st.get("trigger_seen")) or st.get("relay_since", now)
+    if now - since < OWNER_SILENT_H * 3600 or now - st.get("owner_told", 0) < OWNER_REPEAT_H * 3600: return False
+    q = (f"QUESTION: cloud AI observer silent since {time.strftime('%H:%M', time.localtime(since))} - "
+         "log in again (/login) or check claude.ai/code -> Scheduled")
+    if OWNER_POST: OWNER_POST(f"ai-observer-{int(now)}", q)          # the window carries the time: a repeat is a new key, never deduped away
+    else:
+        import owner_q as OQ; OQ.post(f"ai-observer-{int(now)}", q)   # None = queued: owner_q posts it later, still told once
+    st = load_state(); st["owner_told"] = now; save_state(st)
+    return True
+
+def fallback(now, log):
+    """Until one trigger-made comment is seen (state 'proven'), start the observer prompt as a cloud job every FALLBACK_MIN
+    (remote.launch from the watchdog: returns at once, takes no runner lane). A failed start is retried at the next relay."""
+    st = load_state()
+    if st.get("proven") or now - st.get("fallback_at", 0) < FALLBACK_MIN * 60: return False
+    if LAUNCH: launch = LAUNCH
+    else:
+        import remote; launch = remote.launch
+    r = launch(0, FALLBACK_PROMPT, R.CFG.get("main_checkout", str(R.ROOT)), name="cloud-observer", model=MODEL, desk=True)
+    ok = bool((r or {}).get("ok"))
+    if ok: st = load_state(); st["fallback_at"] = now; save_state(st)
+    log("ai observer (cloud): fallback cloud run " + ("started" if ok else "could not start: " + str((r or {}).get("error", ""))[:150]))
+    return ok
 
 def run_if_due(tell, log, minutes=None, now=None, where=None, gh=None, api=None):
     """Watchdog hook, every tick. Starts a background run when due; never two at once; ai_observer_minutes = 0 = off. -> started?
