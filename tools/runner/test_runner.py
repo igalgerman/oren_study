@@ -92,6 +92,19 @@ _bz = [{"name": "run-38", "state": "live", "status": "", "marker": False},
 assert W.leftovers(_bz, closed={38}, blocked=set(), busy={38}) == []
 assert sorted(W.leftovers(_bz, closed={38}, blocked=set())) == ["issue-38", "run-38"]
 print("ok busy run kept")
+# #117 idle alarm: free lanes 15+ min with ready work, PR quiet 60+ min, blocked 2+ h
+import calendar as _c
+_now = _c.timegm((2026, 11, 26, 6, 0, 0, 0, 0, 0))
+_iss = [{"number": 5, "labels": ["blocked", "ready-for-human"], "updatedAt": "2026-11-26T03:00:00Z"},
+        {"number": 6, "labels": ["blocked"], "updatedAt": "2026-11-26T05:00:00Z"},
+        {"number": 7, "labels": ["in-progress"], "updatedAt": "2026-11-26T05:59:00Z"}]
+_prs = [{"number": 70, "title": "Observer v2", "updatedAt": "2026-11-26T04:30:00Z"}, {"number": 71, "title": "x", "updatedAt": "2026-11-26T05:30:00Z"}]
+_al = W.idle_alarms(_iss, _prs, _now, _now - 20 * 60, 3)
+assert [k for k, _ in _al] == ["free", "pr70", "bl5"], _al
+assert _al[0][1] == "2 lane(s) free for 20 min while work is ready" and _al[1][1].startswith("PR #70 has not moved for 90 min"), _al
+assert _al[2][1] == "#5 blocked for 3.0 h (waits for the owner)", _al
+assert [k for k, _ in W.idle_alarms(_iss, [], _now, _now - 5 * 60, 3)] == ["bl5"]   # free only 5 min: no alarm yet
+print("ok idle alarm")
 
 # regression: a finished run-2 next to a live run-2 must not close anything (the live one is working)
 assert W.leftovers([{"name": "run-2", "state": "finished"}, {"name": "run-2", "state": "live", "status": ""}], set(), set()) == []

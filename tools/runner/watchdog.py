@@ -10,7 +10,7 @@ Every minute it checks, deterministically:
 It never answers questions or presses keys in other windows; it only tells the orchestrator and starts the runner.
 Usage: python watchdog.py [--once]
 """
-import hashlib, importlib, json, re, shutil, subprocess, sys, time, threading
+import calendar, hashlib, importlib, json, re, shutil, subprocess, sys, time, threading
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -228,7 +228,58 @@ def sync_tick():
     if msg and msg != _sync["msg"]: log(msg)
     _sync["msg"] = msg
 
+PR_QUIET_MIN, BLOCKED_HOURS, FREE_MIN, ALARM_EVERY_MIN = 60, 2, 15, 60   # #117 idle alarm
+_alarm = {"last": 0.0, "free_since": None, "sent": {}}
+
+def _age_min(iso, now):
+    try: return (now - calendar.timegm(time.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S"))) / 60   # GitHub times are UTC
+    except (TypeError, ValueError): return 0
+
+def idle_alarms(issues, prs, now, free_since, max_parallel):
+    """Pure (#117): -> list of (key, text). issues: open, labels as names; prs: open (number, title, updatedAt);
+    free_since = epoch when 'free lane + startable work' was first seen (None = not now)."""
+    out = []
+    running = sum("in-progress" in i["labels"] for i in issues)
+    if free_since is not None and now - free_since >= FREE_MIN * 60:
+        out.append(("free", f"{max_parallel - running} lane(s) free for {int((now - free_since) / 60)} min while work is ready"))
+    for p in prs:
+        m = _age_min(p.get("updatedAt"), now)
+        if m >= PR_QUIET_MIN: out.append((f"pr{p['number']}", f"PR #{p['number']} has not moved for {int(m)} min ({p.get('title', '')[:50]})"))
+    for i in issues:
+        h = _age_min(i.get("updatedAt"), now) / 60
+        if "blocked" in i["labels"] and h >= BLOCKED_HOURS:
+            out.append((f"bl{i['number']}", f"#{i['number']} blocked for {h:.1f} h" + (" (waits for the owner)" if "ready-for-human" in i["labels"] else "")))
+    return out
+
+def alarms_once(now=None):
+    now = now or time.time()
+    rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
+    rc2, out2 = R.gh("pr", "list", "--state", "open", "--json", "number,title,updatedAt")
+    if rc or rc2: return None
+    issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
+    running = sum("in-progress" in i["labels"] for i in issues)
+    free = running < R.CFG["max_parallel"] and bool(R.select(issues, R.CFG["max_parallel"]))
+    if not free: _alarm["free_since"] = None
+    elif _alarm["free_since"] is None: _alarm["free_since"] = now
+    return idle_alarms(issues, json.loads(out2), now, _alarm["free_since"], R.CFG["max_parallel"])
+
+def alarm_tick():
+    """Every 10 min: idle alarms to the orchestrator (+ watchdog.log); the same alarm at most once an hour."""
+    now = time.time()
+    if now - _alarm["last"] < 600: return
+    _alarm["last"] = now
+    al = alarms_once(now) or []
+    new = [t for k, t in al if now - _alarm["sent"].get(k, 0) >= ALARM_EVERY_MIN * 60]
+    if not new: return
+    for k, t in al:
+        if t in new: _alarm["sent"][k] = now
+    tell("IDLE ALARM (watchdog): " + " · ".join(new))
+
 def main():
+    if "--alarms-once" in sys.argv:          # #117: one command: is anything idle or stuck?
+        sys.stdout.reconfigure(encoding="utf-8")
+        al = alarms_once()
+        print("could not read GitHub" if al is None else "\n".join(t for _, t in al) or "nothing idle or stuck"); return
     if "--observe-once" in sys.argv:
         sys.stdout.reconfigure(encoding="utf-8")
         print("\n".join(observer_once()) or "no problems"); print(OBS_LAST.read_text()); return
@@ -245,6 +296,7 @@ def main():
             cleanup(R.hc_json("ls", "--all", "--json").get("terminals", []) or ts)
             observer_tick()
             sync_tick()
+            alarm_tick()
         except Exception as e:
             log(f"error: {e!r}")
         if "--once" in sys.argv: return
