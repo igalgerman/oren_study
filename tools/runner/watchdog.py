@@ -17,6 +17,8 @@ Every minute it checks, deterministically:
   5d. #306 desks.py: keeps the two cloud sessions 'Oren inbox (cloud)' / 'Oren ask (cloud)' alive and every status_minutes
       writes the session links + dashboard.py --text into ONE pinned issue (edited in place, nothing committed)
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
+  7. #304: a network error (sync, or a tick that raised a network/timeout error) is retried next tick and only logged + told to the
+     orchestrator on the NET_ALARM-th in a row; nightly.prune_if_due removes .runs/<n> of issues closed > 24 h once a day
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
   4b. orchestrator / inbox / inspector terminal finished (#140)                -> removed by address and started again (recover.py commands)
 It never answers questions or presses keys in other windows; it only tells the orchestrator and starts the runner.
@@ -286,6 +288,7 @@ def nightly_tick():
     import nightly   # #219: not reloaded (that would reset its never-two guard)
     nightly.retro_if_due(tell, log)
     nightly.batch_tick(lambda t: R.hc("send", "inbox", t, timeout=30)[0], log)
+    nightly.prune_if_due(log)   # #304
     nightly.night_report_if_due(tell, log)   # #282
 
 def parked_tick():
@@ -296,14 +299,38 @@ def parked_tick():
 def desks_tick():
     import desks; desks.run_if_due(log)   # #306: cloud inbox + ask sessions, pinned links + live status (thread; its never-two lock survives a reload)
 
+# ---------- #304: network errors retry next tick, alarm only after NET_ALARM in a row ----------
+NET_ALARM = 3
+NET_RE = re.compile(r"could not resolve host|unable to access|failed to connect|connection (?:timed out|refused|reset)|"
+                    r"network is unreachable|temporary failure in name resolution|TimeoutExpired|timed out", re.I)
+_net = {}   # key -> network errors in a row
+
+def is_net_error(msg):
+    """Pure: True when a message looks like a passing network/timeout error."""
+    return bool(NET_RE.search(msg or ""))
+
+def net_streak(streaks, key, msg):
+    """(#304) -> (errors in a row, alarm now?). A network error counts up (alarm exactly at NET_ALARM); anything else resets."""
+    streaks[key] = streaks.get(key, 0) + 1 if is_net_error(msg) else 0
+    return streaks[key], streaks[key] == NET_ALARM
+
+def net_alarm(what, msg):
+    text = f"network error {NET_ALARM} in a row ({what}): {msg[:200]}"
+    log(text); tell("WATCHDOG: " + text)
+
 SYNC_MIN = int(R.CFG.get("sync_minutes", 3))
 _sync = {"last": 0.0, "msg": ""}
 
 def sync_tick():
-    """Every SYNC_MIN minutes fast-forward the main checkout; log changes of state only."""
+    """Every SYNC_MIN minutes fast-forward the main checkout; log changes of state only. Network errors: retried next tick (#304)."""
     if time.time() - _sync["last"] < SYNC_MIN * 60: return
     _sync["last"] = time.time()
     msg = R.sync_main()
+    k, alarm = net_streak(_net, "sync", msg)
+    if k:
+        _sync["last"] = 0.0
+        if alarm: net_alarm("sync", msg)
+        return
     if msg and msg != _sync["msg"]: log(msg)
     _sync["msg"] = msg
 
@@ -484,11 +511,14 @@ def loop(once):
                 W = reload_self(W); log("reloaded watchdog.py")
                 st, force = now, False        # only after a clean reload: a failed one is retried next tick
             W.tick()
+            _net["tick"] = 0
         except AttributeError as e:           # #300: new code calling an old module: log once, full reload next tick
             if repr(e) not in seen: seen.add(repr(e)); log(f"error: {e!r} (full reload)")
             force = True
         except Exception as e:
-            log(f"error: {e!r}")
+            k, alarm = net_streak(_net, "tick", repr(e))   # #304: a passing network/timeout error: quiet until NET_ALARM in a row
+            if alarm: net_alarm("tick", f"error: {e!r}")
+            elif not k: log(f"error: {e!r}")
         if once: return
         time.sleep(EVERY)
 
