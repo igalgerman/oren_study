@@ -225,10 +225,12 @@ function genAbc(save,k){const kind=k[0],L=k.slice(2),b=box(save,k);const seenL=A
   if(kind==='c'){const up=b%2===0;const target=up?L.toLowerCase():L;const set=up?LOOK.lower:LOOK.upper;const look=(set.find(g=>g.includes(target))||[]).filter(x=>x!==target).map(x=>x.toUpperCase());
     const ds=fill([...shuf(look),...shuf(seenL),...shuf(AZ)],2);
     return mk({k,lv:1,type:'case',L,up,show:up?L:L.toLowerCase()},{t:'let',v:target},ds.map(x=>({t:'let',v:up?x.toLowerCase():x})));}
-  const kw=b===0?LET[L].kw[0]:pk(LET[L].kw);const inWord=kw.toUpperCase().replace(/[^A-Z]/g,'').split('');
+  const kw=b===0?LET[L].kw[0]:lkw(L);const inWord=kw.toUpperCase().replace(/[^A-Z]/g,'').split('');
   const bad=[...inWord,...(SOUNDMATE[L]||[])];const n=b>=2?4:3;
   const ds=fill([...shuf(seenL),...shuf(AZ)],n-1,bad);
   return mk({k,lv:1,type:'sound',L,w:kw,end:LET[L].end},{t:'let',v:L},ds.map(x=>({t:'let',v:x})));}
+/* a keyword of letter L chosen by the learning engine (unseen first, no repeats); plain random without it */
+function lkw(L){const kws=LET[L].kw;const LN=typeof window!=='undefined'&&window.LEARN;if(LN&&LN.pickItem&&kws.length>1){try{const r=LN.pickItem('eng-kw',kws.map(w=>({k:L+':'+w})));const w=r&&r.item.k.slice(2);if(w&&kws.includes(w)){LN.seen('eng-kw',r.item.k,true,false);return w;}}catch(e){}}return pk(kws);}
 const CVCW=CVC.flatMap(([v,ws])=>ws);const vowelOf=w=>(CVC.find(([v,ws])=>ws.includes(w))||[''])[0];
 const diff1=(a,b)=>a.length===b.length&&[...a].filter((c,i)=>c!==b[i]).length===1;
 function genRead(save,k,pass){const kind=k[0],v=k.slice(2),b=box(save,k);
