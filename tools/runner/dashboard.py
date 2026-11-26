@@ -89,6 +89,7 @@ def model(issues, prs, events, now, log_text="", cloud=()):
     ev24 = [e for e in events if e.get("ts", 0) > now - 86400]
     by_runner, started = S.finish_rate(events, now)
     fixes = sum(e.get("event") == "review_fix" for e in ev24); passes = sum(e.get("event") == "review_pass" for e in ev24)
+    red_esc = sum(e.get("event") == "red_escalated" for e in ev24)      # #303: still RED after the Opus fix round -> orchestrator
     deploys = [e for e in events if e.get("event") == "deploy"]
     stuck = {}
     for n, k in T.blocked_lines(log_text, now - 86400):
@@ -123,7 +124,7 @@ def model(issues, prs, events, now, log_text="", cloud=()):
         "last_deploy": max(deploys, key=lambda e: e["ts"]) if deploys else None,
         "fc": fc,
         "fc_p0": forecast(by_prio["P0"], p0_closed, [], now, history_h) if by_prio["P0"] else None, "p0_open": by_prio["P0"],
-        "truth": {"started": started, "by_runner": by_runner, "fixes": fixes, "passes": passes,
+        "truth": {"started": started, "by_runner": by_runner, "fixes": fixes, "passes": passes, "red_escalated": red_esc,
                   "deploys_ok": sum(1 for d in deploys if d["ts"] > now - 86400 and d.get("ok")),
                   "deploys_fail": sum(1 for d in deploys if d["ts"] > now - 86400 and d.get("ok") is False),
                   "stuck": sorted(stuck.items(), key=lambda x: -len(x[1]))[:6]},
@@ -221,7 +222,8 @@ def text(m):
              f"Forecast (estimate, {m['history_h']:.0f} h of history): " + fc_text(fc, m["now"], "all open issues"),
              "  " + (fc_text(m["fc_p0"], m["now"], f"the {m['p0_open']} open P0") if m["fc_p0"] else "no open P0"),
              f"Runner (24 h): started {tr['started']}, finished by itself {tr['by_runner']} ({pct(tr['by_runner'], tr['started'])}); "
-             f"PRs not finished by the runner (by hand, or it crashed after merging) ≈ {max(0, m['merged_24h'] - tr['by_runner'])}; reviews sent back {tr['fixes']} of {tr['fixes'] + tr['passes']}",
+             f"PRs not finished by the runner (by hand, or it crashed after merging) ≈ {max(0, m['merged_24h'] - tr['by_runner'])}; reviews sent back {tr['fixes']} of {tr['fixes'] + tr['passes']}; "
+             f"to the orchestrator after 3 RED reviews: {tr.get('red_escalated', 0)}",
              f"Average: build {S.fmt(m['avg_build'])}, review {S.fmt(m['avg_review'])}, start to merge {S.fmt(m['avg_merge'])}"]
     d = m["last_deploy"]
     lines.append("Last deploy: " + (f"{hhmm(d['ts'])} {'ok' if d.get('ok') else 'FAILED'}" if d else "no record yet") + f" · deploys 24 h: {tr['deploys_ok']} ok, {tr['deploys_fail']} failed")
@@ -442,7 +444,8 @@ def page(m):
                  f'<ul class="facts"><li>The runner started <b>{tr["started"]}</b> issues and finished <b>{tr["by_runner"]}</b> by itself ({pct(tr["by_runner"], tr["started"])}). '
                  f'{m["merged_24h"]} pull requests were merged in total, so about <b>{max(0, m["merged_24h"] - tr["by_runner"])}</b> were not finished by the runner: '
                  f'merged by hand (orchestrator), or the runner crashed right after merging and never recorded it.</li>'
-                 f'<li>Reviews: {tr["passes"]} passed, <b>{tr["fixes"]}</b> sent back for fixes ({pct(tr["fixes"], tr["fixes"] + tr["passes"])}).</li>'
+                 f'<li>Reviews: {tr["passes"]} passed, <b>{tr["fixes"]}</b> sent back for fixes ({pct(tr["fixes"], tr["fixes"] + tr["passes"])}); '
+                 f'<b>{tr.get("red_escalated", 0)}</b> still red after 3 reviews went to the orchestrator.</li>'
                  f'<li>Runner deploys: {tr["deploys_ok"]} ok, {tr["deploys_fail"]} failed (hand deploys are not recorded).</li>'
                  f'<li>Average times (runner records): build {S.fmt(m["avg_build"])}, review {S.fmt(m["avg_review"])}, start to merge {S.fmt(m["avg_merge"])}.</li>'
                  f'<li>Pull requests: {m["merged_24h"]} merged in 24 hours, {m["merged_7d"]} in 7 days, {m["open_prs"]} open now. '

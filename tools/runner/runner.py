@@ -58,6 +58,17 @@ def model_of(labels):
     """Value for `claude --model`."""
     return MODEL_IDS.get(model_name(labels), MODEL)
 
+def fix_model(rnd, wm):
+    """#303: the last fix round (FIX_ROUNDS) uses Opus; a stronger model (fable) stays."""
+    return "opus" if rnd >= FIX_ROUNDS and wm not in ("opus", MODEL_IDS["fable"]) else wm
+
+def red_escalation(n, reviews):
+    """#303: comment when the reviewer is still RED after the last fix round: every review, for the orchestrator (never the owner)."""
+    each = 9000 // max(1, len(reviews))
+    parts = [f"### Review {i}\n```\n{(t or '').strip()[-each:]}\n```" for i, t in enumerate(reviews, 1)]
+    return (f"Runner: the reviewer is still RED after {len(reviews) - 1} fix rounds (the last one with Opus). "
+            f"For the orchestrator: decide (fix by hand, split, or close). All reviews of #{n}:\n\n" + "\n\n".join(parts))
+
 def reviewer_model(labels):
     """Reviewer: opus when the issue is model:opus, else sonnet."""
     return "opus" if "model:opus" in labels else "sonnet"
@@ -1021,11 +1032,13 @@ def remote_fix_prompt(n, review_text, br=None):
             "with `RESULT: DONE <PR url>` (or `RESULT: STUCK <why>`, or `QUESTION: <question, options>` and stop) on its own line:\n---\n"
             + review_text[-6000:] + "\n---")
 
-def remote_fix(n, session, review_text, send, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None, br=None):
-    """#134: FIX for a cloud worker: the points go to its session (send); no session or send failed -> a new cloud fix session. -> marker line."""
+def remote_fix(n, session, review_text, send, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None, br=None, model=None):
+    """#134: FIX for a cloud worker: the points go to its session (send); no session or send failed -> a new cloud fix session. -> marker line.
+    model (#303, the Opus round): always a new session with that model (a running session keeps its model); refused -> without it."""
     text = remote_fix_prompt(n, review_text, br)
-    if not (session and send(session, text).get("ok")):
-        s = start(n, text, CFG.get("main_checkout", "."))
+    if model or not (session and send(session, text).get("ok")):
+        s = start(n, text, CFG.get("main_checkout", "."), model=model) if model else start(n, text, CFG.get("main_checkout", "."))
+        if model and not s.get("ok"): s = start(n, text, CFG.get("main_checkout", "."))
         if not s.get("ok"):
             return f"RESULT: STUCK remote fix start failed: {s.get('error', '?')}"
         if on_start: on_start(s)
@@ -1423,6 +1436,7 @@ def process_locked(issue, where="local"):
             pr = find_pr(n)
             if not pr: raise Blocked(f"auto-resume: no open PR for #{n}")
             reviewed["sha"] = gh("pr", "view", str(pr), "--json", "headRefOid", "-q", ".headRefOid")[1].strip()
+        reviews = []
         for rnd in range(1, FIX_ROUNDS + 2):
             if step in ("resolve", "merge"): break
             pr = find_pr(n)
@@ -1451,17 +1465,20 @@ def process_locked(issue, where="local"):
                 raise Blocked(verdict or "reviewer gave no VERDICT line" + (f": {rv[:300]}" if where == "remote" else ""))
             disable_auto(pr, log)                  # #185: FIX after a (hand) auto-merge mark: never merge the unfixed PR
             stat(n, lane, "review_fix")
-            if rnd == FIX_ROUNDS + 1:
-                stat(n, lane, "blocked")
-                block(n, f"reviewer asked for fixes {rnd} times; needs a human", log); return f"BLOCKED: reviewer asked for fixes {rnd} times; needs a human"
+            reviews.append(rv or verdict)
+            if rnd == FIX_ROUNDS + 1:               # #303: still RED after the Opus round -> the orchestrator, with every review
+                stat(n, lane, "blocked"); stat(n, lane, "red_escalated")
+                gh("issue", "comment", str(n), "--body", redact(red_escalation(n, reviews)))
+                why = f"reviewer still RED after {FIX_ROUNDS} fix rounds; to the orchestrator"
+                block(n, why, log); return f"BLOCKED: {why}"
             red = text or rv[-1500:]
             if where == "remote":                  # #134: FIX goes back to the cloud worker session (or a new cloud fix session)
                 since = utc()
                 res = remote_fix(n, saved_session(), rv, remote.send, remote.start, lambda: remote.status(n, since=since), time.sleep, time.time,
-                                 3 * 3600, 60, on_start=save_session, ended=over, br=branch_of(n))
+                                 3 * 3600, 60, on_start=save_session, ended=over, br=branch_of(n), model=fix_model(rnd, wm) if rnd >= FIX_ROUNDS else None)
                 remote_question(res)
             else:
-                out, res = agent(f"issue-{n}-fix" + ("" if rnd == 1 else str(rnd)), worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / f"worker{rnd + 1}.log", "RESULT:", n, "worker", wm, over=over)
+                out, res = agent(f"issue-{n}-fix" + ("" if rnd == 1 else str(rnd)), worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / f"worker{rnd + 1}.log", "RESULT:", n, "worker", fix_model(rnd, wm), over=over)
             if not res.startswith("RESULT: DONE"):
                 raise Blocked(res or "fix worker gave no RESULT line")
             stat(n, lane, "fix_done")
