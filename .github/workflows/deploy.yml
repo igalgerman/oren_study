@@ -88,9 +88,10 @@ jobs:
         if: steps.guard.outputs.current == 'true'
         id: report
         run: python3 tools/ci/deploy_ci.py report "$RUNNER_TEMP/deploy.log"
-      - name: Live smoke check (page, save round trip, /api/tts/status)
+      - name: Live smoke check, deployment URL + production (page, save round trip then deleted, D1 bound, /api/tts/status; #150)
+        # a failure fails this job: the GitHub deployment is failed (dashboard deploy event ok=false) and deploy-failed raises the P0 alarm
         if: steps.guard.outputs.current == 'true'
-        run: python3 tools/ci/deploy_ci.py smoke "${{ steps.report.outputs.url }}"
+        run: python3 tools/ci/deploy_ci.py smoke "${{ steps.report.outputs.url }}" https://oren-game.pages.dev
 
   deploy-failed:
     # one issue "Deploy failed" (P0): opened once, then commented on each new failure

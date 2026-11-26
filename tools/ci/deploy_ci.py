@@ -1,10 +1,11 @@
 """Deploy workflow helper (#192), used by .github/workflows/deploy.yml. Stdlib only.
   python3 tools/ci/deploy_ci.py report <deploy.log>   parse deploy.sh output -> job summary + outputs ok/url/d1; exit 1 if not deployed
-  python3 tools/ci/deploy_ci.py smoke <url>           live check: page loads, save round trip (D1), /api/tts/status; exit 1 on a failure
+  python3 tools/ci/deploy_ci.py smoke <url> [<url>..] live check (#150): page loads, save round trip (random id, then deleted), D1 bound,
+                                                      /api/tts/status; exit 1 on a failure. Workers: run it on demand against
+                                                      https://oren-game.pages.dev to verify a fix on the live site; it leaves no data behind.
   python3 tools/ci/deploy_ci.py plan                  which sha to deploy (env EVENT, RUN_SHA, MAIN_SHA, GREEN_SHA) -> output sha ("" = skip)"""
-import json, os, subprocess, sys, time, urllib.request
+import json, os, secrets, subprocess, sys, time, urllib.error, urllib.request
 
-SMOKE_ID = "0" * 31 + "1"          # one fixed save id for the smoke check: each deploy overwrites the same row
 UA = {"user-agent": "oren-deploy-smoke"}
 
 def parse(out):
@@ -20,25 +21,36 @@ def summary(r):
 def _req(method, url, body=None):
     data = body.encode() if body is not None else None
     h = dict(UA, **({"content-type": "application/json"} if data else {}))
-    with urllib.request.urlopen(urllib.request.Request(url, data=data, method=method, headers=h), timeout=30) as r:
-        return r.status, r.read().decode("utf-8", "replace")
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, data=data, method=method, headers=h), timeout=30) as r:
+            return r.status, r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8", "replace")
 
 def _page(base):
     s, t = _req("GET", base + "/"); return s == 200 and "<html" in t.lower()
 
 def _save(base):
-    mark = str(time.time())
-    body = json.dumps({"v": 4, "smoke": mark})
-    if _req("PUT", f"{base}/api/save/{SMOKE_ID}", body)[0] != 200: return False
-    s, t = _req("GET", f"{base}/api/save/{SMOKE_ID}"); return s == 200 and json.loads(t).get("smoke") == mark
+    """A fresh random save id each run: PUT, read back, DELETE (the worker deletes only saves marked smoke), then it must be gone."""
+    u, mark = f"{base}/api/save/{secrets.token_hex(16)}", str(time.time())
+    try:
+        if _req("PUT", u, json.dumps({"v": 4, "smoke": mark}))[0] != 200: return False
+        s, t = _req("GET", u); back = s == 200 and json.loads(t).get("smoke") == mark
+    finally:
+        gone = _req("DELETE", u)[0] in (200, 404)             # cleaned up even when the read back failed
+    return back and gone and _req("GET", u)[0] == 404
 
-def _tts(base):
-    s, t = _req("GET", base + "/api/tts/status"); return s == 200 and json.loads(t).get("ok") is True
+def _status(base):
+    s, t = _req("GET", base + "/api/tts/status"); return json.loads(t) if s == 200 else {}
+
+def _d1(base): return _status(base).get("d1") is True       # the live worker sees its D1 binding (deploys said ok while it was broken)
+
+def _tts(base): return _status(base).get("ok") is True
 
 def smoke(base, tries=5, wait=6):
     """-> [(name, passed)]. Each check is retried: a brand-new deployment URL can take a few seconds to answer."""
     base = base.rstrip("/"); res = []
-    for name, f in (("page loads", _page), ("save round trip", _save), ("/api/tts/status", _tts)):
+    for name, f in (("page loads", _page), ("save round trip", _save), ("D1 bound", _d1), ("/api/tts/status", _tts)):
         ok = False
         for i in range(tries):
             try: ok = f(base)
@@ -85,11 +97,14 @@ def main(argv, attempted=attempted_cache):
         _append("GITHUB_STEP_SUMMARY", summary(r))
         _append("GITHUB_OUTPUT", f"ok={str(r['ok']).lower()}\nurl={r['url']}\nd1={'yes' if r['d1'] else 'no'}\n")
         print(summary(r)); return 0 if r["ok"] else 1
-    if len(argv) == 2 and argv[0] == "smoke":
-        res = smoke(argv[1], tries=int(os.environ.get("SMOKE_TRIES", "5")))
-        text = "\n## Live smoke check\n\n" + "".join(f"- {'ok' if ok else 'FAILED'}: {n}\n" for n, ok in res)
-        _append("GITHUB_STEP_SUMMARY", text); print(text)
-        return 0 if all(ok for _, ok in res) else 1
+    if len(argv) >= 2 and argv[0] == "smoke":
+        good = True
+        for url in argv[1:]:
+            res = smoke(url, tries=int(os.environ.get("SMOKE_TRIES", "5"))); good = good and all(ok for _, ok in res)
+            text = f"\n## Live smoke check: {url}\n\n" + "".join(f"- {'ok' if ok else 'FAILED'}: {n}\n" for n, ok in res)
+            _append("GITHUB_STEP_SUMMARY", text); print(text)
+        _append("GITHUB_OUTPUT", f"smoke={str(good).lower()}\n")
+        return 0 if good else 1
     if argv == ["plan"]:
         e = os.environ.get
         sha, why = plan(e("EVENT", ""), e("RUN_SHA", ""), e("MAIN_SHA", ""), e("GREEN_SHA", ""), attempted)

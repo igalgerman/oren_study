@@ -19,7 +19,7 @@ s = d.summary(ok); assert "ok" in s and "https://ab12.oren-game.pages.dev" in s 
 s = d.summary(bad); assert "FAILED" in s and "D1 bound: no" in s, s
 print("ok summary")
 
-# smoke: page loads, save round trip, /api/tts/status - against a fake site
+# smoke (#150): page loads, save round trip (random id, then deleted), D1 bound, /api/tts/status - against a fake site
 STORE = {}
 class H(BaseHTTPRequestHandler):
     broken = set()
@@ -29,19 +29,32 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/" and "page" not in H.broken: return self._send(200, "<html><body><div id=app>game</div></body></html>", "text/html")
         if self.path.startswith("/api/save/") and self.path in STORE and "save" not in H.broken: return self._send(200, STORE[self.path])
-        if self.path == "/api/tts/status" and "tts" not in H.broken: return self._send(200, json.dumps({"ok": True, "ver": 3}))
+        if self.path == "/api/tts/status": return self._send(200, json.dumps({"ok": "tts" not in H.broken, "ver": 3, "d1": "d1" not in H.broken}))
         self._send(404, "{}")
     def do_PUT(self):
         t = self.rfile.read(int(self.headers["content-length"])).decode()
         STORE[self.path] = t; self._send(200, '{"ok":true}')
+    def do_DELETE(self):                                     # like the worker: only a save marked smoke can be deleted
+        if "delete" in H.broken or "smoke" not in json.loads(STORE.get(self.path, "{}")): return self._send(403, "{}")
+        del STORE[self.path]; self._send(200, '{"ok":true}')
 srv = ThreadingHTTPServer(("127.0.0.1", 0), H); threading.Thread(target=srv.serve_forever, daemon=True).start()
 URL = f"http://127.0.0.1:{srv.server_address[1]}"
 res = d.smoke(URL, tries=1)
-assert all(r[1] for r in res) and [r[0] for r in res] == ["page loads", "save round trip", "/api/tts/status"], res
-assert list(STORE) == ["/api/save/" + d.SMOKE_ID] and json.loads(STORE["/api/save/" + d.SMOKE_ID])["v"] == 4
-for part, name in (("page", "page loads"), ("save", "save round trip"), ("tts", "/api/tts/status")):
-    H.broken = {part}
+assert all(r[1] for r in res) and [r[0] for r in res] == ["page loads", "save round trip", "D1 bound", "/api/tts/status"], res
+assert STORE == {}, STORE                                    # no test data left behind
+STORE["/api/save/" + "ab" * 16] = json.dumps({"v": 4, "gems": 7})      # a family save is never touched
+for part, name in (("page", "page loads"), ("save", "save round trip"), ("delete", "save round trip"), ("d1", "D1 bound"), ("tts", "/api/tts/status")):
+    H.broken = {part}; [STORE.pop(k) for k in list(STORE) if "smoke" in STORE[k]]
     res = dict(d.smoke(URL, tries=1)); assert res[name] is False and sum(not v for v in res.values()) == 1, (part, res)
+    assert ("delete" in H.broken) or list(STORE) == ["/api/save/" + "ab" * 16], (part, STORE)   # cleaned up even when a check fails
+H.broken = set(); STORE.clear()
+ids = set()
+_orig = d._req
+def _spy(m, u, b=None):
+    if "/api/save/" in u: ids.add(u.rsplit("/", 1)[1])
+    return _orig(m, u, b)
+d._req = _spy; d.smoke(URL, tries=1); d.smoke(URL, tries=1); d._req = _orig
+assert len(ids) == 2 and all(len(i) == 32 for i in ids), ids    # a fresh random test id each run
 H.broken = set()
 print("ok smoke")
 
@@ -50,11 +63,19 @@ tmp = tempfile.mkdtemp(); log = os.path.join(tmp, "deploy.log"); summ = os.path.
 os.environ["GITHUB_STEP_SUMMARY"], os.environ["GITHUB_OUTPUT"], os.environ["SMOKE_TRIES"] = summ, outp, "1"
 open(log, "w").write("ok " + URL + NL)
 assert d.main(["report", log]) == 0 and "ok=true" in open(outp).read() and "url=" + URL in open(outp).read() and "D1 bound: yes" in open(summ).read()
-assert d.main(["smoke", URL]) == 0 and "save round trip" in open(summ).read()
+open(outp, "w").close(); open(summ, "w").close()
+assert d.main(["smoke", URL, URL + "/"]) == 0 and "save round trip" in open(summ).read() and "smoke=true" in open(outp).read()
+assert open(summ).read().count("D1 bound") == 2               # both the deployment URL and production are checked
 open(log, "w").write("[{'code': 10000}] None" + NL)
 assert d.main(["report", log]) == 1 and "ok=false" in open(outp).read()
-H.broken = {"tts"}
-assert d.main(["smoke", URL]) == 1
+# forced failure (D1 not bound on the live site): exit 1 -> the deploy job fails (GitHub deployment = failed, dashboard deploy event ok=false)
+# and the workflow's deploy-failed job opens/comments the P0 issue "Deploy failed" (the orchestrator alarm)
+H.broken = {"d1"}; open(outp, "w").close()
+assert d.main(["smoke", URL]) == 1 and "smoke=false" in open(outp).read() and "FAILED: D1 bound" in open(summ).read()
+H.broken = set()
+wf = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".github", "workflows", "deploy.yml"), encoding="utf-8").read()
+assert "deploy_ci.py smoke \"${{ steps.report.outputs.url }}\" https://oren-game.pages.dev" in wf, "smoke must check the deployment URL and production"
+assert "needs.deploy.result == 'failure'" in wf and '"Deploy failed"' in wf and "--label P0" in wf
 srv.shutdown()
 print("ok main")
 
