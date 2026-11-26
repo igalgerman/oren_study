@@ -1,0 +1,15 @@
+/* ===== LESSON CARDS (#56) ===== */
+.lccard{width:min(640px,100%)}
+.lcart{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:10px;min-height:130px}
+.lcrow{display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;direction:ltr}
+.lcart .m2staff{display:block;width:min(340px,80vw);height:auto;background:#fff}
+.lcrow .m2staff{width:min(220px,36vw)}
+.lcart .pic{font-size:72px}
+.lcbeats{display:flex;justify-content:center;gap:12px;direction:ltr}
+.lcbeats i{width:26px;height:26px;border-radius:50%;background:#d9dee3;box-shadow:inset 0 -3px 0 rgba(0,0,0,.15);transition:background .15s,transform .15s}
+.lcbeats i.on{background:#f4b400;transform:scale(1.2)}
+.lcarr{font-size:44px;font-weight:900;color:#5c6b73}
+.chb.lcgo{font-size:26px;height:auto;min-height:78px;padding:8px 30px;display:flex;align-items:center;gap:10px;background:var(--ok);color:#fff}
+.chb.lcgo svg{width:26px;height:26px}
+.chb.lcgo:disabled{opacity:.55}
+.lcagain{display:block;margin:14px auto 0;font-weight:800;font-size:19px;padding:10px 18px;background:#eef3f7;box-shadow:inset -3px -3px 0 rgba(0,0,0,.1),0 3px 0 rgba(0,0,0,.18)}

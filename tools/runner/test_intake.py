@@ -26,6 +26,7 @@ assert len(runs) == 1, runs
 c = runs[0]
 assert c[c.index("--name") + 1] == "intake-3" and "--outlive-parent" in c and "herdr.space=sp1" in c, c
 assert "/grill-me" in c[-1] and "#3" in c[-1] and "/to-tickets" in c[-1], c[-1]
+assert "## Acceptance" in c[-1] and "{n}" not in c[-1], c[-1]          # #186: the intake writes the Acceptance section
 assert told == ["NEEDS YOU: intake-3 is open"], told
 W.check_intake([{"name": "intake-3", "state": "live"}])
 assert len(runs) == 1
