@@ -81,9 +81,10 @@ def mark(key, text):
     return owner_q.mark_answered(key, text)
 
 def push(q, text):
-    """One more phone push through the question's own window (qwin, #220). -> False when there is no such window."""
+    """One more phone push through the session that sent the first one (qwin, #390). -> False when there is none."""
     import qwin
-    return R.hc("send", qwin.win_name(q), text, timeout=30)[0] == 0
+    via = (qwin.load().get(q["key"]) or {}).get("via")
+    return bool(via) and R.hc("send", via, R.one_line(text + " " + qwin.push_message(q)), timeout=30)[0] == 0
 
 def _load():
     try: return json.loads(STATE.read_text(encoding="utf-8"))

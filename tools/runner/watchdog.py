@@ -2,7 +2,7 @@
 Every minute it checks, deterministically:
   1. a worker/reviewer/intake window waiting for an answer (status blocked)  -> tells the orchestrator (once per new screen; also a worker whose last line is QUESTION:)
      and posts the question in the pinned issue 'Questions for the owner' (owner_q.py, #193; once per window+question); an owner reply there -> tells the orchestrator
-  1b. every open owner question (qwin.py, #220/#368): python starts the Hebrew page (tools/ask) and reads its answer; after 2 min a pinned window question-<n> sends the phone push; first answer wins, relayed
+  1b. every open owner question (qwin.py, #220/#368): python starts the Hebrew page (tools/ask) and reads its answer; at the same time an idle inbox/orchestrator session sends the phone push (#390); first answer wins, relayed
   2. a worker/reviewer that stopped without its RESULT:/VERDICT: line for 10 min -> tells the orchestrator
   3. free lanes + ready issues but no runner pass running                       -> starts a runner pass
   3b. a window waiting for the owner longer than park_minutes (the runner parks it itself; this is the fallback): issue gets blocked + ready-for-human, lane freed
@@ -105,7 +105,7 @@ def check_windows(ts):
                 what = f"asks: {q}" if q else "is waiting for an answer"
                 tell(f"{needs_you_line(name, q, tail)}{chr(10)}WATCHDOG: window {name} {what}. NEW OWNER QUESTION"
                      + (f" (posted: {url})" if url else " (in the 'Questions for the owner' issue)")
-                     + f": a pinned question window (question-<n>, #220) asks him on the Hebrew page and by PushNotification; do not push yourself. "
+                     + f": qwin (#220/#390) asks him on the Hebrew page and has an idle inbox/orchestrator session send the PushNotification; send one yourself only when it hands you a PHONE PUSH line. "
                      f"When it tells you OWNER ANSWERED, relay the answer (hc send {name} \"..\" or the menu option he picks). Its screen ends with:{chr(10)}{tail}")
             m = re.match(r"(?:issue|review)-(\d+)", name)       # fallback for a runner that did not park by itself
             if m and R.should_park(since, now, R.PARK_MINUTES + 3) and R.park_issue(int(m[1]), name, tail, since):
@@ -282,7 +282,7 @@ def check_control(ts):
         if rc == 0 and name != "orchestrator": tell(f"WATCHDOG: {name} had finished; restarted it")
 
 def qwin_tick(ts):
-    import qwin; importlib.reload(qwin); qwin.tick(ts)   # #220: one pinned question window per open owner question
+    import qwin; importlib.reload(qwin); qwin.tick(ts)   # #220/#390: page + phone push per open owner question
 
 def resume_tick():
     for n in R.resume_answered(): log(f"#{n}: owner answered the cloud question -> unparked, the next pass resumes its session (#135)")
