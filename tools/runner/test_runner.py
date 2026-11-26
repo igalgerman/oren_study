@@ -311,3 +311,14 @@ assert nums(r.select([I(1, ["in-progress", "core"]), I(2, ["in-progress", "core"
 assert nums(r.select([_e(1, ["pack", "blocked"]), _e(2, ["pack"], )], 3, 2, 1)) == [2]
 assert r.CFG["express_lanes"] == 1
 print("ok express")
+
+# #65: model from the issue's model:* label
+assert r.model_of([]) == "sonnet" and r.model_of(["pack", "P1"]) == "sonnet"     # no label = config default
+assert r.model_of(["model:opus"]) == "opus" and r.model_of(["model:haiku", "pack"]) == "haiku"
+assert r.model_of(["model:bogus"]) == "sonnet"
+assert r.model_of(["model:fable"]) == "claude-fable-5-2"
+assert r.model_of(["model:sonnet", "model:opus"]) == "opus"                      # most capable wins if two labels
+assert r.reviewer_model(["model:opus"]) == "opus"
+assert r.reviewer_model(["model:haiku"]) == "sonnet" and r.reviewer_model([]) == "sonnet" and r.reviewer_model(["model:fable"]) == "sonnet"
+assert r.model_name(["model:fable"]) == "fable" and r.model_name([]) == "sonnet"
+print("ok model labels")
