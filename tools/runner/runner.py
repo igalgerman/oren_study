@@ -8,7 +8,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import remote, ghcache, ghauth
+import remote, ghcache, ghauth, pcload   # pcload: #293 PC load watch
 ROOT = HERE.parent.parent                      # repo checkout (tools/runner/../..)
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # #229: tests point this at a temp dir
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -732,6 +732,14 @@ def record_refusal(n, error, now=None):
         tell_orchestrator(msg)
     return due
 
+def local_lanes_now(is_alarmed, local=None):
+    """#293: while the PC load watch is alarmed the runner starts no new LOCAL work."""
+    return 0 if is_alarmed else (LOCAL_LANES if local is None else local)
+
+def refusal_pauses(error, runs=None, now=None):
+    """#293 (14:52): a cloud start that failed with no output while the PC is alarmed was the PC: it sets no cloud pause."""
+    return not pcload.pc_not_cloud(error, pcload.alarmed(runs or RUNS, now))
+
 def local_lane_free(n):
     """#137: is a local lane free for #n (other in-progress issues running locally < local_lanes)? Any gh error -> False."""
     if LOCAL_LANES <= 0: return False
@@ -1009,20 +1017,37 @@ def sync_decision(branch, into, dirty, behind):
     if dirty: return ("skip", "main checkout has uncommitted changes")
     return ("pull", "")
 
-def sync_main(log=None):
-    """Fast-forward the main checkout to origin/main when that is harmless. Returns a message ('' = nothing to say); never raises."""
+def dirty_files(status):
+    """Pure (#326): the tracked changed paths of `git status --porcelain` (untracked '??' left out)."""
+    return [l[3:].strip() for l in status.splitlines() if l.strip() and not l.startswith("??")]
+
+def sync_main(log=None, info=None):
+    """Fast-forward the main checkout to origin/main when that is harmless. Returns a message ('' = nothing to say); never raises.
+    #326: `info` (a dict) gets act (pull|none|skip|fail|net), behind, why, dirty (files), and after a pull old/new head + changed files."""
+    info = {} if info is None else info
+    info.update(act="net", behind=None)
     try:
         g = lambda *a: run(["git", "-C", str(MAIN_CHECKOUT), *a], timeout=120)
         rc, out = g("fetch", "-q", REMOTE)
         if rc: return f"sync failed: fetch rc {rc} {out.strip()[:200]}"
         branch = g("rev-parse", "--abbrev-ref", "HEAD")[1].strip()
         behind = int(g("rev-list", "--count", f"HEAD..{REMOTE}/{BRANCH}")[1].strip() or 0)
-        act, why = sync_decision(branch, BRANCH, is_dirty(g("status", "--porcelain")[1]), behind)
+        dirty = dirty_files(g("status", "--porcelain")[1])
+        act, why = sync_decision(branch, BRANCH, bool(dirty), behind)
+        info.update(behind=behind, why=why, dirty=dirty, act="skip" if why else "none")
         if act == "pull":
+            old = g("rev-parse", "HEAD")[1].strip()
             rc, out = g("merge", "-q", "--ff-only", f"{REMOTE}/{BRANCH}")
-            return f"main checkout fast-forwarded ({behind} commits)" if rc == 0 else f"sync failed: ff-only rc {rc} {out.strip()[:200]}"
+            if rc:
+                info.update(act="fail", why=f"ff-only rc {rc} {out.strip()[:200]}")
+                return f"sync failed: ff-only rc {rc} {out.strip()[:200]}"
+            new = g("rev-parse", "HEAD")[1].strip()
+            info.update(act="pull", old=old, new=new,
+                        changed=[l.strip() for l in g("diff", "--name-only", old, new)[1].splitlines() if l.strip()])
+            return f"main checkout fast-forwarded ({behind} commits)"
         return f"sync skipped ({behind} behind): {why}" if why else ""
     except Exception as e:
+        info["act"] = "fail"; info.setdefault("why", repr(e))
         return f"sync error: {e!r}"
 
 def remove_worktree(wt, log=None):
@@ -1796,8 +1821,8 @@ def process_locked(issue, where="local"):
                 remote_question(res)
                 out = res
             except Refused as e:                         # #137: local lane free -> run here; else give the issue back, it waits
-                record_refusal(n, str(e))
-                if not local_lane_free(n):
+                if refusal_pauses(str(e)): record_refusal(n, str(e))   # #293: not when the PC was the cause
+                if pcload.alarmed(RUNS) or not local_lane_free(n):      # #293: no new local work while the PC is overloaded
                     stat(n, lane, "waiting", why="cloud start refused")
                     set_labels(n, remove=["in-progress"])
                     return f"WAITING: cloud start refused ({str(e)[:200]}), no local lane free"
@@ -2120,8 +2145,9 @@ def run_pass():
     rbusy = remote_busy(busy)                            # #277: a run waiting for a core slot holds no cloud lane
     gv = governor_pass(rbusy)                     # #239: remote lane count from the 5h usage
     remote_lanes = lanes_now(gv["lanes"], refusal_state(), time.time())   # #137: no cloud starts for 1 h after a refusal
-    chosen = stop_filter([c for c in select(issues, LOCAL_LANES + remote_lanes, MAX_CORE, EXPRESS, core_held()) if not FileLock(f"issue-{c['number']}").held_by_other()], gv)   # #269: express still starts on stop
-    wmap = {c["number"]: w for c, w in assign_where(chosen, sum(where_of(b) != "remote" for b in busy), rbusy, LOCAL_LANES, remote_lanes)}
+    local_lanes = local_lanes_now(pcload.alarmed(RUNS))   # #293: PC overloaded -> no new local work
+    chosen = stop_filter([c for c in select(issues, local_lanes + remote_lanes, MAX_CORE, EXPRESS, core_held()) if not FileLock(f"issue-{c['number']}").held_by_other()], gv)   # #269: express still starts on stop
+    wmap = {c["number"]: w for c, w in assign_where(chosen, sum(where_of(b) != "remote" for b in busy), rbusy, local_lanes, remote_lanes)}
     chosen = [c for c in chosen if c["number"] in wmap]
     if not DRY: chosen = open_pr_resumes(chosen, resume_lookup)     # #295: an issue with an open PR resumes; never a second worker
     cutoff = CFG["stuck_hours"] * 3600

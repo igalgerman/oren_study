@@ -229,7 +229,7 @@ function mergeTh(dst,src){if(!src||typeof src!=='object')return dst||blankTh();d
 function skillStat(save,sk,now){const d=lastDays(14,now),w1=d.slice(0,7),w2=d.slice(7);const [a,o]=sumK(save,d,sk),[a1,o1]=sumK(save,w1,sk),[a2,o2]=sumK(save,w2,sk);
   let tr=0;if(a1>=4&&a2>=4){const x=o1/a1-o2/a2;tr=x>.08?1:x<-.08?-1:0;}return {n:a,acc:a?o/a:null,tr};}
 
-return {GEN,genSer,genShp,genMat,genAna,genRel,genSen,genMth,rcPick,nikud,easyWord,strip,bare,okey,tile,COL,COLN,SHP,level,answer,nkAnswer,blankTh,MAXLV,TEST,testPlan,testSkills,
+return {clearLB:()=>{LB=null;},GEN,genSer,genShp,genMat,genAna,genRel,genSen,genMth,rcPick,nikud,easyWord,strip,bare,okey,tile,COL,COLN,SHP,level,answer,nkAnswer,blankTh,MAXLV,TEST,testPlan,testSkills,
   lastDays,logDay,hit,sumK,skillStat,mergeLog,mergeTh,dkey,setRandom:f=>{rnd=f||Math.random;}};})();
 
 /* ======================= part 2: the game ======================= */
@@ -289,7 +289,7 @@ function openTracks(){const s=S();if((s.set||{}).all)return ORDER.slice();const 
 /* the shared quiz screen: card, options, a gentle explanation after a mistake */
 function round(o){/* o: {id, sk, title, bg, back, n, next(i) → q, again} */
   let i=0,err=0,gems=0;const qs=[];O.setScreen('sTal',o.bg||'mount',o.back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq thq');s.appendChild(wrap);
-  const render=()=>{let q;for(let t=0;t<30;t++){q=o.next(i);if(!qs.some(x=>x.key===q.key))break;}qs.push(q);let tries=0,lock=false,first=true;
+  const render=()=>{let q;for(let t=0;t<30;t++){C.clearLB();q=o.next(i);if(!qs.some(x=>x.key===q.key))break;}qs.push(q);let tries=0,lock=false,first=true;
     T.hudT(o.title,T.progressBar(i,o.n));O.sayNow=T.plainHe((q.say||'')+' '+(q.text||''));wrap.innerHTML='';
     const card=h('div','prq tqc',`${promptHTML(q)}${q.text?`<div class="qq">${q.text}</div>`:''}`);wrap.appendChild(card);if(T.rdQ&&q.text)T.rdQ(q,card);
     const row=h('div','chs n'+q.opts.length+(q.opts[0].t==='num'?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+optCls(op),optHTML(op));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
@@ -340,7 +340,7 @@ function challenge(back){const tl=testLv();if(!tl)return back();const plan=C.tes
     s.appendChild(h('div','whead',`<span class="gd">🏆</span><h1>אֶתְגַּר הָאַלּוּפִים</h1>`));
     s.appendChild(h('div','lsent',`${plan.length>1?`פֶּרֶק ${ci+1} מִתּוֹךְ ${plan.length}.<br>`:''}${ch.n} שְׁאֵלוֹת. יֵשׁ ${ch.sec/60} דַּקּוֹת.<br>קוֹרְאִים בְּעִיּוּן וּבוֹחֲרִים. אֶפְשָׁר לְדַלֵּג וְלַחְזֹר.`));
     const row=h('div','btnrow');const go=h('button','bigbtn',O.ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=()=>{sfx.pop(2);chapter(ch);};row.appendChild(go);s.appendChild(row);setTimeout(()=>go.focus(),100);};
-  function chapter(ch){const sks=C.testSkills(ch);const qs=sks.map(sk=>{if(sk!=='rc')return C.GEN[sk](C.level(TH(),sk));const p=C.rcPick(Math.min(C.level(TH(),'rc'),3));return Object.assign(O.pick(p.qs),{pt:p.P.t,pp:p.P.p});});
+  function chapter(ch){const sks=C.testSkills(ch);const qs=sks.map(sk=>{C.clearLB();if(sk!=='rc')return C.GEN[sk](C.level(TH(),sk));const p=C.rcPick(Math.min(C.level(TH(),'rc'),3));return Object.assign(O.pick(p.qs),{pt:p.P.t,pp:p.P.p});});
     const got=qs.map(()=>null);let i=0,left=ch.sec;const t0=Date.now();O.setScreen('sTal','final',()=>{clearInterval(iv);back();});
     const wrap=h('div','tq thq');s.innerHTML='';const bar=h('div','thtime','<i></i><span></span>');s.appendChild(bar);s.appendChild(wrap);
     const tick=()=>{left=Math.max(0,ch.sec-Math.round((Date.now()-t0)/1000));bar.firstChild.style.width=(left/ch.sec*100)+'%';bar.lastChild.textContent='⏳';bar.classList.toggle('low',left<=30);if(left<=0)finish();};

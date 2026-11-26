@@ -49,7 +49,7 @@ assert W.net_streak(st, "sync", "main checkout fast-forwarded (1 commits)") == (
 
 # ---- 2b. sync_tick: network error -> silent, retried next tick; 3rd in a row -> log + tell the orchestrator ----
 msgs, told, logged = ["sync failed: fetch rc 128 Could not resolve host: github.com"] * 3 + ["main checkout fast-forwarded (2 commits)"], [], []
-R.sync_main = lambda log=None: msgs.pop(0)
+R.sync_main = lambda log=None, info=None: msgs.pop(0)
 W.tell, W.log = told.append, logged.append
 W._sync.update(last=0.0, msg=""); W._net.clear()
 W.sync_tick(); W.sync_tick()

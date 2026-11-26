@@ -23,8 +23,12 @@ Every minute it checks, deterministically:
       writes the session links + dashboard.py --text into ONE pinned issue (edited in place, nothing committed)
   5d. #330 canary.py: every 6 h (and after a merge into tools/runner or tools/mods) ONE tiny canary issue runs the whole flow;
       a step past its deadline -> alarm to the orchestrator + inspector, NEEDS-ATTENTION on panel/dashboard; side paths hourly
+  5f. #293 pcload.py, every 2 min: CPU / free RAM / heavy process counts; an overload -> alarm with the top 3 processes by RAM and who
+      started them, to the orchestrator + inspector (once per 30 min per cause); .runs/pc.json for the panel/dashboard. Never kills.
   5e. #187 once a week: tools/test_garden.py (test trim proposal: ONE issue 'Test trim proposal (week N)'; it never deletes a test)
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
+  6b. #326 mainsync.py: behind 10+ min or skipped twice in a row -> alarm (orchestrator + inspector, names the dirty files);
+     a sync that changed the panel mod -> /reload-plugins to the orchestrator, CLAUDE.md/ORCHESTRATOR.md/inbox prompt -> re-read (when idle)
   7. #304: a network error (sync, or a tick that raised a network/timeout error) is retried next tick and only logged + told to the
      orchestrator on the NET_ALARM-th in a row; nightly.prune_if_due removes .runs/<n> of issues closed > 24 h once a day
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
@@ -298,6 +302,7 @@ def nightly_tick():
     nightly.retro_if_due(tell, log)
     nightly.batch_tick(lambda t: R.hc("send", "inbox", t, timeout=30)[0], log)
     nightly.prune_if_due(log)   # #304
+    nightly.worktrees_if_due(log)   # #326: helper worktrees whose branch is pushed and merged/closed
     nightly.night_report_if_due(tell, log)   # #282
 
 def parked_tick():
@@ -316,6 +321,9 @@ def due_tick():
 
 def canary_tick():
     import canary; canary.tick(say=lambda t: (tell(t), R.hc("send", "inspector", t, timeout=30)), log=lambda m: log("canary: " + m))   # #330
+
+def pc_tick(ts):
+    import pcload; pcload.tick(ts, send=lambda w, m: R.hc("send", w, m, timeout=30), log=log)   # #293: reports only, never kills
 
 def desks_tick():
     import desks; desks.run_if_due(log)   # #306: cloud inbox + ask sessions, pinned links + live status (thread; its never-two lock survives a reload)
@@ -343,10 +351,16 @@ SYNC_MIN = int(R.CFG.get("sync_minutes", 3))
 _sync = {"last": 0.0, "msg": ""}
 
 def sync_tick():
-    """Every SYNC_MIN minutes fast-forward the main checkout; log changes of state only. Network errors: retried next tick (#304)."""
+    """Every SYNC_MIN minutes fast-forward the main checkout; log changes of state only. Network errors: retried next tick (#304).
+    #326 (mainsync.py): every tick queued reload sends go to idle sessions; after each sync the behind/skip alarm (orchestrator +
+    inspector, names the dirty files) and, after a pull, /reload-plugins and re-read messages are queued."""
+    import mainsync
+    mainsync.deliver_tick(log)
     if time.time() - _sync["last"] < SYNC_MIN * 60: return
     _sync["last"] = time.time()
-    msg = R.sync_main()
+    info = {}
+    msg = R.sync_main(info=info)
+    mainsync.after_sync(info, time.time(), say=lambda t: (tell(t), R.hc("send", "inspector", t, timeout=30)), log=log)
     k, alarm = net_streak(_net, "sync", msg)
     if k:
         _sync["last"] = 0.0
@@ -602,6 +616,7 @@ def tick():
         step("stuck_tick", stuck_tick, ts)
         step("net_due_tick", net_due_tick, ts) # #364
         step("conflicts_tick", conflicts_tick, ts)  # #262
+        step("pc_tick", pc_tick, ts)                # #293
         for name, fn in (("observer_tick", observer_tick), ("ai_observer_tick", ai_observer_tick), ("nightly_tick", nightly_tick),
                          ("parked_tick", parked_tick), ("due_tick", due_tick), ("garden_tick", garden_tick),   # #282 #241 #187
                          ("issues_stuck_tick", issues_stuck_tick), ("desks_tick", desks_tick), ("canary_tick", canary_tick),   # #280 #330

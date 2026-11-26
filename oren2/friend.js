@@ -60,6 +60,8 @@ FR.onCorrect=ctx=>{ctx=ctx||{};if(!FR.shown()&&onAct())FR.mount();const fixed=(c
   return talk(t,ctx);};
 FR.onWrong=ctx=>{ctx=ctx||{};if(!FR.shown()&&onAct())FR.mount();streak=0;missed=!ctx.final;anim('sad');if(ctx.final)missed=false;return talk(draw(ctx.final?SHOWN:WRONG),ctx);};
 FR.reset=()=>{streak=0;missed=false;};
+/* a story opens: try to read alone first (#355). Bubble only: the screen's own instruction (sayNow) says it */
+const READFIRST='קוֹדֶם נְנַסֶּה לִקְרֹא לְבַד!';FR.READFIRST=READFIRST;FR.readFirst=()=>talk(READFIRST,{quiet:1,ms:4000});
 
 /* ---------- a picture that stands for a word: say the word ---------- */
 let lead='';                                   /* a story line waiting to be said before the next instruction */
@@ -115,7 +117,7 @@ O.on('screen',id=>{FR.reset();
   else FR.unmount();});
 O.on('levelDone',()=>setTimeout(FR.stepCheck,D(600)));
 
-FR.speakList=()=>[DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
+FR.speakList=()=>[READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
   ...[...Object.values(STORY),STORY0].flatMap(([a,b])=>[a,FIRST+' '+a,LAST+' '+a,b,b+' '+ALL])];
 FR._cur=()=>cur;FR._lines={ok:OK,streak:[...Object.values(STREAK),STREAK_MORE],effort:EFFORT,wrong:WRONG,shown:SHOWN};
 window.FRIEND=FR;window.PATHBAR=PATHBAR;
