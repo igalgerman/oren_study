@@ -359,6 +359,13 @@ def eff_text(wins):
     s = f" · efficiency {f(main)}" + (" merged/10%" if main["eff"] is not None else "") + (f" (last {f(other)})" if other else "")
     return s + f" · wasted {main['wasted']}" + (f" (last {other['wasted']})" if other else "")
 
+def eff_fields(wins):
+    """#245: governor.json fields for the panel: eff/wasted of the current window, eff_last/wasted_last of the last finished one."""
+    cur = wins[-1] if wins and not wins[-1]["done"] else None
+    last = next((w for w in reversed(wins) if w["done"]), None)
+    return {"eff": cur and cur["eff"], "wasted": cur["wasted"] if cur else 0,
+            "eff_last": last and last["eff"], "wasted_last": last["wasted"] if last else None}
+
 def governor(usage, hist, now, g=None, prev=None, wins=None):
     """Pure (#239): usage.json dict (or None) + samples + now -> {lanes, stop, pct, projected, reset, week_pct, week_projected, week_reset, why}.
     Most remote lanes in [min, max] whose projection at the 5h reset stays <= target (min when even that is above); 5h >= stop -> no new run;
@@ -423,7 +430,8 @@ def governor_pass(remote_busy, now=None):
         except Exception: pass
         return out
     hist = jsonl("usage_hist.jsonl", 5000)
-    wins = gov_windows(hist, [e for e in jsonl("stats.jsonl", 5000) if e.get("ts", 0) > now - 16 * 3600], now)   # #245
+    events = [e for e in jsonl("stats.jsonl", 5000) if e.get("ts", 0) > now - 16 * 3600]   # #245
+    wins = gov_windows(hist, events, now)
     try: prev = int(json.loads((RUNS / "governor.json").read_text(encoding="utf-8"))["lanes"])
     except Exception: prev = None
     gv = governor(usage, hist, now, prev=prev, wins=wins)
@@ -433,8 +441,8 @@ def governor_pass(remote_busy, now=None):
         if gv["pct"] is not None:                    # #245: 16 h of samples = the current and the last two 5h windows
             hist = [h for h in hist if now - h.get("at", 0) < 16 * 3600] + [{"at": now, "pct": gv["pct"], "reset": usage.get("five_h_reset"), "busy": remote_busy, "lanes": gv["lanes"]}]
             (RUNS / "usage_hist.jsonl").write_text("".join(json.dumps(h) + "\n" for h in hist), encoding="utf-8")
-            wins = gov_windows(hist, [e for e in jsonl("stats.jsonl", 5000) if e.get("ts", 0) > now - 16 * 3600], now)
-        (RUNS / "governor.json").write_text(json.dumps({**gv, "text": governor_text(gv) + eff_text(wins), "at": now}), encoding="utf-8")
+            wins = gov_windows(hist, events, now)
+        (RUNS / "governor.json").write_text(json.dumps({**gv, **eff_fields(wins), "text": governor_text(gv) + eff_text(wins), "at": now}), encoding="utf-8")
         if prev is not None and gv["lanes"] != prev:
             log_line(f"{datetime.fromtimestamp(now).astimezone():%Y-%m-%d %H:%M:%S} governor: lanes {prev} -> {gv['lanes']} ({gv['why']})")     # #245: the reason of every lane change
     except Exception: pass
@@ -449,7 +457,8 @@ def assign_where(chosen, local_busy, remote_busy, local_lanes, remote_lanes):
         elif "express" in i.get("labels", []): out.append((i, "remote" if remote_lanes > 0 else "local"))   # #72: select() gave it the extra express slot: all lanes busy still starts it
     return out
 
-ACCEPT = ("Build exactly the issue's `## Acceptance` list (every point, with the tests it names) and nothing in its `Out of scope` (#186).")
+ACCEPT = ("Build exactly the issue's `## Acceptance` list (every point, with the tests it names) and nothing in its `Out of scope` (#186). "
+          "New tests: add the test to an existing suite unless a new one is clearly needed; give it a budget line in oren2/tests/budget.txt (#187).")
 SPEC = ("A 'Batch:' issue (title starts with Batch:) or an issue labelled 'spec': follow docs/agents/skills/implement-spec.md "
         "(one branch, sub-agents in parallel for independent parts, integrate, test once, one PR).\n")
 
@@ -1308,8 +1317,10 @@ def pregen_cmd():
 
 def start_pregen(log=None, popen=None):
     """#175: voice pregen in the background, OUTSIDE the merge lock (it can take 30 min); one at a time; never blocks an issue.
-    -> 'started' / 'already running' / 'off' / 'failed: ...'."""
-    if not CFG.get("pregen", False): return "off"
+    -> 'started' / 'already running' / 'off' / 'off (test)' / 'failed: ...'."""
+    if CFG.get("deploy_in_ci", True) or not CFG.get("pregen", False): return "off"   # #325: CI pregens after each deploy; the PC never does
+    if popen is None and (os.environ.get("OREN_TEST") == "1" or RUNS.resolve() != (HERE / ".runs").resolve()):
+        return "off (test)"                                  # #325: a test never launches the real node pregen.js
     try:                                                     # #301: nothing here may raise into process(): a failure is a note, never a block
         lock = FileLock("pregen")
         if lock.held_by_other(): return "already running"
@@ -1317,7 +1328,7 @@ def start_pregen(log=None, popen=None):
         RUNS.mkdir(exist_ok=True)
         out = open(RUNS / "pregen.log", "a", encoding="utf-8")
         out.write(f"\n=== pregen {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n"); out.flush()
-        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)   # #325: no DETACHED_PROCESS: a console-less node gives every child (Chrome) a visible window
         p = (popen or subprocess.Popen)(pregen_cmd(), cwd=str(MAIN_CHECKOUT), env=env, stdout=out, stderr=subprocess.STDOUT, creationflags=flags | no_window())
         lock.path.write_text(str(p.pid))                     # held while that process lives (FileLock checks the pid)
         if log: log_to(log, f"voice pregen started in the background (pid {p.pid}, .runs/pregen.log)")

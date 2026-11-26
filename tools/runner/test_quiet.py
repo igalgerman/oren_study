@@ -2,6 +2,7 @@
 import os, re, subprocess, sys, tempfile, time
 from pathlib import Path
 os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")
+os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 HERE = Path(__file__).resolve().parent
 sys.argv.append("--dry-run"); sys.path.insert(0, str(HERE))
 import runner as R, remote, watchdog as W, ai_observer as A, nightly as N
