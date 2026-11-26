@@ -169,6 +169,52 @@ async function stories(b) {
   await p.evaluate(() => window.TAL.parentPanel('day')); await L.sleep(300);
   const rows = await p.evaluate(() => [...document.querySelectorAll('.dllog .dlrow.dl-c')].map(x => x.textContent));
   ok('parent day log shows the story name, its goal, read alone / listened and the level', rows.length === 4 && rows.every(t => /🎯/.test(t) && /רמה 1/.test(t)) && rows.filter(t => /קרא לבד/.test(t)).length === 2 && rows.filter(t => /האזין/.test(t)).length === 2, JSON.stringify(rows));
+  await words420(p, run);
   ok('stories: no JS errors', !errs.length, errs.slice(0, 3).join(' | '));
   await ctx.close();
+}
+
+/* ---------- #420: "words we will meet" before a story; words he taps while reading come back the next day in word practice ---------- */
+async function words420(p, run) {
+  // data: every story (bank + bedtime) has 2-3 words, each with nikud and a picture, met as a word of the story itself
+  const dat = await p.evaluate(() => { const C = t => String(t).replace(/<[^>]+>/g, ' ').split(/\s+/).map(w => w.replace(/[^֑-ׇא-ת]/g, ''));
+    const all = [...window.READBANK2.stories.map(s => ['R' + s.id, s]), ...window.TAL.STORIES.map((s, k) => ['B' + k, s])];
+    return all.filter(([, s]) => { const hw = s.hw || []; const toks = new Set(s.s.flatMap(C));
+      return !(hw.length >= 2 && hw.length <= 3 && hw.every(([w, pic]) => /[ְ-ּ]/.test(w) && pic && toks.has(w))); }).map(([id]) => id).concat(['n' + all.length]); });
+  ok('#420 every story has 2-3 words we will meet (nikud + picture, words of the story)', dat.length === 1 && dat[0] === 'n60', JSON.stringify(dat));
+  // the card: above the story, one tile per word (picture + word), a tap says the word
+  const spy = () => p.evaluate(() => { const O = window.OREN; window.__said420 = []; if (!O.__say420) { O.__say420 = O.say; O.say = (t, ...a) => { window.__said420.push(t); return O.__say420(t, ...a); }; } });
+  await spy(); await run(p, 0, 1); await L.sleep(150);
+  const card = await p.evaluate(() => { const c = document.querySelector('#sTal .sthw'), st = document.querySelector('#sTal .story'); const hw = window.READBANK2.stories[0].hw;
+    const ts = c ? [...c.querySelectorAll('.hwt')] : []; if (ts[0]) ts[0].click();
+    return { has: !!c, above: !!c && !!st && c.getBoundingClientRect().bottom <= st.getBoundingClientRect().top + 1, title: c && c.querySelector('.sthwt').textContent,
+      n: ts.length, want: hw.length, words: ts.map(t => t.querySelector('.hww').textContent).join() === hw.map(x => x[0]).join(), pics: ts.every(t => t.querySelector('.hwp').textContent.trim()), said: window.__said420.slice(), w0: hw[0][0] }; });
+  ok('#420 pre-story card above the story: title, one tile per word with picture and word', card.has && card.above && /מִלִּים שֶׁנִּפְגֹּשׁ/.test(card.title) && card.n === card.want && card.words && card.pics, JSON.stringify(card));
+  ok('#420 tapping a word tile says the word', card.said.includes(card.w0), JSON.stringify(card.said));
+  await p.evaluate(() => window.TAL.readStory(0, () => {})); await L.sleep(150);
+  ok('#420 the bedtime stories show the card too', await p.evaluate(() => document.querySelectorAll('#sTal .sthw .hwt').length === window.TAL.STORIES[0].hw.length));
+  // tap a word while reading: the word (with nikud) is said and stored; due tomorrow, not today
+  await p.evaluate(() => { const S = window.LEARN.state(); if (S.wr) delete S.wr['rb-asked']; if (S.sn) delete S.sn['rb-asked']; window.TAL.S().askw = []; window.LEARN.setNow(null); });
+  await spy(); await run(p, 1, 1); await L.sleep(150);
+  const tap = await p.evaluate(() => { const ln = document.querySelectorAll('#sTal .story .sl')[2]; const ws = [...ln.querySelectorAll('.rw')]; const w = ws[1]; w.click();
+    const want = window.READBANK2.stories[1].s[2].split(/\s+/)[1].replace(/[^֑-ׇא-ת]/g, '');
+    return { want, said: window.__said420.slice(), asked: window.READBANK2.asked(), due: window.READBANK2.askedDue() }; });
+  ok('#420 tapping a word in the story says that word (with nikud)', tap.said.includes(tap.want) && /[ְ-ּ]/.test(tap.want), JSON.stringify(tap));
+  ok('#420 the tapped word is stored, not due the same day', tap.asked.includes(tap.want) && !tap.due.includes(tap.want), JSON.stringify(tap));
+  const tmr = await p.evaluate(() => { const L = window.LEARN; L.setNow(() => Date.now() + 864e5); return window.READBANK2.askedDue(); });
+  ok('#420 the next day the tapped word is due', tmr.includes(tap.want), JSON.stringify(tmr));
+  // next day, word practice: the round starts with it ("which word did you hear?"), the word is said, he picks it among written words
+  await spy(); await p.evaluate(() => window.__rb2run.pw(() => {})); await L.sleep(200);
+  const q = await p.evaluate(() => { const Q = window.__quiz; const bs = [...Q.wrap.querySelectorAll('.chs .chb')].map(b => b.textContent.trim());
+    return { qq: Q.wrap.querySelector('.tqc').textContent, opts: bs, right: bs[Q.ans], said: window.__said420.slice() }; });
+  ok('#420 next day: word practice starts with the tapped word (heard, then picked among words)', /אֵיזוֹ מִלָּה שָׁמַעְתָּ/.test(q.qq) && q.right === tap.want && q.opts.length === 3 && q.said.includes(tap.want), JSON.stringify(q));
+  await L.sleep(100); await p.evaluate(() => { const Q = window.__quiz; Q.wrap.querySelector('.chs').children[Q.ans].click(); }); await L.sleep(100);
+  ok('#420 answered right: not due again that day', await p.evaluate(w => !window.READBANK2.askedDue().includes(w), tap.want));
+  // voice: the card title, the question and every word of every story are in the pregen lists
+  const pg = await p.evaluate(() => { const R = window.READBANK2, T = window.TAL; const sl = new Set(R.speakList()), wl = new Set(T.storyWordList());
+    const miss = [...R.stories.flatMap(s => s.hw.map(x => x[0])).filter(w => !sl.has(w)), ...T.STORIES.flatMap(s => s.hw.map(x => x[0])).filter(w => !wl.has(w))];
+    return { miss, title: sl.has(T.HW_T) || wl.has(T.HW_T), heard: sl.has(R.UI.heard), word: wl.has(window.READBANK2.stories[1].s[2].split(/\s+/)[1].replace(/[^֑-ׇא-ת]/g, '')), n: wl.size }; });
+  const src = require('fs').readFileSync(require('path').join(__dirname, '../cf/tools/pregen.js'), 'utf8');
+  ok('#420 pregen: card words, title, question and all story words', !pg.miss.length && pg.title && pg.heard && pg.word && pg.n > 500 && /storyWordList\(\)/.test(src), JSON.stringify(pg).slice(0, 300));
+  await p.evaluate(() => window.LEARN.setNow(null));
 }
