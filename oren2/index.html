@@ -1145,6 +1145,7 @@ function mergeIn(o){if(!o||typeof o!=='object')return;
   for(const k of ['prof','bdg','last'])if(o[k]&&!save[k])save[k]=o[k];
   for(const m of ['dom','rw','coach','cnt'])for(const [k,v] of Object.entries(o[m]||{})){save[m]=save[m]||{};save[m][k]=Math.max(+save[m][k]||0,+v||0);}
   if(o.lrn&&window.LEARN&&window.LEARN.core)save.lrn=window.LEARN.core.merge(save.lrn,o.lrn);
+  if(o.kn&&window.KNOW)save.kn=window.KNOW.core.merge(save.kn,o.kn);
   if(o.help&&typeof o.help==='object'){const hp=save.help=save.help||{items:{},tb:[],t:0};hp.items=hp.items||{};for(const [k,v] of Object.entries(o.help.items||{})){const c=hp.items[k];if(!c||(v.n|0)>(c.n|0)||((v.n|0)===(c.n|0)&&String(v.last||'')>String(c.last||'')))hp.items[k]=v;}
     if((o.help.tb||[]).length>(hp.tb||[]).length)hp.tb=o.help.tb;hp.t=Math.max(hp.t|0,o.help.t|0);}
   if(o.health&&window.HEALTH)save.health=window.HEALTH.merge(save.health||{},o.health);else if(o.health&&!save.health)save.health=o.health;
@@ -4329,7 +4330,7 @@ function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(
   s.appendChild(h('div','whead',`<h1>לוח הורים</h1>`));const tb=h('div','ptabs');TABS.forEach(([id,n])=>{const b=h('button','ptab'+(id===curTab?' on':''),n);b.onclick=()=>{openSec=null;panel(id);};tb.appendChild(b);});s.appendChild(tb);
   const body=h('div','pbody');s.appendChild(body);
   if(curTab==='sum')sumTab(body);
-  else if(curTab==='day'){timeTab(body);if(window.HEALTH)window.HEALTH.panel(body,sec,()=>panel('day'));planTab(body);if(window.DAYLOG)window.DAYLOG.panel(body,sec);if(window.LEARN)window.LEARN.parentPanel(body,sec,()=>panel('day'));if(T.rdSettings)T.rdSettings(body,sec,()=>panel('day'));}
+  else if(curTab==='day'){timeTab(body);if(window.HEALTH)window.HEALTH.panel(body,sec,()=>panel('day'));planTab(body);if(window.DAYLOG)window.DAYLOG.panel(body,sec);if(window.LEARN)window.LEARN.parentPanel(body,sec,()=>panel('day'));if(window.KNOW)window.KNOW.panel(body,sec,()=>panel('day'));if(T.rdSettings)T.rdSettings(body,sec,()=>panel('day'));}
   else MORE.forEach(([id,n])=>{const d=document.createElement('details');d.className='pdet';const sm=document.createElement('summary');sm.textContent=n;d.appendChild(sm);const inner=h('div','pdin');d.appendChild(inner);let done=false;
     const fill=()=>{if(done)return;done=true;FN[id](inner);};d.addEventListener('toggle',()=>{if(d.open){openSec=id;fill();}});if(openSec===id){d.open=true;fill();}body.appendChild(d);});
   const out=h('div','btnrow');const bb=h('button','bigbtn plain sm',ICON.home+'<span>יציאה מלוח ההורים</span>');bb.onclick=exitParent;out.appendChild(bb);s.appendChild(out);window.__par=curTab;parLiveOn();
@@ -5383,7 +5384,7 @@ window.FRIEND=FR;window.PATHBAR=PATHBAR;
      LESSONS.first(ids,back,then)   unseen lessons of ids (in order), then then(); seen ones are skipped
      LESSONS.show(ids,back,then)    the lessons again, always (the "show me again" button)
      LESSONS.againBtn(ids,back,then) the small button; put it on the activity screen
-     LESSONS.seen(id) · LESSONS.speakList() (voice pregen)
+     LESSONS.seen(id) · LESSONS.mark(id,on) (KNOW sets it) · LESSONS.speakList() (voice pregen)
    Seen lessons: T.S().lc = {id:1}. */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;
 const DEF={};
@@ -5393,6 +5394,8 @@ const {h,$,ICON}=O;const sfx=O.sfx,D=O.D||(x=>x);
 const LC=()=>{const s=T.S();s.lc=s.lc||{};return s.lc;};
 const list=ids=>(Array.isArray(ids)?ids:[ids]).filter(id=>DEF[id]);
 api.seen=id=>!!LC()[id];
+/* KNOW (#57): a known skill marks its lesson seen (skipped); a wrong answer later unmarks it (the lesson comes back) */
+api.mark=(id,on)=>{if(on)LC()[id]=1;else delete LC()[id];O.persist();};
 function run(ids,back,then){ids=ids.slice();if(!ids.length)return then();const id=ids.shift(),d=DEF[id],cards=d.cards;let i=0;
   O.setScreen('sTal',d.bg||'final',back);const s=$('#sTal');
   const show=()=>{const c=cards[i];T.hudT(d.title,T.progressBar(i,cards.length));s.innerHTML='';
@@ -5410,6 +5413,89 @@ function run(ids,back,then){ids=ids.slice();if(!ids.length)return then();const i
 api.first=(ids,back,then)=>run(list(ids).filter(id=>!api.seen(id)),back,then);
 api.show=(ids,back,then)=>run(list(ids),back,then);
 api.againBtn=(ids,back,then)=>{const b=h('button','lcagain','📖 <span>הַרְאֵה לִי שׁוּב</span>');b.onclick=()=>{sfx.pop(1);api.show(ids,back,then);};return b;};
+})();
+
+/* ===== KNOW (#57): what Oren already knows — skip what he knows, step back quietly, learn over time =====
+   One small model for every area (math, English, music, and any area added later).
+   An area lists its skills, easy → hard, in tracks (one track = one ladder, e.g. the rhythm activity):
+     KNOW.area(id,{name (parent text), skills:[{id, track, lesson (lesson card id), ...pack data}],
+                   asks:[{id, q (parent question, plain text), skills:[skill ids]}], on:events=>{} (the pack moves its own levels)})
+   The rules (owner, 25 Nov 2026):
+     · 3 right answers in a row on a skill → 'known': its lesson is skipped, the next harder skill follows.
+     · a wrong answer on a known skill → not known any more: its lesson comes back.
+     · 2 wrong answers in a row → quietly back to the easier skill of the same track (no message).
+     · about 1 question in 10 is a quick review of a skill he already knows (KNOW.review).
+     · the parent answers a few yes/no questions per area (parent panel); yes = that skill and the easier ones
+       of its track are known, no = that skill and the harder ones are not. The game keeps learning from his answers.
+   Part 1 (pure, runs in Node for the tests) works on a state object; part 2 binds it to save.kn and the lesson cards.
+   State: save.kn = {k:{skill:{r (right in a row), w (wrong in a row), ok (known), b (stepped back from it)}}, pl:{ask:1|0}, t} */
+window.KNOW=(()=>{'use strict';
+const AREAS={};
+const REVIEW=.1;
+const blank=()=>({k:{},pl:{},t:0});
+const ensure=st=>{st=st&&typeof st==='object'?st:blank();st.k=st.k||{};st.pl=st.pl||{};return st;};
+const rec=(st,id)=>st.k[id]||(st.k[id]={r:0,w:0,ok:0});
+function area(id,def){def.id=id;def.asks=def.asks||[];def.skills.forEach(s=>{s.track=s.track||'';s.area=id;});AREAS[id]=def;return def;}
+const skillOf=id=>{for(const a in AREAS){const s=AREAS[a].skills.find(x=>x.id===id);if(s)return s;}return null;};
+const track=(a,tr)=>((AREAS[a]||{skills:[]}).skills).filter(s=>s.track===(tr||''));
+const near=(id,d)=>{const s=skillOf(id);if(!s)return null;const t=track(s.area,s.track);return t[t.indexOf(s)+d]||null;};
+const known=(st,id)=>!!(st&&st.k&&st.k[id]&&st.k[id].ok);
+/* one first-try answer → the events it caused: [{e:'known'|'lost'|'back', skill, to}] */
+function answer(st,id,ok){st=ensure(st);const s=skillOf(id);if(!s)return [];const k=rec(st,id),ev=[];st.t=Date.now();
+  if(ok){k.r=(k.r|0)+1;k.w=0;
+    if(!k.ok&&k.r>=3){k.ok=1;ev.push({e:'known',skill:id,area:s.area});const nx=near(id,1);if(nx&&st.k[nx.id])delete st.k[nx.id].b;}}
+  else{k.r=0;k.w=(k.w|0)+1;
+    if(k.ok){k.ok=0;ev.push({e:'lost',skill:id,area:s.area});}
+    if(k.w>=2){k.w=0;const pv=near(id,-1);if(pv){const p=rec(st,pv.id);p.ok=0;p.r=0;k.b=1;ev.push({e:'back',skill:id,to:pv.id,area:s.area});}}}
+  return ev;}
+/* the skill to work on in a track: the first one not known (all known: the hardest) */
+function current(st,a,tr){const t=track(a,tr);return t.find(s=>!known(st,s.id))||t[t.length-1]||null;}
+/* about 1 in 10: a known easier skill of the same track to review now (else null) */
+function review(st,id,rnd){const s=skillOf(id);if(!s)return null;const t=track(s.area,s.track);const easier=t.slice(0,t.indexOf(s)).filter(x=>known(st,x.id));
+  rnd=rnd||Math.random;if(!easier.length||rnd()>=REVIEW)return null;return easier[Math.floor(rnd()*easier.length)];}
+/* the parent's yes/no answer → events [{e:'place', skill, yes}] for every skill it changed */
+function place(st,a,askId,yes){st=ensure(st);const A=AREAS[a];const q=A&&A.asks.find(x=>x.id===askId);if(!q)return [];st.pl[askId]=yes?1:0;st.t=Date.now();const ev=[];
+  q.skills.forEach(id=>{const s=skillOf(id);if(!s)return;const t=track(a,s.track),i=t.indexOf(s);
+    (yes?t.slice(0,i+1):t.slice(i)).forEach(x=>{const k=rec(st,x.id);k.ok=yes?1:0;k.r=0;k.w=0;delete k.b;ev.push({e:'place',skill:x.id,yes:!!yes,area:a});});});
+  return ev;}
+/* family merge: the newer state wins */
+function merge(dst,src){dst=ensure(dst);if(!src||typeof src!=='object')return dst;return (+src.t||0)>(+dst.t||0)?ensure(JSON.parse(JSON.stringify(src))):dst;}
+const core={AREAS,REVIEW,ensure,area,skillOf,track,near,known,answer,current,review,place,merge};
+const api=Object.assign({core},{area,skillOf,track,AREAS});
+if(typeof module!=='undefined'&&module.exports)module.exports=api;
+if(typeof document==='undefined')return api;
+
+/* ---------- part 2: the game ---------- */
+const O=window.OREN,T=window.TAL;if(!O||!T)return api;
+const h=O.h;
+const ST=()=>{O.save.kn=ensure(O.save.kn);return O.save.kn;};
+/* during a round the pack's level changes wait for its end (KNOW.begin/end), so they do not fight its own level-up */
+const held={};
+function fire(ev){ev.forEach(x=>{const s=skillOf(x.skill);const L=window.LESSONS;
+    if(L&&L.mark){if(x.e==='known'||(x.e==='place'&&x.yes))s.lesson&&L.mark(s.lesson,1);
+      else if(x.e==='lost'||(x.e==='place'&&!x.yes))s.lesson&&L.mark(s.lesson,0);
+      else if(x.e==='back'){const p=skillOf(x.to);if(p&&p.lesson)L.mark(p.lesson,0);}}});
+  const by={};ev.forEach(x=>{(by[x.area]=by[x.area]||[]).push(x);});
+  for(const a in by){if(held[a]&&!held[a].alive())api.end(a);if(held[a])held[a].q.push(...by[a]);else if(AREAS[a].on)AREAS[a].on(by[a]);}}
+api.st=ST;
+api.known=id=>known(ST(),id);
+api.current=(a,tr)=>current(ST(),a,tr);
+api.review=id=>review(ST(),id);
+api.stepped=id=>!!(ST().k[id]&&ST().k[id].b);
+api.hit=(id,ok)=>{const ev=answer(ST(),id,ok);fire(ev);O.persist();return ev;};
+api.set=(a,ask,yes)=>{const ev=place(ST(),a,ask,yes);fire(ev);O.persist();return ev;};
+/* alive(): the round's screen is still there (a round left in the middle stops holding) */
+api.begin=(a,alive)=>{api.end(a);held[a]={q:[],alive:alive||(()=>true)};};
+api.end=a=>{const x=held[a];delete held[a];if(x&&x.q.length&&AREAS[a]&&AREAS[a].on)AREAS[a].on(x.q);O.persist();};
+/* parent panel: a few yes/no questions per area (plain text, no nikud) */
+api.panel=(box,sec,rerender)=>{const st=ST();const as=Object.values(AREAS).filter(a=>a.asks.length);if(!as.length)return null;
+  const el=sec(box,'מה אורן כבר יודע','<div class="pnote">המשחק לא מלמד את מה שאורן כבר יודע. אפשר לשנות בכל זמן — המשחק ממשיך ללמוד מהתשובות שלו.</div>');
+  as.forEach(a=>{el.appendChild(h('div','knarea',`<b>${a.name}</b>`));
+    a.asks.forEach(q=>{const v=st.pl[q.id];const r=h('div','prow knq',`<span class="pn">${q.q}</span>`);const bt=h('span','lnp-bt');
+      [['כן',1],['לא',0]].forEach(([lbl,yes])=>{const b=h('button','pchip'+(v===yes?' on':''),lbl);b.dataset.ask=q.id;b.dataset.yes=yes;b.onclick=()=>{api.set(a.id,q.id,yes);rerender&&rerender();};bt.appendChild(b);});
+      r.appendChild(bt);el.appendChild(r);});});
+  return el;};
+return api;
 })();
 
 /* ===== CURRICULUM GAPS (grade 1-2): nikud ladder, first sound, spelling, word race, final letters, more stories =====
@@ -6668,12 +6754,13 @@ let CUR=null;
 function lesson(key,qs,back){const [id,title,max]=ACTS[key];const lvl=ST()[key];let i=0,err=0,gems=0,items=0;qs.forEach(q=>{items+=q.items||1;});
   O.setScreen('sTal','final',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq m2');s.appendChild(wrap);
   if(key==='rhy'&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(rhyLessons(),back,()=>rhyRun(back)));
-  const show=()=>{const q=qs[i];T.hudT(title,T.progressBar(i,qs.length));wrap.innerHTML='';T.setKey(null);CUR=KIND[q.k](q,wrap,done);};
+  const sk=skAt(key,lvl);if(KN)KN.begin('music',()=>wrap.isConnected&&!s.hidden);
+  const show=()=>{const q=qs[i];T.hudT(title,T.progressBar(i,qs.length));wrap.innerHTML='';T.setKey(null);CUR=KIND[q.k](q,wrap,(e,first,el)=>{if(KN&&(q.rv||sk))KN.hit(q.rv||sk.id,!!first);done(e,first,el);});};
   function done(e,first,el){err+=e;const g=first?2:e>=2&&!el?0:1;if(g){gems+=g;O.addGems(g,el||wrap);O.floatText(el||wrap,'+'+g);}
     setTimeout(()=>{if(!wrap.isConnected)return;i++;if(i<qs.length)show();else finish();},D(e>=2?2200:1300));}
-  function finish(){CUR=null;T.setKey(null);const st=err<=Math.max(1,items*.1)?3:err<=Math.max(3,items*.3)?2:1;const up=st>=2&&lvl<max;const m2=ST();if(up)m2[key]=lvl+1;
+  function finish(){CUR=null;T.setKey(null);const st=err<=Math.max(1,items*.1)?3:err<=Math.max(3,items*.3)?2:1;const up=st>=2&&lvl<max;const m2=ST();if(up)m2[key]=lvl+1;if(KN)KN.end('music');
     const bonus=5+st*2;O.addGems(bonus);T.record(id,st);
-    T.result({title:{read:'קוֹרֵא תָּוִים אַלּוּף!',ear:'אֹזֶן מְצֻיֶּנֶת!',rhy:'מְתוֹפֵף אַלּוּף!',mel:'נִגַּנְתָּ מֵהַתָּוִים!'}[key],sub:up?`עָלִיתָ לְשָׁלָב ${lvl+1}!`:st>=2&&lvl===max?'סִיַּמְתָּ אֶת כָּל הַשְּׁלָבִים!':'',stars:st,gems:gems+bonus,back,again:()=>START[key](back)});}
+    T.result({title:{read:'קוֹרֵא תָּוִים אַלּוּף!',ear:'אֹזֶן מְצֻיֶּנֶת!',rhy:'מְתוֹפֵף אַלּוּף!',mel:'נִגַּנְתָּ מֵהַתָּוִים!'}[key],sub:m2[key]>lvl?`עָלִיתָ לְשָׁלָב ${m2[key]}!`:st>=2&&lvl===max?'סִיַּמְתָּ אֶת כָּל הַשְּׁלָבִים!':'',stars:st,gems:gems+bonus,back,again:()=>START[key](back)});}
   window.__quiz={get ans(){return CUR&&CUR.ans?CUR.ans():undefined;},get i(){return i;},get wrap(){return wrap;}};
   show();}
 
@@ -6736,11 +6823,11 @@ function keyMap(kb){const ws=[...kb.querySelectorAll('.mw')];T.setKey(e=>{const 
 
 /* ---------- question sets per level ---------- */
 const noteBtn=(i,clef)=>`<span class="m2opt">${staffSVG([{i,d:'q'}],{clef,minW:120,cls:'mini'})}<b>${nameOf(i)}</b></span>`;
-function readQs(){const L=READ[ST().read-1];const qs=[];let last=null;
-  for(let n=0;n<8;n++){let i;do i=pick(L.pool);while(i===last&&L.pool.length>1);last=i;
+function readQs(){const L0=READ[ST().read-1];const qs=[];let last=null;
+  for(let n=0;n<8;n++){const rv=rev('read'),L=rv?READ[rv.lv[1]-1]:L0;let i;do i=pick(L.pool);while(i===last&&L.pool.length>1);last=i;
     if(n%2===0){const right=nameOf(i);const names=[...new Set(L.pool.map(nameOf))].filter(x=>x!==right);const opts=shuffle([right,...shuffle(names).slice(0,L.opts-1)]);
-      qs.push({k:'choice',pr:`${staffSVG([{i,d:'q'}],{clef:L.clef,minW:200})}<div class="qq">אֵיזֶה תָּו זֶה?</div>`,opts,ans:opts.indexOf(right),after:()=>play(midiOf(i)),key:'r'+n});}
-    else qs.push({k:'piano',i,clef:L.clef,names:L.names});}
+      qs.push({k:'choice',pr:`${staffSVG([{i,d:'q'}],{clef:L.clef,minW:200})}<div class="qq">אֵיזֶה תָּו זֶה?</div>`,opts,ans:opts.indexOf(right),after:()=>play(midiOf(i)),key:'r'+n,rv:rv&&rv.id});}
+    else qs.push({k:'piano',i,clef:L.clef,names:L.names,rv:rv&&rv.id});}
   return qs;}
 function earQs(){const kind=EAR[ST().ear-1];const qs=[];
   for(let n=0;n<8;n++){
@@ -6751,10 +6838,10 @@ function earQs(){const kind=EAR[ST().ear-1];const qs=[];
     else{const pool=kind==='which2'?[0,4]:[0,2,4];const x=pick(pool);const opts=pool.map(i=>noteBtn(i));
       qs.push({k:'choice',pr:`<div class="m2ear">🎹</div><div class="qq">קֹדֶם דּוֹ, וְאַחֲרָיו תָּו סוֹדִי. אֵיזֶה תָּו הוּא?</div>`,opts,ans:pool.indexOf(x),cls:'m2pic',play:()=>{play(60,.6);play(midiOf(x),.7,1,1.1);},auto:1,playLbl:'שׁוּב',say:'קודם דו, ואחריו תו סודי. איזה תו הוא?',a:60,b:midiOf(x)});}}
   return qs;}
-function rhyQs(){const L=RHY[ST().rhy-1];const qs=[];
-  for(let n=0;n<L.nq;n++){const v=L.vals[n%L.vals.length];const byBeats=n>=L.vals.length;const opts=shuffle(L.vals.map(x=>byBeats?VALB[x]:VALN[x]));const right=byBeats?VALB[v]:VALN[v];
-    qs.push({k:'choice',pr:`${staffSVG([{i:0,d:v}],{one:true,minW:160})}<div class="qq">${byBeats?'כַּמָּה פְּעָמוֹת נִמְשָׁךְ הַתָּו הַזֶּה?':'אֵיזֶה תָּו זֶה?'}</div>`,opts,ans:opts.indexOf(right),cls:byBeats?'m2num':'',key:'v'+n});}
-  shuffle(L.pats.slice()).slice(0,8-L.nq).forEach(p=>qs.push({k:'tap',pat:p}));
+function rhyQs(){const L0=RHY[ST().rhy-1];const qs=[];
+  for(let n=0;n<L0.nq;n++){const rv=rev('rhy'),L=rv?RHY[rv.lv[1]-1]:L0;const v=L.vals[n%L.vals.length];const byBeats=n>=L.vals.length;const opts=shuffle(L.vals.map(x=>byBeats?VALB[x]:VALN[x]));const right=byBeats?VALB[v]:VALN[v];
+    qs.push({k:'choice',pr:`${staffSVG([{i:0,d:v}],{one:true,minW:160})}<div class="qq">${byBeats?'כַּמָּה פְּעָמוֹת נִמְשָׁךְ הַתָּו הַזֶּה?':'אֵיזֶה תָּו זֶה?'}</div>`,opts,ans:opts.indexOf(right),cls:byBeats?'m2num':'',key:'v'+n,rv:rv&&rv.id});}
+  shuffle(L0.pats.slice()).slice(0,8-L0.nq).forEach(p=>qs.push({k:'tap',pat:p}));
   return qs;}
 function melQs(){const L=MEL[ST().mel-1];return L.songs.map(song=>({k:'melody',song,names:L.names,items:parseMel(song).length}));}
 /* lesson cards before the first rhythm questions (#56): note lengths; eighths get their own lesson when they first appear */
@@ -6771,6 +6858,20 @@ if(LN){LN.add('mus-len',{title:'כַּמָּה זְמַן נִמְשָׁךְ ת�
   LN.add('mus-len8',{title:'תָּו חָדָשׁ: שְׁמִינִית',bg:'final',cards:[
     {art:()=>staffSVG([{i:0,d:'e'}],{one:true,minW:160}),t:'זוֹ שְׁמִינִית: עִגּוּל מָלֵא, מַקֵּל וְדֶגֶל. הִיא מְהִירָה: נִמְשֶׁכֶת חֲצִי פְּעָמָה.'},
     {art:()=>`<div class="lcrow">${staffSVG([{i:0,d:'e',beam:'s'},{i:0,d:'e',beam:'e'}],{one:true,minW:160})}<span class="lcarr">=</span>${staffSVG([{i:0,d:'q'}],{one:true,minW:160})}</div>`,t:'שְׁתֵּי שְׁמִינִיּוֹת יַחַד נִמְשָׁכוֹת כְּמוֹ רֶבַע אֶחָד.'}]});}
+/* what Oren knows (#57): reading notes and rhythm, each a ladder of skills over the activity's levels (lv = [from, to]) */
+const KN=window.KNOW;
+const skAt=(key,lvl)=>KN?KN.track('music',key).find(x=>lvl>=x.lv[0]&&lvl<=x.lv[1])||null:null;
+const rev=key=>{const s=skAt(key,ST()[key]);return s?KN.review(s.id):null;};
+if(KN)KN.area('music',{name:'מוזיקה',skills:[
+    {id:'mus-len',track:'rhy',lv:[1,2],lesson:'mus-len'},{id:'mus-len8',track:'rhy',lv:[3,4],lesson:'mus-len8'},
+    {id:'mus-read',track:'read',lv:[1,2]},{id:'mus-read2',track:'read',lv:[3,4]},{id:'mus-bass',track:'read',lv:[5,5]}],
+  asks:[{id:'mus-len',q:'מכיר משכי תווים: שלם, חצי, רבע',skills:['mus-len']},{id:'mus-len8',q:'מכיר שמיניות',skills:['mus-len8']},
+    {id:'mus-read',q:'קורא את התווים דו, רה, מי, פה, סול על החמשה',skills:['mus-read']},{id:'mus-read2',q:'קורא את כל תווי האוקטבה',skills:['mus-read2']}],
+  /* known → the next skill's first level; 2 wrong in a row → the easier skill's last level; the parent's yes/no moves the level the same way */
+  on:evs=>{const m2=ST();evs.forEach(x=>{const s=KN.skillOf(x.skill),key=s.track,nx=KN.core.near(s.id,1);
+    if(x.e==='known'&&nx)m2[key]=Math.max(m2[key],nx.lv[0]);
+    else if(x.e==='back')m2[key]=Math.min(m2[key],KN.skillOf(x.to).lv[1]);
+    else if(x.e==='place')m2[key]=x.yes?Math.max(m2[key],nx?nx.lv[0]:s.lv[1]):Math.min(m2[key],s.lv[0]);});O.persist();}});
 const rhyLessons=()=>['mus-len',...(RHY[ST().rhy-1].vals.includes('e')?['mus-len8']:[])];
 const rhyRun=back=>lesson('rhy',rhyQs(),back);
 const START={read:back=>lesson('read',readQs(),back),ear:back=>lesson('ear',earQs(),back),rhy:back=>LN?LN.first(rhyLessons(),back,()=>rhyRun(back)):rhyRun(back),mel:back=>lesson('mel',melQs(),back)};
@@ -6788,7 +6889,7 @@ function register(building){if(reg)return;reg=true;const acts=actList();const ha
 /* for the parent panel: one row per skill (plain text, no nikud) */
 function skills(){const tl=T.S().tl,m2=ST();const lv={'קריאת תווים':m2.read,'שמיעה':m2.ear,'קצב':m2.rhy};
   return Object.entries(SKILLS).map(([name,ids])=>({name,ids,stars:ids.reduce((a,id)=>a+((tl[id]||{}).s|0),0),max:ids.length*3,plays:ids.reduce((a,id)=>a+((tl[id]||{}).n|0),0),level:lv[name]}));}
-Object.assign(window.MUSIC2,{register,skills,SKILLS,START,ST,READ,EAR,RHY,MEL,play,
+Object.assign(window.MUSIC2,{register,skills,SKILLS,START,ST,READ,EAR,RHY,MEL,play,rhyQs,readQs,
   setLevel:(k,n)=>{ST()[k]=n;O.persist();},solve:()=>CUR&&CUR.solve&&CUR.solve()});
 Object.defineProperty(window.MUSIC2,'cur',{get:()=>CUR});
 })();
@@ -7744,7 +7845,9 @@ function unitDone(save,u){const E=st(save);if(E.u[u.id])return true;if(u.lv===4)
   if(!groupsOf(u).every(g=>u.items.some(k=>groupOf(k)===g&&seen(save,k))))return false;
   const n=u.items.filter(k=>known(save,k)).length;if(n>=Math.ceil(u.items.length*.8)){E.u[u.id]=1;return true;}return false;}
 const doneUnits=(save,lv)=>LEVELS[lv].units.filter(u=>unitDone(save,u)).length;
-function levelOpen(save,lv){if(lv===0||(save.set&&save.set.all))return true;const [from,n]=OPEN[lv];return doneUnits(save,from)>=n;}
+/* a level also opens when Oren already knows the level before it (#57: 3 right in a row, or the parent said so) */
+const knowsLv=(save,lv)=>!!(save.kn&&save.kn.k&&(save.kn.k[LEVELS[lv].id]||{}).ok);
+function levelOpen(save,lv){if(lv===0||(save.set&&save.set.all))return true;if(lv<4&&knowsLv(save,lv-1))return true;const [from,n]=OPEN[lv];return doneUnits(save,from)>=n;}
 const songOpen=(save,th)=>levelOpen(save,4)&&(unitDone(save,UNIT['v-'+th])||!!(save.set&&save.set.all));
 const openSongs=save=>SONGS.filter(s=>songOpen(save,s.th));
 const curUnit=(save,lv)=>LEVELS[lv].units.find(u=>!unitDone(save,u))||null;
@@ -7990,8 +8093,8 @@ function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save
       if(v.afterK){const tok=++TOK;karaoke(card.querySelector('.e2sent'),q.s,tok);}else if(v.after)talk(v.after);};
     function pick(k,b){if(lock||b.disabled)return;
       if(k===q.ans){lock=true;hush();b.classList.add('ok');sfx.ok(i);const g=tries||hinted?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);
-        if(!tries&&T.skHit)T.skHit(NAMES[lv],!hinted);settle(tries?'bad':hinted?'hint':'ok');nq++;reveal();setTimeout(next,D(v.after||v.afterK?2600:1700));return;}
-      if(!tries&&T.skHit)T.skHit(NAMES[lv],false);tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();
+        if(!tries&&T.skHit)T.skHit(NAMES[lv],!hinted);if(!tries&&KN)KN.hit(NAMES[lv],!hinted);settle(tries?'bad':hinted?'hint':'ok');nq++;reveal();setTimeout(next,D(v.after||v.afterK?2600:1700));return;}
+      if(!tries&&T.skHit)T.skHit(NAMES[lv],false);if(!tries&&KN)KN.hit(NAMES[lv],false);tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();
       if(tries>=2){lock=true;hush();settle('bad');nq++;row.children[q.ans].classList.add('show');reveal();setTimeout(next,D(3000));}}
     }
   function next(){if(!wrap.isConnected)return;i++;if(i>=steps.length){T.setKey(null);const t=doneTitle(before,snapshot());T.finishAct(id,err,Math.max(1,nq),gems,back,()=>round(lv,back),t);}else render();}
@@ -8025,7 +8128,11 @@ if(LN)LN.add('eng-abc',{title:'אוֹתִיּוֹת בְּאַנְגְּלִית
   {art:()=>`<div class="lcrow"><div class="e2let e2one">B</div><div class="e2let e2one">b</div></div>`,t:'לְכָל אוֹת יֵשׁ צוּרָה גְּדוֹלָה וְצוּרָה קְטַנָּה. שְׁתֵּיהֶן אוֹתָהּ אוֹת.',after:()=>talk([['en','B']])},
   {art:()=>`<div class="lcrow"><div class="e2let e2one">B</div><div class="e2kw">${pic('ball')}<span class="e2word sm"><b>b</b>all</span></div></div>`,t:'לְכָל אוֹת יֵשׁ צְלִיל. הָאוֹת הַזֹּאת נִשְׁמַעַת כְּמוֹ בּ, כְּמוֹ בַּהַתְחָלָה שֶׁל בּוֹל.',after:()=>talk([['en',E2.sayIsFor('B','ball')]])}]});
 const ABC=back=>round(1,back);
-const runLv=(lv,back)=>lv===4?songs(back):lv===1&&LN?LN.first('eng-abc',back,()=>ABC(back)):round(lv,back);
+/* what Oren knows (#57): the English levels are one ladder. 2 wrong in a row → the level plays the easier one, quietly, until that is known again */
+const KN=window.KNOW;
+if(KN)KN.area('english',{name:'אנגלית',skills:NAMES.slice(0,4).map(id=>({id,track:'eng',lesson:LN&&id==='eng-abc'?'eng-abc':undefined})),
+  asks:[{id:'eng-voc',q:'מכיר מילים בסיסיות באנגלית',skills:['eng-voc']},{id:'eng-abc',q:'מכיר את האותיות באנגלית והצלילים שלהן',skills:['eng-abc']},{id:'eng-read',q:'קורא מילים קצרות באנגלית',skills:['eng-read']}]});
+const runLv=(lv,back)=>(lv>=1&&lv<=3&&KN&&KN.stepped(NAMES[lv]))?runLv(lv-1,back):lv===4?songs(back):lv===1&&LN?LN.first('eng-abc',back,()=>ABC(back)):round(lv,back);
 const ACTS=NAMES.map((id,lv)=>({id,name:ACTN[id],icon:ICONS[id],avail:()=>lv===4?E2.openSongs(O.save).length>0:E2.levelOpen(O.save,lv),run:back=>runLv(lv,back)}));
 function register(){const b=T.BUILD.find(x=>x.id==='eng');if(!b||b._e2)return;b._e2=1;
   b.acts.forEach(a=>{if(T.ACT[a.id]===a)delete T.ACT[a.id];});b.acts=ACTS.slice();ACTS.forEach(a=>{a.b=b;T.ACT[a.id]=a;});
@@ -8850,7 +8957,7 @@ window.__th={track,readRC,challenge,openTracks,TH,skillList};
    family merge, and the question generators (mental-math strategies, word problems, challenge puzzles, paper tasks).
    It runs in Node for the tests. Part 2 hooks it into the game: two activities in the thinking tower
    ('ln-math' = math training, the engine picks the strategy and level; 'ln-paper' = take paper and pencil),
-   the placement screen, the parent's view and controls.
+   the parent's view and controls (no placement test in the game, #57: the parent answers a few questions in KNOW).
    State: save.lrn = {v, k:{skill:{l,h,n,d,i,u,f,g,lk,r}}, pl:{domain:level}, rc:[recent skills], pf:{focus,pace}, pt, pp}
      l level · h last first-try answers ('1'/'0', 12) · n answers · d last day (day number) · i review step (IV) · u due day
      f quick perfect rounds in a row · g good rounds in a row (calm pace) · lk locked by the parent · r open round [n,ok,ms] */
@@ -9267,7 +9374,6 @@ C.bind({state:ST,cands,planSteps,names:nameOf,after:()=>{},onLevel:(sk,k)=>{cons
 /* a city activity finished with st stars (call it from T.record; the tlDone event is the fallback) */
 C.noteAct=(id,st)=>{if(!id||/^ln-/.test(id))return;const s=ST();const sk='a:'+id;const ok=Math.max(0,Math.min(3,st|0));K.start(s,sk,1);
   for(let j=0;j<3;j++)K.record(s,sk,j<ok,true,5000);K.done(s,sk);C._noted=id;};
-C.needsPlacement=dom=>dom==='math'&&!(ST().pl.math)&&!DRILLS.some(sk=>(ST().k[sk]||{}).n);
 C.names=nameOf;C.journeyNext=journeyNext;C.cands=cands;
 /* what the parent sees: per domain the next things the engine plans, and what is due for review */
 C.parentView=()=>{const st=ST(),t=C.dayNum();const doms=['math',...T.GROUPS.map(g=>g.id)].filter(d=>cands(d).length);const snap=JSON.stringify(st);
@@ -9329,32 +9435,31 @@ function askQ(wrap,q,i,n,title,onAns){T.hudT(title,T.progressBar(i,n));wrap.inne
   window.__learn={q,get ans(){return q.ans;},wrap,i};}
 
 /* ---------- math training: the engine picks 1–3 skills, interleaved ---------- */
-function mathRound(back){const st=ST();if(C.needsPlacement('math'))return placement('math',back,()=>mathRound(back));
+/* what Oren knows (#57): every strategy is a ladder of levels ('mm-ten@2'). 3 right in a row → the next level; 2 wrong in a row → one level down.
+   No placement test in the game: the parent answers 3 questions; the game learns from his answers anyway. */
+const KN=window.KNOW;
+const kid=(sk,lv)=>sk+'@'+lv;
+if(KN)KN.area('math',{name:'חשבון',skills:DRILLS.flatMap(sk=>Array.from({length:C.maxLv(sk)},(_,j)=>({id:kid(sk,j+1),track:sk,sk,lv:j+1}))),
+  asks:[['math-10','מחבר ומחסר עד 10',1],['math-20','מחבר ומחסר עד 20 (גם מעבר עשרת)',2],['math-100','מחבר ומחסר עד 100',3]].map(([id,q,lv])=>({id,q,skills:DRILLS.filter(sk=>C.maxLv(sk)>=lv).map(sk=>kid(sk,lv))})),
+  on:evs=>{const st=ST();evs.forEach(x=>{const s=KN.skillOf(x.skill),k=st.k[s.sk]||{l:1},mx=C.maxLv(s.sk),l=k.l||1;if(k.lk)return;let nl=l;
+    if(x.e==='known')nl=Math.max(l,Math.min(mx,s.lv+1));else if(x.e==='back')nl=Math.min(l,s.lv-1);
+    else if(x.e==='place'){nl=x.yes?Math.max(l,Math.min(mx,s.lv+1)):Math.min(l,s.lv);if(x.yes)st.pl.math=Math.max(st.pl.math|0,6*s.lv);}
+    if(nl!==l)C.setLevel(s.sk,Math.max(1,nl));});O.persist();}});
+function mathRound(back){const st=ST();
   const dc=mathCands().filter(c=>c.step==='ln-math');const t=C.dayNum();
   const due=dc.filter(c=>C.isDue(st.k[c.skill],t));let parts,title;
   if(due.length>=2){parts=due.slice(0,3).map(c=>({sk:c.skill,lv:(st.k[c.skill]||{}).l||1}));title=KID.mix;}
   else{const a=K.pick(st,dc,{t});const b=K.pick(st,dc,{t,exclude:new Set([a.skill]),review:due.length?true:undefined});parts=[{sk:a.skill,lv:a.lv}];if(b)parts.push({sk:b.skill,lv:b.lv});title=KID[a.skill];}
   parts.forEach(p=>{p.lv=K.start(st,p.sk,p.lv);});
   const N=6;const order=parts.length===1?Array(N).fill(0):parts.length===2?[0,0,1,0,1,0]:[0,1,2,0,1,2];
-  const qs=[],seen=new Set();for(let i=0;i<N;i++){const p=parts[order[i]];let q;for(let k=0;k<30;k++){q=C.gen(p.sk,p.lv);if(!seen.has(q.key))break;}seen.add(q.key);qs.push(q);}
-  let i=0,err=0;O.setScreen('sTal','mount',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq lnr');s.appendChild(wrap);
+  /* about 1 question in 10: a quick review one level easier (a level he already passed) */
+  const qs=[],seen=new Set();for(let i=0;i<N;i++){const p=parts[order[i]];const lv=p.lv>1&&KN&&Math.random()<KN.core.REVIEW?p.lv-1:p.lv;let q;for(let k=0;k<30;k++){q=C.gen(p.sk,lv);if(!seen.has(q.key))break;}seen.add(q.key);q.klv=lv;qs.push(q);}
+  let i=0,err=0;O.setScreen('sTal','mount',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq lnr');s.appendChild(wrap);if(KN)KN.begin('math',()=>wrap.isConnected&&!s.hidden);
   const ttl=()=>`${parts.length>2?title:KID[qs[i].sk]} · שָׁלָב ${qs[i].lv}`;
-  const go=()=>askQ(wrap,qs[i],i,N,ttl(),(r)=>{if(r){C.record(qs[i].sk,r.ok,r.first,r.ms);if(!r.ok)err++;O.persist();return;}i++;if(i<N)go();else end();});
-  function end(){T.setKey(null);let msg='';parts.forEach(p=>{const r=C.done(p.sk);if(r&&r.up>=2)msg='🚀 קָפַצְתָּ שְׁנֵי שְׁלַבִּים!';else if(r&&r.up===1&&!msg)msg='🎉 עָלִיתָ שָׁלָב!';});
+  const go=()=>askQ(wrap,qs[i],i,N,ttl(),(r)=>{if(r){C.record(qs[i].sk,r.ok,r.first,r.ms);if(KN)KN.hit(kid(qs[i].sk,qs[i].klv),r.ok);if(!r.ok)err++;O.persist();return;}i++;if(i<N)go();else end();});
+  function end(){T.setKey(null);let msg='';parts.forEach(p=>{const r=C.done(p.sk);if(r&&r.up>=2)msg='🚀 קָפַצְתָּ שְׁנֵי שְׁלַבִּים!';else if(r&&r.up===1&&!msg)msg='🎉 עָלִיתָ שָׁלָב!';});if(KN)KN.end('math');
     T.finishAct('ln-math',err,N,0,back,()=>mathRound(back),msg||undefined);}
   go();}
-
-/* ---------- placement ("where are you?") ---------- */
-function placement(dom,back,then){const lad=C.MATH_LADDER;const ps=C.placeStart(lad);O.setScreen('sTal','mount',back);const s=$('#sTal');s.innerHTML='';
-  const say='כַּמָּה שְׁאֵלוֹת קְצָרוֹת, וְנֵדַע מֵאֵיפֹה לְהַתְחִיל.';O.sayNow=plain(say);T.hudT('מֵאֵיפֹה מַתְחִילִים?');
-  s.appendChild(h('div','whead',`<span class="gd bob">🧗</span><h1>מֵאֵיפֹה מַתְחִילִים?</h1>`));s.appendChild(h('div','lsent',say));
-  const row=h('div','btnrow');const goB=h('button','bigbtn',O.ICON.play+'<span>הַמְשֵׁךְ</span>');goB.onclick=()=>{sfx.pop(2);ask();};row.appendChild(goB);s.appendChild(row);setTimeout(()=>goB.focus(),100);
-  let wrap=null;const MAXQ=7;
-  function ask(){if(!wrap){s.innerHTML='';wrap=h('div','tq lnr');s.appendChild(wrap);}const [sk,lv]=lad[ps.i];const q=C.gen(sk,lv);let first=null;
-    askQ(wrap,q,ps.n,MAXQ,'מֵאֵיפֹה מַתְחִילִים?',r=>{if(r){first=r;return;}C.placeStep(ps,lad,first&&first.ok);if(C.placeDone(ps,lad,MAXQ))fin();else ask();});}
-  function fin(){T.setKey(null);const res=C.placeResult(ps,lad);K.applyPlacement(ST(),dom,res);O.persist();const top=Math.max(1,res.top+2);
-    const ov=$('#ov');ov.hidden=false;ov.innerHTML=`<div class="card"><div class="qbig">🏔️</div><h2>מְצֻיָּן!</h2><div class="sub">מָצָאנוּ אֶת הַשָּׁלָב שֶׁלְּךָ. מַמְשִׁיכִים מִשָּׁם!</div></div>`;
-    const r=h('div','btnrow');const b=h('button','bigbtn',O.ICON.play+'<span>הַמְשֵׁךְ</span>');b.onclick=()=>{ov.hidden=true;then();};r.appendChild(b);ov.firstChild.appendChild(r);sfx.win();O.say('מצוין! מצאנו את השלב שלך.');setTimeout(()=>b.focus(),200);}}
 
 /* ---------- paper & pencil ---------- */
 function paper(back){const st=ST();const last=st.pp&&st.pp.k;const kind=last==='math'?'write':'math';const sk=kind==='math'?'pp-math':'pp-write';
@@ -9404,7 +9509,6 @@ C.skillsPanel=(box,sec,rerender)=>{const st=ST(),t=C.dayNum();const ids=[...DRIL
 
 /* ---------- activities ---------- */
 C.run=(id,back)=>{if(id==='ln-math')return mathRound(back);if(id==='ln-paper')return paper(back);const a=T.ACT[id];if(a)a.run(back);};
-C.placement=(dom,back,then)=>placement(dom,back,then||back);
 const addAct=(bid,a)=>{const b=T.BUILD.find(x=>x.id===bid);if(!b)return;const old=T.ACT[a.id];if(old){Object.assign(old,a);return;}a.b=b;b.acts.push(a);T.ACT[a.id]=a;};
 C.register=()=>{addAct('think',{id:'ln-math',name:'אִמּוּן חֶשְׁבּוֹן',icon:()=>'<span style="font-size:34px">🧮</span>',run:mathRound});
   addAct('think',{id:'ln-paper',name:'דַּף וְעִפָּרוֹן',icon:()=>'<span style="font-size:34px">📝</span>',avail:()=>!paperToday(),run:paper});

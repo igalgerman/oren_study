@@ -79,7 +79,7 @@ ok('melodies: every bar has 4 beats', E.parseMel && ['2q 1q 0h | 2q 1q 0h', '0q 
   const f1 = await p.evaluate(() => window.__freqs[0]);
   ok('pressing a key plays an equal-tempered pitch', [60, 62, 64, 65, 67, 69, 71, 72].some(m => Math.abs(f1 - 440 * Math.pow(2, (m - 69) / 12)) < 1e-6), String(f1));
   ok('reading lesson finishes', await playThrough('read', 'mus2-read', () => { const q = window.__quiz; if (!q || !q.wrap.isConnected) return; const c = q.wrap.querySelector('.chs'); if (c && c.children[q.ans]) c.children[q.ans].click(); }));
-  ok('reading: stars recorded, moved up to level 2', await p.evaluate(() => (window.TAL.S().tl['mus2-read'] || {}).s >= 2 && window.MUSIC2.ST().read === 2));
+  ok('reading: stars recorded; all right → do-re-mi known (#57), so it moves on to the next skill (level 3)', await p.evaluate(() => (window.TAL.S().tl['mus2-read'] || {}).s >= 2 && window.MUSIC2.ST().read === 3));
   await shot('read-result');
   // every reading level, incl. bass clef: the note asked is drawn where it belongs
   for (let lv = 2; lv <= 5; lv++) {
