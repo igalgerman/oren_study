@@ -50,22 +50,25 @@ const srv = http.createServer((q, r) => { const m = /^\/api\/save\/([a-f0-9]{32}
   await startAct(); await sleep(100); await lim({ nofin: 1, today: null }); await used(31); await lim({}); ok('with "finish" off: locks mid-activity', !!(await locked()));
   await lim({ nofin: 0, today: { d: await p.evaluate(() => window.OREN.today()), none: 1 } }); await p.evaluate(() => document.querySelectorAll('.tyay').forEach(e => e.remove()));
   ok('"no limit today": unlocked, no pill', !(await locked()) && !(await pill()));
-  // count-based
-  const d0 = await p.evaluate(() => (window.TAL.S().cnt || {})[window.OREN.today()] | 0);
-  await lim({ today: { d: await p.evaluate(() => window.OREN.today()), n: d0 + 2 } }); await p.evaluate(() => window.OREN.showMap()); await sleep(100);
-  pl = await pill(); ok('count limit: "⭐ עוֹד 2 מְשִׂימוֹת"', pl && pl.t === '⭐ עוֹד 2 מְשִׂימוֹת' && !pl.low, JSON.stringify(pl));
-  await startAct(); await sleep(100); await endAct(); await cont();
-  pl = await pill(); ok('one left: "last task", orange, and said', pl && pl.t === '⭐ מְשִׂימָה אַחֲרוֹנָה' && pl.low && (await said()).includes('זוֹ הַמְּשִׂימָה הָאַחֲרוֹנָה') && !(await locked()), JSON.stringify(pl));
-  await startAct(); await sleep(100); await endAct(); await p.evaluate(() => window.TAL.limCheck()); ok('the last one: no lock over its result', !(await locked()));
-  await cont(); ok('then the lock (tasks done)', (await locked()) === 'סִיַּמְתָּ אֶת הַמְּשִׂימוֹת שֶׁל הַיּוֹם!', await locked());
+  // the day's tasks: finishing them never stops him, unless the parent switched "stop when tasks done" on
+  const today = () => p.evaluate(() => window.OREN.today());
+  const plan = async () => { const d = await today(); await p.evaluate(([d, id]) => { window.TAL.S().daily = { d, t: [id], done: [0], claimed: 0, ch: 'plan', cr: [] }; }, [d, rid]); };
+  await lim({ today: { d: await today(), n: 2 }, daily: 0, stopDone: 0 }); await p.evaluate(() => window.OREN.showMap()); await sleep(100);
+  ok('an old task-count limit does nothing: no pill', !(await pill()));
+  await plan(); await startAct(); await sleep(100); await endAct(); await cont(); await p.evaluate(() => window.TAL.limCheck());
+  ok('tasks done, setting OFF: no lock (free time)', !(await locked()));
+  await plan(); await lim({ today: null, stopDone: 1 }); await startAct(); await sleep(100); await endAct(); await p.evaluate(() => window.TAL.limCheck());
+  ok('setting ON: no lock over the last result', !(await locked()));
+  await cont(); ok('setting ON: the lock right after the last task', (await locked()) === 'סִיַּמְתָּ אֶת הַמְּשִׂימוֹת שֶׁל הַיּוֹם!', await locked());
   // the parent's block
   await p.evaluate(() => { document.querySelectorAll('.tlock').forEach(e => e.remove()); document.body.classList.remove('tlocked'); window.TAL.parentPanel('day'); }); await sleep(300);
   const pb = await p.evaluate(() => { const s = document.querySelector('#sPar .pbody .psec'); return { h: s && s.querySelector('h3').textContent, chips: s ? [...s.querySelectorAll('.pchip')].map(x => x.textContent) : [], big: s ? [...s.querySelectorAll('.pbig .bigbtn')].map(x => x.textContent).join('|') : '' }; });
-  ok('parent: "⏱️ היום" block first: two big buttons, the rest folded', pb.h === '⏱️ היום' && ['ללא הגבלה', '⏹ לסיים עכשיו'].every(c => pb.chips.includes(c)) && pb.big === '+15 דק׳|+ משימה', JSON.stringify(pb));
+  ok('parent: "⏱️ היום" block first: two big buttons, the rest folded', pb.h === '⏱️ היום' && ['ללא הגבלה', '⏹ לסיים עכשיו'].every(c => pb.chips.includes(c)) && pb.big === '+15 דק׳', JSON.stringify(pb));
   if (process.env.HSHOTS) await p.screenshot({ path: path.join(process.env.HSHOTS, 'parent-today-' + L.variant + '.png') });
-  const n0 = await p.evaluate(() => (window.TAL.S().set.lim.today || {}).n | 0);
-  await p.locator('#sPar .pbig .bigbtn', { hasText: '+ משימה' }).click(); await sleep(200);
-  ok('"+ משימה" gives one more activity', await p.evaluate(n0 => window.TAL.S().set.lim.today.n === n0 + 1, n0), String(n0));
+  ok('parent: no task-count buttons', !pb.chips.some(c => /משימות$/.test(c)) && !pb.big.includes('משימה'), JSON.stringify(pb));
+  const tog = () => p.evaluate(() => { const c = [...document.querySelectorAll('#sPar .pchip')].find(x => x.textContent.includes('לעצור אותו כשסיים את משימות היום')); if (!c) return null; const on = c.classList.contains('on'); c.click(); return on; });
+  await lim({ stopDone: 0 }); await p.evaluate(() => window.TAL.parentPanel('day')); await sleep(300); const t1 = await tog(); ok('parent: "stop when tasks done" is OFF by default and turns ON', t1 === false && await p.evaluate(() => window.TAL.S().set.lim.stopDone === 1), String(t1));
+  await sleep(200); ok('parent: and OFF again', (await tog()) === true && await p.evaluate(() => !window.TAL.S().set.lim.stopDone));
   await ctx.close();
   // ---------- two devices: the parent's phone grants, Oren's device unlocks ----------
   if (fs.existsSync(path.join(PUB, 'index.html'))) {
