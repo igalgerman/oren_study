@@ -571,16 +571,21 @@ _st["escalated"] = _n + 31 * 60
 assert W.orch_decision("done", [213], _st, _n + 40 * 60) == "nudge"              # no second escalation within 2 h
 print("ok watch the checker")
 # #234: a run ends as DONE when its issue is closed or its lane PR is merged elsewhere (every wait loop checks, one gh call per poll)
-assert r.run_over("CLOSED", 0) and r.run_over("OPEN", 1) and not r.run_over("OPEN", 0) and not r.run_over("", 0) and not r.run_over(None, None)
-_gq = '{"data":{"repository":{"issue":{"state":"%s"},"pullRequests":{"totalCount":%d}}}}'
+_S0 = "2026-11-26T12:00:00Z"                         # run start
+assert r.run_over("CLOSED", [], _S0) and r.run_over("OPEN", ["2026-11-26T12:30:00Z"], _S0)
+assert not r.run_over("OPEN", [], _S0) and not r.run_over("", [], _S0) and not r.run_over(None, None, _S0)
+assert not r.run_over("OPEN", ["2026-11-20T09:00:00Z"], _S0)          # reopened issue: lane/<n> PR merged BEFORE this run -> keep working
+assert not r.run_over("OPEN", [None], _S0)
+def _gq_(state, merged): return _j.dumps({"data": {"repository": {"issue": {"state": state}, "pullRequests": {"nodes": [{"mergedAt": m} for m in merged]}}}})
 _calls = []
 def _fr(out, rc=0):
     def f(cmd, **kw): _calls.append(cmd); return rc, out
     return f
-assert r.issue_over(7, run_=_fr(_gq % ("CLOSED", 0))) and r.issue_over(7, run_=_fr(_gq % ("OPEN", 1)))
-assert not r.issue_over(7, run_=_fr(_gq % ("OPEN", 0)))
-assert not r.issue_over(7, run_=_fr("boom", rc=1)) and not r.issue_over(7, run_=_fr("not json"))   # gh failed: never end a run on an error
-assert len(_calls) == 5 and all(c[:3] == ["gh", "api", "graphql"] for c in _calls) and any("h=lane/7" in c for c in _calls)   # one gh call per poll
+assert r.issue_over(7, _S0, run_=_fr(_gq_("CLOSED", []))) and r.issue_over(7, _S0, run_=_fr(_gq_("OPEN", ["2026-11-26T13:00:00Z"])))
+assert not r.issue_over(7, _S0, run_=_fr(_gq_("OPEN", [])))
+assert not r.issue_over(7, _S0, run_=_fr(_gq_("OPEN", ["2026-11-01T13:00:00Z"])))      # #234 review: old merged lane PR of a reopened issue
+assert not r.issue_over(7, _S0, run_=_fr("boom", rc=1)) and not r.issue_over(7, _S0, run_=_fr("not json"))   # gh failed: never end a run on an error
+assert len(_calls) == 6 and all(c[:3] == ["gh", "api", "graphql"] for c in _calls) and any("h=lane/7" in c for c in _calls)   # one gh call per poll
 # wait_remote: ended() -> {'state': 'ended'}; a final status still wins
 _t = [0]
 _seq = iter([{"state": "working"}, {"state": "working"}])
@@ -607,7 +612,7 @@ _lab, _did = [], []
 r.gh = lambda *a, **k: (0, ""); r.run = lambda *a, **k: (0, ""); r.stat = lambda *a, **k: None; r.set_where = lambda *a: None
 r.set_labels = lambda n, add=(), remove=(): _lab.append((tuple(add), tuple(remove)))
 r.remove_worktree = lambda *a, **k: _did.append("wt"); r.close_windows = lambda n: _did.append("win")
-r.block = lambda *a, **k: _did.append("block"); r.issue_over = lambda n: True
+r.block = lambda *a, **k: _did.append("block"); r.issue_over = lambda n, since: bool(since)
 r.remote.start = _ok; r.remote.status = lambda n, since=None: {"state": "working"}
 try:
     _res = r.process_locked({"number": 7, "labels": ["pack"]}, "remote")

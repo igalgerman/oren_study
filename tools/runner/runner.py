@@ -218,21 +218,22 @@ def remote_worker_prompt(n, lane, bug=False):
                    f"if blocked post `RESULT: STUCK <why>`; if you need the owner post `QUESTION: <short question, with options>` and stop. "
                    "The comment must have that line on its own line.")
 
-def run_over(issue_state, merged_prs):
-    """Pure (#234): the run has nothing left to do when its issue is CLOSED or its lane PR is already merged."""
-    return issue_state == "CLOSED" or bool(merged_prs)
+def run_over(issue_state, merged_at, since):
+    """Pure (#234): the run has nothing left to do when its issue is CLOSED or a lane PR was merged AFTER this run started
+    (since, ISO UTC). A lane/<n> PR merged before (a reopened issue reuses lane/<n>) does not count."""
+    return issue_state == "CLOSED" or any(m and m >= since for m in merged_at or [])
 
 _OVER_Q = ("query($o:String!,$r:String!,$n:Int!,$h:String!){repository(owner:$o,name:$r){"
-           "issue(number:$n){state} pullRequests(headRefName:$h,states:MERGED,first:1){totalCount}}}")
+           "issue(number:$n){state} pullRequests(headRefName:$h,states:MERGED,first:5,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{mergedAt}}}}")
 
-def issue_over(n, run_=None):
-    """#234: ONE gh call: is issue #n closed or lane/<n> merged? Any gh/parse error -> False (never end a run on an error)."""
+def issue_over(n, since, run_=None):
+    """#234: ONE gh call: is issue #n closed, or lane/<n> merged after `since` (run start)? Any gh/parse error -> False (never end a run on an error)."""
     o, name = REPO.split("/", 1)
     rc, out = (run_ or run)(["gh", "api", "graphql", "-f", f"query={_OVER_Q}", "-f", f"o={o}", "-f", f"r={name}", "-F", f"n={n}", "-f", f"h=lane/{n}"], timeout=60)
     if rc: return False
     try:
         repo = json.loads(out)["data"]["repository"]
-        return run_over((repo.get("issue") or {}).get("state"), (repo.get("pullRequests") or {}).get("totalCount"))
+        return run_over((repo.get("issue") or {}).get("state"), [x.get("mergedAt") for x in (repo.get("pullRequests") or {}).get("nodes") or []], since)
     except (ValueError, KeyError, TypeError):
         return False
 
@@ -535,7 +536,7 @@ def code_mode(n):
     k = int(CFG.get("code_mode_every", 0) or 0)
     return k > 0 and int(n) % k == 0
 
-def agent(name, prompt, cwd, tools, log, marker, n, role, model=MODEL):
+def agent(name, prompt, cwd, tools, log, marker, n, role, model=MODEL, over=None):
     """Run an INTERACTIVE claude in a herdr terminal the owner can open; return (screen text, marker line).
     Terminals are closed after success and left open when BLOCKED/PARKED. A window of that name that is still live (parked earlier) is re-attached, not restarted.
     Waiting for a person longer than park_minutes -> Parked. Falls back to the hidden `claude -p` when herdr is unavailable."""
@@ -582,7 +583,7 @@ def agent(name, prompt, cwd, tools, log, marker, n, role, model=MODEL):
             if time.time() - last_check > 60:                           # someone (watchdog / owner) parked or blocked the issue: stop waiting
                 last_check = time.time()
                 if "blocked" in (issue_labels(n) or []): raise Parked(name)
-                if issue_over(n): raise Ended(name)                        # #234: closed / merged elsewhere
+                if over and over(): raise Ended(name)                      # #234: closed / merged elsewhere
             time.sleep(10)           # agent idle without a marker (e.g. the owner is talking to it): look again later
         else:
             raise Blocked(f"{name}: no {marker} line after 3h")
@@ -800,7 +801,7 @@ def log_to(log, text):
         with open(log, "a", encoding="utf-8") as f: f.write(text + "\n")
     except OSError: pass
 
-def ci_integrate(n, wt, log):
+def ci_integrate(n, wt, log, over=None):
     """CI-based integrate (#74): update the lane with main, push, wait for the PR checks, `gh pr merge --squash`. -> (rc, out) like integrate.sh:
     0 merged, 2 conflict, 4 no PR, 5 push failed, 6 CI red after one rerun, 7 CI timeout / merge failed (blocked, real reason in out)."""
     pr = find_pr(n)
@@ -828,7 +829,7 @@ def ci_integrate(n, wt, log):
         with FileLock("integrate", wait=True, note=f"#{n} CI merge"):                   # #166: the lock covers only the merge itself
             rc_, o_ = gh("pr", "merge", str(pr), "--squash", log=log)
         return True if rc_ == 0 else ("conflict" if merge_conflict(o_) else False)
-    res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp, ended=lambda: issue_over(n))
+    res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp, ended=over)
     if res[0] == "ended": raise Ended("CI merge")
     if res[0] == "merged": return 0, "merged PR #%d" % pr
     if res[0] == "red": return 6, "CI RED\n" + "\n".join(res[1])
@@ -930,7 +931,7 @@ def process_locked(issue, where="local"):
             (d / "remote.json").write_text(json.dumps({"session": s.get("session", ""), "url": s.get("url", "")}), encoding="utf-8")
         def utc():
             return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        over = lambda: issue_over(n)                     # #234: every wait loop ends the run when the issue is closed / PR merged
+        over = lambda: issue_over(n, started)                   # #234: every wait loop ends the run when the issue is closed / PR merged
         def remote_question(res):                        # the session already posted it on the issue: park, the owner answers there
             if res.startswith("QUESTION:"):
                 set_labels(n, add=["blocked", "ready-for-human"], remove=["in-progress"])
@@ -943,7 +944,7 @@ def process_locked(issue, where="local"):
         else:
             prep_worktree()
             out, res = agent(f"issue-{n}", worker_prompt(n, lane, bug="bug" in issue["labels"]), wt, WORKER_TOOLS if lane != "review" else REVIEW_LANE_TOOLS,
-                             d / "worker1.log", "RESULT:", n, "worker", wm)
+                             d / "worker1.log", "RESULT:", n, "worker", wm, over=over)
         (d / "worker1.out").write_text(redact(out), encoding="utf-8")
         if not res.startswith("RESULT: DONE"):
             raise Blocked(res or "worker gave no RESULT line")
@@ -961,7 +962,7 @@ def process_locked(issue, where="local"):
                 rv, verdict = remote_review(n, pr, red, remote.start, lambda: remote.review_status(pr, since=since), time.sleep, time.time, 3600, 60, ended=over)
             else:
                 rv, verdict = agent(f"review-{n}" + ("" if rnd == 1 else f"-{rnd}"), review_prompt(n, pr, red), wt, READ_TOOLS,
-                                    d / f"review{rnd}.log", "VERDICT:", n, "reviewer", rm)
+                                    d / f"review{rnd}.log", "VERDICT:", n, "reviewer", rm, over=over)
             (d / f"review{rnd}.out").write_text(redact(rv), encoding="utf-8")
             kind, text, extra = parse_verdict(verdict)
             if kind == "pass":
@@ -988,7 +989,7 @@ def process_locked(issue, where="local"):
                                  3 * 3600, 60, on_start=save_session, ended=over)
                 remote_question(res)
             else:
-                out, res = agent(f"issue-{n}-fix" + ("" if rnd == 1 else str(rnd)), worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / f"worker{rnd + 1}.log", "RESULT:", n, "worker", wm)
+                out, res = agent(f"issue-{n}-fix" + ("" if rnd == 1 else str(rnd)), worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / f"worker{rnd + 1}.log", "RESULT:", n, "worker", wm, over=over)
             if not res.startswith("RESULT: DONE"):
                 raise Blocked(res or "fix worker gave no RESULT line")
             stat(n, lane, "fix_done")
@@ -997,7 +998,7 @@ def process_locked(issue, where="local"):
         kind = {"ci": False}
         def integrate():
             if CFG.get("ci_merge", True) and find_pr(n):     # #74: CI decides, no local full suite
-                rc, out = ci_integrate(n, wt, log)           # #166: takes the lock itself, only around `gh pr merge`
+                rc, out = ci_integrate(n, wt, log, over)           # #166: takes the lock itself, only around `gh pr merge`
                 kind["ci"] = rc == 6
                 return rc, out
             with FileLock("integrate", wait=True, note=f"#{n} local merge"):          # fallback: local merge + full suite
@@ -1010,7 +1011,7 @@ def process_locked(issue, where="local"):
         def resolve(files):
             rounds[0] += 1
             stat(n, lane, "resolve")
-            o, r_ = agent(f"issue-{n}-resolve{rounds[0]}", ci_fix_prompt(n, files) if kind["ci"] else resolve_prompt(n, files), wt, WORKER_TOOLS, d / f"resolve{rounds[0]}.log", "RESULT:", n, "worker", wm)
+            o, r_ = agent(f"issue-{n}-resolve{rounds[0]}", ci_fix_prompt(n, files) if kind["ci"] else resolve_prompt(n, files), wt, WORKER_TOOLS, d / f"resolve{rounds[0]}.log", "RESULT:", n, "worker", wm, over=over)
             return r_.startswith("RESULT: DONE")
         outcome = integrate_with_resolve(integrate, resolve, 2)
         if outcome[0] == "giveup":
