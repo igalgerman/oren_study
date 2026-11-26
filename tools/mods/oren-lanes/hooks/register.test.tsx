@@ -106,7 +106,7 @@ test('readable view', () => {
   expect(v.lanes[1]).toMatch(/^○ free — /)
   expect(v.you).toEqual(['! #10 voice — your task', '? #11 math ideas — answer questions'])
   expect(v.orch).toEqual([])
-  expect(v.next).toEqual(['#5 G1-G8  (after #4)'])
+  expect(v.next).toEqual(['[P2] #5 G1-G8  (after #4)'])
   expect(v.done).toEqual(['✓ #3 Batch B'])
 })
 
@@ -119,6 +119,21 @@ test('blocked + needs-orchestrator stays out of your lane', () => {
   ], [], [], [])
   expect(v.you).toEqual(['! #23 parked q — your task'])
   expect(v.orch).toEqual(['orchestrator handling: #22 #24'])
+})
+
+test('up next shows priority and sorts bug, then P0-P3, then number', () => {
+  const lab = (...n: string[]) => n.map(name => ({ name }))
+  const v = view([
+    { number: 1, title: 'low', labels: lab('ready-for-agent', 'P3') },
+    { number: 2, title: 'normal', labels: lab('ready-for-agent') },
+    { number: 3, title: 'high', labels: lab('ready-for-agent', 'P1') },
+    { number: 4, title: 'urgent', labels: lab('ready-for-agent', 'P0') },
+    { number: 5, title: 'bugfix', labels: lab('ready-for-agent', 'bug', 'P3') },
+  ], [], [], [])
+  expect(v.next).toEqual([
+    '[P3] #5 bugfix  (ready)', '[P0] #4 urgent  (ready)', '[P1] #3 high  (ready)',
+    '[P2] #2 normal  (ready)', '[P3] #1 low  (ready)',
+  ])
 })
 
 test('status line counts distinct issues, capped at 3', () => {

@@ -36,6 +36,13 @@ def lane_of(labels):
             return l
     return "core"
 
+def priority_of(labels):
+    """0-3 from a P0..P3 label; P2 (normal) when missing."""
+    for n in range(4):
+        if f"P{n}" in labels:
+            return n
+    return 2
+
 def blockers(body):
     """Issue numbers in 'Blocked by: #1, #2' lines."""
     out = []
@@ -55,7 +62,7 @@ def select(issues, max_parallel, max_core=1):
              and "in-progress" not in i["labels"] and "blocked" not in i["labels"]
              and not any(b in open_nums for b in blockers(i.get("body")))]
     chosen = []
-    for i in sorted(ready, key=lambda i: ("bug" not in i["labels"], i["createdAt"])):   # bugs first
+    for i in sorted(ready, key=lambda i: ("bug" not in i["labels"], priority_of(i["labels"]), i["createdAt"])):   # bugs first, then P0..P3, then oldest
         if slots <= 0:
             break
         if lane_of(i["labels"]) == "core":
