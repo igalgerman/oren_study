@@ -70,9 +70,10 @@ def state_from(comments, pr):
             return {"state": state, "line": line, "pr": pr}
     return {"state": "working", "line": "", "pr": pr}
 
-def status(n, run=sh):
+def status(n, run=sh, since=None):
+    """since = ISO UTC time (#133): only comments created at or after it count, so an earlier run's RESULT line is ignored."""
     rc, out = run(["gh", "issue", "view", str(n), "--repo", REPO, "--json", "comments"])
-    comments = [c.get("body", "") for c in json.loads(out).get("comments", [])] if rc == 0 else []
+    comments = [c.get("body", "") for c in json.loads(out).get("comments", []) if not since or c.get("createdAt", "") >= since] if rc == 0 else []
     rc, out = run(["gh", "pr", "list", "--repo", REPO, "--head", f"lane/{n}", "--state", "all",
                    "--json", "number,url,isDraft"])
     prs = json.loads(out) if rc == 0 and out.strip() else []
