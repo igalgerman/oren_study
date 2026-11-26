@@ -19,5 +19,5 @@ voice-stats 60            # #400 adds the missing-voice report on a fake sentenc
 friend-desktop 60         # #433 adds the error-in-a-mission check (one thrown error, ~2 s): ~25 s in all
 friend-phone 60           # same file on the phone viewport
 network 60                # #434 slow network (throttled) + offline (service worker, voice from the device, save after reconnect): ~18 s alone
-resume-desktop 60          # #44 reloads mid-level, mid-quiz and while paused: ~25 s
+resume-desktop 60          # #44 reloads mid-level, mid-quiz and while paused + timed rounds paused 2 s: ~37 s
 resume-phone 60            # same file on the phone viewport

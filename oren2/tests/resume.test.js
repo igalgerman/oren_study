@@ -43,7 +43,7 @@ const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + 
   ok('pause: saving the place does not touch the family save (no cloud write)', await p.evaluate(t => window.OREN.save.t === t && !('here' in JSON.parse(localStorage.getItem('oren4-v1'))), tFam));
   const tm = await p.evaluate(() => { const O = window.OREN, d = O.today(); const a = (O.save.time || {})[d] | 0; document.querySelector('#hud').hidden = false; O.timeTick(); return [a, (O.save.time || {})[d] | 0]; });
   ok('pause: play time does not count while paused', tm[0] === tm[1], JSON.stringify(tm));
-  const mP = await mathAt(), iP = mP.i; await p.keyboard.type('1'); await p.keyboard.press('Enter'); await sleep(300);
+  const mP = await mathAt(), iP = mP.i; await p.keyboard.type('12'); await sleep(300);
   ok('pause: the keyboard does not answer under the overlay', (await mathAt()).i === iP && await p.evaluate(() => (window.__oren4.play.boxes || []).every(x => x.val === '')));
   await reopen();
   ok('reload while paused: back in the level, still paused', await vis('#sPlay') && await vis('.pzov') && (await mathAt()).i === iP);
@@ -73,6 +73,31 @@ const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + 
   ok('a finished activity is not resumed', await here() === null);
   await reopen();
   ok('after finishing, reopening goes home', await vis('#sHome') || await vis('#sMap'));
+
+  // --- timed rounds stand still while paused (review of #532): the clock, the falling letters, no result behind the card ---
+  const ovUp = () => p.evaluate(() => !document.querySelector('#ov').hidden);
+  await p.evaluate(() => window.TAL.ACT['type-rain'].run(window.OREN.showMap)); await sleep(1500);
+  const rain = () => p.evaluate(() => ({ t: (document.querySelector('#sTal .score') || {}).textContent, y: (window.__rain.blocks || []).map(o => Math.round(o.y)).join(',') }));
+  await p.click('#btnPause'); await sleep(200); const r0 = await rain(); await sleep(2000); const r1 = await rain();
+  ok('rain paused 2 s: the clock and the letters did not move, no result card', r0.t === r1.t && r0.y === r1.y && r0.y !== '' && !await ovUp(), JSON.stringify({ r0, r1 }));
+  await p.click('.pzov button'); await sleep(1500); const r2 = await rain();
+  ok('rain after continue: the clock runs again', r2.t !== r1.t && /⏱️/.test(r2.t), JSON.stringify({ r1, r2 }));
+  await p.click('#btnBack'); await sleep(300);
+  // an arcade round (45 s, ~3 s in the fast test mode)
+  await p.evaluate(() => { window.TAL_arcade(window.OREN.showMap); window.__arc.start('balloon'); }); await sleep(700);
+  const arc = () => p.evaluate(() => ({ t: (document.querySelector('#sTal .gstat .tm') || {}).textContent, y: [...document.querySelectorAll('#sTal .bal')].map(e => e.style.top).join(',') }));
+  ok('arcade round: the pause button is there', await vis('#btnPause'));
+  await p.click('#btnPause'); await sleep(200); const a0 = await arc(); await sleep(2500); const a1 = await arc();
+  ok('arcade paused: the clock and the balloons did not move, the round did not end', a0.t === a1.t && a0.y === a1.y && !await ovUp(), JSON.stringify({ a0, a1 }));
+  await p.click('.pzov button'); await sleep(4000);
+  ok('arcade after continue: the round runs on to its end', await ovUp());
+  await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.OREN.showMap(); }); await sleep(300);
+  // the math speed round (60 s)
+  await p.evaluate(() => { const O = window.__oren4; O.playSpeed(O.WORLDS[0]); }); await sleep(500);
+  await p.click('#btnPause'); await sleep(200);
+  const sp0 = await p.evaluate(() => window.__oren4.play.end - Date.now()); await sleep(1500); const sp1 = await p.evaluate(() => window.__oren4.play.end - Date.now());
+  ok('speed round paused: the time left stays', Math.abs(sp0 - sp1) < 400, JSON.stringify([sp0, sp1]));
+  await p.click('.pzov button'); await p.click('#btnBack'); await sleep(300);
 
   // --- parent play (sandbox) never writes Oren's place ---
   await p.evaluate(() => { window.OREN.parentPlay(true, true); window.TAL.ACT['read-first'].run(window.OREN.showMap); }); await sleep(400);
