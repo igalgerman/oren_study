@@ -23,6 +23,7 @@ herdr_space = "Oren_study_orech"
 # acting observer (observer.py, rules only), run by the watchdog every N minutes
 observer_minutes = 10   # 0 = off
 pregen = true    # voice pregen after each deploy; on since #68 (KV write budget) went live 26 Nov
+deploy_in_ci = true             # #192: deploy + voice pregen run in GitHub Actions (.github/workflows/deploy.yml); false = the runner deploys from the PC with .env
 code_mode_every = 3             # Code Mode trial (owner 26 Nov): issues # divisible by 3 run Claude with CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1; 0 = off
 ai_model = "haiku"              # #171: model for the dashboard AI assessment (hourly, watchdog); "" = off
 

@@ -555,6 +555,8 @@ def find_pr(n):
         return None
 
 def deploy_text(log):
+    if CFG.get("deploy_in_ci", True):                      # #192: .github/workflows/deploy.yml deploys + pregens every green push to main
+        return "deploy runs in GitHub Actions (workflow deploy, after tests)"
     tok = env_file().get("CLOUDFLARE_API_TOKEN", "")
     if not tok:
         return "not deployed: no token"
@@ -649,7 +651,7 @@ def deploy_main(log):
         run(["git", "commit", "-qm", "Rebuild index.html\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"], cwd=INTEG, log=log)
         if run(["git", "push", "-q", REMOTE, f"HEAD:{BRANCH}"], cwd=INTEG, log=log)[0]: raise Blocked("push of rebuilt index.html failed")
     sha = run(["git", "rev-parse", "HEAD"], cwd=INTEG)[1].strip()
-    mark = RUNS / "deployed.sha"
+    mark = RUNS / "deployed.sha"                               # only used when deploy_in_ci = false (#192)
     if not deploy_needed(mark.read_text().strip() if mark.exists() else "", sha):
         return "already deployed with an earlier PR (batch)"
     dep = deploy_text(log)
