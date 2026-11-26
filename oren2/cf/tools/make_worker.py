@@ -151,6 +151,53 @@ async function diag(req,env,u){
  try{const ks=((await env.SAVES.list({prefix:'diag:'})).keys||[]).map(k=>k.name).sort().reverse().slice(0,20);
   for(const k of ks){const v=JSON.parse(await env.SAVES.get(k));L.push({id:k,fam:v.fam,at:v.at,log:v.log,snapLen:(v.snap||'').length});}}catch(e){}
  return J(L.sort((a,b)=>b.at-a.at).slice(0,20).map(out));}
+/* /api/log (#348): the game's event log. POST {fam,sid,tz,ev:[{i,t,k,...}]} = one batch = ONE D1 row (table evlog); D1 only, never KV
+   (1k writes a day): no D1 = 503 and the game keeps the batch. Events keep only numbers and short strings (no objects).
+   GET /api/log/summary?days=7 = a daily summary (play minutes, missions with right/wrong, help, popups, errors, voice Google/browser share);
+   &raw=N adds the newest N raw events (needs the x-admin-key header, like /api/diag). Raw batches older than 30 days are pruned
+   (on a summary read, and on a batch at most once an hour). */
+const EVMAX=400;let evPruneAt=0;
+function evClean(e){if(!e||typeof e!=='object'||Array.isArray(e)||typeof e.k!=='string'||!/^[a-z]{1,12}$/.test(e.k))return null;const o={};let n=0;
+ for(const [k,v] of Object.entries(e)){if(n>=20||!/^[a-z]{1,8}$/i.test(k))continue;
+  if(typeof v==='number'&&isFinite(v))o[k]=v;else if(typeof v==='boolean')o[k]=v?1:0;else if(typeof v==='string')o[k]=v.slice(0,160);else continue;n++;}return o;}
+async function evInit(env){if(env.DB.exec)await env.DB.exec("CREATE TABLE IF NOT EXISTS evlog(id INTEGER PRIMARY KEY AUTOINCREMENT,fam TEXT,sid TEXT,at INTEGER,tz INTEGER,n INTEGER,ev TEXT);CREATE INDEX IF NOT EXISTS evlog_at ON evlog(at);");}
+async function evPrune(env,now){evPruneAt=now;try{await env.DB.prepare('DELETE FROM evlog WHERE at<?').bind(now-30*864e5).run();}catch(e){}}
+const evDay=(t,tz)=>new Date(t-tz*6e4).toISOString().slice(0,10);
+function evSummary(rows,days,now){const tz0=rows.length?+rows[rows.length-1].tz||0:0,from=evDay(now-(days-1)*864e5,tz0),D={},S={};
+ const day=k=>D[k]||(D[k]={day:k,sessions:0,min:0,events:0,taps:0,screens:0,questions:0,right:0,wrong:0,missions:{},help:{},popups:{},errors:0,warnings:0,syncFail:0,retries:0,audioFail:0,longFrames:0,dropped:0,voice:{google:0,browser:0,claude:0,share:null},_s:{}});
+ const inc=(o,k)=>{o[k]=(o[k]|0)+1;};
+ for(const r of rows){let L=[];try{L=JSON.parse(r.ev)||[];}catch(e){}
+  for(const e of L){const t=+e.t||r.at,k=evDay(t,+r.tz||0);if(k<from)continue;const d=day(k),sid=e.osid||r.sid;d.events++;d._s[sid]=1;(S[sid]=S[sid]||[]).push(t);
+   const mi=()=>{const id=String(e.m||'?');return d.missions[id]||(d.missions[id]={open:0,q:0,right:0,wrong:0,ms:0,_ms:0,_n:0});};
+   if(e.k==='tap')d.taps++;else if(e.k==='scr')d.screens++;else if(e.k==='mis')mi().open++;else if(e.k==='q'){d.questions++;mi().q++;}
+   else if(e.k==='ans'){const x=mi();if(e.ok)x.right++,d.right++;else x.wrong++,d.wrong++;if(e.ms>=0){x._ms+=+e.ms;x._n++;}}
+   else if(e.k==='help')inc(d.help,String(e.h||'?'));else if(e.k==='pop')inc(d.popups,String(e.p||'?'));
+   else if(e.k==='err'||e.k==='cerr')d.errors++;else if(e.k==='cwarn')d.warnings++;else if(e.k==='sync')d.syncFail++;else if(e.k==='retry')d.retries++;
+   else if(e.k==='au'&&e.ev==='fail')d.audioFail++;else if(e.k==='lf')d.longFrames++;else if(e.k==='se')d.dropped+=+e.drop||0;
+   else if(e.k==='voice'&&e.src in d.voice&&e.src!=='share')d.voice[e.src]++;}}
+ /* play minutes: the gaps between one session's events, a gap over 2 minutes counts as a pause */
+ for(const sid in S){const T=S[sid].sort((a,b)=>a-b);for(let i=1;i<T.length;i++){const g=T[i]-T[i-1];if(g<=12e4){const d=D[evDay(T[i],tz0)];if(d)d.min+=g/6e4;}}}
+ return Object.values(D).sort((a,b)=>a.day<b.day?1:-1).map(d=>{d.sessions=Object.keys(d._s).length;delete d._s;d.min=Math.round(d.min*10)/10;
+  const v=d.voice,n=v.google+v.browser+v.claude;v.share=n?Math.round(v.google/n*100)/100:null;
+  for(const x of Object.values(d.missions)){x.ms=x._n?Math.round(x._ms/x._n):0;delete x._ms;delete x._n;}return d;});}
+async function evlog(req,env,u){const now=Date.now();
+ if(u.pathname==='/api/log'){if(req.method!=='POST')return J({error:'method'},405);const t=await req.text();if(t.length>64000)return J({error:'too big'},413);let o;
+  try{o=JSON.parse(t);if(!o||!isId(String(o.fam))||!/^[a-z0-9]{4,16}$/.test(String(o.sid))||!Array.isArray(o.ev)||!o.ev.length||o.ev.length>EVMAX)throw 0;}catch(e){return J({error:'bad request'},400);}
+  const ev=o.ev.map(evClean).filter(Boolean);if(!ev.length)return J({error:'bad request'},400);
+  if(!env.DB)return J({error:'no db'},503);await evInit(env);
+  const fam=(await sha(String(o.fam))).slice(0,6),tz=Math.max(-900,Math.min(900,Math.round(+o.tz||0)));/* only a short hash of the family id, as in /api/diag */
+  await env.DB.prepare('INSERT INTO evlog(fam,sid,at,tz,n,ev) VALUES(?,?,?,?,?,?)').bind(fam,String(o.sid),now,tz,ev.length,JSON.stringify(ev)).run();
+  if(now-evPruneAt>36e5)await evPrune(env,now);
+  return J({ok:true,n:ev.length});}
+ if(u.pathname==='/api/log/summary'){if(req.method!=='GET')return J({error:'method'},405);
+  const days=Math.max(1,Math.min(30,Math.round(+u.searchParams.get('days')||7))),raw=Math.max(0,Math.min(500,Math.round(+u.searchParams.get('raw')||0)));
+  if(raw){const key=req.headers.get('x-admin-key')||'';if(!env.DIAG_KEY||(await sha(key))!==(await sha(env.DIAG_KEY)))return J({error:'unauthorized'},401);}
+  if(!env.DB)return J({error:'no db'},503);await evInit(env);await evPrune(env,now);
+  const rows=((await env.DB.prepare('SELECT sid,at,tz,ev FROM evlog WHERE at>=? ORDER BY id').bind(now-(days+1)*864e5).all()).results)||[];
+  const out={days:evSummary(rows,days,now)};
+  if(raw){const R=[];for(let i=rows.length-1;i>=0&&R.length<raw;i--){let L=[];try{L=JSON.parse(rows[i].ev)||[];}catch(e){}for(let j=L.length-1;j>=0&&R.length<raw;j--)R.push(Object.assign({sid:L[j].osid||rows[i].sid},L[j]));}out.raw=R;}
+  return J(out);}
+ return J({error:'not found'},404);}
 /* Google voice (game voice: Chirp3-HD Kore at 0.9), every sentence created once and kept forever in KV,
    plus a monthly character cap far below Google's free tier. */
 const TTS_CAP=250000;const GAME_VOICE='he-IL-Chirp3-HD-Kore',GAME_RATE=0.9;const VOICES=/^(he-IL-((Standard|Wavenet)-[A-D]|Chirp3-HD-[A-Za-z]+)|en-US-Chirp3-HD-[A-Za-z]+)$/;
@@ -430,6 +477,7 @@ export default{async fetch(req,env,ctx){const u=new URL(req.url);const p=u.pathn
  if(ctx&&ctx.waitUntil&&(p==='/'||p==='/index.html'||p.startsWith('/api/save/')))ctx.waitUntil(qRun(env).catch(()=>{}));
  if(p==='/sw.js')return new Response(SW,{headers:{'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache'}});
  if(p.startsWith('/api/tts'))return tts(req,env,u).catch(e=>J({ok:false,why:String(e&&e.message||e).slice(0,200)},503));/* a failing KV write (daily limit) used to be Cloudflare error 1101 */
+ if(p==='/api/log'||p.startsWith('/api/log/'))return evlog(req,env,u).catch(e=>J({error:'log',why:String(e&&e.message||e).slice(0,200)},503));
  if(p==='/api/diag')return diag(req,env,u).catch(e=>J({error:'diag',why:String(e&&e.message||e).slice(0,200)},503));
  const m=/^\\/api\\/save\\/([^/]+)$/.exec(p);if(m)return api(req,env,m[1]);
  if(p==='/manifest.webmanifest')return new Response(MAN,{headers:{'content-type':'application/manifest+json'}});

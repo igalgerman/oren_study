@@ -189,10 +189,10 @@ function lesson(o){const cards=o.cards.filter(c=>c);if(!cards.length)return o.th
 const Q=(lv,q,a,ds,x)=>Object.assign({lv,q,a,ds},x||{});
 function pickQs(bank,L,n,id){const ok=bank.filter(q=>q.lv<=L),LN=window.LEARN;
   if(id&&LN&&LN.pickItem&&ok.length>n)try{/* the learning engine chooses (wrong ones back on schedule, unseen first, no repeats) */const bk='x2-'+id,items=ok.map(q=>({k:q.q,lv:q.lv})),got=[],ex=new Set();
-    while(got.length<n){const r=LN.pickItem(bk,items,{lv:L,upto:true,exclude:ex});if(!r)break;ex.add(r.item.k);got.push(ok.find(q=>q.q===r.item.k));LN.seen(bk,r.item.k,true,false);}
+    while(got.length<n){const r=LN.pickItem(bk,items,{lv:L,upto:true,exclude:ex});if(!r)break;ex.add(r.item.k);got.push(Object.assign({},ok.find(q=>q.q===r.item.k),{bank:bk}));}
     if(got.length===n)return got.sort((a,b)=>a.lv-b.lv);}catch(e){}
   const pool=shuffle(ok);pool.sort((a,b)=>(b.lv===L)-(a.lv===L));return pool.slice(0,Math.min(n,pool.length)).sort((a,b)=>a.lv-b.lv);}
-const mkQ=q=>{const opts=shuffle([q.a,...q.ds]);return {pr:`${q.art?`<div class="e2art sm">${q.art}</div>`:''}<div class="qq">${q.q}</div>`,opts:opts.map(x=>q.fmt?q.fmt(x):x),ans:opts.indexOf(q.a),cls:(q.cls||'tx')+' e2o',key:q.q+'|'+q.a,explain:q.ex||''};};
+const mkQ=q=>{const opts=shuffle([q.a,...q.ds]);return {pr:`${q.art?`<div class="e2art sm">${q.art}</div>`:''}<div class="qq">${q.q}</div>`,opts:opts.map(x=>q.fmt?q.fmt(x):x),ans:opts.indexOf(q.a),cls:(q.cls||'tx')+' e2o',key:q.q+'|'+q.a,explain:q.ex||'',bank:q.bank,bkey:q.q};};
 function runQuiz(o,list){STEP=null;T.quiz({id:o.id,title:o.title,bg:o.bg,back:o.back,n:list.length,gen:i=>typeof list[i]==='function'?list[i]():mkQ(list[i])});}
 /* a lesson + quiz activity: def = {id,name,icon,bg,title,cards:[{lv,art,t}],bank:[Q...],n} */
 function lessonAct(def){return Object.assign({},def,{run:back=>{const L=lvl(def.id),o={id:def.id,title:def.title||def.name,bg:def.bg,back};

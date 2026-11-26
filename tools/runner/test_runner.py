@@ -1342,3 +1342,27 @@ _dep = {"number": 911, "labels": ["ready-for-agent", "pack", "P2"], "createdAt":
 assert [c["number"] for c in r.select([_b(910, ["later", "pack"]), _dep], 4)] == [911]
 assert [c["number"] for c in r.select([_b(910, ["pack"]), _dep], 4)] == []
 print("ok later blocker counts as done")
+
+# 26 Nov (#26): an ended issue's worker/reviewer tabs are settled with herdr-app tab.settle (once per tab), running issues are left alone
+_saved = {k: getattr(r, k) for k in ("hc", "hc_json", "run", "USE_HERDR", "HERDR_APP")}
+try:
+    _app = os.path.join(tempfile.mkdtemp(prefix="herdr-app-"), "herdr-app.exe"); open(_app, "w").close()
+    _live = {"issue-5": "t:5w", "review-5": "t:5r", "issue-6": "t:6w"}       # #6 is still running
+    _runs, _hcs = [], []
+    r.USE_HERDR, r.HERDR_APP = True, _app
+    r.hc = lambda *a, **k: (_hcs.append(a), (0, ""))[1]
+    r.hc_json = lambda *a: {"address": _live[a[1]]} if a[:1] == ("get",) and a[1] in _live else {}
+    r.run = lambda cmd, **k: (_runs.append(cmd), (0, ""))[1]
+    r.close_windows(5)
+    _settled = [c[c.index("--terminal") + 1] for c in _runs if c[:3] == [_app, "do", "tab.settle"]]
+    assert sorted(_settled) == ["t:5r", "t:5w"], _runs                       # once per tab of the ended issue
+    assert "t:6w" not in _settled                                            # never a running issue's tab
+    assert ("kill", "issue-5") in [a[:2] for a in _hcs]                      # windows still closed as before
+    _runs.clear(); r.USE_HERDR = False; r.close_windows(5); assert _runs == []   # no herdr: nothing
+finally:
+    for k, v in _saved.items(): setattr(r, k, v)
+_cw = _src.split("def close_windows", 1)[1].split("\ndef ", 1)[0]
+assert "tab.settle" in _cw
+_pl = _src.split("def process_locked", 1)[1].split("def close_windows", 1)[0]
+assert _pl.count("close_windows(n)") >= 2 and "close_windows" not in _pl.split("except Parked", 1)[1].split("except", 1)[0]   # DONE + Ended settle; parked keeps tabs
+print("ok #26 ended issue tabs settled")

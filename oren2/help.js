@@ -27,6 +27,7 @@ const E=t=>/^\d+$/.test(String(t))?String(t):`<span class="ltr">${t}</span>`;   
 const strip=s=>String(s==null?'':s).replace(/<svg[\s\S]*?<\/svg>/g,' ').replace(/<[^>]+>/g,' ').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&amp;/g,'&').replace(/\s+/g,' ').trim();
 const plain=s=>strip(s).replace(/[֑-ׇ]/g,'');
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const track=d=>{try{O().track&&O().track('help',d);}catch(e){}};/* #348 event log */
 const cfg={idle:25000,teachP:.5,keep:40};/* #347: teach-back only after a helped question, at most once a day (DB().tday) */
 
 /* ---------- speech: numbers and signs as words (voice only) ---------- */
@@ -194,7 +195,7 @@ register('add-make10',binX({topic:()=>'חיבור עם מעבר עשרת (השל
 
 const tensOnesSteps=(d,sign)=>{const ta=tens(d.l),tb=tens(d.r),oa=d.l%10,ob=d.r%10,add=sign==='+';const T=add?ta+tb:ta-tb,Ox=add?oa+ob:oa-ob,out=[];
   if(tb)out.push(`קֹדֶם הָעֲשָׂרוֹת: ${E(`${ta} ${sign} ${tb} = ${T}`)}`);
-  if(ob)out.push(`אַחַר כָּךְ הָאֲחָדוֹת: ${E(`${oa} ${sign} ${ob} = ${Ox}`)}`);
+  if(ob)out.push(`${tb?'אַחַר כָּךְ':'קֹדֶם'} הָאֲחָדוֹת: ${E(`${oa} ${sign} ${ob} = ${Ox}`)}`);
   if(add&&Ox>=10)out.push(`${E(Ox)} אֲחָדוֹת ← עוֹד עֶשֶׂרֶת!`);
   if(T&&Ox&&(tb||ob))out.push(`בְּיַחַד: ${E(`${T} + ${Ox} = ${d.res}`)}`);
   out.push(E(eqFull(d)));return out;};
@@ -253,7 +254,7 @@ register('sub-2d',binX({topic:()=>'חיסור עשרות ואחדות',tip:()=>'
   teach:()=>['הוֹרַדְתִּי עֲשָׂרוֹת וַאֲחָדוֹת','סָפַרְתִּי אָחוֹרָה','זָכַרְתִּי בְּעַל פֶּה']}));
 
 register('sub-cross',binX({topic:()=>'חיסור עם פריטה (מעבר עשרת)',tip:()=>'להוריד קודם את העשרות, אחר כך לרדת עד העשרת העגולה, ומשם את השאר',
-  hint:d=>d.r>=10?'טִיפּ: קֹדֶם תּוֹרִיד אֶת הָעֲשָׂרוֹת':`טִיפּ: קֹדֶם תֵּרֵד עַד ${E(tens(d.l))}`,
+  hint:d=>d.r>=10?'טִיפּ: קֹדֶם תּוֹרִיד אֶת הָעֲשָׂרוֹת':`טִיפּ: קֹדֶם תֵּרֵד עַד ${E(d.l%10===0?d.l-10:tens(d.l))}`,
   visual:d=>{const tr=tens(d.r),o=d.r%10,m=d.l-tr,hops=[];if(tr)hops.push({a:d.l,b:m,lbl:'−'+tr});const mo=m%10;if(mo){hops.push({a:m,b:tens(m),lbl:'−'+mo});hops.push({a:tens(m),b:d.res,lbl:'−'+(o-mo)});}else hops.push({a:m,b:d.res,lbl:'−'+o});
     return {cap:'קוֹפְצִים אָחוֹרָה בַּחֲלָקִים',svg:vLine(tens(d.res),d.l%10?tens(d.l)+10:d.l,hops,d.res)};},
   similar:d=>differ(()=>{if(d.r<10){let l;do{l=R(21,99);}while(l%10>8);return bin(l,'−',R(l%10+1,9));}const at=R(3,9),a1=R(0,8),b1=R(a1+1,9),bt=R(1,at-2);return bin(at*10+a1,'−',bt*10+b1);},d),
@@ -425,7 +426,7 @@ function arm(){if(!S)return;clearTimeout(S.idleT);const ms=+((((O().save||{}).se
   S.idleT=setTimeout(()=>{if(!S)return;if(S.ctx.mount&&!S.ctx.mount.isConnected)return stop();if(document.hidden||ovOpen()||S.busy)return arm();onIdle();},ms);}
 function onIdle(){if(!S)return;if(S.phase==='solo'){if(S.level===0)step(1);else arm();return;}
   if(S.level<(S.ex.reading?3:3))step(S.level+1);else arm();}
-function step(n){const st=S;if(!st)return;st.level=n;const ex=st.ex,d=st.d;
+function step(n){const st=S;if(!st)return;st.level=n;const ex=st.ex,d=st.d;if(n<=(ex.reading?3:4))track({h:ex.reading?['','sound','syllables','word'][n]||'parents':['','tip','picture','example','solo'][n],n,ty:d.type});
   if(n===1&&st.phase!=='solo'&&!st.key)st.key=recordStuck(st);
   if(ex.reading){
     if(n===1){const h=ex.hint(d);showPanel(1,`<div class="hlp-t">${h.t}</div>`,h.say);}
@@ -461,14 +462,14 @@ function example(){const st=S;const d2=simData(st);if(!d2)return parents();st.d2
 function solo(){const st=S;const q3=st.ctx.present?simHostQ(st,st.d2?keyOf(st.d2):null):null;
   if(!q3){st.phase='after';hidePanel();arm();return;}
   pend={q:q3,from:st};hidePanel();st.ctx.present(q3);}
-function parents(){const st=S;if(!st)return;st.busy=true;clearTimeout(st.idleT);hidePanel();const ex=st.ex,d=st.d;
+function parents(){const st=S;if(!st)return;track({h:'parents',ty:st.d&&st.d.type});st.busy=true;clearTimeout(st.idleT);hidePanel();const ex=st.ex,d=st.d;
   const show=ex.show?ex.show(d):'',showHTML=st.q&&st.q.k==='ch'?`<div class="hlp-intro">${st.q.pr}</div>`:show?(/[א-ת]/.test(show)?`<div class="hlp-intro">${show}</div>`:`<div class="hlp-q">${E(esc(show))}</div>`):'';
   const card=openOv(`<div class="hlp-f big bob">${pet()}</div><h2>בּוֹא נִקְרָא לְאַבָּא אוֹ לְאִמָּא, נִפְתֹּר יַחַד</h2>${showHTML}${ex.tip?`<div class="hlp-tip">להורה: ${esc(ex.tip(d))}</div>`:''}`,'hlp-par-call');
   if(!card)return;xBtn(card,()=>{closeOv();if(S===st){S.busy=false;stop();}});const row=el('btnrow');row.appendChild(btn('bigbtn','<span>פָּתַרְנוּ יַחַד!</span>',()=>{closeOv();const c=st.ctx;if(S===st){S.busy=false;stop();}if(c.done)c.done('parents');}));card.appendChild(row);
   say('בּוֹא נִקְרָא לְאַבָּא אוֹ לְאִמָּא, נִפְתֹּר יַחַד');try{O().sfx&&O().sfx.star&&O().sfx.star(0);}catch(e){}}
 function teach(st){const ex=st.ex;if(!ex.teach)return false;const opts=shuffle(ex.teach(st.d));
   const eq=st.d.l!=null&&st.d.op?E(eqFull(st.d)):'';const card=openOv(`<div class="hlp-h"><span class="hlp-f">${pet()}</span><h2>תַּסְבִּיר לִי, אֵיךְ עָשִׂיתָ?</h2></div>${eq?`<div class="hlp-q">${eq}</div>`:''}<div class="hlp-opts"></div>`,'hlp-tb');
-  if(!card)return false;xBtn(card,closeOv);const box=card.querySelector('.hlp-opts');DB().tday=today();persist();
+  if(!card)return false;try{O().track&&O().track('pop',{p:'tb'});}catch(e){}xBtn(card,closeOv);const box=card.querySelector('.hlp-opts');DB().tday=today();persist();
   const done=pick_=>{const db=DB();db.tb.push({d:today(),type:st.d.type,ex:plain(ex.show?ex.show(st.d):''),pick:plain(pick_)});db.tb=db.tb.slice(-30);persist();
     box.innerHTML=`<div class="hlp-thanks">אֵיזֶה הֶסְבֵּר יָפֶה!</div>`;card.querySelector('.hlp-aloud')&&card.querySelector('.hlp-aloud').remove();say('אֵיזֶה הֶסְבֵּר יָפֶה!');try{O().sfx.ok(3);}catch(e){}setTimeout(closeOv,D(1500));};
   opts.forEach(o=>box.appendChild(btn('chb tx hlp-opt',`<span>${o}</span>`,()=>done(o))));

@@ -12,3 +12,4 @@ playthrough-desktop 300   # FULL=1 only: plays every world level by level
 playthrough-phone 300     # FULL=1 only: same on the phone viewport
 health-desktop 90         # breaks, meals, reminders + #353 parent message with simulated time: ~41 s alone
 health-phone 90           # same file on the phone viewport: ~40 s alone
+eventlog 60               # #348 event log: worker + fake D1, then the real page through the worker: ~15 s
