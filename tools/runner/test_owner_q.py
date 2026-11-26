@@ -9,6 +9,11 @@ import watchdog as W
 
 tmp = Path(tempfile.mkdtemp())
 OQ.STATE = tmp / "owner_q.json"
+_lt = time.localtime                   # #207: Windows rejects negative times; fail the same way on Linux
+def _win_localtime(t=None):
+    if t is not None and t < 0: raise OSError(22, "Invalid argument")
+    return _lt() if t is None else _lt(t)
+time.localtime = _win_localtime
 
 class FakeGH:
     """A fake `gh` with one repo: issues + comments in memory."""
@@ -44,7 +49,8 @@ W.tell = told.append
 W.pin = lambda t, on: None
 W.R.should_park = lambda *a: False
 ts = lambda: [{"name": n, "status": status[n], "state": "live"} for n in screens] + [{"name": "orchestrator", "state": "live"}]
-clock = [1000.0]
+clock = [time.time()]              # #207: a real time, so later time.localtime(now - days) stays positive
+start = clock[0]
 W.time.time = lambda: clock[0]
 for k in range(4):                     # four watchdog ticks, 60 s apart: the same screens
     W.check_windows(ts()); clock[0] += 60
@@ -57,7 +63,7 @@ by = {re.search(r"\*\*(#\d+)\*\*", c["body"])[1]: c["body"] for c in p}
 assert "לשנות את הצבע? (כחול / ירוק)" in by["#5"] and "QUESTION:" not in by["#5"]
 assert "שָׁלוֹם" in by["#7"] and "`review-7`" in by["#7"] and "#9" in by
 assert "- 1. Yes" in by["#6"] and "- 2. No, tell Claude" in by["#6"]   # a permission menu: its options are listed
-assert clock[0] - 1000 <= 240 and all(any(f"#{n}" in t or f"-{n}" in t for t in told) for n in (5, 7, 9, 6)), told
+assert clock[0] - start <= 240 and all(any(f"#{n}" in t or f"-{n}" in t for t in told) for n in (5, 7, 9, 6)), told
 assert all("NEW OWNER QUESTION" in t and "PushNotification" in t for t in told), told
 assert sum("issue-5" in t for t in told) == 1                  # the orchestrator is told once per question
 # blocked menu seen for under 90 s: nothing posted yet (the runner answers short menus at once)
