@@ -48,6 +48,9 @@ assert sum(a[0] == "run" for a in h.calls) == 3, h.calls
 argv = h.t["question-3"]["argv"]
 assert argv[argv.index("--model") + 1] == "haiku" and argv[argv.index("--remote-control") + 1] == "oren-question-3"
 assert "herdr.space=ctl" in argv and "role=question" in argv
+# #281: claude starts through Git Bash like the worker windows (hc cannot start claude.CMD directly)
+assert R.BASH in argv and argv[argv.index(R.BASH) + 1] == "-c" and argv.index(R.BASH) < argv.index("--model"), argv
+assert argv[argv.index(R.BASH) + 3] == "_" and argv[argv.index(R.BASH) + 4] == R.CFG["extra_path"], argv
 p = argv[-1]
 assert "tools/ask/ask.py" in p and "PushNotification" in p and "(מומלץ)" in p and "qwin.py answer k3" in p and "שאלה 3?" in p and "TaskStop" in p
 assert [x for x in h.pins if x[1] == "true"].__len__() == 3                     # pinned on top
@@ -103,3 +106,22 @@ assert any(a[:3] == ("issue", "comment", "3") and "OWNER ANSWER" in a[-1] for a 
 assert any(s[0] == "orchestrator" and "resume" in s[1] for s in h.sent), h.sent
 (R.RUNS / "3" / "where").unlink()
 print("ok qwin runner-managed cloud answer")
+
+# #281: a window that cannot open is not retried silently every minute: after 2 failures the orchestrator is told ONCE
+# to send the phone push itself (question text + link); no more retries for that question
+h2 = FakeHerdr()
+def failing_hc(*a, **kw):
+    if a[0] == "run": h2.calls.append(a); return 1, "spawn_failed cannot start C:\\...\\claude.CMD"
+    return h2.hc(*a, **kw)
+QW._hc, QW._run = failing_hc, h2.run
+QW.STATE, QW.FAILS = tmp / "qwin2.json", tmp / "qwin2_fails.json"
+opened[:] = [{"key": "f1", "window": "#9", "source": "issue-9", "text": "צבע כפתור?", "url": "https://github.com/x/issues/193#c1"}]
+for k in range(5): QW.tick(h2.ts(), now=20000 + 60 * k)
+assert sum(a[0] == "run" for a in h2.calls) == 2, h2.calls                          # tried twice, then stopped
+told = [s for s in h2.sent if s[0] == "orchestrator"]
+assert len(told) == 1, told
+assert "PushNotification" in told[0][1] and "צבע כפתור?" in told[0][1] and "issues/193#c1" in told[0][1] and "question-9" in told[0][1], told
+# answered later: the state entry goes, nothing else is sent
+opened.clear(); QW.tick(h2.ts(), now=30000)
+assert QW.load() == {} and len([s for s in h2.sent if s[0] == "orchestrator"]) == 1
+print("ok qwin open failure -> one push via the orchestrator")
