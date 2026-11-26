@@ -261,6 +261,7 @@ test('usage.json for the governor (#239)', () => {
   expect(usageJson([], 0)).toBe(null)
   expect(governorLine('{"text":"governor: 6 lanes (5h 40% -> ~89% at 19:00)"}')).toBe('governor: 6 lanes (5h 40% -> ~89% at 19:00)')
   expect(governorLine('junk')).toBe('')
+  expect(governorLine('{"text":"governor: 4 lanes · efficiency 1.00 merged/10% (last 0.75) · wasted 1 (last 3)"}')).toBe('governor: 4 lanes · efficiency 1.00 merged/10% (last 0.75) · wasted 1 (last 3)')   // #245
 })
 
 import { DESKS } from './lanes'

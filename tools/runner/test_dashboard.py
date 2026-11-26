@@ -144,6 +144,8 @@ assert D.merge_deploys(ev, de, ci=False) == ev
 print("ok dashboard ci deploys")
 m3["governor"] = "governor: 6 lanes (5h 40% -> ~89% at 19:00)"
 assert "Lanes: " in D.text(m3) and "· governor: 6 lanes (5h 40% -> ~89% at 19:00)" in D.text(m3) and "governor: 6 lanes" in D.page(m3)
+m3["governor"] = "governor: 4 lanes · efficiency 1.00 merged/10% (last 0.75) · wasted 1 (last 3)"   # #245
+assert "efficiency 1.00 merged/10% (last 0.75) · wasted 1 (last 3)" in D.text(m3) and "efficiency 1.00 merged/10%" in D.page(m3)
 print("ok dashboard governor")
 # #236: an in-progress issue running remote without the cloud label is a cloud lane (a remote.cloud() row), not local
 ic4 = issues + [I(13, "OPEN", ["in-progress", "P0"])]

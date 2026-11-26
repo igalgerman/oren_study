@@ -764,6 +764,51 @@ assert r.total_lanes() == r.LOCAL_LANES + 7
 assert r.total_lanes() == r.LOCAL_LANES
 (r.RUNS / "governor.json").unlink()
 print("ok governor lanes")
+# #245 efficiency = merged PRs per 10% of a 5h window; wasted runs per window; add lanes only while efficiency holds
+_W1, _W2, _W3 = _now - 6 * 3600, _now - 3600, _now + 4 * 3600          # resets: two finished windows + the current one
+_hh = [{"at": _W1 - 4 * 3600, "pct": 10, "reset": _iso(_W1), "busy": 2, "lanes": 2}, {"at": _W1 - 600, "pct": 40, "reset": _iso(_W1), "busy": 2, "lanes": 2},
+       {"at": _W2 - 4 * 3600, "pct": 30, "reset": _iso(_W2), "busy": 4, "lanes": 4}, {"at": _W2 - 600, "pct": 80, "reset": _iso(_W2), "busy": 4, "lanes": 4},
+       {"at": _now - 60, "pct": 10, "reset": _iso(_W3), "busy": 4, "lanes": 4}]
+_ev = ([{"ts": _W1 - 3600 - k, "issue": 10 + k, "event": "merged"} for k in range(4)]                    # W1: 4 merged / 40% -> 1.00
+       + [{"ts": _W2 - 3600 - k, "issue": 20 + k, "event": "merged"} for k in range(6)]                 # W2: 6 merged / 80% -> 0.75
+       + [{"ts": _W2 - 100, "issue": 30, "event": e} for e in ("blocked", "ended", "retry", "parked", "start", "review_fix")]   # W2: 3 wasted
+       + [{"ts": _now - 30, "issue": 40, "event": "merged"}, {"ts": _now - 20, "issue": 41, "event": "blocked"}])            # W3 (now)
+_ws = r.gov_windows(_hh, _ev, _now)
+assert [w["done"] for w in _ws] == [True, True, False], _ws
+assert [w["used"] for w in _ws] == [40, 80, 10] and [w["merged"] for w in _ws] == [4, 6, 1] and [w["wasted"] for w in _ws] == [0, 3, 1], _ws
+assert abs(_ws[0]["eff"] - 1.0) < 1e-9 and abs(_ws[1]["eff"] - 0.75) < 1e-9 and abs(_ws[2]["eff"] - 1.0) < 1e-9 and [w["lanes"] for w in _ws] == [2, 4, 4], _ws
+assert r.gov_windows([{"at": _now - 60, "pct": 0.5, "reset": _iso(_W3)}], [], _now)[0]["eff"] is None   # < 1% used: no efficiency yet
+assert r.gov_windows([], _ev, _now) == [] and r.gov_windows([{"at": _now, "pct": 5, "reset": None}], [], _now) == []
+# add-lane rule: lanes went 2 -> 4 and efficiency dropped 1.00 -> 0.75 -> hold at the current count
+n_, why_ = r.lane_gate(6, 4, _ws); assert n_ == 4 and "1.00 -> 0.75" in why_ and "2 -> 4" in why_, why_
+assert r.lane_gate(3, 4, _ws) == (3, None) and r.lane_gate(4, 4, _ws) == (4, None)                      # fewer / same lanes: always
+assert r.lane_gate(6, None, _ws) == (6, None)                                                            # no earlier count
+_up = [dict(_ws[0]), {**_ws[1], "eff": 1.2}, _ws[2]]; assert r.lane_gate(6, 4, _up) == (6, None)          # efficiency held: add
+_flat = [{**_ws[0], "lanes": 4}, _ws[1], _ws[2]]; assert r.lane_gate(6, 4, _flat) == (6, None)            # drop without more lanes: add
+assert r.lane_gate(6, 4, _ws[1:]) == (6, None)                                                          # one finished window: too little data
+# the governor applies the rule (projection follows the held count); a stop / fallback is unchanged
+g = r.governor(_u(5, 1), [], _now, _G, prev=4, wins=_ws); assert g["lanes"] == 4 and "hold 4" in g["why"] and abs(g["projected"] - (5 + 3.5 * 4)) < 1e-9, g
+assert r.governor(_u(5, 1), [], _now, _G, prev=4, wins=_up)["lanes"] == 8
+assert r.governor(None, [], _now, _G, prev=2, wins=_ws)["lanes"] == 4
+# shown on the panel and dashboard (both print governor.json's text)
+t = r.eff_text(_ws); assert t == " · efficiency 1.00 merged/10% (last 0.75) · wasted 1 (last 3)", t
+assert r.eff_text([]) == "" and r.eff_text([{**_ws[2], "eff": None}]) == " · efficiency - · wasted 1", r.eff_text([{**_ws[2], "eff": None}])
+# governor_pass: reads stats.jsonl, keeps 'lanes' in the samples, logs the reason of each lane change
+_dry = r.DRY; r.DRY = False
+(r.RUNS / "usage.json").write_text(_json.dumps({**_u(5, 1), "at": _iso(_time.time() - 30), "five_h_reset": _iso(_time.time() + 3600)}))
+(r.RUNS / "governor.json").write_text(_json.dumps({"lanes": 3, "stop": False, "at": _time.time()}))
+(r.RUNS / "stats.jsonl").write_text("")
+(r.RUNS / "usage_hist.jsonl").write_text("")
+g = r.governor_pass(2)
+_log = (r.RUNS / "runner.log").read_text(encoding="utf-8")
+assert f"governor: lanes 3 -> {g['lanes']} (" in _log and g["lanes"] != 3, _log
+assert _json.loads((r.RUNS / "usage_hist.jsonl").read_text().splitlines()[-1])["lanes"] == g["lanes"]
+assert " · efficiency " in _json.loads((r.RUNS / "governor.json").read_text())["text"]
+n_log = _log.count("governor: lanes"); r.governor_pass(2)                                                # no change -> no new line
+assert (r.RUNS / "runner.log").read_text(encoding="utf-8").count("governor: lanes") == n_log
+r.DRY = _dry
+for _f in ("usage.json", "governor.json", "stats.jsonl", "usage_hist.jsonl"): (r.RUNS / _f).unlink()
+print("ok #245 efficiency governor")
 # #234: a run ends as DONE when its issue is closed or its lane PR is merged elsewhere (every wait loop checks, one gh call per poll)
 _S0 = "2026-11-26T12:00:00Z"                         # run start
 assert r.run_over("CLOSED", [], _S0) and r.run_over("OPEN", ["2026-11-26T12:30:00Z"], _S0)
