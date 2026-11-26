@@ -13,11 +13,12 @@ import stats as S           # pipeline timings from stats.jsonl
 import trends as T          # stuck reasons from runner.log
 import remote as RM         # cloud lanes (#136)
 import parked as PK         # #282: batch members, manual, later
+import stuck as SK          # #280: leftovers = open issues with no live state
 
 OUT = R.RUNS / "dashboard.html"
 STATES = [("running", "Running now"), ("needs_you", "Needs you"), ("blocked", "Blocked"),
           ("waiting", "Waiting for another issue"), ("ready", "Ready to start"),
-          ("batch", "In a batch"), ("manual", "Manual"), ("later", "Later"), ("other", "Not triaged / other")]
+          ("batch", "In a batch"), ("manual", "Manual"), ("later", "Later"), ("aside", "Put aside with a reason"), ("other", "Not triaged / other")]
 STEP = {"start": "building", "worker_done": "in review", "review_fix": "fixing review notes", "fix_done": "in review",
         "review_pass": "merging (CI)", "resolve": "resolving a conflict", "merged": "deploying"}
 
@@ -25,14 +26,16 @@ def epoch(iso):
     try: return calendar.timegm(time.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S"))
     except (TypeError, ValueError): return None
 
-def state_of(i, open_nums, bm=None):
+def state_of(i, open_nums, bm=None, left=None):
     l = set(i["labels"])
     if "in-progress" in l: return "running"
     if l & {"ready-for-human", "needs-triage", "needs-info"}: return "needs_you"
     if "blocked" in l: return "blocked"
     if any(b != i["number"] and b in open_nums for b in R.blockers(i.get("body"))): return "waiting"
     if "ready-for-agent" in l: return "ready"
-    return PK.kind(i, bm or {}) or "other"          # #282: on purpose not ready-for-agent -> own bucket
+    k = PK.kind(i, bm or {})                         # #282: on purpose not ready-for-agent -> own bucket
+    if k: return k
+    return "other" if left is None or i["number"] in left else "aside"   # #280: PR, owner question, list ... is no 'not triaged'
 
 def prio_of(i):
     return next((p for p in ("P0", "P1", "P2", "P3") if p in i["labels"]), "-")
@@ -53,15 +56,16 @@ def forecast(open_n, closed_ts, opened_ts, now, history_h):
             "net": [open_n / x for x in sorted(nets, reverse=True)] if nets else None,
             "gross": [open_n / x for x in sorted(gross, reverse=True)] if gross else None}
 
-def model(issues, prs, events, now, log_text="", cloud=()):
+def model(issues, prs, events, now, log_text="", cloud=(), qnums=frozenset()):
     """Pure: everything the page and the text show. issues/prs as gh JSON (labels as names), events from stats.jsonl,
-    cloud = rows of remote.cloud() (#136)."""
+    cloud = rows of remote.cloud() (#136), qnums = issue numbers with an open owner question (#280)."""
     op = [i for i in issues if i["state"] == "OPEN"]
     open_nums = {i["number"] for i in op}
     closed_at = {i["number"]: epoch(i.get("closedAt")) for i in issues if i["state"] == "CLOSED"}
     created = {i["number"]: epoch(i.get("createdAt")) for i in issues}
     bm = PK.batch_map(issues)
-    rows = sorted(({"n": i["number"], "title": i["title"], "state": state_of(i, open_nums, bm), "prio": prio_of(i),
+    left = [i["number"] for i in SK.leftovers(issues, [p for p in prs if p.get("state") == "OPEN"], set(qnums), now)]
+    rows = sorted(({"n": i["number"], "title": i["title"], "state": state_of(i, open_nums, bm, set(left)), "prio": prio_of(i),
                     "batch": bm[i["number"]]["number"] if i["number"] in bm else None,
                     "age_h": (now - (created[i["number"]] or now)) / 3600,
                     "blockers": [b for b in R.blockers(i.get("body")) if b in open_nums and b != i["number"]]} for i in op),
@@ -119,7 +123,7 @@ def model(issues, prs, events, now, log_text="", cloud=()):
     fc = forecast(len(op), list(closed_at.values()), list(created.values()), now, history_h)
     return {
         "plan": eta_plan(rows, running, t, fc, now),
-        "now": now, "open": len(op), "cloud": list(cloud), "cloud_done": cloud_done, "cloud_n": len(cloud_n),
+        "now": now, "open": len(op), "leftovers": left, "cloud": list(cloud), "cloud_done": cloud_done, "cloud_n": len(cloud_n),
         "lanes": f"local {len(running)}/{R.CFG.get('local_lanes', 3)} · cloud {len(cloud_n)}/{R.CFG.get('remote_lanes', 0)}", "by_state": by_state, "by_prio": by_prio, "rows": rows, "running": running,
         "closed_24h": sum(within(c, 24) for c in closed_at.values()), "closed_7d": sum(within(c, 168) for c in closed_at.values()),
         "closed_total": len(closed_at), "opened_24h": sum(within(c, 24) for c in created.values()),
@@ -150,8 +154,8 @@ def eta_plan(rows, running, t, fc, now, lanes=None):
         sec = max(600, b - (r["for_s"] or 0)) + rv + wait if r["step"] == "building" else left.get(r["step"], mg / 2)
         out[r["n"]] = (now + sec, now + sec * 1.5)
     for r in rows:
-        if r["state"] in ("needs_you", "blocked", "other", "batch", "manual", "later"):
-            out[r["n"]] = {"needs_you": "waits for you", "blocked": "blocked", "other": "not triaged", "manual": "manual",
+        if r["state"] in ("needs_you", "blocked", "other", "batch", "manual", "later", "aside"):
+            out[r["n"]] = {"needs_you": "waits for you", "blocked": "blocked", "other": "not triaged", "manual": "manual", "aside": "put aside",
                            "later": "later", "batch": f"in batch #{r.get('batch')}"}[r["state"]]
     fast, slow = max(fc["c6"], fc["c24"]), min(fc["c6"], fc["c24"]) or max(fc["c6"], fc["c24"])
     lanes = lanes or int(R.CFG.get("max_parallel", 3))
@@ -252,8 +256,12 @@ def text(m):
     nxt = sorted(((v, n) for n, v in m["plan"].items() if isinstance(v, tuple)))[:8]
     title = {r["n"]: r["title"] for r in m["rows"]}
     if nxt: lines.append("Next merges (estimate): " + "; ".join(f"#{n} {title.get(n, '')[:35]} ≈ {eta_str(v, m['now'])}" for v, n in nxt))
+    lf = m.get("leftovers") or []
+    if lf: lines.append(f"Not triaged (no live state, #280): {len(lf)} (" + " ".join(f"#{n}" for n in lf) + ")")
     if s["needs_you"]: lines.append("Needs you: " + ", ".join(f"#{r['n']} {r['title'][:50]}" for r in s["needs_you"]))
-    for q in m.get("questions", []): lines.append(f"Needs you (question): {q['window']} {q['text'][:120]} {q['url']}")   # #193
+    for q in m.get("questions", []):
+        h = int((m["now"] - (epoch(q.get("at")) or m["now"])) // 3600)
+        lines.append(f"Needs you (question): {q['window']} {q['text'][:120]} {q['url']}" + (f" · waiting for owner {h}h" if h >= SK.AUTO_H else ""))   # #193, #280
     return "\n".join(lines)
 
 def _bars(rows, aria, every=1):
@@ -572,7 +580,7 @@ def _ov_card(m):
 
 def fetch():
     rc, out = R.gh("issue", "list", "--state", "all", "--limit", "1000", "--json", "number,title,state,labels,createdAt,closedAt,body")
-    rc2, out2 = R.gh("pr", "list", "--state", "all", "--limit", "500", "--json", "number,state,mergedAt")
+    rc2, out2 = R.gh("pr", "list", "--state", "all", "--limit", "500", "--json", "number,state,mergedAt,headRefName,title,body")
     if rc or rc2: raise SystemExit("could not read GitHub (gh): " + (out if rc else out2)[:300])
     return [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)], json.loads(out2)
 
@@ -675,12 +683,13 @@ def gather():
     now = time.time()
     ci = R.CFG.get("deploy_in_ci", True)
     ev = merge_deploys(S.read_events(R.RUNS / "stats.jsonl"), ci_deploys() if ci else [], ci)
-    m = model(issues, prs, ev, now, runner_log(), RM.cloud())
+    import owner_q
+    qs = owner_q.open_list() or []                        # #193
+    m = model(issues, prs, ev, now, runner_log(), RM.cloud(), {int(r[1:]) for r in map(PK.owner_q_ref, qs) if r})
     w, wmt = _file("watchdog.log"); _, rmt = _file("runner.log"); ol, omt = _file("observer.last")
     _, bmt = _file("watchdog.beat"); wmt = bmt or wmt          # heartbeat every pass; the log is written only on events
     m["ov"] = oversight(w, wmt, rmt, ol, omt, now)
-    import owner_q
-    m["questions"] = owner_q.open_list() or []            # #193
+    m["questions"] = qs
     try: m["stuck_lanes"] = json.loads((R.RUNS / "stuck_lanes.json").read_text(encoding="utf-8"))   # #248 (written by the watchdog)
     except Exception: m["stuck_lanes"] = []
     try: m["pr_conflicts"] = json.loads((R.RUNS / "pr_conflicts.json").read_text(encoding="utf-8"))   # #262 (written by the watchdog)

@@ -133,7 +133,12 @@ def owner_q_issues():
     import owner_q
     qs = owner_q.open_list()
     if qs is None: return None
-    return {int(r[1:]) for r in (owner_q.issue_ref(q.get("window") or q.get("source")) for q in qs) if r}
+    return {int(r[1:]) for r in (owner_q_ref(q) for q in qs) if r}
+
+def owner_q_ref(q):
+    """'#n' of the issue an owner question is about ('' when none)."""
+    import owner_q
+    return owner_q.issue_ref(q.get("window") or q.get("source"))
 
 def fetch(gh):
     rc, out = gh("issue", "list", "--state", "all", "--limit", "1000", "--json", "number,title,state,labels,body,createdAt,updatedAt")

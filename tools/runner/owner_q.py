@@ -64,7 +64,7 @@ def open_questions(comments):
         src = re.search(r"חלון `([^`]+)`", b)                       # #220: the asking window (remote-<n> gets its answer sent)
         window = (w[1] or w[2]) if w else ""
         out.append({"key": m[1], "window": window, "source": src[1] if src else window,
-                    "text": q[1].strip() if q else "", "url": c.get("url", "")})
+                    "text": q[1].strip() if q else "", "url": c.get("url", ""), "at": c.get("createdAt", "")})
     return out
 
 # ---------- GitHub side ----------
