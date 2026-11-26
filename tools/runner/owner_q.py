@@ -60,7 +60,10 @@ def open_questions(comments):
         m = KEY_RE.search(b)
         if not m or m[1] in done or b.lstrip().startswith("ANSWERED"): continue
         q = re.search(r"\*\*שאלה:\*\*\s*(.*)", b); w = re.search(r"\*\*(#\d+)\*\*|חלון `([^`]+)`", b)
-        out.append({"key": m[1], "window": (w[1] or w[2]) if w else "", "text": q[1].strip() if q else "", "url": c.get("url", "")})
+        src = re.search(r"חלון `([^`]+)`", b)                       # #220: the asking window (remote-<n> gets its answer sent)
+        window = (w[1] or w[2]) if w else ""
+        out.append({"key": m[1], "window": window, "source": src[1] if src else window,
+                    "text": q[1].strip() if q else "", "url": c.get("url", "")})
     return out
 
 # ---------- GitHub side ----------
