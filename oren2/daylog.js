@@ -1,6 +1,8 @@
 /* ===== DAY LOG: everything Oren did, for the parent (also from another house, in real time through the family save) =====
    save.alog[day].e = [[min, id, stars, ok, n, helped, o], ...]   min = minutes after midnight when it started,
      ok/n = right on the first try / questions, o: 'c' done · 'q' left in the middle · 'x' opened and closed at once (only for Oren's "again" list) · 's' a path step he did not reach · 'b' stopped for a break
+     · 'p' skipped by the parent (#359, x.pc = the command id; hidden when that command was undone: save.pcU[id])
+   x (optional object): a story's {t, g, lv, r} (#355); any activity: lv = his level when it started (learning engine), ra = taps on read-aloud (#359)
    save.now = {id, t, s}  the activity being played, the last moment something happened (ms; also each active play tick, the heartbeat) and when this play
      session started (s; a new session after 3+ min without a heartbeat) — "playing now · N min (from HH:MM)" for the parent (#352).
    Detailed entries are kept for 14 days (think.js keeps the day counts for 35). Parent text has no nikud. */
@@ -25,9 +27,11 @@ const mark=id=>{if(O.isParentPlay)return;const t=Date.now(),p=S().now;S().now={i
 const now=()=>mark(cur?cur.id:null);
 /* the heartbeat: every active play tick (talents.js timeTick, which saves anyway) — never from the parent panel */
 DL.beat=()=>{const par=document.querySelector('#sPar');if(par&&!par.hidden)return;mark(cur&&!cur.end?cur.id:null);};
-function begin(id){if(O.isParentPlay)return;if(cur&&!cur.end)end(cur.brk?'b':'q');cur={id,t:Date.now(),d:day(),ok:0,n:0,help:0};now();}
-function end(o,st){const c=cur;if(!c||c.end)return;c.end=1;if(o!=='c'&&!c.n&&Date.now()-c.t<15000)o='x';   /* opened and closed at once: 'x' — kept for Oren's "again" list, not shown to the parent */
-  add(c.d,[minOf(c.t),c.id,st|0,c.ok,c.n,c.help,o].concat(c.x?[c.x]:[]));now();cur=null;O.persist();}
+const lvOf=id=>{const k=((O.save.lrn||{}).k||{})['a:'+id];return k&&k.n?k.l|0:0;};
+function begin(id){if(O.isParentPlay)return;if(cur&&!cur.end)end(cur.brk?'b':'q');cur={id,t:Date.now(),d:day(),ok:0,n:0,help:0,ra:0,lv:lvOf(id)};now();O.emit('dlBegin',id);}
+function end(o,st){const c=cur;if(!c||c.end)return;c.end=1;if(o!=='c'&&o!=='p'&&!c.n&&Date.now()-c.t<15000)o='x';   /* opened and closed at once: 'x' — kept for Oren's "again" list, not shown to the parent */
+  const x=Object.assign({},c.x||{});if(c.lv&&x.lv==null)x.lv=c.lv;if(c.ra)x.ra=c.ra;
+  add(c.d,[minOf(c.t),c.id,st|0,c.ok,c.n,c.help,o].concat(Object.keys(x).length?[x]:[]));now();cur=null;O.persist();}
 DL.begin=begin;DL.end=end;DL.cur=()=>cur;
 /* a story adds its details to its line (#355): x = {t: title, g: goal, lv: story level, r: 'a' read alone · 'l' listened}; the object is filled in while he plays */
 DL.note=(id,x)=>{if(O.isParentPlay)return;if(!cur||cur.end||cur.id!==id||cur.x)begin(id);cur.x=x;};
@@ -39,6 +43,9 @@ O.on('levelDone',(lv,st)=>{if(lv&&lv.id)done('lv:'+lv.id,st);});
 O.on('tq',(id,ok)=>{if(cur&&!cur.end){cur.n++;if(ok)cur.ok++;now();}});
 O.on('ans',(u,ok)=>{if(cur&&!cur.end){cur.n++;if(ok)cur.ok++;now();}});
 O.on('help',()=>{if(cur&&!cur.end)cur.help++;});
+/* #359: the help layer reports through O.track('help'); a tap on a read-aloud button (🔊) counts as read-aloud */
+if(O.track&&!O.track._dl){const tr=O.track;O.track=function(k,...a){if(k==='help'&&cur&&!cur.end)cur.help++;return tr.call(this,k,...a);};O.track._dl=1;}
+document.addEventListener('click',e=>{const b=e.target&&e.target.closest&&e.target.closest('.rdb,.hagain');if(b&&cur&&!cur.end)cur.ra++;},true);
 /* math levels start through the play screen; leaving to the map / city / home without finishing = left in the middle */
 const ACTIVE=new Set(['sTal','sPlay','sLearn']);
 O.on('screen',id=>{if(id==='sPlay')setTimeout(()=>{const p=window.__oren4&&window.__oren4.play;if(p&&p.lv&&p.lv.type!=='train'&&(!cur||cur.id!=='lv:'+p.lv.id||cur.end))begin('lv:'+p.lv.id);},0);
@@ -59,12 +66,14 @@ DL.nameOf=id=>{if(id==='math')return 'מסע החשבון';
   if(/^lv:/.test(id)){const lv=O.ALLLV.find(l=>l.id===id.slice(3));return lv?`${plain(lv.u.name)} (${plain(lv.w.name)})`:'חשבון';}
   const a=T.ACT[id];return a?plain(a.name):id;};
 DL.domOf=id=>{if(id==='math'||/^lv:/.test(id))return 'חשבון';const a=T.ACT[id];if(!a||!a.b)return '';const g=(T.GROUPS||[]).find(x=>x.ids.includes(a.b.id));return g?GN()[g.id]:plain(a.b.name);};
-const ICO={c:'✓',q:'✗',s:'⏭',b:'⏸'},WHY={c:'',q:'יצא באמצע',s:'לא הגיע',b:'הפסקה'};
+const ICO={c:'✓',q:'✗',s:'⏭',b:'⏸',p:'⏭'},WHY={c:'',q:'יצא באמצע',s:'לא הגיע',b:'הפסקה',p:'דילג (הורה)'};
 /* a bank story's own quiz line (rb2-st-N) repeats its 'story-new' line: not shown */
-DL.rows=d=>{const L=((O.realSave.alog||{})[d]||{}).e||[];return L.filter(e=>e[6]!=='x'&&!/^rb2-st-/.test(e[1])).sort((a,b)=>a[0]-b[0]);};
+const undone=e=>e[6]==='p'&&e[7]&&(O.realSave.pcU||{})[e[7].pc];
+DL.rows=d=>{const L=((O.realSave.alog||{})[d]||{}).e||[];return L.filter(e=>e[6]!=='x'&&!/^rb2-st-/.test(e[1])&&!undone(e)).sort((a,b)=>a[0]-b[0]);};
 DL.rowHTML=e=>{const [m,id,st,ok,n,hp,o,x]=e;const sx=x&&typeof x==='object'?x:null;
-  const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`${ok}/${n} נכון בניסיון ראשון`:'',hp?`עזרה ×${hp}`:'',sx?(sx.r==='l'?'האזין להקראה':'קרא לבד')+' · רמה '+(sx.lv|0):'',WHY[o]].filter(Boolean).join(' · ');
-  const name=sx?`${plain(sx.t)}${sx.g?` <span class="dlgoal">🎯 ${plain(sx.g)}</span>`:''}`:DL.nameOf(id);
+  const story=sx&&sx.t;
+  const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`✓ ${ok} · ✗ ${n-ok}`:'',sx&&sx.lv?'רמה '+(sx.lv|0):'',hp?`עזרה ×${hp}`:'',story?(sx.r==='l'?'האזין להקראה':'קרא לבד'):'',sx&&sx.ra?`הקראה ×${sx.ra}`:'',WHY[o]].filter(Boolean).join(' · ');
+  const name=story?`${plain(sx.t)}${sx.g?` <span class="dlgoal">🎯 ${plain(sx.g)}</span>`:''}`:DL.nameOf(id);
   return `<div class="prow dlrow dl-${o}"><span class="pn"><b class="dli">${ICO[o]||''}</b> ${o==='s'?'':hhmm(m)+' · '}${name} <small>${DL.domOf(id)}</small></span><span class="pc">${res}</span></div>`;};
 /* the top line of the summary: playing now / last played */
 DL.playing=()=>{const nw=O.realSave.now;return !!(nw&&nw.t&&Date.now()-nw.t<GAP);};
@@ -79,12 +88,5 @@ DL.merge=(save,o)=>{for(const d in o.alog||{}){const src=(o.alog[d]||{}).e;if(!A
     const have=new Set(L.e.map(x=>JSON.stringify(x)));src.forEach(x=>{const k=JSON.stringify(x);if(!have.has(k)){have.add(k);L.e.push(x);}});
     L.e.sort((a,b)=>a[0]-b[0]);if(L.e.length>MAXE)L.e.splice(0,L.e.length-MAXE);}
   if(o.now&&(+o.now.t||0)>(+(save.now||{}).t||0))save.now=o.now;trim();};
-/* parent panel, day tab: "playing now" and what he did today and yesterday, one line each. Tap a day to see its lines. */
-const rowsHTML=d=>{const r=DL.rows(d);return r.length?r.map(DL.rowHTML).join(''):'<div class="pnote">עוד לא שיחק</div>';};
-DL.panel=(box,sec)=>{const s=sec(box,'מה אורן עשה','');
-  const ds=[0,1].map(i=>{const x=new Date();x.setDate(x.getDate()-i);return x;});
-  ds.forEach((x,i)=>{const d=x.getFullYear()+'-'+pad(x.getMonth()+1)+'-'+pad(x.getDate());const det=document.createElement('details');det.className='pdet';if(i===0)det.open=true;
-    det.innerHTML=`<summary>${i?'אתמול':'היום'}</summary><div class="pdin dllog" data-d="${d}">${rowsHTML(d)}</div>`;s.appendChild(det);});return s;};
-/* redraw the live parts (called after each family pull while the parent panel is open) */
-DL.refresh=()=>{document.querySelectorAll('.dllog[data-d]').forEach(e=>{e.innerHTML=rowsHTML(e.dataset.d);});};
+/* the parent's day view (pday.js, #359) draws DL.rows(d) with DL.rowHTML */
 })();

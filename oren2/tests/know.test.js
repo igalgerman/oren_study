@@ -95,7 +95,7 @@ const { chromium } = require('playwright'); const sleep = ms => new Promise(r =>
   ok('music: a review question asks about a skill he already knows', rv.length && rv.every(x => x === 'mus-len'), rv.join(','));
 
   // ---- the parent panel ----
-  await hide(); await p.evaluate(() => window.TAL.parentPanel('day')); await sleep(300);
+  await hide(); await p.evaluate(() => window.TAL.parentPanel('know')); await sleep(300);
   const pan = await p.evaluate(() => { const s = [...document.querySelectorAll('#sPar .psec')].find(x => /מה אורן כבר יודע/.test(x.querySelector('h3').textContent));
     return s ? { rows: s.querySelectorAll('.knq').length, yes: s.querySelectorAll('.knq button').length, nik: /[ְ-ּ]/.test(s.textContent), inputs: s.querySelectorAll('input,select').length } : null; });
   ok('parent panel: short yes/no placement questions per area', pan && pan.rows >= 8 && pan.yes === pan.rows * 2 && pan.inputs === 0, JSON.stringify(pan));

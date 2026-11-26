@@ -27,7 +27,7 @@ const shot = async (page, name) => { if (!process.env.SHOTS) return; fs.mkdirSyn
   ok(await page.evaluate(() => /נשארו \d+ חדשים/.test(LEARN.runwayOf('read-sent'))), 'content map line: "נשארו N חדשים" for a finite bank');
   await page.evaluate(() => { window.OREN.showMap(); });
 
-  await page.evaluate(() => window.TAL.parentPanel('day')); await page.waitForTimeout(400);
+  await page.evaluate(() => window.TAL.parentPanel('learn')); await page.waitForTimeout(400);
   if (await page.locator('#pw1').count()) { await page.fill('#pw1', 'sod1234'); await page.fill('#pw2', 'sod1234'); await page.keyboard.press('Enter'); await page.waitForTimeout(500); }
   const par = { day: await page.evaluate(() => document.querySelector('#sPar').textContent) };
   await page.evaluate(() => { const b = [...document.querySelectorAll('#sPar *')].find(e => e.children.length === 0 && /המסלול של אורן/.test(e.textContent)); if (b) b.scrollIntoView({ block: 'start' }); }); await page.waitForTimeout(200);
@@ -43,8 +43,9 @@ const shot = async (page, name) => { if (!process.env.SHOTS) return; fs.mkdirSyn
     window.HELP.cfg.idle = 600000; O4.playLevel(lv, [q(), q(), q()]);
     const hintBtn = [...document.querySelectorAll('#sPlay button')].some(x => /רֶמֶז/.test(x.textContent));
     const wrong = () => { const bx = document.querySelector('#sPlay .ans'); const box = O4.play; box.boxes[0].val = '5'; document.querySelector('#sPlay .key[data-k="go"]').click(); };
-    wrong(); await new Promise(r => setTimeout(r, 700)); const one = !!document.querySelector('.hlp');
-    wrong(); await new Promise(r => setTimeout(r, 700)); const two = !!document.querySelector('.hlp');
+    const guard = async () => { while (O.tapTooSoon && O.tapTooSoon()) await new Promise(r => setTimeout(r, 50)); };   /* #436: taps in the first 400 ms of a new question are ignored */
+    await guard(); wrong(); await new Promise(r => setTimeout(r, 700)); const one = !!document.querySelector('.hlp');
+    await guard(); wrong(); await new Promise(r => setTimeout(r, 700)); const two = !!document.querySelector('.hlp');
     return { hintBtn, one, two };
   });
   ok(!r.hintBtn, 'no "רֶמֶז" button on a math question');

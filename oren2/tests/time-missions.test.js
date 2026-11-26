@@ -14,11 +14,10 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  await p.evaluate(()=>window.TAL.parentPanel('plan'));await sleep(200);
  const t0=await p.evaluate(()=>window.TAL.S().daily.t.slice());
  await p.locator('.tdrow').nth(1).click();await sleep(50);await p.locator('.tdrow').nth(1).locator('.pchip',{hasText:'▲'}).click();await sleep(100);const t1=await p.evaluate(()=>window.TAL.S().daily.t.slice());ok('reorder today',t1[0]===t0[1]&&t1[1]===t0[0],JSON.stringify([t0,t1]));
- await p.locator('.tdrow').nth(0).locator('.pchip',{hasText:'✓'}).click();await sleep(100);ok('mark done',await p.evaluate(()=>window.TAL.S().daily.done[0]===1));
  await p.locator('.tdrow').nth(2).locator('.pchip',{hasText:'✕'}).click();await sleep(100);ok('remove step',await p.evaluate(n=>window.TAL.S().daily.t.length===n-1,t0.length));
- await p.locator('#sPar .pchip',{hasText:'חשבון'}).first().click();await sleep(100);ok('add step',await p.evaluate(n=>window.TAL.S().daily.t.length===n,t0.length));
+ await p.locator('#sPar .pchip',{hasText:'הוספת נושא'}).click();await p.locator('#sPar .pdtops .pchip',{hasText:'חשבון'}).click();await sleep(100);ok('add step',await p.evaluate(n=>window.TAL.S().daily.t.length===n,t0.length));
  // template with specific activity
- await p.evaluate(()=>{document.querySelectorAll('#sPar details').forEach(d=>d.open=true);});await sleep(150);
+ await p.evaluate(()=>window.TAL.parentPanel('tmpl'));await sleep(150);
  await p.evaluate(()=>{const s=document.querySelectorAll('#sPar .psel');s[1].value='act:art-mix';s[1].dispatchEvent(new Event('change'));});await p.locator('#sPar .bigbtn',{hasText:'שמירת התבנית'}).click();await sleep(1100);
  ok('template saved with specific activity',await p.evaluate(()=>JSON.stringify(window.TAL.S().set.plan).includes('act:art-mix')));
  const nd=await p.evaluate(()=>{delete window.TAL.S().daily;return window.TAL.dailyEnsure().t;});ok('new day uses template',nd[1]==='art-mix',JSON.stringify(nd));

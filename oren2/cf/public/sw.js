@@ -1,13 +1,14 @@
 /* Offline mode for the family website (served at /sw.js by cf/dist/_worker.js; never used inside Claude or file://).
    - the page '/': network first (4 s), else the saved copy;  manifest, icons, Google fonts: saved copy first
-   - /api/tts/status: network first, else the saved answer (so offline the game keeps the Google voice it has saved)
+   - /api/tts/status: network first, else the saved answer (so offline the game keeps the Google voice it has saved);
+     also saved at install (#434: the first visit asks it before this worker runs, so an offline reload had no saved answer)
    - /api/tts?... audio: saved copy first (these URLs never change), at most MAX sentences, oldest used dropped first
    - /api/save and everything else: never cached
    - postMessage({type:'prefetch', urls?:[...]}) saves a list of sentences (default: the server's list of all game
      sentences, /api/tts/list); progress is posted back as {type:'prefetch', left, ok, fail}. */
 const PAGE = 'oren-page-v1', AUDIO = 'oren-audio-v2', MAX = 1500;
 const SHELL = ['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
-self.addEventListener('install', e => e.waitUntil(caches.open(PAGE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())));
+self.addEventListener('install', e => e.waitUntil(caches.open(PAGE).then(c => c.addAll(SHELL).then(() => c.add('/api/tts/status').catch(() => {}))).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys()
   .then(ks => Promise.all(ks.filter(k => k !== PAGE && k !== AUDIO).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 
