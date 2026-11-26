@@ -197,8 +197,80 @@ LOCAL_LANES = int(CFG.get("local_lanes", 1))
 REMOTE_LANES = int(CFG.get("remote_lanes", 0))
 
 def total_lanes():
-    """#133: lanes in total = local + remote (replaces max_parallel)."""
+    """#133: lanes in total = local + remote (replaces max_parallel). #239: remote = the governor's last count (.runs/governor.json, < 15 min old)."""
+    try:
+        gv = json.loads((RUNS / "governor.json").read_text(encoding="utf-8"))
+        if time.time() - gv["at"] < 15 * 60: return LOCAL_LANES + (0 if gv["stop"] else int(gv["lanes"]))
+    except Exception: pass
     return LOCAL_LANES + REMOTE_LANES
+
+# #239 usage governor: cloud lane count follows the 5h window (the panel writes .runs/usage.json every refresh)
+GOV = {"target": float(CFG.get("governor_target", 90)), "min": int(CFG.get("governor_min", 2)), "max": int(CFG.get("governor_max", 8)),
+       "stop": float(CFG.get("governor_stop", 93)), "pace": float(CFG.get("governor_pace", 3.5)), "week_cap": int(CFG.get("governor_week_cap", 4)),
+       "stale_s": 15 * 60, "fallback": REMOTE_LANES}
+
+def _ts(iso):
+    try: return datetime.fromisoformat(str(iso).replace("Z", "+00:00")).timestamp()
+    except Exception: return None
+
+def gov_pace(hist, now, reset, default):
+    """Pure (#239): 5h % used per hour per busy remote lane over the last hour of samples [{at, pct, reset, busy}] of the SAME window. Too little data -> default."""
+    s = [h for h in hist if now - 3600 <= h["at"] <= now and h.get("reset") == reset]
+    if len(s) < 2 or s[-1]["at"] - s[0]["at"] < 600: return default
+    busy = sum(h.get("busy", 0) for h in s) / len(s)
+    if busy < 0.5: return default
+    return max(0.0, (s[-1]["pct"] - s[0]["pct"]) / ((s[-1]["at"] - s[0]["at"]) / 3600) / busy)
+
+def governor(usage, hist, now, g=None):
+    """Pure (#239): usage.json dict (or None) + samples + now -> {lanes, stop, pct, projected, reset, why}.
+    Most remote lanes in [min, max] whose projection at the 5h reset stays <= target (min when even that is above); 5h >= stop -> no new run;
+    week above its even pace +10 pts -> at most week_cap lanes; usage missing or older than 15 min -> config remote_lanes."""
+    g = {**GOV, **(g or {})}
+    at = _ts((usage or {}).get("at"))
+    if not usage or at is None or now - at > g["stale_s"] or usage.get("five_h_pct") is None:
+        return {"lanes": g["fallback"], "stop": False, "pct": None, "projected": None, "reset": None, "why": "no fresh usage: config remote_lanes"}
+    pct = float(usage["five_h_pct"]); reset = _ts(usage.get("five_h_reset")) or now
+    hours = max(0.0, (reset - now) / 3600)
+    pace = gov_pace(hist, now, usage.get("five_h_reset"), g["pace"])
+    proj = lambda n: pct + pace * n * hours
+    lanes = max([n for n in range(g["min"], g["max"] + 1) if proj(n) <= g["target"]] or [g["min"]])
+    why = f"pace {pace:.1f}%/h per lane"
+    wk, wreset = usage.get("week_pct"), _ts(usage.get("week_reset"))
+    if wk is not None and wreset is not None:
+        even = 100 * min(1.0, max(0.0, 1 - (wreset - now) / (7 * 86400)))
+        if float(wk) > even + 10 and lanes > g["week_cap"]:
+            lanes = g["week_cap"]; why += f"; week {float(wk):.0f}% > even {even:.0f}%+10: cap {g['week_cap']}"
+    stop = pct >= g["stop"]
+    if stop: why = f"5h {pct:.0f}% >= {g['stop']:.0f}%: no new run"
+    return {"lanes": lanes, "stop": stop, "pct": pct, "projected": proj(lanes), "reset": reset, "why": why}
+
+def governor_text(gv):
+    """'governor: N lanes (5h X% -> ~Y% at HH:MM)' (local time)."""
+    if gv["pct"] is None: return f"governor: {gv['lanes']} lanes ({gv['why']})"
+    s = f"governor: {0 if gv['stop'] else gv['lanes']} lanes (5h {gv['pct']:.0f}% -> ~{min(100, gv['projected']):.0f}% at {time.strftime('%H:%M', time.localtime(gv['reset']))})"
+    return s + (" · STOP" if gv["stop"] else "")
+
+def governor_pass(remote_busy, now=None):
+    """Read .runs/usage.json, keep a sample in .runs/usage_hist.jsonl, write .runs/governor.json. Returns the governor dict; never raises."""
+    now = now or time.time()
+    try: usage = json.loads((RUNS / "usage.json").read_text(encoding="utf-8"))
+    except Exception: usage = None
+    hist = []
+    try:
+        for l in (RUNS / "usage_hist.jsonl").read_text(encoding="utf-8").splitlines()[-300:]:
+            try: hist.append(json.loads(l))
+            except Exception: pass
+    except Exception: pass
+    gv = governor(usage, hist, now)
+    if DRY: return gv
+    try:
+        RUNS.mkdir(exist_ok=True)
+        if gv["pct"] is not None:
+            hist = [h for h in hist if now - h.get("at", 0) < 2 * 3600] + [{"at": now, "pct": gv["pct"], "reset": usage.get("five_h_reset"), "busy": remote_busy}]
+            (RUNS / "usage_hist.jsonl").write_text("".join(json.dumps(h) + "\n" for h in hist), encoding="utf-8")
+        (RUNS / "governor.json").write_text(json.dumps({**gv, "text": governor_text(gv), "at": now}), encoding="utf-8")
+    except Exception: pass
+    return gv
 
 def assign_where(chosen, local_busy, remote_busy, local_lanes, remote_lanes):
     """Pure (#133): chosen issues (in priority order) -> [(issue, 'local'|'remote')]. A free local lane first, then a free remote slot; the rest wait."""
@@ -1130,16 +1202,19 @@ def main():
     rc, out = gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: print("gh failed:", out); return 1
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
-    chosen = [c for c in select(issues, total_lanes(), MAX_CORE, EXPRESS) if not FileLock(f"issue-{c['number']}").held_by_other()]
     busy = [i["number"] for i in issues if "in-progress" in i["labels"]]
     remote_busy = sum(where_of(b) == "remote" for b in busy)
-    wmap = {c["number"]: w for c, w in assign_where(chosen, len(busy) - remote_busy, remote_busy, LOCAL_LANES, REMOTE_LANES)}
+    gv = governor_pass(remote_busy)                     # #239: remote lane count from the 5h usage
+    remote_lanes = gv["lanes"]
+    chosen = [] if gv["stop"] else [c for c in select(issues, LOCAL_LANES + remote_lanes, MAX_CORE, EXPRESS) if not FileLock(f"issue-{c['number']}").held_by_other()]
+    wmap = {c["number"]: w for c, w in assign_where(chosen, len(busy) - remote_busy, remote_busy, LOCAL_LANES, remote_lanes)}
     chosen = [c for c in chosen if c["number"] in wmap]
     cutoff = CFG["stuck_hours"] * 3600
     stuck = [i for i in issues if "in-progress" in i["labels"] and not FileLock(f"issue-{i['number']}").held_by_other()
              and (time.time() - datetime.fromisoformat(i["updatedAt"].replace("Z", "+00:00")).timestamp()) > cutoff]
     if DRY:
         print(f"[dry-run] repo={REPO} branch={BRANCH} model={MODEL} local_lanes={LOCAL_LANES} remote_lanes={REMOTE_LANES} max_core={MAX_CORE}")
+        print(f"[dry-run] {governor_text(gv)}; {gv['why']}")
         print(f"[dry-run] open issues: {len(issues)}; in-progress: {sum('in-progress' in i['labels'] for i in issues)}")
         for c in chosen: print(f"[dry-run] would start #{c['number']} ({lane_of(c['labels'])}): {c['title']}")
         for s in stuck: print(f"[dry-run] would block stuck #{s['number']} (in-progress, idle > {CFG['stuck_hours']}h, no runner process)")
