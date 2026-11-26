@@ -1928,12 +1928,33 @@ def main():
         return 0
     return one_pass(run_pass)
 
+def pass_exit_line(out, now_ts, reset_ts=None):
+    """#357: the one runner.log text for a pass that exits early. A rate limit is SKIPPED (not a runner failure), with when to retry."""
+    if ghcache.rate_limited(out):
+        m = re.search(r"retry[- ]after:?\s*(\d+)", out or "", re.I)
+        at = now_ts + int(m[1]) if m else (reset_ts or now_ts + 60)
+        return f"pass: SKIPPED rate limit (retry after {time.strftime('%H:%M', time.localtime(at))})"
+    return "pass: FAILED " + " ".join(redact(out or "unknown error").split())[:160]
+
+def rate_reset():
+    """#357: when the exhausted GitHub limit resets (epoch s; `gh api rate_limit` is free), None if unknown."""
+    rc, out = run(["gh", "api", "rate_limit"], timeout=30)
+    try:
+        res = json.loads(out)["resources"]
+        return min(v["reset"] for v in res.values() if v.get("remaining") == 0) if rc == 0 else None
+    except (ValueError, KeyError, TypeError): return None
+
+def log_pass_exit(out):
+    log_line(f"{now()} " + pass_exit_line(out, time.time(), rate_reset() if ghcache.rate_limited(out) else None))
+
 def one_pass(fn):
     """#250: one pass at a time (select + spawn under the 'pass' lock); a second pass exits at once."""
     try: lock = FileLock("pass").__enter__()
     except Blocked:
         print("another pass is running"); return 0
     try: return fn()
+    except Exception as e:                      # #357: a crashed pass leaves one FAILED line, then the traceback as before
+        log_pass_exit(repr(e)); raise
     finally: lock.__exit__()
 
 def live_terminals():
@@ -1961,7 +1982,7 @@ def start_chosen(chosen, wmap, spawn_=None, terms_=None):
 
 def run_pass():
     rc, out = gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
-    if rc: print("gh failed:", out); return 1
+    if rc: print("gh failed:", out); log_pass_exit(out); return 1
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
     issues, refused = gate(issues)                          # #186: no Acceptance section -> not started
     if refused and not DRY: ask_acceptance(refused)
