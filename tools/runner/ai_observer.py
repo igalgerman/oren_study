@@ -22,7 +22,7 @@ DENY = ["Bash(gh issue edit:*)", "Bash(gh issue comment:*)", "Bash(gh issue clos
         "Bash(gh pr merge:*)", "Bash(gh pr comment:*)", "Bash(gh pr review:*)", "Bash(gh pr close:*)", "Bash(gh api:*)",
         "Bash(hc send:*)", "Bash(hc kill:*)", "Bash(hc rm:*)", "Bash(hc run:*)"]
 RUN = subprocess.run        # tests swap in a fake claude
-_running = {"v": False}
+_running = globals().get("_running") or {"v": False}   # #345: kept across a reload (a thread may be running)
 
 PROMPT = """You are the AI OBSERVER of the Oren study automatic flow: a fresh, read-only auditor. You change NOTHING (no labels, comments, edits, merges, sends). Be quick: a few commands only.
 Repo: {repo} (always `gh ... --repo {repo}`). Rules: FLOW.md, ORCHESTRATOR.md, docs/agents/triage-labels.md.
