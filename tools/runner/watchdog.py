@@ -568,42 +568,46 @@ def loop(once):
         if once: return
         time.sleep(EVERY)
 
+STEP_ERR_EVERY_S = 3600
+_step_err = {}     # (step name, error text) -> last time logged (#445)
+
+def step(name, fn, *a, now=None, **k):
+    """#445: run one tick step; an exception is logged once per error text per hour and the tick goes on. -> fn's value or None."""
+    try: return fn(*a, **k)
+    except Exception as e:
+        now, key = now or time.time(), (name, repr(e))
+        if now - _step_err.get(key, -STEP_ERR_EVERY_S) >= STEP_ERR_EVERY_S:
+            _step_err[key] = now; log(f"step {name} failed: {e!r}")
+        return None
+
 def tick():
-    """One watchdog pass (main() calls it on the newest loaded copy of this file). #365: every call inside is bounded (R.tick_mode)."""
+    """One watchdog pass (main() calls it on the newest loaded copy of this file). #365: every call inside is bounded (R.tick_mode).
+    #445: every step runs through step(), so one failing step never skips the later ones."""
     with R.tick_mode():
         try: (R.RUNS / "watchdog.beat").write_text(str(int(time.time())), encoding="utf-8")   # #171: liveness for the dashboard
         except OSError: pass
-        fresh(log)          # #300: never run a step against a module older than its file
-        ghcache_tick()      # #329: the ONE GitHub reader (every reader below uses its cache)
-        ts = windows()
-        check_windows(ts)
-        OQ.answers_tick(tell)
-        qwin_tick(ts)
-        resume_tick()
-        check_lanes(ts)
-        check_intake(ts)
-        all_ts = R.hc_json("ls", "--all", "--json").get("terminals", []) or ts
-        check_control(all_ts)
-        cleanup(all_ts)
-        reap_tick(ts)       # #248
-        stuck_tick(ts)
-        net_due_tick(ts)    # #364
-        conflicts_tick(ts)  # #262
-        observer_tick()
-        ai_observer_tick()
-        nightly_tick()
-        parked_tick()       # #282
-        due_tick()          # #241
-        garden_tick()       # #187
-        issues_stuck_tick() # #280
-        desks_tick()
-        canary_tick()       # #330
-        sync_tick()
-        alarm_tick()
-        trends_tick()
-        ai_tick()
-        lock_tick()
-        orch_idle_tick()
+        step("fresh", fresh, log)            # #300: never run a step against a module older than its file
+        step("ghcache_tick", ghcache_tick)   # #329: the ONE GitHub reader (every reader below uses its cache)
+        ts = step("windows", windows) or []
+        step("check_windows", check_windows, ts)
+        step("answers_tick", OQ.answers_tick, tell)
+        step("qwin_tick", qwin_tick, ts)
+        step("resume_tick", resume_tick)
+        step("check_lanes", check_lanes, ts)
+        step("check_intake", check_intake, ts)
+        all_ts = (step("all_windows", R.hc_json, "ls", "--all", "--json") or {}).get("terminals", []) or ts
+        step("check_control", check_control, all_ts)
+        step("cleanup", cleanup, all_ts)
+        step("reap_tick", reap_tick, ts)       # #248
+        step("stuck_tick", stuck_tick, ts)
+        step("net_due_tick", net_due_tick, ts) # #364
+        step("conflicts_tick", conflicts_tick, ts)  # #262
+        for name, fn in (("observer_tick", observer_tick), ("ai_observer_tick", ai_observer_tick), ("nightly_tick", nightly_tick),
+                         ("parked_tick", parked_tick), ("due_tick", due_tick), ("garden_tick", garden_tick),   # #282 #241 #187
+                         ("issues_stuck_tick", issues_stuck_tick), ("desks_tick", desks_tick), ("canary_tick", canary_tick),   # #280 #330
+                         ("sync_tick", sync_tick), ("alarm_tick", alarm_tick), ("trends_tick", trends_tick), ("ai_tick", ai_tick),
+                         ("lock_tick", lock_tick), ("orch_idle_tick", orch_idle_tick)):
+            step(name, fn)
 
 # ---------- #262: a green/approved PR that conflicts with main gets a resolve run by itself ----------
 def resolve_cmd(a):

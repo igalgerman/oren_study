@@ -1137,7 +1137,7 @@ assert "remote_resume(" in _pl and "take_answer(n)" in _pl and "park_remote(n, r
 _pr = (r.HERE / "runner.py").read_text(encoding="utf-8").split("\ndef process(", 1)[1].split("\ndef process_locked", 1)[0]
 assert "pending_answer(n)" in _pr                                  # a resumed issue always runs in the cloud (its session is there)
 _wd = (r.HERE / "watchdog.py").read_text(encoding="utf-8")
-assert "resume_tick()" in _wd.split("def tick():", 1)[1].split("\ndef ", 1)[0] and "R.resume_answered()" in _wd.split("def resume_tick():", 1)[1].split("\ndef ", 1)[0]
+assert "resume_tick)" in _wd.split("def tick():", 1)[1].split("\ndef ", 1)[0] and "R.resume_answered()" in _wd.split("def resume_tick():", 1)[1].split("\ndef ", 1)[0]
 print("ok #135 cloud question parks, answer resumes")
 # end to end: stored answer -> process_locked sends it to the saved session (no new start); a new QUESTION parks again
 _saved = {k: getattr(r, k) for k in ("gh", "run", "set_labels", "stat", "set_where", "issue_over", "tell_orchestrator")}
