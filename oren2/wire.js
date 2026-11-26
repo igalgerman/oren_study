@@ -33,4 +33,7 @@ step('health',()=>{if(W.HEALTH&&W.HEALTH.wrapRuns)W.HEALTH.wrapRuns();});
 
 /* day log: every activity run opens a log line (after all packs added theirs); path steps he did not reach yesterday */
 step('daylog',()=>{const D=W.DAYLOG;if(!D)return;D.wrap();D.pathLeft();});
+
+/* event log (#348): every activity run is a 'mission opened' event (after all packs added or replaced their runs) */
+step('evlog',()=>{if(!O.evMission)return;Object.values(T.ACT).forEach(a=>{if(!a.run||a.run._ev)return;const r=a.run;const f=back=>{O.evMission(a.id);return r(back);};f._ev=1;a.run=f;});});
 })();
