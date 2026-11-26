@@ -144,7 +144,7 @@ export function clock(ms: number, nowMs = ms): string {
 
 export const ago = (min: number) => (min < 90 ? `${Math.round(min)}m` : `${(min / 60).toFixed(1)}h`)
 
-export type Lane = { n: number; kind: 'local' | 'cloud' | 'express'; step: string; since: number; pr?: number; tone: Row['tone']; title: string }
+export type Lane = { n: number; kind: 'local' | 'cloud' | 'express'; step: string; since: number; pr?: number; tone: Row['tone']; title: string; manual?: boolean }
 
 /** The step one lane is in, from its windows, PR, cloud row and last runner event. */
 export function laneStep(i: Issue, p: PanelIn, pr: Pr | undefined, coreBusy: boolean): { step: string; since: number; bad: boolean } {
@@ -164,6 +164,7 @@ export function laneStep(i: Issue, p: PanelIn, pr: Pr | undefined, coreBusy: boo
   if (c?.state === 'question') return { step: 'blocked: question for you', since, bad: true }
   if (wins.some(w => w.state.endsWith('/blocked'))) return { step: 'blocked: window waits for input', since, bad: true }
   if (c?.stale) return { step: 'blocked: no cloud activity', since, bad: true }
+  if (!pr && c?.state === 'waiting review') return { step: 'waiting review', since, bad: false }   // #297: cloud PR open + quiet, no 'Fixes #n' link
   if (pr) {
     if (isConflict(pr)) return { step: 'resolving conflict', since, bad: false }
     if (isRed(pr) || has(new RegExp(`^issue-${n}-fix`)) || last?.event === 'review_fix') return { step: 'fixing', since, bad: false }
@@ -211,13 +212,15 @@ export function panel(p: PanelIn): Panel {
     const kind: Lane['kind'] = labs(i).has('express') ? 'express'
       : p.where[i.number] === 'remote' || labs(i).has('cloud') || p.cloud.some(c => c.n === i.number) ? 'cloud' : 'local'
     const tone: Row['tone'] = s.bad ? 'red' : now - s.since > AMBER_MIN * 60e3 ? 'amber' : ''
-    return { n: i.number, kind, step: s.step, since: s.since, pr: pr?.number, tone, title: i.title }
+    const cloudRow = p.cloud.find(c => c.n === i.number && c.state !== 'done')
+    const cloudPr = Number(/\/pull\/(\d+)/.exec(cloudRow?.pr ?? '')?.[1]) || undefined
+    return { n: i.number, kind, step: s.step, since: s.since, pr: pr?.number ?? cloudPr, tone, title: i.title, manual: cloudRow?.manual }
   })
   const rank = { red: 0, amber: 1, '': 2, dim: 3 }
   lanes.sort((a, b) => rank[a.tone] - rank[b.tone] || a.n - b.n)
   const icon = { local: '●', cloud: '☁', express: '⚡' }
   const laneRows: Row[] = lanes.map(x => ({
-    text: `${icon[x.kind]} #${x.n} ${short(x.title)} — ${x.step}${x.pr ? ` · PR #${x.pr}` : ''} · ${clock(x.since, now)}`, tone: x.tone,
+    text: `${icon[x.kind]} #${x.n} ${short(x.title)} — ${x.step}${x.pr ? ` · PR #${x.pr}` : ''}${x.manual ? ' · manual' : ''} · ${clock(x.since, now)}`, tone: x.tone,
   }))
 
   // UP NEXT: ready work that has no lane, no PR and is not waiting on the owner

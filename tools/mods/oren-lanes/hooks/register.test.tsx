@@ -152,3 +152,11 @@ test('#305 every process call goes through pythonw + quiet.py', () => {
   const direct = src.split(String.fromCharCode(10)).filter(l => /\$\.process\.(run|spawn|exec)\(/.test(l) && !l.includes('quietArgv('))
   expect(direct).toEqual([])
 })
+
+test('#297 cloud row waiting review shows the PR number even without a PR in the list; #263 manual', () => {
+  const cl = (over: object) => ({ n: 269, title: 'Quiet', state: 'waiting review', last: minAgo(5), stale: false, pr: 'https://github.com/x/y/pull/270', session: '', ...over })
+  const open = [{ number: 269, title: 'Quiet', labels: L('in-progress', 'cloud') }]
+  const t1 = panel(base({ open, prs: [], cloud: [cl({})] })).lanes[0]!.text
+  expect(t1).toMatch(/^.{1,3}#269 Quiet . waiting review . PR #270 . \d\d:\d\d$/)
+  expect(panel(base({ open, prs: [], cloud: [cl({ manual: true })] })).lanes[0]!.text).toMatch(/PR #270 . manual . \d\d:\d\d$/)
+})
