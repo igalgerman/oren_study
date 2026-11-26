@@ -244,12 +244,19 @@ ob.integrating = lambda: True; assert ob.execute("make_ready", 1, "r", {"termina
 ob.integrating = lambda: False; assert ob.execute("make_ready", 1, "r", {"terminals": []}) is True and _sets == [1]
 ob.integrating, ob.R.set_labels, ob.comment = _old
 print("observer ok")
-# priority: bug first, then P0<P1<P2<P3 (missing = P2), then oldest
+# priority: P0, then bug, then P1<P2<P3 (missing = P2), then oldest (#437: P0 now before bugs)
 assert nums(r.select([I(1,[R,"pack","P3"]), I(2,[R,"pack"]), I(3,[R,"pack","P1"]), I(4,[R,"pack","P0"])], 4)) == [4,3,2,1]
-assert nums(r.select([I(1,[R,"pack","P0"]), I(2,[R,"pack","bug","P3"])], 2)) == [2,1]
+assert nums(r.select([I(1,[R,"pack","P0"]), I(2,[R,"pack","bug","P3"]), I(3,[R,"pack","P1"])], 3)) == [1,2,3]
 assert nums(r.select([I(5,[R,"pack","P1"]), I(3,[R,"pack","P1"])], 2)) == [3,5]
 assert r.priority_of(["P1", "x"]) == 1 and r.priority_of([]) == 2
 print("ok priority")
+# #437 tiers: express, then P0 (any tier), then tier-1 (no label) < tier-2 < tier-3, then bug, then P1..P3, then oldest
+assert r.tier_of([]) == 1 and r.tier_of(["tier-2"]) == 2 and r.tier_of(["tier-3", "P1"]) == 3
+assert nums(r.select([I(1,[R,"pack","P1","tier-2"]), I(2,[R,"pack","P2"])], 2)) == [2,1]               # P1 tier-2 after P2 tier-1
+assert nums(r.select([I(1,[R,"pack","P1"]), I(2,[R,"pack","P0","tier-2"])], 2)) == [2,1]               # P0 tier-2 before P1 tier-1
+assert nums(r.select([I(1,[R,"pack","P0"]), I(2,[R,"pack","P3","tier-3","express"])], 1, express_lanes=0)) == [2]   # express first
+assert nums(r.select([I(1,[R,"pack","tier-2","bug"]), I(2,[R,"pack","P3"]), I(3,[R,"pack","tier-3"])], 3)) == [2,1,3]   # tier before bug
+print("ok tiers")
 # stale window on resume: a finished (done/idle) window is stale, because every window found at the start of a run is older than this run
 # (and than the latest push); only working / blocked / waiting-for-an-answer windows are re-attached
 assert r.is_stale_window("done", scr("● hi", "  VERDICT: FIX", "❯"))                       # old finished review: stale

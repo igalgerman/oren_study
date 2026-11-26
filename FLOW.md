@@ -10,7 +10,8 @@ Everything after the issue is automatic (`tools/runner`). Lanes: `local_lanes` o
 
 Hand work by the orchestrator/inspector carries the label `manual`, never `in-progress` and no `core` on tooling: the runner ignores `manual` (no lane, never started) (#177).
 
-Priority: label `P0` (urgent) / `P1` / `P2` (normal, default) / `P3` (low) orders the queue: bugs first, then P0→P3, then oldest.
+Priority: label `P0` (urgent) / `P1` / `P2` (normal, default) / `P3` (low). Tier (#437): `tier-1` (default, no label) / `tier-2` / `tier-3` splits work into rounds (the owner's 26 Nov game picks are `tier-2`).
+Queue order: `express`, then P0 (any tier), then tier 1→3, then bugs, then P1→P3, then oldest; the panel's UP NEXT shows e.g. `P1 T2`.
 
 ## If you are a WORKER (window `issue-<n>`, in worktree `wt-<n>`, branch `lane/<n>`)
 Do the WHOLE job yourself, then report. Nobody merges for you by hand.

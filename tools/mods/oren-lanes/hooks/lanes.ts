@@ -148,6 +148,7 @@ export type PanelIn = {
 export const AMBER_MIN = 30
 const labs = (i: Issue) => new Set((i.labels ?? []).map(x => x.name))
 const prio = (i: Issue) => [0, 1, 2, 3].find(n => labs(i).has(`P${n}`)) ?? 2
+const tier = (i: Issue) => [1, 2, 3].find(n => labs(i).has(`tier-${n}`)) ?? 1   // #437: no label = tier 1
 const short = (t: string, n = 26) => (t.length > n ? t.slice(0, n - 1) + '…' : t)
 const DONE_EV = new Set(['ended', 'merged', 'blocked', 'parked', 'deployed'])
 
@@ -243,11 +244,12 @@ export function panel(p: PanelIn): Panel {
 
   // UP NEXT: ready work that has no lane, no PR and is not waiting on the owner
   const nextAll = p.open.filter(i => { const l = labs(i); return l.has('ready-for-agent') && !l.has('in-progress') && !l.has('blocked') && !laneNums.has(i.number) && !youSet.has(i.number) })
-    .sort((a, b) => prio(a) - prio(b) || +!labs(a).has('express') - +!labs(b).has('express') || a.number - b.number)
+    .sort((a, b) => +!labs(a).has('express') - +!labs(b).has('express') || +(prio(a) !== 0) - +(prio(b) !== 0) || tier(a) - tier(b)
+      || +!labs(a).has('bug') - +!labs(b).has('bug') || prio(a) - prio(b) || a.number - b.number)   // #437: same order as runner.select
   const waitsOn = (i: Issue) => parseBlockers(i.body).filter(b => b !== i.number && openNums.has(b))
   const next: Row[] = nextAll.slice(0, 5).map(i => {
     const w = waitsOn(i)
-    return { text: `${labs(i).has('express') ? '⚡ ' : ''}P${prio(i)} #${i.number} ${short(i.title, 30)}${w.length ? `  (after #${w.join(', #')})` : ''}`, tone: 'dim' }
+    return { text: `${labs(i).has('express') ? '⚡ ' : ''}P${prio(i)}${tier(i) > 1 ? ` T${tier(i)}` : ''} #${i.number} ${short(i.title, 30)}${w.length ? `  (after #${w.join(', #')})` : ''}`, tone: 'dim' }
   })
 
   // starts: will a new task start now?
