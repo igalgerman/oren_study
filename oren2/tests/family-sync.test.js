@@ -51,7 +51,7 @@ const FIX='a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0',OLD='0123456789abcdef0123456789abcd
  {const d=DIAGS[0]||{};const L=d.log||[];
   ok('all retries failed: one diag record',DIAGS.length===1,String(DIAGS.length));
   ok('diag has the family id and the rolling log (endpoint, status, retry count, error)',d.fam===fid&&L.length>=5&&L.filter(x=>x.st===503).length>=5&&L.every(x=>x.t>0&&x.ep&&'rt' in x&&'e' in x)&&L.some(x=>x.rt===4),JSON.stringify(L.slice(-2)));
-  ok('diag has a DOM snapshot of the screen without scripts',typeof d.snap==='string'&&d.snap.length>200&&/<body/i.test(d.snap)&&!/<script/i.test(d.snap),String((d.snap||'').length));
+  ok('diag has the visible screen text, whole body under 18000',typeof d.snap==='string'&&d.snap.length>20&&!/<script|<body/i.test(d.snap)&&JSON.stringify(d).length<=18000,String((d.snap||'').length));
   const is=await A.evaluate(()=>(window.OREN.save.iss||[]).find(x=>x.k==='sync'&&x.d===window.OREN.today()));
   ok('parent log shows the server reason, not "no internet", and that a report was sent',is&&is.m==='full'&&is.r===1,JSON.stringify(is));}
  FAILN=0;FAILST=500;FAILB='{}';await A.evaluate(()=>{window.__fast=true;});
