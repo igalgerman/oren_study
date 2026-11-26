@@ -461,6 +461,28 @@ _a = W.lock_alarm((7, "#122 deploy", _t - 31 * 60), True, _t, [167, 176])
 assert _a[0] == "alarm" and "31 min" in _a[1] and "#122 deploy" in _a[1] and "#167, #176" in _a[1], _a
 assert W.lock_alarm((7, "#1 CI merge", _t - 60), False, _t)[0] == "clear"
 print("ok merge lock watch")
+
+# #149: four review colours. GREEN pass / BLUE pass-with-notes / PURPLE owner question / RED fix
+assert r.parse_verdict("VERDICT: PASS") == ("pass", "", "")
+assert r.parse_verdict("VERDICT: PASS-NOTES rename x; add test y") == ("notes", "rename x; add test y", "")
+assert r.parse_verdict("VERDICT: FIX button crashes: no test") == ("fix", "button crashes: no test", "")
+assert r.parse_verdict("VERDICT: PURPLE should Oren hear a or b? merge-safe") == ("purple", "should Oren hear a or b?", "merge-safe")
+assert r.parse_verdict("VERDICT: PURPLE should it speak? hold") == ("purple", "should it speak?", "hold")
+assert r.parse_verdict("VERDICT: PURPLE should it speak?") == ("purple", "should it speak?", "hold")   # no flag: safe default = hold
+assert r.parse_verdict("") == ("none", "", "") and r.parse_verdict("VERDICT: MAYBE") == ("none", "", "")
+assert r.find_marker("● VERDICT: PURPLE a or b? hold\n", "VERDICT:") == "VERDICT: PURPLE a or b? hold"   # ' or ' in a question is fine for VERDICT
+assert r.find_marker("❯ end with `VERDICT: PASS`, `VERDICT: PASS-NOTES <list>` ...\n", "VERDICT:") == ""
+assert r.polish_lines("a; b ;", 5) == ["- a (PR #5)", "- b (PR #5)"]
+assert r.polish_title("pack") == "Polish backlog (pack)"
+# round 2 checks only the round-1 RED points; FIX only for RED reasons
+_p = r.review_prompt(7, 9, round1="button crashes")
+assert "button crashes" in _p and "ONLY" in _p
+assert "VERDICT: PASS-NOTES" in r.review_prompt(7, 9) and "VERDICT: PURPLE" in r.review_prompt(7, 9) and "RED" in r.review_prompt(7, 9)
+assert r.FIX_ROUNDS == 2          # one more fix round before blocking (2 fixes, 3 reviews)
+print("ok #149")
+# #149: no screenshots when no oren2/ file changed
+assert "no oren2/ file changed" in r.worker_prompt(7, "pack", "") and "no oren2/ file changed" in r.review_prompt(7, 9)
+print("ok skip screenshots")
 # Code Mode trial: every 3rd issue number; 0 = off
 _cm = r.CFG.get("code_mode_every")
 r.CFG["code_mode_every"] = 3; assert [n for n in range(1, 10) if r.code_mode(n)] == [3, 6, 9]
