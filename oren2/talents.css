@@ -532,5 +532,11 @@ body:has(#dlg:not([hidden])) .toast{top:74px;bottom:auto}
 .tdrow{cursor:pointer}.tdrow .tdmore{display:none;flex-wrap:wrap;gap:6px;width:100%}.tdrow.open .tdmore{display:flex}
 .tdrow .pchip.tdx{min-width:44px}
 .pstat{font-weight:800;font-size:17px;margin:4px 0 10px}
+/* #7 simplicity P2: parent panel — three summary lines, building toggles, one "⋯" per row */
+.psum{width:min(900px,100%);box-sizing:border-box;background:rgba(255,255,255,.94);padding:12px 18px;box-shadow:0 5px 0 rgba(0,0,0,.15)}
+.psl{font-size:18px;font-weight:700;padding:5px 0}.psl+.psl{border-top:1px solid #eee}
+.pbld{flex-direction:row;flex-wrap:wrap;align-items:center}.pbn{flex:1;text-align:start;background:none;border:0;font:inherit;font-weight:800;font-size:16px;color:inherit;cursor:pointer;min-height:44px;padding:0}
+.pbn:disabled{cursor:default;opacity:.55}.pbld .pacts{display:none;width:100%}.pbld.open .pacts{display:flex}
+.prow .pmore{min-width:44px;min-height:36px;font-weight:900}.prow .practs{display:none;gap:6px;flex-wrap:wrap}.prow.open .practs{display:flex}.prow:has(.pmore){flex-wrap:wrap}
 .pbig{display:flex;gap:10px;flex-wrap:wrap}.pbig .bigbtn{font-size:20px;padding:10px 22px}
 .dnh{animation:pulse 1.6s infinite}

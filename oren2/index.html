@@ -923,7 +923,7 @@ function shapeSVG(t,hard,cls,size){const col=pick(COL);let body;
   else{let p;
     if(t==='tri')p=hard?(()=>{const a0=Math.random()*6.28,a1=a0+(100+Math.random()*40)*Math.PI/180,a2=a1+(95+Math.random()*40)*Math.PI/180;return [a0,a1,a2].map(a=>[50+44*Math.cos(a),50+44*Math.sin(a)]);})():ngon(3,44,-Math.PI/2);
     else if(t==='sq'){const s=(size||rand(50,66))/2;p=[[50-s,50-s],[50+s,50-s],[50+s,50+s],[50-s,50+s]];}
-    else if(t==='rect'){const w=rand(78,86)/2,hh=rand(28,44)/2;p=[[50-w,50-hh],[50+w,50-hh],[50+w,50+hh],[50-w,50+hh]];if(hard&&mm(.4))p=rot(p,Math.PI/2);}
+    else if(t==='rect'){const w=rand(78,86)/2,hh=(size||rand(28,44))/2;p=[[50-w,50-hh],[50+w,50-hh],[50+w,50+hh],[50-w,50+hh]];if(hard&&mm(.4))p=rot(p,Math.PI/2);}
     else p=ngon(SIDES[t],42,Math.random()*6.28,hard);
     if(hard&&(t==='sq'||t==='rect'||t==='tri'))p=rot(p,Math.random()*6.28);
     body=`<polygon points="${p.map(q=>q.map(v=>v.toFixed(1)).join(',')).join(' ')}"`;}
@@ -938,7 +938,8 @@ function nameQ(set,hard){const t=pick(set.filter(x=>x!=='circ'||set.length<5));c
 function countQ(hard){const t=pick(['tri','sq','rect','pent','hex']);const corners=mm(.5);const o=['3','4','5','6'];
   return ch(`<div class="qq">כַּמָּה ${corners?'קָדְקֳדִים':'צְלָעוֹת'} יֵשׁ לַצּוּרָה?</div>${shapeSVG(t,hard,'shp1')}`,o,SIDES[t]-3,
     corners?'קָדְקֹד הוּא פִּנָּה. סוֹפְרִים אֶת הַפִּנּוֹת':'צֶלַע הִיא קַו יָשָׁר. סוֹפְרִים אֶת הַקַּוִּים מִסָּבִיב','מַתְחִילִים בְּאֶחָד, וּמַמְשִׁיכִים מִסָּבִיב עַד שֶׁחוֹזְרִים אֵלָיו','',{t:'shape',ask:corners?'corners':'sides',target:t},true);}
-function sqQ(hard){const sq=shapeSVG('sq',hard,'');const ts=shuffle(['sq','rect','rect']);const svgs=ts.map(x=>x==='sq'?sq:shapeSVG('rect',hard,''));
+/* the two rectangles get different heights, so they never look the same (#292) */
+function sqQ(hard){const sq=shapeSVG('sq',hard,'');const ts=shuffle(['sq','rect','rect']);const h1=rand(28,44),hs=[h1,28+(h1-28+8)%17];let r=0;const svgs=ts.map(x=>x==='sq'?sq:shapeSVG('rect',hard,'',hs[r++]));
   return ch('<div class="qq">אֵיזֶה מַלְבֵּן הוּא גַּם רִבּוּעַ?</div>',svgs,ts.indexOf('sq'),'לָרִבּוּעַ כָּל אַרְבַּע הַצְּלָעוֹת שָׁווֹת','מְחַפְּשִׂים מַלְבֵּן שֶׁהָאֹרֶךְ וְהָרֹחַב שֶׁלּוֹ שָׁוִים','shp',{t:'shape',ask:'sqrect',ts});}
 const B4=['tri','sq','rect','circ'],B6=['tri','sq','rect','pent','hex','circ'];
 const shp1=i=>{const hard=i>=3;return mm(.65)?whichQ(B4,hard):nameQ(B4,hard);};
@@ -2638,6 +2639,12 @@ body:has(#dlg:not([hidden])) .toast{top:74px;bottom:auto}
 .tdrow{cursor:pointer}.tdrow .tdmore{display:none;flex-wrap:wrap;gap:6px;width:100%}.tdrow.open .tdmore{display:flex}
 .tdrow .pchip.tdx{min-width:44px}
 .pstat{font-weight:800;font-size:17px;margin:4px 0 10px}
+/* #7 simplicity P2: parent panel — three summary lines, building toggles, one "⋯" per row */
+.psum{width:min(900px,100%);box-sizing:border-box;background:rgba(255,255,255,.94);padding:12px 18px;box-shadow:0 5px 0 rgba(0,0,0,.15)}
+.psl{font-size:18px;font-weight:700;padding:5px 0}.psl+.psl{border-top:1px solid #eee}
+.pbld{flex-direction:row;flex-wrap:wrap;align-items:center}.pbn{flex:1;text-align:start;background:none;border:0;font:inherit;font-weight:800;font-size:16px;color:inherit;cursor:pointer;min-height:44px;padding:0}
+.pbn:disabled{cursor:default;opacity:.55}.pbld .pacts{display:none;width:100%}.pbld.open .pacts{display:flex}
+.prow .pmore{min-width:44px;min-height:36px;font-weight:900}.prow .practs{display:none;gap:6px;flex-wrap:wrap}.prow.open .practs{display:flex}.prow:has(.pmore){flex-wrap:wrap}
 .pbig{display:flex;gap:10px;flex-wrap:wrap}.pbig .bigbtn{font-size:20px;padding:10px 22px}
 .dnh{animation:pulse 1.6s infinite}
 
@@ -4319,10 +4326,12 @@ const fmtMin=sec=>{const m=Math.round(sec/60);return m<60?m+' דק׳':(m/60).toF
 function lastDays(n){const out=[];const d=new Date();for(let i=n-1;i>=0;i--){const x=new Date(d);x.setDate(d.getDate()-i);const k=x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');out.push([k,x]);}return out;}
 /* three simple tabs; everything else lives in closed sections under "settings" */
 const TABS=[['sum','📊 סיכום'],['day','📅 היום של אורן'],['more','⚙️ הגדרות']];
-const MORE=[['voice','🔊 קול — בדיקה ובחירה'],['try','🎮 לשחק כהורה (ניסיון)'],['msg','💌 הודעה לאורן'],['parts','🧩 להפעיל / לכבות חלקים'],['prog','⏭️ דילוג, איפוס ויהלומים'],['perm','🎤 הרשאות'],['set','🔑 סיסמה וגיבוי'],['map','🗺️ מפת התוכן']];
-const GROUP={plan:'day',time:'day',map:'more',voice:'more',try:'more',msg:'more',parts:'more',prog:'more',perm:'more',set:'more'};
-const FN={map:box=>{if(T.contentMap)T.contentMap(box,sec,BAR);},sum:sumTab,try:tryTab,plan:planTab,time:timeTab,voice:voiceTab,perm:permTab,parts:partsTab,prog:progTab,msg:msgTab,set:setTab};
+const MORE=[['voice','🔊 קול — בדיקה ובחירה'],['try','🎮 לשחק כהורה (ניסיון)'],['msg','💌 הודעה לאורן'],['parts','🧩 להפעיל / לכבות חלקים'],['health','🥤 הפסקות וארוחות'],['read','📖 קריאה'],['prog','⏭️ דילוג, איפוס ויהלומים'],['perm','🎤 הרשאות'],['set','🔑 סיסמה וגיבוי'],['map','🗺️ מפת התוכן']];
+const GROUP={plan:'day',time:'day',health:'more',read:'more',map:'more',voice:'more',try:'more',msg:'more',parts:'more',prog:'more',perm:'more',set:'more'};
+const FN={map:box=>{if(T.contentMap)T.contentMap(box,sec,BAR);},sum:sumTab,try:tryTab,plan:planTab,time:timeTab,health:box=>{if(window.HEALTH)window.HEALTH.panel(box,sec,()=>panel('health'),'set');},read:box=>{if(T.rdSettings)T.rdSettings(box,sec,()=>panel('read'));},voice:voiceTab,perm:permTab,parts:partsTab,prog:progTab,msg:msgTab,set:setTab};
 let curTab='sum',openSec=null;
+/* on the website there is nothing to approve: no permissions section (G8: hide empty sections) */
+const permNone=()=>!!window.__site&&!(window.claude&&window.claude.use);
 const exitParent=()=>{parentOn=false;O.showMap();};
 function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(dl&&!dl.hidden)dl.hidden=true;if(!parentOn)return login(()=>panel(tab));
   if(tab&&GROUP[tab]){openSec=tab;curTab=GROUP[tab];}else if(tab){curTab=tab;if(tab!=='more')openSec=null;}
@@ -4330,8 +4339,8 @@ function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(
   s.appendChild(h('div','whead',`<h1>לוח הורים</h1>`));const tb=h('div','ptabs');TABS.forEach(([id,n])=>{const b=h('button','ptab'+(id===curTab?' on':''),n);b.onclick=()=>{openSec=null;panel(id);};tb.appendChild(b);});s.appendChild(tb);
   const body=h('div','pbody');s.appendChild(body);
   if(curTab==='sum')sumTab(body);
-  else if(curTab==='day'){timeTab(body);if(window.HEALTH)window.HEALTH.panel(body,sec,()=>panel('day'));planTab(body);if(window.DAYLOG)window.DAYLOG.panel(body,sec);if(window.LEARN)window.LEARN.parentPanel(body,sec,()=>panel('day'));if(window.KNOW)window.KNOW.panel(body,sec,()=>panel('day'));if(T.rdSettings)T.rdSettings(body,sec,()=>panel('day'));}
-  else MORE.forEach(([id,n])=>{const d=document.createElement('details');d.className='pdet';const sm=document.createElement('summary');sm.textContent=n;d.appendChild(sm);const inner=h('div','pdin');d.appendChild(inner);let done=false;
+  else if(curTab==='day'){timeTab(body);if(window.HEALTH)window.HEALTH.panel(body,sec,()=>panel('day'),'today');planTab(body);if(window.DAYLOG)window.DAYLOG.panel(body,sec);if(window.LEARN)window.LEARN.parentPanel(body,sec,()=>panel('day'));if(window.KNOW)window.KNOW.panel(body,sec,()=>panel('day'));}
+  else MORE.filter(([id])=>id!=='perm'||!permNone()).forEach(([id,n])=>{const d=document.createElement('details');d.className='pdet';const sm=document.createElement('summary');sm.textContent=n;d.appendChild(sm);const inner=h('div','pdin');d.appendChild(inner);let done=false;
     const fill=()=>{if(done)return;done=true;FN[id](inner);};d.addEventListener('toggle',()=>{if(d.open){openSec=id;fill();}});if(openSec===id){d.open=true;fill();}body.appendChild(d);});
   const out=h('div','btnrow');const bb=h('button','bigbtn plain sm',ICON.home+'<span>יציאה מלוח ההורים</span>');bb.onclick=exitParent;out.appendChild(bb);s.appendChild(out);window.__par=curTab;parLiveOn();
   if(GROUP[tab]&&openSec)setTimeout(()=>{const o=s.querySelector('details[open]');if(o&&tab===openSec&&curTab==='more')o.scrollIntoView({block:'start'});else $('#screens').scrollTop=sy;},0);}
@@ -4346,13 +4355,17 @@ const sec=(box,t,html)=>{const d=h('section','psec',`<h3>${t}</h3>`);if(html)d.i
 const ISS={voice:'🔊 הקול של Google לא ענה בזמן — הושמע קול גיבוי',sync:'☁️ השמירה לענן לא הצליחה',err:'🐞 תקלה במשחק'};
 const WHY={off:'(המכשיר לא היה מחובר לאינטרנט)',full:'(השרת לא קיבל שמירות באותו זמן — המשחק ניסה שוב אחר כך)'};/* #129: the real reason, 'no internet' only when offline */
 function issues(box){const from=lastDays(14)[0][0];const L=(O.realSave.iss||[]).filter(x=>x.d>=from).sort((a,b)=>a.d<b.d?1:-1);
-  if(!L.length){box.appendChild(h('div','pissok','✅ אין תקלות בשבועיים האחרונים'));return;}
+  if(!L.length)return;/* no problems: nothing to show (G8) */
   const d=document.createElement('details');d.className='pdet piss';d.innerHTML=`<summary>⚠️ היו ${L.length} תקלות בשבועיים האחרונים — לחצו לפרטים</summary>`+L.map(x=>`<div class="prow"><span class="pn">${x.d.slice(8)}.${x.d.slice(5,7)} · ${ISS[x.k]||x.k}${WHY[x.m]?' '+WHY[x.m]:x.m?` <small dir="ltr">${String(x.m).replace(/[<>&]/g,'')}</small>`:''}${x.r?' · 📨 נשלח דיווח לבדיקה':''}</span><span class="pc">×${x.n}</span></div>`).join('');box.appendChild(d);}
 function sumTab(box){const s0=T.S(),sv=O.save;
   permStates().then(st=>{if(st&&Object.values(st).some(v=>v==='prompt'||v==='denied')){const w=h('button','pwarn','⚠️ יש הרשאות שעוד לא אושרו (למשל מיקרופון). לחצו כאן כדי לאשר מראש, כדי שאורן לא ייתקע באמצע.');w.onclick=()=>panel('perm');box.prepend(w);}});
   if(!SET().voiceOk){const w=h('button','pwarn','🔊 עוד לא בדקתם את הקול של המשחק. לחצו כאן — לוקח דקה: שומעים דוגמה ואומרים אוקי.');w.onclick=()=>panel('voice');box.appendChild(w);}
+  /* three lines: today's minutes, streak, what he did today; everything else in "פירוט מלא" (G8) */
+  const DL=window.DAYLOG,done=DL?[...new Set(DL.rows(O.today()).filter(e=>e[6]==='c').map(e=>DL.nameOf(e[1])))]:[];const st0=O.dayStreak();
+  box.appendChild(h('div','psum',`<div class="psl">⏱️ היום: <b>${usedMin()} דק׳</b> משחק</div><div class="psl">🔥 רצף: <b>${st0===1?'יום אחד':st0+' ימים'}</b></div><div class="psl">🎯 היום: ${done.length?done.join(' · '):DL?'עוד לא סיים פעילות':doneN()+' פעילויות'}</div>`));
   issues(box);
-  if(window.DAYLOG)window.DAYLOG.nowBox(box);if(window.LEARN){const rl=window.LEARN.runwayLine();if(rl)box.appendChild(h('div','pnote',rl));}if(T.thinkSummary)T.thinkSummary(box,sec);
+  const det=document.createElement('details');det.className='pdet';det.innerHTML='<summary>📈 פירוט מלא</summary>';const dbox=h('div','pdin');det.appendChild(dbox);box.appendChild(det);box=dbox;
+  if(DL)DL.nowBox(box);if(window.LEARN){const rl=window.LEARN.runwayLine();if(rl)box.appendChild(h('div','pnote',rl));}if(T.thinkSummary)T.thinkSummary(box,sec);
   const acc=sv.ans?Math.round((sv.ok|0)/sv.ans*100):0;const totT=Object.values(s0.time).reduce((a,v)=>a+(v|0),0);const talSt=Object.values(s0.tl).reduce((a,c)=>a+(c.s|0),0);
   sec(box,'במבט אחד',`<div class="ptiles">
     <div><b>${new Set([...(sv.days||[]),...Object.keys(s0.time).filter(k=>(s0.time[k]|0)>=60)]).size}</b><span>ימי משחק</span></div><div><b>${O.dayStreak()}</b><span>רצף ימים</span></div>
@@ -4361,7 +4374,7 @@ function sumTab(box){const s0=T.S(),sv=O.save;
     <div><b>${talSt}</b><span>כוכבים בעיר הכשרונות</span></div><div><b>${Object.keys(s0.bdg||{}).length}/${BADGES.length}</b><span>תגים</span></div></div>`);
   const days=lastDays(14);const mx=Math.max(600,...days.map(([k])=>s0.time[k]|0));
   sec(box,'זמן משחק — 14 ימים אחרונים',`<div class="pchart">${days.map(([k,x])=>{const v=s0.time[k]|0;return `<div class="pcol" title="${k}: ${fmtMin(v)}"><span class="pv">${v?Math.round(v/60):''}</span><i style="height:${v/mx*100}%"></i><small>${'אבגדהוש'[x.getDay()]}</small></div>`;}).join('')}</div><div class="pnote">בדקות, היום מימין. נספר רק זמן פעיל.</div>`);
-  const det=document.createElement('details');det.className='pdet';det.innerHTML='<summary>📈 פירוט מלא (עולמות, נושאים, בניינים, רגשות)</summary>';const dbox=h('div','pdin');det.appendChild(dbox);box.appendChild(det);box=dbox;if(T.thinkSkills)T.thinkSkills(box,sec,BAR);
+  if(T.thinkSkills)T.thinkSkills(box,sec,BAR);
   sec(box,'התקדמות בעולמות המסע',O.WORLDS.map(w=>{const got=w.levels.reduce((a,l)=>a+O.stars(l.id),0),max=w.levels.length*3;return `<div class="prow"><span class="pn">${w.name}${SET().offW[w.id]?' <small>(כבוי)</small>':''}</span>${BAR(got,max,w.color)}<span class="pc">${got}/${max}</span></div>`;}).join(''));
   const st=sv.st||{};const units=O.ALLU.filter(u=>!u.boss&&st[u.id]&&st[u.id].a>=4).map(u=>({u,r:st[u.id].o/st[u.id].a}));
   const weak=[...units].sort((a,b)=>a.r-b.r).slice(0,5),strong=[...units].sort((a,b)=>b.r-a.r).slice(0,3);
@@ -4405,10 +4418,10 @@ function planTab(box){const st=SET();let plan=(st.plan&&st.plan.slice())||['math
 /* --- try it yourself (parent sandbox) --- */
 function enterTry(fresh){parentOn=false;O.parentPlay(true,fresh);}
 function tryIt(id){enterTry();if(id==='math'){O.showJourney();return;}const a=ACT[id];if(a)a.run(O.showMap);else O.showMap();}
-function tryTab(box){const ts=sec(box,'משתמש הורה — לשחק ולנסות',`<div class="pnote">כאן אתם נכנסים למשחק <b>כמשתמש נפרד</b>: הכל פתוח, יש 500 יהלומים, ואפשר לדלג על כל שלב. שום דבר שתעשו לא משפיע על ההתקדמות של אורן. בתחתית המסך יופיע פס הורה עם "⏭ דלג" ו"חזרה ללוח".</div>`);
-  const r=h('div','btnrow');const go=h('button','bigbtn','🎮 <span>כניסה למשחק כהורה</span>');go.onclick=()=>{enterTry();O.showMap();};const rs=h('button','bigbtn plain sm','↺ <span>להתחיל את הניסיון מחדש</span>');rs.onclick=()=>{try{localStorage.removeItem('oren4-v1-parent');}catch(e){}O.floatText(rs,'אופס ✓');};r.append(go,rs);ts.appendChild(r);
-  const ws=sec(box,'עולמות החשבון');const wr=h('div','popt');O.WORLDS.forEach(w=>{const b=h('button','pchip','▶ '+w.name);b.onclick=()=>{enterTry();O.showWorld(w);};wr.appendChild(b);});ws.appendChild(wr);
-  const bs=sec(box,'כל הפעילויות בעיר הכשרונות');BUILD.forEach(b=>{const row=h('div','pbld',`<b>${b.name}</b>`);const a2=h('div','pacts');b.acts.forEach(a=>{const c=h('button','pchip','▶ '+plain(a.name));c.onclick=()=>tryIt(a.id);a2.appendChild(c);});row.appendChild(a2);bs.appendChild(row);});}
+/* two buttons (G8): play as the parent user, or start that parent user over (fresh: all open, 500 gems) */
+function tryTab(box){const ts=sec(box,'משתמש הורה',`<div class="pnote">משתמש נפרד: הכל פתוח. ההתקדמות של אורן לא מושפעת.</div>`);
+  const r=h('div','btnrow');const go=h('button','bigbtn','🎮 <span>לשחק כהורה</span>');go.onclick=()=>{enterTry();O.showMap();};
+  const rs=h('button','bigbtn plain sm','↺ <span>להתחיל מחדש</span>');rs.onclick=()=>{try{localStorage.removeItem('oren4-v1-parent');}catch(e){}enterTry(true);O.showMap();};r.append(go,rs);ts.appendChild(r);}
 (()=>{const bar=h('div','pbar2',`<span class="pbt">👤 מצב הורה — ניסיון. אורן לא מושפע.</span>`);bar.hidden=true;
   const sk=h('button','pchip','⏭ דלג / סיים');sk.onclick=()=>{$('#ov').hidden=true;if(O.skipLevel())return toast('דילגת על השלב ✓');if(!$('#sTal').hidden){const l=T.S().last;if(l&&ACT[l.id]){T.record(l.id,3);toast('סומן כהושלם ✓');}$('#btnBack').click();}else $('#btnBack').click();};
   const hm=h('button','pchip','🏠 בית');hm.onclick=()=>O.showMap();const ex=h('button','pchip on','🚪 חזרה ללוח ההורים');ex.onclick=()=>{O.parentPlay(false);parentOn=true;panel('try');};
@@ -4498,11 +4511,14 @@ T.limCheck=limCheck;
 const SAMPLE='שָׁלוֹם אוֹרֶן! הַיּוֹם נִלְמַד יַחַד. הֶחָתוּל יָשֵׁן עַל הַכִּסֵּא. כַּמָּה זֶה שָׁלוֹשׁ וְעוֹד אַרְבַּע? נָכוֹן, שֶׁבַע!';
 /* one fixed game voice (Google Kore at 0.9, chosen by the parents); no voice options */
 function voiceTab(box){const st=SET();const g=(window.__gv||{}).ok;
-  const vc=sec(box,'בדיקת קול — דקה אחת',`<div class="pnote">לחצו ▶ ושמעו דוגמה. אם הקול נשמע טוב — "אוקי, הקול טוב" וסיימתם.</div><div class="vnow">${g?'קול: <b>Kore</b> — אותו קול בכל המכשירים':'קול: <b>הקול של המכשיר</b> (באתר המשחק: Kore — אותו קול בכל המכשירים)'}${st.voiceOk?' · <span class="pst ok">אושר ✓</span>':''}</div><div class="vsample">${SAMPLE}</div>`);
+  const vc=sec(box,'בדיקת קול — דקה אחת',`<div class="vnow">${g?'קול: <b>Kore</b> — אותו קול בכל המכשירים':'קול: <b>הקול של המכשיר</b> (באתר המשחק: Kore — אותו קול בכל המכשירים)'}${st.voiceOk?' · <span class="pst ok">אושר ✓</span>':''}</div><div class="vsample">${SAMPLE}</div>`);
   const r=h('div','btnrow');const pl=h('button','bigbtn','▶ <span>השמיעו דוגמה</span>');pl.onclick=()=>O.say(SAMPLE);
   const okb=h('button','bigbtn sm','👍 <span>אוקי, הקול טוב</span>');okb.onclick=()=>{st.voiceOk={t:Date.now()};O.persist();sfx.win();panel('voice');};
-  r.append(pl,okb);vc.appendChild(r);const ar=h('button','pchip'+(st.autoRead===0?'':' on'),(st.autoRead===0?'':'✓ ')+'הקראה אוטומטית');ar.onclick=()=>{st.autoRead=st.autoRead===0?1:0;O.persist();panel('voice');};vc.appendChild(ar);const sw=navigator.serviceWorker;if(g&&sw&&sw.controller){const dl=h('button','bigbtn plain sm','⬇️ <span>הורדת כל הקולות למכשיר הזה (כ-15MB)</span>');dl.onclick=()=>{dl.disabled=true;sw.onmessage=e=>{const d=e.data||{};if(d.type==='prefetch')dl.lastChild.textContent=d.left?'מוריד… נשארו '+d.left:'✓ '+d.ok+' קולות שמורים במכשיר';};sw.controller.postMessage({type:'prefetch',k:(window.__gv&&window.__gv.ver)|0});};vc.appendChild(dl);}if(g)return;
-  sec(box,'איך מקבלים קול עברי טוב יותר — בחינם',`<div class="pnote">• <b>במחשב Windows עם Edge:</b> יש קולות עבריים טבעיים מובנים (Hila / Avri). פשוט פותחים את המשחק ב-Edge.<br>• <b>Windows בלי חיבור:</b> הגדרות ← זמן ושפה ← דיבור ← הוספת קולות ← עברית.<br>• <b>טלפון Android:</b> הגדרות ← נגישות ← המרת טקסט לדיבור ← מנוע Google ← להתקין עברית.<br>• <b>אייפון/אייפד:</b> הגדרות ← נגישות ← תוכן מוקרא ← קולות ← עברית ← להוריד את Carmit (משופר).</div>`);
+  r.append(pl,okb);vc.appendChild(r);const ar=h('button','pchip'+(st.autoRead===0?'':' on'),(st.autoRead===0?'':'✓ ')+'הקראה אוטומטית');ar.onclick=()=>{st.autoRead=st.autoRead===0?1:0;O.persist();panel('voice');};vc.appendChild(ar);const sw=navigator.serviceWorker;if(g&&sw&&sw.controller){const dl=h('button','bigbtn plain sm','⬇️ <span>הורדת כל הקולות למכשיר הזה (כ-15MB)</span>');dl.onclick=()=>{dl.disabled=true;sw.onmessage=e=>{const d=e.data||{};if(d.type==='prefetch')dl.lastChild.textContent=d.left?'מוריד… נשארו '+d.left:'✓ '+d.ok+' קולות שמורים במכשיר';};sw.controller.postMessage({type:'prefetch',k:(window.__gv&&window.__gv.ver)|0});};vc.appendChild(dl);}
+  /* the explanations wait behind "עזרה" (G8) */
+  const help=document.createElement('details');help.className='pdet';help.innerHTML='<summary>❓ עזרה</summary>';const hin=h('div','pdin');help.appendChild(hin);vc.appendChild(help);
+  hin.appendChild(h('div','pnote','לחצו ▶ ושמעו דוגמה. אם הקול נשמע טוב — "אוקי, הקול טוב" וסיימתם.'));if(g)return;
+  sec(hin,'איך מקבלים קול עברי טוב יותר — בחינם',`<div class="pnote">• <b>במחשב Windows עם Edge:</b> יש קולות עבריים טבעיים מובנים (Hila / Avri). פשוט פותחים את המשחק ב-Edge.<br>• <b>Windows בלי חיבור:</b> הגדרות ← זמן ושפה ← דיבור ← הוספת קולות ← עברית.<br>• <b>טלפון Android:</b> הגדרות ← נגישות ← המרת טקסט לדיבור ← מנוע Google ← להתקין עברית.<br>• <b>אייפון/אייפד:</b> הגדרות ← נגישות ← תוכן מוקרא ← קולות ← עברית ← להוריד את Carmit (משופר).</div>`);
 }
 /* --- permissions --- */
 async function permTab(box){const d=sec(box,'הרשאות','<div class="pnote">בודק…</div>');const P=await getPerm();
@@ -4519,6 +4535,7 @@ async function permTab(box){const d=sec(box,'הרשאות','<div class="pnote">�
   d.appendChild(h('div','pnote','קריאה בקול עובדת ב-Chrome או Edge במחשב. בדפדפנים אחרים הפעילות פשוט לא תופיע.'));}
 /* --- parts: enable / disable / gradual --- */
 function toggle(on,lbl,fn){const b=h('button','pchip'+(on?' on':''),(on?'✓ ':'')+lbl);b.onclick=()=>{fn();O.persist();panel('parts');};return b;}
+let partsOpen=null;
 function partsTab(box){const st=SET();const g=st.grad;
   if(T.thinkSettings)T.thinkSettings(box,sec,()=>panel('parts'));
   const gs=sec(box,'פתיחה הדרגתית של עיר הכשרונות','<div class="pnote">כשההפעלה ההדרגתית פועלת, אורן מתחיל עם 2 בניינים ובניין חדש נפתח כל כמה ימי משחק — זה שומר על עניין ועל הפתעה. אורן רואה את הבניינים הסגורים ומתי ייפתחו.</div>');
@@ -4526,38 +4543,44 @@ function partsTab(box){const st=SET();const g=st.grad;
   if(g.on){const r2=h('div','popt','<span>בניין חדש כל:</span>');[1,2,3,7].forEach(n=>r2.appendChild(toggle((g.every|0)===n,n===1?'יום משחק':n+' ימי משחק',()=>{g.every=n;})));gs.appendChild(r2);
     const gi=gradInfo();gs.appendChild(h('div','pnote',`פתוחים ${gi.open.length} מתוך ${gi.ord.length}.${gi.next?` הבא בתור: ${(BUILD.find(b=>b.id===gi.next)||{}).name} (בעוד ${gi.left} ימי משחק).`:''}`));
     const r3=h('div','btnrow');const nx=h('button','bigbtn sm','<span>פתחו את הבא עכשיו</span>');nx.disabled=!gi.next;nx.onclick=()=>{g.extra=(g.extra|0)+1;O.persist();panel('parts');};r3.appendChild(nx);gs.appendChild(r3);
-    const ol=h('div','gord');gs.appendChild(h('div','psub','סדר הפתיחה (אפשר להזיז):'));
+    const ol=h('div','gord');const od=pdet(gs,'gord','סדר הפתיחה (אפשר להזיז)');
     gi.ord.forEach((id,i)=>{const b=BUILD.find(x=>x.id===id);const row=h('div','gro'+(gi.open.includes(id)?' open':''),`<span>${i+1}. ${b.name} ${gi.open.includes(id)?'✓':'🔒'}</span>`);
       const up=h('button','pchip','▲');up.disabled=i===0;up.onclick=()=>{const o=order();const a=o.indexOf(id);const prev=gi.ord[i-1];const bI=o.indexOf(prev);o[a]=prev;o[bI]=id;g.order=o;O.persist();panel('parts');};row.appendChild(up);ol.appendChild(row);});
-    gs.appendChild(ol);}
-  const bs=sec(box,'בניינים ופעילויות','<div class="pnote">כבו בניין שלם או פעילות בודדת. דברים כבויים לא מופיעים לאורן ולא נבחרים למשימות היום.</div>');
-  BUILD.forEach(b=>{const on=!st.hide[b.id];const row=h('div','pbld');row.appendChild(toggle(on,b.name,()=>{if(on)st.hide[b.id]=1;else delete st.hide[b.id];}));
-    if(on){const acts=h('div','pacts');b.acts.forEach(a=>{const aon=!st.offA[a.id];acts.appendChild(toggle(aon,plain(a.name),()=>{if(aon)st.offA[a.id]=1;else delete st.offA[a.id];}));});row.appendChild(acts);}bs.appendChild(row);});
+    od.appendChild(ol);}
+  /* one toggle per building; its activities show only after a tap on the building's name (G8) */
+  const bs=sec(box,'בניינים ופעילויות','<div class="pnote">דברים כבויים לא מופיעים לאורן. לחיצה על שם הבניין: הפעילויות שלו.</div>');
+  BUILD.forEach(b=>{const on=!st.hide[b.id];const row=h('div','pbld'+(partsOpen===b.id?' open':''));const nb=h('button','pbn',(on?'◂ ':'')+b.name);nb.disabled=!on;
+    row.appendChild(nb);row.appendChild(toggle(on,on?'פועל':'כבוי',()=>{if(on)st.hide[b.id]=1;else delete st.hide[b.id];}));
+    if(on){const acts=h('div','pacts');b.acts.forEach(a=>{const aon=!st.offA[a.id];acts.appendChild(toggle(aon,plain(a.name),()=>{if(aon)st.offA[a.id]=1;else delete st.offA[a.id];}));});row.appendChild(acts);
+      nb.onclick=()=>{partsOpen=partsOpen===b.id?null:b.id;bs.querySelectorAll('.pbld.open').forEach(x=>{if(x!==row)x.classList.remove('open');});row.classList.toggle('open',partsOpen===b.id);};}bs.appendChild(row);});
   const ws=sec(box,'עולמות החשבון','<div class="pnote">עולם כבוי לא מופיע במפה, וגם לא נדרש כדי להגיע לקרב האחרון.</div>');const wr=h('div','popt');
   O.WORLDS.filter(w=>w.id!=='fin').forEach(w=>{const on=!st.offW[w.id];wr.appendChild(toggle(on,w.name,()=>{if(on)st.offW[w.id]=1;else delete st.offW[w.id];}));});ws.appendChild(wr);
   const os=sec(box,'עוד');const r4=h('div','popt','<span>משימות היום:</span>');r4.appendChild(toggle(!st.noDaily,st.noDaily?'כבוי':'פועל',()=>{st.noDaily=st.noDaily?0:1;}));os.appendChild(r4);
   const r5=h('div','popt','<span>כל השלבים פתוחים (בלי לחכות לכוכבים):</span>');r5.appendChild(toggle(!!st.all,st.all?'פתוח':'כבוי',()=>{st.all=!st.all;}));os.appendChild(r5);}
 /* --- progress: skip / reset / gems --- */
 function armBtn(lbl,cls,fn){const b=h('button','pchip '+(cls||''),lbl);let arm=0;b.onclick=()=>{if(Date.now()-arm>3000){arm=Date.now();b.textContent='בטוחים? לחצו שוב';b.classList.add('arm');return;}fn();O.persist();sfx.ok(1);panel('prog');};return b;}
+/* one "⋯" per row (its actions open on tap); the one big reset is last (G8) */
+function moreRow(row,...btns){const m=h('button','pchip pmore','⋯');m.setAttribute('aria-label','עוד');const a=h('span','practs');btns.forEach(b=>a.appendChild(b));
+  m.onclick=()=>row.classList.toggle('open');row.append(m,a);return row;}
 function progTab(box){const sv=O.save,s0=T.S();
-  const ws=sec(box,'עולמות החשבון','<div class="pnote"><b>דילוג</b> מסמן את כל שלבי העולם כעבורים (כוכב אחד), כדי שאורן יוכל להמשיך הלאה. <b>איפוס</b> מוחק את הכוכבים של העולם כדי לעבור עליו מחדש.</div>');
+  const ws=sec(box,'עולמות החשבון','<div class="pnote">לחיצה על ⋯: דילוג (כל השלבים עבורים) או איפוס.</div>');
   O.WORLDS.forEach(w=>{const got=w.levels.filter(l=>O.stars(l.id)).length;const row=h('div','prow',`<span class="pn">${w.name}</span>${BAR(got,w.levels.length,w.color)}<span class="pc">${got}/${w.levels.length}</span>`);
-    row.appendChild(armBtn('⏭️ דילוג','',()=>{w.levels.forEach(l=>{if(!O.stars(l.id))sv.s[l.id]=1;});sv.story[w.id+'-in']=1;sv.story[w.id+'-out']=1;}));
-    row.appendChild(armBtn('↺ איפוס','bad',()=>{w.levels.forEach(l=>{delete sv.s[l.id];});delete sv.story[w.id+'-in'];delete sv.story[w.id+'-out'];w.units.forEach(u=>{if(sv.st)delete sv.st[u.id];});}));ws.appendChild(row);});
-  const bs=sec(box,'בנייני עיר הכשרונות','<div class="pnote">איפוס מוחק כוכבים והתקדמות של הבניין (הציורים בגלריה נשמרים).</div>');
+    moreRow(row,armBtn('⏭️ דילוג','',()=>{w.levels.forEach(l=>{if(!O.stars(l.id))sv.s[l.id]=1;});sv.story[w.id+'-in']=1;sv.story[w.id+'-out']=1;}),
+      armBtn('↺ איפוס','bad',()=>{w.levels.forEach(l=>{delete sv.s[l.id];});delete sv.story[w.id+'-in'];delete sv.story[w.id+'-out'];w.units.forEach(u=>{if(sv.st)delete sv.st[u.id];});}));ws.appendChild(row);});
+  const bs=sec(box,'בנייני עיר הכשרונות','<div class="pnote">לחיצה על ⋯: איפוס הבניין (הציורים נשמרים).</div>');
   BUILD.forEach(b=>{const got=b.acts.reduce((a,x)=>a+((s0.tl[x.id]||{}).s|0),0);const row=h('div','prow',`<span class="pn">${b.name}</span>${BAR(got,b.acts.length*3,b.color)}<span class="pc">${got}/${b.acts.length*3}</span>`);
-    row.appendChild(armBtn('↺ איפוס','bad',()=>{b.acts.forEach(a=>delete s0.tl[a.id]);if(b.id==='code')s0.code={};if(b.id==='write')s0.wr={};if(b.id==='type')s0.typ={best:{},wpm:0};}));bs.appendChild(row);});
-  const gs=sec(box,'יהלומים',`<div class="pnote">כרגע: <b>${sv.gems|0}</b> יהלומים. אפשר להעניק בונוס (או להוריד).</div>`);const gr=h('div','popt');
+    moreRow(row,armBtn('↺ איפוס','bad',()=>{b.acts.forEach(a=>delete s0.tl[a.id]);if(b.id==='code')s0.code={};if(b.id==='write')s0.wr={};if(b.id==='type')s0.typ={best:{},wpm:0};}));bs.appendChild(row);});
+  const gs=sec(box,'יהלומים',`<div class="pnote">כרגע: <b>${sv.gems|0}</b> יהלומים.</div>`);const gr=h('div','popt');
   [10,50,-10].forEach(n=>{const b=h('button','pchip',(n>0?'+':'')+n);b.onclick=()=>{sv.gems=Math.max(0,(sv.gems|0)+n);O.persist();O.updateGems&&O.updateGems();panel('prog');};gr.appendChild(b);});gs.appendChild(gr);
-  const rs=sec(box,'איפוס מלא','<div class="pnote">מוחק את כל ההתקדמות של אורן (כוכבים, יהלומים, ממלכה, ציורים, תגים). הסיסמה, ההגדרות והכרטיס האישי נשמרים.</div>');
-  const rr=h('div','popt');rr.appendChild(armBtn('🗑️ איפוס כל ההתקדמות','bad',()=>{const keep={set:SET(),prof:prof()};O.resetAll(keep);}));rs.appendChild(rr);if(window.LEARN)window.LEARN.skillsPanel(box,sec,()=>panel('prog'));}
+  if(window.LEARN)window.LEARN.skillsPanel(pdet(box,'skills','📶 רמות לפי מיומנות'),sec,()=>panel('prog'));
+  const rs=sec(box,'איפוס מלא','<div class="pnote">מוחק את כל ההתקדמות של אורן. הסיסמה, ההגדרות והכרטיס האישי נשמרים.</div>');
+  const rr=h('div','popt');rr.appendChild(armBtn('🗑️ איפוס כל ההתקדמות','bad',()=>{const keep={set:SET(),prof:prof()};O.resetAll(keep);}));rs.appendChild(rr);}
 /* --- message to Oren --- */
 function msgTab(box){const st=SET();const m=st.msg;
-  const ms=sec(box,'הודעה לאורן','<div class="pnote">ההודעה תופיע לאורן בפעם הבאה שייכנס למפה, תוקרא לו בקול, והוא יוכל לשלוח לכם תגובה באימוג׳י. אפשר לצרף מתנה של יהלומים.</div>');
+  const ms=sec(box,'הודעה לאורן','<div class="pnote">אורן ישמע אותה בפעם הבאה שייכנס, ויוכל להגיב באימוג׳י.</div>');
   if(m&&m.text)ms.appendChild(h('div','pmsgold',`<div>${esc(m.text)}</div><small>${m.seen?`נקראה ✓ ${m.reply?'· אורן הגיב: <span class="emo">'+m.reply+'</span>':''}`:'עוד לא נקראה'}</small>`));
   const ta=h('textarea','pta big');ta.rows=3;ta.placeholder='למשל: אורן, כל הכבוד על השבוע! אוהבים אותך 💛';ta.setAttribute('aria-label','הודעה');ta.onkeydown=e=>e.stopPropagation();ms.appendChild(ta);
-  const gr=h('div','popt','<span>מתנה:</span>');let gift=0;[0,5,10,20].forEach(n=>{const b=h('button','pchip'+(n===0?' on':''),n?'+'+n+' 💎':'בלי');b.onclick=()=>{gift=n;gr.querySelectorAll('.pchip').forEach(x=>x.classList.toggle('on',x===b));};gr.appendChild(b);});ms.appendChild(gr);
-  const row=h('div','btnrow');const sd=h('button','bigbtn sm','💌 <span>שליחה</span>');sd.onclick=()=>{const t=ta.value.trim();if(!t){O.floatText(sd,'כתבו משהו');return;}st.msg={text:t.slice(0,300),gems:gift,t:Date.now(),seen:0};O.persist();sfx.win();panel('msg');};row.appendChild(sd);ms.appendChild(row);}
+  const row=h('div','btnrow');const sd=h('button','bigbtn sm','💌 <span>שליחה</span>');sd.onclick=()=>{const t=ta.value.trim();if(!t){O.floatText(sd,'כתבו משהו');return;}st.msg={text:t.slice(0,300),t:Date.now(),seen:0};O.persist();sfx.win();panel('msg');};row.appendChild(sd);ms.appendChild(row);}
 /* --- settings --- */
 function setTab(box){const st=SET();
   const ps=sec(box,'סיסמת הורה','<div class="pnote">החלפת הסיסמה. (אם תשכחו: במסך הכניסה יש "שכחתי סיסמה".)</div>');const p1=h('input','pgin sm');p1.type='password';p1.placeholder='סיסמה חדשה';const p2=h('input','pgin sm');p2.type='password';p2.placeholder='שוב';
@@ -5224,13 +5247,15 @@ H.decorate=decorate;
 document.addEventListener('click',e=>{if(bypass||off())return;const el=e.target.closest&&e.target.closest('[data-hrest]');if(!el||el.closest('.hlock')||!H.resting(el.dataset.hrest))return;e.stopPropagation();e.preventDefault();sfx.pop&&sfx.pop(1);showRest(el.dataset.hrest,el);},true);
 
 /* ---------- parent panel (no nikud) ---------- */
-H.panel=(box,sec,re)=>{const c=cfg(),r=day();remPanel(box,sec,re);
-  const s1=sec(box,'הפסקות, ארוחות והחלפת נושא','<div class="pnote">בסוף פעילות (אף פעם לא באמצע שאלה): כל כמה דקות פעילות — הפסקה של כחצי דקה עם החבר, בסבב: מים, שירותים, תנועה, מנוחת עיניים. בזמן ארוחה המשחק עוצר עד "אכלתי" (לפחות 10 דקות, או סיסמת הורה). אחרי הרבה זמן באותו תחום — החבר מציע תחום אחר, והתחום נח עד מחר.</div>');
-  const tg=h('div','popt','<span>תזכורות:</span>');[['water','💧 מים'],['toilet','🚽 שירותים'],['move','🤸 תנועה'],['eyes','👀 עיניים'],['meal','🍽️ ארוחות']].forEach(([k,n])=>{const b=h('button','pchip'+(c.off[k]?'':' on'),n);b.onclick=()=>{H.setCfg('off',{[k]:c.off[k]?0:1});re&&re();};tg.appendChild(b);});s1.appendChild(tg);
+/* part: 'today' = the reminder + today's log (day tab), 'set' = the settings (settings tab), none = all */
+H.panel=(box,sec,re,part)=>{const c=cfg(),r=day();if(part!=='set')remPanel(box,sec,re);
+  const s1=part==='today'?null:sec(box,'הפסקות, ארוחות והחלפת נושא','<div class="pnote">בסוף פעילות (אף פעם לא באמצע שאלה): כל כמה דקות פעילות — הפסקה של כחצי דקה עם החבר, בסבב: מים, שירותים, תנועה, מנוחת עיניים. בזמן ארוחה המשחק עוצר עד "אכלתי" (לפחות 10 דקות, או סיסמת הורה). אחרי הרבה זמן באותו תחום — החבר מציע תחום אחר, והתחום נח עד מחר.</div>');
+  if(s1){const tg=h('div','popt','<span>תזכורות:</span>');[['water','💧 מים'],['toilet','🚽 שירותים'],['move','🤸 תנועה'],['eyes','👀 עיניים'],['meal','🍽️ ארוחות']].forEach(([k,n])=>{const b=h('button','pchip'+(c.off[k]?'':' on'),n);b.onclick=()=>{H.setCfg('off',{[k]:c.off[k]?0:1});re&&re();};tg.appendChild(b);});s1.appendChild(tg);
   const iv=h('div','popt','<span>הפסקה כל:</span>');[15,20,30].forEach(v=>{const b=h('button','pchip'+(c.brk===v?' on':''),v+' דק׳');b.onclick=()=>{H.setCfg('brk',v);re&&re();};iv.appendChild(b);});s1.appendChild(iv);
   const ml=h('div','popt','<span>ארוחות:</span>');MEALS.forEach(([k,,n])=>{const l=h('label','hml',n+' ');const i=document.createElement('input');i.type='time';i.className='pgin sm';i.value=c.meals[k];i.setAttribute('aria-label','ארוחת '+n);
     i.onkeydown=e=>e.stopPropagation();i.onchange=()=>{if(/^\d\d:\d\d$/.test(i.value))H.setCfg('meals',{[k]:i.value});};l.appendChild(i);ml.appendChild(l);});s1.appendChild(ml);
-  const th=h('div','popt','<span>החלפת נושא אחרי:</span>');[10,15,20].forEach(v=>{const b=h('button','pchip'+(c.thr===v?' on':''),v+' דק׳');b.onclick=()=>{H.setCfg('thr',v);re&&re();};th.appendChild(b);});th.appendChild(h('small','hnote','(או '+H.ACTS+' פעילויות באותו תחום ביום)'));s1.appendChild(th);
+  const th=h('div','popt','<span>החלפת נושא אחרי:</span>');[10,15,20].forEach(v=>{const b=h('button','pchip'+(c.thr===v?' on':''),v+' דק׳');b.onclick=()=>{H.setCfg('thr',v);re&&re();};th.appendChild(b);});th.appendChild(h('small','hnote','(או '+H.ACTS+' פעילויות באותו תחום ביום)'));s1.appendChild(th);}
+  if(part==='set')return s1;
   /* today's log */
   const BI={water:'💧',toilet:'🚽',move:'🤸',eyes:'👀'};
   const br=r.breaks.length?r.breaks.map(x=>`<span class="hlg${x.ok?'':' no'}">${BI[x.k]||''} ${x.t}</span>`).join(' '):'עוד לא היו הפסקות היום';
