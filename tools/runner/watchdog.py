@@ -540,6 +540,7 @@ def tick():
     cleanup(all_ts)
     reap_tick(ts)       # #248
     stuck_tick(ts)
+    net_due_tick(ts)    # #364
     conflicts_tick(ts)  # #262
     observer_tick()
     ai_observer_tick()
@@ -609,6 +610,51 @@ def reap_tick(ts, now=None, gh=None, hc=None, say=None, holder=None):
         say(f"WATCHDOG (#248): closed run-{n} (issue #{n} is closed, the lane was held for nothing)")
         done.append((addr, n))
     return done
+
+NET_EVERY_S = 300
+_netq = {"at": 0.0}
+
+def net_tick(ts, now=None, gh=None, hc=None, say=None, events=None, find_pr=None):
+    """#364 safety net: a live run-<n> that waits on its worker (stats phase start/review_fix) while its PR has been quiet
+    R.NET_QUIET_MIN+ min with no VERDICT -> kill the run window, store 'resume at review' (#264 path) and give the issue
+    back to the queue (the next pass starts the review, no new worker). Once per PR head. -> [n]."""
+    import stats
+    now, gh, hc, say = now or time.time(), gh or R.gh, hc or R.hc, say or tell
+    events = stats.read_events(R.RUNS / "stats.jsonl") if events is None else events
+    find_pr = find_pr or R.find_pr
+    done = []
+    for t in ts:
+        m = re.match(r"^run-(\d+)$", t.get("name") or "")
+        if not m or t.get("state") != "live" or not t.get("address"): continue
+        n = int(m.group(1))
+        phase = R.run_phase(events, n)
+        if phase not in ("start", "review_fix"): continue
+        pr = find_pr(n)
+        if not pr: continue
+        rc, out = gh("pr", "view", str(pr), "--json", "number,state,isDraft,mergeable,headRefOid,createdAt,commits,comments")
+        try: pj = json.loads(out) if rc == 0 else {}
+        except ValueError: continue
+        if not R.net_due(pj, phase, now): continue
+        mark = R.RUNS / str(n) / "net_head"
+        try:
+            if mark.read_text(encoding="utf-8").strip() == pj.get("headRefOid", ""): continue
+        except OSError: pass
+        hc("kill", t["address"], timeout=30)
+        R.set_resume(n, "review")
+        mark.write_text(pj.get("headRefOid", ""), encoding="utf-8")
+        gh("issue", "edit", str(n), "--remove-label", "in-progress", "--add-label", "ready-for-agent")
+        gh("issue", "comment", str(n), "--body", f"Runner (watchdog #364): PR #{pr} quiet {R.NET_QUIET_MIN}+ min with no VERDICT while the run "
+           "still waited on its worker; the run is ended and the next pass resumes at review (no new worker).")
+        log(f"#364 run-{n}: PR #{pr} quiet, no VERDICT -> resume at review")
+        say(f"WATCHDOG (#364): run-{n} waited on a quiet PR #{pr}; resumed at review")
+        done.append(n)
+    return done
+
+def net_due_tick(ts, now=None):
+    now = now or time.time()
+    if now - _netq["at"] < NET_EVERY_S: return []
+    _netq["at"] = now
+    return net_tick(ts, now)
 
 def run_mtime(n):
     """Newest change in .runs/<n> (the dir and its files); None when there is no such dir."""
