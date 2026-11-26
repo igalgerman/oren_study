@@ -1139,7 +1139,7 @@ def agent(name, prompt, cwd, tools, log, marker, n, role, model=MODEL, over=None
                BASH, "-c", 'export PATH="$1:$PATH"; shift; "$@"', "_", CFG["extra_path"],
                *(["env", "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1"] if code_mode(n) else []),   # Code Mode trial (owner, 26 Nov)
                shutil.which("claude") or "claude", "--model", model, "--permission-mode", "auto",
-               "--allowedTools", *tools, "--", prompt + INTERACTIVE_NOTE]
+               "--allowedTools", *tools, "--", argv_prompt(name, prompt + INTERACTIVE_NOTE)]
         rc, out = run(cmd, log=log)
         if rc: raise Blocked(f"cannot start terminal {name}: {out.strip()[:200]}")
     deadline, screen = time.time() + 3 * 3600, ""
@@ -1177,6 +1177,19 @@ def agent(name, prompt, cwd, tools, log, marker, n, role, model=MODEL, over=None
         rc, full = hc("read", name, "--lines", "3000")
         Path(log).with_suffix(".screen.txt").write_text(redact(full), encoding="utf-8")
     return screen, find_marker(screen, marker)
+
+def argv_prompt(name, text):
+    """#390: cmd.exe (claude.CMD) cuts an argv at the first newline. One line stays as it is; a multi-line prompt goes to
+    .runs/prompts/<name>.md and the window gets one line pointing at it."""
+    if "\n" not in text and "\r" not in text: return text
+    p = RUNS / "prompts" / f"{name}.md"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w", encoding="utf-8", newline="") as f: f.write(text)
+    return f"Read {p.as_posix()} and follow it exactly."
+
+def one_line(text):
+    """#390: for a prompt that cannot point at a PC file (cloud sessions): the lines joined with a space."""
+    return re.sub(r"[ \t]*[\r\n]+[ \t]*", " ", text).strip()
 
 def spawn(extra_args):
     """From inside a run terminal: start another run (one issue, or a pass) as its own terminal, reporting to the same main session."""

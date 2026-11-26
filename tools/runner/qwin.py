@@ -170,10 +170,9 @@ def open_window(q, name):
                   R.BASH, "-c", 'export PATH="$1:$PATH"; shift; "$@"', "_", R.CFG["extra_path"],
                   shutil.which("claude") or "claude", "--model", "haiku", "--remote-control", f"oren-{name}",
                   "--permission-mode", "auto", "--allowedTools", *TOOLS, "--disallowedTools", "AskUserQuestion",
-                  "--", prompt(q, name), timeout=60)
+                  "--", R.argv_prompt(name, prompt(q, name)), timeout=60)   # #390: one line
     if rc: log(f"could not open {name}: {out.strip()[:200]}"); return False
-    pin(name, True)
-    return True
+    return True             # #390: NOT pinned: a pinned window counts as 'active', so Claude Code skips the phone push
 
 def tick(ts, now=None):
     """One watchdog pass: start pages, read their answers, open/close/remind phone windows."""
@@ -221,8 +220,18 @@ def tick(ts, now=None):
         if st[k].get("answered"): continue
         _hc("send", st[k]["name"], "WATCHDOG REMINDER: 2 hours without an answer. Send the same PushNotification once more, then wait again.", timeout=30)
         st[k]["reminded"] = True; log(f"{st[k]['name']}: 2 h reminder")
+    check_not_sent(st)
     save_fails(fails)
     save(st)
+
+def check_not_sent(st):
+    """#390: Claude Code skips a push while it thinks the owner is active in that terminal ('Not sent because ...').
+    Say so in watchdog.log, once per question (the browser page stays open). A second channel waits for the owner's choice."""
+    for e in st.values():
+        if not e.get("window") or e.get("answered") or e.get("not_sent"): continue
+        if "Not sent" in (_hc("read", e["name"], "--lines", "80", timeout=30)[1] or ""):
+            e["not_sent"] = True
+            log(f"{e['name']}: phone push NOT sent (Claude Code: owner active in this terminal); only the browser page has the question")
 
 def load_fails():
     try: return json.loads(FAILS.read_text(encoding="utf-8"))

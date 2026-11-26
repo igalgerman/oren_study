@@ -54,7 +54,7 @@ def parse_start(out):
 def start(n, task, cwd, run=sh, name=None, model=None):
     """cwd must be a checkout whose current commit is on GitHub (e.g. the main checkout): the session starts there.
     name (#306): a session that is not an issue's worker (the cloud desks) -> window <name>, label role=desk."""
-    task = task.replace('"', "'")                             # double quotes break the Windows argv to bash ('file not found')
+    task = re.sub(r"[ \t]*[\r\n]+[ \t]*", " ", task.replace('"', "'")).strip()   # #390: cmd.exe cuts argv at a newline                             # double quotes break the Windows argv to bash ('file not found')
     labels = ["--label", f"issue={n}", "--label", "role=remote"] if not name else ["--label", "role=desk"]
     name = name or f"remote-{n}"
     run([HC, "rm", name])                                        # leftover finished terminal of an earlier start
