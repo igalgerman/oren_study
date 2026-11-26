@@ -216,6 +216,35 @@ def run(cmd, cwd=None, env=None, input=None, log=None, timeout=None):
             f.write(f"\n$ {' '.join(map(str, cmd))[:300]}\n{out}\n[exit {p.returncode}]\n")
     return p.returncode, out
 
+MAIN_CHECKOUT = Path(CFG.get("main_checkout", str(ROOT)))   # the checkout the watchdog/runner/panel import code from
+
+def is_dirty(status):
+    """Pure: True when `git status --porcelain` shows tracked changes (untracked files '??' are fine)."""
+    return any(l.strip() and not l.startswith("??") for l in status.splitlines())
+
+def sync_decision(branch, into, dirty, behind):
+    """Pure: ('pull', '') | ('skip', reason). reason '' = nothing to report."""
+    if behind <= 0: return ("skip", "")
+    if branch != into: return ("skip", f"main checkout is on {branch}, not {into}")
+    if dirty: return ("skip", "main checkout has uncommitted changes")
+    return ("pull", "")
+
+def sync_main(log=None):
+    """Fast-forward the main checkout to origin/main when that is harmless. Returns a message ('' = nothing to say); never raises."""
+    try:
+        g = lambda *a: run(["git", "-C", str(MAIN_CHECKOUT), *a], timeout=120)
+        rc, out = g("fetch", "-q", REMOTE)
+        if rc: return f"sync failed: fetch rc {rc} {out.strip()[:200]}"
+        branch = g("rev-parse", "--abbrev-ref", "HEAD")[1].strip()
+        behind = int(g("rev-list", "--count", f"HEAD..{REMOTE}/{BRANCH}")[1].strip() or 0)
+        act, why = sync_decision(branch, BRANCH, is_dirty(g("status", "--porcelain")[1]), behind)
+        if act == "pull":
+            rc, out = g("merge", "-q", "--ff-only", f"{REMOTE}/{BRANCH}")
+            return f"main checkout fast-forwarded ({behind} commits)" if rc == 0 else f"sync failed: ff-only rc {rc} {out.strip()[:200]}"
+        return f"sync skipped ({behind} behind): {why}" if why else ""
+    except Exception as e:
+        return f"sync error: {e!r}"
+
 def remove_worktree(wt, log=None):
     """Remove a lane worktree. oren2/node_modules is a JUNCTION to the real modules: take the junction off alone first
     (rmdir, never /s, never rmtree: that would delete the real modules), then remove the worktree and any leftover folder (#82)."""
@@ -654,6 +683,8 @@ def process_locked(issue):
         with FileLock("integrate", wait=True):
             stat(n, lane, "merged")
             dep = deploy_main(log) if CFG.get("ci_merge", True) and find_pr_merged(n) else deploy_text(log)
+        m = sync_main(log)                       # result logged (review of #47)
+        if m: log_line(m)
         gh("issue", "close", str(n), "--comment", f"Merged to {BRANCH}, tests green, {dep}.")
         set_labels(n, remove=["in-progress"])
         remove_worktree(wt, log)
