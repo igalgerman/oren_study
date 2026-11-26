@@ -160,6 +160,10 @@ def merge_conflict(text):
     t = (text or "").lower()
     return "conflict" in t or "not mergeable" in t or "cannot be cleanly created" in t
 
+def needs_branch_update(mergeable):
+    """Pure (#166): update the lane with main only when GitHub says the PR really conflicts; otherwise merge straight on green (one CI run, not two)."""
+    return (mergeable or "").upper() == "CONFLICTING"
+
 def deploy_needed(deployed_sha, main_sha):
     """Pure (#74): batching. PRs merged one after another are deployed ONCE: the first deploy after the last merge covers all of them."""
     return bool(main_sha) and deployed_sha != main_sha
@@ -585,15 +589,17 @@ def ci_integrate(n, wt, log):
     0 merged, 2 conflict, 4 no PR, 5 push failed, 6 CI red after one rerun, 7 CI timeout / merge failed (blocked, real reason in out)."""
     pr = find_pr(n)
     if not pr: return 4, "no open PR for lane/%d" % n
-    run(["git", "fetch", "-q", REMOTE], cwd=wt, log=log)
-    rc, out = run(["git", "merge", "--no-edit", "-X", "renormalize", f"{REMOTE}/{BRANCH}"], cwd=wt, log=log)
-    if rc:
-        files = run(["git", "diff", "--name-only", "--diff-filter=U"], cwd=wt, log=log)[1].split()
-        run(["git", "merge", "--abort"], cwd=wt, log=log)
-        return 2, "CONFLICTS (fix by hand, or send back to the lane):\n" + "\n".join(files)
-    if run(["git", "rev-parse", "HEAD"], cwd=wt)[1] != run(["git", "rev-parse", f"{REMOTE}/lane/{n}"], cwd=wt)[1]:
-        if run(["git", "push", "-q", REMOTE, f"lane/{n}"], cwd=wt, log=log)[0]: return 5, "push failed"
-        time.sleep(20)                                           # let GitHub start the new run
+    mergeable = gh("pr", "view", str(pr), "--json", "mergeable", "-q", ".mergeable", log=log)[1].strip()
+    if needs_branch_update(mergeable):                           # #166: only a real conflict updates the branch
+        run(["git", "fetch", "-q", REMOTE], cwd=wt, log=log)
+        rc, out = run(["git", "merge", "--no-edit", "-X", "renormalize", f"{REMOTE}/{BRANCH}"], cwd=wt, log=log)
+        if rc:
+            files = run(["git", "diff", "--name-only", "--diff-filter=U"], cwd=wt, log=log)[1].split()
+            run(["git", "merge", "--abort"], cwd=wt, log=log)
+            return 2, "CONFLICTS (fix by hand, or send back to the lane):\n" + "\n".join(files)
+        if run(["git", "rev-parse", "HEAD"], cwd=wt)[1] != run(["git", "rev-parse", f"{REMOTE}/lane/{n}"], cwd=wt)[1]:
+            if run(["git", "push", "-q", REMOTE, f"lane/{n}"], cwd=wt, log=log)[0]: return 5, "push failed"
+            time.sleep(20)                                           # let GitHub start the new run
     def get_checks():
         try: return json.loads(gh("pr", "checks", str(pr), "--json", "name,bucket", log=log)[1] or "[]")
         except ValueError: return []
@@ -603,7 +609,8 @@ def ci_integrate(n, wt, log):
         rid = run(["gh", "run", "list", "--repo", REPO, "--branch", f"lane/{n}", "--limit", "1", "--json", "databaseId", "-q", ".[0].databaseId"], log=log)[1].strip()
         if rid.isdigit(): run(["gh", "run", "rerun", rid, "--failed", "--repo", REPO], log=log)
     def merge():
-        rc_, o_ = gh("pr", "merge", str(pr), "--squash", log=log)
+        with FileLock("integrate", wait=True):                   # #166: the lock covers only the merge itself
+            rc_, o_ = gh("pr", "merge", str(pr), "--squash", log=log)
         return True if rc_ == 0 else ("conflict" if merge_conflict(o_) else False)
     res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp)
     if res[0] == "merged": return 0, "merged PR #%d" % pr
@@ -722,10 +729,9 @@ def process_locked(issue):
         kind = {"ci": False}
         def integrate():
             if CFG.get("ci_merge", True) and find_pr(n):     # #74: CI decides, no local full suite
-                with FileLock("integrate", wait=True):
-                    rc, out = ci_integrate(n, wt, log)
-                    kind["ci"] = rc == 6
-                    return rc, out
+                rc, out = ci_integrate(n, wt, log)           # #166: takes the lock itself, only around `gh pr merge`
+                kind["ci"] = rc == 6
+                return rc, out
             with FileLock("integrate", wait=True):          # fallback: local merge + full suite
                 rc, out = run([BASH, "tools/integrate.sh", f"lane/{n}", BRANCH], cwd=ROOT,
                               env={"REMOTE": REMOTE, "JOBS": "4", "RUNNER": "1"}, log=log, timeout=3600)
