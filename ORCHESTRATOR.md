@@ -12,7 +12,7 @@ Keep your own context small: do the work through the runner (herdr windows) or S
 - Runner: `tools/runner/run.cmd <n>` (one issue now) or `run.cmd` (one pass over the ready queue). Opens herdr windows
   `run-<n>` → `issue-<n>` (worker, interactive Sonnet, owner can talk to it) → `review-<n>` → integrate (wait for green CI, squash-merge, ONE build + deploy; #74)
   → deploy if `.env` has `CLOUDFLARE_API_TOKEN` → pregen → closes the issue. The `run-<n>` window's exit note lands in your terminal.
-  Config: `tools/runner/config.toml` (remote, branch, max_parallel=3, model, hc path). Not yet proven on a real issue.
+  Config: `tools/runner/config.toml` (remote, branch, local_lanes=1 + remote_lanes=4, model, hc path). Not yet proven on a real issue.
 - herdr CLI: `C:\Users\97254\AppData\Local\Programs\herdr-core\hc.exe` (`hc ls`, `hc read <t>`, `hc run --bg --name X claude ...`).
   Never touch the owner's other terminals.
 - Panel mod: `tools/mods/oren-lanes` (loaded with --plugin-dir by `tools/orchestrator.cmd`; `/lanes` opens it).

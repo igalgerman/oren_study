@@ -66,3 +66,9 @@ st = r.status(143, run=f)
 assert st["state"] == "done" and st["pr"]["number"] == 145, st
 assert any("lane/143" in " ".join(c[0]) for c in f.calls)
 print("ok remote")
+# #133: comments before `since` are ignored (an earlier run's RESULT line)
+f = Fake(("issue view", 0, json.dumps({"comments": [{"body": "RESULT: DONE old", "createdAt": "2026-11-26T08:00:00Z"}]})), ("pr list", 0, "[]"))
+assert r.status(5, run=f, since="2026-11-26T09:00:00Z")["state"] == "working"
+f = Fake(("issue view", 0, json.dumps({"comments": [{"body": "RESULT: DONE new", "createdAt": "2026-11-26T09:30:00Z"}]})), ("pr list", 0, "[]"))
+assert r.status(5, run=f, since="2026-11-26T09:00:00Z")["state"] == "done"
+print("ok since")

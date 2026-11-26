@@ -3,8 +3,9 @@ repo = "igalgerman/oren_study"   # gh --repo
 remote = "origin"
 branch = "main"
 model = "sonnet"
-max_parallel = 2                # 26 Nov: PC froze with 3 local lanes; back up only via remote lanes (#130)
-express_lanes = 1               # #72: extra lane for issues labelled express (owner-approved), on top of max_parallel
+local_lanes = 0                 # #133: worker windows on this PC (owner 26 Nov: 0, the PC froze; all workers in the cloud)
+remote_lanes = 4                # #133: cloud sessions (tools/runner/remote.py); a local lane busy + a remote slot free -> the worker runs in the cloud
+express_lanes = 1               # #72: extra lane for issues labelled express (owner-approved), on top of the local + remote lanes
 max_core = 3                    # 26 Nov: was 2; #166 waited 59 min for a core slot. LF fixed (#62) + auto-resolve (#160) make parallel core safe enough
 worktree_prefix = "C:/work/Oren_study/wt-"
 bash = "C:/Program Files/Git/bin/bash.exe"   # Git Bash (not WSL's bash)
@@ -18,7 +19,7 @@ parent = ""                     # herdr terminal that gets the notes (e.g. "t2g"
 
 # give each worker/reviewer its own tab in the Herdr app
 # Herdr space where worker/reviewer tabs open (by name)
-herdr_space = "Oren_study_orech"
+herdr_space = "Oren workers"
 
 # acting observer (observer.py, rules only), run by the watchdog every N minutes
 observer_minutes = 10   # 0 = off

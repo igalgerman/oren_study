@@ -376,6 +376,50 @@ assert r.reviewer_model(["model:opus"]) == "opus"
 assert r.reviewer_model(["model:haiku"]) == "sonnet" and r.reviewer_model([]) == "sonnet" and r.reviewer_model(["model:fable"]) == "sonnet"
 assert r.model_name(["model:fable"]) == "fable" and r.model_name([]) == "sonnet"
 print("ok model labels")
+
+# #133: remote lanes (local_lanes / remote_lanes), remote worker start, results from GitHub
+assert r.CFG["local_lanes"] == 0 and r.CFG["remote_lanes"] == 4 and "max_parallel" not in r.CFG
+assert r.total_lanes() == 4
+ch = [I(1, [R, "pack"]), I(2, [R, "pack"]), I(3, [R, "pack"])]
+assert [(i["number"], w) for i, w in r.assign_where(ch, 0, 0, 1, 4)] == [(1, "local"), (2, "remote"), (3, "remote")]
+assert [(i["number"], w) for i, w in r.assign_where(ch, 1, 0, 1, 4)] == [(1, "remote"), (2, "remote"), (3, "remote")]   # local busy -> remote
+assert [(i["number"], w) for i, w in r.assign_where(ch, 1, 3, 1, 4)] == [(1, "remote")]                                 # one remote slot left
+assert r.assign_where(ch, 1, 4, 1, 4) == []                                                                              # all busy
+ex = [{"number": 9, "labels": ["express"]}]
+assert [(i["number"], w) for i, w in r.assign_where(ex, 1, 4, 1, 4)] == [(9, "remote")]   # #72: express beyond the cap still gets a slot
+assert [(i["number"], w) for i, w in r.assign_where(ex, 1, 0, 1, 0)] == [(9, "local")]    # no remote lanes: local
+assert r.assign_where([{"number": 9, "labels": []}], 1, 4, 1, 4) == []                    # a normal issue still waits
+assert [(i["number"], w) for i, w in r.assign_where(ch, 0, 0, 1, 0)] == [(1, "local")]                                  # no remote lanes configured
+p = r.remote_worker_prompt(7, "core", bug=True)
+assert "#7" in p and "lane/7" in p and "FLOW.md" in p and "Fixes #7" in p and "gh issue comment 7" in p
+assert "RESULT: DONE" in p and "QUESTION:" in p and "diagnosing-bugs" in p
+assert "diagnosing-bugs" not in r.remote_worker_prompt(7, "core")
+# wait_remote polls GitHub state (no herdr screen) until a final state
+seq = iter([{"state": "working"}, {"state": "working"}, {"state": "done", "line": "RESULT: DONE x", "pr": {"number": 9}}])
+t = [0]
+def sl(s): t[0] += s
+res = r.wait_remote(lambda: next(seq), sl, lambda: t[0], 3600, 30)
+assert res["state"] == "done" and t[0] == 60
+t[0] = 0
+res = r.wait_remote(lambda: {"state": "working"}, sl, lambda: t[0], 100, 30)
+assert res["state"] == "timeout"
+assert r.wait_remote(lambda: {"state": "question", "line": "QUESTION: a or b?"}, sl, lambda: 0, 100, 30)["state"] == "question"
+# a started remote issue records where=remote in stats
+import json as _j
+r.RUNS = r.HERE / ".runs-test133"
+r.stat(5, "core", "start", where="remote")
+ev = _j.loads((r.RUNS / "stats.jsonl").read_text().splitlines()[-1]); assert ev["where"] == "remote"
+import shutil as _sh; _sh.rmtree(r.RUNS)
+# remote_worker(): start via remote.py, poll GitHub, map to RESULT line; fake remote + fake gh
+calls = []
+def fake_start(n, task, cwd): calls.append(("start", n, task)); return {"ok": True, "session": "session_x", "url": "https://claude.ai/code/session_x"}
+res = r.remote_worker(7, "pack", False, fake_start, lambda: {"state": "done", "line": "RESULT: DONE https://p", "pr": {"number": 3}}, lambda s: None, lambda: 0, 60, 30)
+assert res == "RESULT: DONE https://p" and calls[0][0] == "start" and calls[0][1] == 7 and "lane/7" in calls[0][2]
+res = r.remote_worker(7, "pack", False, lambda n, t, cwd: {"ok": False, "error": "403"}, lambda: {"state": "working"}, lambda s: None, lambda: 0, 60, 30)
+assert res.startswith("RESULT: STUCK") and "403" in res
+res = r.remote_worker(7, "pack", False, fake_start, lambda: {"state": "question", "line": "QUESTION: x?"}, lambda s: None, lambda: 0, 60, 30)
+assert res == "QUESTION: x?"
+print("ok remote lanes")
 # #175: voice pregen runs in the background AFTER the merge lock, one at a time, never blocking an issue
 import os as _os
 class _P:
