@@ -27,7 +27,8 @@ INTERACTIVE_NOTE = ("\nWhen you are completely finished, make the very last line
 
 COMMON_TOOLS = ["Read", "Glob", "Grep", "Skill", "AskUserQuestion", "Bash(gh:*)"]
 WORKER_TOOLS = COMMON_TOOLS + ["Edit", "Write", "Bash(git:*)", "Bash(node:*)", "Bash(npx:*)", "Bash(python3:*)",
-                               "Bash(bash tools/:*)", "Bash(bash tests/:*)", "Bash(cd:*)", "Bash(ls:*)", "Bash(mkdir:*)"]
+                               "Bash(bash tools/:*)", "Bash(bash tests/:*)", "Bash(cd:*)", "Bash(ls:*)", "Bash(mkdir:*)",
+                               "Agent"]                                  # sub-agents for independent members of a batch issue
 READ_TOOLS = COMMON_TOOLS + ["Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"]
 REVIEW_LANE_TOOLS = READ_TOOLS + ["Bash(node:*)", "Bash(python3:*)"]
 
@@ -201,7 +202,9 @@ def assign_where(chosen, local_busy, remote_busy, local_lanes, remote_lanes):
 
 def remote_worker_prompt(n, lane, bug=False):
     """Task for a cloud worker (#133): no herdr, no local paths. It reports through an issue comment (the runner polls GitHub)."""
-    base = (f"You are an unattended worker for GitHub issue #{n} in repo {REPO} (lane: {lane}). Read CLAUDE.md and FLOW.md, then the issue "
+    base = (f"You are an unattended worker for GitHub issue #{n} in repo {REPO} (lane: {lane}). If its title starts with 'Batch:', follow "
+            f"its 'How to work' section: independent members (different files) may go to sub-agents (Agent tool); you integrate, test once "
+            f"and open ONE PR with a 'Fixes #m' line per member. Read CLAUDE.md and FLOW.md, then the issue "
             f"(`gh issue view {n} --repo {REPO} --comments`). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n")
     if bug:
         base += "This is a BUG: use the mattpocock-skills:diagnosing-bugs skill, then tdd: reproduce it with a failing test, then fix it; say the root cause in the PR body.\n"
@@ -579,7 +582,9 @@ def launch_self():
     return rc
 
 def worker_prompt(n, lane, review_text=None, bug=False):
-    base = (f"You are an unattended worker for GitHub issue #{n} in repo {REPO} (lane: {lane}). Read CLAUDE.md and FLOW.md, then the issue "
+    base = (f"You are an unattended worker for GitHub issue #{n} in repo {REPO} (lane: {lane}). If its title starts with 'Batch:', follow "
+            f"its 'How to work' section: independent members (different files) may go to sub-agents (Agent tool); you integrate, test once "
+            f"and open ONE PR with a 'Fixes #m' line per member. Read CLAUDE.md and FLOW.md, then the issue "
             f"(`gh issue view {n} --repo {REPO} --comments`). Work only inside this worktree (your cwd). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n")
     if lane == "review":
         return base + (f"This is a read-only review issue: change NO files, make no commits, open no PR. Post your report as ONE issue comment "

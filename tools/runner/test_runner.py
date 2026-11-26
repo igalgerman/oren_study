@@ -505,3 +505,8 @@ r.CFG["code_mode_every"] = 0; assert not any(r.code_mode(n) for n in range(1, 10
 r.CFG["code_mode_every"] = _cm
 assert '"CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1"] if code_mode(n)' in (r.HERE / "runner.py").read_text(encoding="utf-8")
 print("ok code mode trial")
+# batch skill: workers may use sub-agents; the worker prompt knows batch issues
+assert "Agent" in r.WORKER_TOOLS
+assert "Batch:" in r.worker_prompt(7, "core") and "sub-agents" in r.worker_prompt(7, "core")
+assert (r.HERE.parent.parent / ".claude" / "skills" / "batch" / "SKILL.md").exists()
+print("ok batch skill")
