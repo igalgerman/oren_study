@@ -2,6 +2,7 @@
 import os, re, subprocess, sys, tempfile, time
 from pathlib import Path
 os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")
+os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 HERE = Path(__file__).resolve().parent
 sys.argv.append("--dry-run"); sys.path.insert(0, str(HERE))
 
@@ -19,6 +20,8 @@ for t in sorted(HERE.glob("test_*.py")):
     src = t.read_text(encoding="utf-8")
     m, s = IMPORT.search(src), src.find('os.environ["RUNNER_RUNS"]')
     assert m is None or 0 <= s < m.start(), f"{t.name}: set os.environ['RUNNER_RUNS'] to a temp dir before importing runner modules"
+    o = src.find('os.environ["OREN_TEST"] = "1"')                 # #325: start_pregen never launches a real pregen.js under tests
+    assert 0 <= o and (m is None or o < m.start()), f"{t.name}: set os.environ['OREN_TEST'] = '1' before importing runner modules"
 
 # 1. --help prints usage and exits; an unknown flag exits 2; neither starts the loop
 with tempfile.TemporaryDirectory() as d:

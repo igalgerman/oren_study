@@ -1,6 +1,7 @@
 """#300: a change reloads ALL local modules in dependency order; a failed reload is retried; an AttributeError
 in a tick is logged once and triggers a full reload. Run: python3 tools/runner/test_fullreload.py"""
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # tests never write to the live .runs
+os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 import importlib, sys, time
 from pathlib import Path
 sys.argv.append("--dry-run"); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

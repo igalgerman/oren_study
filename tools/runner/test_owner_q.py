@@ -1,5 +1,6 @@
 """#193 owner questions: one post per window+question, from fake watchdog screens. Run: python3 tools/runner/test_owner_q.py"""
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
+os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 import json, re, sys, tempfile, time
 from pathlib import Path
 sys.argv.append("--dry-run")

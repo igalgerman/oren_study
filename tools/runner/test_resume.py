@@ -1,6 +1,7 @@
 # #264: blocked issues with an open PR resume by themselves; ready-for-human only for a real owner QUESTION.
 # python tools/runner/test_resume.py
 import json, os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")
+os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 import sys; sys.argv.append("--dry-run")
 import runner as r
 import remote

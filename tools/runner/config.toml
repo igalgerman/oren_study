@@ -38,7 +38,7 @@ status_minutes = 10             # #306: cloud desks (desks.py): pinned links + l
 desk_probe_hours = 12           # #306: a PING to each cloud desk this often; no answer -> a new session
 retro_hour = 23                 # #219: nightly retro + handoff (nightly.py, headless Sonnet, read-only) at this local hour; 0 = off
 inspector_handoff = "C:/work/Oren_study/INSPECTOR_HANDOFF.md"   # #219: the nightly run refreshes its UPDATE section
-pregen = true    # voice pregen after each deploy; on since #68 (KV write budget) went live 26 Nov
+pregen = false   # #325: voice pregen runs in GitHub Actions after each deploy (deploy_in_ci); the PC never starts it
 deploy_in_ci = true             # #192: deploy + voice pregen run in GitHub Actions (.github/workflows/deploy.yml); false = the runner deploys from the PC with .env
 code_mode_every = 3             # Code Mode trial (owner 26 Nov): issues # divisible by 3 run Claude with CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1; 0 = off
 ai_model = "haiku"              # #171: model for the dashboard AI assessment (hourly, watchdog); "" = off
