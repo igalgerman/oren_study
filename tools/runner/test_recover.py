@@ -25,6 +25,31 @@ ts = [T("orchestrator", "finished", "t:1"), T("inbox", "live", "t:2"), T("inbox"
 assert rc.finished(ts) == ["t:1", "t:3", "t:4", "t:5"]
 assert rc.finished_control(ts) == [("orchestrator", "t:1"), ("inspector", "t:4")]
 
+# #332: a live control session is matched by herdr name OR label name=<role> OR --remote-control oren-<role> in argv
+live_unnamed = {"name": "", "state": "live", "status": "done", "address": "t:7", "labels": {"name": "inspector"}}
+assert rc.control_role(live_unnamed) == "inspector"
+assert rc.control_role({"name": "", "state": "live", "labels": ["herdr.space=c1", "name=inbox"]}) == "inbox"
+assert rc.control_role({"name": None, "state": "live", "argv": ["claude", "--model", "opus", "--remote-control", "oren-inspector", "x"]}) == "inspector"
+assert rc.control_role({"name": "", "state": "live", "command": "claude --remote-control oren-orchestrator --plugin-dir P"}) == "orchestrator"
+assert rc.control_role({"name": "issue-5", "state": "live", "argv": ["claude", "-p", "x"]}) is None
+assert rc.control_role({"name": "x", "state": "live", "labels": {"role": "intake"}}) is None
+# the 16:23 case: old 'inspector' row finished, the real inspector live but unnamed -> nothing restarted
+ts2 = [T("inspector", "finished", "t:4"), live_unnamed, T("orchestrator", "finished", "t:1"),
+       {"name": "", "state": "live", "address": "t:8", "argv": ["claude", "--remote-control", "oren-orchestrator"]}]
+assert rc.finished_control(ts2) == [], rc.finished_control(ts2)
+assert rc.live_roles(ts2) == {"inspector", "orchestrator"}
+# status 'done' (idle between turns) is never finished; only state finished/exited
+idle = [{"name": "inspector", "state": "live", "status": "done", "address": "t:4"}, T("inbox", "idle", "t:3"), T("orchestrator", "exited", "t:1")]
+assert rc.finished_control(idle) == [("orchestrator", "t:1")], rc.finished_control(idle)
+assert rc.finished(idle) == ["t:1"]
+# an unnamed finished control row (label only) with no live twin is restarted under its role
+assert rc.finished_control([{"name": "", "state": "exited", "address": "t:9", "labels": ["name=inbox"]}]) == [("inbox", "t:9")]
+# recover --open: an unnamed live inspector is not started again
+d332 = {"spaces": lambda: {"oren": "c1", "oren-workers": "w1"}, "control_space": "oren", "worker_space": "oren-workers",
+        "terminals": lambda: [live_unnamed, T("orchestrator", "live", "t:1"), T("inbox", "live", "t:2")], "start": lambda n, s: started.append(n) or 0}
+started = []; rc.start_tabs(d332, [])
+assert started == [], started
+
 # exact commands (owner, #140 comments)
 cwd, a = rc.control_argv("inbox", "C:/work/Oren_study/a", "P")
 assert cwd == "C:/work/Oren_study/a" and a[:5] == ["claude", "--model", "sonnet", "--remote-control", "oren-inbox"] and "INBOX" in a[5]
@@ -159,4 +184,7 @@ W.log = lambda m: None; W.tell = lambda t: calls.append(("tell", t))
 rc.start_control = lambda R, name, sid=None: (calls.append(("start", name)), 0)[1]
 W.check_control([T("inbox", "finished", "t:9"), T("orchestrator", "live", "t:1")])
 assert calls[0] == ("rm", "t:9") and calls[1] == ("start", "inbox"), calls
+calls.clear()   # #332: finished 'inspector' row + live unnamed inspector (label name=inspector, status done) -> no rm, no restart
+W.check_control([T("inspector", "finished", "t:4"), {"name": "", "state": "live", "status": "done", "address": "t:7", "labels": {"name": "inspector"}}])
+assert calls == [], calls
 print("ok")

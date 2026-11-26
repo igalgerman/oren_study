@@ -507,7 +507,7 @@ assert "silent" in r.remote_fix(7, "s", "FIX x", lambda s, x: {"ok": True}, _st,
 assert r.remote_fix(7, "s", "FIX x", lambda s, x: {"ok": True}, _st, lambda: {"state": "question", "line": "QUESTION: a?"}, sl, lambda: 0) == "QUESTION: a?"
 # process_locked: remote issues use the cloud reviewer and cloud fix; local ones keep the herdr agent
 _pl = (r.HERE / "runner.py").read_text(encoding="utf-8").split("def process_locked", 1)[1].split("def close_windows", 1)[0]
-assert "remote.review_status(pr, since=since)" in _pl and "remote_fix(" in _pl and 'agent(f"review-{n}"' in _pl
+assert "fresh_remote().review_status(pr, since=since)" in _pl and "remote_fix(" in _pl and 'agent(f"review-{n}"' in _pl
 assert _pl.index('if where == "remote": prep_worktree()') > _pl.index("remote_fix(")          # worktree made after the last cloud fix
 print("ok #134 remote reviewer")
 # #175: voice pregen runs in the background AFTER the merge lock, one at a time, never blocking an issue

@@ -551,6 +551,45 @@ def issue_over(n, since, run_=None):
     except (ValueError, KeyError, TypeError, IndexError, AttributeError, subprocess.TimeoutExpired, OSError):
         return False
 
+_FRESH = {}   # #364: file -> the newest loaded copy of that module
+
+def _file_mtime(m):
+    try: return Path(m.__file__).stat().st_mtime
+    except (OSError, TypeError, AttributeError): return None
+
+def fresh(mod, log=None):
+    """#364: a run in flight never kept its start-time code: -> the newest copy of mod. The file changed on disk since it was
+    loaded -> reloaded (runner.py running as __main__: a fresh copy is imported, never re-run as a script). A half-written
+    file -> the old copy this poll (logged), retried at the next poll. First look only stamps the module."""
+    f = getattr(mod, "__file__", None)
+    cur = _FRESH.get(f, mod)
+    t = _file_mtime(cur)
+    if t is None: return cur
+    if getattr(cur, "_loaded_mtime", None) is None:
+        cur._loaded_mtime = t; return cur
+    if t == cur._loaded_mtime: return cur
+    import importlib, importlib.util
+    try:
+        if cur.__name__ == "__main__":
+            spec = importlib.util.spec_from_file_location(Path(f).stem, f)
+            new = importlib.util.module_from_spec(spec); spec.loader.exec_module(new)
+        else:
+            new = importlib.reload(cur)
+    except Exception as e:
+        if log: log(f"fresh: {Path(f).name} not reloaded yet ({e!r})")
+        return cur
+    new._loaded_mtime = t; _FRESH[f] = new
+    if log: log(f"fresh: reloaded {Path(f).name} (a merged fix applies to this run now)")
+    return new
+
+def fresh_remote():
+    """#364: the status helpers (remote.py, and ghcache.py under it) as they are on disk now."""
+    fresh(ghcache, log_line); return fresh(remote, log_line)
+
+def fresh_self():
+    """#364: this runner's own helpers (issue_over) as runner.py is on disk now."""
+    return fresh(sys.modules[__name__], log_line)
+
 def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=None):
     """Pure loop (#133): poll the GitHub-based status until it is done/stuck/question. Returns that status dict, or {'state': 'timeout'}.
     ended() True (#234: issue closed / lane PR merged elsewhere) -> {'state': 'ended'}."""
@@ -726,6 +765,26 @@ def auto_resume(issues, lookup, set_labels, comment, tell):
         i["labels"] = [l for l in L if l not in ("blocked", "needs-orchestrator")] + ([] if "ready-for-agent" in L else ["ready-for-agent"])
         out.append((n, step))
     return out
+
+# #364: watchdog safety net: a run waiting on a worker whose PR is quiet NET_QUIET_MIN with no VERDICT resumes at review.
+NET_QUIET_MIN = 20
+PHASES = ("start", "worker_done", "review_fix", "fix_done", "review_pass")
+
+def run_phase(events, n):
+    """Pure: the last pipeline event of issue n in the stats events ('' = none). start/review_fix = a worker is awaited;
+    worker_done/fix_done = a review is running."""
+    return next((e["event"] for e in sorted(events, key=lambda e: e.get("ts", 0), reverse=True)
+                 if e.get("issue") == n and e.get("event") in PHASES), "")
+
+def net_due(pj, phase, now, quiet_min=NET_QUIET_MIN):
+    """Pure: `gh pr view --json number,state,isDraft,mergeable,headRefOid,createdAt,commits,comments` of the run's PR -> True when
+    a worker is awaited (phase) but the PR exists quiet_min+, has no new commit for quiet_min, and its head has no VERDICT."""
+    if phase not in ("start", "review_fix") or not pj or pj.get("isDraft") or (pj.get("state") or "OPEN") != "OPEN": return False
+    info = pr_resume_info(pj)
+    if resume_step(info["mergeable"], info["verdict"]) != "review": return False
+    head = max((c.get("committedDate", "") for c in pj.get("commits") or []), default="")
+    old = lambda iso: remote._epoch(iso or "") > 0 and now - remote._epoch(iso) >= quiet_min * 60
+    return old(pj.get("createdAt")) and old(head)
 
 def open_pr_resumes(chosen, lookup):
     """#295: before a pass starts issue n, look up its open PR (lookup(n) -> pr_resume_info or None). PR open -> no new worker:
@@ -1589,7 +1648,7 @@ def process_locked(issue, where="local"):
             (d / "remote.json").write_text(json.dumps({"session": s.get("session", ""), "url": s.get("url", "")}), encoding="utf-8")
         def utc():
             return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        over = lambda: issue_over(n, started)                   # #234: every wait loop ends the run when the issue is closed / PR merged
+        over = lambda: fresh_self().issue_over(n, started)                   # #234: every wait loop ends the run when the issue is closed / PR merged
         def remote_question(res):                        # the session already posted it on the issue: park, the owner answers there (#135)
             if res.startswith("QUESTION:"): park_remote(n, res)
         def saved_session():
@@ -1605,12 +1664,12 @@ def process_locked(issue, where="local"):
             gh("issue", "comment", str(n), "--body", f"Runner: resuming at {step} (no new worker).")
         elif answer:                                       # #135: parked on a QUESTION, the owner answered: same session continues
             res = remote_resume(n, lane, "bug" in issue["labels"], saved_session(), answer, remote.send, remote.start,
-                                lambda: remote.status(n, since=started), time.sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over)
+                                lambda: fresh_remote().status(n, since=started), time.sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over)
             remote_question(res)
             out = res
         elif where == "remote":                          # #133: the cloud worker needs no worktree here; it is made after the review (resolve uses it, #134)
             try:
-                res = remote_worker(n, lane, "bug" in issue["labels"], remote.start, lambda: remote.status(n, since=started),
+                res = remote_worker(n, lane, "bug" in issue["labels"], remote.start, lambda: fresh_remote().status(n, since=started),
                                     time.sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over,
                                     comment=lambda b: gh("issue", "comment", str(n), "--body", b))
                 remote_question(res)
@@ -1650,7 +1709,7 @@ def process_locked(issue, where="local"):
                 rv = verdict = red0 or f"VERDICT: FIX see the last VERDICT comment on PR #{pr}"
             elif where == "remote":                  # #134: the reviewer is a cloud session too; its VERDICT is a PR comment
                 since = utc()
-                rv, verdict = remote_review(n, pr, red, remote.start, lambda: remote.review_status(pr, since=since), time.sleep, time.time, 3600, 60, ended=over)
+                rv, verdict = remote_review(n, pr, red, remote.start, lambda: fresh_remote().review_status(pr, since=since), time.sleep, time.time, 3600, 60, ended=over)
             else:
                 rv, verdict = agent(f"review-{n}" + ("" if rnd == 1 else f"-{rnd}"), review_prompt(n, pr, red), wt, READ_TOOLS,
                                     d / f"review{rnd}.log", "VERDICT:", n, "reviewer", rm, over=over)
@@ -1678,7 +1737,7 @@ def process_locked(issue, where="local"):
             red = text or rv[-1500:]
             if where == "remote":                  # #134: FIX goes back to the cloud worker session (or a new cloud fix session)
                 since = utc()
-                res = remote_fix(n, saved_session(), rv, remote.send, remote.start, lambda: remote.status(n, since=since), time.sleep, time.time,
+                res = remote_fix(n, saved_session(), rv, remote.send, remote.start, lambda: fresh_remote().status(n, since=since), time.sleep, time.time,
                                  3 * 3600, 60, on_start=save_session, ended=over, br=branch_of(n), model=fix_model(rnd, wm) if rnd >= FIX_ROUNDS else None)
                 remote_question(res)
             else:
@@ -1947,6 +2006,9 @@ def run_pass():
     log_line(f"{now()} pass: started={sum(r == 'started' for _, r in results) if results else len(chosen)} stuck={len(stuck)} " + " ".join(f"#{n}:{r}" for n, r in results))
     for n, r in results: print(f"ISSUE {n}: {r}")
     return 0
+
+for _m in (remote, ghcache, sys.modules[__name__]):     # #364: the code this run started with; fresh() reloads when a file is newer
+    if getattr(_m, "_loaded_mtime", None) is None: _m._loaded_mtime = _file_mtime(_m)
 
 if __name__ == "__main__":
     sys.exit(main())
