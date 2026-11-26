@@ -3,7 +3,7 @@ Usage: python3 tools/runner/dashboard.py          write .runs/dashboard.html and
        python3 tools/runner/dashboard.py --text   the same numbers as plain text (for a terminal / the orchestrator)
 Every number is measured from GitHub (issues, PRs) or the runner's own records (.runs/stats.jsonl, runner.log);
 estimates are marked with ≈ and show a range and what they are based on."""
-import calendar, html, json, sys, time, webbrowser
+import calendar, html, json, re, shutil, subprocess, sys, time, webbrowser
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -205,7 +205,7 @@ rect:hover,.hit:hover+.dot{opacity:.75}
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:760px){.cols{grid-template-columns:1fr}}
 table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:5px 6px;border-top:1px solid var(--line);vertical-align:top;text-align:left}th{color:var(--sub);font-weight:normal;font-size:13px}
 td.n{white-space:nowrap;width:1%}a{color:var(--s1);text-decoration:none}.pill{font-size:11px;border:1px solid var(--line);border-radius:6px;padding:0 5px;color:var(--sub)}
-.p0{color:var(--bad);border-color:var(--bad);font-weight:600}.count{color:var(--sub);font-weight:normal}.warn{color:var(--bad);font-weight:600}
+.p0{color:var(--bad);border-color:var(--bad);font-weight:600}.count{color:var(--sub);font-weight:normal}.warn{color:var(--bad);font-weight:600}.good{color:#0aac23;font-weight:600}
 ul.facts{margin:0;padding-left:18px}ul.facts li{margin:3px 0}details summary{cursor:pointer}
 """
 
@@ -267,13 +267,42 @@ def page(m):
             f'<h1>Oren game: work status</h1><div class="sub">Made {time.strftime("%d %b %H:%M", time.localtime(now))} (Israel time). '
             f'Sources: GitHub issues and PRs (live), the runner\'s records (.runs/stats.jsonl, runner.log). Estimates are marked. '
             f'For fresh numbers run tools\\dashboard.cmd again.</div>'
-            f'<div class="tiles">{tiles}</div>{fcard}{running}'
+            f'<div class="tiles">{tiles}</div>{_ai_card(m)}{fcard}{running}'
             f'<div class="cols"><div class="card"><h2>Opened vs closed, per hour (last 24 h)</h2>'
             f'<div class="legend"><span><i style="background:var(--s1)"></i>opened</span><span><i style="background:var(--s2)"></i>closed</span></div>{_bars(m["hours"], "Issues opened and closed per hour", 3)}</div>'
             f'<div class="card"><h2>Open issues, hour by hour (last 24 h)</h2>{_line(m["hours"], "Open issues at the end of each hour", 3)}</div></div>'
             f'<div class="cols"><div class="card"><h2>Opened vs closed, per day</h2>'
             f'<div class="legend"><span><i style="background:var(--s1)"></i>opened</span><span><i style="background:var(--s2)"></i>closed</span></div>{_bars(m["days"], "Issues opened and closed per day", 1 if len(m["days"]) <= 7 else 2)}</div>'
-            f'{truth}</div>{recent}{lists}</main></body></html>')
+            f'{truth}</div>{_ov_card(m)}{recent}{lists}</main></body></html>')
+
+def _ai_card(m):
+    a = m.get("ai")
+    if not a:
+        return ('<div class="card est"><h2>AI assessment <span class="tag">AI</span></h2><div class="sub">Not written yet. '
+                'The watchdog writes it every hour; run <code>python3 tools/runner/dashboard.py --ai</code> for one now.</div></div>')
+    old = m["now"] - a.get("at", 0) > 2 * 3600
+    pts = [re.sub(r"^(?:[-•]|\*(?!\*))\s*", "", l.strip()) for l in a["text"].splitlines() if l.strip()]   # drop a bullet mark, keep **bold**
+    return (f'<div class="card est"><h2>AI assessment <span class="tag">AI</span></h2><ul class="facts">'
+            + "".join("<li>" + re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", html.escape(x)) + "</li>" for x in pts) +
+            f'</ul><div class="sub" style="margin-top:6px">Written {time.strftime("%d %b %H:%M", time.localtime(a["at"]))} by Claude {html.escape(a["model"])} '
+            f'from the numbers on this page{" (<span class=warn>older than 2 h</span>)" if old else ""}. AI-written, may be wrong: check the numbers below.</div></div>')
+
+def _ov_card(m):
+    o = m.get("ov")
+    if not o: return ""
+    def health(age, limit):
+        if age is None: return '<span class="warn">no log</span>'
+        return f'{dur(age)} ago ' + ('<span class="good">OK</span>' if age <= limit else '<span class="warn">STOPPED?</span>')
+    last = {"runner": health(o["runner_age"], 6 * 3600), "watchdog": health(o["watchdog_age"], 300),
+            "observer": health(o["observer_age"], 3600), "trend watcher": ("last: " + html.escape(o["trends_last"][8:90])) if o["trends_last"] else "no run yet",
+            "orchestrator": f'{o["told"]} notes received in 24 h'}
+    rows = "".join(f"<tr><td class='n'><b>{n}</b></td><td>{w}</td><td class='n sub'>{h}</td><td class='sub'>{last[n]}</td></tr>" for n, w, h in WATCHERS)
+    notes = "".join(f"<tr><td class='n sub'>{hhmm(t)}</td><td>{html.escape(x[:160])}</td></tr>" for t, x in o["last_told"])
+    return (f'<div class="card"><h2>Oversight: who watches the system</h2><table><tr><th>watcher</th><th>watches</th><th>how often</th><th>last activity</th></tr>{rows}</table>'
+            f'<ul class="facts" style="margin-top:10px"><li>Last 24 h: <b>{o["told"]}</b> notes to the orchestrator ({o["idle"]} idle alarms, {o["trend"]} trend alarms), '
+            f'{o["closed_windows"]} finished windows cleaned up, {o["errors"]} watchdog errors.</li>'
+            f'<li>Observer last result: {html.escape(o["observer_last"]) or "-"}</li></ul>'
+            + (f'<h2 style="margin-top:12px">Latest notes to the orchestrator</h2><table>{notes}</table>' if notes else "") + '</div>')
 
 def fetch():
     rc, out = R.gh("issue", "list", "--state", "all", "--limit", "1000", "--json", "number,title,state,labels,createdAt,closedAt,body")
@@ -285,13 +314,97 @@ def runner_log():
     f = R.RUNS / "runner.log"
     return f.read_text(encoding="utf-8", errors="replace") if f.exists() else ""
 
+# ---------- oversight (#171): who watches what, measured from the watchers' own logs ----------
+WATCHERS = [("runner", "each issue: worker -> review -> CI merge -> deploy -> close", "one run per issue"),
+            ("watchdog", "windows, free lanes, leftovers, idle alarm, main checkout sync", "every minute"),
+            ("observer", "rules per issue (stuck labels, missing windows, Blocked-by lines)", "every 30 min"),
+            ("trend watcher", "patterns over 24 h: repeated stuck reasons, finish and review rates", "every hour"),
+            ("orchestrator", "acts on every note and alarm above; merges by hand when the runner cannot", "always on")]
+
+def _file(name):
+    f = R.RUNS / name
+    return (f.read_text(encoding="utf-8", errors="replace"), f.stat().st_mtime) if f.exists() else ("", None)
+
+def oversight(wlog, wlog_mt, rlog_mt, obs_last, obs_mt, now):
+    """Pure: watcher health + what they sent in the last 24 h. Log lines start with 'YYYY-mm-dd HH:MM:SS '."""
+    rows = []
+    for l in wlog.splitlines():
+        try: t = time.mktime(time.strptime(l[:19], "%Y-%m-%d %H:%M:%S"))
+        except ValueError: continue
+        if t > now - 86400: rows.append((t, l[20:]))
+    told = [(t, x.split("told orchestrator: ", 1)[1]) for t, x in rows if x.startswith("told orchestrator: ")]
+    trends = [x for _, x in rows if x.startswith("trends: ")]
+    age = lambda mt: None if mt is None else now - mt
+    return {
+        "watchdog_age": age(wlog_mt), "runner_age": age(rlog_mt), "observer_age": age(obs_mt), "observer_last": obs_last.strip()[:300],
+        "told": len(told), "idle": sum("IDLE ALARM" in x for _, x in told), "trend": sum("TREND" in x for _, x in told),
+        "last_told": told[-5:][::-1], "closed_windows": sum(x.startswith("closed window") for _, x in rows),
+        "errors": sum(x.startswith("error") or " error" in x[:20] for _, x in rows), "trends_last": trends[-1] if trends else "",
+    }
+
+def ov_text(o):
+    a = lambda s: "never" if s is None else f"{dur(s)} ago"
+    return (f"Oversight: watchdog last active {a(o['watchdog_age'])}" + (" (STOPPED?)" if o["watchdog_age"] is None or o["watchdog_age"] > 300 else "") +
+            f"; observer last ran {a(o['observer_age'])}; runner log {a(o['runner_age'])}. 24 h: {o['told']} notes to the orchestrator "
+            f"({o['idle']} idle alarms, {o['trend']} trend alarms), {o['closed_windows']} windows cleaned up, {o['errors']} watchdog errors."
+            + (f" {o['trends_last']}" if o["trends_last"] else ""))
+
+# ---------- AI assessment (#171): a model reads this page's own numbers ----------
+AI_FILE, AI_EVERY_MIN = R.RUNS / "ai_summary.json", 60
+AI_PROMPT = ("You audit an automatic software-work pipeline for its owner (a parent building a learning game for his son). "
+             "Below are its measured numbers. Write 4 to 6 short bullet points in plain English: what is going well, what is going wrong, "
+             "the biggest risk, and ONE concrete recommendation. Use only numbers that appear below; never invent numbers; if something "
+             "cannot be judged from them, say so. No headings, no preamble, each bullet under 30 words.\n\n")
+
+def ai_refresh(numbers, model=None):
+    """Ask Claude (no tools, no saved session) for the assessment; store it with time and model. -> dict or None."""
+    model = model or R.CFG.get("ai_model", "haiku")
+    claude = shutil.which("claude") or "claude"
+    try:
+        # the prompt goes on stdin: --tools takes a list and would swallow a prompt argument after it
+        p = subprocess.run([claude, "-p", "--model", model, "--no-session-persistence", "--tools", ""], input=AI_PROMPT + numbers,
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    out = (p.stdout or "").strip()
+    if p.returncode or not out: return None
+    data = {"at": time.time(), "model": model, "text": out[:3000]}
+    AI_FILE.write_text(json.dumps(data), encoding="utf-8")
+    return data
+
+def ai_load():
+    try: return json.loads(AI_FILE.read_text(encoding="utf-8"))
+    except Exception: return None
+
+def gather():
+    issues, prs = fetch()
+    now = time.time()
+    m = model(issues, prs, S.read_events(R.RUNS / "stats.jsonl"), now, runner_log())
+    w, wmt = _file("watchdog.log"); _, rmt = _file("runner.log"); ol, omt = _file("observer.last")
+    _, bmt = _file("watchdog.beat"); wmt = bmt or wmt          # heartbeat every pass; the log is written only on events
+    m["ov"] = oversight(w, wmt, rmt, ol, omt, now)
+    return m
+
+def ai_tick(log=print):
+    """Watchdog hook: refresh the AI assessment when it is older than AI_EVERY_MIN (call it in a background thread)."""
+    a = ai_load()
+    if a and time.time() - a.get("at", 0) < AI_EVERY_MIN * 60: return
+    m = gather()
+    log("ai assessment " + ("refreshed" if ai_refresh(text(m) + "\n" + ov_text(m["ov"])) else "failed"))
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
-    issues, prs = fetch()
-    m = model(issues, prs, S.read_events(R.RUNS / "stats.jsonl"), time.time(), runner_log())
-    if "--text" in sys.argv: print(text(m)); return
+    m = gather()
+    if "--ai" in sys.argv:                                   # refresh the AI assessment now (otherwise the watchdog does it hourly)
+        print("asking Claude for the assessment ...", flush=True)
+        ai_refresh(text(m) + "\n" + ov_text(m["ov"]))
+    m["ai"] = ai_load()
+    if "--text" in sys.argv:
+        print(text(m)); print(ov_text(m["ov"]))
+        if m["ai"]: print(f"\nAI assessment ({hhmm(m['ai']['at'])}, {m['ai']['model']}, may be wrong):\n" + m["ai"]["text"])
+        return
     OUT.write_text(page(m), encoding="utf-8")
-    print(text(m)); print(f"\npage: {OUT}")
+    print(text(m)); print(ov_text(m["ov"])); print(f"\npage: {OUT}")
     webbrowser.open(OUT.as_uri())
 
 if __name__ == "__main__":
