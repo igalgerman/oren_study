@@ -290,23 +290,32 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8")
         print("\n".join(observer_once()) or "no problems"); print(OBS_LAST.read_text()); return
     log("watchdog started")
-    stamp = (HERE / "runner.py").stat().st_mtime
+    W, me = sys.modules[__name__], Path(__file__).resolve()
+    stamp, wstamp = (HERE / "runner.py").stat().st_mtime, me.stat().st_mtime
     while True:
         try:
             m = (HERE / "runner.py").stat().st_mtime
             if m != stamp:                    # runner.py changed: pick up the new select()/park logic without restarting this window
                 stamp = m; importlib.reload(R); log("reloaded runner.py")
-            ts = windows()
-            check_windows(ts)
-            check_lanes(ts)
-            cleanup(R.hc_json("ls", "--all", "--json").get("terminals", []) or ts)
-            observer_tick()
-            sync_tick()
-            alarm_tick()
+            w = me.stat().st_mtime
+            if w != wstamp:                   # #127: watchdog.py changed (a merged fix): load it too, no manual restart
+                wstamp = w; W = importlib.reload(W) if W.__name__ == "watchdog" else importlib.import_module("watchdog")
+                log("reloaded watchdog.py")
+            W.tick()
         except Exception as e:
             log(f"error: {e!r}")
         if "--once" in sys.argv: return
         time.sleep(EVERY)
+
+def tick():
+    """One watchdog pass (main() calls it on the newest loaded copy of this file)."""
+    ts = windows()
+    check_windows(ts)
+    check_lanes(ts)
+    cleanup(R.hc_json("ls", "--all", "--json").get("terminals", []) or ts)
+    observer_tick()
+    sync_tick()
+    alarm_tick()
 
 if __name__ == "__main__":
     main()
