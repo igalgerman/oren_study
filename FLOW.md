@@ -44,4 +44,4 @@ Every `observer_minutes` the watchdog runs `tools/runner/observer.py` (determini
 Questions to the owner: in Hebrew, through tools/ask/ask.py (browser page), one round at a time; never ask in the terminal when the owner prefers Hebrew.
 
 ## CI (GitHub Actions, #73)
-`.github/workflows/tests.yml` runs all suites on every PR to main and every push to main: 6 parallel shards (`SUITES_SHARD=i/6 tests/run.sh`, a failed suite is retried alone once) and one summary job `tests`. **A PR is mergeable when the `tests` check is green.** No secrets in CI; deploy stays local.
+`.github/workflows/tests.yml` runs all suites on every PR to main and every push to main: 6 parallel shards (`SUITES_SHARD=i/6 tests/run.sh`, a failed suite is retried alone once) a `tools` job (runner/watchdog/ask tests with python, panel tests with `node tools/mods/oren-lanes/run-tests.mjs`, #152) and one summary job `tests`. **A PR is mergeable when the `tests` check is green.** No secrets in CI; deploy stays local.

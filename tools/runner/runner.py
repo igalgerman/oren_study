@@ -332,6 +332,9 @@ def park_issue(n, name, tail, since):
     return True
 
 def pid_alive(pid):
+    if os.name != "nt":                                  # CI on Linux (#152)
+        try: os.kill(int(pid), 0); return True
+        except (OSError, ValueError): return False
     rc, out = run(["tasklist", "/FI", f"PID eq {pid}", "/NH"])
     return f" {pid} " in out
 

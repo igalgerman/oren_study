@@ -281,8 +281,11 @@ import tempfile, subprocess, os
 from pathlib import Path as _P
 _t = _P(tempfile.mkdtemp()); _real = _t / "real_modules"; _real.mkdir(); (_real / "keep.txt").write_text("x")
 _wt = _t / "wt-x"; (_wt / "oren2").mkdir(parents=True)
-subprocess.run(["cmd", "/c", "mklink", "/J", str(_wt / "oren2" / "node_modules"), str(_real)], capture_output=True, check=True)
-assert os.path.isjunction(_wt / "oren2" / "node_modules")
+if os.name == "nt":
+    subprocess.run(["cmd", "/c", "mklink", "/J", str(_wt / "oren2" / "node_modules"), str(_real)], capture_output=True, check=True)
+    assert os.path.isjunction(_wt / "oren2" / "node_modules")
+else:                                                # CI on Linux (#152): the same case with a symlink
+    os.symlink(_real, _wt / "oren2" / "node_modules")
 r.remove_worktree(_wt)
 assert not _wt.exists() and (_real / "keep.txt").exists()
 import shutil; shutil.rmtree(_t, ignore_errors=True)
