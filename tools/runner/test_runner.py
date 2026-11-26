@@ -293,6 +293,12 @@ assert _cm([_ck("pending"), _ck("pass")]) == (("merged",), ["sleep", "merge"])
 assert _cm([_ck("fail"), _ck("pending"), _ck("pass")]) == (("merged",), ["rerun", "sleep", "sleep", "merge"])   # flaky: rerun once, then green
 assert _cm([_ck("fail"), _ck("fail")])[0] == ("red", ["c0"]) and _cm([_ck("fail"), _ck("fail")])[1].count("rerun") == 1   # still red: back to the worker
 assert _cm([_ck("pass")], merge_ok=False)[0] == ("merge-failed",)
+assert _cm([_ck("pass")], merge_ok="conflict")[0] == ("conflict",)     # #160: CI green but main moved -> conflict, not a block
+assert r.merge_conflict("Pull Request has merge conflicts") and r.merge_conflict("not mergeable: the merge commit cannot be cleanly created") and not r.merge_conflict("required status check missing")
+_mr = iter([(2, "CONFLICTS"), (7, "x"), (0, "ok")])
+assert r.integrate_with_resolve(lambda: next(_mr), lambda f: True, 2)[0] == "failed"
+_mr = iter([(2, "CONFLICTS"), (0, "ok")])
+assert r.integrate_with_resolve(lambda: next(_mr), lambda f: True, 2)[0] == "merged"            # merge conflict -> resolve round -> retry -> merged
 assert _cm([_ck("pending")] * 99, timeout_s=60, poll_s=30)[0] == ("timeout",)
 assert r.deploy_needed("a", "b") and not r.deploy_needed("b", "b") and r.deploy_needed("", "b") and not r.deploy_needed("a", "")
 assert r.conflict_files("CI RED\nc0\n") == ["c0"]
