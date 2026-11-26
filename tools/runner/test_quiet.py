@@ -24,7 +24,7 @@ finally:
 assert len(seen) == 2 and all(kw.get("creationflags") == R.no_window() for kw in seen), seen
 
 # ... and no subprocess call in the PC tools forgets it (source scan)
-for f in ("runner.py", "watchdog.py", "qwin.py", "remote.py", "ai_observer.py", "nightly.py"):
+for f in ("runner.py", "watchdog.py", "qwin.py", "remote.py", "ai_observer.py", "nightly.py", "dashboard.py"):
     src = (HERE / f).read_text(encoding="utf-8")
     for m in re.finditer(r"(subprocess\.(?:run|Popen|call|check_output)|\(popen or subprocess\.Popen\)|\bRUN)\(", src):
         i, depth = m.end(), 1                                                  # the whole call, up to its closing paren
