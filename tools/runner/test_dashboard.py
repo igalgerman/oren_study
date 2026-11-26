@@ -52,3 +52,24 @@ assert "Oversight: who watches the system" in pg and "STOPPED?" in pg     # obse
 assert "<b>Good:</b>" in pg and "AI assessment" in pg and "&lt;b&gt;x&lt;/b&gt;" in pg and "may be wrong" in pg
 m2["ai"] = None; assert "Not written yet" in D.page(m2)
 print("ok dashboard ai/oversight")
+# #173 merge ETA per issue + bottom line
+t0 = {"avg_build": 1200, "avg_review": 300, "avg_merge": 3600}
+fc0 = {"c6": 2.0, "c24": 1.0}
+rows0 = [{"n": 1, "prio": "P0", "state": "ready", "blockers": []}, {"n": 2, "prio": "P1", "state": "ready", "blockers": []},
+         {"n": 3, "prio": "P1", "state": "waiting", "blockers": [1]}, {"n": 4, "prio": "P2", "state": "needs_you", "blockers": []},
+         {"n": 5, "prio": "P2", "state": "waiting", "blockers": [4]}, {"n": 6, "prio": "P1", "state": "running", "blockers": []}]
+run0 = [{"n": 6, "step": "merging (CI)", "for_s": 3000}]
+pl = D.eta_plan(rows0, run0, t0, fc0, now, lanes=3)
+assert pl[6] == (now + 1050, now + 1575), pl[6]                                  # merging: half the CI/merge wait (2100 s)
+assert pl[1] == (now + 3600, now + 5400) and pl[2] == (now + 3600, now + 7200), (pl[1], pl[2])   # at least one cycle; place 2 at 1/h = 2 h
+assert pl[3][0] >= pl[1][0] + 3600 and pl[3][1] >= pl[1][1] + 5400, pl[3]           # after its blocker + one cycle
+assert pl[4] == "waits for you" and pl[5] == "after #4", (pl[4], pl[5])
+assert D.eta_str("waits for you", now) == "waits for you" and "–" in D.eta_str(pl[2], now)
+mm = {"plan": pl, "rows": [{**r, "title": "t"} for r in rows0], "now": now}
+bl = dict(D.bottom_line(mm))
+assert "all 1 P0" in bl and "2 without an estimate" in bl["everything open now"], bl
+pg = D.page(m2); assert "Timeline: when each issue should be merged" in pg and "merge ≈" in pg
+assert "Bottom line (estimate)" in D.text(m2)
+pl1 = D.eta_plan(rows0, run0, t0, {"c6": 50.0, "c24": 50.0}, now, lanes=1)        # 1 lane, busy until #6 merges
+assert pl1[1][0] == now + 1050 + 3600 and pl1[2][0] == now + 1050 + 7200, (pl1[1], pl1[2])   # lane frees, then one cycle each
+print("ok merge eta")
