@@ -386,7 +386,7 @@ function rhythm(back){const rounds=shuffle(PATS.slice()).slice(0,4);let r=0,tota
       t0=now+4*beat*1000*(window.__fast?1/15:1);
       p.forEach((b,i)=>setTimeout(()=>{const el=bar.querySelector(`[data-i="${i}"]`);if(el){el.classList.add('now');setTimeout(()=>el.classList.remove('now'),D(beat*900));}},D((4+i)*beat*1000)));
       setTimeout(()=>{msg.textContent='עַכְשָׁו!';},D(4*beat*1000));
-      setTimeout(()=>{running=false;const on=patOnsets(p).map(x=>t0+x*beat*1000*(window.__fast?1/15:1));const tol=window.__fast?60:170;let hit=0;const used=new Set();
+      setTimeout(()=>{if(!bar.isConnected)return;/* left the drum mid-round: its timers must not take the screen back */running=false;const on=patOnsets(p).map(x=>t0+x*beat*1000*(window.__fast?1/15:1));const tol=window.__fast?60:170;let hit=0;const used=new Set();
         on.forEach(o=>{const k=taps.findIndex((t,j)=>!used.has(j)&&Math.abs(t-o)<tol);if(k>=0){used.add(k);hit++;}});const extra=taps.length-used.size;const sc=Math.max(0,hit-extra);
         total+=on.length;good+=sc;msg.innerHTML=sc===on.length?'מְעֻלֶּה! בְּדִיּוּק בַּקֶּצֶב.':`פָּגַעְתָּ ב-${sc} מִתּוֹךְ ${on.length}`;if(sc===on.length)sfx.ok(r);else sfx.no();
         setTimeout(()=>{r++;if(r<rounds.length)run();else{T.setKey(null);const pc=good/total;const st=pc>=.85?3:pc>=.6?2:1;O.addGems(5+st*2);T.record('mus-rhythm',st);T.result({title:'מְתוֹפֵף אַלּוּף!',stars:st,gems:5+st*2,back,again:()=>rhythm(back)});}},D(1800));},D((4+4+.6)*beat*1000));};
