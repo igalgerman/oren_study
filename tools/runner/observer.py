@@ -98,7 +98,7 @@ def rules(snap):
         if not snap.get("integrating"):
             if ("needs-orchestrator" in L or ("blocked" in L and "P0" in L)) and orch_idle and idle >= ORCH_MIN and m >= ORCH_MIN:
                 acts.append(("make_ready", n, f"{'P0 ' if 'P0' in L else ''}needs-orchestrator untouched {m} min, orchestrator idle {idle} min"))
-            elif "in-progress" in L and i["no_run_min"] >= NORUN_MIN:
+            elif "in-progress" in L and "cloud" not in L and i["no_run_min"] >= NORUN_MIN:   # #203: a cloud lane has no local window by design
                 acts.append(("rerun", n, f"in-progress with no live run-{n} terminal for {i['no_run_min']} min"))
         if normalize_body(i["body"])[1]: acts.append(("fix_blocked_by", n, "malformed dependency line"))
     return acts

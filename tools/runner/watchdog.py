@@ -7,6 +7,7 @@ Every minute it checks, deterministically:
   3b. a window waiting for the owner longer than park_minutes (the runner parks it itself; this is the fallback): issue gets blocked + ready-for-human, lane freed
   3c. owner lane: no intake window open + a needs-triage/needs-info issue -> opens ONE `intake-<n>` (oldest issue), `NEEDS YOU: intake-<n> is open`
   5. every observer_minutes: observer.py applies deterministic rules (make_ready, rerun, fix Blocked-by lines) within limits
+  5b. every ai_observer_minutes (#203): ai_observer.py, ONE read-only headless Sonnet check in a thread; new findings -> the orchestrator
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
 It never answers questions or presses keys in other windows; it only tells the orchestrator and starts the runner.
@@ -229,6 +230,9 @@ def cleanup(ts):
 def observer_tick():
     import observer; observer.run_if_due()      # acting observer (observer.py)
 
+def ai_observer_tick():
+    import ai_observer; ai_observer.run_if_due(tell, log)   # #203: hourly AI check (thread; not reloaded: that would reset its never-two guard)
+
 SYNC_MIN = int(R.CFG.get("sync_minutes", 3))
 _sync = {"last": 0.0, "msg": ""}
 
@@ -328,6 +332,7 @@ def tick():
     check_intake(ts)
     cleanup(R.hc_json("ls", "--all", "--json").get("terminals", []) or ts)
     observer_tick()
+    ai_observer_tick()
     sync_tick()
     alarm_tick()
     trends_tick()
