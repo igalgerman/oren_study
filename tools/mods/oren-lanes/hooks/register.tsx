@@ -3,7 +3,7 @@ import type { Register } from 'claude-code'
 
 import type { OrenLanesData } from '../types/index'
 import {
-  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, flowRows, laneReasons, view, statsLines,
+  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, flowRows, laneReasons, view, statsLines, parseMaxCore,
 } from './lanes'
 import type { Issue, View, Win } from './lanes'
 
@@ -12,6 +12,7 @@ const HC = 'C:/Users/97254/AppData/Local/Programs/herdr-core/hc.exe'
 const REPO = 'igalgerman/oren_study'
 const LOG = 'C:/work/Oren_study/a/tools/runner/.runs/runner.log'
 const OBSERVER = 'C:/work/Oren_study/a/tools/runner/.runs/observer.last'
+const CONFIG = 'C:/work/Oren_study/a/tools/runner/config.toml'
 const STATS = 'C:/work/Oren_study/a/tools/runner/.runs/stats.jsonl'
 const ROOT = /^c:[\\/]+work[\\/]+oren_study([\\/]|$)/i
 const DATA = { plugin: 'oren-lanes', key: 'data' } as const
@@ -71,6 +72,8 @@ export const register: Register = on => {
         try { stats = statsLines((await $.fs.read(STATS)) as string, Date.now() / 1000) } catch { /* no stats yet */ }
         let observer = ''
         try { observer = ((await $.fs.read(OBSERVER)) as string).trim() } catch { /* no observer run yet */ }
+        let maxCore = 1
+        try { maxCore = parseMaxCore((await $.fs.read(CONFIG)) as string) } catch { /* default 1 */ }
         let flow: string[] = []
         let vw: View | undefined
         let done = ''
@@ -80,7 +83,7 @@ export const register: Register = on => {
           const prs = pr.exitCode === 0 ? (JSON.parse(pr.stdout) as { headRefName: string }[]).map(p => p.headRefName) : []
           const closed = cl.exitCode === 0 ? (JSON.parse(cl.stdout) as Issue[]) : []
           flow = flowRows(issues, closed, windows, prs)
-          vw = view(issues, closed, windows, prs)
+          vw = view(issues, closed, windows, prs, 3, maxCore)
           const dayAgo = Date.now() - 24 * 3600 * 1000
           const today = closed.filter(c => Date.parse((c as { closedAt?: string }).closedAt ?? '') > dayAgo).length
           const g = groupIssues(issues)
@@ -105,7 +108,7 @@ export const register: Register = on => {
           errors: [`GitHub slow — showing data from ${new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(prevData.updatedAt))}`],
           updatedAt: prevData.updatedAt,
         } : {
-          windows, groups: groupIssues(issues), lastLog, errors, usage, flow, done, lanes: laneReasons(issues, windows), view: vw, stats, observer,
+          windows, groups: groupIssues(issues), lastLog, errors, usage, flow, done, lanes: laneReasons(issues, windows, 3, maxCore), view: vw, stats, observer,
           updatedAt: await $.clock.now(),
         }
         await update($, dataAtom, () => data)
