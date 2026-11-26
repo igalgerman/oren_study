@@ -12,10 +12,12 @@ import runner as R          # gh(), blockers(), CFG
 import stats as S           # pipeline timings from stats.jsonl
 import trends as T          # stuck reasons from runner.log
 import remote as RM         # cloud lanes (#136)
+import parked as PK         # #282: batch members, manual, later
 
 OUT = R.RUNS / "dashboard.html"
 STATES = [("running", "Running now"), ("needs_you", "Needs you"), ("blocked", "Blocked"),
-          ("waiting", "Waiting for another issue"), ("ready", "Ready to start"), ("other", "Not triaged / other")]
+          ("waiting", "Waiting for another issue"), ("ready", "Ready to start"),
+          ("batch", "In a batch"), ("manual", "Manual"), ("later", "Later"), ("other", "Not triaged / other")]
 STEP = {"start": "building", "worker_done": "in review", "review_fix": "fixing review notes", "fix_done": "in review",
         "review_pass": "merging (CI)", "resolve": "resolving a conflict", "merged": "deploying"}
 
@@ -23,14 +25,14 @@ def epoch(iso):
     try: return calendar.timegm(time.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S"))
     except (TypeError, ValueError): return None
 
-def state_of(i, open_nums):
+def state_of(i, open_nums, bm=None):
     l = set(i["labels"])
     if "in-progress" in l: return "running"
     if l & {"ready-for-human", "needs-triage", "needs-info"}: return "needs_you"
     if "blocked" in l: return "blocked"
     if any(b != i["number"] and b in open_nums for b in R.blockers(i.get("body"))): return "waiting"
     if "ready-for-agent" in l: return "ready"
-    return "other"
+    return PK.kind(i, bm or {}) or "other"          # #282: on purpose not ready-for-agent -> own bucket
 
 def prio_of(i):
     return next((p for p in ("P0", "P1", "P2", "P3") if p in i["labels"]), "-")
@@ -58,7 +60,9 @@ def model(issues, prs, events, now, log_text="", cloud=()):
     open_nums = {i["number"] for i in op}
     closed_at = {i["number"]: epoch(i.get("closedAt")) for i in issues if i["state"] == "CLOSED"}
     created = {i["number"]: epoch(i.get("createdAt")) for i in issues}
-    rows = sorted(({"n": i["number"], "title": i["title"], "state": state_of(i, open_nums), "prio": prio_of(i),
+    bm = PK.batch_map(issues)
+    rows = sorted(({"n": i["number"], "title": i["title"], "state": state_of(i, open_nums, bm), "prio": prio_of(i),
+                    "batch": bm[i["number"]]["number"] if i["number"] in bm else None,
                     "age_h": (now - (created[i["number"]] or now)) / 3600,
                     "blockers": [b for b in R.blockers(i.get("body")) if b in open_nums and b != i["number"]]} for i in op),
                   key=lambda r: (r["prio"], r["n"]))
@@ -145,8 +149,9 @@ def eta_plan(rows, running, t, fc, now, lanes=None):
         sec = max(600, b - (r["for_s"] or 0)) + rv + wait if r["step"] == "building" else left.get(r["step"], mg / 2)
         out[r["n"]] = (now + sec, now + sec * 1.5)
     for r in rows:
-        if r["state"] in ("needs_you", "blocked", "other"):
-            out[r["n"]] = {"needs_you": "waits for you", "blocked": "blocked", "other": "not triaged"}[r["state"]]
+        if r["state"] in ("needs_you", "blocked", "other", "batch", "manual", "later"):
+            out[r["n"]] = {"needs_you": "waits for you", "blocked": "blocked", "other": "not triaged", "manual": "manual",
+                           "later": "later", "batch": f"in batch #{r.get('batch')}"}[r["state"]]
     fast, slow = max(fc["c6"], fc["c24"]), min(fc["c6"], fc["c24"]) or max(fc["c6"], fc["c24"])
     lanes = lanes or int(R.CFG.get("max_parallel", 3))
     busy = [v[0] - now for v in out.values() if isinstance(v, tuple)]
@@ -237,6 +242,10 @@ def text(m):
         lines.append(f"  cloud #{c['n']} {c['title'][:40]} — {c['state']}{' · manual' if c.get('manual') else ''} · last {hhmm(epoch(c['last'])) if epoch(c['last']) else '-'}"
                      + (" · STALE" if c["stale"] else "") + (f" · {c['pr']}" if c["pr"] else "") + (f" · {c['session']}" if c["session"] else ""))
     if m.get("cloud_done"): lines.append("Cloud done: " + "; ".join(f"#{c['n']} {c['title'][:40]}" for c in m["cloud_done"]))   # #263
+    if s.get("batch"):                   # #282: members under their batch
+        by_b = {}
+        for r in s["batch"]: by_b.setdefault(r["batch"], []).append(r["n"])
+        lines.append("In batches: " + "; ".join(f"#{b} (" + " ".join(f"#{n}" for n in ns) + ")" for b, ns in sorted(by_b.items())))
     if m["running"]: lines.append("Running: " + "; ".join(f"#{r['n']} {r['step']} {dur(r['for_s'])}" for r in m["running"]))
     lines.append("Bottom line (estimate): " + "; ".join(f"{a} merged by {b}" for a, b in bottom_line(m)))
     nxt = sorted(((v, n) for n, v in m["plan"].items() if isinstance(v, tuple)))[:8]

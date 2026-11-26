@@ -12,6 +12,8 @@ Every minute it checks, deterministically:
   5c. every tick (#262): an open PR that conflicts with main and has auto-merge or a review PASS -> a resolve run (window resolve-<n>, conflicts.py)
   5c. #219 nightly.py: once a day at retro_hour ONE read-only headless Sonnet retro + handoff (issue 'Daily retro <date>', handoff PR);
       batch trigger: tells the inbox to run /batch once a day, and early when >= 8 ready P2/P3 issues share a lane
+  5d. #282 parked.py, once an hour: closed batch -> its open members get ready-for-agent back; a polish list at 5 notes or 24 h -> ready-for-agent P3;
+      later/manual 2 h+ with no owner question, run, PR or future date -> 'parked without owner question: #n' to the orchestrator; night report at retro_hour
   5d. #306 desks.py: keeps the two cloud sessions 'Oren inbox (cloud)' / 'Oren ask (cloud)' alive and every status_minutes
       writes the session links + dashboard.py --text into ONE pinned issue (edited in place, nothing committed)
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
@@ -261,6 +263,12 @@ def nightly_tick():
     import nightly   # #219: not reloaded (that would reset its never-two guard)
     nightly.retro_if_due(tell, log)
     nightly.batch_tick(lambda t: R.hc("send", "inbox", t, timeout=30)[0], log)
+    nightly.night_report_if_due(tell, log)   # #282
+
+def parked_tick():
+    """#282, once an hour: orphaned batch members / due polish lists get ready-for-agent; parked later/manual -> the orchestrator."""
+    import parked
+    parked.tick(tell=tell, log=log)
 
 def desks_tick():
     import desks; desks.run_if_due(log)   # #306: cloud inbox + ask sessions, pinned links + live status (thread; not reloaded: never-two guard)
@@ -467,6 +475,7 @@ def tick():
     observer_tick()
     ai_observer_tick()
     nightly_tick()
+    parked_tick()       # #282
     desks_tick()
     sync_tick()
     alarm_tick()
