@@ -923,7 +923,7 @@ function shapeSVG(t,hard,cls,size){const col=pick(COL);let body;
   else{let p;
     if(t==='tri')p=hard?(()=>{const a0=Math.random()*6.28,a1=a0+(100+Math.random()*40)*Math.PI/180,a2=a1+(95+Math.random()*40)*Math.PI/180;return [a0,a1,a2].map(a=>[50+44*Math.cos(a),50+44*Math.sin(a)]);})():ngon(3,44,-Math.PI/2);
     else if(t==='sq'){const s=(size||rand(50,66))/2;p=[[50-s,50-s],[50+s,50-s],[50+s,50+s],[50-s,50+s]];}
-    else if(t==='rect'){const w=rand(78,86)/2,hh=rand(28,44)/2;p=[[50-w,50-hh],[50+w,50-hh],[50+w,50+hh],[50-w,50+hh]];if(hard&&mm(.4))p=rot(p,Math.PI/2);}
+    else if(t==='rect'){const w=rand(78,86)/2,hh=(size||rand(28,44))/2;p=[[50-w,50-hh],[50+w,50-hh],[50+w,50+hh],[50-w,50+hh]];if(hard&&mm(.4))p=rot(p,Math.PI/2);}
     else p=ngon(SIDES[t],42,Math.random()*6.28,hard);
     if(hard&&(t==='sq'||t==='rect'||t==='tri'))p=rot(p,Math.random()*6.28);
     body=`<polygon points="${p.map(q=>q.map(v=>v.toFixed(1)).join(',')).join(' ')}"`;}
@@ -938,7 +938,8 @@ function nameQ(set,hard){const t=pick(set.filter(x=>x!=='circ'||set.length<5));c
 function countQ(hard){const t=pick(['tri','sq','rect','pent','hex']);const corners=mm(.5);const o=['3','4','5','6'];
   return ch(`<div class="qq">כַּמָּה ${corners?'קָדְקֳדִים':'צְלָעוֹת'} יֵשׁ לַצּוּרָה?</div>${shapeSVG(t,hard,'shp1')}`,o,SIDES[t]-3,
     corners?'קָדְקֹד הוּא פִּנָּה. סוֹפְרִים אֶת הַפִּנּוֹת':'צֶלַע הִיא קַו יָשָׁר. סוֹפְרִים אֶת הַקַּוִּים מִסָּבִיב','מַתְחִילִים בְּאֶחָד, וּמַמְשִׁיכִים מִסָּבִיב עַד שֶׁחוֹזְרִים אֵלָיו','',{t:'shape',ask:corners?'corners':'sides',target:t},true);}
-function sqQ(hard){const sq=shapeSVG('sq',hard,'');const ts=shuffle(['sq','rect','rect']);const svgs=ts.map(x=>x==='sq'?sq:shapeSVG('rect',hard,''));
+/* the two rectangles get different heights, so they never look the same (#292) */
+function sqQ(hard){const sq=shapeSVG('sq',hard,'');const ts=shuffle(['sq','rect','rect']);const h1=rand(28,44),hs=[h1,28+(h1-28+8)%17];let r=0;const svgs=ts.map(x=>x==='sq'?sq:shapeSVG('rect',hard,'',hs[r++]));
   return ch('<div class="qq">אֵיזֶה מַלְבֵּן הוּא גַּם רִבּוּעַ?</div>',svgs,ts.indexOf('sq'),'לָרִבּוּעַ כָּל אַרְבַּע הַצְּלָעוֹת שָׁווֹת','מְחַפְּשִׂים מַלְבֵּן שֶׁהָאֹרֶךְ וְהָרֹחַב שֶׁלּוֹ שָׁוִים','shp',{t:'shape',ask:'sqrect',ts});}
 const B4=['tri','sq','rect','circ'],B6=['tri','sq','rect','pent','hex','circ'];
 const shp1=i=>{const hard=i>=3;return mm(.65)?whichQ(B4,hard):nameQ(B4,hard);};

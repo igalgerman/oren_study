@@ -61,6 +61,23 @@ export function usageJson(limits: Limit[], nowMs: number) {
   return { five_h_pct: f.percentUsed, five_h_reset: f.resetsAt ?? null, week_pct: w ? w.percentUsed : null, week_reset: w?.resetsAt ?? null, at: new Date(nowMs).toISOString() }
 }
 
+/** #329: the ONE GitHub reader (the watchdog) writes this once a minute; the panel never calls gh itself. */
+export const GH_CACHE = 'C:/work/Oren_study/a/tools/runner/.runs/gh_cache.json'
+const GH_MAX_AGE_S = 180
+
+/** #329: backlog, closed issues, open PRs from the cache text; throws when it is older than GH_MAX_AGE_S. */
+export function fromCache(text: string, nowMs: number): { issues: Issue[]; closed: Issue[]; prs: Pr[]; closedTotal: number } {
+  const c = JSON.parse(text)
+  const age = Math.round(nowMs / 1000 - (c.ts ?? 0))
+  if (age > GH_MAX_AGE_S) throw new Error(`GitHub cache ${age} s old (watchdog not reading?)`)
+  const issues = (c.open ?? []).map((i: any) => ({ number: i.number, title: i.title, body: i.body, labels: i.labels, ...(i.createdAt !== undefined ? { createdAt: i.createdAt } : {}) }))
+  const prs: Pr[] = (c.prs ?? []).filter((p: any) => p.state === 'OPEN').map((p: any) => ({
+    number: p.number, headRefName: p.headRefName, createdAt: p.createdAt, isDraft: p.isDraft, mergeable: p.mergeable,
+    autoMergeRequest: p.autoMergeRequest, closingIssuesReferences: p.closingIssuesReferences, statusCheckRollup: p.statusCheckRollup,
+  }))
+  return { issues, closed: c.closed ?? [], prs, closedTotal: c.closed_total ?? (c.closed ?? []).length }
+}
+
 /** #239: the runner's governor state from .runs/governor.json (reset in epoch seconds). */
 export type Gov = { lanes?: number; stop?: boolean; pct?: number | null; projected?: number | null; reset?: number | null; text?: string; at?: number; eff?: number | null; wasted?: number }
 
