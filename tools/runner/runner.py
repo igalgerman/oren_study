@@ -135,13 +135,16 @@ def ci_verdict(checks):
 def failed_checks(checks):
     return [c.get("name", "?") for c in checks or [] if c.get("bucket") in ("fail", "cancel")]
 
-def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_reruns=1, stamp=None, max_stale=10):
+def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_reruns=1, stamp=None, max_stale=10, ended=None):
     """Pure decision loop (#74): wait for the PR checks, then merge. Red -> rerun the failed jobs once (flaky), still red -> send back to the worker.
     stamp() = run id/status/attempt of the latest run: after a rerun, red is ignored until it changes (the old failed run is still shown for a while).
     merge() -> True | False | 'conflict' (#160: main moved after green CI -> the caller resolves and retries).
-    Returns ('merged',) | ('red', [names]) | ('timeout',) | ('conflict',) | ('merge-failed',)."""
+    ended() True (#234: PR merged / issue closed elsewhere) -> ('ended',).
+    Returns ('merged',) | ('red', [names]) | ('timeout',) | ('conflict',) | ('merge-failed',) | ('ended',)."""
     waited, reruns, old, stale = 0, 0, None, 0
     while True:
+        if ended and ended():
+            return ("ended",)
         checks = get_checks()
         v = ci_verdict(checks)
         if v == "green":
@@ -215,25 +218,48 @@ def remote_worker_prompt(n, lane, bug=False):
                    f"if blocked post `RESULT: STUCK <why>`; if you need the owner post `QUESTION: <short question, with options>` and stop. "
                    "The comment must have that line on its own line.")
 
-def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60):
-    """Pure loop (#133): poll the GitHub-based status until it is done/stuck/question. Returns that status dict, or {'state': 'timeout'}."""
+def run_over(issue_state, merged_at, since):
+    """Pure (#234): the run has nothing left to do when its issue is CLOSED or a lane PR was merged AFTER this run started
+    (since, ISO UTC). A lane/<n> PR merged before (a reopened issue reuses lane/<n>) does not count."""
+    return issue_state == "CLOSED" or any(m and m >= since for m in merged_at or [])
+
+_OVER_Q = ("query($o:String!,$r:String!,$n:Int!,$h:String!){repository(owner:$o,name:$r){"
+           "issue(number:$n){state} pullRequests(headRefName:$h,states:MERGED,first:5,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{mergedAt}}}}")
+
+def issue_over(n, since, run_=None):
+    """#234: ONE gh call: is issue #n closed, or lane/<n> merged after `since` (run start)? Any gh/parse error -> False (never end a run on an error)."""
+    o, name = REPO.split("/", 1)
+    rc, out = (run_ or run)(["gh", "api", "graphql", "-f", f"query={_OVER_Q}", "-f", f"o={o}", "-f", f"r={name}", "-F", f"n={n}", "-f", f"h=lane/{n}"], timeout=60)
+    if rc: return False
+    try:
+        repo = json.loads(out)["data"]["repository"]
+        return run_over((repo.get("issue") or {}).get("state"), [x.get("mergedAt") for x in (repo.get("pullRequests") or {}).get("nodes") or []], since)
+    except (ValueError, KeyError, TypeError):
+        return False
+
+def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=None):
+    """Pure loop (#133): poll the GitHub-based status until it is done/stuck/question. Returns that status dict, or {'state': 'timeout'}.
+    ended() True (#234: issue closed / lane PR merged elsewhere) -> {'state': 'ended'}."""
     start = clock()
     while True:
         st = get_status()
         if st.get("state") in ("done", "stuck", "question"):
             return st
+        if ended and ended():
+            return {"state": "ended", "line": "", "pr": st.get("pr")}
         if clock() - start >= timeout_s:
             return {"state": "timeout", "line": "", "pr": st.get("pr")}
         sleep(poll_s)
 
-def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None):
+def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None):
     """Start the cloud worker and wait for its comment. Returns the marker line (`RESULT: ...` / `QUESTION: ...`) like agent() does.
     on_start(start result) keeps the session id (#134: FIX points are sent back to this session)."""
     s = start(n, remote_worker_prompt(n, lane, bug), CFG.get("main_checkout", "."))
     if not s.get("ok"):
         return f"RESULT: STUCK remote start failed: {s.get('error', '?')}"
     if on_start: on_start(s)
-    st = wait_remote(get_status, sleep, clock, timeout_s, poll_s)
+    st = wait_remote(get_status, sleep, clock, timeout_s, poll_s, ended)
+    if st["state"] == "ended": raise Ended("cloud worker")
     if st["state"] == "timeout":
         return f"RESULT: STUCK remote worker silent for {timeout_s // 3600}h ({s.get('url', '')})"
     return st["line"]
@@ -389,6 +415,9 @@ def stat(n, lane, event, **extra):
 class Blocked(Exception):
     pass
 
+class Ended(Exception):
+    """#234: the issue was closed or its lane PR merged elsewhere while the run waited: end as DONE, free the lane."""
+
 class Parked(Exception):
     """The issue waits for the owner (question unanswered for park_minutes): lane freed, windows stay open, the run exits cleanly."""
 
@@ -507,7 +536,7 @@ def code_mode(n):
     k = int(CFG.get("code_mode_every", 0) or 0)
     return k > 0 and int(n) % k == 0
 
-def agent(name, prompt, cwd, tools, log, marker, n, role, model=MODEL):
+def agent(name, prompt, cwd, tools, log, marker, n, role, model=MODEL, over=None):
     """Run an INTERACTIVE claude in a herdr terminal the owner can open; return (screen text, marker line).
     Terminals are closed after success and left open when BLOCKED/PARKED. A window of that name that is still live (parked earlier) is re-attached, not restarted.
     Waiting for a person longer than park_minutes -> Parked. Falls back to the hidden `claude -p` when herdr is unavailable."""
@@ -554,6 +583,7 @@ def agent(name, prompt, cwd, tools, log, marker, n, role, model=MODEL):
             if time.time() - last_check > 60:                           # someone (watchdog / owner) parked or blocked the issue: stop waiting
                 last_check = time.time()
                 if "blocked" in (issue_labels(n) or []): raise Parked(name)
+                if over and over(): raise Ended(name)                      # #234: closed / merged elsewhere
             time.sleep(10)           # agent idle without a marker (e.g. the owner is talking to it): look again later
         else:
             raise Blocked(f"{name}: no {marker} line after 3h")
@@ -638,12 +668,13 @@ def remote_review_prompt(n, pr, round1=""):
             "file in your scratch dir). The runner reads ONLY that comment: put the verdict on its own line starting with VERDICT: (no backticks). "
             + review_colours(round1))
 
-def remote_review(n, pr, round1, start, get_verdict, sleep, clock, timeout_s=3600, poll_s=60):
+def remote_review(n, pr, round1, start, get_verdict, sleep, clock, timeout_s=3600, poll_s=60, ended=None):
     """#134: the reviewer as a cloud session; get_verdict() = remote.review_status of this round. -> (comment, VERDICT line) like agent(); '' line = none."""
     s = start(n, remote_review_prompt(n, pr, round1), CFG.get("main_checkout", "."))
     if not s.get("ok"):
         return f"remote review start failed: {s.get('error', '?')}", ""
-    st = wait_remote(get_verdict, sleep, clock, timeout_s, poll_s)
+    st = wait_remote(get_verdict, sleep, clock, timeout_s, poll_s, ended)
+    if st["state"] == "ended": raise Ended("cloud review")
     if st["state"] == "timeout":
         return f"remote reviewer posted no VERDICT in {timeout_s // 60} min ({s.get('url', '')})", ""
     return st.get("body") or st["line"], st["line"]
@@ -655,7 +686,7 @@ def remote_fix_prompt(n, review_text):
             "with `RESULT: DONE <PR url>` (or `RESULT: STUCK <why>`, or `QUESTION: <question, options>` and stop) on its own line:\n---\n"
             + review_text[-6000:] + "\n---")
 
-def remote_fix(n, session, review_text, send, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None):
+def remote_fix(n, session, review_text, send, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None):
     """#134: FIX for a cloud worker: the points go to its session (send); no session or send failed -> a new cloud fix session. -> marker line."""
     text = remote_fix_prompt(n, review_text)
     if not (session and send(session, text).get("ok")):
@@ -663,7 +694,8 @@ def remote_fix(n, session, review_text, send, start, get_status, sleep, clock, t
         if not s.get("ok"):
             return f"RESULT: STUCK remote fix start failed: {s.get('error', '?')}"
         if on_start: on_start(s)
-    st = wait_remote(get_status, sleep, clock, timeout_s, poll_s)
+    st = wait_remote(get_status, sleep, clock, timeout_s, poll_s, ended)
+    if st["state"] == "ended": raise Ended("cloud fix")
     if st["state"] == "timeout":
         return f"RESULT: STUCK remote fix silent for {timeout_s // 3600}h"
     return st["line"]
@@ -769,7 +801,7 @@ def log_to(log, text):
         with open(log, "a", encoding="utf-8") as f: f.write(text + "\n")
     except OSError: pass
 
-def ci_integrate(n, wt, log):
+def ci_integrate(n, wt, log, over=None):
     """CI-based integrate (#74): update the lane with main, push, wait for the PR checks, `gh pr merge --squash`. -> (rc, out) like integrate.sh:
     0 merged, 2 conflict, 4 no PR, 5 push failed, 6 CI red after one rerun, 7 CI timeout / merge failed (blocked, real reason in out)."""
     pr = find_pr(n)
@@ -797,7 +829,8 @@ def ci_integrate(n, wt, log):
         with FileLock("integrate", wait=True, note=f"#{n} CI merge"):                   # #166: the lock covers only the merge itself
             rc_, o_ = gh("pr", "merge", str(pr), "--squash", log=log)
         return True if rc_ == 0 else ("conflict" if merge_conflict(o_) else False)
-    res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp)
+    res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp, ended=over)
+    if res[0] == "ended": raise Ended("CI merge")
     if res[0] == "merged": return 0, "merged PR #%d" % pr
     if res[0] == "red": return 6, "CI RED\n" + "\n".join(res[1])
     if res[0] == "conflict": return 2, "CONFLICT: main moved after green CI (gh pr merge reports merge conflicts)"
@@ -898,19 +931,20 @@ def process_locked(issue, where="local"):
             (d / "remote.json").write_text(json.dumps({"session": s.get("session", ""), "url": s.get("url", "")}), encoding="utf-8")
         def utc():
             return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        over = lambda: issue_over(n, started)                   # #234: every wait loop ends the run when the issue is closed / PR merged
         def remote_question(res):                        # the session already posted it on the issue: park, the owner answers there
             if res.startswith("QUESTION:"):
                 set_labels(n, add=["blocked", "ready-for-human"], remove=["in-progress"])
                 raise Parked(f"cloud session of #{n}: {res[:200]}")
         if where == "remote":                            # #133: the cloud worker needs no worktree here; it is made after the review (resolve uses it, #134)
             res = remote_worker(n, lane, "bug" in issue["labels"], remote.start, lambda: remote.status(n, since=started),
-                                time.sleep, time.time, 3 * 3600, 60, on_start=save_session)
+                                time.sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over)
             remote_question(res)
             out = res
         else:
             prep_worktree()
             out, res = agent(f"issue-{n}", worker_prompt(n, lane, bug="bug" in issue["labels"]), wt, WORKER_TOOLS if lane != "review" else REVIEW_LANE_TOOLS,
-                             d / "worker1.log", "RESULT:", n, "worker", wm)
+                             d / "worker1.log", "RESULT:", n, "worker", wm, over=over)
         (d / "worker1.out").write_text(redact(out), encoding="utf-8")
         if not res.startswith("RESULT: DONE"):
             raise Blocked(res or "worker gave no RESULT line")
@@ -925,10 +959,10 @@ def process_locked(issue, where="local"):
             if not pr: raise Blocked("worker said DONE but no open PR for lane/%d" % n)
             if where == "remote":                  # #134: the reviewer is a cloud session too; its VERDICT is a PR comment
                 since = utc()
-                rv, verdict = remote_review(n, pr, red, remote.start, lambda: remote.review_status(pr, since=since), time.sleep, time.time, 3600, 60)
+                rv, verdict = remote_review(n, pr, red, remote.start, lambda: remote.review_status(pr, since=since), time.sleep, time.time, 3600, 60, ended=over)
             else:
                 rv, verdict = agent(f"review-{n}" + ("" if rnd == 1 else f"-{rnd}"), review_prompt(n, pr, red), wt, READ_TOOLS,
-                                    d / f"review{rnd}.log", "VERDICT:", n, "reviewer", rm)
+                                    d / f"review{rnd}.log", "VERDICT:", n, "reviewer", rm, over=over)
             (d / f"review{rnd}.out").write_text(redact(rv), encoding="utf-8")
             kind, text, extra = parse_verdict(verdict)
             if kind == "pass":
@@ -952,10 +986,10 @@ def process_locked(issue, where="local"):
                 try: sess = json.loads((d / "remote.json").read_text(encoding="utf-8")).get("session", "")
                 except (OSError, ValueError): sess = ""
                 res = remote_fix(n, sess, rv, remote.send, remote.start, lambda: remote.status(n, since=since), time.sleep, time.time,
-                                 3 * 3600, 60, on_start=save_session)
+                                 3 * 3600, 60, on_start=save_session, ended=over)
                 remote_question(res)
             else:
-                out, res = agent(f"issue-{n}-fix" + ("" if rnd == 1 else str(rnd)), worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / f"worker{rnd + 1}.log", "RESULT:", n, "worker", wm)
+                out, res = agent(f"issue-{n}-fix" + ("" if rnd == 1 else str(rnd)), worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / f"worker{rnd + 1}.log", "RESULT:", n, "worker", wm, over=over)
             if not res.startswith("RESULT: DONE"):
                 raise Blocked(res or "fix worker gave no RESULT line")
             stat(n, lane, "fix_done")
@@ -964,7 +998,7 @@ def process_locked(issue, where="local"):
         kind = {"ci": False}
         def integrate():
             if CFG.get("ci_merge", True) and find_pr(n):     # #74: CI decides, no local full suite
-                rc, out = ci_integrate(n, wt, log)           # #166: takes the lock itself, only around `gh pr merge`
+                rc, out = ci_integrate(n, wt, log, over)           # #166: takes the lock itself, only around `gh pr merge`
                 kind["ci"] = rc == 6
                 return rc, out
             with FileLock("integrate", wait=True, note=f"#{n} local merge"):          # fallback: local merge + full suite
@@ -977,7 +1011,7 @@ def process_locked(issue, where="local"):
         def resolve(files):
             rounds[0] += 1
             stat(n, lane, "resolve")
-            o, r_ = agent(f"issue-{n}-resolve{rounds[0]}", ci_fix_prompt(n, files) if kind["ci"] else resolve_prompt(n, files), wt, WORKER_TOOLS, d / f"resolve{rounds[0]}.log", "RESULT:", n, "worker", wm)
+            o, r_ = agent(f"issue-{n}-resolve{rounds[0]}", ci_fix_prompt(n, files) if kind["ci"] else resolve_prompt(n, files), wt, WORKER_TOOLS, d / f"resolve{rounds[0]}.log", "RESULT:", n, "worker", wm, over=over)
             return r_.startswith("RESULT: DONE")
         outcome = integrate_with_resolve(integrate, resolve, 2)
         if outcome[0] == "giveup":
@@ -1000,6 +1034,12 @@ def process_locked(issue, where="local"):
         close_windows(n)
         stat(n, lane, "deployed")
         return f"DONE {dep}"
+    except Ended as e:                          # #234: closed / merged elsewhere: DONE, lane freed (locks: the caller's `with`)
+        stat(n, lane, "ended")
+        set_labels(n, remove=["in-progress"])
+        remove_worktree(wt, log)
+        close_windows(n)
+        return f"DONE closed or merged elsewhere (seen in {e})"
     except Parked as e:                         # waiting for the owner: windows stay open, locks are released by the caller's `with`
         stat(n, lane, "parked")
         return f"PARKED: waiting for the owner in {e}"
