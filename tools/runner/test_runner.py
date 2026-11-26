@@ -464,6 +464,18 @@ assert r.remote_review(7, 9, "", _st, lambda: next(seq), lambda s: None, lambda:
 assert "gh pr comment 9" in starts[-1]
 rv, v = r.remote_review(7, 9, "", lambda n, t, c: {"ok": False, "error": "403"}, lambda: {"state": "working"}, lambda s: None, lambda: 0, 60, 30)
 assert v == "" and "403" in rv
+# #322: a cloud reviewer that fails to start is retried after 60 s, then 300 s; then no verdict with the real error
+_sl, _n = [], [0]
+def _flaky(n, t, c):
+    _n[0] += 1
+    return {"ok": False, "error": "Cloud session create failed: timeout of 15000ms exceeded"} if _n[0] == 1 else _st(n, t, c)
+rv, v = r.remote_review(7, 9, "", _flaky, lambda: {"state": "done", "line": "VERDICT: PASS", "body": ""}, _sl.append, lambda: 0, 60, 30)
+assert v == "VERDICT: PASS" and _n[0] == 2 and _sl == [60], (rv, v, _n, _sl)     # fails once, then succeeds -> review runs
+_sl, _n = [], [0]
+def _dead(n, t, c): _n[0] += 1; return {"ok": False, "error": "timeout of 15000ms exceeded"}
+rv, v = r.remote_review(7, 9, "", _dead, lambda: {"state": "working"}, _sl.append, lambda: 0, 60, 30)
+assert v == "" and _n[0] == 3 and _sl == [60, 300], (_n, _sl)
+assert "timeout of 15000ms exceeded" in rv and "3 tries" in rv, rv                 # the real error for the orchestrator
 t[0] = 0
 rv, v = r.remote_review(7, 9, "", _st, lambda: {"state": "working"}, sl, lambda: t[0], 120, 60)
 assert v == "" and "no VERDICT" in rv                                                # silent reviewer -> no verdict -> runner blocks
