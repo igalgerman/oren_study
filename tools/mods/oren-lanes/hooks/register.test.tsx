@@ -42,9 +42,9 @@ test('windows, finished runs and status line', () => {
   expect(finishedRuns(['run-5', 'run-6', 'issue-12'], wins)).toEqual(['run-5', 'run-6'])
   const groups = groupIssues([])
   const d = { windows: wins, groups, lastLog: '', errors: [], updatedAt: 0 }
-  expect(statusLine(d)).toBe('lanes local 1/3 · cloud 0 · ready 0 · blocked 0')
+  expect(statusLine(d)).toBe('lanes local 1/3 · cloud 0/0 · ready 0 · blocked 0')
   groups.needsYou.count = 2
-  expect(statusLine(d)).toMatch(/^lanes local 1\/3 · cloud 0 · ready 0 · blocked 0/)
+  expect(statusLine(d)).toMatch(/^lanes local 1\/3 · cloud 0\/0 · ready 0 · blocked 0/)
 })
 
 import { usageText } from './lanes'
@@ -210,13 +210,14 @@ test('core lanes follow max_core', () => {
   expect(laneReasons(three, [], 3, 2)[2]).toMatch(/#7 ready but only 2 core at a time/)
 })
 
-import { cloudRows, parseLocalLanes, needsRows, remoteFromStats } from './lanes'
+import { cloudRows, parseLocalLanes, parseRemoteLanes, needsRows, remoteFromStats } from './lanes'
 
 test('#136 lanes line: local X/Y from config local_lanes, cloud = open issues labelled cloud', () => {
   expect(parseLocalLanes('local_lanes = 0   # all in the cloud\nremote_lanes = 4')).toBe(0)
+  expect(parseRemoteLanes('local_lanes = 0\nremote_lanes = 4')).toBe(4)
   expect(parseLocalLanes('')).toBe(3)
-  const d = { windows: [{ name: 'issue-7', state: 'live/working' }], groups: groupIssues([]), lastLog: '', errors: [], updatedAt: 0, localMax: 0, cloudCount: 4 }
-  expect(statusLine(d)).toMatch(/^lanes local 1\/0 · cloud 4 · ready 0/)
+  const d = { windows: [{ name: 'issue-7', state: 'live/working' }], groups: groupIssues([]), lastLog: '', errors: [], updatedAt: 0, localMax: 0, remoteMax: 4, cloudCount: 4 }
+  expect(statusLine(d)).toMatch(/^lanes local 1\/0 · cloud 4\/4 · ready 0/)
 })
 
 test('#136 one row per cloud lane: state, last activity HH:MM (Israel), STALE, PR and session links', () => {

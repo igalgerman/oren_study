@@ -20,6 +20,7 @@ export type OrenLanesData = {
   observer?: string
   localMax?: number
   cloudCount?: number
+  remoteMax?: number
   cloud?: string[]
   needs?: string[]
   errors: string[]

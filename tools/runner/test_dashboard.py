@@ -57,7 +57,7 @@ ic = issues + [I(11, "OPEN", ["in-progress", "cloud", "P0"]), I(12, "OPEN", ["cl
 cl = [{"n": 11, "title": "t11", "state": "working", "line": "", "last": "2026-11-26T06:30:00Z", "stale": True, "pr": "", "session": "https://claude.ai/code/session_01A"},
       {"n": 12, "title": "t12", "state": "done", "line": "RESULT: DONE", "last": "2026-11-26T07:50:00Z", "stale": False, "pr": "https://github.com/x/y/pull/201", "session": ""}]
 m3 = D.model(ic, prs, ev, now, "", cl)
-assert m3["lanes"] == f"local 1/{D.R.CFG.get('local_lanes', 3)} · cloud 2", m3["lanes"]
+assert m3["lanes"] == f"local 1/{D.R.CFG.get('local_lanes', 3)} · cloud 2/{D.R.CFG.get('remote_lanes', 0)}", m3["lanes"]
 assert [r["n"] for r in m3["running"]] == [1], m3["running"]
 t3 = D.text(m3)
 assert "Lanes: local 1/" in t3 and "cloud #11 t11 — working · last " in t3 and " · STALE · https://claude.ai/code/session_01A" in t3, t3

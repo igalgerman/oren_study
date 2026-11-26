@@ -109,7 +109,7 @@ def model(issues, prs, events, now, log_text="", cloud=()):
     p0_closed = [closed_at[i["number"]] for i in issues if i["state"] == "CLOSED" and "P0" in i["labels"]]
     return {
         "now": now, "open": len(op), "cloud": list(cloud), "cloud_n": len(cloud_n),
-        "lanes": f"local {len(running)}/{R.CFG.get('local_lanes', 3)} · cloud {len(cloud_n)}", "by_state": by_state, "by_prio": by_prio, "rows": rows, "running": running,
+        "lanes": f"local {len(running)}/{R.CFG.get('local_lanes', 3)} · cloud {len(cloud_n)}/{R.CFG.get('remote_lanes', 0)}", "by_state": by_state, "by_prio": by_prio, "rows": rows, "running": running,
         "closed_24h": sum(within(c, 24) for c in closed_at.values()), "closed_7d": sum(within(c, 168) for c in closed_at.values()),
         "closed_total": len(closed_at), "opened_24h": sum(within(c, 24) for c in created.values()),
         "merged_24h": sum(within(m, 24) for m in merged), "merged_7d": sum(within(m, 168) for m in merged),

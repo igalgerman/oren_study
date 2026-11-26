@@ -82,7 +82,7 @@ def status(n, run=sh, since=None):
     return state_from(comments, prs[0] if prs else None)
 
 SESSION = re.compile(r"https://claude\.ai/code/session_\w+")
-STALE_MIN = 60
+STALE_MIN = 60   # owner (#136, 26 Nov 12:10): STALE after 60 min with no comment/commit; the watchdog alarm uses stuck_hours
 
 def cloud_lane(issue, pr, commit_iso, now):
     """Pure (#136): one cloud lane row from the issue (gh JSON with comments), its lane PR (or None) and the last commit time."""

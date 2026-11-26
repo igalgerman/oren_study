@@ -75,7 +75,7 @@ export function finishedRuns(prevLive: string[], now: Win[]): string[] {
 export function statusLine(d: OrenLanesData): string {
   const nums = new Set(d.windows.filter(w => isLive(w) && /^issue-\d+/.test(w.name)).map(w => /^issue-(\d+)/.exec(w.name)![1]))
   const lanes = Math.min(nums.size, 3)
-  let s = `lanes local ${lanes}/${d.localMax ?? 3} · cloud ${d.cloudCount ?? 0} · ready ${d.groups.ready.count} · blocked ${d.groups.blocked.count}`
+  let s = `lanes local ${lanes}/${d.localMax ?? 3} · cloud ${d.cloudCount ?? 0}/${d.remoteMax ?? 0} · ready ${d.groups.ready.count} · blocked ${d.groups.blocked.count}`
   const waiting = d.windows.filter(w => /^(issue|review|intake)-/.test(w.name) && w.state.endsWith('/blocked')).map(w => w.name)
   const you = [...d.groups.needsYou.titles.map(t => t.split(' ')[0]), ...waiting]
   if (you.length) s += ` · needs you: ${you.slice(0, 3).join(', ')}`
@@ -194,6 +194,11 @@ export function parseMaxCore(toml: string): number {
 export function parseLocalLanes(toml: string): number {
   const m = /^\s*local_lanes\s*=\s*(\d+)/m.exec(toml)
   return m ? Number(m[1]) : 3
+}
+
+export function parseRemoteLanes(toml: string): number {
+  const m = /^\s*remote_lanes\s*=\s*(\d+)/m.exec(toml)
+  return m ? Number(m[1]) : 0
 }
 
 export const isCloud = (i: Issue) => (i.labels ?? []).some(x => x.name === 'cloud')
