@@ -366,7 +366,7 @@ def remote_worker_prompt(n, lane, bug=False, retry=False):
             f"its 'How to work' section: independent members (different files) may go to sub-agents (Agent tool); you integrate, test once "
             f"and open ONE PR with a 'Fixes #m' line per member. Read CLAUDE.md and FLOW.md, then the issue "
             f"(`gh issue view {n} --repo {REPO} --comments`). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
-            f"{ACCEPT}\n")
+            f"{ACCEPT}\n" + SPEC)
     if bug:
         base += "This is a BUG: follow docs/agents/skills/diagnosing-bugs.md, then tdd: reproduce it with a failing test, then fix it; say the root cause in the PR body.\n"
     if retry:                                    # #137: an earlier cloud session died without a RESULT comment
@@ -835,7 +835,7 @@ def worker_prompt(n, lane, review_text=None, bug=False):
             f"its 'How to work' section: independent members (different files) may go to sub-agents (Agent tool); you integrate, test once "
             f"and open ONE PR with a 'Fixes #m' line per member. Read CLAUDE.md and FLOW.md, then the issue "
             f"(`gh issue view {n} --repo {REPO} --comments`). Work only inside this worktree (your cwd). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
-            f"{ACCEPT}\n")
+            f"{ACCEPT}\n" + SPEC)
     if lane == "review":
         return base + (f"This is a read-only review issue: change NO files, make no commits, open no PR. Post your report as ONE issue comment "
                        f"(`gh issue comment {n} --repo {REPO} --body-file <file>`; write the file under oren2/tests/.tmp/). "
