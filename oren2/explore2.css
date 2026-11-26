@@ -4,12 +4,12 @@
 .actc .ai .e2em{font-size:40px;letter-spacing:0}.bld .ico .e2em,.whead .gd .e2em{font-size:46px;letter-spacing:0}
 .e2svg{display:block;max-width:100%;height:auto}
 .e2card{width:min(640px,100%)}
-.e2card .e2art{display:flex;justify-content:center;align-items:center;min-height:110px}
+.e2card .e2art{max-width:100%;min-width:0;display:flex;justify-content:center;align-items:center;min-height:110px}
 .e2card .e2art .e2svg{width:min(400px,84vw);max-height:42vh}
 .e2card .e2art .e2svg.e2il{width:auto;height:min(54vh,440px);max-height:none}
 .e2card .e2art .e2svg.e2wide{width:min(600px,88vw);max-height:none}
 .e2card .e2art .e2svg.e2world{width:min(600px,86vw)}
-.e2card .e2art .flagsvg,.e2fl .flagsvg{width:120px;height:80px}
+.e2card .e2art .flagsvg,.e2fl .flagsvg{width:120px;height:auto;aspect-ratio:3/2;flex:0 1 120px;min-width:0}
 .e2art.sm{display:flex;justify-content:center}
 .e2art.sm .e2svg{width:min(240px,60vw);max-height:26vh}
 .e2art.sm .e2svg.e2hood{width:min(270px,62vw);max-height:none}
@@ -25,7 +25,7 @@
 .e2cyc .e2svg{width:72px;height:72px}
 .e2pair{display:flex;align-items:center;gap:10px}.e2pair .e2svg{width:96px;height:96px}
 .e2leg{display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center;font-family:var(--read);font-weight:700;font-size:18px;margin-top:6px}
-.e2fl{display:flex;align-items:center;justify-content:center;gap:12px;font-family:var(--read);font-size:30px}
+.e2fl{max-width:100%;min-width:0;display:flex;align-items:center;justify-content:center;gap:12px;font-family:var(--read);font-size:30px}
 /* order game */
 .e2ord{width:min(860px,100%)}
 .e2slots{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;align-items:center}
@@ -82,7 +82,7 @@ circle.e2hit.e2show,rect.e2hit.e2show{fill:rgba(255,209,102,.6)!important;stroke
 @media (max-width:760px){
   .e2em{font-size:48px}.e2em.sm{font-size:36px}
   .e2slot{width:54px;min-height:78px}.e2start{width:36px;min-height:78px}.e2slots{gap:4px}
-  .e2mapq,.e2ord{padding:10px 8px}.e2fl .flagsvg{width:96px;height:64px}.e2slot b,.e2it b{font-size:14px}
+  .e2mapq,.e2ord{padding:10px 8px}.e2fl .flagsvg{width:96px;flex-basis:96px}.e2slot b,.e2it b{font-size:14px}
   .e2pi .e2svg{width:44px;height:44px}.e2slot .e2pi .e2svg{width:36px;height:36px}
   .chb.e2it{min-height:84px;min-width:80px}
   .e2bgrid{--bc:40px}.e2bp .e2grid{height:84px}
