@@ -230,7 +230,7 @@ r.run, r.env_file = _fake_run, (lambda: {"CLOUDFLARE_API_TOKEN": "t"})
 r.CFG["pregen"] = False
 assert r.deploy_text(None) == "deployed ok https://x.oren-game.pages.dev (pregen off)" and not any("pregen.js" in " ".join(map(str, c)) for c in _calls)
 r.CFG["pregen"] = True; _calls.clear()
-assert r.deploy_text(None).startswith("deployed ok https://") and any("pregen.js" in " ".join(map(str, c)) for c in _calls)
+assert r.deploy_text(None).startswith("deployed ok https://") and not any("pregen.js" in " ".join(map(str, c)) for c in _calls)   # #175: pregen runs later, outside the lock
 r.run, r.env_file = _orig_run, _orig_env; r.CFG["pregen"] = False
 print("ok deploy")
 # sync_decision: keep the main checkout up to date with origin/main (#47)
@@ -368,3 +368,19 @@ assert r.reviewer_model(["model:opus"]) == "opus"
 assert r.reviewer_model(["model:haiku"]) == "sonnet" and r.reviewer_model([]) == "sonnet" and r.reviewer_model(["model:fable"]) == "sonnet"
 assert r.model_name(["model:fable"]) == "fable" and r.model_name([]) == "sonnet"
 print("ok model labels")
+# #175: voice pregen runs in the background AFTER the merge lock, one at a time, never blocking an issue
+import os as _os
+class _P:
+    def __init__(self, *a, **k): self.pid = _os.getpid(); _P.calls.append(a[0])
+_P.calls = []
+r.RUNS.mkdir(exist_ok=True); (r.RUNS / "pregen.lock").unlink(missing_ok=True)
+_old = r.CFG.get("pregen"); r.CFG["pregen"] = True
+assert r.start_pregen(popen=_P) == "started" and _P.calls == [r.pregen_cmd()]
+assert r.start_pregen(popen=_P) == "already running" and len(_P.calls) == 1      # lock holds our (live) pid
+(r.RUNS / "pregen.lock").unlink(missing_ok=True)
+r.CFG["pregen"] = False; assert r.start_pregen(popen=_P) == "off"
+r.CFG["pregen"] = _old
+_src = (r.HERE / "runner.py").read_text(encoding="utf-8")
+_blk = _src.split('with FileLock("integrate", wait=True):\n            stat(n, lane, "merged")', 1)[1].split("\n        m = sync_main", 1)[0]
+assert "pregen.js" not in _src.split("def deploy_text", 1)[1].split("def pregen_cmd", 1)[0] and "start_pregen(log)" in _blk
+print("ok pregen outside the merge lock")
