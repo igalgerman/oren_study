@@ -21,7 +21,7 @@ Every minute it checks, deterministically:
       label owner -> an owner question (popup)
   5d. #306 desks.py: keeps the two cloud sessions 'Oren inbox (cloud)' / 'Oren ask (cloud)' alive and every status_minutes
       writes the session links + dashboard.py --text into ONE pinned issue (edited in place, nothing committed)
-  5d. #330 canary.py: every 6 h (and after a merge into tools/runner or tools/mods) ONE tiny canary issue runs the whole flow;
+  5d. #330 canary.py: every 6 h (and after a merge into tools/runner or tools/mods; #538: at most once per canary_minutes) ONE rolling canary issue runs the whole flow;
       a step past its deadline -> alarm to the orchestrator + inspector, NEEDS-ATTENTION on panel/dashboard; side paths hourly
   5f. #293 pcload.py, every 2 min: CPU / free RAM / heavy process counts; an overload -> alarm with the top 3 processes by RAM and who
       started them, to the orchestrator + inspector (once per 30 min per cause); .runs/pc.json for the panel/dashboard. Never kills.
@@ -835,12 +835,22 @@ def lock_state(now=None):
 ORCH_WAIT_MIN, ORCH_NUDGE_EVERY_MIN, ORCH_ESCALATE_MIN, ORCH_ESCALATE_EVERY_H = 10, 10, 30, 2
 OWNER_ISSUE = int(R.CFG.get("owner_questions_issue", 205))
 _orch = {"nudged": 0.0, "first": 0.0, "escalated": 0.0}
+OWNER_ONLY = ("owner-merge", "no-automerge")   # #542: only the owner merges these PRs -> never a review nudge
+OWNER_MERGE_NOTE_H = 12                         # #542: an owner-merge PR open this long -> ONE owner note (owner_q, Telegram too)
+
+def _labels(p):
+    return {l.get("name") if isinstance(l, dict) else l for l in p.get("labels") or []}
+
+def owner_merge_due(prs, now):
+    """Pure (#542): open PRs labelled owner-merge, open >= OWNER_MERGE_NOTE_H -> [(number, title)]."""
+    return sorted((p["number"], p.get("title") or "") for p in prs
+                  if "owner-merge" in _labels(p) and _age_min(p.get("createdAt"), now) >= OWNER_MERGE_NOTE_H * 60)
 
 def waiting_reviews(prs, now):
     """Pure: open non-draft PRs, all checks green, no auto-merge yet, open >= ORCH_WAIT_MIN -> [numbers] (they wait for a review)."""
     out = []
     for p in prs:
-        if p.get("isDraft") or p.get("autoMergeRequest") is not None: continue
+        if p.get("isDraft") or p.get("autoMergeRequest") is not None or _labels(p) & set(OWNER_ONLY): continue
         checks = p.get("statusCheckRollup") or []
         if not checks or not all((c.get("conclusion") or c.get("status")) in ("SUCCESS", "SKIPPED", "NEUTRAL") for c in checks): continue
         t = _age_min(p.get("updatedAt") or p.get("createdAt"), now)
@@ -874,10 +884,12 @@ def orch_idle_tick(now=None, ts=None):
     d = R.hc_json("get", "orchestrator", "--json") or {}
     stt = d.get("status") or {}
     state = stt.get("state") if isinstance(stt, dict) else stt
-    if not d or d.get("state") != "live": return                      # gone/finished: the #140 restart check handles it
-    rc, out = R.gh("pr", "list", "--state", "open", "--json", "number,isDraft,autoMergeRequest,statusCheckRollup,updatedAt,createdAt,headRefName,body")
+    rc, out = R.gh("pr", "list", "--state", "open", "--json", "number,title,labels,isDraft,autoMergeRequest,statusCheckRollup,updatedAt,createdAt,headRefName,body")
     if rc: return
     prs = json.loads(out)
+    for n, title in owner_merge_due(prs, now):                       # #542: same window+question -> owner_q posts it only once
+        OQ.post(f"#{n}", f"PR #{n} waits for your merge: {title}")
+    if not d or d.get("state") != "live": return                      # gone/finished: the #140 restart check handles it
     rc2, out2 = R.gh("issue", "list", "--state", "open", "--label", "blocked", "--limit", "200", "--json", "number")
     try: parked = {i["number"] for i in json.loads(out2)} if rc2 == 0 else set()
     except (ValueError, KeyError, TypeError): parked = set()

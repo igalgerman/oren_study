@@ -8,6 +8,8 @@ const today=O.today;
 const L_=t=>`<span class="ltr">${t}</span>`;
 const nb=n=>`<b>${n}</b>`;
 const plainHe=s=>String(s).replace(/<[^>]+>/g,' ').replace(/[֑-ׇ]/g,'').replace(/\s+/g,' ').trim();
+/* what the voice says: full spelling (מִלָּה → מילה), not nikud just stripped (מלה), #405 */
+const spoken=s=>window.__fullSpell?window.__fullSpell(String(s).replace(/\d/g,d=>String.fromCharCode(0xE000+ +d))).replace(/[\uE000-\uE009]/g,c=>c.charCodeAt(0)-0xE000):plainHe(s);   /* digits stay digits: the voice worker reads them (gender, + − ×) */
 /* text for the voice: keep the nikud (the voice layer turns it into full spelling) */
 const spk=s=>String(s).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
 
@@ -86,7 +88,7 @@ function quiz(o){const qs=[],seen=new Set();let t=0;const LN=window.LEARN,pb=o.p
   while(qs.length<o.n&&t++<400){const q=gen();const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k))continue;seen.add(k);qs.push(q);}
   let i=0,err=0,gems=0,lock=false,tries=0,HB=null;O.setScreen('sTal',o.bg||'valley',o.back);
   const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq');s.appendChild(wrap);
-  const render=()=>{const q=qs[i];tries=0;lock=false;if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||plainHe(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
+  const render=()=>{const q=qs[i];tries=0;lock=false;if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||spoken(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
     wrap.innerHTML='';const card=h('div','prq tqc',q.pr);if(q.play){const pb=h('button','hintbtn',ICON.say+`<span>${q.playLbl||'הַשְׁמַע'}</span>`);pb.onclick=q.play;card.appendChild(pb);}
     wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});const row=h('div','chs'+(q.ltr?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>{if(!(O.tapTooSoon&&O.tapTooSoon()))pickA(k,b);};row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');
@@ -259,17 +261,17 @@ building({id:'world',name:'הָעוֹלָם וְיִשְׂרָאֵל',color:'#4f
   {id:'world-il',name:'הָאָרֶץ שֶׁלָּנוּ',icon:()=>flag('il'),run:back=>quiz({id:'world-il',pool:1,title:'הָאָרֶץ שֶׁלָּנוּ',bg:'valley',back,n:7,gen:()=>{const [q,a,ds]=pick(ISR);const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}})}]});
 /* Bedtime stories */
 const STORIES=[
- {t:'הַחֲתוּלָה וְהַכַּדּוּר הָאָדֹם',spr:['cat','ball'],gk:'sci',goal:'כדי לראות צריך אור',s:['לְנוֹעָה יֵשׁ חֲתוּלָה קְטַנָּה בְּשֵׁם מִיצִי.','מִיצִי אוֹהֶבֶת לְשַׂחֵק בְּכַדּוּר אָדֹם.','יוֹם אֶחָד הַכַּדּוּר הִתְגַּלְגֵּל מִתַּחַת לַמִּטָּה.','מִתַּחַת לַמִּטָּה הָיָה חֹשֶׁךְ, וּמִיצִי לֹא מָצְאָה אוֹתוֹ.','נוֹעָה הֵבִיאָה פָּנָס, וְהָאוֹר הֵאִיר מִתַּחַת לַמִּטָּה.','עִם אוֹר רוֹאִים! הִנֵּה הַכַּדּוּר! מִיצִי קָפְצָה מִשִּׂמְחָה.'],
+ {t:'הַחֲתוּלָה וְהַכַּדּוּר הָאָדֹם',hw:[['הִתְגַּלְגֵּל','🌀'],['פָּנָס','🔦'],['חֹשֶׁךְ','🌑']],spr:['cat','ball'],gk:'sci',goal:'כדי לראות צריך אור',s:['לְנוֹעָה יֵשׁ חֲתוּלָה קְטַנָּה בְּשֵׁם מִיצִי.','מִיצִי אוֹהֶבֶת לְשַׂחֵק בְּכַדּוּר אָדֹם.','יוֹם אֶחָד הַכַּדּוּר הִתְגַּלְגֵּל מִתַּחַת לַמִּטָּה.','מִתַּחַת לַמִּטָּה הָיָה חֹשֶׁךְ, וּמִיצִי לֹא מָצְאָה אוֹתוֹ.','נוֹעָה הֵבִיאָה פָּנָס, וְהָאוֹר הֵאִיר מִתַּחַת לַמִּטָּה.','עִם אוֹר רוֹאִים! הִנֵּה הַכַּדּוּר! מִיצִי קָפְצָה מִשִּׂמְחָה.'],
   q:[['אֵיזֶה צֶבַע הַכַּדּוּר?','אָדֹם',['כָּחֹל','יָרֹק']],['מָה עָזַר לְנוֹעָה לִמְצֹא אֶת הַכַּדּוּר?','פָּנָס',['מַפְתֵּחַ','סֵפֶר']],['לָמָּה הַפָּנָס עָזַר?','כִּי צָרִיךְ אוֹר כְּדֵי לִרְאוֹת',['כִּי הַפָּנָס כָּבֵד','כִּי הַפָּנָס עוֹשֶׂה רַעַשׁ']]],les:2},
- {t:'הַזֶּרַע שֶׁל אוֹרֶן',spr:['flower','sun'],gk:'sci',goal:'צמח צריך מים ואור',s:['אוֹרֶן שָׁתַל זֶרַע קָטָן בְּעָצִיץ.','כָּל בֹּקֶר הוּא הִשְׁקָה אוֹתוֹ בְּמַיִם.','הוּא שָׂם אֶת הָעָצִיץ לְיַד הַחַלּוֹן, בַּשֶּׁמֶשׁ, כִּי צֶמַח צָרִיךְ אוֹר.','אַחֲרֵי שָׁבוּעַ יָצָא נֶבֶט יָרֹק.','אַחֲרֵי חֹדֶשׁ פָּרַח פֶּרַח צָהֹב וְיָפֶה.','אוֹרֶן הָיָה גֵּאֶה מְאוֹד.'],
+ {t:'הַזֶּרַע שֶׁל אוֹרֶן',hw:[['הָעָצִיץ','🪴'],['נֶבֶט','🌱'],['הִשְׁקָה','💧']],spr:['flower','sun'],gk:'sci',goal:'צמח צריך מים ואור',s:['אוֹרֶן שָׁתַל זֶרַע קָטָן בְּעָצִיץ.','כָּל בֹּקֶר הוּא הִשְׁקָה אוֹתוֹ בְּמַיִם.','הוּא שָׂם אֶת הָעָצִיץ לְיַד הַחַלּוֹן, בַּשֶּׁמֶשׁ, כִּי צֶמַח צָרִיךְ אוֹר.','אַחֲרֵי שָׁבוּעַ יָצָא נֶבֶט יָרֹק.','אַחֲרֵי חֹדֶשׁ פָּרַח פֶּרַח צָהֹב וְיָפֶה.','אוֹרֶן הָיָה גֵּאֶה מְאוֹד.'],
   q:[['אֵיזֶה צֶבַע הָיָה הַפֶּרַח?','צָהֹב',['אָדֹם','סָגֹל']],['מָה יָצָא מֵהַזֶּרַע אַחֲרֵי שָׁבוּעַ?','נֶבֶט יָרֹק',['תַּפּוּחַ','אֶבֶן']],['מָה צָרִיךְ צֶמַח כְּדֵי לִגְדֹּל?','מַיִם וְאוֹר שֶׁמֶשׁ',['חֹשֶׁךְ וְשֶׁקֶט','מוּזִיקָה וְעוּגָה']]],les:2},
- {t:'הַדְּרָקוֹן שֶׁפָּחַד מֵהַחֹשֶׁךְ',spr:['dragon','moon'],gk:'sci',goal:'למה רואים כוכבים רק בלילה',s:['נִיצוֹץ הָיָה דְּרָקוֹן קָטָן וְאַמִּיץ.','הוּא לֹא פָּחַד מִשּׁוּם דָּבָר, חוּץ מֵהַחֹשֶׁךְ.','פִּיקְסֶל הֶחָתוּל אָמַר: "בּוֹא נִסְתַּכֵּל עַל הַשָּׁמַיִם."','הֵם יָצְאוּ הַחוּצָה, וְהַשָּׁמַיִם הָיוּ מְלֵאִים כּוֹכָבִים נוֹצְצִים.','פִּיקְסֶל אָמַר: "הַכּוֹכָבִים שָׁם גַּם בַּיּוֹם, אֲבָל אוֹר הַשֶּׁמֶשׁ חָזָק מְאוֹד, וְלָכֵן לֹא רוֹאִים אוֹתָם."','"רַק בַּחֹשֶׁךְ רוֹאִים כּוֹכָבִים!" אָמַר נִיצוֹץ. מֵאָז הוּא אוֹהֵב אֶת הַלַּיְלָה.'],
+ {t:'הַדְּרָקוֹן שֶׁפָּחַד מֵהַחֹשֶׁךְ',hw:[['דְּרָקוֹן','🐉'],['כּוֹכָבִים','⭐'],['נוֹצְצִים','✨']],spr:['dragon','moon'],gk:'sci',goal:'למה רואים כוכבים רק בלילה',s:['נִיצוֹץ הָיָה דְּרָקוֹן קָטָן וְאַמִּיץ.','הוּא לֹא פָּחַד מִשּׁוּם דָּבָר, חוּץ מֵהַחֹשֶׁךְ.','פִּיקְסֶל הֶחָתוּל אָמַר: "בּוֹא נִסְתַּכֵּל עַל הַשָּׁמַיִם."','הֵם יָצְאוּ הַחוּצָה, וְהַשָּׁמַיִם הָיוּ מְלֵאִים כּוֹכָבִים נוֹצְצִים.','פִּיקְסֶל אָמַר: "הַכּוֹכָבִים שָׁם גַּם בַּיּוֹם, אֲבָל אוֹר הַשֶּׁמֶשׁ חָזָק מְאוֹד, וְלָכֵן לֹא רוֹאִים אוֹתָם."','"רַק בַּחֹשֶׁךְ רוֹאִים כּוֹכָבִים!" אָמַר נִיצוֹץ. מֵאָז הוּא אוֹהֵב אֶת הַלַּיְלָה.'],
   q:[['מִמָּה פָּחַד נִיצוֹץ?','מֵהַחֹשֶׁךְ',['מִכְּלָבִים','מִמַּיִם']],['מָה הֵם רָאוּ בַּשָּׁמַיִם?','כּוֹכָבִים',['שֶׁמֶשׁ','גֶּשֶׁם']],['לָמָּה לֹא רוֹאִים כּוֹכָבִים בַּיּוֹם?','כִּי אוֹר הַשֶּׁמֶשׁ חָזָק מְאוֹד',['כִּי הַכּוֹכָבִים יְשֵׁנִים','כִּי הַכּוֹכָבִים נוֹפְלִים']]],les:2},
- {t:'יוֹם הַהֻלֶּדֶת שֶׁל סַבְתָּא',spr:['cake','heart'],gk:'math',goal:'ספירה בעשרות: 7 נרות של 10 שנים = 70',s:['הַיּוֹם יוֹם הַהֻלֶּדֶת שֶׁל סַבְתָּא. הִיא בַּת שִׁבְעִים!','אוֹרֶן וְאַבָּא אָפוּ עוּגַת שׁוֹקוֹלָד.','עַל הָעוּגָה הֵם שָׂמוּ שִׁבְעָה נֵרוֹת: נֵר אֶחָד לְכָל עֶשֶׂר שָׁנִים.','אוֹרֶן סָפַר בַּעֲשָׂרוֹת: עֶשֶׂר, עֶשְׂרִים, שְׁלוֹשִׁים, אַרְבָּעִים, חֲמִשִּׁים, שִׁשִּׁים, שִׁבְעִים!','כָּל הַמִּשְׁפָּחָה שָׁרָה לָהּ שִׁיר, וְסַבְתָּא כִּבְּתָה אֶת הַנֵּרוֹת.','הִיא חִבְּקָה אֶת אוֹרֶן וְאָמְרָה: "אַתָּה יוֹדֵעַ לִסְפֹּר בַּעֲשָׂרוֹת!"'],
+ {t:'יוֹם הַהֻלֶּדֶת שֶׁל סַבְתָּא',hw:[['הַהֻלֶּדֶת','🎂'],['נֵרוֹת','🕯️'],['בַּעֲשָׂרוֹת','🔟']],spr:['cake','heart'],gk:'math',goal:'ספירה בעשרות: 7 נרות של 10 שנים = 70',s:['הַיּוֹם יוֹם הַהֻלֶּדֶת שֶׁל סַבְתָּא. הִיא בַּת שִׁבְעִים!','אוֹרֶן וְאַבָּא אָפוּ עוּגַת שׁוֹקוֹלָד.','עַל הָעוּגָה הֵם שָׂמוּ שִׁבְעָה נֵרוֹת: נֵר אֶחָד לְכָל עֶשֶׂר שָׁנִים.','אוֹרֶן סָפַר בַּעֲשָׂרוֹת: עֶשֶׂר, עֶשְׂרִים, שְׁלוֹשִׁים, אַרְבָּעִים, חֲמִשִּׁים, שִׁשִּׁים, שִׁבְעִים!','כָּל הַמִּשְׁפָּחָה שָׁרָה לָהּ שִׁיר, וְסַבְתָּא כִּבְּתָה אֶת הַנֵּרוֹת.','הִיא חִבְּקָה אֶת אוֹרֶן וְאָמְרָה: "אַתָּה יוֹדֵעַ לִסְפֹּר בַּעֲשָׂרוֹת!"'],
   q:[['אֵיזוֹ עוּגָה הֵם אָפוּ?','שׁוֹקוֹלָד',['גְּבִינָה','תַּפּוּחִים']],['כַּמָּה נֵרוֹת הָיוּ עַל הָעוּגָה?','7',['70','10']],['כָּל נֵר הוּא עֶשֶׂר שָׁנִים. לְסָבָא יֵשׁ שִׁשָּׁה נֵרוֹת. בֶּן כַּמָּה סָבָא?','60',['6','16']]],les:2},
- {t:'הַסִּירָה שֶׁל דָּנִי',spr:['boat','cloud'],gk:'sci',goal:'נייר סופג מים ונהיה רך, עץ צף ונשאר חזק',s:['דָּנִי בָּנָה סִירָה מִנְּיָר.','הוּא שָׂם אוֹתָהּ בַּשְּׁלוּלִית שֶׁלְּיַד הַבַּיִת.','רוּחַ נָשְׁבָה, וְהַסִּירָה שָׁטָה מַהֵר.','פִּתְאוֹם הִתְחִיל גֶּשֶׁם. הַנְּיָר סָפַג מַיִם, נִהְיָה רַךְ וְשָׁקַע.','דָּנִי הֵבִין: נְיָר סוֹפֵג מַיִם, אֲבָל עֵץ צָף וְנִשְׁאָר חָזָק.','בַּפַּעַם הַבָּאָה הוּא יִבְנֶה סִירָה מֵעֵץ!'],
+ {t:'הַסִּירָה שֶׁל דָּנִי',hw:[['סִירָה','⛵'],['בַּשְּׁלוּלִית','💦'],['סָפַג','🧽']],spr:['boat','cloud'],gk:'sci',goal:'נייר סופג מים ונהיה רך, עץ צף ונשאר חזק',s:['דָּנִי בָּנָה סִירָה מִנְּיָר.','הוּא שָׂם אוֹתָהּ בַּשְּׁלוּלִית שֶׁלְּיַד הַבַּיִת.','רוּחַ נָשְׁבָה, וְהַסִּירָה שָׁטָה מַהֵר.','פִּתְאוֹם הִתְחִיל גֶּשֶׁם. הַנְּיָר סָפַג מַיִם, נִהְיָה רַךְ וְשָׁקַע.','דָּנִי הֵבִין: נְיָר סוֹפֵג מַיִם, אֲבָל עֵץ צָף וְנִשְׁאָר חָזָק.','בַּפַּעַם הַבָּאָה הוּא יִבְנֶה סִירָה מֵעֵץ!'],
   q:[['מִמָּה הָיְתָה הַסִּירָה?','מִנְּיָר',['מֵעֵץ','מִבַּרְזֶל']],['מָה קָרָה כְּשֶׁהִתְחִיל גֶּשֶׁם?','הַנְּיָר סָפַג מַיִם',['הַסִּירָה עָפָה','הַשֶּׁמֶשׁ זָרְחָה']],['לָמָּה כְּדַאי לִבְנוֹת סִירָה מֵעֵץ?','כִּי עֵץ צָף וְלֹא נִהְיָה רַךְ בַּמַּיִם',['כִּי עֵץ יָפֶה יוֹתֵר','כִּי עֵץ שָׁט גַּם בְּלִי מַיִם']]],les:2},
- {t:'חָכָם הַיַּנְשׁוּף סוֹפֵר כּוֹכָבִים',spr:['owl','star'],gk:'math',goal:'חיבור: 10 ועוד 5 הם 15',s:['בַּיַּעַר גָּר יַנְשׁוּף חָכָם.','בַּיּוֹם הוּא יָשֵׁן, וּבַלַּיְלָה הוּא עֵר וְסוֹפֵר אֶת הַכּוֹכָבִים.','בַּלַּיְלָה הָרִאשׁוֹן הוּא סָפַר עֲשָׂרָה כּוֹכָבִים.','בַּלַּיְלָה הַשֵּׁנִי הוּא סָפַר עוֹד חֲמִשָּׁה.','"עֲשָׂרָה וְעוֹד חֲמִשָּׁה, כַּמָּה זֶה בְּיַחַד?" שָׁאַל חָכָם.','חָכָם חִיֵּךְ: "חֶשְׁבּוֹן זֶה כֵּיף!"'],
+ {t:'חָכָם הַיַּנְשׁוּף סוֹפֵר כּוֹכָבִים',hw:[['יַנְשׁוּף','🦉'],['כּוֹכָבִים','⭐'],['חֶשְׁבּוֹן','➕']],spr:['owl','star'],gk:'math',goal:'חיבור: 10 ועוד 5 הם 15',s:['בַּיַּעַר גָּר יַנְשׁוּף חָכָם.','בַּיּוֹם הוּא יָשֵׁן, וּבַלַּיְלָה הוּא עֵר וְסוֹפֵר אֶת הַכּוֹכָבִים.','בַּלַּיְלָה הָרִאשׁוֹן הוּא סָפַר עֲשָׂרָה כּוֹכָבִים.','בַּלַּיְלָה הַשֵּׁנִי הוּא סָפַר עוֹד חֲמִשָּׁה.','"עֲשָׂרָה וְעוֹד חֲמִשָּׁה, כַּמָּה זֶה בְּיַחַד?" שָׁאַל חָכָם.','חָכָם חִיֵּךְ: "חֶשְׁבּוֹן זֶה כֵּיף!"'],
   q:[['אֵיפֹה גָּר הַיַּנְשׁוּף?','בַּיַּעַר',['בַּיָּם','בָּעִיר']],['כַּמָּה כּוֹכָבִים הוּא סָפַר בַּלַּיְלָה הָרִאשׁוֹן?','10',['5','15']],['כַּמָּה כּוֹכָבִים הוּא סָפַר בְּסַךְ הַכֹּל?','15',['10','5']]],les:2}];
 /* ---------- a story screen (#355): the bedtime stories here and the story bank (read-bank2.js) ----------
    Read first, listen later: the read-aloud help follows Oren's story level (READBANK2.level('story'), 1-5).
@@ -281,7 +283,14 @@ const storyLv=()=>{try{const R=window.READBANK2;return R&&R.level?R.level('story
 let SS=null;   /* the story being played: {id, t0, lv, help, wrong, heard, log} */
 /* a story he listened to (whole or a line) is marked: only stories read alone move the story level up (read-bank2.js) */
 O.on('tlDone',id=>{if(SS&&SS.id===id){const c=T.S().tl[id];if(c){c.l=SS.heard?1:0;O.persist();}}});
-function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), title (html), name (quiz title), tp (plain title), goal, spr:[html,html], lines:[html], q:[{pr, say, a, ds}], back, qback, end(err, heard): after the last question (#360)} */
+/* #420: a story word as said and stored: letters and nikud only (no punctuation, no markup) */
+const HW_T='מִלִּים שֶׁנִּפְגֹּשׁ בַּסִּפּוּר';
+const swd=t=>String(t||'').replace(/[^\u0591-\u05C7\u05D0-\u05EA]/g,'');
+const stoks=line=>String(line||'').replace(/<[^>]+>/g,' ').split(/\s+/).map(swd).filter(Boolean);
+/* every word of every story (bedtime + the story bank), for the voice pregen: a tapped word is said alone */
+T.storyWordList=()=>{const out=new Set([HW_T]);const R=window.READBANK2;[...STORIES,...((R&&R.stories)||[])].forEach(st=>{st.s.forEach(l=>stoks(l).forEach(w=>out.add(w)));(st.hw||[]).forEach(x=>out.add(x[0]));});return [...out];};
+T.HW_T=HW_T;
+function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), title (html), name (quiz title), tp (plain title), goal, spr:[html,html], lines:[html], vl:[vocalized lines, when lines may lack nikud], hw:[[word, picture]] (#420), q:[{pr, say, a, ds}], back, qback, end(err, heard): after the last question (#360)} */
   const lv=storyLv(),help=helpOf(lv);const ss=SS={id:o.id,t0:Date.now(),lv,help,wrong:false,heard:false,log:{t:o.tp,g:o.goal||'',lv,r:'a'}};
   if(window.DAYLOG&&DAYLOG.note)DAYLOG.note(o.act,ss.log);
   const shows=k=>(ss.wrong&&help.wrong.includes(k))||(help[k]!=null&&Date.now()-ss.t0>=D(help[k]*1000));
@@ -291,7 +300,12 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
     const row=h('div','btnrow strow');const rd=h('button','bigbtn blue sm strd',ICON.say+'<span>הַקְרֵא לִי</span>');row.append(rd,fwd);box.appendChild(row);
     const mark=i=>pg.querySelectorAll('.sl').forEach(p=>p.classList.toggle('cur',+p.dataset.i===i));
     pg.addEventListener('click',e=>{if(e.target.closest('.rdb'))heard();},true);
-    pg.querySelectorAll('.sl').forEach(p=>p.onclick=()=>{if(pg.classList.contains('noline'))return;heard();mark(+p.dataset.i);if(T.readEl)T.readEl(p);else O.say(T.spk(p.textContent));});
+    /* a tap on a word says just that word (with nikud) and keeps it for word practice the next day (#420); 🔊 reads the line */
+    const vl=(o.vl||o.lines).map(stoks);if(T.rdWords)pg.querySelectorAll('.sl').forEach(p=>T.rdWords(p));
+    const tapWord=(p,w)=>{const ws=T.rdWords?T.rdWords(p):[],j=ws.indexOf(w),v=vl[+p.dataset.i]||[];const wd=v.length===ws.length&&v[j]?v[j]:swd(w.textContent);if(!wd)return false;
+      if(T.readStop)T.readStop();ws.forEach(x=>x.classList.toggle('on',x===w));setTimeout(()=>w.classList.remove('on'),D(1200));O.say(wd);
+      const R=window.READBANK2;if(R&&R.ask)R.ask(wd);return true;};
+    pg.querySelectorAll('.sl').forEach(p=>p.onclick=e=>{if(pg.classList.contains('noline'))return;heard();const w=e&&e.target&&e.target.closest&&e.target.closest('.rw');if(w&&p.contains(w)&&tapWord(p,w))return;mark(+p.dataset.i);if(T.readEl)T.readEl(p);else O.say(T.spk(p.textContent));});
     rd.onclick=()=>{heard();const els=[...pg.querySelectorAll('.sl')];if(T.readSeq){T.readSeq(els,mark);return;}let i=0;const nx=()=>{if(i>=els.length||!pg.isConnected)return;mark(i);O.say(T.spk(els[i].textContent));i++;setTimeout(nx,3200);};nx();};/* the game voice, never the browser voice directly (#36) */
     const upd=()=>{if(!pg.isConnected)return;pg.classList.toggle('noline',!shows('line'));rd.hidden=!shows('all');};
     upd();[help.line,help.all].forEach(sec=>{if(sec==null)return;const left=D(sec*1000)-(Date.now()-ss.t0);if(left>0)setTimeout(upd,left+30);});
@@ -303,10 +317,13 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
     gen:i=>{const q=o.q[i];/* the index, not a counter: "again" restarts at 0 (#350) */const opts=shuffle([q.a,...q.ds]);return {pr:`<div class="sent">${q.pr}</div>`,opts,ans:opts.indexOf(q.a),cls:'tx',say:q.say,key:q.pr};},
     onWrong:()=>{ss.wrong=true;},end:err=>{if(o.end)o.end(err,ss.heard);},side:{lbl:'📖 <span>לַסִּפּוּר</span>',open:peek}});};
   O.setScreen('sTal','final',o.back);T.hudT('סִפּוּר');const s=$('#sTal');s.innerHTML='';
+  /* #420: "words we will meet": 2-3 hard words of the story with a picture, a tap says the word */
+  if(o.hw&&o.hw.length){const c=h('div','sthw',`<div class="sthwt">${HW_T}</div>`);const r=h('div','sthwr');
+    o.hw.forEach(([w,pic])=>{const b=h('button','hwt',`<span class="hwp">${pic}</span><span class="hww">${w}</span>`);b.type='button';b.onclick=()=>{O.sfx.pop(1);O.say(w);};r.appendChild(b);});c.appendChild(r);s.appendChild(c);}
   const go=h('button','bigbtn stgo',ICON.play+'<span>לַשְּׁאֵלוֹת</span>');go.onclick=questions;page(s,go);
   if(window.FRIEND&&FRIEND.readFirst){O.sayNow=T.spk(FRIEND.READFIRST);FRIEND.readFirst();}else O.sayNow='קְרָא אֶת הַסִּפּוּר, וְאַחַר כָּךְ עוֹנִים עַל שְׁאֵלוֹת.';}
 T.storyScreen=storyScreen;T.READ_HELP=READ_HELP;T.helpOf=helpOf;window.__story={get ss(){return SS;}};
-function readStory(k,back){const st=STORIES[k];storyScreen({act:'story-'+k,id:'story-'+k,title:st.t,name:st.t,tp:T.plainHe(st.t),goal:st.goal,spr:st.spr.map(x=>ALLSPR(x)),lines:st.s,
+function readStory(k,back){const st=STORIES[k];storyScreen({act:'story-'+k,id:'story-'+k,title:st.t,name:st.t,tp:T.plainHe(st.t),goal:st.goal,spr:st.spr.map(x=>ALLSPR(x)),lines:st.s,hw:st.hw,
   q:st.q.map(([pr,a,ds])=>({pr,a,ds})),back,qback:()=>openStories(back)});}
 function openStories(back){O.setScreen('sTal','final',back);T.hudT('סִפּוּרֵי עֶרֶב');const s=$('#sTal');s.innerHTML='';s.appendChild(h('div','whead',`<span class="gd">${X.moon}</span><h1>סִפּוּרֵי עֶרֶב</h1>`));
   const g=h('div','acts');STORIES.forEach((st,k)=>{const n=(T.S().tl['story-'+k]||{}).s|0;const c=h('button','actc',`<span class="ai">${ALLSPR(st.spr[0])}</span><span class="an">${st.t}</span><span class="st">${[0,1,2].map(j=>j<n?SPR.star:SPR.starOff).join('')}</span>`);c.onclick=()=>readStory(k,()=>openStories(back));g.appendChild(c);});s.appendChild(g);}

@@ -74,7 +74,10 @@ def model(issues, prs, events, now, log_text="", cloud=(), qnums=frozenset()):
     by_state = {k: [r for r in rows if r["state"] == k] for k, _ in STATES}
     by_prio = {p: sum(r["prio"] == p for r in rows) for p in ("P0", "P1", "P2", "P3", "-")}
     within = lambda t, h: t is not None and t > now - h * 3600
-    merged = [epoch(p.get("mergedAt")) for p in prs if p.get("mergedAt")]
+    can = {i["number"] for i in issues if "canary" in i["labels"]}      # #538: canary runs are counted on their own
+    is_can = lambda p: any(p.get("headRefName") == f"lane/{n}" or RM.fixes(p.get("body"), n) for n in can)
+    can_merged = [epoch(p.get("mergedAt")) for p in prs if p.get("mergedAt") and is_can(p)]
+    merged = [epoch(p.get("mergedAt")) for p in prs if p.get("mergedAt") and not is_can(p)]
     first = min([c for c in created.values() if c] + [now])
     history_h = (now - first) / 3600
     # local days (the PC runs on Israel time): from the first issue's day, at most the last 14
@@ -96,7 +99,7 @@ def model(issues, prs, events, now, log_text="", cloud=(), qnums=frozenset()):
                       "open_end": sum(1 for n, c in created.items() if (c or 0) < min(h0 + 3600, now) and not (closed_at.get(n) and closed_at[n] < min(h0 + 3600, now)))})
     # how the work really gets done (24 h, the runner's own records)
     ev24 = [e for e in events if e.get("ts", 0) > now - 86400]
-    by_runner, started = S.finish_rate(events, now)
+    by_runner, started = S.finish_rate([e for e in events if e.get("issue") not in can], now)   # #538: canaries apart
     fixes = sum(e.get("event") == "review_fix" for e in ev24); passes = sum(e.get("event") == "review_pass" for e in ev24)
     red_esc = sum(e.get("event") == "red_escalated" for e in ev24)      # #303: still RED after the Opus fix round -> orchestrator
     deploys = [e for e in events if e.get("event") == "deploy"]
@@ -135,6 +138,7 @@ def model(issues, prs, events, now, log_text="", cloud=(), qnums=frozenset()):
         "fc": fc,
         "fc_p0": forecast(by_prio["P0"], p0_closed, [], now, history_h) if by_prio["P0"] else None, "p0_open": by_prio["P0"],
         "truth": {"started": started, "by_runner": by_runner, "fixes": fixes, "passes": passes, "red_escalated": red_esc,
+                  "canary": sum(within(m, 24) for m in can_merged),
                   "deploys_ok": sum(1 for d in deploys if d["ts"] > now - 86400 and d.get("ok")),
                   "deploys_fail": sum(1 for d in deploys if d["ts"] > now - 86400 and d.get("ok") is False),
                   "stuck": sorted(stuck.items(), key=lambda x: -len(x[1]))[:6]},
@@ -246,7 +250,7 @@ def text(m):
              "  " + (fc_text(m["fc_p0"], m["now"], f"the {m['p0_open']} open P0") if m["fc_p0"] else "no open P0"),
              f"Runner (24 h): started {tr['started']}, finished by itself {tr['by_runner']} ({pct(tr['by_runner'], tr['started'])}); "
              f"PRs not finished by the runner (by hand, or it crashed after merging) ≈ {max(0, m['merged_24h'] - tr['by_runner'])}; reviews sent back {tr['fixes']} of {tr['fixes'] + tr['passes']}; "
-             f"to the orchestrator after 3 RED reviews: {tr.get('red_escalated', 0)}",
+             f"to the orchestrator after 3 RED reviews: {tr.get('red_escalated', 0)}; canary PRs merged {tr.get('canary', 0)} (not counted above)",
              f"Average: build {S.fmt(m['avg_build'])}, review {S.fmt(m['avg_review'])}, start to merge {S.fmt(m['avg_merge'])}"]
     d = m["last_deploy"]
     if m.get("github"): lines.append(m["github"])                     # #329: calls/min, graphql/core left, alarm < 20%
@@ -479,7 +483,8 @@ def page(m):
     truth = fold("How the work really gets done", "last 24 hours: who finished what, reviews, why issues got stuck",
                  f'<ul class="facts"><li>The runner started <b>{tr["started"]}</b> issues and finished <b>{tr["by_runner"]}</b> by itself ({pct(tr["by_runner"], tr["started"])}). '
                  f'{m["merged_24h"]} pull requests were merged in total, so about <b>{max(0, m["merged_24h"] - tr["by_runner"])}</b> were not finished by the runner: '
-                 f'merged by hand (orchestrator), or the runner crashed right after merging and never recorded it.</li>'
+                 f'merged by hand (orchestrator), or the runner crashed right after merging and never recorded it. '
+                 f'<b>{tr.get("canary", 0)}</b> canary pull requests (the automatic flow check) were merged too; they are not in these numbers.</li>'
                  f'<li>Reviews: {tr["passes"]} passed, <b>{tr["fixes"]}</b> sent back for fixes ({pct(tr["fixes"], tr["fixes"] + tr["passes"])}); '
                  f'<b>{tr.get("red_escalated", 0)}</b> still red after 3 reviews went to the orchestrator.</li>'
                  f'<li>Runner deploys: {tr["deploys_ok"]} ok, {tr["deploys_fail"]} failed (hand deploys are not recorded).</li>'

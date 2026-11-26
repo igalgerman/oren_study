@@ -32,4 +32,4 @@ One line per term, as the repo uses it. Rules live in `FLOW.md`; this file only 
 - **Triage** — giving a new issue its labels (`docs/agents/triage-labels.md`), P-level, Acceptance list, lane and `Blocked by`.
 - **Acceptance** — the `## Acceptance` section (3-7 checkable points + tests, `Out of scope`); the runner never starts an issue without it.
 - **Control tabs** — the Herdr space `oren`: `orchestrator` (main session, `ORCHESTRATOR.md`), `inbox` (owner's requests → issues), `inspector`.
-- **Canary** — `canary.py`: a tiny express issue every 6 h that proves the whole flow still works end to end.
+- **Canary** — `canary.py`: one rolling express issue, run every 6 h (at most hourly), that proves the whole flow still works end to end.

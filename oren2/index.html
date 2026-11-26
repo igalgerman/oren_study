@@ -1166,12 +1166,13 @@ let kidSave=null;
 /* #348 event log: track(kind,data) records what Oren does as short events (ids and numbers, never text the kid typed). They wait in a
    buffer on this device and go to /api/log in batches (one D1 row each): on save and on a 60 s tick (at most once a minute), and when the
    page hides. A failed send puts the batch back (the newest EV.max are kept on the device, oldest dropped) until the next send: no retry loop.
-   At most EV.cap events per page session (the rest are counted). Parent play (sandbox) is not logged. Every event has an id (i) for #462. */
+   At most EV.cap events per page session (the rest are counted). Parent play (sandbox) is not logged. Every event has an id (i): #462 links
+   its screenshots (shots.js) to it; they ride in the same batch. */
 const EV={k:'oren4-ev',sid:(Math.random().toString(36).slice(2)+'0000000000').slice(0,10),n:0,cap:2000,max:600,buf:[],last:0,busy:0,drop:0,t0:Date.now(),s:'',sT:Date.now(),m:'',q:'',lv:'',qT:0,lf:0};
 try{const o=JSON.parse(localStorage.getItem(EV.k)||'null');if(o&&Array.isArray(o.ev))EV.buf=o.ev.slice(-EV.max).map(e=>(e.osid||(e.osid=o.sid),e));}catch(e){}
 function evSan(d){const o={};if(d&&typeof d==='object')for(const k in d){const v=d[k];if(typeof v==='number'&&isFinite(v))o[k]=Math.round(v*100)/100;else if(typeof v==='boolean')o[k]=v?1:0;else if(typeof v==='string'&&v)o[k]=v.slice(0,120);}return o;}
 function track(k,d,force){try{if(kidSave)return;if(EV.n>=EV.cap&&!force){EV.drop++;return;}EV.n++;
-  const e=Object.assign({s:EV.s,m:EV.m},evSan(d),{i:EV.n,t:Date.now(),k});if(!e.s)delete e.s;if(!e.m)delete e.m;EV.buf.push(e);if(EV.buf.length>EV.max)EV.buf.splice(0,EV.buf.length-EV.max);}catch(x){}}
+  const e=Object.assign({s:EV.s,m:EV.m},evSan(d),{i:EV.n,t:Date.now(),k});if(!e.s)delete e.s;if(!e.m)delete e.m;EV.buf.push(e);if(EV.buf.length>EV.max)EV.buf.splice(0,EV.buf.length-EV.max);if(window.SHOTS)SHOTS.on(e);}catch(x){}}
 /* the state an error is attached to: screen, mission, question id, level, stars */
 function evSnap(){let st=0;try{st=EV.lv&&save.s[EV.lv]!=null?save.s[EV.lv]|0:((save.tl||{})[EV.m]||{}).s|0;}catch(e){}return {s:EV.s,m:EV.m,q:EV.q,lv:EV.lv||EV.m,st};}
 const evHash=s=>{let h=5381;s=String(s);for(let i=0;i<s.length;i++)h=(h*33+s.charCodeAt(i))>>>0;return h.toString(36);};
@@ -1184,10 +1185,12 @@ function evAns(ok,d){track('ans',Object.assign({q:EV.q,ok:ok?1:0,ms:EV.qT?Date.n
 function evKeep(){try{if(EV.buf.length)localStorage.setItem(EV.k,JSON.stringify({sid:EV.sid,ev:EV.buf}));else localStorage.removeItem(EV.k);}catch(x){}}
 function evFlush(why){try{if(!FAM.on||kidSave||!EV.buf.length)return;const hide=why==='hide';
   if(!hide&&(EV.busy||Date.now()-EV.last<(window.__logGap!=null?window.__logGap:60000)))return;
-  EV.last=Date.now();const ev=EV.buf.splice(0,200);const body=JSON.stringify({fam:FAM.id,sid:EV.sid,tz:new Date().getTimezoneOffset(),ev});
-  const back=()=>{EV.buf=ev.concat(EV.buf).slice(-EV.max);evKeep();};
+  EV.last=Date.now();const ev=EV.buf.splice(0,200),o={fam:FAM.id,sid:EV.sid,tz:new Date().getTimezoneOffset(),ev};
+  /* #462: the waiting screenshots ride in this batch (on page hide only what fits the 64 KB beacon) */
+  const sh=window.SHOTS?SHOTS.take(hide?6e4-JSON.stringify(o).length-500:45e4):[];if(sh.length)o.sh=sh;const body=JSON.stringify(o);
+  const back=()=>{EV.buf=ev.concat(EV.buf).slice(-EV.max);evKeep();if(sh.length)SHOTS.back(sh);};
   if(hide&&navigator.sendBeacon){let sent=false;try{sent=navigator.sendBeacon('/api/log',new Blob([body],{type:'application/json'}));}catch(x){}if(sent)evKeep();else back();return;}
-  EV.busy=1;fetch('/api/log',{method:'POST',headers:{'content-type':'application/json'},body,keepalive:body.length<60000}).then(r=>{if(!r.ok)back();else evKeep();},back).finally(()=>{EV.busy=0;});}catch(x){}}
+  EV.busy=1;fetch('/api/log',{method:'POST',headers:{'content-type':'application/json'},body,keepalive:!sh.length&&body.length<6e4}).then(r=>{if(!r.ok)back();else evKeep();},back).finally(()=>{EV.busy=0;});}catch(x){}}
 function evDevice(){const n=navigator,ua=n.userAgent||'',w=Math.min(screen.width||0,screen.height||0),touch=(n.maxTouchPoints|0)>0||'ontouchstart' in window;
   const br=(/Edg\/(\d+)/.exec(ua)&&'Edge '+RegExp.$1)||(/(?:Chrome|CriOS)\/(\d+)/.exec(ua)&&'Chrome '+RegExp.$1)||(/Firefox\/(\d+)/.exec(ua)&&'Firefox '+RegExp.$1)||(/Version\/(\d+).*Safari/.exec(ua)&&'Safari '+RegExp.$1)||'other';
   const os=/Android/.test(ua)?'Android':/iPhone|iPad|iPod/.test(ua)||(/Mac/.test(ua)&&touch)?'iOS':/Windows/.test(ua)?'Windows':/Mac/.test(ua)?'Mac':/CrOS/.test(ua)?'ChromeOS':/Linux/.test(ua)?'Linux':'other';
@@ -1387,7 +1390,7 @@ function digitsToWords(t){return t.replace(/(^|[^א-ת֑-ׇ\d])(?:([ולבכמש
 window.__numWords=numWords;
 /* nikud text -> full spelling (ktiv male), so a voice that ignores nikud still reads it right */
 function fullSpell(str){/* words the rules cannot know (Israeli spelling), also after a prefix ו/ה/ב/כ/ל/מ/ש */
-  const SPELL_RX=fullSpell.X||(fullSpell.X=Object.entries({'בְּרֵכָה':'בריכה','בְּרֵכוֹת':'בריכות','אִמָּא':'אמא','מַיִם':'מים','מַּיִם':'מים','מִכָּל':'מכל','מִשָּׁם':'משם','מִפֹּה':'מפה','אַרְיֵה':'אריה','מִרְיָם':'מרים','מַרְיָם':'מרים','יְרוּשָׁלַיִם':'ירושלים','לִוְיָתָן':'לווייתן','לִּוְיָתָן':'לווייתן','לִוְיָתָנִים':'לווייתנים','יְרוּשָׁלַםִ':'ירושלים'}).map(([k,v])=>[new RegExp('(^|[^\u05D0-\u05EA\u0591-\u05C7])((?:[ובכל][\u05B0\u05B4\u05B7\u05B8\u05BC]{0,2}|ה[\u05B6\u05B7\u05B8]|מ[\u05B4\u05B5]|ש[\u05B6\u05C1]{2}){0,3})'+k.normalize('NFC')+'(?![\u05D0-\u05EA\u0591-\u05C7])','g'),v]));
+  const SPELL_RX=fullSpell.X||(fullSpell.X=Object.entries({'בְּרֵכָה':'בריכה','בְּרֵכוֹת':'בריכות','אִמָּא':'אמא','מַיִם':'מים','מַּיִם':'מים','מִכָּל':'מכל','מִשָּׁם':'משם','מִפֹּה':'מפה','אַרְיֵה':'אריה','מִרְיָם':'מרים','מַרְיָם':'מרים','יְרוּשָׁלַיִם':'ירושלים','לִוְיָתָן':'לווייתן','לִּוְיָתָן':'לווייתן','לִוְיָתָנִים':'לווייתנים','יְרוּשָׁלַםִ':'ירושלים','שָׁוֶה':'שווה','שָׁוִים':'שווים','מִדַּי':'מדי','מִלִּים':'מילים','מִּלִּים':'מילים'}).map(([k,v])=>[new RegExp('(^|[^\u05D0-\u05EA\u0591-\u05C7])((?:[ובכל][\u05B0\u05B4\u05B7\u05B8\u05BC]{0,2}|ה[\u05B6\u05B7\u05B8]|מ[\u05B4\u05B5]|ש[\u05B6\u05C1]{2}){0,3})'+k.normalize('NFC')+'(?![\u05D0-\u05EA\u0591-\u05C7])','g'),v]));
   let t=digitsToWords(String(str).replace(/<[^>]+>/g,' ').normalize('NFC'));const NIK=/[\u0591-\u05C7]/;let out='';
   for(const [rx,v] of SPELL_RX)t=t.replace(rx,(m,a,pre)=>a+pre.replace(/[\u0591-\u05C7]/g,'')+v);
   const words=t.split(/(\s+)/);for(const w of words){if(!NIK.test(w)){out+=w;continue;}
@@ -1427,7 +1430,7 @@ function voiceFlush(){clearTimeout(VS.tm);VS.tm=0;const days=VS.n,ev=VS.ev;if(!O
   try{if(navigator.sendBeacon&&navigator.sendBeacon(url,body))return;}catch(e){}try{fetch(url,{method:'POST',body,mode:'no-cors',keepalive:true}).catch(()=>{});}catch(e){}}
 window.__vs=VS;window.__voiceFlush=voiceFlush;
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')voiceFlush();});addEventListener('pagehide',voiceFlush);
-function browserSay(t,lang,why){if(!('speechSynthesis' in window))return;voiceLog('browser',why||voiceWhy(),t,lang);speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(lang==='en'?plain(t):fullSpell(t));u.lang=lang==='en'?'en-US':'he-IL';const v=lang==='en'?enVoice:heVoice;if(v)u.voice=v;u.rate=lang==='en'?.85:.92;u.pitch=1.05;u.onstart=()=>{duck(true);track('au',{ev:'play',src:'browser'});};u.onend=()=>{duck(false);track('au',{ev:'end',src:'browser'});};u.onerror=e=>{duck(false);track('au',{ev:'fail',src:'browser',why:String(e&&e.error||'')});};VS.own=u;speechSynthesis.speak(u);}
+function browserSay(t,lang,why,slow){if(!('speechSynthesis' in window))return;voiceLog('browser',why||voiceWhy(),t,lang);speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(lang==='en'?plain(t):fullSpell(t));u.lang=lang==='en'?'en-US':'he-IL';const v=lang==='en'?enVoice:heVoice;if(v)u.voice=v;u.rate=lang==='en'?(slow?.65:.85):.92;u.pitch=1.05;u.onstart=()=>{duck(true);track('au',{ev:'play',src:'browser'});};u.onend=()=>{duck(false);track('au',{ev:'end',src:'browser'});};u.onerror=e=>{duck(false);track('au',{ev:'fail',src:'browser',why:String(e&&e.error||'')});};VS.own=u;speechSynthesis.speak(u);}
 /* Google voice on the family website: one fixed voice on every device (chosen by the parents in blind tests),
    each sentence made in advance by cf/tools/pregen.js and cached by the server */
 const GVOICE='he-IL-Chirp3-HD-Kore',GRATE=0.9;
@@ -1439,7 +1442,7 @@ GV.check=async n=>{GV.pending=true;
   GV.at=Date.now();GV.pending=false;};
 GV.wait=GV.site?GV.check(3):Promise.resolve();
 window.__gv=GV;
-const GEN={v:'en-US-Chirp3-HD-Despina',r:0.85};/* English: one fixed Google voice too, chosen by the parents */
+const GEN={v:'en-US-Chirp3-HD-Despina',r:0.85,slow:0.7};/* English: one fixed Google voice too, chosen by the parents; slow: a second tap on the speaker (#425, 0.7 = the server's lowest rate) */
 const useGoogle=lang=>(lang==='he'||lang==='en')&&GV.ok;
 /* #401: the server speaks at most 400 chars a request. A longer text is cut at sentence ends (else at a word) into parts
    of at most 400, spoken one after the other. pregen.js uses this same function, so every part's audio exists in advance. */
@@ -1450,23 +1453,23 @@ function ttsParts(s,max=400){s=String(s).replace(/\s+/g,' ').trim();if(s.length<
     for(const w of sen.split(' ')){for(let i=0;i<w.length;i+=max)put(w.slice(i,i+max));}}
   if(cur)out.push(cur);return out;}
 window.__ttsParts=ttsParts;
-function googleSay(t,lang,again,part){const en=lang==='en';part=part|0;if(!part){try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}try{speechSynthesis.cancel();}catch(e){}}
+function googleSay(t,lang,again,part,slow){const en=lang==='en';part=part|0;if(!part){try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}try{speechSynthesis.cancel();}catch(e){}}
   const parts=ttsParts(en?plain(t):fullSpell(t)),last=part>=parts.length-1;
-  const url='/api/tts?t='+encodeURIComponent(parts[part])+'&v='+(en?GEN.v:GVOICE)+'&r='+(en?GEN.r:GRATE)+'&k='+GV.ver;
+  const url='/api/tts?t='+encodeURIComponent(parts[part])+'&v='+(en?GEN.v:GVOICE)+'&r='+(en?(slow?GEN.slow:GEN.r):GRATE)+'&k='+GV.ver;
   const a=new Audio(url);GV.audio=a;let go=false;const t0=Date.now();
   const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;track('au',{ev:'fail',src:'google',why,ms:Date.now()-t0});try{a.pause();}catch(e){}GV.audio=null;
-    if(!again&&why!=='no-audio'&&why!=='blocked'){logIssue('voice',why+' (retry)');track('retry',{what:'voice',why});googleSay(t,lang,1,part);return;}browserSay(t,en?'en':'he',why);if(why!=='blocked')logIssue('voice',why);};
+    if(!again&&why!=='no-audio'&&why!=='blocked'){logIssue('voice',why+' (retry)');track('retry',{what:'voice',why});googleSay(t,lang,1,part,slow);return;}browserSay(t,en?'en':'he',why,slow);if(why!=='blocked')logIssue('voice',why);};
   const tm=setTimeout(()=>{if(!go)fall('timeout');},GV.ms);/* the browser voice only after a retry and a long wait (#36) */
-  a.onplaying=()=>{if(!go){if(!part)voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});}go=true;clearTimeout(tm);};a.onplay=()=>duck(true);a.onended=()=>{if(GV.audio===a&&!last){googleSay(t,lang,0,part+1);return;}duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a)GV.audio=null;};/* the next part; stopped (hush) or replaced: the rest is not spoken */
+  a.onplaying=()=>{if(!go){if(!part)voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});}go=true;clearTimeout(tm);};a.onplay=()=>duck(true);a.onended=()=>{if(GV.audio===a&&!last){googleSay(t,lang,0,part+1,slow);return;}duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a)GV.audio=null;};/* the next part; stopped (hush) or replaced: the rest is not spoken */
   a.onerror=()=>fall(a.error&&a.error.code===4?'no-audio':'audio-error');/* 4: not audio, e.g. the server answered 429/502 (not made yet) */
   a.play().catch(e=>fall(e&&e.name==='NotAllowedError'?'blocked':e&&e.name==='NotSupportedError'?'no-audio':'audio-error'));}
-function say(t,lang){if(!t||window.__fast)return;const stamp=window.__autoSaid=Date.now();lang=lang||'he';
-  if(GV.pending){const g=GV.wait;g.then(()=>{if(window.__autoSaid===stamp)say(t,lang);});return;}
+function say(t,lang,slow){if(!t||window.__fast)return;const stamp=window.__autoSaid=Date.now();lang=lang||'he';
+  if(GV.pending){const g=GV.wait;g.then(()=>{if(window.__autoSaid===stamp)say(t,lang,slow);});return;}
   if(!GV.ok&&GV.site&&Date.now()-GV.at>=GV.again)GV.wait=GV.check(1);/* the status failed earlier: check again in the background, the next sentences get Google back */
-  if(useGoogle(lang)){googleSay(t,lang);return;}
+  if(useGoogle(lang)){googleSay(t,lang,0,0,slow);return;}
   if(useClaude(lang)){try{speechSynthesis.cancel();}catch(e){}const txt=(lang==='he'?withNikud(t):plain(t)).slice(0,1900);
-    TTS.ns.speak(txt,{language:lang,rate:lang==='en'?.9:.95}).then(()=>voiceLog('claude','',t,lang)).catch(e=>{const c=e&&(e.code||e.reason);if(c==='not_granted'||c==='unavailable'){TTS.blocked=true;return;}if(c==='stopped')return;browserSay(t,lang);});return;}
-  browserSay(t,lang);}
+    TTS.ns.speak(txt,{language:lang,rate:lang==='en'?(slow?.7:.9):.95}).then(()=>voiceLog('claude','',t,lang)).catch(e=>{const c=e&&(e.code||e.reason);if(c==='not_granted'||c==='unavailable'){TTS.blocked=true;return;}if(c==='stopped')return;browserSay(t,lang,'',slow);});return;}
+  browserSay(t,lang,'',slow);}
 window.__tts=TTS;
 if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pickVoice;setTimeout(pickVoice,1500);
   try{const ss=speechSynthesis,sp=ss.speak.bind(ss);ss.speak=u=>{if(u&&u!==VS.own)voiceLog('browser','direct-call',u.text,/^en/i.test(u.lang||'')?'en':'he');VS.own=null;return sp(u);};}catch(e){}}else $('#voiceNote').hidden=false;
@@ -2192,7 +2195,7 @@ function showFinal(){setScreen('sFinal','final',showMap);$('#hudMid').innerHTML=
 
 updateGems();cloudInit();
 const BUS={};function emit(e,...a){(BUS[e]||[]).forEach(f=>{try{f(...a);}catch(x){console.error(x);}});}
-window.OREN={get save(){return save;},persist,known,track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l)=>say(t,l),get heVoice(){return heVoice;},setVoicePref,
+window.OREN={get save(){return save;},persist,known,track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
   set sayNow(v){sayNow=v;AUTO.gen++;},get sayNow(){return sayNow;},hud:html=>{$('#hudMid').innerHTML=html;document.body.classList.toggle('act',!document.body.classList.contains('inpar')&&/class="chip"/.test(html));},resetAll:keep=>{const snd=save.snd;save=blank();save.snd=snd;Object.assign(save,keep||{});persist();renderStart();},on:(e,f)=>{(BUS[e]=BUS[e]||[]).push(f);},emit,blank};
 window.__oren4={renderAudio,THEMES,RAW,setTheme,get mus(){return mus;},WORLDS,ALLLV,ALLU,hintHTML,hintData,uniq,colInit,colNeedBorrow,digs,qkey,bubbleOpts,storyFor,teachCheck,HEROES,get play(){return play;},get save(){return save;},startLevel,playLevel,showMap,showWorld,kingdom,studio,teacher,playSpeed,setFast:v=>{window.__fast=v;},mergeIn,migrateOld,lp};
 })();
@@ -2613,6 +2616,14 @@ body.pplay .dlg,body.pplay .overlay{padding-bottom:78px}
 /* stories: compact lines; the buttons sit in normal flow under the last line, never over the text (#355) */
 .story{margin:0 12px}.sl{margin:0;padding:4px 8px;line-height:1.75}
 .story+.btnrow{margin:6px 0 4px}
+/* #420: "words we will meet" above the story; a tapped word lights up */
+.sthw{width:min(820px,100%);margin:0 12px 10px;box-sizing:border-box;background:var(--paper);padding:10px 14px;box-shadow:0 6px 0 rgba(0,0,0,.18);text-align:center}
+.sthwt{font-weight:900;font-size:20px;margin-bottom:8px}
+.sthwr{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.hwt{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:96px;padding:8px 12px;border:0;border-radius:14px;background:#fff;box-shadow:0 4px 0 rgba(0,0,0,.18);cursor:pointer;font:inherit}
+.hwt:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.18)}
+.hwp{font-size:40px;line-height:1.1}.hww{font-size:24px;font-weight:800}
+.story .sl .rw{cursor:pointer}.story.noline .sl .rw{cursor:default}
 /* read first, listen later (#355): the per-line 🔊 waits for its time */
 .story.noline .sl .rdb{display:none}.story.noline .sl{cursor:default}
 .stpeek{display:flex;flex-direction:column;align-items:center;gap:10px;width:100%}
@@ -3043,6 +3054,8 @@ body.fron #screens{padding-bottom:84px}
   .chb.shp{min-width:88px;min-height:86px}.chb.shp svg{width:72px;height:72px}.prq svg.shp1{width:120px;height:120px}
   .chb.pen{min-width:150px}.chb.pen svg{width:150px;height:34px}
 }
+/* rhymes: the picture above the word */
+.gp-rhy{display:flex;flex-direction:column;align-items:center;gap:4px}.gp-rhy .pic svg{width:96px;height:96px}
 
 /* ===== MUSIC 2 (music2.js) ===== */
 .m2 .m2staff{display:block;height:auto;background:#fff;max-width:100%}
@@ -3518,6 +3531,8 @@ const today=O.today;
 const L_=t=>`<span class="ltr">${t}</span>`;
 const nb=n=>`<b>${n}</b>`;
 const plainHe=s=>String(s).replace(/<[^>]+>/g,' ').replace(/[֑-ׇ]/g,'').replace(/\s+/g,' ').trim();
+/* what the voice says: full spelling (מִלָּה → מילה), not nikud just stripped (מלה), #405 */
+const spoken=s=>window.__fullSpell?window.__fullSpell(String(s).replace(/\d/g,d=>String.fromCharCode(0xE000+ +d))).replace(/[\uE000-\uE009]/g,c=>c.charCodeAt(0)-0xE000):plainHe(s);   /* digits stay digits: the voice worker reads them (gender, + − ×) */
 /* text for the voice: keep the nikud (the voice layer turns it into full spelling) */
 const spk=s=>String(s).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
 
@@ -3596,7 +3611,7 @@ function quiz(o){const qs=[],seen=new Set();let t=0;const LN=window.LEARN,pb=o.p
   while(qs.length<o.n&&t++<400){const q=gen();const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k))continue;seen.add(k);qs.push(q);}
   let i=0,err=0,gems=0,lock=false,tries=0,HB=null;O.setScreen('sTal',o.bg||'valley',o.back);
   const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq');s.appendChild(wrap);
-  const render=()=>{const q=qs[i];tries=0;lock=false;if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||plainHe(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
+  const render=()=>{const q=qs[i];tries=0;lock=false;if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||spoken(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
     wrap.innerHTML='';const card=h('div','prq tqc',q.pr);if(q.play){const pb=h('button','hintbtn',ICON.say+`<span>${q.playLbl||'הַשְׁמַע'}</span>`);pb.onclick=q.play;card.appendChild(pb);}
     wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});const row=h('div','chs'+(q.ltr?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>{if(!(O.tapTooSoon&&O.tapTooSoon()))pickA(k,b);};row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');
@@ -3769,17 +3784,17 @@ building({id:'world',name:'הָעוֹלָם וְיִשְׂרָאֵל',color:'#4f
   {id:'world-il',name:'הָאָרֶץ שֶׁלָּנוּ',icon:()=>flag('il'),run:back=>quiz({id:'world-il',pool:1,title:'הָאָרֶץ שֶׁלָּנוּ',bg:'valley',back,n:7,gen:()=>{const [q,a,ds]=pick(ISR);const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}})}]});
 /* Bedtime stories */
 const STORIES=[
- {t:'הַחֲתוּלָה וְהַכַּדּוּר הָאָדֹם',spr:['cat','ball'],gk:'sci',goal:'כדי לראות צריך אור',s:['לְנוֹעָה יֵשׁ חֲתוּלָה קְטַנָּה בְּשֵׁם מִיצִי.','מִיצִי אוֹהֶבֶת לְשַׂחֵק בְּכַדּוּר אָדֹם.','יוֹם אֶחָד הַכַּדּוּר הִתְגַּלְגֵּל מִתַּחַת לַמִּטָּה.','מִתַּחַת לַמִּטָּה הָיָה חֹשֶׁךְ, וּמִיצִי לֹא מָצְאָה אוֹתוֹ.','נוֹעָה הֵבִיאָה פָּנָס, וְהָאוֹר הֵאִיר מִתַּחַת לַמִּטָּה.','עִם אוֹר רוֹאִים! הִנֵּה הַכַּדּוּר! מִיצִי קָפְצָה מִשִּׂמְחָה.'],
+ {t:'הַחֲתוּלָה וְהַכַּדּוּר הָאָדֹם',hw:[['הִתְגַּלְגֵּל','🌀'],['פָּנָס','🔦'],['חֹשֶׁךְ','🌑']],spr:['cat','ball'],gk:'sci',goal:'כדי לראות צריך אור',s:['לְנוֹעָה יֵשׁ חֲתוּלָה קְטַנָּה בְּשֵׁם מִיצִי.','מִיצִי אוֹהֶבֶת לְשַׂחֵק בְּכַדּוּר אָדֹם.','יוֹם אֶחָד הַכַּדּוּר הִתְגַּלְגֵּל מִתַּחַת לַמִּטָּה.','מִתַּחַת לַמִּטָּה הָיָה חֹשֶׁךְ, וּמִיצִי לֹא מָצְאָה אוֹתוֹ.','נוֹעָה הֵבִיאָה פָּנָס, וְהָאוֹר הֵאִיר מִתַּחַת לַמִּטָּה.','עִם אוֹר רוֹאִים! הִנֵּה הַכַּדּוּר! מִיצִי קָפְצָה מִשִּׂמְחָה.'],
   q:[['אֵיזֶה צֶבַע הַכַּדּוּר?','אָדֹם',['כָּחֹל','יָרֹק']],['מָה עָזַר לְנוֹעָה לִמְצֹא אֶת הַכַּדּוּר?','פָּנָס',['מַפְתֵּחַ','סֵפֶר']],['לָמָּה הַפָּנָס עָזַר?','כִּי צָרִיךְ אוֹר כְּדֵי לִרְאוֹת',['כִּי הַפָּנָס כָּבֵד','כִּי הַפָּנָס עוֹשֶׂה רַעַשׁ']]],les:2},
- {t:'הַזֶּרַע שֶׁל אוֹרֶן',spr:['flower','sun'],gk:'sci',goal:'צמח צריך מים ואור',s:['אוֹרֶן שָׁתַל זֶרַע קָטָן בְּעָצִיץ.','כָּל בֹּקֶר הוּא הִשְׁקָה אוֹתוֹ בְּמַיִם.','הוּא שָׂם אֶת הָעָצִיץ לְיַד הַחַלּוֹן, בַּשֶּׁמֶשׁ, כִּי צֶמַח צָרִיךְ אוֹר.','אַחֲרֵי שָׁבוּעַ יָצָא נֶבֶט יָרֹק.','אַחֲרֵי חֹדֶשׁ פָּרַח פֶּרַח צָהֹב וְיָפֶה.','אוֹרֶן הָיָה גֵּאֶה מְאוֹד.'],
+ {t:'הַזֶּרַע שֶׁל אוֹרֶן',hw:[['הָעָצִיץ','🪴'],['נֶבֶט','🌱'],['הִשְׁקָה','💧']],spr:['flower','sun'],gk:'sci',goal:'צמח צריך מים ואור',s:['אוֹרֶן שָׁתַל זֶרַע קָטָן בְּעָצִיץ.','כָּל בֹּקֶר הוּא הִשְׁקָה אוֹתוֹ בְּמַיִם.','הוּא שָׂם אֶת הָעָצִיץ לְיַד הַחַלּוֹן, בַּשֶּׁמֶשׁ, כִּי צֶמַח צָרִיךְ אוֹר.','אַחֲרֵי שָׁבוּעַ יָצָא נֶבֶט יָרֹק.','אַחֲרֵי חֹדֶשׁ פָּרַח פֶּרַח צָהֹב וְיָפֶה.','אוֹרֶן הָיָה גֵּאֶה מְאוֹד.'],
   q:[['אֵיזֶה צֶבַע הָיָה הַפֶּרַח?','צָהֹב',['אָדֹם','סָגֹל']],['מָה יָצָא מֵהַזֶּרַע אַחֲרֵי שָׁבוּעַ?','נֶבֶט יָרֹק',['תַּפּוּחַ','אֶבֶן']],['מָה צָרִיךְ צֶמַח כְּדֵי לִגְדֹּל?','מַיִם וְאוֹר שֶׁמֶשׁ',['חֹשֶׁךְ וְשֶׁקֶט','מוּזִיקָה וְעוּגָה']]],les:2},
- {t:'הַדְּרָקוֹן שֶׁפָּחַד מֵהַחֹשֶׁךְ',spr:['dragon','moon'],gk:'sci',goal:'למה רואים כוכבים רק בלילה',s:['נִיצוֹץ הָיָה דְּרָקוֹן קָטָן וְאַמִּיץ.','הוּא לֹא פָּחַד מִשּׁוּם דָּבָר, חוּץ מֵהַחֹשֶׁךְ.','פִּיקְסֶל הֶחָתוּל אָמַר: "בּוֹא נִסְתַּכֵּל עַל הַשָּׁמַיִם."','הֵם יָצְאוּ הַחוּצָה, וְהַשָּׁמַיִם הָיוּ מְלֵאִים כּוֹכָבִים נוֹצְצִים.','פִּיקְסֶל אָמַר: "הַכּוֹכָבִים שָׁם גַּם בַּיּוֹם, אֲבָל אוֹר הַשֶּׁמֶשׁ חָזָק מְאוֹד, וְלָכֵן לֹא רוֹאִים אוֹתָם."','"רַק בַּחֹשֶׁךְ רוֹאִים כּוֹכָבִים!" אָמַר נִיצוֹץ. מֵאָז הוּא אוֹהֵב אֶת הַלַּיְלָה.'],
+ {t:'הַדְּרָקוֹן שֶׁפָּחַד מֵהַחֹשֶׁךְ',hw:[['דְּרָקוֹן','🐉'],['כּוֹכָבִים','⭐'],['נוֹצְצִים','✨']],spr:['dragon','moon'],gk:'sci',goal:'למה רואים כוכבים רק בלילה',s:['נִיצוֹץ הָיָה דְּרָקוֹן קָטָן וְאַמִּיץ.','הוּא לֹא פָּחַד מִשּׁוּם דָּבָר, חוּץ מֵהַחֹשֶׁךְ.','פִּיקְסֶל הֶחָתוּל אָמַר: "בּוֹא נִסְתַּכֵּל עַל הַשָּׁמַיִם."','הֵם יָצְאוּ הַחוּצָה, וְהַשָּׁמַיִם הָיוּ מְלֵאִים כּוֹכָבִים נוֹצְצִים.','פִּיקְסֶל אָמַר: "הַכּוֹכָבִים שָׁם גַּם בַּיּוֹם, אֲבָל אוֹר הַשֶּׁמֶשׁ חָזָק מְאוֹד, וְלָכֵן לֹא רוֹאִים אוֹתָם."','"רַק בַּחֹשֶׁךְ רוֹאִים כּוֹכָבִים!" אָמַר נִיצוֹץ. מֵאָז הוּא אוֹהֵב אֶת הַלַּיְלָה.'],
   q:[['מִמָּה פָּחַד נִיצוֹץ?','מֵהַחֹשֶׁךְ',['מִכְּלָבִים','מִמַּיִם']],['מָה הֵם רָאוּ בַּשָּׁמַיִם?','כּוֹכָבִים',['שֶׁמֶשׁ','גֶּשֶׁם']],['לָמָּה לֹא רוֹאִים כּוֹכָבִים בַּיּוֹם?','כִּי אוֹר הַשֶּׁמֶשׁ חָזָק מְאוֹד',['כִּי הַכּוֹכָבִים יְשֵׁנִים','כִּי הַכּוֹכָבִים נוֹפְלִים']]],les:2},
- {t:'יוֹם הַהֻלֶּדֶת שֶׁל סַבְתָּא',spr:['cake','heart'],gk:'math',goal:'ספירה בעשרות: 7 נרות של 10 שנים = 70',s:['הַיּוֹם יוֹם הַהֻלֶּדֶת שֶׁל סַבְתָּא. הִיא בַּת שִׁבְעִים!','אוֹרֶן וְאַבָּא אָפוּ עוּגַת שׁוֹקוֹלָד.','עַל הָעוּגָה הֵם שָׂמוּ שִׁבְעָה נֵרוֹת: נֵר אֶחָד לְכָל עֶשֶׂר שָׁנִים.','אוֹרֶן סָפַר בַּעֲשָׂרוֹת: עֶשֶׂר, עֶשְׂרִים, שְׁלוֹשִׁים, אַרְבָּעִים, חֲמִשִּׁים, שִׁשִּׁים, שִׁבְעִים!','כָּל הַמִּשְׁפָּחָה שָׁרָה לָהּ שִׁיר, וְסַבְתָּא כִּבְּתָה אֶת הַנֵּרוֹת.','הִיא חִבְּקָה אֶת אוֹרֶן וְאָמְרָה: "אַתָּה יוֹדֵעַ לִסְפֹּר בַּעֲשָׂרוֹת!"'],
+ {t:'יוֹם הַהֻלֶּדֶת שֶׁל סַבְתָּא',hw:[['הַהֻלֶּדֶת','🎂'],['נֵרוֹת','🕯️'],['בַּעֲשָׂרוֹת','🔟']],spr:['cake','heart'],gk:'math',goal:'ספירה בעשרות: 7 נרות של 10 שנים = 70',s:['הַיּוֹם יוֹם הַהֻלֶּדֶת שֶׁל סַבְתָּא. הִיא בַּת שִׁבְעִים!','אוֹרֶן וְאַבָּא אָפוּ עוּגַת שׁוֹקוֹלָד.','עַל הָעוּגָה הֵם שָׂמוּ שִׁבְעָה נֵרוֹת: נֵר אֶחָד לְכָל עֶשֶׂר שָׁנִים.','אוֹרֶן סָפַר בַּעֲשָׂרוֹת: עֶשֶׂר, עֶשְׂרִים, שְׁלוֹשִׁים, אַרְבָּעִים, חֲמִשִּׁים, שִׁשִּׁים, שִׁבְעִים!','כָּל הַמִּשְׁפָּחָה שָׁרָה לָהּ שִׁיר, וְסַבְתָּא כִּבְּתָה אֶת הַנֵּרוֹת.','הִיא חִבְּקָה אֶת אוֹרֶן וְאָמְרָה: "אַתָּה יוֹדֵעַ לִסְפֹּר בַּעֲשָׂרוֹת!"'],
   q:[['אֵיזוֹ עוּגָה הֵם אָפוּ?','שׁוֹקוֹלָד',['גְּבִינָה','תַּפּוּחִים']],['כַּמָּה נֵרוֹת הָיוּ עַל הָעוּגָה?','7',['70','10']],['כָּל נֵר הוּא עֶשֶׂר שָׁנִים. לְסָבָא יֵשׁ שִׁשָּׁה נֵרוֹת. בֶּן כַּמָּה סָבָא?','60',['6','16']]],les:2},
- {t:'הַסִּירָה שֶׁל דָּנִי',spr:['boat','cloud'],gk:'sci',goal:'נייר סופג מים ונהיה רך, עץ צף ונשאר חזק',s:['דָּנִי בָּנָה סִירָה מִנְּיָר.','הוּא שָׂם אוֹתָהּ בַּשְּׁלוּלִית שֶׁלְּיַד הַבַּיִת.','רוּחַ נָשְׁבָה, וְהַסִּירָה שָׁטָה מַהֵר.','פִּתְאוֹם הִתְחִיל גֶּשֶׁם. הַנְּיָר סָפַג מַיִם, נִהְיָה רַךְ וְשָׁקַע.','דָּנִי הֵבִין: נְיָר סוֹפֵג מַיִם, אֲבָל עֵץ צָף וְנִשְׁאָר חָזָק.','בַּפַּעַם הַבָּאָה הוּא יִבְנֶה סִירָה מֵעֵץ!'],
+ {t:'הַסִּירָה שֶׁל דָּנִי',hw:[['סִירָה','⛵'],['בַּשְּׁלוּלִית','💦'],['סָפַג','🧽']],spr:['boat','cloud'],gk:'sci',goal:'נייר סופג מים ונהיה רך, עץ צף ונשאר חזק',s:['דָּנִי בָּנָה סִירָה מִנְּיָר.','הוּא שָׂם אוֹתָהּ בַּשְּׁלוּלִית שֶׁלְּיַד הַבַּיִת.','רוּחַ נָשְׁבָה, וְהַסִּירָה שָׁטָה מַהֵר.','פִּתְאוֹם הִתְחִיל גֶּשֶׁם. הַנְּיָר סָפַג מַיִם, נִהְיָה רַךְ וְשָׁקַע.','דָּנִי הֵבִין: נְיָר סוֹפֵג מַיִם, אֲבָל עֵץ צָף וְנִשְׁאָר חָזָק.','בַּפַּעַם הַבָּאָה הוּא יִבְנֶה סִירָה מֵעֵץ!'],
   q:[['מִמָּה הָיְתָה הַסִּירָה?','מִנְּיָר',['מֵעֵץ','מִבַּרְזֶל']],['מָה קָרָה כְּשֶׁהִתְחִיל גֶּשֶׁם?','הַנְּיָר סָפַג מַיִם',['הַסִּירָה עָפָה','הַשֶּׁמֶשׁ זָרְחָה']],['לָמָּה כְּדַאי לִבְנוֹת סִירָה מֵעֵץ?','כִּי עֵץ צָף וְלֹא נִהְיָה רַךְ בַּמַּיִם',['כִּי עֵץ יָפֶה יוֹתֵר','כִּי עֵץ שָׁט גַּם בְּלִי מַיִם']]],les:2},
- {t:'חָכָם הַיַּנְשׁוּף סוֹפֵר כּוֹכָבִים',spr:['owl','star'],gk:'math',goal:'חיבור: 10 ועוד 5 הם 15',s:['בַּיַּעַר גָּר יַנְשׁוּף חָכָם.','בַּיּוֹם הוּא יָשֵׁן, וּבַלַּיְלָה הוּא עֵר וְסוֹפֵר אֶת הַכּוֹכָבִים.','בַּלַּיְלָה הָרִאשׁוֹן הוּא סָפַר עֲשָׂרָה כּוֹכָבִים.','בַּלַּיְלָה הַשֵּׁנִי הוּא סָפַר עוֹד חֲמִשָּׁה.','"עֲשָׂרָה וְעוֹד חֲמִשָּׁה, כַּמָּה זֶה בְּיַחַד?" שָׁאַל חָכָם.','חָכָם חִיֵּךְ: "חֶשְׁבּוֹן זֶה כֵּיף!"'],
+ {t:'חָכָם הַיַּנְשׁוּף סוֹפֵר כּוֹכָבִים',hw:[['יַנְשׁוּף','🦉'],['כּוֹכָבִים','⭐'],['חֶשְׁבּוֹן','➕']],spr:['owl','star'],gk:'math',goal:'חיבור: 10 ועוד 5 הם 15',s:['בַּיַּעַר גָּר יַנְשׁוּף חָכָם.','בַּיּוֹם הוּא יָשֵׁן, וּבַלַּיְלָה הוּא עֵר וְסוֹפֵר אֶת הַכּוֹכָבִים.','בַּלַּיְלָה הָרִאשׁוֹן הוּא סָפַר עֲשָׂרָה כּוֹכָבִים.','בַּלַּיְלָה הַשֵּׁנִי הוּא סָפַר עוֹד חֲמִשָּׁה.','"עֲשָׂרָה וְעוֹד חֲמִשָּׁה, כַּמָּה זֶה בְּיַחַד?" שָׁאַל חָכָם.','חָכָם חִיֵּךְ: "חֶשְׁבּוֹן זֶה כֵּיף!"'],
   q:[['אֵיפֹה גָּר הַיַּנְשׁוּף?','בַּיַּעַר',['בַּיָּם','בָּעִיר']],['כַּמָּה כּוֹכָבִים הוּא סָפַר בַּלַּיְלָה הָרִאשׁוֹן?','10',['5','15']],['כַּמָּה כּוֹכָבִים הוּא סָפַר בְּסַךְ הַכֹּל?','15',['10','5']]],les:2}];
 /* ---------- a story screen (#355): the bedtime stories here and the story bank (read-bank2.js) ----------
    Read first, listen later: the read-aloud help follows Oren's story level (READBANK2.level('story'), 1-5).
@@ -3791,7 +3806,14 @@ const storyLv=()=>{try{const R=window.READBANK2;return R&&R.level?R.level('story
 let SS=null;   /* the story being played: {id, t0, lv, help, wrong, heard, log} */
 /* a story he listened to (whole or a line) is marked: only stories read alone move the story level up (read-bank2.js) */
 O.on('tlDone',id=>{if(SS&&SS.id===id){const c=T.S().tl[id];if(c){c.l=SS.heard?1:0;O.persist();}}});
-function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), title (html), name (quiz title), tp (plain title), goal, spr:[html,html], lines:[html], q:[{pr, say, a, ds}], back, qback, end(err, heard): after the last question (#360)} */
+/* #420: a story word as said and stored: letters and nikud only (no punctuation, no markup) */
+const HW_T='מִלִּים שֶׁנִּפְגֹּשׁ בַּסִּפּוּר';
+const swd=t=>String(t||'').replace(/[^\u0591-\u05C7\u05D0-\u05EA]/g,'');
+const stoks=line=>String(line||'').replace(/<[^>]+>/g,' ').split(/\s+/).map(swd).filter(Boolean);
+/* every word of every story (bedtime + the story bank), for the voice pregen: a tapped word is said alone */
+T.storyWordList=()=>{const out=new Set([HW_T]);const R=window.READBANK2;[...STORIES,...((R&&R.stories)||[])].forEach(st=>{st.s.forEach(l=>stoks(l).forEach(w=>out.add(w)));(st.hw||[]).forEach(x=>out.add(x[0]));});return [...out];};
+T.HW_T=HW_T;
+function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), title (html), name (quiz title), tp (plain title), goal, spr:[html,html], lines:[html], vl:[vocalized lines, when lines may lack nikud], hw:[[word, picture]] (#420), q:[{pr, say, a, ds}], back, qback, end(err, heard): after the last question (#360)} */
   const lv=storyLv(),help=helpOf(lv);const ss=SS={id:o.id,t0:Date.now(),lv,help,wrong:false,heard:false,log:{t:o.tp,g:o.goal||'',lv,r:'a'}};
   if(window.DAYLOG&&DAYLOG.note)DAYLOG.note(o.act,ss.log);
   const shows=k=>(ss.wrong&&help.wrong.includes(k))||(help[k]!=null&&Date.now()-ss.t0>=D(help[k]*1000));
@@ -3801,7 +3823,12 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
     const row=h('div','btnrow strow');const rd=h('button','bigbtn blue sm strd',ICON.say+'<span>הַקְרֵא לִי</span>');row.append(rd,fwd);box.appendChild(row);
     const mark=i=>pg.querySelectorAll('.sl').forEach(p=>p.classList.toggle('cur',+p.dataset.i===i));
     pg.addEventListener('click',e=>{if(e.target.closest('.rdb'))heard();},true);
-    pg.querySelectorAll('.sl').forEach(p=>p.onclick=()=>{if(pg.classList.contains('noline'))return;heard();mark(+p.dataset.i);if(T.readEl)T.readEl(p);else O.say(T.spk(p.textContent));});
+    /* a tap on a word says just that word (with nikud) and keeps it for word practice the next day (#420); 🔊 reads the line */
+    const vl=(o.vl||o.lines).map(stoks);if(T.rdWords)pg.querySelectorAll('.sl').forEach(p=>T.rdWords(p));
+    const tapWord=(p,w)=>{const ws=T.rdWords?T.rdWords(p):[],j=ws.indexOf(w),v=vl[+p.dataset.i]||[];const wd=v.length===ws.length&&v[j]?v[j]:swd(w.textContent);if(!wd)return false;
+      if(T.readStop)T.readStop();ws.forEach(x=>x.classList.toggle('on',x===w));setTimeout(()=>w.classList.remove('on'),D(1200));O.say(wd);
+      const R=window.READBANK2;if(R&&R.ask)R.ask(wd);return true;};
+    pg.querySelectorAll('.sl').forEach(p=>p.onclick=e=>{if(pg.classList.contains('noline'))return;heard();const w=e&&e.target&&e.target.closest&&e.target.closest('.rw');if(w&&p.contains(w)&&tapWord(p,w))return;mark(+p.dataset.i);if(T.readEl)T.readEl(p);else O.say(T.spk(p.textContent));});
     rd.onclick=()=>{heard();const els=[...pg.querySelectorAll('.sl')];if(T.readSeq){T.readSeq(els,mark);return;}let i=0;const nx=()=>{if(i>=els.length||!pg.isConnected)return;mark(i);O.say(T.spk(els[i].textContent));i++;setTimeout(nx,3200);};nx();};/* the game voice, never the browser voice directly (#36) */
     const upd=()=>{if(!pg.isConnected)return;pg.classList.toggle('noline',!shows('line'));rd.hidden=!shows('all');};
     upd();[help.line,help.all].forEach(sec=>{if(sec==null)return;const left=D(sec*1000)-(Date.now()-ss.t0);if(left>0)setTimeout(upd,left+30);});
@@ -3813,10 +3840,13 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
     gen:i=>{const q=o.q[i];/* the index, not a counter: "again" restarts at 0 (#350) */const opts=shuffle([q.a,...q.ds]);return {pr:`<div class="sent">${q.pr}</div>`,opts,ans:opts.indexOf(q.a),cls:'tx',say:q.say,key:q.pr};},
     onWrong:()=>{ss.wrong=true;},end:err=>{if(o.end)o.end(err,ss.heard);},side:{lbl:'📖 <span>לַסִּפּוּר</span>',open:peek}});};
   O.setScreen('sTal','final',o.back);T.hudT('סִפּוּר');const s=$('#sTal');s.innerHTML='';
+  /* #420: "words we will meet": 2-3 hard words of the story with a picture, a tap says the word */
+  if(o.hw&&o.hw.length){const c=h('div','sthw',`<div class="sthwt">${HW_T}</div>`);const r=h('div','sthwr');
+    o.hw.forEach(([w,pic])=>{const b=h('button','hwt',`<span class="hwp">${pic}</span><span class="hww">${w}</span>`);b.type='button';b.onclick=()=>{O.sfx.pop(1);O.say(w);};r.appendChild(b);});c.appendChild(r);s.appendChild(c);}
   const go=h('button','bigbtn stgo',ICON.play+'<span>לַשְּׁאֵלוֹת</span>');go.onclick=questions;page(s,go);
   if(window.FRIEND&&FRIEND.readFirst){O.sayNow=T.spk(FRIEND.READFIRST);FRIEND.readFirst();}else O.sayNow='קְרָא אֶת הַסִּפּוּר, וְאַחַר כָּךְ עוֹנִים עַל שְׁאֵלוֹת.';}
 T.storyScreen=storyScreen;T.READ_HELP=READ_HELP;T.helpOf=helpOf;window.__story={get ss(){return SS;}};
-function readStory(k,back){const st=STORIES[k];storyScreen({act:'story-'+k,id:'story-'+k,title:st.t,name:st.t,tp:T.plainHe(st.t),goal:st.goal,spr:st.spr.map(x=>ALLSPR(x)),lines:st.s,
+function readStory(k,back){const st=STORIES[k];storyScreen({act:'story-'+k,id:'story-'+k,title:st.t,name:st.t,tp:T.plainHe(st.t),goal:st.goal,spr:st.spr.map(x=>ALLSPR(x)),lines:st.s,hw:st.hw,
   q:st.q.map(([pr,a,ds])=>({pr,a,ds})),back,qback:()=>openStories(back)});}
 function openStories(back){O.setScreen('sTal','final',back);T.hudT('סִפּוּרֵי עֶרֶב');const s=$('#sTal');s.innerHTML='';s.appendChild(h('div','whead',`<span class="gd">${X.moon}</span><h1>סִפּוּרֵי עֶרֶב</h1>`));
   const g=h('div','acts');STORIES.forEach((st,k)=>{const n=(T.S().tl['story-'+k]||{}).s|0;const c=h('button','actc',`<span class="ai">${ALLSPR(st.spr[0])}</span><span class="an">${st.t}</span><span class="st">${[0,1,2].map(j=>j<n?SPR.star:SPR.starOff).join('')}</span>`);c.onclick=()=>readStory(k,()=>openStories(back));g.appendChild(c);});s.appendChild(g);}
@@ -5204,7 +5234,7 @@ function readEl(el){stop();const ws=words(el);if(!ws.length)return Promise.resol
     r.timers.push(setTimeout(()=>{if(cur===r&&!r.started&&!r.gotB)estimate(r,0);},700));});}
 let seqTok=0;
 async function readSeq(els,mark){const tok=++seqTok;for(let i=0;i<els.length;i++){if(tok!==seqTok||!els[i].isConnected)return;if(mark)mark(i);await readEl(els[i]);if(tok!==seqTok)return;}}
-T.readEl=el=>{seqTok++;return readEl(el);};T.readSeq=readSeq;T.readStop=()=>{seqTok++;stop();};
+T.rdWords=words;T.readEl=el=>{seqTok++;return readEl(el);};T.readSeq=readSeq;T.readStop=()=>{seqTok++;stop();};
 
 /* ---- the 🔊 button on every readable text ---- */
 function decorate(el){if(el.dataset.rd||!HEB.test(el.textContent))return;el.dataset.rd='1';
@@ -5913,42 +5943,93 @@ const finNote=l=>{const f=FINALS.find(x=>x[0]===l);return f?`<div class="gp-fin"
 
 /* ===================== 8. MORE BEDTIME STORIES (why? / what happened first?) ===================== */
 const STORIES=[
- {t:'הַגֶּשֶׁם הָרִאשׁוֹן',spr:['cloud','flower'],gk:'sci',goal:'גשם יורד מהעננים, וצמחים צריכים מים כדי לגדול',les:1,s:['בַּבֹּקֶר הַשָּׁמַיִם הָיוּ אֲפֹרִים.','מָיָה רָאֲתָה עָנָן גָּדוֹל וְשָׁחֹר, מָלֵא טִפּוֹת מַיִם.','הִיא לָקְחָה מִטְרִיָּה וְיָצְאָה לַגַּן.','פִּתְאוֹם יָרַד מֵהֶעָנָן גֶּשֶׁם רִאשׁוֹן.','הַפְּרָחִים שָׂמְחוּ, כִּי צְמָחִים צְרִיכִים מַיִם כְּדֵי לִגְדֹּל.','מָיָה קָפְצָה בַּשְּׁלוּלִיּוֹת וְצָחֲקָה.'],
+ {t:'הַגֶּשֶׁם הָרִאשׁוֹן',hw:[['אֲפֹרִים','☁️'],['טִפּוֹת','💧'],['מִטְרִיָּה','☂️']],spr:['cloud','flower'],gk:'sci',goal:'גשם יורד מהעננים, וצמחים צריכים מים כדי לגדול',les:1,s:['בַּבֹּקֶר הַשָּׁמַיִם הָיוּ אֲפֹרִים.','מָיָה רָאֲתָה עָנָן גָּדוֹל וְשָׁחֹר, מָלֵא טִפּוֹת מַיִם.','הִיא לָקְחָה מִטְרִיָּה וְיָצְאָה לַגַּן.','פִּתְאוֹם יָרַד מֵהֶעָנָן גֶּשֶׁם רִאשׁוֹן.','הַפְּרָחִים שָׂמְחוּ, כִּי צְמָחִים צְרִיכִים מַיִם כְּדֵי לִגְדֹּל.','מָיָה קָפְצָה בַּשְּׁלוּלִיּוֹת וְצָחֲקָה.'],
   q:[['מֵאַיִן יָרַד הַגֶּשֶׁם?','מֵהֶעָנָן',['מֵהַשֶּׁמֶשׁ','מֵהָעֵץ']],['לָמָּה הַגֶּשֶׁם טוֹב לַפְּרָחִים?','כִּי צְמָחִים צְרִיכִים מַיִם כְּדֵי לִגְדֹּל',['כִּי הַגֶּשֶׁם קַר','כִּי מָיָה קָפְצָה בַּשְּׁלוּלִיּוֹת']],['מָה קָרָה רִאשׁוֹן?','מָיָה רָאֲתָה עָנָן',['מָיָה קָפְצָה בַּשְּׁלוּלִיּוֹת','הַפְּרָחִים שָׁתוּ מַיִם']]]},
- {t:'הַגּוּר שֶׁל גִּיל',spr:['dog','heart'],gk:'sci',goal:'כלבים שומעים טוב מאיתנו, ורעש חזק מפחיד אותם',les:1,s:['לְגִיל יֵשׁ גּוּר קָטָן בְּשֵׁם בּוּבִּי.','יוֹם אֶחָד בּוּבִּי בָּרַח מֵהֶחָצֵר.','גִּיל חִפֵּשׂ אוֹתוֹ בְּכָל הָרְחוֹב.','הוּא שָׁמַע נְבִיחָה קְטַנָּה, וּמָצָא אֶת בּוּבִּי מֵאֲחוֹרֵי הַשִּׂיחַ.','בּוּבִּי רָעַד, כִּי רַעַשׁ חָזָק שֶׁל מְכוֹנִית הִפְחִיד אוֹתוֹ.','בַּבַּיִת אִמָּא הִסְבִּירָה: "כְּלָבִים שׁוֹמְעִים הַרְבֵּה יוֹתֵר טוֹב מֵאִתָּנוּ."'],
+ {t:'הַגּוּר שֶׁל גִּיל',hw:[['גּוּר','🐶'],['נְבִיחָה','🐕'],['הַשִּׂיחַ','🌿']],spr:['dog','heart'],gk:'sci',goal:'כלבים שומעים טוב מאיתנו, ורעש חזק מפחיד אותם',les:1,s:['לְגִיל יֵשׁ גּוּר קָטָן בְּשֵׁם בּוּבִּי.','יוֹם אֶחָד בּוּבִּי בָּרַח מֵהֶחָצֵר.','גִּיל חִפֵּשׂ אוֹתוֹ בְּכָל הָרְחוֹב.','הוּא שָׁמַע נְבִיחָה קְטַנָּה, וּמָצָא אֶת בּוּבִּי מֵאֲחוֹרֵי הַשִּׂיחַ.','בּוּבִּי רָעַד, כִּי רַעַשׁ חָזָק שֶׁל מְכוֹנִית הִפְחִיד אוֹתוֹ.','בַּבַּיִת אִמָּא הִסְבִּירָה: "כְּלָבִים שׁוֹמְעִים הַרְבֵּה יוֹתֵר טוֹב מֵאִתָּנוּ."'],
   q:[['אֵיךְ קוֹרְאִים לַגּוּר?','בּוּבִּי',['שׁוֹקוֹ','רֶקְס']],['לָמָּה רַעַשׁ שֶׁל מְכוֹנִית מַפְחִיד כְּלָבִים?','כִּי כְּלָבִים שׁוֹמְעִים טוֹב מְאוֹד',['כִּי כְּלָבִים לֹא שׁוֹמְעִים','כִּי כְּלָבִים אוֹהֲבִים מְכוֹנִיּוֹת']],['מָה קָרָה רִאשׁוֹן?','בּוּבִּי בָּרַח',['גִּיל שָׁמַע נְבִיחָה','אִמָּא הִסְבִּירָה עַל כְּלָבִים']]]},
- {t:'הַמִּגְדָּל שֶׁל יוֹנִי',spr:['tower','puzzle'],gk:'value',goal:'כשמשהו נהרס, נרגעים ומנסים שוב',les:1,s:['יוֹנִי בָּנָה מִגְדָּל גָּבוֹהַּ מִקֻּבִּיּוֹת.','הוּא שָׂם קֻבִּיָּה עַל קֻבִּיָּה, לְאַט לְאַט.','אָחִיו הַקָּטָן רָץ וְנָגַע בַּמִּגְדָּל.','הַמִּגְדָּל נָפַל, וְכָל הַקֻּבִּיּוֹת הִתְפַּזְּרוּ.','יוֹנִי כָּעַס, אֲבָל הוּא נָשַׁם עָמֹק וְנִרְגַּע.','"לֹא נוֹרָא, אֶפְשָׁר לְנַסּוֹת שׁוּב! בּוֹא נִבְנֶה בְּיַחַד," הוּא אָמַר.'],
+ {t:'הַמִּגְדָּל שֶׁל יוֹנִי',hw:[['מִגְדָּל','🗼'],['מִקֻּבִּיּוֹת','🧱'],['הִתְפַּזְּרוּ','💥']],spr:['tower','puzzle'],gk:'value',goal:'כשמשהו נהרס, נרגעים ומנסים שוב',les:1,s:['יוֹנִי בָּנָה מִגְדָּל גָּבוֹהַּ מִקֻּבִּיּוֹת.','הוּא שָׂם קֻבִּיָּה עַל קֻבִּיָּה, לְאַט לְאַט.','אָחִיו הַקָּטָן רָץ וְנָגַע בַּמִּגְדָּל.','הַמִּגְדָּל נָפַל, וְכָל הַקֻּבִּיּוֹת הִתְפַּזְּרוּ.','יוֹנִי כָּעַס, אֲבָל הוּא נָשַׁם עָמֹק וְנִרְגַּע.','"לֹא נוֹרָא, אֶפְשָׁר לְנַסּוֹת שׁוּב! בּוֹא נִבְנֶה בְּיַחַד," הוּא אָמַר.'],
   q:[['לָמָּה הַמִּגְדָּל נָפַל?','כִּי הָאָח הַקָּטָן נָגַע בּוֹ',['כִּי הָיְתָה רוּחַ','כִּי יוֹנִי קָפַץ']],['מָה לָמַדְנוּ מִיּוֹנִי?','כְּשֶׁמַּשֶּׁהוּ נֶהֱרָס, נִרְגָּעִים וּמְנַסִּים שׁוּב',['כְּשֶׁמַּשֶּׁהוּ נֶהֱרָס, צוֹעֲקִים','לֹא בּוֹנִים אַף פַּעַם']],['מָה קָרָה רִאשׁוֹן?','יוֹנִי בָּנָה מִגְדָּל',['הַמִּגְדָּל נָפַל','יוֹנִי חִיֵּךְ']]]},
- {t:'הַצִּפּוֹר הַקְּטַנָּה',spr:['bird','tree'],gk:'value',goal:'גם כשמפחדים, אפשר לנסות',les:0,s:['בְּקֵן עַל הָעֵץ גָּרָה צִפּוֹר קְטַנָּה.','כָּל הַצִּפֳּרִים עָפוּ, אֲבָל הִיא פָּחֲדָה.','אִמָּא שֶׁלָּהּ אָמְרָה: "תְּנַסִּי, אֲנִי כָּאן."','הַצִּפּוֹר פָּתְחָה כְּנָפַיִם וְקָפְצָה.','הִיא עָפָה עַד הָעֵץ הַשֵּׁנִי!','מֵאָז הִיא עָפָה כָּל יוֹם.'],
+ {t:'הַצִּפּוֹר הַקְּטַנָּה',hw:[['בְּקֵן','🪺'],['צִפּוֹר','🐦'],['כְּנָפַיִם','🪽']],spr:['bird','tree'],gk:'value',goal:'גם כשמפחדים, אפשר לנסות',les:0,s:['בְּקֵן עַל הָעֵץ גָּרָה צִפּוֹר קְטַנָּה.','כָּל הַצִּפֳּרִים עָפוּ, אֲבָל הִיא פָּחֲדָה.','אִמָּא שֶׁלָּהּ אָמְרָה: "תְּנַסִּי, אֲנִי כָּאן."','הַצִּפּוֹר פָּתְחָה כְּנָפַיִם וְקָפְצָה.','הִיא עָפָה עַד הָעֵץ הַשֵּׁנִי!','מֵאָז הִיא עָפָה כָּל יוֹם.'],
   q:[['מָה לָמַדְנוּ מֵהַצִּפּוֹר?','גַּם כְּשֶׁמְּפַחֲדִים, אֶפְשָׁר לְנַסּוֹת',['שֶׁצָּרִיךְ תָּמִיד לְהִשָּׁאֵר בַּקֵּן','שֶׁצִּפֳּרִים לֹא עָפוֹת']],['לָמָּה הַצִּפּוֹר לֹא עָפָה בַּהַתְחָלָה?','כִּי הִיא פָּחֲדָה',['כִּי הִיא הָיְתָה רְעֵבָה','כִּי יָרַד גֶּשֶׁם']],['מָה קָרָה רִאשׁוֹן?','אִמָּא אָמְרָה לָהּ לְנַסּוֹת',['הַצִּפּוֹר עָפָה עַד הָעֵץ הַשֵּׁנִי','הַצִּפּוֹר עָפָה כָּל יוֹם']]]},
- {t:'הַפָּנָס שֶׁל סַבָּא',spr:['lantern','moon'],gk:'sci',goal:'צל נוצר כשמשהו עוצר את האור',les:1,s:['בַּלַּיְלָה הַחַשְׁמַל בַּבַּיִת כָּבָה.','הָיָה חֹשֶׁךְ גָּמוּר, וְתָמָר לֹא רָאֲתָה כְּלוּם.','סַבָּא הוֹצִיא פָּנָס יָשָׁן מֵהָאָרוֹן.','הוּא הִדְלִיק אוֹתוֹ, וְהַחֶדֶר הִתְמַלֵּא בְּאוֹר.','תָּמָר שָׂמָה יָד מוּל הַפָּנָס, וְעַל הַקִּיר הוֹפִיעַ צֵל.','סַבָּא הִסְבִּיר: "הַיָּד עוֹצֶרֶת אֶת הָאוֹר, וְכָכָה נוֹצָר צֵל."'],
+ {t:'הַפָּנָס שֶׁל סַבָּא',hw:[['הַחַשְׁמַל','⚡'],['פָּנָס','🔦'],['צֵל','👤']],spr:['lantern','moon'],gk:'sci',goal:'צל נוצר כשמשהו עוצר את האור',les:1,s:['בַּלַּיְלָה הַחַשְׁמַל בַּבַּיִת כָּבָה.','הָיָה חֹשֶׁךְ גָּמוּר, וְתָמָר לֹא רָאֲתָה כְּלוּם.','סַבָּא הוֹצִיא פָּנָס יָשָׁן מֵהָאָרוֹן.','הוּא הִדְלִיק אוֹתוֹ, וְהַחֶדֶר הִתְמַלֵּא בְּאוֹר.','תָּמָר שָׂמָה יָד מוּל הַפָּנָס, וְעַל הַקִּיר הוֹפִיעַ צֵל.','סַבָּא הִסְבִּיר: "הַיָּד עוֹצֶרֶת אֶת הָאוֹר, וְכָכָה נוֹצָר צֵל."'],
   q:[['לָמָּה הָיָה חֹשֶׁךְ בַּבַּיִת?','כִּי הַחַשְׁמַל כָּבָה',['כִּי הָיָה עָנָן','כִּי תָּמָר יָשְׁנָה']],['לָמָּה הוֹפִיעַ צֵל עַל הַקִּיר?','כִּי הַיָּד עָצְרָה אֶת הָאוֹר',['כִּי הַחַשְׁמַל חָזַר','כִּי הַקִּיר הָיָה שָׁחֹר']],['מָה קָרָה רִאשׁוֹן?','הַחַשְׁמַל כָּבָה',['סַבָּא הִדְלִיק פָּנָס','הוֹפִיעַ צֵל עַל הַקִּיר']]]},
- {t:'הַדָּג הַזָּהֹב',spr:['fish','wave'],gk:'sci',goal:'דג נושם בזימים, רק בתוך המים',les:1,s:['בַּיָּם הַכָּחֹל שָׂחָה דָּג קָטָן וְזָהֹב.','הוּא רָצָה לִרְאוֹת מָה יֵשׁ מֵעַל הַמַּיִם.','הוּא קָפַץ גָּבוֹהַּ וְרָאָה סִירָה לְבָנָה.','אֲבָל מִיָּד הוּא חָזַר לַמַּיִם, כִּי דָּג נוֹשֵׁם רַק בְּתוֹךְ הַמַּיִם.','לַדָּג יֵשׁ זִימִים, וְאִתָּם הוּא נוֹשֵׁם בַּמַּיִם, כְּמוֹ שֶׁאֲנַחְנוּ נוֹשְׁמִים אֲוִיר.'],
+ {t:'הַדָּג הַזָּהֹב',hw:[['זִימִים','🐟'],['סִירָה','⛵'],['אֲוִיר','💨']],spr:['fish','wave'],gk:'sci',goal:'דג נושם בזימים, רק בתוך המים',les:1,s:['בַּיָּם הַכָּחֹל שָׂחָה דָּג קָטָן וְזָהֹב.','הוּא רָצָה לִרְאוֹת מָה יֵשׁ מֵעַל הַמַּיִם.','הוּא קָפַץ גָּבוֹהַּ וְרָאָה סִירָה לְבָנָה.','אֲבָל מִיָּד הוּא חָזַר לַמַּיִם, כִּי דָּג נוֹשֵׁם רַק בְּתוֹךְ הַמַּיִם.','לַדָּג יֵשׁ זִימִים, וְאִתָּם הוּא נוֹשֵׁם בַּמַּיִם, כְּמוֹ שֶׁאֲנַחְנוּ נוֹשְׁמִים אֲוִיר.'],
   q:[['אֵיזֶה צֶבַע הָיָה הַדָּג?','זָהֹב',['אָדֹם','יָרֹק']],['לָמָּה הַדָּג חָזַר מַהֵר לַמַּיִם?','כִּי דָּג נוֹשֵׁם רַק בְּתוֹךְ הַמַּיִם',['כִּי הוּא רָאָה כָּרִישׁ','כִּי הַסִּירָה הָיְתָה רוֹעֶשֶׁת']],['מָה קָרָה רִאשׁוֹן?','הַדָּג רָצָה לִרְאוֹת מָה יֵשׁ לְמַעְלָה',['הַדָּג קָפַץ גָּבוֹהַּ','הַדָּג חָזַר לַמַּיִם']]]},
- {t:'הָעוּגָה שֶׁנִּשְׂרְפָה',spr:['cake','flame'],gk:'value',goal:'מטעות לומדים: בפעם הבאה שמים שעון',les:0,s:['אַבָּא וְשִׁירָה אָפוּ עוּגָה לְשַׁבָּת.','הֵם שָׂמוּ אוֹתָהּ בַּתַּנּוּר וְהָלְכוּ לְשַׂחֵק.','אַחֲרֵי זְמַן מָה, שִׁירָה הֵרִיחָה רֵיחַ שֶׁל שְׂרֵפָה.','הֵם רָצוּ לַמִּטְבָּח, אֲבָל הָעוּגָה כְּבָר הָיְתָה שְׁחֹרָה.','"טָעִינוּ, וְלָמַדְנוּ: בַּפַּעַם הַבָּאָה נָשִׂים שָׁעוֹן," אָמַר אַבָּא.','הֵם אָפוּ עוּגָה חֲדָשָׁה, וְהַפַּעַם הִיא יָצְאָה טְעִימָה.'],
+ {t:'הָעוּגָה שֶׁנִּשְׂרְפָה',hw:[['בַּתַּנּוּר','🍞'],['שְׂרֵפָה','🔥'],['שָׁעוֹן','⏰']],spr:['cake','flame'],gk:'value',goal:'מטעות לומדים: בפעם הבאה שמים שעון',les:0,s:['אַבָּא וְשִׁירָה אָפוּ עוּגָה לְשַׁבָּת.','הֵם שָׂמוּ אוֹתָהּ בַּתַּנּוּר וְהָלְכוּ לְשַׂחֵק.','אַחֲרֵי זְמַן מָה, שִׁירָה הֵרִיחָה רֵיחַ שֶׁל שְׂרֵפָה.','הֵם רָצוּ לַמִּטְבָּח, אֲבָל הָעוּגָה כְּבָר הָיְתָה שְׁחֹרָה.','"טָעִינוּ, וְלָמַדְנוּ: בַּפַּעַם הַבָּאָה נָשִׂים שָׁעוֹן," אָמַר אַבָּא.','הֵם אָפוּ עוּגָה חֲדָשָׁה, וְהַפַּעַם הִיא יָצְאָה טְעִימָה.'],
   q:[['מָה לָמְדוּ אַבָּא וְשִׁירָה מֵהַטָּעוּת?','לָשִׂים שָׁעוֹן, כְּדֵי לֹא לִשְׁכֹּחַ אֶת הָעוּגָה',['לֹא לֶאֱפוֹת אַף פַּעַם','לָשִׂים אֶת הָעוּגָה בַּמְּקָרֵר']],['לָמָּה הָעוּגָה נִשְׂרְפָה?','כִּי הֵם שָׁכְחוּ אוֹתָהּ בַּתַּנּוּר',['כִּי הִיא נָפְלָה','כִּי שָׂמוּ בָּהּ מֶלַח']],['מָה קָרָה רִאשׁוֹן?','שִׁירָה הֵרִיחָה שְׂרֵפָה',['הֵם אָפוּ עוּגָה חֲדָשָׁה','אַבָּא אָמַר שֶׁיָּשִׂימוּ שָׁעוֹן']]]},
- {t:'הַכִּבְשָׂה שֶׁהָלְכָה לְאִבּוּד',spr:['sheep','mount'],gk:'math',goal:'סופרים כדי לדעת מה חסר: 10 פחות 9 זה 1',les:0,s:['בַּשָּׂדֶה הָיוּ עֶשֶׂר כְּבָשִׂים לְבָנוֹת.','בָּעֶרֶב הָרוֹעֶה סָפַר אוֹתָן, וְהָיוּ רַק תֵּשַׁע. חָסְרָה אַחַת!','כִּבְשָׂה אַחַת טִפְּסָה עַל הָהָר וְלֹא יָדְעָה אֵיךְ לָרֶדֶת.','הַכֶּלֶב שֶׁל הָרוֹעֶה רָץ וּמָצָא אוֹתָהּ.','הוּא הוֹבִיל אוֹתָהּ בַּשְּׁבִיל בַּחֲזָרָה לָעֵדֶר.'],
+ {t:'הַכִּבְשָׂה שֶׁהָלְכָה לְאִבּוּד',hw:[['כְּבָשִׂים','🐑'],['הָרוֹעֶה','🧑‍🌾'],['טִפְּסָה','⛰️']],spr:['sheep','mount'],gk:'math',goal:'סופרים כדי לדעת מה חסר: 10 פחות 9 זה 1',les:0,s:['בַּשָּׂדֶה הָיוּ עֶשֶׂר כְּבָשִׂים לְבָנוֹת.','בָּעֶרֶב הָרוֹעֶה סָפַר אוֹתָן, וְהָיוּ רַק תֵּשַׁע. חָסְרָה אַחַת!','כִּבְשָׂה אַחַת טִפְּסָה עַל הָהָר וְלֹא יָדְעָה אֵיךְ לָרֶדֶת.','הַכֶּלֶב שֶׁל הָרוֹעֶה רָץ וּמָצָא אוֹתָהּ.','הוּא הוֹבִיל אוֹתָהּ בַּשְּׁבִיל בַּחֲזָרָה לָעֵדֶר.'],
   q:[['הָיוּ עֶשֶׂר כְּבָשִׂים, וְהָרוֹעֶה סָפַר תֵּשַׁע. כַּמָּה כְּבָשִׂים חָסְרוּ?','1',['9','10']],['לָמָּה הַכִּבְשָׂה לֹא חָזְרָה?','כִּי הִיא לֹא יָדְעָה אֵיךְ לָרֶדֶת מֵהָהָר',['כִּי הִיא יָשְׁנָה','כִּי הִיא כָּעֲסָה']],['מָה קָרָה רִאשׁוֹן?','הָרוֹעֶה סָפַר אֶת הַכְּבָשִׂים',['הַכֶּלֶב מָצָא אֶת הַכִּבְשָׂה','הַכִּבְשָׂה חָזְרָה לָעֵדֶר']]]},
- {t:'הַמְּכוֹנִית הָאֲדֻמָּה',spr:['car','star'],gk:'value',goal:'לשתף ולשחק בתורות זה כיף יותר',les:1,s:['לְאָדָם יֵשׁ מְכוֹנִית צַעֲצוּעַ אֲדֻמָּה.','הוּא לָקַח אוֹתָהּ לַגַּן כְּדֵי לְשַׂחֵק עִם חֲבֵרִים.','רוֹנִי רָצָה לְשַׂחֵק בָּהּ גַּם.','בַּהַתְחָלָה אָדָם לֹא רָצָה לְהַשְׁאִיל.','אַחַר כָּךְ הֵם בָּנוּ כְּבִישׁ מֵחוֹל, וְשִׂחֲקוּ בְּתוֹרוֹת.','"כָּכָה הַרְבֵּה יוֹתֵר כֵּיף!" אָמַר אָדָם.'],
+ {t:'הַמְּכוֹנִית הָאֲדֻמָּה',hw:[['מְכוֹנִית','🚗'],['צַעֲצוּעַ','🧸'],['לְהַשְׁאִיל','🤝']],spr:['car','star'],gk:'value',goal:'לשתף ולשחק בתורות זה כיף יותר',les:1,s:['לְאָדָם יֵשׁ מְכוֹנִית צַעֲצוּעַ אֲדֻמָּה.','הוּא לָקַח אוֹתָהּ לַגַּן כְּדֵי לְשַׂחֵק עִם חֲבֵרִים.','רוֹנִי רָצָה לְשַׂחֵק בָּהּ גַּם.','בַּהַתְחָלָה אָדָם לֹא רָצָה לְהַשְׁאִיל.','אַחַר כָּךְ הֵם בָּנוּ כְּבִישׁ מֵחוֹל, וְשִׂחֲקוּ בְּתוֹרוֹת.','"כָּכָה הַרְבֵּה יוֹתֵר כֵּיף!" אָמַר אָדָם.'],
   q:[['אֵיזֶה צֶבַע הַמְּכוֹנִית?','אֲדֻמָּה',['כְּחֻלָּה','צְהֻבָּה']],['לָמָּה בַּסּוֹף הָיָה יוֹתֵר כֵּיף?','כִּי הֵם שִׂחֲקוּ יַחַד בְּתוֹרוֹת',['כִּי אָדָם שִׂחֵק לְבַד','כִּי הַמְּכוֹנִית נִשְׁבְּרָה']],['מָה קָרָה רִאשׁוֹן?','אָדָם לֹא רָצָה לְהַשְׁאִיל',['הֵם בָּנוּ כְּבִישׁ מֵחוֹל','הֵם שִׂחֲקוּ בְּתוֹרוֹת']]]},
- {t:'שֶׁלֶג בַּחֶרְמוֹן',spr:['mount','cloud'],gk:'sci',goal:'שלג הוא מים קפואים, ובחום הוא נמס',les:0,s:['בַּחֹרֶף נָסְעָה הַמִּשְׁפָּחָה לַחֶרְמוֹן.','עַל הָהָר הָיָה קַר מְאוֹד, וּמֵהֶעֲנָנִים יָרַד שֶׁלֶג לָבָן.','נוֹגָה לָבְשָׁה מְעִיל, כְּפָפוֹת וְכוֹבַע.','הִיא בָּנְתָה אִישׁ שֶׁלֶג עִם אַף מִגֶּזֶר.','בַּבַּיִת הַחַם, הַשֶּׁלֶג עַל הַכְּפָפוֹת נָמֵס וְנִהְיָה מַיִם, כִּי שֶׁלֶג הוּא מַיִם קְפוּאִים.'],
+ {t:'שֶׁלֶג בַּחֶרְמוֹן',hw:[['שֶׁלֶג','❄️'],['כְּפָפוֹת','🧤'],['נָמֵס','💧']],spr:['mount','cloud'],gk:'sci',goal:'שלג הוא מים קפואים, ובחום הוא נמס',les:0,s:['בַּחֹרֶף נָסְעָה הַמִּשְׁפָּחָה לַחֶרְמוֹן.','עַל הָהָר הָיָה קַר מְאוֹד, וּמֵהֶעֲנָנִים יָרַד שֶׁלֶג לָבָן.','נוֹגָה לָבְשָׁה מְעִיל, כְּפָפוֹת וְכוֹבַע.','הִיא בָּנְתָה אִישׁ שֶׁלֶג עִם אַף מִגֶּזֶר.','בַּבַּיִת הַחַם, הַשֶּׁלֶג עַל הַכְּפָפוֹת נָמֵס וְנִהְיָה מַיִם, כִּי שֶׁלֶג הוּא מַיִם קְפוּאִים.'],
   q:[['לָמָּה הַשֶּׁלֶג נָמֵס בַּבַּיִת?','כִּי בַּבַּיִת חַם, וְשֶׁלֶג בְּחֹם נִהְיָה מַיִם',['כִּי בַּבַּיִת קַר','כִּי נוֹגָה אָכְלָה אוֹתוֹ']],['לָמָּה נוֹגָה לָבְשָׁה מְעִיל וּכְפָפוֹת?','כִּי בַּחוּץ הָיָה קַר',['כִּי הָיָה חַם','כִּי הִיא הָלְכָה לַיָּם']],['מָה קָרָה רִאשׁוֹן?','הַמִּשְׁפָּחָה נָסְעָה לַחֶרְמוֹן',['נוֹגָה בָּנְתָה אִישׁ שֶׁלֶג','הַשֶּׁלֶג נָמֵס']]]},
- {t:'הַקֶּשֶׁת בַּשָּׁמַיִם',spr:['rainbow','sun'],gk:'sci',goal:'קשת נוצרת משמש וטיפות מים, ויש בה 7 צבעים',les:1,s:['אַחֲרֵי הַגֶּשֶׁם יָצְאָה הַשֶּׁמֶשׁ.','אִיתַי הִסְתַּכֵּל מֵהַחַלּוֹן וְרָאָה קֶשֶׁת.','הוּא סָפַר שִׁשָּׁה צְבָעִים: אָדֹם, כָּתֹם, צָהֹב, יָרֹק, כָּחֹל וְסָגֹל.','אַבָּא אָמַר: "יֵשׁ עוֹד אֶחָד, כָּחֹל כֵּהֶה, בֵּין הַכָּחֹל לַסָּגֹל. בְּיַחַד שִׁבְעָה!"','"קֶשֶׁת נוֹצֶרֶת כְּשֶׁהַשֶּׁמֶשׁ מְאִירָה עַל טִפּוֹת מַיִם," הִסְבִּיר אַבָּא.'],
+ {t:'הַקֶּשֶׁת בַּשָּׁמַיִם',hw:[['קֶשֶׁת','🌈'],['טִפּוֹת','💧'],['צְבָעִים','🎨']],spr:['rainbow','sun'],gk:'sci',goal:'קשת נוצרת משמש וטיפות מים, ויש בה 7 צבעים',les:1,s:['אַחֲרֵי הַגֶּשֶׁם יָצְאָה הַשֶּׁמֶשׁ.','אִיתַי הִסְתַּכֵּל מֵהַחַלּוֹן וְרָאָה קֶשֶׁת.','הוּא סָפַר שִׁשָּׁה צְבָעִים: אָדֹם, כָּתֹם, צָהֹב, יָרֹק, כָּחֹל וְסָגֹל.','אַבָּא אָמַר: "יֵשׁ עוֹד אֶחָד, כָּחֹל כֵּהֶה, בֵּין הַכָּחֹל לַסָּגֹל. בְּיַחַד שִׁבְעָה!"','"קֶשֶׁת נוֹצֶרֶת כְּשֶׁהַשֶּׁמֶשׁ מְאִירָה עַל טִפּוֹת מַיִם," הִסְבִּיר אַבָּא.'],
   q:[['כַּמָּה צְבָעִים יֵשׁ בַּקֶּשֶׁת?','7',['3','10']],['לָמָּה הוֹפִיעָה קֶשֶׁת?','כִּי הַשֶּׁמֶשׁ הֵאִירָה עַל טִפּוֹת מַיִם',['כִּי הָיָה לַיְלָה','כִּי הָיָה קַר']],['מָה קָרָה רִאשׁוֹן?','יָרַד גֶּשֶׁם',['אִיתַי רָאָה קֶשֶׁת','אַבָּא הִסְבִּיר עַל הַקֶּשֶׁת']]]},
- {t:'הָאֶבֶן הַנּוֹצֶצֶת',spr:['crystal','lantern'],gk:'word',goal:'מילה חדשה: גביש, אבן נוצצת שנוצרת בטבע',les:0,s:['לִיאוֹר וְאַבָּא טִיְּלוּ לְיַד מְעָרָה.','בִּפְנִים הָיָה חָשׁוּךְ, אָז הֵם הִדְלִיקוּ פָּנָס.','עַל הַקִּיר נָצְצָה אֶבֶן כְּחֻלָּה.','"זֶה יַהֲלוֹם?" שָׁאַל לִיאוֹר.','אַבָּא צָחַק: "זֶה גָּבִישׁ, אֶבֶן נוֹצֶצֶת שֶׁנּוֹצְרָה בַּטֶּבַע."','הֵם צִלְּמוּ אֶת הָאֶבֶן, וְהִשְׁאִירוּ אוֹתָהּ בַּמָּקוֹם.'],
+ {t:'הָאֶבֶן הַנּוֹצֶצֶת',hw:[['מְעָרָה','🕳️'],['יַהֲלוֹם','💎'],['גָּבִישׁ','🔮']],spr:['crystal','lantern'],gk:'word',goal:'מילה חדשה: גביש, אבן נוצצת שנוצרת בטבע',les:0,s:['לִיאוֹר וְאַבָּא טִיְּלוּ לְיַד מְעָרָה.','בִּפְנִים הָיָה חָשׁוּךְ, אָז הֵם הִדְלִיקוּ פָּנָס.','עַל הַקִּיר נָצְצָה אֶבֶן כְּחֻלָּה.','"זֶה יַהֲלוֹם?" שָׁאַל לִיאוֹר.','אַבָּא צָחַק: "זֶה גָּבִישׁ, אֶבֶן נוֹצֶצֶת שֶׁנּוֹצְרָה בַּטֶּבַע."','הֵם צִלְּמוּ אֶת הָאֶבֶן, וְהִשְׁאִירוּ אוֹתָהּ בַּמָּקוֹם.'],
   q:[['מָה זֶה גָּבִישׁ?','אֶבֶן נוֹצֶצֶת מֵהַטֶּבַע',['סוּג שֶׁל פָּנָס','חַיָּה שֶׁגָּרָה בַּמְּעָרָה']],['לָמָּה הֵם הִדְלִיקוּ פָּנָס?','כִּי בַּמְּעָרָה הָיָה חָשׁוּךְ',['כִּי הָיָה קַר','כִּי הֵם חִפְּשׂוּ אֶת אַבָּא']],['מָה קָרָה רִאשׁוֹן?','הֵם הִדְלִיקוּ פָּנָס',['הֵם רָאוּ אֶבֶן כְּחֻלָּה','הֵם צִלְּמוּ אֶת הָאֶבֶן']]]},
- {t:'הַמַּגְלֵשָׁה בַּגַּן',spr:['star','heart'],gk:'value',goal:'כשמישהו מתקשה, עוזרים לו',les:0,s:['בַּגַּן הָיְתָה מַגְלֵשָׁה גְּבוֹהָה.','הַרְבֵּה יְלָדִים עָמְדוּ בַּתּוֹר.','יַלְדָּה קְטַנָּה בָּכְתָה, כִּי הִיא לֹא הִגִּיעָה לַמַּדְרֵגָה.','עִידוֹ עָזַר לָהּ לְטַפֵּס, וְהִיא גָּלְשָׁה וְצָחֲקָה.','הַגַּנֶּנֶת אָמְרָה: "עִידוֹ, אַתָּה חָבֵר טוֹב!"'],
+ {t:'הַמַּגְלֵשָׁה בַּגַּן',hw:[['מַגְלֵשָׁה','🛝'],['לַמַּדְרֵגָה','🪜'],['הַגַּנֶּנֶת','👩‍🏫']],spr:['star','heart'],gk:'value',goal:'כשמישהו מתקשה, עוזרים לו',les:0,s:['בַּגַּן הָיְתָה מַגְלֵשָׁה גְּבוֹהָה.','הַרְבֵּה יְלָדִים עָמְדוּ בַּתּוֹר.','יַלְדָּה קְטַנָּה בָּכְתָה, כִּי הִיא לֹא הִגִּיעָה לַמַּדְרֵגָה.','עִידוֹ עָזַר לָהּ לְטַפֵּס, וְהִיא גָּלְשָׁה וְצָחֲקָה.','הַגַּנֶּנֶת אָמְרָה: "עִידוֹ, אַתָּה חָבֵר טוֹב!"'],
   q:[['לָמָּה הַגַּנֶּנֶת אָמְרָה שֶׁעִידוֹ חָבֵר טוֹב?','כִּי הוּא עָזַר לְמִישֶׁהִי שֶׁהִתְקַשְּׁתָה',['כִּי הוּא גָּלַשׁ הֲכִי מַהֵר','כִּי הוּא עָמַד רִאשׁוֹן בַּתּוֹר']],['לָמָּה הַיַּלְדָּה בָּכְתָה?','כִּי הִיא לֹא הִגִּיעָה לַמַּדְרֵגָה',['כִּי הִיא נָפְלָה','כִּי הִיא רָצְתָה הַבַּיְתָה']],['מָה קָרָה רִאשׁוֹן?','הַיַּלְדָּה בָּכְתָה',['הַיַּלְדָּה גָּלְשָׁה','הַגַּנֶּנֶת דִּבְּרָה עִם עִידוֹ']]]},
- {t:'צְבִיקָה הַצָּב לֹא מְוַתֵּר',spr:['turtle','flower'],gk:'value',goal:'מי שממשיך ולא מוותר, מגיע',les:0,s:['צְבִיקָה הַצָּב הָלַךְ לְאַט לְאַט אֶל הַבְּרֵכָה.','הָאַרְנָב רָץ מַהֵר וְצָחַק עָלָיו.','בַּדֶּרֶךְ הָאַרְנָב עָצַר לֶאֱכֹל, וְנִרְדַּם מִתַּחַת לָעֵץ.','צְבִיקָה הִמְשִׁיךְ לָלֶכֶת, צַעַד אַחֲרֵי צַעַד.','כְּשֶׁהָאַרְנָב הִתְעוֹרֵר, צְבִיקָה כְּבָר שָׂחָה בַּבְּרֵכָה.'],
+ {t:'צְבִיקָה הַצָּב לֹא מְוַתֵּר',hw:[['הַצָּב','🐢'],['הָאַרְנָב','🐇'],['בַּבְּרֵכָה','🏊']],spr:['turtle','flower'],gk:'value',goal:'מי שממשיך ולא מוותר, מגיע',les:0,s:['צְבִיקָה הַצָּב הָלַךְ לְאַט לְאַט אֶל הַבְּרֵכָה.','הָאַרְנָב רָץ מַהֵר וְצָחַק עָלָיו.','בַּדֶּרֶךְ הָאַרְנָב עָצַר לֶאֱכֹל, וְנִרְדַּם מִתַּחַת לָעֵץ.','צְבִיקָה הִמְשִׁיךְ לָלֶכֶת, צַעַד אַחֲרֵי צַעַד.','כְּשֶׁהָאַרְנָב הִתְעוֹרֵר, צְבִיקָה כְּבָר שָׂחָה בַּבְּרֵכָה.'],
   q:[['מָה לָמַדְנוּ מִצְּבִיקָה?','מִי שֶׁמַּמְשִׁיךְ וְלֹא מְוַתֵּר, מַגִּיעַ',['שֶׁצָּרִיךְ רַק לָרוּץ מַהֵר','שֶׁכְּדַאי לִישֹׁן בַּדֶּרֶךְ']],['לָמָּה הָאַרְנָב לֹא הִגִּיעַ רִאשׁוֹן?','כִּי הוּא נִרְדַּם בַּדֶּרֶךְ',['כִּי הוּא הָלַךְ לְאַט','כִּי הוּא פָּחַד מִמַּיִם']],['מָה קָרָה רִאשׁוֹן?','הָאַרְנָב צָחַק עַל צְבִיקָה',['הָאַרְנָב נִרְדַּם','הָאַרְנָב הִתְעוֹרֵר']]]}];
 /* extra questions for the 6 older stories (by index): none since #355 — each now has its own 3 questions, the last about the lesson (2-3 per story) */
 const STORY_Q={};
+
+/* ===================== 9. RHYMES: hear a word (with its picture), pick the word that rhymes ===================== */
+/* one set per line: word|sprite, its rhyme family, the words that rhyme with it. Words of one family are never offered against each other. */
+const RHY_RAW=`עִפָּרוֹן|pencil on בַּלּוֹן לִימוֹן
+דְּרָקוֹן|dragon on חַלּוֹן סַבּוֹן
+יַהֲלוֹם|gem on חֲלוֹם שָׁלוֹם
+דָּג|fish ag גַּג חַג
+קֶשֶׁת|rainbow esh רֶשֶׁת
+נֶשֶׁר|eagle esh גֶּשֶׁר קֶשֶׁר
+כּוֹכָב|star av זָהָב
+צָב|turtle av חָלָב
+אַרְנָב|rabbit av זָנָב
+יָרֵחַ|moon ach פּוֹרֵחַ
+מַפְתֵּחַ|key ach שָׂמֵחַ
+פֶּרַח|flower ach קֶרַח
+תַּפּוּחַ|apple ach לוּחַ רוּחַ
+לֵב|heart ev זְאֵב כְּאֵב
+סִירָה|boat ia שִׁירָה דִּירָה
+מִטְרִיָּה|umbrella ia סִפְרִיָּה
+עֵץ|tree etz קוֹפֵץ נוֹצֵץ
+דֶּגֶל|flag egel רֶגֶל עֵגֶל
+כּוֹבַע|hat va צֶבַע אֶצְבַּע
+לֶהָבָה|flame va אַהֲבָה
+כַּדּוּר|ball ur תַּנּוּר צִיּוּר
+צִפּוֹר|bird or כִּנּוֹר אוֹר
+עָנָן|cloud an גַּנָּן
+לִוְיָתָן|whale an קָטָן
+פָּנָס|lantern as אֲנָנָס
+מִגְדָּל|tower al סַנְדָּל
+גַּל|wave al סַל גָּמָל
+הַר|mount ar נָהָר פַּר
+יַנְשׁוּף|owl uf גּוּף עוּף
+מַסְמֵר|nail er שׁוֹמֵר
+גָּבִישׁ|crystal ish כְּבִישׁ
+צְרִיף|hut if כִּיף
+מַנְעוּל|lock ul חָתוּל`;
+const RHY=RHY_RAW.trim().split('\n').map(l=>{const [ws,f,...r]=l.trim().split(/\s+/);const [w,spr]=ws.split('|');return {w,spr,f,r};});
+const RHY_ASK='מָה מִתְחָרֵז עִם ';
+let rhyTok=0;
+/* the voice: the word, then each choice in turn (one word per sentence, so every sentence exists in advance) */
+function rhySay(s,os,card){const tok=++rhyTok;O.say(RHY_ASK+s.w);os.forEach((o,k)=>setTimeout(()=>{if(tok===rhyTok&&(!card||card.isConnected))O.say(o);},D(2200+k*1300)));}
+function rhyQ(used){const s=lword('gp-rhy',used?RHY.filter(x=>!used.has(x.w)):RHY);if(used)used.add(s.w);const a=pick(s.r);const ds=[];
+  for(const x of shuffle(RHY.filter(x=>x.f!==s.f).flatMap(x=>[x.w,...x.r]))){if(ds.length>=2)break;if(!ds.includes(x))ds.push(x);}
+  const os=shuffle([a,...ds]);let card=null;
+  return {pr:`<div class="gp-rhy">${pic(s)}<div class="bigw">${s.w}</div></div><div class="qq">מָה מִתְחָרֵז?</div>`,opts:os,ans:os.indexOf(a),cls:'tx',
+    play:()=>{card=document.querySelector('#sTal .tqc');rhySay(s,os,card);},auto:1,playLbl:'שׁוּב',say:plainHe(RHY_ASK+s.w),
+    explain:`<span class="bigw">${s.w} · ${a}</span>`,reveal:()=>O.say(s.w+', '+a),bank:'gp-rhy',bkey:s.w,key:s.w,chk:{w:s.w,a,f:s.f}};}
+/* a round of 5 different words (the learning engine alone may offer the same unseen word again) */
+function rhyRound(back){const used=new Set();T.quiz({id:'read-rhyme',title:'מִלִּים מִתְחָרְזוֹת',bg:'city',back,n:5,gen:i=>{if(!i)used.clear();return rhyQ(used);}});}
+/* every sentence the rhymes say, for the voice pregen */
+const speakList=()=>[...new Set(RHY.flatMap(s=>[RHY_ASK+s.w,s.w,...s.r,...s.r.map(a=>s.w+', '+a)]))];
 
 /* ---------- names for the parents' skills view (no nikud) ---------- */
 const SKILLS={'read-nik':'סולם הניקוד: הברות ומילים','nik-1':'ניקוד: קמץ ופתח (אַ)','nik-2':'ניקוד: חיריק (אִי)','nik-3':'ניקוד: חולם (אוֹ)','nik-4':'ניקוד: שורוק וקובוץ (אוּ)','nik-5':'ניקוד: צירי וסגול (אֶ)','nik-6':'ניקוד: שווא',
  'read-sound':'מודעות פונולוגית: הצליל הפותח (שמיעה בלבד)','snd-1':'צליל פותח: אות (3 אפשרויות)','snd-2':'צליל פותח: אות (4 אפשרויות)','snd-3':'צליל פותח: הברה',
  'write-spell':'כתיב: שומעים מילה וכותבים מאותיות','spell-1':'כתיב: מילים של 2-3 אותיות','spell-2':'כתיב: מילים של 4 אותיות','spell-3':'כתיב: מילים של 5+ אותיות',
- 'read-flu':'שטף קריאה: מילים ב-45 שניות (שיא אישי)','write-trace':'כתיבת אותיות (כולל אותיות סופיות)',
+ 'read-flu':'שטף קריאה: מילים ב-45 שניות (שיא אישי)','read-rhyme':'מודעות פונולוגית: חרוזים (שומעים מילה ובוחרים מילה שמתחרזת)','write-trace':'כתיבת אותיות (כולל אותיות סופיות)',
  'pict-1':'גרף תמונות: כמה, הכי הרבה, הכי מעט','pict-2':'גרף תמונות: בכמה יותר, ביחד','shp-1':'צורות: זיהוי משולש, ריבוע, מלבן, עיגול','shp-2':'צורות: צלעות, קודקודים, מחומש ומשושה',
  'len-1':'מדידת אורך בסרגל (ס"מ)','len-2':'השוואה: ארוך-קצר, כבד-קל (מאזניים)'};
 
@@ -5956,11 +6037,12 @@ const SKILLS={'read-nik':'סולם הניקוד: הברות ומילים','nik-1
 const ACTS={
  read:[{id:'read-nik',name:'סֻלַּם הַנִּקּוּד',icon:()=>'<span class="gp-ic">בָּ</span>',run:nikMenu},
   {id:'read-sound',name:'מָה שׁוֹמְעִים בַּהַתְחָלָה?',icon:()=>'<span style="font-size:34px">👂</span>',run:back=>sndRound(back)},
-  {id:'read-flu',name:'מֵרוֹץ מִלִּים',icon:()=>'<span style="font-size:34px">⏱️</span>',noMenu:true,run:race}],
+  {id:'read-flu',name:'מֵרוֹץ מִלִּים',icon:()=>'<span style="font-size:34px">⏱️</span>',noMenu:true,run:race},
+  {id:'read-rhyme',name:'מִלִּים מִתְחָרְזוֹת',icon:()=>'<span style="font-size:34px">🎵</span>',run:rhyRound}],
  write:[{id:'write-spell',name:'כּוֹתְבִים מִלִּים',icon:()=>T.X.abc,run:back=>spell(back)}]};
 function addAct(bid,a){const b=T.BUILD.find(x=>x.id===bid);if(!b||T.ACT[a.id])return;b.acts.push(a);T.ACT[a.id]=a;a.b=b;}
 function register(){Object.entries(ACTS).forEach(([bid,as])=>as.forEach(a=>addAct(bid,a)));}
-window.GAPS={register,ACTS,WD,parse,hi,level,nikMenu,nikRound,nikIntro,nikQ,RUNG,sndQ,sndRound,spell,race,raceRun,FINALS,finNote,STORIES,STORY_Q,SKILLS,sameSound,
+window.GAPS={register,ACTS,WD,parse,hi,level,nikMenu,nikRound,nikIntro,nikQ,RUNG,sndQ,sndRound,spell,race,raceRun,RHY,rhyQ,rhyRound,speakList,FINALS,finNote,STORIES,STORY_Q,SKILLS,sameSound,
   set dict(v){dict=v;dictTried=true;}};
 })();
 
@@ -6715,7 +6797,49 @@ ST(5,'לַיְלָה בָּאֹהֶל','לילה באוהל',['⛺','lantern'],
  [['lit','מִי עָשָׂה אֶת הָרַעַשׁ?','מי עשה את הרעש?','צְרָצָרִים',['צְפַרְדְּעִים','כְּלָבִים']],['seq','אוֹרֶן עָזַר לִמְתֹּחַ חֲבָלִים',['אִמָּא הִדְלִיקָה פָּנָס','אוֹרֶן נִרְדַּם']],
   ['les','אֵיךְ הַצְּרָצָרִים עוֹשִׂים אֶת הַקּוֹל?','איך הצרצרים עושים את הקול?','מְשַׁפְשְׁפִים כְּנָפַיִם',['פּוֹתְחִים אֶת הַפֶּה','דּוֹפְקִים עַל עֵצִים']]],
  ['sci','צרצרים משמיעים קול כשהם משפשפים את הכנפיים'])];
-stories.forEach((s,i)=>{s.id=i;});
+/* #420: 2-3 hard words of each story, met before it ("words we will meet"): [word as in the story, with nikud; picture] */
+const HW=[
+[['לַשַּׁעַר','🥅'],['פַּעֲמַיִם','✌️'],['גּוֹלִים','⚽']],
+[['בּוּעָה','🫧'],['וְהִתְפּוֹצְצָה','💥'],['אֲוִיר','💨']],
+[['פְּסַנְתֵּר','🎹'],['וְהַצְּלִיל','🎵'],['נָמוּךְ','⬇️']],
+[['הַגַּג','🏠'],['סֻלָּם','🪜']],
+[['קַרְטוֹן','📦'],['חֲלָלִית','🚀'],['הַמְרָאָה','🛫']],
+[['שְׁלוּלִית','💦'],['חִמְּמָה','☀️'],['נֶעֶלְמָה','🫥']],
+[['אַרְמוֹן','🏰'],['רָטֹב','💧'],['גַּל','🌊']],
+[['לַסַּל','🏀'],['זָרַק','🤾'],['תִּסְתַּכֵּל','👀']],
+[['שְׂחִיָּה','🏊'],['הַמְּאַמֶּנֶת','👩‍🏫'],['קֶרֶשׁ','🏄']],
+[['קֻפְסָאוֹת','📦'],['וּפְקָקִים','🍾'],['רוֹבּוֹט','🤖']],
+[['אַרְנָב','🐇'],['עֵשֶׂב','🌾'],['שִׁנַּיִם','🦷']],
+[['תִּזְמֹרֶת','🎺'],['סִירִים','🍲'],['תּוֹפֵף','🥁']],
+[['מֵטֵאוֹר','☄️'],['הַכּוֹכָבִים','⭐'],['מֵהֶחָלָל','🌌']],
+[['עַכְבָּר','🐭'],['הָאֱגוֹז','🌰'],['הַחֶדֶק','🐘']],
+[['מִבְצָר','🏰'],['מִכִּסְאוֹת','🪑'],['וּשְׂמִיכוֹת','🛏️']],
+[['בַּהַפְסָקָה','🔔'],['כַּדּוּרֶגֶל','⚽'],['הִבְקִיעַ','🥅']],
+[['אָחוֹת','👧'],['הַפְּסַנְתֵּר','🎹'],['נִרְדְּמָה','😴']],
+[['כַּדּוּרְסַל','🏀'],['הִפְסִידוּ','😞'],['הַמְּאַמֵּן','🧑‍🏫']],
+[['בַּבְּרֵכָה','🏊'],['מַקְפֵּצָה','🤸'],['פָּחֲדָה','😨']],
+[['גֶּשֶׁר','🌉'],['נָהָר','🏞️'],['מְהַנְדֵּס','👷']],
+[['נָבַח','🐕'],['הַשָּׁטִיחַ','🧶'],['בָּרְחָה','🏃']],
+[['טֶלֶסְקוֹפּ','🔭'],['הַיָּרֵחַ','🌙'],['מַכְתְּשִׁים','🕳️']],
+[['בִּשְׁבִיל','🥾'],['הַפְתָּעָה','🎁'],['מַעְיָן','💧']],
+[['פִּיתוֹת','🫓'],['קֶמַח','🌾'],['הַבָּצֵק','🥣']],
+[['הַמִּגְרָשׁ','🏟️'],['לַבֹּץ','🟤'],['מְלֻכְלָכִים','🧼']],
+[['לִפְסַנְתֵּר','🎹'],['הַשּׁוּרָה','📝'],['שֶׁהִתְאַמַּנְתָּ','💪']],
+[['אַסְטְרוֹנָאוּט','👨‍🚀'],['חֲלִיפָה','🧥'],['רִחֵף','🎈']],
+[['יוֹנָה','🕊️'],['זְרָדִים','🪵'],['גּוֹזָלִים','🐣']],
+[['הַגָּדֵר','🚧'],['הַשָּׁכֵן','🏡'],['דָּפְקוּ','🚪']],
+[['לִשְׂחוֹת','🏊'],['בּוּעוֹת','🫧'],['מֶטְרִים','📏']],
+[['קְרָשִׁים','🪵'],['מַסְמְרִים','🔨'],['סֻלָּם','🪜']],
+[['לַכִּתָּה','🏫'],['דִּינוֹזָאוּרִים','🦕'],['וְדִפְדְּפוּ','📖']],
+[['טוּרְנִיר','🏀'],['בְּפִגּוּר','📉'],['בַּגָּבִיעַ','🏆']],
+[['מְבֻלְגָּן','🧦'],['צַעֲצוּעִים','🧸'],['מְסֻדָּר','✅']],
+[['דּוֹלְפִין','🐬'],['בְּרֶשֶׁת','🕸️'],['לְמַצִּילִים','🛟']],
+[['חָלִיל','🪈'],['גִּיטָרָה','🎸'],['הַקֶּצֶב','🥁']],
+[['הַיָּרֵחַ','🌙'],['עִגּוּל','⭕'],['בַּמַּחְבֶּרֶת','📓']],
+[['עֲפִיפוֹן','🪁'],['זָנָב','〰️'],['דֶּבֶק','🧴']],
+[['לִשְׁלֹחַ','📤'],['בַּטֶּלֶפוֹן','📱'],['לְצַלֵּם','📷']],
+[['בְּאֹהֶל','⛺'],['צְרָצָרִים','🦗'],['כְּרִיכִים','🥪']]];
+stories.forEach((s,i)=>{s.id=i;s.hw=HW[i];});
 
 /* ---------- 4. WRITING ---------- */
 const FINAL={'ך':'כ','ם':'מ','ן':'נ','ף':'פ','ץ':'צ'};
@@ -6799,14 +6923,14 @@ function itemsFor(skill,level){const L=+level;
 /* everything the game may say (for the voice pregen); with nikud, like T.spk */
 function speakList(){const out=new Set();const add=s=>{if(s)out.add(String(s).replace(/\s+/g,' ').trim());};
   words.forEach(w=>add(w.w));sentences.forEach(s=>{add(s.t);add(s.q);if(s.a[0]!=='@')add(s.a);s.ds.forEach(d=>{if(d[0]!=='@')add(d);});});
-  stories.forEach(st=>{add(st.t);st.s.forEach(add);st.q.forEach(q=>{add(q[1]);add(q[3]);q[4].forEach(add);});});
+  stories.forEach(st=>{add(st.t);st.s.forEach(add);st.q.forEach(q=>{add(q[1]);add(q[3]);q[4].forEach(add);});(st.hw||[]).forEach(x=>add(x[0]));});
   order.forEach(o=>add(o.t));paper.forEach(p=>{add(p.t);p.chk.forEach(add);});Object.values(UI).forEach(add);
   return [...out];}
 /* fixed kid-facing lines of the activities */
 const UI={first:'בְּאֵיזוֹ אוֹת מַתְחִילָה הַמִּלָּה?',pw:'אֵיזוֹ מִלָּה מַתְאִימָה לַתְּמוּנָה?',wp:'אֵיזוֹ תְּמוּנָה מַתְאִימָה לַמִּלָּה?',build:'לוֹחֲצִים עַל הַהֲבָרוֹת לְפִי הַסֵּדֶר, מִיָּמִין לִשְׂמֹאל',
  copy:'כְּתֹב אֶת הַמִּלָּה: לוֹחֲצִים עַל הָאוֹתִיּוֹת לְפִי הַסֵּדֶר',dict:'שׁוֹמְעִים אֶת הַמִּלָּה וְכוֹתְבִים אוֹתָהּ',miss:'אֵיזוֹ אוֹת חֲסֵרָה?',order:'סַדֵּר אֶת הַמִּלִּים לְמִשְׁפָּט',
  paperGo:'סִיַּמְתִּי לִכְתֹּב',paperChk:'בּוֹא נִבְדֹּק:',paperOk:'בָּדַקְתִּי',paperPar:'הַרְאֵה לְאַבָּא אוֹ לְאִמָּא',paperParOk:'אַבָּא אוֹ אִמָּא רָאוּ',paperEx:'דֻּגְמָאוֹת:',
- paperTake:'קַח דַּף וְעִפָּרוֹן',storyRead:'הַקְרֵא לִי',storyQ:'לַשְּׁאֵלוֹת',finHint:'בְּסוֹף מִלָּה כּוֹתְבִים אוֹת סוֹפִית',again:'נַסֵּה שׁוּב',
+ paperTake:'קַח דַּף וְעִפָּרוֹן',storyRead:'הַקְרֵא לִי',storyQ:'לַשְּׁאֵלוֹת',finHint:'בְּסוֹף מִלָּה כּוֹתְבִים אוֹת סוֹפִית',again:'נַסֵּה שׁוּב',heard:'אֵיזוֹ מִלָּה שָׁמַעְתָּ?',
  /* #54 the help button on the tile screens */
  hNextsyl:'הַהֲבָרָה הַבָּאָה',hNextlet:'הָאוֹת הַבָּאָה',hNextword:'הַמִּלָּה הַבָּאָה',
  hBysyl:'הֲבָרָה אַחֲרֵי הֲבָרָה, מִיָּמִין לִשְׂמֹאל:',hBylet:'אוֹת אַחֲרֵי אוֹת, מִיָּמִין לִשְׂמֹאל:',hByword:'מִלָּה אַחֲרֵי מִלָּה, מִיָּמִין לִשְׂמֹאל:'};
@@ -6853,18 +6977,35 @@ const MAIN={first:'read-first',pw:'read-pw',wp:'read-wp',build:'read-build',sent
 O.on('tlDone',id=>{let m=/^rb2-(first|pw|wp|build|sent|mix)-\d$/.exec(id);if(m){T.record(MAIN[m[1]],st(id));return;}
   if(/^rb2-st-\d+$/.test(id)){T.record('story-new',st(id));return;}if(/^rb2-pp-\d+$/.test(id))T.record('write-paper',st(id));});
 const W=R.words,withPic=W.filter(w=>w.pic);
+/* #420: words he tapped while reading a story (T.S().askw, newest last). Each tap = a "helped" item of the bank 'rb-asked',
+   so the learning engine brings it back the next day (then 2, 4, 8 days while he gets it right). The next word rounds start with the due ones. */
+const ASK='rb-asked',AW=()=>{const s=T.S();if(!Array.isArray(s.askw))s.askw=[];return s.askw;};
+const askEntry=w=>{const L=window.LEARN;if(!L||!L.state)return null;const wr=(L.state().wr||{})[ASK]||{};return wr[L.hash(w)]||null;};
+R.ask=w=>{if(!w)return;const a=AW();const i=a.indexOf(w);if(i>=0)a.splice(i,1);a.push(w);if(a.length>40)a.splice(0,a.length-40);
+  if(window.LEARN)try{LEARN.seen(ASK,w,false,true);}catch(e){}O.persist();};
+R.asked=()=>AW().slice();
+R.askedDue=()=>{const L=window.LEARN;if(!L)return [];const t=L.dayNum();const a=AW();
+  for(let i=a.length-1;i>=0;i--)if(!askEntry(a[i]))a.splice(i,1);   /* gone from the engine's list = learned */
+  return a.filter(w=>{const e=askEntry(w);return e&&e[0]<=t;});};
+/* "which word did you hear?": the word is said, he picks it among 3 written words of the stories */
+const STW=()=>{const out=new Set();R.stories.forEach(st=>st.s.forEach(l=>l.split(/\s+/).forEach(x=>{x=x.replace(/[^\u0591-\u05C7\u05D0-\u05EA]/g,'');if(x.length>2)out.add(x);})));return [...out];};
+const bareW=x=>x.replace(/[\u0591-\u05C7]/g,'');
+function askedQ(w){const n=bareW(w).length;const ds=shuffle(STW().filter(x=>bareW(x)!==bareW(w)&&Math.abs(bareW(x).length-n)<=1)).slice(0,2);const opts=shuffle([w,...ds]);
+  return {pr:`<div class="qq">${UI.heard}</div>`,opts,ans:opts.indexOf(w),cls:'tx',play:()=>O.say(w),auto:1,playLbl:'שׁוּב',say:UI.heard,explain:`<span class="bigw">${w}</span>`,key:'ask'+w,bank:ASK,bkey:w};}
+/* a word round (first / pw / wp): the due tapped words first, at most 3 */
+const withAsked=gen=>{const due=R.askedDue().slice(0,3);return i=>i<due.length?askedQ(due[i]):gen(i);};
 const otherWords=(w,n,f)=>shuffle(W.filter(x=>x!==w&&x.w!==w.w&&!R.near(x,w)&&(!f||f(x)))).slice(0,n);
 
 /* ---- library: the same activity ids, bigger graded pools ---- */
-function first(back){const L=level('word');T.quiz({id:'rb2-first-'+L,title:'אוֹת רִאשׁוֹנָה',bg:'city',back,n:8,gen:()=>{const w=lvPick(withPic,L,null,'rb-word',wk);const f=w.f;
+function first(back){const L=level('word');T.quiz({id:'rb2-first-'+L,title:'אוֹת רִאשׁוֹנָה',bg:'city',back,n:8,gen:withAsked(()=>{const w=lvPick(withPic,L,null,'rb-word',wk);const f=w.f;
   const pool=shuffle([...new Set(W.map(x=>x.f))].filter(c=>!R.sameSound(c,f)));const opts=shuffle([f,pool[0],pool.find(c=>!R.sameSound(c,pool[0]))]);
-  return {pr:`${pic(w.pic,1)}<div class="qq">${UI.first}</div>`,opts,ans:opts.indexOf(f),cls:'tx big2',say:'באיזו אות מתחילה המילה?',word:w.w,explain:`<span class="bigw">${w.w}</span>`,key:w.w,bank:'rb-word'};}});}
-function pw(back){const L=level('word');T.quiz({id:'rb2-pw-'+L,title:'אֵיזוֹ מִלָּה?',bg:'city',back,n:8,gen:()=>{const w=lvPick(withPic,L,null,'rb-word',wk);
+  return {pr:`${pic(w.pic,1)}<div class="qq">${UI.first}</div>`,opts,ans:opts.indexOf(f),cls:'tx big2',say:'באיזו אות מתחילה המילה?',word:w.w,explain:`<span class="bigw">${w.w}</span>`,key:w.w,bank:'rb-word'};})});}
+function pw(back){const L=level('word');T.quiz({id:'rb2-pw-'+L,title:'אֵיזוֹ מִלָּה?',bg:'city',back,n:8,gen:withAsked(()=>{const w=lvPick(withPic,L,null,'rb-word',wk);
   const like=otherWords(w,2,x=>x.lv<=L&&(x.f===w.f||x.plain.length===w.plain.length));const ds=like.length>=2?like:otherWords(w,2,x=>x.lv<=L);const opts=shuffle([w,...ds]);
-  return {pr:`${pic(w.pic,1)}<div class="qq">${UI.pw}</div>`,opts:opts.map(x=>x.w),ans:opts.indexOf(w),cls:'tx',reveal:()=>say(w.w),key:w.w,bank:'rb-word'};}});}
-function wp(back){const L=level('word');T.quiz({id:'rb2-wp-'+L,title:'אֵיזוֹ תְּמוּנָה?',bg:'city',back,n:8,gen:()=>{const w=lvPick(withPic,L,null,'rb-word',wk);const ds=[];
+  return {pr:`${pic(w.pic,1)}<div class="qq">${UI.pw}</div>`,opts:opts.map(x=>x.w),ans:opts.indexOf(w),cls:'tx',reveal:()=>say(w.w),key:w.w,bank:'rb-word'};})});}
+function wp(back){const L=level('word');T.quiz({id:'rb2-wp-'+L,title:'אֵיזוֹ תְּמוּנָה?',bg:'city',back,n:8,gen:withAsked(()=>{const w=lvPick(withPic,L,null,'rb-word',wk);const ds=[];
   for(const x of shuffle(withPic)){if(ds.length>=3)break;if(x!==w&&x.pic!==w.pic&&!R.near(x,w)&&!ds.some(d=>R.near(d,x)))ds.push(x);}const opts=shuffle([w,...ds]);
-  return {pr:`<div class="bigw">${w.w}</div><div class="qq">${UI.wp}</div>`,opts:opts.map(x=>pic(x.pic)),ans:opts.indexOf(w),cls:'picb',reveal:()=>say(w.w),key:w.w,bank:'rb-word'};}});}
+  return {pr:`<div class="bigw">${w.w}</div><div class="qq">${UI.wp}</div>`,opts:opts.map(x=>pic(x.pic)),ans:opts.indexOf(w),cls:'picb',reveal:()=>say(w.w),key:w.w,bank:'rb-word'};})});}
 /* tap tiles in order (syllables, letters or words); calls done(errors, gems). o.unit = 'syl'|'let'|'word', o.whole = the word/sentence.
    #54 one help button: tap 1 = the next tile glows, tap 2 = the whole answer with a short explanation (counts as a mistake, no gems). */
 function tiles(s,o,done){let k=0,err=0,miss=0,HB=null;s.innerHTML='';const card=h('div','prq tqc',`${o.head||''}<div class="slots">${o.need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
@@ -6904,7 +7045,7 @@ function nextStory(){const L=level('story');const at=R.stories.filter(x=>x.lv===
 /* recorded once per story, after its questions (#360): any wrong answer, or the story read aloud to him → back after 1 day */
 function story(back,k){const sto=k!=null?R.stories[k]:nextStory();
   /* the shared story screen (talents.js, #355): read first, listen later; 📖 back to the story from every question */
-  T.storyScreen({act:'story-new',id:'rb2-st-'+sto.id,title:nk(sto.t,sto.tp),name:sto.t,tp:sto.tp,goal:sto.goal,spr:sto.spr.map(x=>pic(x)),lines:sto.s.map((x,i)=>nk(x,sto.p[i])),
+  T.storyScreen({act:'story-new',id:'rb2-st-'+sto.id,title:nk(sto.t,sto.tp),name:sto.t,tp:sto.tp,goal:sto.goal,spr:sto.spr.map(x=>pic(x)),lines:sto.s.map((x,i)=>nk(x,sto.p[i])),vl:sto.s,hw:sto.hw,
     q:sto.q.map(([,q,qp,a,ds])=>({pr:nk(q,qp,1),say:T.spk(q),a,ds})),back,end:(err,heard)=>{if(window.LEARN)try{LEARN.seen('rb-story',sto.t,!err,heard);}catch(e){}}});}
 
 /* ---- writing: a mixed graded session (copy, dictation, missing letter, sentence order) ---- */
@@ -8361,11 +8502,14 @@ function pic(w,cls){const p=(E2.WORD[w]||{}).pic||'';const c=cls?' '+cls:'';
 const heOf=w=>(E2.WORD[w]||{}).he||'';
 
 /* ---------- voice ---------- */
-let TOK=0;
-const en=t=>{try{O.sayLang(t,'en');}catch(e){}};
+let TOK=0,SLOWT=-1;
+/* #425: a second tap on the same 🔊 soon after the first says the English slowly (no new button); SLOWT = the token of that slow replay */
+const SLOWMS=2500,isSlow=()=>SLOWT===TOK;
+const twice=fn=>{let last=0;return ()=>{const now=Date.now(),s=now-last<SLOWMS;last=s?0:now;SLOWT=s?TOK+1:-1;fn();};};/* fn starts one new voice token (++TOK) */
+const en=t=>{try{O.sayLang(t,'en',isSlow());}catch(e){}};
 const he=t=>{try{O.say(t);}catch(e){}};
 const speaking=()=>{try{const g=window.__gv;if(g&&g.audio&&!g.audio.paused&&!g.audio.ended)return true;}catch(e){}try{return !!(window.speechSynthesis&&speechSynthesis.speaking);}catch(e){return false;}};
-const estMs=(t,lang)=>lang==='en'?(320+75*String(t).length)/.85:(250+65*T.plainHe(t).length)/.9;
+const estMs=(t,lang)=>lang==='en'?(320+75*String(t).length)/(isSlow()?.7:.85):(250+65*T.plainHe(t).length)/.9;
 /* wait until the voice is done (or about the time it should take) */
 async function waitSay(t,lang,tok){const est=D(estMs(t,lang)),t0=Date.now();let on=false;
   for(;;){if(tok!==TOK)return false;const el=Date.now()-t0,sp=speaking();if(sp)on=true;if(on&&!sp&&el>D(250))break;if(!on&&el>=est)break;if(el>est*3+D(1500))break;await sleep(Math.max(10,D(90)));}return tok===TOK;}
@@ -8437,7 +8581,7 @@ function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save
     if(st.t==='teach')return renderTeach(st.c);renderQ(st.s);}
   function renderTeach(c){const v=teachView(c);window.__e2q=null;E2.touch(save,c.items,d);O.persist();cur={ans:0};
     const card=h('div','prq tqc e2teach',`<div class="e2head">${v.head}</div>${v.body}`);
-    const pb=h('button','hintbtn',ICON.say+'<span>שׁוּב</span>');pb.onclick=()=>speakTeach(c,card,v);card.appendChild(pb);wrap.appendChild(card);
+    const pb=h('button','hintbtn',ICON.say+'<span>שׁוּב</span>');pb.onclick=twice(()=>speakTeach(c,card,v));card.appendChild(pb);wrap.appendChild(card);
     const row=h('div','chs');const go=h('button','chb e2go',v.honor?'🗣️ <span>אָמַרְתִּי!</span>':ICON.play+'<span>הַמְשֵׁךְ</span>');
     go.onclick=()=>{if(go.disabled)return;go.disabled=true;sfx.pop(2);if(v.honor){O.floatText(go,'⭐');O.addGems(1,go);gems+=1;}setTimeout(next,D(v.honor?700:250));};row.appendChild(go);wrap.appendChild(row);
     O.sayNow=T.plainHe(v.head);card.classList.add('flashin');setTimeout(()=>{if(card.isConnected)speakTeach(c,card,v);},D(350));}
@@ -8447,7 +8591,7 @@ function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save
   function renderQ(step){const q=E2.gen(save,step);window.__e2q=q;const v=qView(q);let tries=0,lock=false,hinted=false,fin=false;cur={ans:q.ans};
     const card=h('div','prq tqc',v.pr);
     const playIt=()=>{if(v.seq)return playSeq();if(v.play)return talk(v.play);};
-    if(v.play||v.seq){const pb=h('button','hintbtn',ICON.say+`<span>${v.seq?'שׁוּב':'הַשְׁמַע'}</span>`);pb.onclick=()=>playIt();card.appendChild(pb);}
+    if(v.play||v.seq){const pb=h('button','hintbtn',ICON.say+`<span>${v.seq?'שׁוּב':'הַשְׁמַע'}</span>`);pb.onclick=twice(()=>playIt());card.appendChild(pb);}
     wrap.appendChild(card);
     const row=h('div','chs'+(q.opts[0].t==='let'||q.opts[0].t==='en'?' ltr':'')+(q.opts.length===4?' e2g4':''));
     q.opts.forEach((o,k)=>{const b=h('button','chb '+optCls(q),optHTML(o));b.onclick=()=>pick(k,b);row.appendChild(b);});wrap.appendChild(row);
@@ -10796,6 +10940,75 @@ function open(){O.setScreen('sTal','meadow',O.showMap);O.hud('');O.sayNow='';con
     day.appendChild(g);box.appendChild(day);});
   s.appendChild(box);}
 A.open=open;
+})();
+
+/* ======================= SESSION SCREENSHOTS (#462) =======================
+   A small downscaled JPEG (480 px wide, at most ~40 KB) at six key moments of the event log (#348): mission opened, the 2nd wrong answer
+   in a row, help used, a popup, an error, and 30 s with no answer. Each is linked to the event that caused it (its event id i, within
+   the session sid) and rides in the next /api/log batch (no extra send, no retry). No library: the visible kid screen is cloned into an
+   SVG foreignObject and drawn on a canvas.
+   Privacy: only the kid game screens; never the parent panel, the parent login/PIN, parent play, or any input/typed text.
+   Never slows play: taken when the browser is idle, skipped when the frame is busy (a long task in the last 2 s, no idle time within
+   3 s, or a frame over 150 ms just before), on a slow device, offline, or without a family id (nothing would be sent). At most 30 per page session; at most 8 wait unsent
+   (oldest dropped). The server keeps at most 30 per session and 100 per day (oldest dropped) for 14 days. */
+(()=>{const W=window,O=W.OREN;if(!O||!O.track)return;
+const KID=['sHome','sMap','sWorld','sLearn','sPlay','sKing','sStudio','sTable','sFinal','sTal'];
+const S={n:0,cap:30,max:8,q:[],w:480,kb:40,jank:150,lastLong:0,lastT:0,wrong:0,idleT:0,skip:{},pend:0};
+const vis=el=>!!el&&!el.hidden&&el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden';
+const curScreen=()=>{const x=[...document.querySelectorAll('#screens > .screen')].find(s=>!s.hidden);return x?x.id:'';};
+/* the privacy rule: a kid screen, no parent anything, no typed text on screen */
+function allowed(){try{if(O.isParentPlay)return false;const b=document.body;if(!b||b.classList.contains('inpar'))return false;
+  if(KID.indexOf(curScreen())<0)return false;const par=document.getElementById('sPar');if(vis(par))return false;
+  for(const el of document.querySelectorAll('.plog,input:not([type=hidden]):not([type=range]):not([type=checkbox]):not([type=radio]),textarea,select,[contenteditable]:not([contenteditable=false])'))if(vis(el))return false;
+  return true;}catch(e){return false;}}
+const slow=()=>(navigator.hardwareConcurrency||4)<=2||(navigator.deviceMemory||4)<1;
+const busy=()=>S.jank>0&&S.lastLong>0&&performance.now()-S.lastLong<2000;/* performance clock: the game may speed up Date in tests */
+try{new PerformanceObserver(l=>{for(const x of l.getEntries())if(x.duration>100)S.lastLong=Math.max(S.lastLong,x.startTime+x.duration);}).observe({type:'longtask'});}catch(e){}
+const no=why=>{S.skip[why]=(S.skip[why]||0)+1;return false;};
+/* the screen as an SVG image: the page's styles + a clone of the body without hidden parts, scripts, the parent panel and input values */
+function svgOf(){const w=innerWidth,h=innerHeight,b=document.body,cs=getComputedStyle(b);
+  const css=[...document.querySelectorAll('style')].map(s=>s.textContent).join('\n').replace(/(^|[\s,{}>+~(])body(?=[\s,{.:#[>+~)])/g,'$1.shot-body').replace(/(^|[\s,{}>+~(])(html|:root)(?=[\s,{.:#[>+~)])/g,'$1.shot-root')+'\n*{animation:none!important;transition:none!important}';/* a picture starts every animation at 0 (often invisible) */
+  const c=b.cloneNode(true),oc=b.querySelectorAll('canvas'),cc=c.querySelectorAll('canvas');/* a visible canvas (the scene) becomes a picture */
+  oc.forEach((x,k)=>{try{if(!vis(x)||!cc[k]||!x.width)return;const im=document.createElement('img');im.src=x.toDataURL('image/png');im.className=x.className;im.id=x.id;im.style.cssText=x.style.cssText;
+    const r=x.getBoundingClientRect();im.style.width=r.width+'px';im.style.height=r.height+'px';im.style.imageRendering='pixelated';cc[k].replaceWith(im);}catch(e){}});
+  c.querySelectorAll('script,[hidden],#sPar,.plog,input,textarea,select,audio,video,iframe,canvas').forEach(x=>x.remove());
+  const sc=document.getElementById('screens'),csc=c.querySelector('#screens');if(sc&&csc&&sc.scrollTop&&csc.firstElementChild)csc.style.cssText+=';overflow:hidden';
+  if(sc&&csc&&sc.scrollTop)[...csc.children].forEach(x=>{x.style.transform='translateY(-'+sc.scrollTop+'px)';});
+  const div=document.createElement('div');div.className='shot-root';div.setAttribute('dir',document.documentElement.dir||'rtl');
+  const bd=document.createElement('div');bd.className='shot-body '+b.className;bd.style.cssText='width:'+w+'px;height:'+h+'px;overflow:hidden;margin:0;background:'+cs.background+';font-family:'+cs.fontFamily+';color:'+cs.color;
+  while(c.firstChild)bd.appendChild(c.firstChild);const st=document.createElement('style');st.textContent=css;div.appendChild(st);div.appendChild(bd);
+  const x=new XMLSerializer().serializeToString(div);
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'"><foreignObject x="0" y="0" width="'+w+'" height="'+h+'">'+x+'</foreignObject></svg>';}
+function grab(){return new Promise((ok,bad)=>{const w=innerWidth,h=innerHeight,img=new Image();
+  img.onload=()=>{try{const cw=Math.min(S.w,w),ch=Math.round(h*cw/w),cv=document.createElement('canvas');cv.width=cw;cv.height=ch;const g=cv.getContext('2d');
+    g.fillStyle='#fff';g.fillRect(0,0,cw,ch);g.drawImage(img,0,0,cw,ch);let d='';
+    for(const qq of [.6,.45,.3]){d=cv.toDataURL('image/jpeg',qq);if(d.length*.75<=S.kb*1024)break;}
+    if(d.length*.75>S.kb*1024*1.15)return bad('big');ok(d);}catch(e){bad('draw');}};
+  img.onerror=()=>bad('img');img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgOf());});}
+/* the frame is calm: 12 animation frames (~0.2 s), none longer than S.jank = 150 ms (a busy page = skip; 0 = no check, tests only) */
+const calm=()=>new Promise(ok=>{if(!S.jank)return ok(true);let n=0,t=performance.now(),worst=0;const to=setTimeout(()=>ok(false),2000);
+  const f=()=>{const x=performance.now();worst=Math.max(worst,x-t);t=x;if(++n<12)requestAnimationFrame(f);else{clearTimeout(to);ok(worst<S.jank);}};requestAnimationFrame(f);});
+const idle=f=>W.requestIdleCallback?W.requestIdleCallback(f,{timeout:3000}):setTimeout(()=>f({didTimeout:false,timeRemaining:()=>10}),200);
+/* one shot for event e (after `wait` ms, so a just-opened screen has drawn) */
+function shoot(e,wait,again){if(S.n+S.pend>=S.cap)return no('cap');if(document.visibilityState==='hidden')return no('hidden');if(navigator.onLine===false)return no('off');if(slow())return no('slow');
+  if(!O.family)return no('nofam');if(!allowed())return no('priv');if(busy())return no('busy');
+  S.pend++;setTimeout(()=>idle(dl=>{const end=r=>{S.pend--;return r;};/* busy: one more try 2.5 s later, then skipped */
+    const late=()=>{S.pend--;if(again)return no('busy');no('later');shoot(e,2500,1);return false;};
+    if(dl&&dl.didTimeout)return late();if(busy())return late();
+    calm().then(c=>{if(!c){S.lastLong=performance.now();return late();}if(document.visibilityState==='hidden')return end(no('hidden'));if(!allowed())return end(no('priv'));
+    grab().then(d=>{end();S.n++;S.q.push({i:e.i,d});if(S.q.length>S.max)S.q.splice(0,S.q.length-S.max);S.lastT=Date.now();},why=>{end();no(String(why));});});}),wait||0);return true;}
+/* the six moments, from the event stream */
+function onEvent(e){const k=e.k;
+  if(k==='mis'){S.wrong=0;shoot(e,1500);}
+  else if(k==='q'){clearTimeout(S.idleT);const q=e.q;S.idleT=setTimeout(()=>{if(document.visibilityState==='visible'&&O.evSnap().q===q)O.track('idle',{ms:30000,q});},W.__idleMs||30000);}
+  else if(k==='ans'){clearTimeout(S.idleT);if(e.ok)S.wrong=0;else if(++S.wrong>=2){S.wrong=0;shoot(e,300);}}
+  else if(k==='help'||k==='pop'||k==='err'||k==='idle')shoot(e,k==='err'?0:400);}
+W.SHOTS={on:e=>{try{onEvent(e);}catch(x){}},
+  /* the batch takes the waiting shots (up to `room` characters); a failed send gives them back */
+  take:room=>{const out=[];let n=0;while(S.q.length&&n+S.q[0].d.length<=(room||1e9)){const s=S.q.shift();n+=s.d.length;out.push(s);}return out;},
+  back:sh=>{S.q=sh.concat(S.q).slice(-S.max);},
+  allowed,shoot,stat:()=>({n:S.n,q:S.q.length,pend:S.pend,skip:Object.assign({},S.skip),busy:busy()}),
+  _set:o=>Object.assign(S,o)};
 })();
 
 /* ===== WIRING: plugs the content packs into the game. Loaded last by build_talents.py, after every pack. =====
