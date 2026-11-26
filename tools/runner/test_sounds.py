@@ -1,5 +1,6 @@
 # Tests for the herdr sound settings (#27): python tools/runner/test_sounds.py
 import os, sys, tempfile
+os.environ["OREN_TEST"] = "1"   # #325 guard: set before importing runner modules
 from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import sounds as S
@@ -35,6 +36,13 @@ with tempfile.TemporaryDirectory() as t:
     assert S.apply(cfg) is False                                              # idempotent here too
     sec = text.split("[ui.sound]\n", 1)[1].split("\n[", 1)[0]
     assert "request_path" in sec and "done_path" in sec, sec                  # inside [ui.sound], not in another table
+
+# a header with a trailing comment is the same table (no second [ui.sound], which would be invalid TOML)
+with tempfile.TemporaryDirectory() as t:
+    cfg = Path(t) / "config.toml"
+    cfg.write_text('[ui.sound]  # mine\nenabled = false\n')
+    S.apply(cfg); text = cfg.read_text()
+    assert text.count("[ui.sound]") == 1 and "enabled = false" not in text and "done_path" in text, text
 
 # where herdr reads its config on Windows: %APPDATA%\herdr\config.toml (HERDR_CONFIG_PATH wins)
 assert S.config_path({"APPDATA": "C:/Users/x/AppData/Roaming"}) == Path("C:/Users/x/AppData/Roaming/herdr/config.toml")

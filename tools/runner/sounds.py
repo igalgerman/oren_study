@@ -23,7 +23,7 @@ def config_path(env=os.environ):
 def merged(text):
     """`text` with [ui.sound] holding KEYS (other keys and tables kept)."""
     lines = text.splitlines()
-    head = next((i for i, l in enumerate(lines) if l.strip() == "[ui.sound]"), None)
+    head = next((i for i, l in enumerate(lines) if re.match(r"\s*\[ui\.sound\]\s*(#.*)?$", l)), None)
     new = [f"{k} = {v}" for k, v in KEYS.items()]
     if head is None:
         return (text.rstrip("\n") + "\n\n" if text.strip() else "") + "[ui.sound]\n" + "\n".join(new) + "\n"
