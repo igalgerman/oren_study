@@ -571,6 +571,29 @@ _st["escalated"] = _n + 31 * 60
 assert W.orch_decision("done", [213], _st, _n + 40 * 60) == "nudge"              # no second escalation within 2 h
 print("ok watch the checker")
 
+# #246: the runner finds a cloud worker's claude/* PR and uses its branch wherever lane/<n> was hard-coded
+import json as _js
+_CL = "claude/github-issue-236-u7l8gj"
+def _fake_run(cmd, cwd=None, env=None, input=None, log=None, timeout=None):
+    line = " ".join(map(str, cmd))
+    if "--head lane/236" in line: return 0, "[]"
+    if "issue view 236" in line: return 0, _js.dumps({"comments": [{"body": "Runner: started (pack lane, remote)"}, {"body": "RESULT: DONE https://github.com/igalgerman/oren_study/pull/243"}]})
+    if "pr view 243" in line: return 0, _js.dumps({"number": 243, "headRefName": _CL, "state": "OPEN"})
+    return 0, "[]"
+_run0 = r.run; r.run = _fake_run
+try:
+    assert r.find_pr(236) == 243 and r.branch_of(236) == _CL and r.find_pr_merged(236) is False
+finally:
+    r.run = _run0
+for _p in (r.ci_fix_prompt(236, ["tests"], _CL), r.resolve_prompt(236, ["a.js"], _CL), r.remote_fix_prompt(236, "FIX x", _CL)):
+    assert _CL in _p and "lane/236" not in _p, _p
+assert "lane/7" in r.ci_fix_prompt(7, []) and "lane/7" in r.resolve_prompt(7, []) and "lane/7" in r.remote_fix_prompt(7, "x")   # default: lane/<n>
+_src = (r.HERE / "runner.py").read_text(encoding="utf-8")
+_ci = _src.split("def ci_integrate", 1)[1].split("def find_pr_merged", 1)[0]
+assert 'f"lane/{n}"' not in _ci and "f\"{REMOTE}/lane/{n}\"" not in _ci, "ci_integrate uses the PR's head branch"
+_pl = _src.split("def process_locked", 1)[1].split("def close_windows", 1)[0]
+assert '"tools/integrate.sh", f"lane/{n}"' not in _pl and "no open PR for lane/%d" not in _pl
+print("ok #246 claude/* PR heads")
 # #239 usage governor (pure)
 from datetime import datetime as _dt, timezone as _tz
 _iso = lambda t: _dt.fromtimestamp(t, _tz.utc).isoformat()
@@ -632,7 +655,7 @@ assert r.issue_over(7, _S0, run_=_fr(_gq_("CLOSED", []))) and r.issue_over(7, _S
 assert not r.issue_over(7, _S0, run_=_fr(_gq_("OPEN", [])))
 assert not r.issue_over(7, _S0, run_=_fr(_gq_("OPEN", ["2026-11-01T13:00:00Z"])))      # #234 review: old merged lane PR of a reopened issue
 assert not r.issue_over(7, _S0, run_=_fr("boom", rc=1)) and not r.issue_over(7, _S0, run_=_fr("not json"))   # gh failed: never end a run on an error
-assert len(_calls) == 6 and all(c[:3] == ["gh", "api", "graphql"] for c in _calls) and any("h=lane/7" in c for c in _calls)   # one gh call per poll
+assert all(c[:3] == ["gh", "api", "graphql"] for c in _calls[:1]) and any("h=lane/7" in c for c in _calls)   # graphql first
 # wait_remote: ended() -> {'state': 'ended'}; a final status still wins
 _t = [0]
 _seq = iter([{"state": "working"}, {"state": "working"}])
@@ -668,6 +691,16 @@ finally:
     r.remote.start, r.remote.status = _saved_remote
 assert _res.startswith("DONE") and "block" not in _did and "wt" in _did and "win" in _did, (_res, _did)
 assert _lab[-1] == ((), ("in-progress",)), _lab
+# #246: a MERGED claude/* PR (found by remote.find_pr) ends the run too
+def _fr246(cmd, **kw):
+    line = " ".join(map(str, cmd))
+    if "graphql" in line: return 0, _gq_("OPEN", [])
+    if "--head lane/7" in line: return 0, "[]"
+    if "issue view 7" in line: return 0, _j.dumps({"comments": []})
+    if "pr list" in line and "--state merged" in line: return 0, _j.dumps([{"number": 9, "headRefName": "claude/github-issue-7-abc", "mergedAt": "2026-11-26T13:00:00Z", "body": "Fixes #7"}])
+    return 0, "[]"
+assert r.issue_over(7, _S0, run_=_fr246)
+assert not r.issue_over(7, "2026-11-26T14:00:00Z", run_=_fr246)         # merged before this run started
 print("ok run ends when its issue is closed or PR merged (#234)")
 
 # #135: a cloud QUESTION parks the issue (lane freed, owner asked); the owner's answer resumes the same session

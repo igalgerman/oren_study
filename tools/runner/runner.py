@@ -174,17 +174,23 @@ def deploy_needed(deployed_sha, main_sha):
     """Pure (#74): batching. PRs merged one after another are deployed ONCE: the first deploy after the last merge covers all of them."""
     return bool(main_sha) and deployed_sha != main_sha
 
-def ci_fix_prompt(n, names):
-    return (f"Issue #{n}: the CI check(s) {', '.join(names) or '(see the PR)'} failed on lane/{n} even after one rerun. "
-            f"Use `gh run list --branch lane/{n}` and `gh run view <id> --log-failed`, fix the real cause in this worktree, "
-            f"run the affected suites locally, commit, and `git push {REMOTE} lane/{n}`. Never force-push, never push to {BRANCH}. "
+def push_ref(n, br):
+    """#246: what a worker in the local worktree (branch lane/<n>) pushes: lane/<n>, or HEAD:<the PR's claude/* head>."""
+    return f"lane/{n}" if br in (None, f"lane/{n}") else f"HEAD:{br}"
+
+def ci_fix_prompt(n, names, br=None):
+    br = br or f"lane/{n}"
+    return (f"Issue #{n}: the CI check(s) {', '.join(names) or '(see the PR)'} failed on {br} even after one rerun. "
+            f"Use `gh run list --branch {br}` and `gh run view <id> --log-failed`, fix the real cause in this worktree, "
+            f"run the affected suites locally, commit, and `git push {REMOTE} {push_ref(n, br)}`. Never force-push, never push to {BRANCH}. "
             "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
 
-def resolve_prompt(n, files):
-    return (f"Issue #{n}: merging lane/{n} into {BRANCH} failed because {BRANCH} moved on" + (f" (conflicting files: {', '.join(files)})" if files else "") + ". "
+def resolve_prompt(n, files, br=None):
+    br = br or f"lane/{n}"
+    return (f"Issue #{n}: merging {br} into {BRANCH} failed because {BRANCH} moved on" + (f" (conflicting files: {', '.join(files)})" if files else "") + ". "
             f"In this worktree run `git fetch {REMOTE} && git merge -X renormalize {REMOTE}/{BRANCH}`, resolve the conflicts keeping BOTH sides' intent, "
             "run `python3 build_talents.py` (in oren2/) and the full tests (`oren2/tests/run.sh`; rerun a flaky suite alone once), commit, "
-            f"and `git push {REMOTE} lane/{n}`. Never force-push, never rewrite {BRANCH}, never push to {BRANCH}. "
+            f"and `git push {REMOTE} {push_ref(n, br)}`. Never force-push, never rewrite {BRANCH}, never push to {BRANCH}. "
             "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
 
 LOCAL_LANES = int(CFG.get("local_lanes", 1))
@@ -285,7 +291,7 @@ def remote_worker_prompt(n, lane, bug=False):
         base += "This is a BUG: use the mattpocock-skills:diagnosing-bugs skill, then tdd: reproduce it with a failing test, then fix it; say the root cause in the PR body.\n"
     return base + (f"Work on branch lane/{n} (create it from {BRANCH}). Follow the worker rules in FLOW.md: run the tests you touched, commit "
                    f"(not the built oren2/index.html or oren2/cf/public/index.html), `git push -u {REMOTE} lane/{n}`, and open a PR to {BRANCH} "
-                   f"with `gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Fixes #{n}`. Never deploy, never force-push, never push to {BRANCH}.\n"
+                   f"with `gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Fixes #{n}` (if you may only push claude/* branches, use your claude/* branch instead; the runner finds the PR by `Fixes #{n}`). Never deploy, never force-push, never push to {BRANCH}.\n"
                    f"You have no terminal the owner can see, so report ONLY through an issue comment: when finished post `gh issue comment {n} --repo {REPO} --body \"RESULT: DONE <PR url>\"`; "
                    f"if blocked post `RESULT: STUCK <why>`; if you need the owner post `QUESTION: <short question, with options>` and stop. "
                    "The comment must have that line on its own line.")
@@ -305,8 +311,11 @@ def issue_over(n, since, run_=None):
     if rc: return False
     try:
         repo = json.loads(out)["data"]["repository"]
-        return run_over((repo.get("issue") or {}).get("state"), [x.get("mergedAt") for x in (repo.get("pullRequests") or {}).get("nodes") or []], since)
-    except (ValueError, KeyError, TypeError):
+        if run_over((repo.get("issue") or {}).get("state"), [x.get("mergedAt") for x in (repo.get("pullRequests") or {}).get("nodes") or []], since):
+            return True
+        p = remote.find_pr(n, run_ or run, "merged", fields="number,mergedAt")      # #246: a cloud worker's claude/* PR merged after the run start
+        return bool(p) and run_over(None, [p.get("mergedAt")], since)
+    except (ValueError, KeyError, TypeError, IndexError, AttributeError):
         return False
 
 def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=None):
@@ -751,16 +760,17 @@ def remote_review(n, pr, round1, start, get_verdict, sleep, clock, timeout_s=360
         return f"remote reviewer posted no VERDICT in {timeout_s // 60} min ({s.get('url', '')})", ""
     return st.get("body") or st["line"], st["line"]
 
-def remote_fix_prompt(n, review_text):
-    return (f"Fix round for issue #{n} in {REPO}: the reviewer of the PR on branch lane/{n} asked for fixes. If you are not on that branch: "
-            f"`git fetch {REMOTE} lane/{n} && git checkout lane/{n}`; read CLAUDE.md and FLOW.md. Fix exactly these points (new commit, "
-            f"`git push {REMOTE} lane/{n}`, no new PR, never force-push, never push to {BRANCH}), run the tests you touched, then post an issue comment on #{n} "
+def remote_fix_prompt(n, review_text, br=None):
+    br = br or f"lane/{n}"
+    return (f"Fix round for issue #{n} in {REPO}: the reviewer of the PR on branch {br} asked for fixes. If you are not on that branch: "
+            f"`git fetch {REMOTE} {br} && git checkout {br}`; read CLAUDE.md and FLOW.md. Fix exactly these points (new commit, "
+            f"`git push {REMOTE} {br}`, no new PR, never force-push, never push to {BRANCH}), run the tests you touched, then post an issue comment on #{n} "
             "with `RESULT: DONE <PR url>` (or `RESULT: STUCK <why>`, or `QUESTION: <question, options>` and stop) on its own line:\n---\n"
             + review_text[-6000:] + "\n---")
 
-def remote_fix(n, session, review_text, send, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None):
+def remote_fix(n, session, review_text, send, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None, br=None):
     """#134: FIX for a cloud worker: the points go to its session (send); no session or send failed -> a new cloud fix session. -> marker line."""
-    text = remote_fix_prompt(n, review_text)
+    text = remote_fix_prompt(n, review_text, br)
     if not (session and send(session, text).get("ok")):
         s = start(n, text, CFG.get("main_checkout", "."))
         if not s.get("ok"):
@@ -882,11 +892,12 @@ def block(n, why, log):
     tell_orchestrator(f"STUCK #{n}: {why[:300]} — decide: unblock, split, or ask the owner")
 
 def find_pr(n):
-    rc, out = gh("pr", "list", "--head", f"lane/{n}", "--state", "open", "--json", "number")
-    try:
-        return json.loads(out)[0]["number"]
-    except (ValueError, IndexError, KeyError):
-        return None
+    """Open PR number of issue n: lane/<n>, or a cloud worker's claude/* PR (#246, remote.pr_for)."""
+    return remote.pr_for(n, run=run)[0]
+
+def branch_of(n):
+    """#246: head branch of issue n's open PR (lane/<n> when there is none)."""
+    return remote.pr_for(n, run=run)[1] or f"lane/{n}"
 
 def deploy_text(log):
     if CFG.get("deploy_in_ci", True):                      # #192: .github/workflows/deploy.yml deploys + pregens every green push to main
@@ -939,8 +950,8 @@ def log_to(log, text):
 def ci_integrate(n, wt, log, over=None):
     """CI-based integrate (#74): update the lane with main, push, wait for the PR checks, `gh pr merge --squash`. -> (rc, out) like integrate.sh:
     0 merged, 2 conflict, 4 no PR, 5 push failed, 6 CI red after one rerun, 7 CI timeout / merge failed (blocked, real reason in out)."""
-    pr = find_pr(n)
-    if not pr: return 4, "no open PR for lane/%d" % n
+    pr, br = remote.pr_for(n, run=run)                           # #246: the head may be a cloud worker's claude/* branch
+    if not pr: return 4, "no open PR for issue #%d" % n
     mergeable = gh("pr", "view", str(pr), "--json", "mergeable", "-q", ".mergeable", log=log)[1].strip()
     if needs_branch_update(mergeable):                           # #166: only a real conflict updates the branch
         run(["git", "fetch", "-q", REMOTE], cwd=wt, log=log)
@@ -949,16 +960,16 @@ def ci_integrate(n, wt, log, over=None):
             files = run(["git", "diff", "--name-only", "--diff-filter=U"], cwd=wt, log=log)[1].split()
             run(["git", "merge", "--abort"], cwd=wt, log=log)
             return 2, "CONFLICTS (fix by hand, or send back to the lane):\n" + "\n".join(files)
-        if run(["git", "rev-parse", "HEAD"], cwd=wt)[1] != run(["git", "rev-parse", f"{REMOTE}/lane/{n}"], cwd=wt)[1]:
-            if run(["git", "push", "-q", REMOTE, f"lane/{n}"], cwd=wt, log=log)[0]: return 5, "push failed"
+        if run(["git", "rev-parse", "HEAD"], cwd=wt)[1] != run(["git", "rev-parse", f"{REMOTE}/{br}"], cwd=wt)[1]:
+            if run(["git", "push", "-q", REMOTE, f"HEAD:{br}"], cwd=wt, log=log)[0]: return 5, "push failed"
             time.sleep(20)                                           # let GitHub start the new run
     def get_checks():
         try: return json.loads(gh("pr", "checks", str(pr), "--json", "name,bucket", log=log)[1] or "[]")
         except ValueError: return []
     def stamp():
-        return run(["gh", "run", "list", "--repo", REPO, "--branch", f"lane/{n}", "--limit", "1", "--json", "databaseId,status,attempt", "-q", ".[0]|[.databaseId,.status,.attempt]|join(\":\")"], log=log)[1].strip()
+        return run(["gh", "run", "list", "--repo", REPO, "--branch", br, "--limit", "1", "--json", "databaseId,status,attempt", "-q", ".[0]|[.databaseId,.status,.attempt]|join(\":\")"], log=log)[1].strip()
     def rerun():
-        rid = run(["gh", "run", "list", "--repo", REPO, "--branch", f"lane/{n}", "--limit", "1", "--json", "databaseId", "-q", ".[0].databaseId"], log=log)[1].strip()
+        rid = run(["gh", "run", "list", "--repo", REPO, "--branch", br, "--limit", "1", "--json", "databaseId", "-q", ".[0].databaseId"], log=log)[1].strip()
         if rid.isdigit(): run(["gh", "run", "rerun", rid, "--failed", "--repo", REPO], log=log)
     def merge():
         with FileLock("integrate", wait=True, note=f"#{n} CI merge"):                   # #166: the lock covers only the merge itself
@@ -972,9 +983,7 @@ def ci_integrate(n, wt, log, over=None):
     return 7, "CI " + ("timed out" if res[0] == "timeout" else "green but `gh pr merge` failed")
 
 def find_pr_merged(n):
-    rc, out = gh("pr", "list", "--head", f"lane/{n}", "--state", "merged", "--json", "number")
-    try: return bool(json.loads(out))
-    except ValueError: return False
+    return remote.pr_for(n, run=run, state="merged")[0] is not None     # #246: lane/<n> or claude/* head
 
 def deploy_main(log):
     """After CI merges (#74): bring the integrate checkout to main, rebuild, commit the built files if changed, deploy ONCE (skipped when this sha is already deployed)."""
@@ -1061,6 +1070,10 @@ def process_locked(issue, where="local"):
                         if not rc: break
                         remove_worktree(wt, log); run(["git", "branch", "-D", f"lane/{n}"], cwd=ROOT, log=log)
                     if rc: raise Blocked("lane.sh failed twice (see run.log)")
+                    br = branch_of(n)                            # #246: a cloud worker's PR on claude/*: the worktree takes that branch's work
+                    if br != f"lane/{n}":
+                        run(["git", "fetch", "-q", REMOTE, br], cwd=wt, log=log)
+                        if run(["git", "reset", "-q", "--hard", f"{REMOTE}/{br}"], cwd=wt, log=log)[0]: raise Blocked(f"cannot check out {br}")
 
 
         def save_session(s):                             # #134: FIX points go back to this cloud session; freeze reads it too
@@ -1099,7 +1112,7 @@ def process_locked(issue, where="local"):
         verdict = ""; red = ""
         for rnd in range(1, FIX_ROUNDS + 2):
             pr = find_pr(n)
-            if not pr: raise Blocked("worker said DONE but no open PR for lane/%d" % n)
+            if not pr: raise Blocked("worker said DONE but no open PR for #%d (lane/%d, the RESULT line's PR, or a PR body 'Fixes #%d')" % (n, n, n))
             if where == "remote":                  # #134: the reviewer is a cloud session too; its VERDICT is a PR comment
                 since = utc()
                 rv, verdict = remote_review(n, pr, red, remote.start, lambda: remote.review_status(pr, since=since), time.sleep, time.time, 3600, 60, ended=over)
@@ -1127,7 +1140,7 @@ def process_locked(issue, where="local"):
             if where == "remote":                  # #134: FIX goes back to the cloud worker session (or a new cloud fix session)
                 since = utc()
                 res = remote_fix(n, saved_session(), rv, remote.send, remote.start, lambda: remote.status(n, since=since), time.sleep, time.time,
-                                 3 * 3600, 60, on_start=save_session, ended=over)
+                                 3 * 3600, 60, on_start=save_session, ended=over, br=branch_of(n))
                 remote_question(res)
             else:
                 out, res = agent(f"issue-{n}-fix" + ("" if rnd == 1 else str(rnd)), worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / f"worker{rnd + 1}.log", "RESULT:", n, "worker", wm, over=over)
@@ -1143,7 +1156,7 @@ def process_locked(issue, where="local"):
                 kind["ci"] = rc == 6
                 return rc, out
             with FileLock("integrate", wait=True, note=f"#{n} local merge"):          # fallback: local merge + full suite
-                rc, out = run([BASH, "tools/integrate.sh", f"lane/{n}", BRANCH], cwd=ROOT,
+                rc, out = run([BASH, "tools/integrate.sh", branch_of(n), BRANCH], cwd=ROOT,
                               env={"REMOTE": REMOTE, "JOBS": "4", "RUNNER": "1"}, log=log, timeout=3600)
                 if rc:
                     run(["git", "merge", "--abort"], cwd=INTEG, log=log)
@@ -1152,7 +1165,7 @@ def process_locked(issue, where="local"):
         def resolve(files):
             rounds[0] += 1
             stat(n, lane, "resolve")
-            o, r_ = agent(f"issue-{n}-resolve{rounds[0]}", ci_fix_prompt(n, files) if kind["ci"] else resolve_prompt(n, files), wt, WORKER_TOOLS, d / f"resolve{rounds[0]}.log", "RESULT:", n, "worker", wm, over=over)
+            o, r_ = agent(f"issue-{n}-resolve{rounds[0]}", ci_fix_prompt(n, files, branch_of(n)) if kind["ci"] else resolve_prompt(n, files, branch_of(n)), wt, WORKER_TOOLS, d / f"resolve{rounds[0]}.log", "RESULT:", n, "worker", wm, over=over)
             return r_.startswith("RESULT: DONE")
         outcome = integrate_with_resolve(integrate, resolve, 2)
         if outcome[0] == "giveup":
