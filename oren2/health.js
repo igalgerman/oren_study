@@ -103,9 +103,8 @@ function close(){document.querySelectorAll('.hlock').forEach(e=>{clearInterval(e
 const after=()=>setTimeout(()=>{decorate();H.check();},300);
 addEventListener('keydown',e=>{if(!H.blocking()||(e.target.closest&&e.target.closest('#ov,.hlock')))return;e.stopPropagation();},true);
 const say=t=>setTimeout(()=>{if(H.blocking())O.say(T.spk(t));},400);
-const mmss=s=>Math.floor(s/60)+':'+pad(s%60);
-/* a countdown on the button; it turns on when the time is up */
-function wait(el,btn,until,label){const cd=el.querySelector('.hcd');const up=()=>{const left=Math.max(0,Math.ceil((until-now())/1000));btn.disabled=left>0;if(cd)cd.textContent=left?mmss(left):'';btn.classList.toggle('ready',!left);if(!left){if(!btn._r){btn._r=1;sfx.ok&&sfx.ok(1);}}};up();el._iv=setInterval(up,250);}
+/* no clock digits: the button fills up as the time passes, and turns on when the time is up */
+function wait(el,btn,until){const t0=now(),all=Math.max(1,until-t0);const up=()=>{const left=Math.max(0,until-now());btn.disabled=left>0;btn.style.setProperty('--p',Math.round(100-left/all*100)+'%');btn.classList.toggle('ready',!left);if(!left){if(!btn._r){btn._r=1;sfx.ok&&sfx.ok(1);}}};up();el._iv=setInterval(up,250);}
 
 const BRK={
  water:{e:'💧',t:'בּוֹא נִשְׁתֶּה מַיִם!',s:'שְׁתֵה כּוֹס מַיִם, וְאַחַר כָּךְ נַמְשִׁיךְ.',sec:30},
@@ -117,7 +116,7 @@ H.BRK=BRK;
 function showBreak(kind){const r=day(),en=enKinds();if(!kind){if(!en.length)return;const all=Object.values(T.S().health||{}).reduce((a,x)=>a+((x&&x.breaks)||[]).length,0);kind=en[all%en.length];}
   const v=kind==='move'?((r.breaks.filter(x=>x.k==='move').length+Math.floor(now()/864e5))%2?'stretch':'jump'):kind;const b=BRK[v];
   const rec={k:kind,t:hm(now())};r.breaks.push(rec);r.ba=r.on;O.persist();
-  const el=lock('hbrk '+(b.cls||''),`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">${b.e}</span></div><h2>${b.t}</h2><div class="sub">${b.s}</div>${v==='jump'?'<div class="hcnt">1</div>':''}<div class="hcd"></div>`);
+  const el=lock('hbrk '+(b.cls||''),`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">${b.e}</span></div><h2>${b.t}</h2><div class="sub">${b.s}</div>${v==='jump'?'<div class="hcnt">1</div>':''}`);
   const btn=h('button','bigbtn huge hback','<span>חָזַרְתִּי!</span>');el.firstChild.appendChild(btn);const t0=now();wait(el,btn,t0+b.sec*1000);
   if(v==='jump'){const c=el.querySelector('.hcnt');const iv=setInterval(()=>{if(!el.isConnected)return clearInterval(iv);c.textContent=Math.min(10,1+Math.floor((now()-t0)/2000));},500);}
   btn.onclick=()=>{if(btn.disabled)return;rec.ok=1;O.persist();sfx.win&&sfx.win();close();after();};
@@ -125,7 +124,7 @@ function showBreak(kind){const r=day(),en=enKinds();if(!kind){if(!en.length)retu
 H.showBreak=showBreak;
 
 function showMeal(k){const r=day(),t=now();const m=r.meals[k]=r.meals[k]||{s:t};O.persist();const nm=(MEALS.find(x=>x[0]===k)||[])[1]||'';
-  const el=lock('hmeal',`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">🍽️</span></div><h2>הִגִּיעַ זְמַן לֶאֱכֹל!</h2><div class="sub">${nm}. נַמְשִׁיךְ אַחֲרֵי הָאֹכֶל.</div><div class="hcd"></div>`);
+  const el=lock('hmeal',`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">🍽️</span></div><h2>הִגִּיעַ זְמַן לֶאֱכֹל!</h2><div class="sub">${nm}. נַמְשִׁיךְ אַחֲרֵי הָאֹכֶל.</div>`);
   const btn=h('button','bigbtn huge hback','<span>אָכַלְתִּי</span>');el.firstChild.appendChild(btn);wait(el,btn,m.s+H.MEAL_MIN*60000);
   const done=p=>{m.e=now();if(p)m.p=1;O.persist();close();after();};btn.onclick=()=>{if(!btn.disabled){sfx.win&&sfx.win();done();}};
   if(T.login){const pb=h('button','hpar','🔒 הורה');pb.onclick=()=>T.login(()=>done(1));el.firstChild.appendChild(pb);}

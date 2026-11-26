@@ -37,7 +37,6 @@ svg.tl{width:60px;height:60px;display:block}
 .thp{font-family:var(--read);font-size:28px;line-height:1.75;max-width:760px;text-align:right;padding:0 4px}
 .thp.nk{font-size:30px}
 .rcqq{font-family:var(--read);font-size:28px;font-weight:700;text-align:center;border-top:2px dashed rgba(0,0,0,.15);padding-top:8px;width:100%}
-.thsay{align-self:center}
 /* the champions' challenge */
 .thtime{position:relative;width:min(560px,92%);height:26px;margin:0 auto 6px;background:rgba(255,255,255,.85);box-shadow:inset 0 0 0 2px rgba(0,0,0,.15)}
 .thtime i{position:absolute;inset:0 0 0 auto;background:#7cc35f;transition:width 1s linear}
