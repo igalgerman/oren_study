@@ -3,13 +3,12 @@ import type { Register } from 'claude-code'
 
 import type { OrenLanesData } from '../types/index'
 import {
-  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, usageJson, governorLine, flowRows, laneReasons, view, statsLines, parseMaxCore, parseLocalLanes, parseRemoteLanes, cloudRows, cloudCount, cloudDone, DESKS,
+  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, usageJson, governorLine, flowRows, laneReasons, view, statsLines, parseMaxCore, parseLocalLanes, parseRemoteLanes, cloudRows, cloudCount, cloudDone, DESKS, fromCache, GH_CACHE,
 } from './lanes'
 import type { CloudLane, Issue, View, Win } from './lanes'
 
 const PANE = 'oren-lanes'
 const HC = 'C:/Users/97254/AppData/Local/Programs/herdr-core/hc.exe'
-const REPO = 'igalgerman/oren_study'
 const LOG = 'C:/work/Oren_study/a/tools/runner/.runs/runner.log'
 const OBSERVER = 'C:/work/Oren_study/a/tools/runner/.runs/observer.last'
 const CONFIG = 'C:/work/Oren_study/a/tools/runner/config.toml'
@@ -60,14 +59,10 @@ export const register: Register = on => {
         } catch (err) {
           errors.push(`windows unavailable: ${trunc(String(err), 60)}`)
         }
-        try {
-          const r = await quietRun($, 
-            ['gh', 'issue', 'list', '-R', REPO, '--state', 'open', '--limit', '100',
-              '--json', 'number,title,labels,body'],
-            { timeoutMs: 90000 },
-          )
-          if (r.exitCode !== 0) throw new Error(trunc(r.stderr.trim() || `gh exit ${r.exitCode}`, 60))
-          issues = JSON.parse(r.stdout) as Issue[]
+        let gh: ReturnType<typeof fromCache> | undefined
+        try {   // #329: GitHub only from the shared cache (the watchdog reads it once a minute); no gh call here
+          gh = fromCache((await $.fs.read(GH_CACHE)) as string, await $.clock.now())
+          issues = gh.issues
         } catch (err) {
           errors.push(`backlog unavailable: ${trunc(String(err), 60)}`)
         }
@@ -99,10 +94,9 @@ export const register: Register = on => {
         let vw: View | undefined
         let done = ''
         try {
-          const pr = await quietRun($, ['gh', 'pr', 'list', '-R', REPO, '--state', 'open', '--json', 'headRefName'], { timeoutMs: 90000 })
-          const cl = await quietRun($, ['gh', 'issue', 'list', '-R', REPO, '--state', 'closed', '--limit', '300', '--json', 'number,title,labels,closedAt'], { timeoutMs: 90000 })
-          const prs = pr.exitCode === 0 ? (JSON.parse(pr.stdout) as { headRefName: string }[]).map(p => p.headRefName) : []
-          const closed = cl.exitCode === 0 ? (JSON.parse(cl.stdout) as Issue[]) : []
+          if (!gh) throw new Error('no GitHub cache')
+          const prs = gh.prs
+          const closed = gh.closed
           flow = flowRows(issues, closed, windows, prs)
           vw = view(issues, closed, windows, prs, 3, maxCore)
           vw = { ...vw, done: [...cloudDone(lanesCloud), ...vw.done.filter(x => !lanesCloud.some(c => c.state === 'done' && x.startsWith(`✓ #${c.n} `)))].slice(0, 3) }   // #263
@@ -110,7 +104,7 @@ export const register: Register = on => {
           const today = closed.filter(c => Date.parse((c as { closedAt?: string }).closedAt ?? '') > dayAgo).length
           const g = groupIssues(issues)
           const agentWork = g.running.count + g.ready.count + g.waiting.count
-          done = `backlog ${closed.length}/${closed.length + issues.length} done · ${today} in 24h · left ${issues.length}: ${g.running.count} running, ${g.ready.count} ready, ${g.waiting.count} waiting, ${g.needsYou.count + g.triage.count} need you`
+          done = `backlog ${gh.closedTotal}/${gh.closedTotal + issues.length} done · ${today} in 24h · left ${issues.length}: ${g.running.count} running, ${g.ready.count} ready, ${g.waiting.count} waiting, ${g.needsYou.count + g.triage.count} need you`
             + (agentWork <= 1 ? ' · ⚠ almost no work for the lanes — add to the backlog (/idea, /task)' : '')
         } catch { /* flow is optional */ }
         let usage = ''
@@ -153,7 +147,7 @@ export const register: Register = on => {
     }
 
     timer?.cancel()
-    timer = $.clock.every(30000, () => { void refresh() })
+    timer = $.clock.every(60000, () => { void refresh() })   // #329: 60 s, from the cache only
     void refresh()
     refreshRef = refresh
 

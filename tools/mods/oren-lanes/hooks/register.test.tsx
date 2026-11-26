@@ -299,3 +299,24 @@ test('#297 a quiet PR without a RESULT line shows waiting review with the PR num
   expect(cloudRows([{ n: 269, title: 'Quiet', state: 'waiting review', last: '2026-11-26T12:24:00Z', stale: false, pr: 'https://github.com/x/y/pull/270', session: '' }]))
     .toEqual(['☁ #269 Quiet — waiting review PR #270 · last 14:24', '   PR https://github.com/x/y/pull/270'])
 })
+
+import { fromCache, GH_CACHE } from './lanes'
+
+test('#329 the panel reads GitHub only from the shared cache (.runs/gh_cache.json), never when stale', () => {
+  const L = (...n: string[]) => n.map(name => ({ name }))
+  const cache = {
+    ts: 1000, closed_total: 250,
+    open: [{ number: 9, title: 'nine', body: 'b', labels: L('in-progress'), comments: [] }],
+    closed: [{ number: 7, title: 'seven', labels: L('pack'), closedAt: '2026-11-26T08:00:00Z' }],
+    prs: [{ number: 20, headRefName: 'lane/9', state: 'OPEN' }, { number: 19, headRefName: 'lane/7', state: 'MERGED' }],
+  }
+  const g = fromCache(JSON.stringify(cache), 1060 * 1000)
+  expect(g.issues).toEqual([{ number: 9, title: 'nine', body: 'b', labels: L('in-progress') }])
+  expect(g.closed.map(c => c.number)).toEqual([7])
+  expect(g.prs).toEqual(['lane/9'])
+  expect(g.closedTotal).toBe(250)
+  let err = ''
+  try { fromCache(JSON.stringify(cache), 1400 * 1000) } catch (e) { err = String(e) }
+  expect(err).toMatch('GitHub cache 400 s old')
+  expect(GH_CACHE).toMatch('tools/runner/.runs/gh_cache.json')
+})

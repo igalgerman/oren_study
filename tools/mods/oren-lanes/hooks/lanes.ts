@@ -114,6 +114,20 @@ export function usageJson(limits: Limit[], nowMs: number) {
 }
 
 /** #306: cloud desks line ('cloud desks: inbox ok · ask down'), written by tools/runner/desks.py; read with governorLine. */
+/** #329: the ONE GitHub reader (the watchdog) writes this once a minute; the panel never calls gh itself. */
+export const GH_CACHE = 'C:/work/Oren_study/a/tools/runner/.runs/gh_cache.json'
+const GH_MAX_AGE_S = 180
+
+/** #329: backlog, closed issues, open PR branches from the cache text; throws when it is older than GH_MAX_AGE_S. */
+export function fromCache(text: string, nowMs: number): { issues: Issue[]; closed: Issue[]; prs: string[]; closedTotal: number } {
+  const c = JSON.parse(text)
+  const age = Math.round(nowMs / 1000 - (c.ts ?? 0))
+  if (age > GH_MAX_AGE_S) throw new Error(`GitHub cache ${age} s old (watchdog not reading?)`)
+  const issues = (c.open ?? []).map((i: any) => ({ number: i.number, title: i.title, body: i.body, labels: i.labels }))
+  const prs = (c.prs ?? []).filter((p: any) => p.state === 'OPEN').map((p: any) => p.headRefName as string)
+  return { issues, closed: c.closed ?? [], prs, closedTotal: c.closed_total ?? (c.closed ?? []).length }
+}
+
 export const DESKS = 'C:/work/Oren_study/a/tools/runner/.runs/desks.json'
 
 /** #239: the runner's governor line from .runs/governor.json text; '' when missing or unreadable. */

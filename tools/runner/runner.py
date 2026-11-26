@@ -8,7 +8,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import remote
+import remote, ghcache
 ROOT = HERE.parent.parent                      # repo checkout (tools/runner/../..)
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # #229: tests point this at a temp dir
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -430,6 +430,9 @@ _OVER_Q = ("query($o:String!,$r:String!,$n:Int!,$h:String!){repository(owner:$o,
 
 def issue_over(n, since, run_=None):
     """#234: ONE gh call: is issue #n closed, or lane/<n> merged after `since` (run start)? Any gh/parse error -> False (never end a run on an error)."""
+    if run_ is None:
+        known = ghcache.issue_over_cached(n, since)     # #329: from the shared cache when it knows; else the GraphQL check
+        if known is not None: return known
     o, name = REPO.split("/", 1)
     try:                                               # 26 Nov 14:48: a gh timeout here killed 3 runs at once; a slow GitHub is "not over yet"
         rc, out = (run_ or run)(["gh", "api", "graphql", "-f", f"query={_OVER_Q}", "-f", f"o={o}", "-f", f"r={name}", "-F", f"n={n}", "-f", f"h=lane/{n}"], timeout=60)
@@ -715,13 +718,15 @@ def is_transient(e):
 def run(cmd, cwd=None, env=None, input=None, log=None, timeout=None):
     e = dict(os.environ); e.update(env or {})
     e["PATH"] = CFG["extra_path"].replace("/c/", "C:/", 1) + os.pathsep + e["PATH"]
-    p = subprocess.run(cmd, cwd=cwd, env=e, input=input, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace", timeout=timeout, creationflags=no_window())
-    out = redact((p.stdout or "") + (p.stderr or ""))
+    def raw():
+        p = subprocess.run(cmd, cwd=cwd, env=e, input=input, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=timeout, creationflags=no_window())
+        return p.returncode, redact((p.stdout or "") + (p.stderr or ""))
+    rc, out = ghcache.call(list(map(str, cmd)), raw)     # #329: gh reads from the shared cache, rate limits retried
     if log:
         with open(log, "a", encoding="utf-8") as f:
-            f.write(f"\n$ {' '.join(map(str, cmd))[:300]}\n{out}\n[exit {p.returncode}]\n")
-    return p.returncode, out
+            f.write(f"\n$ {' '.join(map(str, cmd))[:300]}\n{out}\n[exit {rc}]\n")
+    return rc, out
 
 MAIN_CHECKOUT = Path(CFG.get("main_checkout", str(ROOT)))   # the checkout the watchdog/runner/panel import code from
 
@@ -1678,7 +1683,11 @@ def main():
         print(f"ISSUE {n}: {res}"); return 0
     if args:   # run.cmd <issue>: run that one issue now (ignores the queue label and the parallel cap)
         n = int(args[0].lstrip("#"))
-        issue = issue_by_number(n)
+        try: issue = issue_by_number(n)
+        except SystemExit as e:
+            if not ghcache.rate_limited(str(e)): raise
+            set_labels(n, remove=["in-progress"])        # #329: GitHub rate limit at start: back to ready at once, never blocked
+            log_line(f"{now()} #{n}: not started (GitHub rate limit), back to ready"); return 0
         if DRY:
             print(f"[dry-run] would run #{n} ({lane_of(issue['labels'])}): {issue['title']}"
                   + ("; core: waits for any running core issue" if lane_of(issue["labels"]) == "core" else "")); return 0
