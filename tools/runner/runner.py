@@ -18,6 +18,7 @@ DRY = "--dry-run" in sys.argv
 HC = CFG.get("hc", "")                            # herdr CLI; missing -> old hidden `claude -p` path
 USE_HERDR = bool(HC) and Path(HC).exists() and not DRY and os.environ.get("RUNNER_NO_HERDR") != "1"
 TERM = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--term=")), "")   # our own herdr terminal name (set by launch_self)
+NOTIFY = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--notify=")), "")  # #279: a notify-off pass tells this terminal only when it did something
 INTEG = Path(CFG["worktree_prefix"] + "integrate")       # own checkout for merge/test/deploy, so a dirty orchestrator checkout never blocks it
 INTERACTIVE_NOTE = ("\nWhen you are completely finished, make the very last line of your final message exactly the marker line described above, "
                     "then stay open: the owner may open this terminal and ask you questions.\n"
@@ -465,6 +466,33 @@ def governor_text(gv):
     if gv.get("week_projected") is not None:
         s += f" · week {gv['week_pct']:.0f}% -> ~{min(100, gv['week_projected']):.0f}% at {time.strftime('%a %H:%M', time.localtime(gv['week_reset']))}"
     return s + ")" + (" · STOP" if gv["stop"] else " · new 5h window" if gv.get("why") == "new 5h window" else "")
+
+def governor_now(now=None):
+    """#279: the last governor decision (.runs/governor.json, < 15 min old) without taking a new usage sample -> {lanes, stop, pct};
+    missing or stale -> config remote_lanes. A stop from before the 5h reset is over (#269)."""
+    now = time.time() if now is None else now
+    try:
+        gv = json.loads((RUNS / "governor.json").read_text(encoding="utf-8"))
+        if now - gv["at"] < 15 * 60:
+            return {"lanes": int(gv["lanes"]), "stop": bool(gv["stop"] and not (gv.get("reset") and gv["reset"] <= now)), "pct": gv.get("pct")}
+    except Exception: pass
+    return {"lanes": REMOTE_LANES, "stop": False, "pct": None}
+
+def pass_choice(issues, local_lanes, remote_lanes, gv, core_held_n, locked, where=None):
+    """#279: what a runner pass starts now -> [(issue, 'local'|'remote')] (before the open-PR lookup). The ONE lane check, shared by
+    run_pass and the watchdog (which spawns a pass only when this is not empty): Acceptance gate, select(), issue locks, governor stop, free slots."""
+    where = where or where_of
+    issues, _ = gate(issues)
+    busy = [i["number"] for i in issues if "in-progress" in i["labels"]]
+    rbusy = sum(where(b) == "remote" and not waiting_core(b) for b in busy)     # same as remote_busy()
+    chosen = stop_filter([c for c in select(issues, local_lanes + remote_lanes, MAX_CORE, EXPRESS, core_held_n) if not locked(c["number"])], gv)
+    return assign_where(chosen, sum(where(b) != "remote" for b in busy), rbusy, local_lanes, remote_lanes)
+
+def pass_now(issues, gv=None):
+    """#279: pass_choice with this PC's live inputs (governor, cloud refusal pause, PC load, core slots, issue locks)."""
+    gv = gv or governor_now()
+    return pass_choice(issues, local_lanes_now(pcload.alarmed(RUNS)), lanes_now(gv["lanes"], refusal_state(), time.time()), gv,
+                       core_held(), lambda n: FileLock(f"issue-{n}").held_by_other())
 
 def stop_filter(chosen, gv):
     """Pure (#269): on a governor stop only owner-approved 'express' issues still start, and only below 100%.
@@ -1196,12 +1224,28 @@ def hc_json(*args):
             continue
     return {}
 
-def parent_args():
-    """Notes go to the main session: config `parent`, else the parent of our own run-<n> terminal, else herdr's default."""
+def my_parent():
+    """Notes go to the main session: config `parent`, else the parent of our own run-<n> terminal, else the --notify target
+    of a notify-off pass (#279), else '' (herdr's default)."""
     p = CFG.get("parent", "")
     if not p and TERM:
         p = hc_json("get", TERM, "--json").get("parent", "")
+    return p or NOTIFY
+
+def parent_args():
+    p = my_parent()
     return ["--parent", p] if p else []
+
+def pass_cmd(name, parent):
+    """#279: hc command for a runner pass. Notify off (--no-parent: herdr sends no exit note); the pass itself tells
+    --notify=<parent> only when it started or blocked something (notify_pass)."""
+    cmd = [HC, "run", "--bg", "--outlive-parent", "--no-parent", "--name", name, "--cwd", str(ROOT), "--label", "role=runner",
+           sys.executable, str(HERE / "runner.py"), f"--term={name}"]
+    return cmd + ([f"--notify={parent}"] if parent else [])
+
+def notify_pass(started, stuck, line, to, send):
+    """#279: a pass that started nothing and blocked nothing stays quiet; otherwise its pass line goes to `to`."""
+    if to and (started or stuck): send(to, line)
 
 def code_mode(n):
     """Code Mode trial (owner, 26 Nov): issues whose number is a multiple of code_mode_every run their Claude windows with
@@ -1285,10 +1329,12 @@ def spawn(extra_args):
 def spawn_out(extra_args):
     """spawn() -> (rc, output), so a caller can see why `hc run` failed (e.g. name_taken)."""
     name = f"run-{extra_args[0].lstrip('#')}" if extra_args else f"run-pass-{int(time.time()) % 100000}"
-    parent = CFG.get("parent") or (hc_json("get", TERM, "--json").get("parent", "") if TERM else "")
-    cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(ROOT), "--label", "role=runner"]
-    if parent: cmd += ["--parent", parent]
-    cmd += [sys.executable, str(HERE / "runner.py"), *extra_args, f"--term={name}"]
+    parent = my_parent()
+    if not extra_args: cmd = pass_cmd(name, parent)       # #279: a pass is notify-off
+    else:
+        cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(ROOT), "--label", "role=runner"]
+        if parent: cmd += ["--parent", parent]
+        cmd += [sys.executable, str(HERE / "runner.py"), *extra_args, f"--term={name}"]
     rc, out = run(cmd)
     print(out.strip() or f"started terminal {name}")
     return rc, out
@@ -2142,13 +2188,10 @@ def run_pass():
         for m, step in auto_resume(issues, resume_lookup, set_labels, lambda k, b: gh("issue", "comment", str(k), "--body", b), tell_orchestrator):
             log_line(f"{now()} #{m}: auto-resume at {step}")
     busy = [i["number"] for i in issues if "in-progress" in i["labels"]]
-    rbusy = remote_busy(busy)                            # #277: a run waiting for a core slot holds no cloud lane
-    gv = governor_pass(rbusy)                     # #239: remote lane count from the 5h usage
-    remote_lanes = lanes_now(gv["lanes"], refusal_state(), time.time())   # #137: no cloud starts for 1 h after a refusal
-    local_lanes = local_lanes_now(pcload.alarmed(RUNS))   # #293: PC overloaded -> no new local work
-    chosen = stop_filter([c for c in select(issues, local_lanes + remote_lanes, MAX_CORE, EXPRESS, core_held()) if not FileLock(f"issue-{c['number']}").held_by_other()], gv)   # #269: express still starts on stop
-    wmap = {c["number"]: w for c, w in assign_where(chosen, sum(where_of(b) != "remote" for b in busy), rbusy, local_lanes, remote_lanes)}
-    chosen = [c for c in chosen if c["number"] in wmap]
+    gv = governor_pass(remote_busy(busy))         # #239: remote lane count from the 5h usage (#277: a run waiting for a core slot holds no cloud lane)
+    pairs = pass_now(issues, gv)                  # #279: the same lane check as the watchdog (#137 refusal pause, #293 PC load, #269 stop)
+    wmap = {c["number"]: w for c, w in pairs}
+    chosen = [c for c, _ in pairs]
     if not DRY: chosen = open_pr_resumes(chosen, resume_lookup)     # #295: an issue with an open PR resumes; never a second worker
     cutoff = CFG["stuck_hours"] * 3600
     stuck = [i for i in issues if "in-progress" in i["labels"] and not FileLock(f"issue-{i['number']}").held_by_other()
@@ -2172,7 +2215,10 @@ def run_pass():
     elif chosen:
         with ThreadPoolExecutor(max_workers=len(chosen)) as ex:
             results = list(ex.map(lambda c: (c["number"], process(c, wmap[c["number"]])), chosen))
-    log_line(f"{now()} pass: started={sum(r == 'started' for _, r in results) if results else len(chosen)} stuck={len(stuck)} " + " ".join(f"#{n}:{r}" for n, r in results))
+    started = sum(r == 'started' for _, r in results) if results else len(chosen)
+    line = f"pass: started={started} stuck={len(stuck)} " + " ".join(f"#{n}:{r}" for n, r in results)
+    log_line(f"{now()} {line}")
+    notify_pass(started, len(stuck), line.strip(), NOTIFY, lambda to, t: hc("send", to, t, timeout=30) if USE_HERDR else None)   # #279
     for n, r in results: print(f"ISSUE {n}: {r}")
     return 0
 

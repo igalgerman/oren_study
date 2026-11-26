@@ -76,3 +76,65 @@ assert p.stderr == "e", p.stderr
 p = subprocess.run([sys.executable, Q, "no-such-binary-xyz"], capture_output=True)
 assert p.returncode == 127
 print("quiet ok")
+
+# 6. #279: an empty pass is not spawned and does not notify the orchestrator
+ACC = "x\n## Acceptance\n- a\n"
+def iss(n, *labels, body=ACC): return {"number": n, "labels": list(labels), "createdAt": f"2026-11-26T10:0{n % 10}:00Z", "body": body, "title": f"t{n}"}
+GV = {"lanes": 2, "stop": False, "pct": 10}
+nolock = lambda n: False
+busy2 = [iss(1, "in-progress", "pack"), iss(2, "in-progress", "pack")]
+# all lanes busy -> nothing to start
+assert R.pass_choice(busy2 + [iss(3, "ready-for-agent", "pack")], 0, 2, GV, 0, nolock, lambda n: "remote") == []
+# a free lane + a ready issue -> it starts in the free lane
+got = R.pass_choice([busy2[0], iss(3, "ready-for-agent", "pack")], 0, 2, GV, 0, nolock, lambda n: "remote")
+assert [(i["number"], w) for i, w in got] == [(3, "remote")], got
+# the same checks as the pass: no Acceptance, issue lock held, governor stop, core slots held -> nothing
+assert R.pass_choice([iss(3, "ready-for-agent", "pack", body="no list")], 0, 2, GV, 0, nolock) == []
+assert R.pass_choice([iss(3, "ready-for-agent", "pack")], 0, 2, GV, 0, lambda n: n == 3) == []
+assert R.pass_choice([iss(3, "ready-for-agent", "pack")], 0, 2, {**GV, "stop": True}, 0, nolock) == []
+assert R.pass_choice([iss(3, "ready-for-agent", "core")], 0, 2, GV, R.MAX_CORE, nolock) == []
+# governor_now reads governor.json without a new sample; stale -> config remote_lanes
+import json as _j
+(R.RUNS / "governor.json").write_text(_j.dumps({"at": time.time(), "lanes": 5, "stop": False, "pct": 40}))
+assert R.governor_now()["lanes"] == 5 and not R.governor_now()["stop"]
+(R.RUNS / "governor.json").write_text(_j.dumps({"at": time.time() - 3600, "lanes": 5, "stop": True}))
+assert R.governor_now() == {"lanes": R.REMOTE_LANES, "stop": False, "pct": None}
+(R.RUNS / "governor.json").write_text(_j.dumps({"at": time.time(), "lanes": 2, "stop": False, "pct": 10}))
+# the watchdog: no free lane -> no `hc run` (no pass, no gh call of a pass); a free lane -> a pass with notify off
+calls, issues_now = [], []
+saved = (R.gh, R.run, R.hc_json, R.where_of, W.pass_decision)
+R.gh = lambda *a, **k: (0, _j.dumps([{**i, "labels": [{"name": l} for l in i["labels"]]} for i in issues_now]))
+R.run = lambda cmd, **k: (calls.append(cmd), (0, ""))[1]
+R.hc_json = lambda *a, **k: {"address": "orch1"}
+R.where_of = lambda n: "remote"
+W.pass_decision = lambda *a, **k: (True, "")
+try:
+    issues_now[:] = busy2 + [iss(3, "ready-for-agent", "pack")]
+    W.check_lanes([]); assert calls == [], calls
+    issues_now[:] = [busy2[0], iss(3, "ready-for-agent", "pack")]
+    W.check_lanes([]); assert len(calls) == 1, calls
+    c = calls[0]
+    assert "--no-parent" in c and "--parent" not in c and "--notify=orch1" in c, c
+finally:
+    R.gh, R.run, R.hc_json, R.where_of, W.pass_decision = saved
+# a pass started by a run (spawn_out with no args) is notify-off too and passes its parent on as --notify
+calls.clear(); saved = (R.run, R.hc_json); R.run = lambda cmd, **k: (calls.append(cmd), (0, ""))[1]; R.hc_json = lambda *a, **k: {"parent": "orch2"}
+R.TERM = "run-9"
+try:
+    R.spawn_out([]); c = calls[0]
+    assert "--no-parent" in c and "--parent" not in c and "--notify=orch2" in c, c
+    calls.clear(); R.spawn_out(["7"]); assert "--parent" in calls[0] and calls[0][calls[0].index("--parent") + 1] == "orch2", calls   # issue runs: as today
+finally:
+    R.run, R.hc_json = saved; R.TERM = ""
+# the pass itself tells its notify target only when it started or blocked something
+sent = []
+send = lambda to, text: sent.append((to, text))
+R.notify_pass(0, 0, "pass: started=0 stuck=0", "orch1", send); assert sent == []
+R.notify_pass(1, 0, "pass: started=1 stuck=0 #3:started", "orch1", send); assert sent == [("orch1", "pass: started=1 stuck=0 #3:started")]
+R.notify_pass(0, 2, "pass: started=0 stuck=2", "orch1", send); assert len(sent) == 2
+R.notify_pass(1, 0, "x", "", send); assert len(sent) == 2      # no target (started by hand): herdr's own exit note as before
+# a child run of a notify-off pass still reports to the orchestrator
+R.NOTIFY = "orch1"; saved = R.hc_json; R.hc_json = lambda *a, **k: {}
+try: assert R.my_parent() == "orch1"
+finally: R.NOTIFY = ""; R.hc_json = saved
+print("empty pass ok")
