@@ -1,6 +1,6 @@
 """#241 durable 'Due:' reminders. Run: python3 tools/runner/test_due.py"""
-os.environ["OREN_TEST"] = "1"   # #325
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")
+os.environ["OREN_TEST"] = "1"   # #325
 import json, sys, time
 sys.argv.append("--dry-run")
 import due as D
