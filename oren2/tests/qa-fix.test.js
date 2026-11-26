@@ -70,7 +70,7 @@ const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + 
   const pt = await p.evaluate(() => { const s = document.querySelector('#sPar .pbody .psec'); const row = document.querySelector('#sPar .tdrow');
     return { h: s.querySelector('h3').textContent, big: [...s.querySelectorAll('.pbig .bigbtn')].map(x => x.textContent.trim()), vis: [...s.querySelectorAll('.pchip')].filter(x => x.checkVisibility()).length,
       rowBtns: row ? [...row.querySelectorAll('button')].filter(x => x.offsetParent).map(x => x.textContent) : [], gems: getComputedStyle(document.querySelector('#gemc')).display }; });
-  ok('parent today: status + 2 big buttons, the rest folded', pt.h === '⏱️ היום' && pt.big.join('|') === '+15 דק׳|+ משימה' && pt.vis === 0, JSON.stringify(pt));
+  ok('parent today: status + the big button (+15 min), the rest folded', pt.h === '⏱️ היום' && pt.big.join('|') === '+15 דק׳' && pt.vis === 0, JSON.stringify(pt));
   ok('parent today: mission row shows only ✓ and ✕', pt.rowBtns.length === 2 && pt.rowBtns[0] === '✓' && pt.rowBtns[1] === '✕', JSON.stringify(pt.rowBtns));
   ok('parent panel hides the kid gems', pt.gems === 'none');
   await p.locator('#sPar .tdrow').first().click(); await sleep(100);
