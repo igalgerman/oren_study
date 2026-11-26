@@ -43,6 +43,8 @@ Known: `worker` suite fails only on Windows (ESM c:\ path); `reading`/`activitie
 ## Observer
 Every `observer_minutes` the watchdog runs `tools/runner/observer.py` (deterministic rules, no LLM): make_ready (needs-orchestrator/P0 untouched 30+ min while the orchestrator is idle), rerun (in-progress with no live run window for 10+ min), fix Blocked-by lines. Max 5 actions per run, each commented on the issue; never on ready-for-human, on an issue with an open lane/<n> PR, or while integrate.lock is alive. Result in `tools/runner/.runs/observer.last`; `observer_minutes = 0` stops it.
 
+AI observer (#203): every `ai_observer_minutes` (60; 0 = off) the watchdog starts ONE headless `claude -p --model sonnet` (`tools/runner/ai_observer.py`, read-only tools, 10 min timeout, never two at once). It checks open issues/labels/Blocked-by, open PRs, cloud issues (`remote.py status`), runner/watchdog log tails and the merge lock, and reports at most 5 `OBSERVER: <problem #n> -> <fix, who>` lines (or `no problems`) in `.runs/ai_observer.last`. New findings go to the orchestrator (same issue + text start not again within 6 h); one for the owner also goes to #193. It never edits, merges, labels or comments itself. Issues labelled `cloud` have no local window/worktree by design: neither observer flags that.
+
 Questions to the owner: in Hebrew, through tools/ask/ask.py (browser page), one round at a time; never ask in the terminal when the owner prefers Hebrew.
 Every owner question also lands in ONE place: the pinned issue 'Questions for the owner' (#193, `tools/runner/owner_q.py`; the watchdog posts window questions itself). Write `QUESTION:` lines in Hebrew, with the options.
 
