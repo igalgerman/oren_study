@@ -184,3 +184,13 @@ test('model label shows in up next and lanes, e.g. [P1·opus]', () => {
   expect(v.next).toEqual(['[P1·opus] #1 ui  (ready)', '[P2] #2 plain  (ready)'])
   expect(v.lanes[0]).toBe('1. #3 running [fable] · busy')
 })
+
+import { view } from './lanes'
+test('your lane shows the open intake window', () => {
+  const lab = (...n: string[]) => n.map(name => ({ name }))
+  const open = [{ number: 8, title: 'Idea about maps', labels: lab('needs-triage') }, { number: 9, title: 'Other', labels: lab('needs-info') }]
+  const v = view(open, [], [{ name: 'intake-8', state: 'live/working' }], [])
+  expect(v.you[0]).toBe('▶ #8 Idea about maps — intake window open')
+  expect(v.you[1]).toMatch(/^\? #9 /)
+  expect(v.lanes.some(l => l.includes('#8'))).toBe(false)
+})
