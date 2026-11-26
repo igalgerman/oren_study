@@ -1354,6 +1354,7 @@ function home(){const S0=T.S();
     const more=h('button','dmore','🔍 <span>מַשֶּׁהוּ אַחֵר</span>');more.onclick=()=>{sfx.pop(2);other();};s.appendChild(h('div','dpick')).appendChild(more);}
   /* the round doors live inside "something else"; on home only when there is no daily path */
   if(!d)s.appendChild(doorsEl());
+  if(window.AGAIN)window.AGAIN.button(s);
   const pb=h('button','parbtn','🔒');pb.title='כניסת הורים';pb.setAttribute('aria-label','כניסת הורים');pb.onclick=()=>window.TAL_parentGate();s.appendChild(pb);
   T.checkMsg&&T.checkMsg();}
 function doorsEl(){const doors=h('div','doors2');
