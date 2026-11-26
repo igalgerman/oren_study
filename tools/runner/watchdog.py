@@ -5,6 +5,7 @@ Every minute it checks, deterministically:
   3. free lanes + ready issues but no runner pass running                       -> starts a runner pass
   3b. a window waiting for the owner longer than park_minutes (the runner parks it itself; this is the fallback): issue gets blocked + ready-for-human, lane freed
   5. every observer_minutes: a read-only headless Claude audits the flow (observer_prompt.md); problems go to the orchestrator
+  6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
 It never answers questions or presses keys in other windows; it only tells the orchestrator and starts the runner.
 Usage: python watchdog.py [--once]
@@ -209,6 +210,17 @@ def observer_tick():
         finally: _obs["running"] = False
     threading.Thread(target=work, daemon=True).start()
 
+SYNC_MIN = int(R.CFG.get("sync_minutes", 3))
+_sync = {"last": 0.0, "msg": ""}
+
+def sync_tick():
+    """Every SYNC_MIN minutes fast-forward the main checkout; log changes of state only."""
+    if time.time() - _sync["last"] < SYNC_MIN * 60: return
+    _sync["last"] = time.time()
+    msg = R.sync_main()
+    if msg and msg != _sync["msg"]: log(msg)
+    _sync["msg"] = msg
+
 def main():
     if "--observe-once" in sys.argv:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -225,6 +237,7 @@ def main():
             check_lanes(ts)
             cleanup(R.hc_json("ls", "--all", "--json").get("terminals", []) or ts)
             observer_tick()
+            sync_tick()
         except Exception as e:
             log(f"error: {e!r}")
         if "--once" in sys.argv: return
