@@ -105,7 +105,7 @@ def check_lanes(ts):
     rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: return
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
-    if not R.select(issues, R.CFG["max_parallel"], R.MAX_CORE, R.EXPRESS): return
+    if not R.select(issues, R.total_lanes(), R.MAX_CORE, R.EXPRESS): return
     orch = R.hc_json("get", "orchestrator", "--json").get("address", "")
     name = f"run-pass-{int(time.time()) % 100000}"
     cmd = [R.HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(R.ROOT), "--label", "role=runner"]
@@ -264,10 +264,10 @@ def alarms_once(now=None):
     if rc or rc2: return None
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
     running = sum("in-progress" in i["labels"] for i in issues)
-    free = running < R.CFG["max_parallel"] and bool(R.select(issues, R.CFG["max_parallel"]))
+    free = running < R.total_lanes() and bool(R.select(issues, R.total_lanes()))
     if not free: _alarm["free_since"] = None
     elif _alarm["free_since"] is None: _alarm["free_since"] = now
-    return idle_alarms(issues, json.loads(out2), now, _alarm["free_since"], R.CFG["max_parallel"])
+    return idle_alarms(issues, json.loads(out2), now, _alarm["free_since"], R.total_lanes())
 
 def alarm_tick():
     """Every 10 min: idle alarms to the orchestrator (+ watchdog.log); the same alarm at most once an hour."""
