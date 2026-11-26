@@ -622,3 +622,26 @@ finally:
 assert _res.startswith("DONE") and "block" not in _did and "wt" in _did and "win" in _did, (_res, _did)
 assert _lab[-1] == ((), ("in-progress",)), _lab
 print("ok run ends when its issue is closed or PR merged (#234)")
+# #250: one pass at a time; a failed spawn gives in-progress back only when no run-<n> is live, never on name_taken
+assert r.may_give_back(7, "boom", []) is True
+assert r.may_give_back(7, "error: name_taken run-7", []) is False
+assert r.may_give_back(7, "boom", [{"name": "run-7", "state": "live"}]) is False
+assert r.may_give_back(7, "boom", [{"name": "run-7", "state": "exited"}, {"name": "run-70", "state": "live"}]) is True
+_lab2 = []
+_saved = {k: getattr(r, k) for k in ("set_labels", "set_where")}
+r.set_labels = lambda n, add=(), remove=(): _lab2.append((n, tuple(add), tuple(remove))); r.set_where = lambda *a: None
+try:
+    _res2 = r.start_chosen([{"number": 5}, {"number": 6}, {"number": 8}], {5: "remote", 6: "local", 8: "local"},
+                           spawn_=lambda a: (0, "") if a[0] == "5" else (1, "name_taken" if a[0] == "6" else "boom"),
+                           terms_=lambda: [])
+finally:
+    for k, v in _saved.items(): setattr(r, k, v)
+assert _res2 == [(5, "started"), (6, "not started (run already live)"), (8, "not started (hc run failed)")], _res2
+assert (6, (), ("in-progress",)) not in _lab2 and (8, (), ("in-progress",)) in _lab2, _lab2
+# the pass lock: a second pass exits at once while the first holds it
+_ran = []
+with r.FileLock("pass"):
+    assert r.one_pass(lambda: _ran.append(1) or 0) == 0 and _ran == []
+assert r.one_pass(lambda: _ran.append(1) or 0) == 0 and _ran == [1]
+assert not (r.RUNS / "pass.lock").exists()
+print("ok one pass at a time (#250)")
