@@ -174,7 +174,7 @@ def ci_fix_prompt(n, names):
 
 def resolve_prompt(n, files):
     return (f"Issue #{n}: merging lane/{n} into {BRANCH} failed because {BRANCH} moved on" + (f" (conflicting files: {', '.join(files)})" if files else "") + ". "
-            f"In this worktree run `git fetch {REMOTE} && git merge {REMOTE}/{BRANCH}`, resolve the conflicts keeping BOTH sides' intent, "
+            f"In this worktree run `git fetch {REMOTE} && git merge -X renormalize {REMOTE}/{BRANCH}`, resolve the conflicts keeping BOTH sides' intent, "
             "run `python3 build_talents.py` (in oren2/) and the full tests (`oren2/tests/run.sh`; rerun a flaky suite alone once), commit, "
             f"and `git push {REMOTE} lane/{n}`. Never force-push, never rewrite {BRANCH}, never push to {BRANCH}. "
             "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
@@ -387,19 +387,32 @@ def pid_alive(pid):
     return f" {pid} " in out
 
 class FileLock:
-    """Cross-process lock: lock file holding our pid; stale (dead pid) locks are taken over. wait=0: give up at once."""
-    def __init__(self, name, wait=0):
-        self.path, self.wait = RUNS / f"{name}.lock", wait
-    def held_by_other(self):
+    """Cross-process lock: lock file holding our pid (+ #181: a note and the time taken); stale (dead pid) locks are taken over.
+    wait=0: give up at once."""
+    def __init__(self, name, wait=0, note=""):
+        self.path, self.wait, self.note = RUNS / f"{name}.lock", wait, note
+    def info(self):
+        """-> (pid, note, since) of the current holder, or None. Old files hold only a pid."""
         try:
-            return pid_alive(int(self.path.read_text().strip()))
-        except (OSError, ValueError):
-            return False
+            parts = self.path.read_text(encoding="utf-8").split("\n")
+            pid = int(parts[0].strip())
+        except (OSError, ValueError, IndexError):
+            return None
+        note = parts[1].strip() if len(parts) > 1 else ""
+        try: since = float(parts[2])
+        except (IndexError, ValueError):
+            try: since = self.path.stat().st_mtime
+            except OSError: since = time.time()
+        return pid, note, since
+    def held_by_other(self):
+        i = self.info()
+        return bool(i) and pid_alive(i[0])
     def __enter__(self):
         RUNS.mkdir(exist_ok=True)
         while True:
             try:
-                fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY); os.write(fd, str(os.getpid()).encode()); os.close(fd)
+                fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, f"{os.getpid()}\n{self.note}\n{time.time():.0f}".encode()); os.close(fd)
                 return self
             except FileExistsError:
                 if not self.held_by_other():
@@ -452,6 +465,12 @@ def parent_args():
         p = hc_json("get", TERM, "--json").get("parent", "")
     return ["--parent", p] if p else []
 
+def code_mode(n):
+    """Code Mode trial (owner, 26 Nov): issues whose number is a multiple of code_mode_every run their Claude windows with
+    CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 (interactive sessions only; 0 = off). Recorded in the 'start' stat for comparison."""
+    k = int(CFG.get("code_mode_every", 0) or 0)
+    return k > 0 and int(n) % k == 0
+
 def agent(name, prompt, cwd, tools, log, marker, n, role, model=MODEL):
     """Run an INTERACTIVE claude in a herdr terminal the owner can open; return (screen text, marker line).
     Terminals are closed after success and left open when BLOCKED/PARKED. A window of that name that is still live (parked earlier) is re-attached, not restarted.
@@ -467,6 +486,7 @@ def agent(name, prompt, cwd, tools, log, marker, n, role, model=MODEL):
         # bash wrapper only puts the python3 shim on PATH; the prompt goes after `--` ("--allowedTools" is variadic)
         cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), "--label", f"issue={n}", "--label", f"role={role}", *space_args(), *parent_args(),
                BASH, "-c", 'export PATH="$1:$PATH"; shift; exec "$@"', "_", CFG["extra_path"],
+               *(["env", "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1"] if code_mode(n) else []),   # Code Mode trial (owner, 26 Nov)
                shutil.which("claude") or "claude", "--model", model, "--permission-mode", "auto",
                "--allowedTools", *tools, "--", prompt + INTERACTIVE_NOTE]
         rc, out = run(cmd, log=log)
@@ -602,8 +622,34 @@ def deploy_text(log):
     stat(0, "", "deploy", ok=True, d1=d1, url=last.split()[-1])
     if not CFG.get("pregen", False):                       # off until #68: pregen burns the free KV write limit
         return f"deployed {url} (pregen off)"
-    rc, _ = run(["node", "oren2/cf/tools/pregen.js"], cwd=INTEG, env=env, log=log, timeout=1800)
-    return f"deployed {url}" + ("" if rc == 0 else " (pregen failed, see log)")
+    return f"deployed {url} (voice pregen runs in the background)"   # #175: started by process() after the merge lock is released
+
+def pregen_cmd():
+    return ["node", "oren2/cf/tools/pregen.js"]
+
+def start_pregen(log=None, popen=None):
+    """#175: voice pregen in the background, OUTSIDE the merge lock (it can take 30 min); one at a time; never blocks an issue.
+    -> 'started' / 'already running' / 'off' / 'failed: ...'."""
+    if not CFG.get("pregen", False): return "off"
+    lock = FileLock("pregen")
+    if lock.held_by_other(): return "already running"
+    env = dict(os.environ); env.update({k: v for k, v in env_file().items() if k.startswith("CLOUDFLARE_")})
+    try:
+        RUNS.mkdir(exist_ok=True)
+        out = open(RUNS / "pregen.log", "a", encoding="utf-8")
+        out.write(f"\n=== pregen {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n"); out.flush()
+        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        p = (popen or subprocess.Popen)(pregen_cmd(), cwd=str(MAIN_CHECKOUT), env=env, stdout=out, stderr=subprocess.STDOUT, creationflags=flags)
+        lock.path.write_text(str(p.pid))                     # held while that process lives (FileLock checks the pid)
+        if log: log_to(log, f"voice pregen started in the background (pid {p.pid}, .runs/pregen.log)")
+        return "started"
+    except Exception as e:
+        return f"failed: {e!r}"
+
+def log_to(log, text):
+    try:
+        with open(log, "a", encoding="utf-8") as f: f.write(text + "\n")
+    except OSError: pass
 
 def ci_integrate(n, wt, log):
     """CI-based integrate (#74): update the lane with main, push, wait for the PR checks, `gh pr merge --squash`. -> (rc, out) like integrate.sh:
@@ -611,7 +657,7 @@ def ci_integrate(n, wt, log):
     pr = find_pr(n)
     if not pr: return 4, "no open PR for lane/%d" % n
     run(["git", "fetch", "-q", REMOTE], cwd=wt, log=log)
-    rc, out = run(["git", "merge", "--no-edit", f"{REMOTE}/{BRANCH}"], cwd=wt, log=log)
+    rc, out = run(["git", "merge", "--no-edit", "-X", "renormalize", f"{REMOTE}/{BRANCH}"], cwd=wt, log=log)
     if rc:
         files = run(["git", "diff", "--name-only", "--diff-filter=U"], cwd=wt, log=log)[1].split()
         run(["git", "merge", "--abort"], cwd=wt, log=log)
@@ -706,7 +752,7 @@ def process_locked(issue, where="local"):
     wm, rm = model_of(issue["labels"]), reviewer_model(issue["labels"])
     started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")      # remote: only issue comments after this count as the cloud worker's report
     try:
-        stat(n, lane, "start", model=model_name(issue["labels"]), where=where)
+        stat(n, lane, "start", model=model_name(issue["labels"]), where=where, code_mode=code_mode(n))
         set_labels(n, add=["in-progress"]); gh("issue", "comment", str(n), "--body", f"Runner: started ({lane} lane, {where}, worker {model_name(issue['labels'])}, reviewer {rm}).")
         run(["git", "fetch", "-q", REMOTE], cwd=ROOT, log=log)
         def prep_worktree():
@@ -770,11 +816,11 @@ def process_locked(issue, where="local"):
         kind = {"ci": False}
         def integrate():
             if CFG.get("ci_merge", True) and find_pr(n):     # #74: CI decides, no local full suite
-                with FileLock("integrate", wait=True):
+                with FileLock("integrate", wait=True, note=f"#{n} CI merge"):
                     rc, out = ci_integrate(n, wt, log)
                     kind["ci"] = rc == 6
                     return rc, out
-            with FileLock("integrate", wait=True):          # fallback: local merge + full suite
+            with FileLock("integrate", wait=True, note=f"#{n} local merge"):   # fallback: local merge + full suite
                 rc, out = run([BASH, "tools/integrate.sh", f"lane/{n}", BRANCH], cwd=ROOT,
                               env={"REMOTE": REMOTE, "JOBS": "4", "RUNNER": "1"}, log=log, timeout=3600)
                 if rc:
@@ -795,9 +841,10 @@ def process_locked(issue, where="local"):
             return "BLOCKED: merge conflicts after 2 resolve rounds"
         if outcome[0] == "failed":
             raise Blocked(outcome[2] if outcome[1] == 7 else f"integrate.sh exit {outcome[1]}")
-        with FileLock("integrate", wait=True):
+        with FileLock("integrate", wait=True, note=f"#{n} deploy"):
             stat(n, lane, "merged")
             dep = deploy_main(log) if CFG.get("ci_merge", True) and find_pr_merged(n) else deploy_text(log)
+        if dep.startswith("deployed"): start_pregen(log)    # #175: after the lock, in the background
         m = sync_main(log)                       # result logged (review of #47)
         if m: log_line(m)
         gh("issue", "close", str(n), "--comment", f"Merged to {BRANCH}, tests green, {dep}.")

@@ -141,7 +141,7 @@ IDLE_MIN = 15      # a live issue/review/intake window done/idle this long, with
 PARKED_MIN = 60    # #123: a parked (blocked) issue's done/idle windows, after this long
 quiet_since = {}   # live window name -> first time seen done/idle
 
-def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset(), busy=frozenset(), old=frozenset()):
+def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset(), busy=frozenset(), old=frozenset(), passed=frozenset()):
     """Pure: names of windows to close. ts = hc terminals (name, state, status, marker True/False),
     closed = closed issue numbers, blocked = issue numbers labelled blocked (parked: keep their windows for the owner),
     human = issue numbers labelled ready-for-human (owner may look), stale = live window names done/idle for IDLE_MIN+,
@@ -159,6 +159,8 @@ def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset(), busy=fr
         if not m: continue
         n, role, suffix = int(m.group(2)), m.group(1), m.group(3) or ""
         if t.get("state") != "live": continue
+        if n in passed and role in ("issue", "review") and not suffix.startswith("-resolve") and t.get("status") in ("done", "idle"):
+            out.append(name); continue                                      # #164: review passed, runner only merges now
         if n in busy: continue                                              # #113: runner still deploying/closing it
         if n in closed: out.append(name); continue                          # issue done: everything for it goes (#123: even if labelled blocked)
         if n in blocked:                                                    # parked: the owner may look, for PARKED_MIN
@@ -174,6 +176,18 @@ def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset(), busy=fr
                  "review": [f"issue-{n}-fix"] if not suffix else []}[role]
         if any(x in live for x in later): out.append(name)
     return out
+
+def review_passed(nums, events=None):
+    """#164: issues whose CURRENT run (after its last start) has a review_pass event in stats.jsonl."""
+    if events is None:
+        import stats; events = stats.read_events(R.RUNS / "stats.jsonl")
+    start, ok = {}, set()
+    for e in sorted(events, key=lambda e: e.get("ts", 0)):
+        n = e.get("issue")
+        if n not in nums: continue
+        if e.get("event") == "start": start[n] = e["ts"]; ok.discard(n)
+        elif e.get("event") == "review_pass" and n in start: ok.add(n)
+    return ok
 
 def cleanup(ts):
     rc, out = R.gh("issue", "list", "--state", "all", "--limit", "300", "--json", "number,state,labels")
@@ -197,7 +211,7 @@ def cleanup(ts):
         rows.append({**t, "name": name, "marker": marker})
     nums = {int(m.group(1)) for t in rows for m in [re.match(r"^\w+-(\d+)", t["name"])] if m}
     busy = {n for n in nums if R.FileLock(f"issue-{n}").held_by_other()}
-    for name in leftovers(rows, closed, blocked, human, stale, busy, old):
+    for name in leftovers(rows, closed, blocked, human, stale, busy, old, review_passed(nums)):
         # act on the ADDRESS of the matching row, never the bare name: a finished terminal can share its
         # name with a new live one, and `hc kill <name>` would hit the live one.
         for t in rows:
@@ -268,6 +282,13 @@ def alarm_tick():
     tell("IDLE ALARM (watchdog): " + " · ".join(new))
 
 def main():
+    if "--lock" in sys.argv:                 # #181: who holds the merge lock, why, for how long
+        sys.stdout.reconfigure(encoding="utf-8")
+        _, info, alive = lock_state()
+        if not info: print("merge lock: free"); return
+        pid, note, since = info
+        print(f"merge lock: held by {note or 'unknown step'} (pid {pid}, {'alive' if alive else 'DEAD'}) for {int((time.time() - since) / 60)} min")
+        w = green_waiting(); print("green PRs waiting: " + (", ".join(f"#{n}" for n in w) if w else "none")); return
     if "--alarms-once" in sys.argv:          # #117: one command: is anything idle or stuck?
         sys.stdout.reconfigure(encoding="utf-8")
         al = alarms_once()
@@ -292,6 +313,8 @@ def main():
 
 def tick():
     """One watchdog pass (main() calls it on the newest loaded copy of this file)."""
+    try: (R.RUNS / "watchdog.beat").write_text(str(int(time.time())), encoding="utf-8")   # #171: liveness for the dashboard
+    except OSError: pass
     ts = windows()
     check_windows(ts)
     check_lanes(ts)
@@ -301,6 +324,63 @@ def tick():
     sync_tick()
     alarm_tick()
     trends_tick()
+    ai_tick()
+    lock_tick()
+
+# ---------- #181: merge lock watch ----------
+LOCK_WARN_MIN, LOCK_REPEAT_MIN = 20, 30
+_lock = {"sent": 0.0, "key": None}
+
+def lock_alarm(info, alive, now, waiting=()):
+    """Pure: -> ('clear', text) when the holder is dead, ('alarm', text) when held > LOCK_WARN_MIN, else None.
+    info = (pid, note, since) from FileLock.info(); waiting = green open PR numbers."""
+    if not info: return None
+    pid, note, since = info
+    mins = int((now - since) / 60)
+    who = f"{note or 'unknown step'} (pid {pid})"
+    if not alive:
+        return ("clear", f"merge lock held by a dead process: {who}, {mins} min; removed")
+    if mins >= LOCK_WARN_MIN:
+        w = f"; green PRs waiting: #{', #'.join(map(str, waiting))}" if waiting else ""
+        return ("alarm", f"MERGE LOCK held {mins} min by {who}{w}. Check that step; nothing slow belongs inside the lock (#181)")
+    return None
+
+def green_waiting():
+    rc, out = R.gh("pr", "list", "--state", "open", "--json", "number,isDraft,statusCheckRollup")
+    if rc: return []
+    ok = lambda p: p.get("statusCheckRollup") and all((c.get("conclusion") or c.get("status")) in ("SUCCESS", "SKIPPED", "NEUTRAL") for c in p["statusCheckRollup"])
+    return [p["number"] for p in json.loads(out) if not p.get("isDraft") and ok(p)]
+
+def lock_state(now=None):
+    lk = R.FileLock("integrate"); info = lk.info()
+    return lk, info, (bool(info) and R.pid_alive(info[0]))
+
+def lock_tick(now=None):
+    now = now or time.time()
+    lk, info, alive = lock_state()
+    if not info: _lock["key"] = None; return
+    if not alive:
+        a = lock_alarm(info, False, now)
+        lk.path.unlink(missing_ok=True); log(a[1]); return
+    if (now - info[2]) / 60 < LOCK_WARN_MIN: return
+    key = (info[0], info[1])
+    if _lock["key"] == key and now - _lock["sent"] < LOCK_REPEAT_MIN * 60: return
+    a = lock_alarm(info, True, now, green_waiting())
+    _lock.update(sent=now, key=key); tell(a[1])
+
+_ai = {"running": False}
+def ai_tick():
+    """#171: hourly AI assessment for the dashboard, in a background thread (claude -p can take a minute)."""
+    if _ai["running"] or not R.CFG.get("ai_model", "haiku"): return
+    import dashboard; importlib.reload(dashboard)
+    a = dashboard.ai_load()
+    if a and time.time() - a.get("at", 0) < dashboard.AI_EVERY_MIN * 60: return
+    _ai["running"] = True
+    def work():
+        try: dashboard.ai_tick(log)
+        except Exception as e: log(f"ai assessment error: {e!r}")
+        finally: _ai["running"] = False
+    threading.Thread(target=work, daemon=True).start()
 
 def trends_tick():
     """#155: hourly patterns over 24 h (repeated BLOCKED reasons, finish/fix rates); reloaded so merged fixes apply."""
