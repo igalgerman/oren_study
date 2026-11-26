@@ -1,5 +1,6 @@
 # #303: repeated RED reviews never go to the owner. The last fix round uses Opus; still RED -> the orchestrator with all reviews; counted.
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")
+os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 import sys; sys.argv.append("--dry-run")
 import inspect, time
 from pathlib import Path

@@ -1,5 +1,6 @@
 """#127: main() loads a changed watchdog.py by itself. Run: python3 tools/runner/test_selfreload.py"""
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
+os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 import importlib, os, sys, time
 sys.argv.append("--dry-run"); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import watchdog as W
