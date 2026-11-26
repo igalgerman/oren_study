@@ -223,11 +223,13 @@ def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60):
             return {"state": "timeout", "line": "", "pr": st.get("pr")}
         sleep(poll_s)
 
-def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60):
-    """Start the cloud worker and wait for its comment. Returns the marker line (`RESULT: ...` / `QUESTION: ...`) like agent() does."""
+def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None):
+    """Start the cloud worker and wait for its comment. Returns the marker line (`RESULT: ...` / `QUESTION: ...`) like agent() does.
+    on_start(start result) keeps the session id (#134: FIX points are sent back to this session)."""
     s = start(n, remote_worker_prompt(n, lane, bug), CFG.get("main_checkout", "."))
     if not s.get("ok"):
         return f"RESULT: STUCK remote start failed: {s.get('error', '?')}"
+    if on_start: on_start(s)
     st = wait_remote(get_status, sleep, clock, timeout_s, poll_s)
     if st["state"] == "timeout":
         return f"RESULT: STUCK remote worker silent for {timeout_s // 3600}h ({s.get('url', '')})"
@@ -600,7 +602,7 @@ def worker_prompt(n, lane, review_text=None, bug=False):
                   "re-run tests and screenshots:\n---\n" + review_text[-6000:] + "\n---")
     return base + steps
 
-def review_prompt(n, pr, round1=""):
+def review_colours(round1=""):
     colours = ("Verdict colours (the last line, exactly one): `VERDICT: PASS` (GREEN, nothing to say); "
                "`VERDICT: PASS-NOTES <note>; <note>` (BLUE: nothing wrong for Oren or the parent, only polish such as naming, small cleanup, extra test idea, comment wording; one line, notes split by `;`); "
                "`VERDICT: PURPLE <question in one line> merge-safe` or `... hold` (PURPLE: a real product/design choice only the owner can make, e.g. what Oren sees or hears or what the parent can do, the code works; "
@@ -610,12 +612,56 @@ def review_prompt(n, pr, round1=""):
     if round1:
         colours += ("\nThis is a re-review: check ONLY whether these round-1 RED points are fixed, raise NO new nits and no new points "
                     "(a new RED only if the fix itself broke something):\n---\n" + round1[-3000:] + "\n---")
+    return colours
+
+def review_prompt(n, pr, round1=""):
+    colours = review_colours(round1)
     return (f"You are a fresh, read-only reviewer for PR #{pr} (issue #{n}) in {REPO}. You may not edit files. Read CLAUDE.md, the issue "
             f"(`gh issue view {n} --repo {REPO}`), the diff (`gh pr diff {pr} --repo {REPO}`, ignore the built index.html files) and the screenshots in "
             f"C:/work/Oren_study/shots/{n}/ (look at them; none expected when no oren2/ file changed). Check: correctness vs the issue, simplicity (one main action per screen), Hebrew with correct "
             "nikud, facts correct, no unrelated changes. Use the mattpocock-skills:code-review skill (Standards = CLAUDE.md + FLOW.md, Spec = the issue), then post ONE comment with `gh pr comment " + f"{pr} --repo {REPO} --body-file <file>` (write the file under "
             "oren2/tests/.tmp/; this is the only file you may write, via the Bash echo/redirect). Print the same comment as your output. "
             + colours)
+
+def remote_review_prompt(n, pr, round1=""):
+    """#134: task for a cloud reviewer session. No terminal: the verdict is read from its PR comment."""
+    return (f"You are a fresh, read-only reviewer for PR #{pr} (issue #{n}) in {REPO}, running unattended in a cloud session. Change NO files, "
+            f"make no commits, push nothing, open nothing. Read CLAUDE.md, FLOW.md, the issue with its comments (`gh issue view {n} --repo {REPO} --comments`) "
+            f"and the diff (`gh pr diff {pr} --repo {REPO}`, ignore the built index.html files). Check: correctness vs the issue, simplicity (one main action "
+            "per screen), Hebrew with correct nikud, facts correct, no unrelated changes, tests for the change. Use the code-review skill if you have it "
+            f"(Standards = CLAUDE.md + FLOW.md, Spec = the issue). Then post ONE comment on the PR (`gh pr comment {pr} --repo {REPO} --body-file <file>`, "
+            "file in your scratch dir). The runner reads ONLY that comment: put the verdict on its own line starting with VERDICT: (no backticks). "
+            + review_colours(round1))
+
+def remote_review(n, pr, round1, start, get_verdict, sleep, clock, timeout_s=3600, poll_s=60):
+    """#134: the reviewer as a cloud session; get_verdict() = remote.review_status of this round. -> (comment, VERDICT line) like agent(); '' line = none."""
+    s = start(n, remote_review_prompt(n, pr, round1), CFG.get("main_checkout", "."))
+    if not s.get("ok"):
+        return f"remote review start failed: {s.get('error', '?')}", ""
+    st = wait_remote(get_verdict, sleep, clock, timeout_s, poll_s)
+    if st["state"] == "timeout":
+        return f"remote reviewer posted no VERDICT in {timeout_s // 60} min ({s.get('url', '')})", ""
+    return st.get("body") or st["line"], st["line"]
+
+def remote_fix_prompt(n, review_text):
+    return (f"Fix round for issue #{n} in {REPO}: the reviewer of the PR on branch lane/{n} asked for fixes. If you are not on that branch: "
+            f"`git fetch {REMOTE} lane/{n} && git checkout lane/{n}`; read CLAUDE.md and FLOW.md. Fix exactly these points (new commit, "
+            f"`git push {REMOTE} lane/{n}`, no new PR, never force-push, never push to {BRANCH}), run the tests you touched, then post an issue comment on #{n} "
+            "with `RESULT: DONE <PR url>` (or `RESULT: STUCK <why>`, or `QUESTION: <question, options>` and stop) on its own line:\n---\n"
+            + review_text[-6000:] + "\n---")
+
+def remote_fix(n, session, review_text, send, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None):
+    """#134: FIX for a cloud worker: the points go to its session (send); no session or send failed -> a new cloud fix session. -> marker line."""
+    text = remote_fix_prompt(n, review_text)
+    if not (session and send(session, text).get("ok")):
+        s = start(n, text, CFG.get("main_checkout", "."))
+        if not s.get("ok"):
+            return f"RESULT: STUCK remote fix start failed: {s.get('error', '?')}"
+        if on_start: on_start(s)
+    st = wait_remote(get_status, sleep, clock, timeout_s, poll_s)
+    if st["state"] == "timeout":
+        return f"RESULT: STUCK remote fix silent for {timeout_s // 3600}h"
+    return st["line"]
 
 def post_polish(n, lane, pr, notes):
     """BLUE notes: one line each (with the PR link) on the ONE rolling 'Polish backlog (<lane>)' issue; created when missing. Never one issue per note."""
@@ -840,14 +886,19 @@ def process_locked(issue, where="local"):
                     if rc: raise Blocked("lane.sh failed twice (see run.log)")
 
 
-        if where == "remote":                            # #133: the cloud worker needs no worktree here; it is made after the worker pushed (reviewer / resolve use it)
-            res = remote_worker(n, lane, "bug" in issue["labels"], remote.start, lambda: remote.status(n, since=started),
-                                time.sleep, time.time, 3 * 3600, 60)
-            if res.startswith("QUESTION:"):                # the session already posted it on the issue: park, the owner answers there
+        def save_session(s):                             # #134: FIX points go back to this cloud session; freeze reads it too
+            (d / "remote.json").write_text(json.dumps({"session": s.get("session", ""), "url": s.get("url", "")}), encoding="utf-8")
+        def utc():
+            return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        def remote_question(res):                        # the session already posted it on the issue: park, the owner answers there
+            if res.startswith("QUESTION:"):
                 set_labels(n, add=["blocked", "ready-for-human"], remove=["in-progress"])
                 raise Parked(f"cloud session of #{n}: {res[:200]}")
+        if where == "remote":                            # #133: the cloud worker needs no worktree here; it is made after the review (resolve uses it, #134)
+            res = remote_worker(n, lane, "bug" in issue["labels"], remote.start, lambda: remote.status(n, since=started),
+                                time.sleep, time.time, 3 * 3600, 60, on_start=save_session)
+            remote_question(res)
             out = res
-            if res.startswith("RESULT: DONE"): prep_worktree()
         else:
             prep_worktree()
             out, res = agent(f"issue-{n}", worker_prompt(n, lane, bug="bug" in issue["labels"]), wt, WORKER_TOOLS if lane != "review" else REVIEW_LANE_TOOLS,
@@ -864,8 +915,12 @@ def process_locked(issue, where="local"):
         for rnd in range(1, FIX_ROUNDS + 2):
             pr = find_pr(n)
             if not pr: raise Blocked("worker said DONE but no open PR for lane/%d" % n)
-            rv, verdict = agent(f"review-{n}" + ("" if rnd == 1 else f"-{rnd}"), review_prompt(n, pr, red), wt, READ_TOOLS,
-                                d / f"review{rnd}.log", "VERDICT:", n, "reviewer", rm)
+            if where == "remote":                  # #134: the reviewer is a cloud session too; its VERDICT is a PR comment
+                since = utc()
+                rv, verdict = remote_review(n, pr, red, remote.start, lambda: remote.review_status(pr, since=since), time.sleep, time.time, 3600, 60)
+            else:
+                rv, verdict = agent(f"review-{n}" + ("" if rnd == 1 else f"-{rnd}"), review_prompt(n, pr, red), wt, READ_TOOLS,
+                                    d / f"review{rnd}.log", "VERDICT:", n, "reviewer", rm)
             (d / f"review{rnd}.out").write_text(redact(rv), encoding="utf-8")
             kind, text, extra = parse_verdict(verdict)
             if kind == "pass":
@@ -878,16 +933,25 @@ def process_locked(issue, where="local"):
                 if extra == "merge-safe": break
                 raise Parked(f"owner question: {text[:200]}")
             if kind != "fix":
-                raise Blocked(verdict or "reviewer gave no VERDICT line")
+                raise Blocked(verdict or "reviewer gave no VERDICT line" + (f": {rv[:300]}" if where == "remote" else ""))
             stat(n, lane, "review_fix")
             if rnd == FIX_ROUNDS + 1:
                 stat(n, lane, "blocked")
                 block(n, f"reviewer asked for fixes {rnd} times; needs a human", log); return f"BLOCKED: reviewer asked for fixes {rnd} times; needs a human"
             red = text or rv[-1500:]
-            out, res = agent(f"issue-{n}-fix" + ("" if rnd == 1 else str(rnd)), worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / f"worker{rnd + 1}.log", "RESULT:", n, "worker", wm)
+            if where == "remote":                  # #134: FIX goes back to the cloud worker session (or a new cloud fix session)
+                since = utc()
+                try: sess = json.loads((d / "remote.json").read_text(encoding="utf-8")).get("session", "")
+                except (OSError, ValueError): sess = ""
+                res = remote_fix(n, sess, rv, remote.send, remote.start, lambda: remote.status(n, since=since), time.sleep, time.time,
+                                 3 * 3600, 60, on_start=save_session)
+                remote_question(res)
+            else:
+                out, res = agent(f"issue-{n}-fix" + ("" if rnd == 1 else str(rnd)), worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / f"worker{rnd + 1}.log", "RESULT:", n, "worker", wm)
             if not res.startswith("RESULT: DONE"):
                 raise Blocked(res or "fix worker gave no RESULT line")
             stat(n, lane, "fix_done")
+        if where == "remote": prep_worktree()        # #134: after the cloud review/fix rounds, so the worktree has the final pushed branch
 
         kind = {"ci": False}
         def integrate():
