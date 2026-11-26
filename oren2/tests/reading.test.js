@@ -18,11 +18,13 @@ const STUB = () => {
       const starts = []; u.text.replace(/\S+/g, (m, o) => { starts.push(o); return m; });
       setTimeout(() => { if (cur !== u) return; fire(u, 'start');
         starts.forEach((ci, k) => setTimeout(() => { if (cur !== u) return; fire(u, 'boundary', { charIndex: ci, name: 'word' });
-          setTimeout(() => { const on = [...document.querySelectorAll('.reading .rw')].findIndex(w => w.classList.contains('on')); window.__hl.push(on); }, 5); }, 40 * (k + 1)));
+          /* sample right after the event, not on a later timer: under load a timer can run after the next word lit up */
+          window.__hl.push([...document.querySelectorAll('.reading .rw')].findIndex(w => w.classList.contains('on'))); }, 40 * (k + 1)));
         setTimeout(() => { if (cur === u) { cur = null; fire(u, 'end'); } }, 40 * (starts.length + 2));
       }, 20);
     }
   };
+  window.__busy = () => !!cur;
   Object.defineProperty(window, 'speechSynthesis', { value: stub, configurable: true });
 };
 (async () => {
@@ -36,7 +38,10 @@ const STUB = () => {
   ok('🔊 on quiz question and sentence', await p.evaluate(() => !!document.querySelector('.tqc .qq .rdb') && !!document.querySelector('.tqc .sent .rdb')));
   ok('try-to-read cue at level 1', await p.locator('.rdcue').count() === 1);
   // 2. pressing 🔊 speaks the vocalized text (as full spelling) and lights the words in order, then clears
-  await p.evaluate(() => { window.__hl = []; window.__spoken = []; document.querySelector('.tqc .qq .rdb').click(); });
+  /* the question is also read once by itself when the screen settles: let that reading finish before pressing 🔊, or the two overlap */
+  await p.waitForFunction(() => window.__spoken.length >= 1 && !window.__busy(), null, { timeout: 8000 }).catch(() => {}); await L.sleep(150);
+  await p.waitForFunction(() => !window.__busy(), null, { timeout: 3000 }).catch(() => {});
+  await p.evaluate(() => { window.TAL.S().set.rdMode = 3; window.__hl = []; window.__spoken = []; document.querySelector('.tqc .qq .rdb').click(); });   /* level 3: no auto-read can cut in on the button's reading */
   await p.waitForFunction(() => window.__spoken.length >= 1);
   const sent = await p.evaluate(() => window.__spoken[0]);
   const words = await p.evaluate(() => [...document.querySelectorAll('.tqc .qq .rw')].map(w => w.textContent).join(' '));
@@ -47,13 +52,17 @@ const STUB = () => {
   ok('words light up in order', hl.length > 1 && hl.every((v, k) => v === k), JSON.stringify(hl));
   ok('highlight cleared at the end', await p.evaluate(() => document.querySelectorAll('.rw.on').length === 0));
   // 3. level 1 reads by itself after the pause
+  await p.evaluate(() => { window.TAL.S().set.rdMode = 'auto'; });
   await p.evaluate(() => { window.__spoken = []; window.TAL.ACT['read-sent'].run(() => {}); });
   /* the instruction may be said at once; the sentence to read is said only after the wait */
-  const sentSaid = () => p.evaluate(() => { const e = document.querySelector('#sTal .tqc .sent'); if (!e) return -1; let w = window.TAL.plainHe(e.textContent).replace(/🔊/g, '').trim().split(/\s+/).slice(0, 2).join(' '); if (window.__fullSpell) w = window.__fullSpell(w);
-    return window.__spoken.filter(t => t.replace(/[\u0591-\u05C7]/g, '').startsWith(w)).length; });
+  const sentSaid = () => p.evaluate(() => { const e = document.querySelector('#sTal .tqc .sent'); if (!e) return -1;
+    /* compare letters only (no niqqud, punctuation or ו/י): the spoken text uses full spelling, the screen text uses the spelling with vowel marks */
+    const N = t => t.replace(/[֑-ׇ]/g, '').replace(/[^א-ת]/g, '').replace(/[וי]/g, '');
+    const w = N(window.TAL.plainHe(e.textContent).replace(/🔊/g, '').trim().split(/\s+/).slice(0, 2).join(' '));
+    return window.__spoken.filter(t => N(t).startsWith(w)).length; });
   await L.sleep(1500); const early = await sentSaid();
-  await L.sleep(2500); const late = await sentSaid();
-  ok('level 1: waits, then reads by itself', early === 0 && late >= 1, `${early} → ${late}`);
+  let late = await sentSaid(); for (let k = 0; k < 40 && late < 1; k++) { await L.sleep(250); late = await sentSaid(); }   /* wait for the condition (max 10 s), not a fixed sleep */
+  ok('level 1: waits, then reads by itself', early === 0 && late >= 1, `${early} → ${late}` + (late < 1 ? ' ' + JSON.stringify(await p.evaluate(() => ({ s: window.__spoken, mode: window.TAL.S().set.rdMode, rd: window.TAL.S().rd, sent: (document.querySelector('#sTal .tqc .sent') || {}).textContent }))) : ''));
   // 4. level 3 never reads by itself
   await p.evaluate(() => { window.TAL.S().set.rdMode = 3; window.__spoken = []; window.TAL.ACT['read-sent'].run(() => {}); });
   await L.sleep(4000);

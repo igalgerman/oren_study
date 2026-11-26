@@ -75,11 +75,11 @@ const srv = http.createServer((q, r) => { const m = /^\/api\/save\/([a-f0-9]{32}
     await A.goto(BASE); await A.waitForFunction(() => window.OREN && window.OREN.family, null, { timeout: 20000 }); await L.noCoach(A);
     await A.evaluate(() => { const O = window.OREN, T = window.TAL; O.save.story.intro = 1; T.S().prof = { an: 'cat', col: '#3a8fc4', love: 'art' }; T.S().time[O.today()] = 600; const st = T.S().set; st.lim = st.lim || {}; st.lim.daily = 5; O.persist(); O.showMap(); }); await sleep(2500);
     await A.evaluate(() => window.TAL.limCheck()); ok('Oren\'s device: locked (5 minutes, 10 played)', await A.evaluate(() => !!document.querySelector('.tlock')));
-    const B = await (await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })).newPage(); await B.addInitScript(init); B.on('pageerror', e => errs.push('B ' + e.message));
+    const B = await (await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })).newPage(); await B.addInitScript(() => { window.__fast = true; window.__famGap = 60000; window.__pullGap = 300; }); /* the phone's normal save delay must not slow a grant (#34) */ B.on('pageerror', e => errs.push('B ' + e.message));
     await B.goto(BASE); await B.waitForFunction(() => window.OREN && window.OREN.family && window.TAL.S().set.lim && window.TAL.S().set.lim.daily === 5, null, { timeout: 20000 }).catch(() => { }); await L.noCoach(B);
     await B.evaluate(() => window.TAL.parentPanel('day')); await sleep(400);
-    await B.locator('#sPar .pbig .bigbtn', { hasText: '+15 דק׳' }).click(); await sleep(2500);
-    const got = await A.waitForFunction(() => !document.querySelector('.tlock:not(.tyay)') && !!document.querySelector('.tyay'), null, { timeout: 15000 }).then(() => true).catch(() => false);
+    await B.waitForTimeout(500); await B.locator('#sPar .pbig .bigbtn', { hasText: '+15 דק׳' }).click();
+    const got = await A.waitForFunction(() => !document.querySelector('.tlock:not(.tyay)') && !!document.querySelector('.tyay'), null, { timeout: 6000 }).then(() => true).catch(() => false);
     ok('the parent\'s phone grants +15: Oren\'s device unlocks by itself, with the happy note', got, await A.evaluate(() => JSON.stringify(window.TAL.S().set.lim)));
     ok('and the top bar shows the new time', await A.evaluate(() => { const e = document.querySelector('#hud .tpill'); return !!e && !e.hidden && /15 דַּקּוֹת/.test(e.textContent); }));
   }

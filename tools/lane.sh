@@ -4,6 +4,9 @@
 set -euo pipefail
 name="${1:?lane name}"; base="${2:-main}"; remote="${REMOTE:-origin}"
 root="$(git rev-parse --show-toplevel)"; wt="$(dirname "$root")/wt-$name"
+if [ -e "$wt" ] && ! git -C "$wt" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "lane.sh: $wt exists but is not a worktree (leftover folder?). Remove it first (junction: cmd /c rmdir <wt>\oren2\node_modules, no /s)." >&2; exit 1
+fi
 git -C "$root" fetch -q "$remote"
 if git -C "$root" rev-parse -q --verify "refs/remotes/$remote/lane/$name" >/dev/null; then
   git -C "$root" worktree add -B "lane/$name" "$wt" "$remote/lane/$name"
