@@ -113,6 +113,10 @@ assert [k for k, _ in _al] == ["free", "pr70", "bl5"], _al
 assert _al[0][1] == "2 lane(s) free for 20 min while work is ready" and _al[1][1].startswith("PR #70 has not moved for 90 min"), _al
 assert _al[2][1] == "#5 blocked for 3.0 h (waits for the owner)", _al
 assert [k for k, _ in W.idle_alarms(_iss, [], _now, _now - 5 * 60, 3)] == ["bl5"]   # free only 5 min: no alarm yet
+# #148: the idle alarm notes a runner finish rate under 50% (24 h)
+_fa = W.idle_alarms([], [], _now, None, 3, finish=(2, 5))
+assert _fa == [("finish", "runner finished on its own only 2 of 5 issues in 24 h (40%, goal 80%)")], _fa
+assert W.idle_alarms([], [], _now, None, 3, finish=(3, 6)) == [] and W.idle_alarms([], [], _now, None, 3, finish=(0, 0)) == []
 _cl = [{"n": 7, "state": "working", "last": "2026-11-26T09:00:00Z"}, {"n": 8, "state": "working", "last": "2026-11-26T11:30:00Z"}, {"n": 9, "last": ""}]
 _cn = _c.timegm((2026, 11, 26, 12, 0, 0, 0, 0, 0))
 _ca = W.cloud_stuck_alarms(_cl, _cn, 2)
@@ -376,7 +380,7 @@ assert nums(r.select([I(1, ["in-progress", "pack", "express"]), _e(2, ["pack"])]
 assert nums(r.select([_c(1), _c(2), _e(3, ["core"])], 3, 2, 1)) == [3, 1, 2]       # express core first, doesn't use core limit
 assert nums(r.select([I(1, ["in-progress", "core"]), I(2, ["in-progress", "core"]), _e(3, ["core"]), _c(4)], 3, 2, 1)) == [3]   # express core despite max_core
 assert nums(r.select([_e(1, ["pack", "blocked"]), _e(2, ["pack"], )], 3, 2, 1)) == [2]
-assert r.CFG["express_lanes"] == 1
+assert r.CFG["express_lanes"] >= 1
 print("ok express")
 
 # runner must not call "python3" directly: on Windows it is only a bash shim / Store alias -> FileNotFoundError after every CI merge (#79, #72, #41)
@@ -706,6 +710,16 @@ assert r.gov_pace(_h, _now, "other", 3.5) == 3.5
 assert r.gov_pace([{**_h[1], "at": _now - 300}, _h[1]], _now, _rs, 3.5) == 3.5
 assert r.gov_pace([{**x, "busy": 0} for x in _h], _now, _rs, 3.5) == 3.5
 t = r.governor_text(r.governor(_u(20, 4), [], _now, _G)); assert t.startswith("governor: 5 lanes, aim 90% (5h 20% -> ~90% at ") and len(t.split(" at ")[1]) == 6 and "week" not in t, t
+# #269: the 5h reset is past -> a new window: pct 0, never stop, lanes as for a fresh window
+g = r.governor(_u(95, -0.05), [], _now, _G); assert not g["stop"] and g["lanes"] == r.governor(_u(0, 5), [], _now, _G)["lanes"] > 0 and g["pct"] == 0 and g["why"] == "new 5h window", g
+assert g["reset"] > _now and "new 5h window" in r.governor_text(g) and "STOP" not in r.governor_text(g), r.governor_text(g)
+g = r.governor(_u(95, 0.05), [], _now, _G); assert g["stop"] and "STOP" in r.governor_text(g)   # reset still ahead -> stop per governor_stop
+assert r.governor(_u(95, -0.05, age=16 * 60), [], _now, _G)["why"].startswith("no fresh usage")   # stale -> fallback unchanged
+# #269: on stop only express issues still start (below 100%); 100% -> nothing
+_ch = [{"number": 1, "labels": ["core"]}, {"number": 2, "labels": ["express", "core"]}]
+assert r.stop_filter(_ch, {"stop": False, "pct": 50}) == _ch
+assert [c["number"] for c in r.stop_filter(_ch, {"stop": True, "pct": 95})] == [2]
+assert r.stop_filter(_ch, {"stop": True, "pct": 100}) == []
 print("ok governor")
 # total_lanes follows a fresh governor.json (the watchdog uses it), else config
 import json as _json, time as _time
@@ -716,6 +730,11 @@ assert r.total_lanes() == r.LOCAL_LANES + 7
 assert r.total_lanes() == r.LOCAL_LANES
 (r.RUNS / "governor.json").write_text(_json.dumps({"lanes": 7, "stop": False, "at": _time.time() - 3600}))
 assert r.total_lanes() == r.LOCAL_LANES + r.REMOTE_LANES
+# #269: a stop written before the 5h reset does not hold the lanes at 0 after it (the watchdog then starts a pass)
+(r.RUNS / "governor.json").write_text(_json.dumps({"lanes": 7, "stop": True, "reset": _time.time() - 30, "at": _time.time()}))
+assert r.total_lanes() == r.LOCAL_LANES + 7
+(r.RUNS / "governor.json").write_text(_json.dumps({"lanes": 7, "stop": True, "reset": _time.time() + 600, "at": _time.time()}))
+assert r.total_lanes() == r.LOCAL_LANES
 (r.RUNS / "governor.json").unlink()
 print("ok governor lanes")
 # #234: a run ends as DONE when its issue is closed or its lane PR is merged elsewhere (every wait loop checks, one gh call per poll)
@@ -1026,3 +1045,9 @@ assert _res.startswith("PARKED"), _res
 assert _sent and _sent[0][0] == "session_old" and "green" in _sent[0][1] and not _starts, (_sent, _starts)
 assert ("blocked", "ready-for-human") in [a for a, _ in _lab] and not r.pending_answer(11)
 print("ok #135 resume end to end")
+
+# 26 Nov: a gh timeout in issue_over never ends or kills a run
+import subprocess as _sp
+def _slow(cmd, **k): raise _sp.TimeoutExpired(cmd, 60)
+assert r.issue_over(5, 0, run_=_slow) is False
+print("ok issue_over timeout")

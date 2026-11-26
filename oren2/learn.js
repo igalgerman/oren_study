@@ -3,7 +3,7 @@
    family merge, and the question generators (mental-math strategies, word problems, challenge puzzles, paper tasks).
    It runs in Node for the tests. Part 2 hooks it into the game: two activities in the thinking tower
    ('ln-math' = math training, the engine picks the strategy and level; 'ln-paper' = take paper and pencil),
-   the placement screen, the parent's view and controls.
+   the parent's view and controls (no placement test in the game, #57: the parent answers a few questions in KNOW).
    State: save.lrn = {v, k:{skill:{l,h,n,d,i,u,f,g,lk,r}}, pl:{domain:level}, rc:[recent skills], pf:{focus,pace}, pt, pp}
      l level · h last first-try answers ('1'/'0', 12) · n answers · d last day (day number) · i review step (IV) · u due day
      f quick perfect rounds in a row · g good rounds in a row (calm pace) · lk locked by the parent · r open round [n,ok,ms] */
@@ -420,7 +420,6 @@ C.bind({state:ST,cands,planSteps,names:nameOf,after:()=>{},onLevel:(sk,k)=>{cons
 /* a city activity finished with st stars (call it from T.record; the tlDone event is the fallback) */
 C.noteAct=(id,st)=>{if(!id||/^ln-/.test(id))return;const s=ST();const sk='a:'+id;const ok=Math.max(0,Math.min(3,st|0));K.start(s,sk,1);
   for(let j=0;j<3;j++)K.record(s,sk,j<ok,true,5000);K.done(s,sk);C._noted=id;};
-C.needsPlacement=dom=>dom==='math'&&!(ST().pl.math)&&!DRILLS.some(sk=>(ST().k[sk]||{}).n);
 C.names=nameOf;C.journeyNext=journeyNext;C.cands=cands;
 /* what the parent sees: per domain the next things the engine plans, and what is due for review */
 C.parentView=()=>{const st=ST(),t=C.dayNum();const doms=['math',...T.GROUPS.map(g=>g.id)].filter(d=>cands(d).length);const snap=JSON.stringify(st);
@@ -482,32 +481,31 @@ function askQ(wrap,q,i,n,title,onAns){T.hudT(title,T.progressBar(i,n));wrap.inne
   window.__learn={q,get ans(){return q.ans;},wrap,i};}
 
 /* ---------- math training: the engine picks 1–3 skills, interleaved ---------- */
-function mathRound(back){const st=ST();if(C.needsPlacement('math'))return placement('math',back,()=>mathRound(back));
+/* what Oren knows (#57): every strategy is a ladder of levels ('mm-ten@2'). 3 right in a row → the next level; 2 wrong in a row → one level down.
+   No placement test in the game: the parent answers 3 questions; the game learns from his answers anyway. */
+const KN=window.KNOW;
+const kid=(sk,lv)=>sk+'@'+lv;
+if(KN)KN.area('math',{name:'חשבון',skills:DRILLS.flatMap(sk=>Array.from({length:C.maxLv(sk)},(_,j)=>({id:kid(sk,j+1),track:sk,sk,lv:j+1}))),
+  asks:[['math-10','מחבר ומחסר עד 10',1],['math-20','מחבר ומחסר עד 20 (גם מעבר עשרת)',2],['math-100','מחבר ומחסר עד 100',3]].map(([id,q,lv])=>({id,q,skills:DRILLS.filter(sk=>C.maxLv(sk)>=lv).map(sk=>kid(sk,lv))})),
+  on:evs=>{const st=ST();evs.forEach(x=>{const s=KN.skillOf(x.skill),k=st.k[s.sk]||{l:1},mx=C.maxLv(s.sk),l=k.l||1;if(k.lk)return;let nl=l;
+    if(x.e==='known')nl=Math.max(l,Math.min(mx,s.lv+1));else if(x.e==='back')nl=Math.min(l,s.lv-1);
+    else if(x.e==='place'){nl=x.yes?Math.max(l,Math.min(mx,s.lv+1)):Math.min(l,s.lv);if(x.yes)st.pl.math=Math.max(st.pl.math|0,6*s.lv);}
+    if(nl!==l)C.setLevel(s.sk,Math.max(1,nl));});O.persist();}});
+function mathRound(back){const st=ST();
   const dc=mathCands().filter(c=>c.step==='ln-math');const t=C.dayNum();
   const due=dc.filter(c=>C.isDue(st.k[c.skill],t));let parts,title;
   if(due.length>=2){parts=due.slice(0,3).map(c=>({sk:c.skill,lv:(st.k[c.skill]||{}).l||1}));title=KID.mix;}
   else{const a=K.pick(st,dc,{t});const b=K.pick(st,dc,{t,exclude:new Set([a.skill]),review:due.length?true:undefined});parts=[{sk:a.skill,lv:a.lv}];if(b)parts.push({sk:b.skill,lv:b.lv});title=KID[a.skill];}
   parts.forEach(p=>{p.lv=K.start(st,p.sk,p.lv);});
   const N=6;const order=parts.length===1?Array(N).fill(0):parts.length===2?[0,0,1,0,1,0]:[0,1,2,0,1,2];
-  const qs=[],seen=new Set();for(let i=0;i<N;i++){const p=parts[order[i]];let q;for(let k=0;k<30;k++){q=C.gen(p.sk,p.lv);if(!seen.has(q.key))break;}seen.add(q.key);qs.push(q);}
-  let i=0,err=0;O.setScreen('sTal','mount',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq lnr');s.appendChild(wrap);
+  /* about 1 question in 10: a quick review one level easier (a level he already passed) */
+  const qs=[],seen=new Set();for(let i=0;i<N;i++){const p=parts[order[i]];const lv=p.lv>1&&KN&&Math.random()<KN.core.REVIEW?p.lv-1:p.lv;let q;for(let k=0;k<30;k++){q=C.gen(p.sk,lv);if(!seen.has(q.key))break;}seen.add(q.key);q.klv=lv;qs.push(q);}
+  let i=0,err=0;O.setScreen('sTal','mount',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq lnr');s.appendChild(wrap);if(KN)KN.begin('math',()=>wrap.isConnected&&!s.hidden);
   const ttl=()=>`${parts.length>2?title:KID[qs[i].sk]} · שָׁלָב ${qs[i].lv}`;
-  const go=()=>askQ(wrap,qs[i],i,N,ttl(),(r)=>{if(r){C.record(qs[i].sk,r.ok,r.first,r.ms);if(!r.ok)err++;O.persist();return;}i++;if(i<N)go();else end();});
-  function end(){T.setKey(null);let msg='';parts.forEach(p=>{const r=C.done(p.sk);if(r&&r.up>=2)msg='🚀 קָפַצְתָּ שְׁנֵי שְׁלַבִּים!';else if(r&&r.up===1&&!msg)msg='🎉 עָלִיתָ שָׁלָב!';});
+  const go=()=>askQ(wrap,qs[i],i,N,ttl(),(r)=>{if(r){C.record(qs[i].sk,r.ok,r.first,r.ms);if(KN)KN.hit(kid(qs[i].sk,qs[i].klv),r.ok);if(!r.ok)err++;O.persist();return;}i++;if(i<N)go();else end();});
+  function end(){T.setKey(null);let msg='';parts.forEach(p=>{const r=C.done(p.sk);if(r&&r.up>=2)msg='🚀 קָפַצְתָּ שְׁנֵי שְׁלַבִּים!';else if(r&&r.up===1&&!msg)msg='🎉 עָלִיתָ שָׁלָב!';});if(KN)KN.end('math');
     T.finishAct('ln-math',err,N,0,back,()=>mathRound(back),msg||undefined);}
   go();}
-
-/* ---------- placement ("where are you?") ---------- */
-function placement(dom,back,then){const lad=C.MATH_LADDER;const ps=C.placeStart(lad);O.setScreen('sTal','mount',back);const s=$('#sTal');s.innerHTML='';
-  const say='כַּמָּה שְׁאֵלוֹת קְצָרוֹת, וְנֵדַע מֵאֵיפֹה לְהַתְחִיל.';O.sayNow=plain(say);T.hudT('מֵאֵיפֹה מַתְחִילִים?');
-  s.appendChild(h('div','whead',`<span class="gd bob">🧗</span><h1>מֵאֵיפֹה מַתְחִילִים?</h1>`));s.appendChild(h('div','lsent',say));
-  const row=h('div','btnrow');const goB=h('button','bigbtn',O.ICON.play+'<span>הַמְשֵׁךְ</span>');goB.onclick=()=>{sfx.pop(2);ask();};row.appendChild(goB);s.appendChild(row);setTimeout(()=>goB.focus(),100);
-  let wrap=null;const MAXQ=7;
-  function ask(){if(!wrap){s.innerHTML='';wrap=h('div','tq lnr');s.appendChild(wrap);}const [sk,lv]=lad[ps.i];const q=C.gen(sk,lv);let first=null;
-    askQ(wrap,q,ps.n,MAXQ,'מֵאֵיפֹה מַתְחִילִים?',r=>{if(r){first=r;return;}C.placeStep(ps,lad,first&&first.ok);if(C.placeDone(ps,lad,MAXQ))fin();else ask();});}
-  function fin(){T.setKey(null);const res=C.placeResult(ps,lad);K.applyPlacement(ST(),dom,res);O.persist();const top=Math.max(1,res.top+2);
-    const ov=$('#ov');ov.hidden=false;ov.innerHTML=`<div class="card"><div class="qbig">🏔️</div><h2>מְצֻיָּן!</h2><div class="sub">מָצָאנוּ אֶת הַשָּׁלָב שֶׁלְּךָ. מַמְשִׁיכִים מִשָּׁם!</div></div>`;
-    const r=h('div','btnrow');const b=h('button','bigbtn',O.ICON.play+'<span>הַמְשֵׁךְ</span>');b.onclick=()=>{ov.hidden=true;then();};r.appendChild(b);ov.firstChild.appendChild(r);sfx.win();O.say('מצוין! מצאנו את השלב שלך.');setTimeout(()=>b.focus(),200);}}
 
 /* ---------- paper & pencil ---------- */
 function paper(back){const st=ST();const last=st.pp&&st.pp.k;const kind=last==='math'?'write':'math';const sk=kind==='math'?'pp-math':'pp-write';
@@ -557,7 +555,6 @@ C.skillsPanel=(box,sec,rerender)=>{const st=ST(),t=C.dayNum();const ids=[...DRIL
 
 /* ---------- activities ---------- */
 C.run=(id,back)=>{if(id==='ln-math')return mathRound(back);if(id==='ln-paper')return paper(back);const a=T.ACT[id];if(a)a.run(back);};
-C.placement=(dom,back,then)=>placement(dom,back,then||back);
 const addAct=(bid,a)=>{const b=T.BUILD.find(x=>x.id===bid);if(!b)return;const old=T.ACT[a.id];if(old){Object.assign(old,a);return;}a.b=b;b.acts.push(a);T.ACT[a.id]=a;};
 C.register=()=>{addAct('think',{id:'ln-math',name:'אִמּוּן חֶשְׁבּוֹן',icon:()=>'<span style="font-size:34px">🧮</span>',run:mathRound});
   addAct('think',{id:'ln-paper',name:'דַּף וְעִפָּרוֹן',icon:()=>'<span style="font-size:34px">📝</span>',avail:()=>!paperToday(),run:paper});

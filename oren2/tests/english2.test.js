@@ -271,7 +271,7 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
   const second = await p.evaluate(() => document.querySelector('#sTal .e2head').textContent);
   ok(second === E.SONGS[1].he, 'next time: the next song not sung yet', second);
   /* gradual unlocking in the UI (fresh save): words only -> after 3 themes letters + songs */
-  await p.evaluate(() => { const O = window.OREN, E = window.ENGLISH2; O.save.set = { brk: 0, hide: {} }; O.save.en2 = {}; const d = E.day();
+  await p.evaluate(() => { const O = window.OREN, E = window.ENGLISH2; O.save.set = { brk: 0, hide: {} }; O.save.en2 = {}; O.save.kn = {}; const d = E.day();
     E.LEVELS[0].units.slice(0, 3).forEach(u => u.items.forEach(k => { E.st(O.save).i[k] = [2, d + 3]; })); });
   const i2 = await info(); ok(i2.vis.join() === 'eng-voc,eng-abc,eng-song', 'after 3 themes: letters and songs appear', JSON.stringify(i2.vis));
   /* songs with no open song: no crash, back to the building (the card is hidden anyway) */

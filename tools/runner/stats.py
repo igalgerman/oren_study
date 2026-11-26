@@ -45,6 +45,12 @@ def compute(events, now=None):
     }
     return {"issues": issues, "totals": totals}
 
+def finish_rate(events, now=None):
+    """#148: -> (finished, started) in the last 24 h: distinct issues the runner merged by itself / started."""
+    now = time.time() if now is None else now
+    ev = [e for e in events if e.get("ts", 0) > now - 86400]
+    return (len({e["issue"] for e in ev if e.get("event") == "merged"}), len({e["issue"] for e in ev if e.get("event") == "start"}))
+
 def fmt(s):
     if s is None: return "-"
     m = round(s / 60)

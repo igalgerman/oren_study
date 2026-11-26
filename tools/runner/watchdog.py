@@ -278,10 +278,14 @@ def _age_min(iso, now):
     try: return (now - calendar.timegm(time.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S"))) / 60   # GitHub times are UTC
     except (TypeError, ValueError): return 0
 
-def idle_alarms(issues, prs, now, free_since, max_parallel):
+def idle_alarms(issues, prs, now, free_since, max_parallel, finish=(0, 0)):
     """Pure (#117): -> list of (key, text). issues: open, labels as names; prs: open (number, title, updatedAt);
-    free_since = epoch when 'free lane + startable work' was first seen (None = not now)."""
+    free_since = epoch when 'free lane + startable work' was first seen (None = not now);
+    finish = (finished, started) by the runner in 24 h (stats.finish_rate, #148)."""
     out = []
+    done, started = finish
+    if started and done / started < 0.5:
+        out.append(("finish", f"runner finished on its own only {done} of {started} issues in 24 h ({100 * done / started:.0f}%, goal 80%)"))
     running = sum("in-progress" in i["labels"] for i in issues)
     if free_since is not None and now - free_since >= FREE_MIN * 60:
         out.append(("free", f"{max_parallel - running} lane(s) free for {int((now - free_since) / 60)} min while work is ready"))
@@ -318,7 +322,9 @@ def alarms_once(now=None):
         import remote; cloud = remote.cloud(now=now)
     except Exception as e:
         log(f"cloud lanes unreadable: {e!r}"); cloud = []
-    return idle_alarms(issues, json.loads(out2), now, _alarm["free_since"], R.total_lanes()) + cloud_stuck_alarms(cloud, now, float(R.CFG.get("stuck_hours", 2)))
+    import stats
+    finish = stats.finish_rate(stats.read_events(R.RUNS / "stats.jsonl"), now)    # #148
+    return idle_alarms(issues, json.loads(out2), now, _alarm["free_since"], R.total_lanes(), finish) + cloud_stuck_alarms(cloud, now, float(R.CFG.get("stuck_hours", 2)))
 
 def alarm_tick():
     """Every 10 min: idle alarms to the orchestrator (+ watchdog.log); the same alarm at most once an hour."""

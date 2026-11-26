@@ -275,7 +275,8 @@ def total_lanes():
     """#133: lanes in total = local + remote (replaces max_parallel). #239: remote = the governor's last count (.runs/governor.json, < 15 min old)."""
     try:
         gv = json.loads((RUNS / "governor.json").read_text(encoding="utf-8"))
-        if time.time() - gv["at"] < 15 * 60: return LOCAL_LANES + (0 if gv["stop"] else int(gv["lanes"]))
+        stop = gv["stop"] and not (gv.get("reset") and gv["reset"] <= time.time())   # #269: a stop from before the 5h reset is over
+        if time.time() - gv["at"] < 15 * 60: return LOCAL_LANES + (0 if stop else int(gv["lanes"]))
     except Exception: pass
     return LOCAL_LANES + REMOTE_LANES
 
@@ -305,6 +306,10 @@ def governor(usage, hist, now, g=None):
     if not usage or at is None or now - at > g["stale_s"] or usage.get("five_h_pct") is None:
         return {"lanes": g["fallback"], "stop": False, "pct": None, "projected": None, "reset": None, "week_projected": None, "why": "no fresh usage: config remote_lanes"}
     pct = float(usage["five_h_pct"]); reset = _ts(usage.get("five_h_reset")) or now
+    fresh = reset < now                                  # #269: the reset is past -> a new 5h window until the panel writes a new number
+    if fresh:
+        pct = 0.0
+        while reset <= now: reset += 5 * 3600
     hours = max(0.0, (reset - now) / 3600)
     pace = gov_pace(hist, now, usage.get("five_h_reset"), g["pace"])
     proj = lambda n: pct + pace * n * hours
@@ -321,6 +326,7 @@ def governor(usage, hist, now, g=None):
                 lanes = g["week_cap"]; why += f"; week ~{wproj:.0f}% > {g['week_target']:.0f}%: ahead, cap {lanes}"
     stop = pct >= g["stop"]
     if stop: why = f"5h {pct:.0f}% >= {g['stop']:.0f}%: no new run"
+    if fresh: why = "new 5h window"
     return {"lanes": lanes, "stop": stop, "pct": pct, "projected": proj(lanes), "reset": reset, "target": g["target"],
             "week_pct": None if wk is None else float(wk), "week_projected": wproj, "week_reset": wreset, "why": why}
 
@@ -331,7 +337,12 @@ def governor_text(gv):
          f"(5h {gv['pct']:.0f}% -> ~{min(100, gv['projected']):.0f}% at {time.strftime('%H:%M', time.localtime(gv['reset']))}")
     if gv.get("week_projected") is not None:
         s += f" · week {gv['week_pct']:.0f}% -> ~{min(100, gv['week_projected']):.0f}% at {time.strftime('%a %H:%M', time.localtime(gv['week_reset']))}"
-    return s + ")" + (" · STOP" if gv["stop"] else "")
+    return s + ")" + (" · STOP" if gv["stop"] else " · new 5h window" if gv.get("why") == "new 5h window" else "")
+
+def stop_filter(chosen, gv):
+    """Pure (#269): on a governor stop only owner-approved 'express' issues still start, and only below 100%."""
+    if not gv["stop"]: return chosen
+    return [c for c in chosen if "express" in c.get("labels", [])] if (gv.get("pct") or 0) < 100 else []
 
 def governor_pass(remote_busy, now=None):
     """Read .runs/usage.json, keep a sample in .runs/usage_hist.jsonl, write .runs/governor.json. Returns the governor dict; never raises."""
@@ -398,7 +409,10 @@ _OVER_Q = ("query($o:String!,$r:String!,$n:Int!,$h:String!){repository(owner:$o,
 def issue_over(n, since, run_=None):
     """#234: ONE gh call: is issue #n closed, or lane/<n> merged after `since` (run start)? Any gh/parse error -> False (never end a run on an error)."""
     o, name = REPO.split("/", 1)
-    rc, out = (run_ or run)(["gh", "api", "graphql", "-f", f"query={_OVER_Q}", "-f", f"o={o}", "-f", f"r={name}", "-F", f"n={n}", "-f", f"h=lane/{n}"], timeout=60)
+    try:                                               # 26 Nov 14:48: a gh timeout here killed 3 runs at once; a slow GitHub is "not over yet"
+        rc, out = (run_ or run)(["gh", "api", "graphql", "-f", f"query={_OVER_Q}", "-f", f"o={o}", "-f", f"r={name}", "-F", f"n={n}", "-f", f"h=lane/{n}"], timeout=60)
+    except (subprocess.TimeoutExpired, OSError):
+        return False
     if rc: return False
     try:
         repo = json.loads(out)["data"]["repository"]
@@ -406,7 +420,7 @@ def issue_over(n, since, run_=None):
             return True
         p = remote.find_pr(n, run_ or run, "merged", fields="number,mergedAt")      # #246: a cloud worker's claude/* PR merged after the run start
         return bool(p) and run_over(None, [p.get("mergedAt")], since)
-    except (ValueError, KeyError, TypeError, IndexError, AttributeError):
+    except (ValueError, KeyError, TypeError, IndexError, AttributeError, subprocess.TimeoutExpired, OSError):
         return False
 
 def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=None):
@@ -1653,7 +1667,7 @@ def run_pass():
     remote_busy = sum(where_of(b) == "remote" for b in busy)
     gv = governor_pass(remote_busy)                     # #239: remote lane count from the 5h usage
     remote_lanes = lanes_now(gv["lanes"], refusal_state(), time.time())   # #137: no cloud starts for 1 h after a refusal
-    chosen = [] if gv["stop"] else [c for c in select(issues, LOCAL_LANES + remote_lanes, MAX_CORE, EXPRESS) if not FileLock(f"issue-{c['number']}").held_by_other()]
+    chosen = stop_filter([c for c in select(issues, LOCAL_LANES + remote_lanes, MAX_CORE, EXPRESS) if not FileLock(f"issue-{c['number']}").held_by_other()], gv)   # #269: express still starts on stop
     wmap = {c["number"]: w for c, w in assign_where(chosen, len(busy) - remote_busy, remote_busy, LOCAL_LANES, remote_lanes)}
     chosen = [c for c in chosen if c["number"] in wmap]
     cutoff = CFG["stuck_hours"] * 3600
