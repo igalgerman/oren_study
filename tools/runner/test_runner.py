@@ -662,8 +662,9 @@ print("ok #246 claude/* PR heads")
 from datetime import datetime as _dt, timezone as _tz
 _iso = lambda t: _dt.fromtimestamp(t, _tz.utc).isoformat()
 _now = 1_800_000_000.0
-_G = {"target": 90, "min": 2, "max": 8, "stop": 93, "pace": 3.5, "week_cap": 4, "stale_s": 900, "fallback": 4}
-def _u(pct, reset_h, week=10, week_reset_h=24 * 6, age=60):
+import time as _time_mod
+_G = {"target": 90, "min": 2, "max": 8, "stop": 93, "pace": 3.5, "week_cap": 4, "week_target": 99, "stale_s": 900, "fallback": 4}
+def _u(pct, reset_h, week=None, week_reset_h=24 * 6, age=60):
     return {"five_h_pct": pct, "five_h_reset": _iso(_now + reset_h * 3600), "week_pct": week, "week_reset": _iso(_now + week_reset_h * 3600), "at": _iso(_now - age)}
 # below target: 20% with 4h left, 3.5%/h/lane -> (90-20)/(3.5*4)=5 lanes
 g = r.governor(_u(20, 4), [], _now, _G); assert g["lanes"] == 5 and not g["stop"] and abs(g["projected"] - 90) < 0.01, g
@@ -674,9 +675,22 @@ g = r.governor(_u(85, 3), [], _now, _G); assert g["lanes"] == 2 and g["projected
 # 93% stop: no new run
 g = r.governor(_u(93, 1), [], _now, _G); assert g["stop"] and "STOP" in r.governor_text(g) and "governor: 0 lanes" in r.governor_text(g)
 assert not r.governor(_u(92.9, 0.1), [], _now, _G)["stop"]
-# weekly guard: 2 days into the week (even ~28.6%), week 45% > 38.6 -> cap 4; 30% -> no cap
+# #274 weekly-aware: projected week % at its reset (linear) aims at week_target (99)
+# behind: 4 days in, week 39% -> ~68% at reset -> more lanes (max) even though the 5h projection alone gives 5
+g = r.governor(_u(20, 4, week=39, week_reset_h=24 * 3), [], _now, _G); assert g["lanes"] == 8 and abs(g["week_projected"] - 68.25) < 0.01, g
+# ahead: 4 days in, week 80% -> ~140% -> fewer lanes (week_cap)
+g = r.governor(_u(5, 1, week=80, week_reset_h=24 * 3), [], _now, _G); assert g["lanes"] == 4 and g["week_projected"] > 99, g
+# 2 days in: 45% -> ~157% ahead -> cap 4; 20% -> ~70% behind -> 8
 assert r.governor(_u(5, 1, week=45, week_reset_h=24 * 5), [], _now, _G)["lanes"] == 4
-assert r.governor(_u(5, 1, week=30, week_reset_h=24 * 5), [], _now, _G)["lanes"] == 8
+assert r.governor(_u(5, 1, week=20, week_reset_h=24 * 5), [], _now, _G)["lanes"] == 8
+# first hours of a week: too early to project -> 5h rule only
+assert r.governor(_u(20, 4, week=1, week_reset_h=24 * 7 - 2), [], _now, _G)["lanes"] == 5
+# behind week but 5h at stop -> no new run (the 5h stop wins)
+assert r.governor(_u(93, 1, week=39, week_reset_h=24 * 3), [], _now, _G)["stop"]
+# text shows both windows and the target
+t = r.governor_text(r.governor(_u(20, 4, week=39, week_reset_h=24 * 3), [], _now, _G))
+assert t.startswith("governor: 8 lanes, aim 90% (5h 20% -> ~") and " · week 39% -> ~68% at " in t and t.endswith(")"), t
+assert _time_mod.strftime("%a %H:%M", _time_mod.localtime(_now + 24 * 3 * 3600)) in t, t
 # stale / missing -> config remote_lanes
 assert r.governor(_u(20, 4, age=16 * 60), [], _now, _G)["lanes"] == 4
 assert r.governor(None, [], _now, _G)["lanes"] == 4 and not r.governor(None, [], _now, _G)["stop"]
@@ -691,7 +705,7 @@ assert r.governor(_u(20, 4), _h, _now, _G)["lanes"] == 8
 assert r.gov_pace(_h, _now, "other", 3.5) == 3.5
 assert r.gov_pace([{**_h[1], "at": _now - 300}, _h[1]], _now, _rs, 3.5) == 3.5
 assert r.gov_pace([{**x, "busy": 0} for x in _h], _now, _rs, 3.5) == 3.5
-t = r.governor_text(r.governor(_u(20, 4), [], _now, _G)); assert t.startswith("governor: 5 lanes (5h 20% -> ~90% at ") and len(t.split(" at ")[1]) == 6, t
+t = r.governor_text(r.governor(_u(20, 4), [], _now, _G)); assert t.startswith("governor: 5 lanes, aim 90% (5h 20% -> ~90% at ") and len(t.split(" at ")[1]) == 6 and "week" not in t, t
 print("ok governor")
 # total_lanes follows a fresh governor.json (the watchdog uses it), else config
 import json as _json, time as _time
