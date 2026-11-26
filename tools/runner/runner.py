@@ -1357,6 +1357,8 @@ def process_locked(issue, where="local"):
             except (OSError, ValueError): return ""
         step = take_resume(n)                            # #264: auto-resume of a blocked issue with an open PR: skip what is done
         red0 = take_resume_verdict(n)
+        if step == "resolve":                            # review of #273: skip the review only for a PASS head; integrate resolves the conflict
+            step = {"pass": "merge", "notes": "merge", "fix": "fix"}.get(parse_verdict(red0)[0], "review")
         answer = take_answer(n) if where == "remote" and not step else None
         if step:
             out = res = f"RESULT: DONE (auto-resume at {step})"

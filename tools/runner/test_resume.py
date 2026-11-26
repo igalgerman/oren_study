@@ -98,7 +98,7 @@ print("ok park_issue labels")
 _names = ("gh", "run", "set_labels", "stat", "set_where", "issue_over", "tell_orchestrator", "find_pr", "branch_of", "agent",
           "ci_integrate", "remote_review", "remote_fix", "remote_worker", "find_pr_merged", "deploy_main", "sync_main", "remove_worktree", "close_windows")
 _saved = {k: getattr(r, k) for k in _names}
-def e2e(n, step, verdicts, integ, where="remote"):
+def e2e(n, step, verdicts, integ, where="remote", stored=""):
     calls = {"agent": [], "review": 0, "fix": 0, "worker": 0, "labels": [], "comments": []}
     r.gh = lambda *a, **k: (calls["comments"].append(a[3]) if a[:2] == ("issue", "comment") else None) or (0, "sha1")
     r.run = lambda *a, **k: (0, ""); r.stat = lambda *a, **k: None; r.set_where = lambda *a: None
@@ -114,7 +114,7 @@ def e2e(n, step, verdicts, integ, where="remote"):
     r.ci_integrate = lambda *a, **k: ig.pop(0)
     r.find_pr_merged = lambda n: True; r.deploy_main = lambda log: "deployed"; r.sync_main = lambda log=None: ""
     r.remove_worktree = lambda *a, **k: None; r.close_windows = lambda n: None
-    r.set_resume(n, step)
+    r.set_resume(n, step, stored)
     try: res = r.process({"number": n, "labels": ["core", "ready-for-agent"]}, where)
     finally:
         for k, v in _saved.items(): setattr(r, k, v)
@@ -126,10 +126,19 @@ res, c = e2e(186, "fix", ["VERDICT: PASS"], [(0, "")])
 assert res.startswith("DONE") and c["worker"] == 0 and c["fix"] == 1 and c["review"] == 1, (res, c)  # resume-at-fix: fix first, then review
 res, c = e2e(187, "merge", [], [(0, "")])
 assert res.startswith("DONE") and c["worker"] == c["review"] == c["fix"] == 0, (res, c)
-res, c = e2e(188, "resolve", [], [(2, "CONFLICTS\na.js"), (2, "CONFLICTS\na.js")])
+res, c = e2e(188, "resolve", [], [(2, "CONFLICTS\na.js"), (2, "CONFLICTS\na.js")], stored="VERDICT: PASS")
 assert res.startswith("BLOCKED") and c["worker"] == c["review"] == 0 and c["agent"], (res, c)
 assert not any("ready-for-human" in a for a, _ in c["labels"]) and any("needs-orchestrator" in a for a, _ in c["labels"]), c["labels"]   # never the owner
 print("ok process resumes at review / fix / merge / resolve; conflicts -> needs-orchestrator")
+
+# review of #273: a dirty PR without a PASS is never merged unreviewed: fix + review run before ci_integrate
+res, c = e2e(190, "resolve", ["VERDICT: PASS"], [(0, "")], stored="VERDICT: FIX add a test")
+assert res.startswith("DONE") and c["fix"] == 1 and c["review"] == 1, (res, c)
+res, c = e2e(191, "resolve", ["VERDICT: PASS"], [(0, "")], stored="")
+assert res.startswith("DONE") and c["fix"] == 0 and c["review"] == 1, (res, c)                # no review yet: review first
+res, c = e2e(193, "resolve", [], [(2, "CONFLICTS\na.js"), (0, "")], stored="VERDICT: PASS")
+assert c["review"] == 0 and c["agent"], (res, c)                                              # PASS head: resolve in integrate, no new review
+print("ok resolve-resume reviews a head without a PASS before merging")
 
 # remote.status: only this run's PR (an older PR that says Fixes #n is not this run's)
 def fake_run(cmd):
