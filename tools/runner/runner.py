@@ -396,7 +396,8 @@ def assign_where(chosen, local_busy, remote_busy, local_lanes, remote_lanes):
         elif "express" in i.get("labels", []): out.append((i, "remote" if remote_lanes > 0 else "local"))   # #72: select() gave it the extra express slot: all lanes busy still starts it
     return out
 
-ACCEPT = ("Build exactly the issue's `## Acceptance` list (every point, with the tests it names) and nothing in its `Out of scope` (#186).")
+ACCEPT = ("Build exactly the issue's `## Acceptance` list (every point, with the tests it names) and nothing in its `Out of scope` (#186). "
+          "New tests: add the test to an existing suite unless a new one is clearly needed; give it a budget line in oren2/tests/budget.txt (#187).")
 SPEC = ("A 'Batch:' issue (title starts with Batch:) or an issue labelled 'spec': follow docs/agents/skills/implement-spec.md "
         "(one branch, sub-agents in parallel for independent parts, integrate, test once, one PR).\n")
 

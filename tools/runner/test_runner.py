@@ -419,6 +419,8 @@ assert "LAST STEP (mandatory)" in p and p.rstrip().endswith("not finished until 
 # #219: Batch:/spec issues follow implement-spec (local and cloud prompts)
 assert "implement-spec.md" in r.remote_worker_prompt(7, "core") and "Batch:" in r.remote_worker_prompt(7, "core") and "spec" in r.worker_prompt(7, "core")
 assert "implement-spec.md" in r.worker_prompt(7, "core")
+for p in (r.worker_prompt(7, "pack"), r.remote_worker_prompt(7, "pack")):   # #187: new tests go into an existing suite, a new suite gets a budget line
+    assert "existing suite unless a new one is clearly needed" in p and "oren2/tests/budget.txt" in p
 assert "docs/agents/skills/diagnosing-bugs.md" in r.remote_worker_prompt(7, "core", bug=True) and "docs/agents/skills/diagnosing-bugs.md" in r.worker_prompt(7, "core", bug=True)
 import recover as _rc; assert "docs/agents/skills/writing-for-agents.md" in _rc.INBOX_PROMPT
 print("ok #219 skill docs")

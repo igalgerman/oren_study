@@ -16,6 +16,7 @@ Every minute it checks, deterministically:
       later/manual 2 h+ with no owner question, run, PR or future date -> 'parked without owner question: #n' to the orchestrator; night report at retro_hour
   5d. #306 desks.py: keeps the two cloud sessions 'Oren inbox (cloud)' / 'Oren ask (cloud)' alive and every status_minutes
       writes the session links + dashboard.py --text into ONE pinned issue (edited in place, nothing committed)
+  5e. #187 once a week: tools/test_garden.py (test trim proposal: ONE issue 'Test trim proposal (week N)'; it never deletes a test)
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
   4b. orchestrator / inbox / inspector terminal finished (#140)                -> removed by address and started again (recover.py commands)
@@ -514,6 +515,7 @@ def tick():
     ai_observer_tick()
     nightly_tick()
     parked_tick()       # #282
+    garden_tick()       # #187
     desks_tick()
     sync_tick()
     alarm_tick()
@@ -716,6 +718,15 @@ def ai_tick():
         except Exception as e: log(f"ai assessment error: {e!r}")
         finally: _ai["running"] = False
     threading.Thread(target=work, daemon=True).start()
+
+def garden_tick():
+    """#187, once a week: the test gardener (its own process; it opens/updates ONE 'Test trim proposal' issue, never deletes a test)."""
+    if R.DRY: return
+    sys.path.insert(0, str(HERE.parent))
+    import test_garden
+    try:
+        if test_garden.run_if_due(R.RUNS / "garden.last"): log("test gardener started (weekly, #187)")
+    except OSError as e: log(f"test gardener could not start: {e!r} (next try in a week; run python3 tools/test_garden.py by hand)")
 
 def trends_tick():
     """#155: hourly patterns over 24 h (repeated BLOCKED reasons, finish/fix rates); reloaded so merged fixes apply."""
