@@ -89,6 +89,7 @@ const flash=(k,c)=>{k.classList.remove('ok','bad');void k.offsetWidth;k.classLis
 let CUR=null;
 function lesson(key,qs,back){const [id,title,max]=ACTS[key];const lvl=ST()[key];let i=0,err=0,gems=0,items=0;qs.forEach(q=>{items+=q.items||1;});
   O.setScreen('sTal','final',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq m2');s.appendChild(wrap);
+  if(key==='rhy'&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(rhyLessons(),back,()=>rhyRun(back)));
   const show=()=>{const q=qs[i];T.hudT(title,T.progressBar(i,qs.length));wrap.innerHTML='';T.setKey(null);CUR=KIND[q.k](q,wrap,done);};
   function done(e,first,el){err+=e;const g=first?2:e>=2&&!el?0:1;if(g){gems+=g;O.addGems(g,el||wrap);O.floatText(el||wrap,'+'+g);}
     setTimeout(()=>{if(!wrap.isConnected)return;i++;if(i<qs.length)show();else finish();},D(e>=2?2200:1300));}
@@ -178,7 +179,23 @@ function rhyQs(){const L=RHY[ST().rhy-1];const qs=[];
   shuffle(L.pats.slice()).slice(0,8-L.nq).forEach(p=>qs.push({k:'tap',pat:p}));
   return qs;}
 function melQs(){const L=MEL[ST().mel-1];return L.songs.map(song=>({k:'melody',song,names:L.names,items:parseMel(song).length}));}
-const START={read:back=>lesson('read',readQs(),back),ear:back=>lesson('ear',earQs(),back),rhy:back=>lesson('rhy',rhyQs(),back),mel:back=>lesson('mel',melQs(),back)};
+/* lesson cards before the first rhythm questions (#56): note lengths; eighths get their own lesson when they first appear */
+const LN=window.LESSONS;
+/* after the line is read: the note sounds for its length while one dot per beat lights up */
+const beats=card=>{const ds=[...card.querySelectorAll('.lcbeats i')];const q=D(600);play(60,ds.length*.6*.95);
+  ds.forEach((x,k)=>setTimeout(()=>{if(!card.isConnected)return;ds.forEach(y=>y.classList.remove('on'));x.classList.add('on');click(k===0);},k*q));
+  setTimeout(()=>ds.forEach(y=>y.classList.remove('on')),ds.length*q+D(300));};
+const lenCard=(d,t)=>({art:()=>`${staffSVG([{i:0,d}],{one:true,minW:160})}<div class="lcbeats">${'<i></i>'.repeat(BEATS[d])}</div>`,t,after:beats});
+if(LN){LN.add('mus-len',{title:'כַּמָּה זְמַן נִמְשָׁךְ תָּו?',bg:'final',cards:[
+    lenCard('w','זֶה תָּו שָׁלֵם: עִגּוּל רֵיק, בְּלִי מַקֵּל. הוּא אָרֹךְ: נִמְשָׁךְ אַרְבַּע פְּעָמוֹת.'),
+    lenCard('h','זֶה תָּו חֲצִי: עִגּוּל רֵיק עִם מַקֵּל. הוּא נִמְשָׁךְ שְׁתֵּי פְּעָמוֹת.'),
+    lenCard('q','זֶה תָּו רֶבַע: עִגּוּל מָלֵא עִם מַקֵּל. הוּא קָצָר: נִמְשָׁךְ פְּעָמָה אַחַת.')]});
+  LN.add('mus-len8',{title:'תָּו חָדָשׁ: שְׁמִינִית',bg:'final',cards:[
+    {art:()=>staffSVG([{i:0,d:'e'}],{one:true,minW:160}),t:'זוֹ שְׁמִינִית: עִגּוּל מָלֵא, מַקֵּל וְדֶגֶל. הִיא מְהִירָה: נִמְשֶׁכֶת חֲצִי פְּעָמָה.'},
+    {art:()=>`<div class="lcrow">${staffSVG([{i:0,d:'e',beam:'s'},{i:0,d:'e',beam:'e'}],{one:true,minW:160})}<span class="lcarr">=</span>${staffSVG([{i:0,d:'q'}],{one:true,minW:160})}</div>`,t:'שְׁתֵּי שְׁמִינִיּוֹת יַחַד נִמְשָׁכוֹת כְּמוֹ רֶבַע אֶחָד.'}]});}
+const rhyLessons=()=>['mus-len',...(RHY[ST().rhy-1].vals.includes('e')?['mus-len8']:[])];
+const rhyRun=back=>lesson('rhy',rhyQs(),back);
+const START={read:back=>lesson('read',readQs(),back),ear:back=>lesson('ear',earQs(),back),rhy:back=>LN?LN.first(rhyLessons(),back,()=>rhyRun(back)):rhyRun(back),mel:back=>lesson('mel',melQs(),back)};
 
 /* ---------- registration + parent info ---------- */
 const ICONS={read:()=>staffSVG([{i:4,d:'q'}],{minW:96,cls:'mini'}),ear:()=>'<span style="font-size:34px">👂</span>',rhy:()=>staffSVG([{i:0,d:'e',beam:'s'},{i:0,d:'e',beam:'e'},{i:0,d:'q'}],{one:true,cls:'mini'}),mel:()=>staffSVG([{i:0,d:'q'},{i:2,d:'q'},{i:4,d:'q'}],{cls:'mini'})};
