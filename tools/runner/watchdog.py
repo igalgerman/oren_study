@@ -98,6 +98,8 @@ def check_windows(ts):
             idle_since.pop(name, None); told.pop(name, None)
 
 def check_lanes(ts):
+    import freeze
+    if freeze.is_frozen(R.RUNS): return     # #139: frozen, start no runner pass
     if any((t.get("name") or "").startswith("run-pass") and t.get("state") == "live" for t in ts): return
     rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: return
