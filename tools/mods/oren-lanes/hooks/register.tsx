@@ -3,7 +3,7 @@ import type { Register } from 'claude-code'
 
 import type { OrenLanesData } from '../types/index'
 import {
-  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, flowRows, laneReasons, view, statsLines, parseMaxCore, parseLocalLanes, cloudRows, isCloud,
+  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, flowRows, laneReasons, view, statsLines, parseMaxCore, parseLocalLanes, parseRemoteLanes, cloudRows, isCloud,
 } from './lanes'
 import type { CloudLane, Issue, View, Win } from './lanes'
 
@@ -75,8 +75,8 @@ export const register: Register = on => {
         let observer = ''
         try { observer = ((await $.fs.read(OBSERVER)) as string).trim() } catch { /* no observer run yet */ }
         let maxCore = 1
-        let localMax = 3
-        try { const t = (await $.fs.read(CONFIG)) as string; maxCore = parseMaxCore(t); localMax = parseLocalLanes(t) } catch { /* defaults */ }
+        let localMax = 3, remoteMax = 0
+        try { const t = (await $.fs.read(CONFIG)) as string; maxCore = parseMaxCore(t); localMax = parseLocalLanes(t); remoteMax = parseRemoteLanes(t) } catch { /* defaults */ }
         let cloud: string[] = []
         try {   // #136: one row per cloud lane, state from tools/runner/remote.py
           const r = await $.process.run([PY, REMOTE, 'cloud'], { timeoutMs: 120000 })
@@ -115,12 +115,12 @@ export const register: Register = on => {
         const prevData = await read($, dataAtom)
         const ghFailed = errors.some(x => x.startsWith('backlog'))
         const data: OrenLanesData = ghFailed && prevData ? {
-          ...prevData, windows, usage, stats, observer, lastLog, localMax,
+          ...prevData, windows, usage, stats, observer, lastLog, localMax, remoteMax,
           errors: [`GitHub slow — showing data from ${new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(prevData.updatedAt))}`],
           updatedAt: prevData.updatedAt,
         } : {
           windows, groups: groupIssues(issues), lastLog, errors, usage, flow, done, lanes: laneReasons(issues, windows, 3, maxCore), view: vw, stats, observer,
-          localMax, cloudCount: issues.filter(isCloud).length, cloud,
+          localMax, remoteMax, cloudCount: issues.filter(isCloud).length, cloud,
           updatedAt: await $.clock.now(),
         }
         await update($, dataAtom, () => data)

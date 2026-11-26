@@ -109,7 +109,7 @@ def model(issues, prs, events, now, log_text="", cloud=()):
     p0_closed = [closed_at[i["number"]] for i in issues if i["state"] == "CLOSED" and "P0" in i["labels"]]
     return {
         "now": now, "open": len(op), "cloud": list(cloud), "cloud_n": len(cloud_n),
-        "lanes": f"local {len(running)}/{R.CFG.get('local_lanes', 3)} · cloud {len(cloud_n)}", "by_state": by_state, "by_prio": by_prio, "rows": rows, "running": running,
+        "lanes": f"local {len(running)}/{R.CFG.get('local_lanes', 3)} · cloud {len(cloud_n)}/{R.CFG.get('remote_lanes', 0)}", "by_state": by_state, "by_prio": by_prio, "rows": rows, "running": running,
         "closed_24h": sum(within(c, 24) for c in closed_at.values()), "closed_7d": sum(within(c, 168) for c in closed_at.values()),
         "closed_total": len(closed_at), "opened_24h": sum(within(c, 24) for c in created.values()),
         "merged_24h": sum(within(m, 24) for m in merged), "merged_7d": sum(within(m, 168) for m in merged),
@@ -158,6 +158,7 @@ def text(m):
                      + (" · STALE" if c["stale"] else "") + (f" · {c['pr']}" if c["pr"] else "") + (f" · {c['session']}" if c["session"] else ""))
     if m["running"]: lines.append("Running: " + "; ".join(f"#{r['n']} {r['step']} {dur(r['for_s'])}" for r in m["running"]))
     if s["needs_you"]: lines.append("Needs you: " + ", ".join(f"#{r['n']} {r['title'][:50]}" for r in s["needs_you"]))
+    for q in m.get("questions", []): lines.append(f"Needs you (question): {q['window']} {q['text'][:120]} {q['url']}")   # #193
     return "\n".join(lines)
 
 def _bars(rows, aria, every=1):
@@ -225,9 +226,12 @@ def page(m):
     d = m["last_deploy"]
     dep = (f"{hhmm(d['ts'])} " + ("ok" if d.get("ok") else '<span class="warn">FAILED</span>')) if d else "no record yet"
     fin = tr["by_runner"] / tr["started"] if tr["started"] else None
+    qs = m.get("questions", [])   # #193: open owner questions (pinned 'Questions for the owner' issue)
+    qrows = "".join(f'<tr><td class="n">{e(q["window"])}</td><td>{e(q["text"])}</td><td class="n"><a href="{e(q["url"])}">answer</a></td></tr>' for q in qs)
+    qcard = f'<div class="card"><h2>Needs you: open questions</h2><table><tr><th>from</th><th>question</th><th></th></tr>{qrows}</table></div>' if qrows else ""
     tiles = "".join([
         tile(m["open"], "open issues", f"P0 {p['P0']} · P1 {p['P1']} · P2 {p['P2']} · P3 {p['P3']}" + (f" · <span class='warn'>{p['-']} without priority</span>" if p['-'] else "")),
-        tile(len(s["needs_you"]), "need you", "answer or decide" if s["needs_you"] else "nothing waits for you"),
+        tile(len(s["needs_you"]) + len(qs), "need you", "answer or decide" if s["needs_you"] or qs else "nothing waits for you"),
         tile(len(s["running"]), "running now", f"{len(s['ready'])} ready · {len(s['waiting'])} waiting · {len(s['blocked'])} blocked"),
         tile(m["closed_24h"], "closed in 24 h", f"{m['opened_24h']} new in 24 h · {m['closed_total']} closed in total"),
         tile(m["merged_24h"], "PRs merged in 24 h", f"{m['open_prs']} PRs open · last deploy {dep}"),
@@ -281,7 +285,7 @@ def page(m):
             f'<h1>Oren game: work status</h1><div class="sub">Made {time.strftime("%d %b %H:%M", time.localtime(now))} (Israel time). '
             f'Sources: GitHub issues and PRs (live), the runner\'s records (.runs/stats.jsonl, runner.log). Estimates are marked. '
             f'For fresh numbers run tools\\dashboard.cmd again.</div>'
-            f'<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}</div>{_ai_card(m)}{fcard}{running}{cloud}'
+            f'<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}</div>{qcard}{_ai_card(m)}{fcard}{running}{cloud}'
             f'<div class="cols"><div class="card"><h2>Opened vs closed, per hour (last 24 h)</h2>'
             f'<div class="legend"><span><i style="background:var(--s1)"></i>opened</span><span><i style="background:var(--s2)"></i>closed</span></div>{_bars(m["hours"], "Issues opened and closed per hour", 3)}</div>'
             f'<div class="card"><h2>Open issues, hour by hour (last 24 h)</h2>{_line(m["hours"], "Open issues at the end of each hour", 3)}</div></div>'
@@ -397,6 +401,8 @@ def gather():
     w, wmt = _file("watchdog.log"); _, rmt = _file("runner.log"); ol, omt = _file("observer.last")
     _, bmt = _file("watchdog.beat"); wmt = bmt or wmt          # heartbeat every pass; the log is written only on events
     m["ov"] = oversight(w, wmt, rmt, ol, omt, now)
+    import owner_q
+    m["questions"] = owner_q.open_list() or []            # #193
     return m
 
 def ai_tick(log=print):

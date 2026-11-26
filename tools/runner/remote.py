@@ -82,7 +82,7 @@ def status(n, run=sh, since=None):
     return state_from(comments, prs[0] if prs else None)
 
 SESSION = re.compile(r"https://claude\.ai/code/session_\w+")
-STALE_MIN = 60
+STALE_MIN = int(float(CFG.get("stuck_hours", 1)) * 60)   # same threshold as the runner's stuck rule and the watchdog alarm
 
 def cloud_lane(issue, pr, commit_iso, now):
     """Pure (#136): one cloud lane row from the issue (gh JSON with comments), its lane PR (or None) and the last commit time."""
@@ -125,6 +125,9 @@ def main(argv):
         res = start(argv[1].lstrip("#"), argv[2], cwd=CFG.get("main_checkout", "."))
     elif len(argv) == 2 and argv[0] == "status":
         res = status(argv[1].lstrip("#"))
+        if res["state"] == "question":                     # #193: the owner sees every question in ONE pinned issue
+            import owner_q
+            res["posted"] = owner_q.post(f"remote-{argv[1].lstrip('#')}", res["line"])
     elif len(argv) == 3 and argv[0] == "send":
         res = send(argv[1], argv[2])
     elif argv == ["cloud"]:

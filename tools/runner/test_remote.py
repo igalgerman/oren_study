@@ -73,21 +73,22 @@ f = Fake(("issue view", 0, json.dumps({"comments": [{"body": "RESULT: DONE new",
 assert r.status(5, run=f, since="2026-11-26T09:00:00Z")["state"] == "done"
 print("ok since")
 
-# cloud (#136): one row per open issue labelled cloud; state, last activity, PR, session, STALE after 60 min quiet
+# cloud (#136): one row per open issue labelled cloud; state, last activity, PR, session, STALE after stuck_hours quiet
+assert r.STALE_MIN == int(r.CFG["stuck_hours"] * 60)
 import calendar
 NOW = calendar.timegm((2026, 11, 26, 12, 0, 0, 0, 0, 0))
 c = lambda body, at: {"body": body, "createdAt": at}
 iss = {"number": 140, "title": "t140", "createdAt": "2026-11-26T09:00:00Z", "comments": [
     c("Running in a cloud session ... https://claude.ai/code/session_01ABC?from=cli", "2026-11-26T09:05:00Z"),
-    c("progress note", "2026-11-26T10:30:00Z")]}
+    c("progress note", "2026-11-26T09:30:00Z")]}
 row = r.cloud_lane(iss, None, "", NOW)
-assert row == {"n": 140, "title": "t140", "state": "working", "line": "", "last": "2026-11-26T10:30:00Z", "stale": True,
+assert row == {"n": 140, "title": "t140", "state": "working", "line": "", "last": "2026-11-26T09:30:00Z", "stale": True,
                "pr": "", "session": "https://claude.ai/code/session_01ABC"}, row
 assert r.cloud_lane(iss, None, "2026-11-26T11:30:00Z", NOW)["stale"] is False          # a new commit counts as activity
 pr = {"number": 201, "url": "https://github.com/x/y/pull/201"}
-done = {**iss, "comments": iss["comments"] + [c("RESULT: DONE https://github.com/x/y/pull/201", "2026-11-26T10:40:00Z")]}
+done = {**iss, "comments": iss["comments"] + [c("RESULT: DONE https://github.com/x/y/pull/201", "2026-11-26T09:40:00Z")]}
 row = r.cloud_lane(done, pr, "", NOW)
-assert (row["state"], row["stale"], row["pr"]) == ("done", True, pr["url"]), row           # any state: quiet 60+ min = STALE
+assert (row["state"], row["stale"], row["pr"]) == ("done", True, pr["url"]), row           # any state: quiet stuck_hours+ = STALE
 assert r.cloud_lane({**iss, "comments": [c("QUESTION: a or b?", "2026-11-26T11:50:00Z")]}, None, "", NOW)["state"] == "question"
 f = Fake(("issue list", 0, json.dumps([iss])), ("pr list", 0, json.dumps([{**pr, "headRefName": "lane/140",
          "commits": [{"committedDate": "2026-11-26T11:45:00Z"}]}])))
