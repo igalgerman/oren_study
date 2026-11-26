@@ -1432,13 +1432,23 @@ GV.wait=GV.site?GV.check(3):Promise.resolve();
 window.__gv=GV;
 const GEN={v:'en-US-Chirp3-HD-Despina',r:0.85};/* English: one fixed Google voice too, chosen by the parents */
 const useGoogle=lang=>(lang==='he'||lang==='en')&&GV.ok;
-function googleSay(t,lang,again){const en=lang==='en';try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}try{speechSynthesis.cancel();}catch(e){}
-  const url='/api/tts?t='+encodeURIComponent((en?plain(t):fullSpell(t)).slice(0,400))+'&v='+(en?GEN.v:GVOICE)+'&r='+(en?GEN.r:GRATE)+'&k='+GV.ver;
+/* #401: the server speaks at most 400 chars a request. A longer text is cut at sentence ends (else at a word) into parts
+   of at most 400, spoken one after the other. pregen.js uses this same function, so every part's audio exists in advance. */
+function ttsParts(s,max=400){s=String(s).replace(/\s+/g,' ').trim();if(s.length<=max)return [s];
+  const out=[];let cur='';const put=x=>{if(!cur)cur=x;else if(cur.length+1+x.length<=max)cur+=' '+x;else{out.push(cur);cur=x;}};
+  for(const sen of s.match(/[^.!?]+(?:[.!?]+|$)/g).map(x=>x.trim()).filter(Boolean)){
+    if(sen.length<=max){put(sen);continue;}
+    for(const w of sen.split(' ')){for(let i=0;i<w.length;i+=max)put(w.slice(i,i+max));}}
+  if(cur)out.push(cur);return out;}
+window.__ttsParts=ttsParts;
+function googleSay(t,lang,again,part){const en=lang==='en';part=part|0;if(!part){try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}try{speechSynthesis.cancel();}catch(e){}}
+  const parts=ttsParts(en?plain(t):fullSpell(t)),last=part>=parts.length-1;
+  const url='/api/tts?t='+encodeURIComponent(parts[part])+'&v='+(en?GEN.v:GVOICE)+'&r='+(en?GEN.r:GRATE)+'&k='+GV.ver;
   const a=new Audio(url);GV.audio=a;let go=false;const t0=Date.now();
   const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;track('au',{ev:'fail',src:'google',why,ms:Date.now()-t0});try{a.pause();}catch(e){}GV.audio=null;
-    if(!again&&why!=='no-audio'&&why!=='blocked'){logIssue('voice',why+' (retry)');track('retry',{what:'voice',why});googleSay(t,lang,1);return;}browserSay(t,en?'en':'he',why);if(why!=='blocked')logIssue('voice',why);};
+    if(!again&&why!=='no-audio'&&why!=='blocked'){logIssue('voice',why+' (retry)');track('retry',{what:'voice',why});googleSay(t,lang,1,part);return;}browserSay(t,en?'en':'he',why);if(why!=='blocked')logIssue('voice',why);};
   const tm=setTimeout(()=>{if(!go)fall('timeout');},GV.ms);/* the browser voice only after a retry and a long wait (#36) */
-  a.onplaying=()=>{if(!go){voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});}go=true;clearTimeout(tm);};a.onplay=()=>duck(true);a.onended=()=>{duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a)GV.audio=null;};
+  a.onplaying=()=>{if(!go){if(!part)voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});}go=true;clearTimeout(tm);};a.onplay=()=>duck(true);a.onended=()=>{if(GV.audio===a&&!last){googleSay(t,lang,0,part+1);return;}duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a)GV.audio=null;};/* the next part; stopped (hush) or replaced: the rest is not spoken */
   a.onerror=()=>fall(a.error&&a.error.code===4?'no-audio':'audio-error');/* 4: not audio, e.g. the server answered 429/502 (not made yet) */
   a.play().catch(e=>fall(e&&e.name==='NotAllowedError'?'blocked':e&&e.name==='NotSupportedError'?'no-audio':'audio-error'));}
 function say(t,lang){if(!t||window.__fast)return;const stamp=window.__autoSaid=Date.now();lang=lang||'he';
