@@ -146,6 +146,14 @@ test('#296 usage line says (stale) when governor.json is older than 15 min', () 
   expect(panel(base({ limits: lim, gov: { at: at(16) } })).header[1]!.text).toMatch('(stale)')
 })
 
+test('#245 usage line shows efficiency (merged PRs per 10% of 5h) and wasted runs from governor.json', () => {
+  const lim = [{ kind: 'five_hour', percentUsed: 15, resetsAt: new Date(NOW + 3600e3).toISOString() }] as any
+  const at = NOW / 1000
+  expect(panel(base({ limits: lim, gov: { at, eff: 0.75, wasted: 2 } })).header[1]!.text).toMatch(/ · eff 0\.75\/10% · wasted 2$/)
+  expect(panel(base({ limits: lim, gov: { at, eff: null, wasted: 0 } })).header[1]!.text).toMatch(/ · eff - · wasted 0$/)
+  expect(panel(base({ limits: lim, gov: { at } })).header[1]!.text).not.toMatch('eff')
+})
+
 test('#305 every process call goes through pythonw + quiet.py', () => {
   expect(quietArgv(['gh', 'x']).slice(0, 2).map(a => a.replace(/^.*[/]/, ''))).toEqual(['pythonw.exe', 'quiet.py'])
   const src = readFileSync(new URL('./register.tsx', import.meta.url), 'utf8')
@@ -165,4 +173,27 @@ test('#306 the panel shows the cloud desks line (.runs/desks.json text), red whe
   expect(panel(base()).desks).toBe(null)
   expect(panel(base({ desks: 'cloud desks: inbox ok · ask ok' })).desks).toEqual({ text: 'cloud desks: inbox ok · ask ok', tone: 'dim' })
   expect(panel(base({ desks: 'cloud desks: inbox ok · ask down' })).desks!.tone).toBe('red')
+})
+
+import { fromCache, GH_CACHE } from './lanes'
+
+test('#329 the panel reads GitHub only from the shared cache (.runs/gh_cache.json), never when stale', () => {
+  const L = (...n: string[]) => n.map(name => ({ name }))
+  const cache = {
+    ts: 1000, closed_total: 250,
+    open: [{ number: 9, title: 'nine', body: 'b', labels: L('in-progress'), comments: [] }],
+    closed: [{ number: 7, title: 'seven', labels: L('pack'), closedAt: '2026-11-26T08:00:00Z' }],
+    prs: [{ number: 20, headRefName: 'lane/9', state: 'OPEN', createdAt: 'x', mergeable: 'CONFLICTING', statusCheckRollup: [{ state: 'FAILURE' }] }, { number: 19, headRefName: 'lane/7', state: 'MERGED' }],
+  }
+  const g = fromCache(JSON.stringify(cache), 1060 * 1000)
+  expect(g.issues).toEqual([{ number: 9, title: 'nine', body: 'b', labels: L('in-progress') }])
+  expect(g.closed.map(c => c.number)).toEqual([7])
+  expect(g.prs.map(p => p.headRefName)).toEqual(['lane/9'])
+  expect(g.prs[0].mergeable).toBe('CONFLICTING')
+  expect(g.prs[0].statusCheckRollup).toEqual([{ state: 'FAILURE' }])
+  expect(g.closedTotal).toBe(250)
+  let err = ''
+  try { fromCache(JSON.stringify(cache), 1400 * 1000) } catch (e) { err = String(e) }
+  expect(err).toMatch('GitHub cache 400 s old')
+  expect(GH_CACHE).toMatch('tools/runner/.runs/gh_cache.json')
 })

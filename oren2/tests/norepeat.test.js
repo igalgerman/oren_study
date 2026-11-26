@@ -31,7 +31,10 @@ const { chromium } = require('playwright');
 
   /* english2: the keyword of a letter (box 1+) */
   await fresh();
-  const en = await page.evaluate(() => { const E = window.ENGLISH2; const save = { en2: { i: { 's:B': [1, 0] }, u: {}, g: {} } }; const n = E.LET.B.kw.length; const ws = []; for (let i = 0; i < n; i++) ws.push(E.gen(save, { k: 's:B' }).w); return { n, ws }; });
+  const en = await page.evaluate(() => { const E = window.ENGLISH2; const only = { en2: { i: { 's:B': [1, 0] }, u: {}, g: {} } }; const w0 = []; for (let i = 0; i < 4; i++) w0.push(E.gen(only, { k: 's:B' }).w);
+    /* #58: only taught keywords; teach them all (ball on the letter card, bus by reading, bed and banana as words) */
+    const save = { en2: { i: { 's:B': [1, 0], 'r:bus': [0, 0], 'v:bed': [0, 0], 'v:banana': [0, 0] }, u: {}, g: {} } }; const n = E.LET.B.kw.length; const ws = []; for (let i = 0; i < n; i++) ws.push(E.gen(save, { k: 's:B' }).w); return { n, ws, w0 }; });
+  ok(en.w0.every(w => w === 'ball'), 'english2 letter sound: only the taught keyword (ball) before the others are taught', en.w0.join());
   ok(en.n > 2 && new Set(en.ws).size === en.n, 'english2 letter sound: each keyword of B once before any repeats', en.ws.join());
 
   /* explore2: a question bank (6 questions per round) */
