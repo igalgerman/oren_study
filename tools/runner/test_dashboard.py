@@ -1,6 +1,6 @@
 """#142 dashboard: pure model() and text(). Run: python3 tools/runner/test_dashboard.py"""
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
-import calendar, sys, time
+import calendar, re, sys, time
 sys.argv.append("--dry-run")
 import dashboard as D
 now = calendar.timegm((2026, 11, 26, 8, 0, 0, 0, 0, 0))
@@ -57,6 +57,13 @@ t2 = D.text(m2)
 assert "Forecast (estimate" in t2 and "finished by itself 1 (50%)" in t2, t2
 pg = D.page(m2)
 assert "ESTIMATE" in pg and "How the work really gets done" in pg and "Recently finished" in pg
+# #148: the finish-rate tile on the first screen, with the top stuck reasons from runner.log
+assert D.S.finish_rate(ev2, now) == (1, 2) and D.S.finish_rate([], now) == (0, 0)
+assert D.S.finish_rate(ev2 + [{"ts": now - 90000, "issue": 9, "event": "start"}], now) == (1, 2)      # older than 24 h: not counted
+first = pg.split("More details")[0]
+assert "1 of 2" in first and "runner finished on its own" in first and "integrate.sh exit 4 (2)" in first, first
+low = D.page(D.model(issues, prs, ev2 + [{"ts": now - 500, "issue": 5, "event": "start"}], now, log))     # 1 of 3: under 50%
+assert re.search(r'<div class="card attn"><div class="big">1 of 3</div>', low)
 print("ok dashboard v2")
 # #171 oversight + AI card
 wl = "\n".join(["2026-11-26 07:30:00 told orchestrator: IDLE ALARM (watchdog): PR #31 quiet", "2026-11-26 07:40:00 told orchestrator: TREND ALARM: x",

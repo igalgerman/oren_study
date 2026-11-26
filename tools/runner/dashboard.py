@@ -87,8 +87,7 @@ def model(issues, prs, events, now, log_text="", cloud=()):
                       "open_end": sum(1 for n, c in created.items() if (c or 0) < min(h0 + 3600, now) and not (closed_at.get(n) and closed_at[n] < min(h0 + 3600, now)))})
     # how the work really gets done (24 h, the runner's own records)
     ev24 = [e for e in events if e.get("ts", 0) > now - 86400]
-    started = {e["issue"] for e in ev24 if e.get("event") == "start"}
-    by_runner = {e["issue"] for e in ev24 if e.get("event") == "merged"}
+    by_runner, started = S.finish_rate(events, now)
     fixes = sum(e.get("event") == "review_fix" for e in ev24); passes = sum(e.get("event") == "review_pass" for e in ev24)
     deploys = [e for e in events if e.get("event") == "deploy"]
     stuck = {}
@@ -121,7 +120,7 @@ def model(issues, prs, events, now, log_text="", cloud=()):
         "last_deploy": max(deploys, key=lambda e: e["ts"]) if deploys else None,
         "fc": fc,
         "fc_p0": forecast(by_prio["P0"], p0_closed, [], now, history_h) if by_prio["P0"] else None, "p0_open": by_prio["P0"],
-        "truth": {"started": len(started), "by_runner": len(by_runner), "fixes": fixes, "passes": passes,
+        "truth": {"started": started, "by_runner": by_runner, "fixes": fixes, "passes": passes,
                   "deploys_ok": sum(1 for d in deploys if d["ts"] > now - 86400 and d.get("ok")),
                   "deploys_fail": sum(1 for d in deploys if d["ts"] > now - 86400 and d.get("ok") is False),
                   "stuck": sorted(stuck.items(), key=lambda x: -len(x[1]))[:6]},
@@ -289,7 +288,7 @@ h1{font-size:22px;margin:0}h2{font-size:18px;margin:0 0 6px}h3{font-size:15px;ma
 .verdict.ok{border-left-color:var(--good)}.verdict.slow,.verdict.you{border-left-color:var(--warn)}.verdict.bad{border-left-color:var(--bad)}
 .chip{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.04em;border-radius:999px;padding:2px 10px;background:var(--line);color:var(--fg)}
 .ok .chip{background:var(--good);color:#fff}.slow .chip,.you .chip{background:var(--warn);color:#0b0b0b}.bad .chip{background:var(--bad);color:#fff}
-.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:12px}.tiles .card{padding:14px 16px;margin:0}
+.tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:12px}.tiles .card{padding:14px 16px;margin:0}
 .big{font-size:36px;font-weight:600;line-height:1.1}.attn{border:2px solid var(--warn)}
 .est{background:var(--est)}.tag{font-size:11px;font-weight:600;border:1px solid var(--sub);border-radius:6px;padding:0 5px;color:var(--sub);margin-left:6px;vertical-align:2px}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin:4px 0 8px}
@@ -309,7 +308,7 @@ th{color:var(--sub);font-weight:normal;font-size:13px}td.n{white-space:nowrap;wi
 .s1{fill:var(--s1)}.s2{fill:var(--s2)}.ln{fill:none;stroke:var(--s1);stroke-width:2}.dot{fill:var(--s1);stroke:var(--card);stroke-width:2}.hit{fill:transparent}
 rect:hover,.hit:hover+.dot{opacity:.75}
 .legend{display:flex;gap:16px;font-size:13px;color:var(--sub);margin-bottom:6px}.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
-@media(max-width:760px){.tiles{grid-template-columns:1fr 1fr}.two{grid-template-columns:1fr}.verdict .head{font-size:24px}
+@media(max-width:760px){.tiles{grid-template-columns:1fr 1fr}.tiles .card:last-child{grid-column:span 2}.two{grid-template-columns:1fr}.verdict .head{font-size:24px}
 ul.rows{grid-template-columns:1fr}ul.rows .when{padding-bottom:0}ul.rows .what{border-top:0;padding-top:0}}
 """
 
@@ -382,7 +381,10 @@ def page(m):
     tiles = (tile(m["open"], "open issues", f"{p['P0']} of them urgent (P0)")
              + tile(m["closed_24h"], "closed in 24 hours", f"{m['opened_24h']} new ones came in")
              + tile(len(m["running"]), "being worked on now", f"{len(s['ready'])} more ready to start")
-             + tile(len(s["needs_you"]) + len(qs), "need you", "your answer or decision" if s["needs_you"] or qs else "nothing waits for you", "attn" if s["needs_you"] or qs else ""))
+             + tile(len(s["needs_you"]) + len(qs), "need you", "your answer or decision" if s["needs_you"] or qs else "nothing waits for you", "attn" if s["needs_you"] or qs else "")
+             + tile(f'{tr["by_runner"]} of {tr["started"]}', "runner finished on its own (24 h)",            # #148: goal 80%
+                    ("stuck: " + ", ".join(f"{e(k)} ({len(v)})" for k, v in tr["stuck"][:2])) if tr["stuck"] else "no stuck runs in 24 hours",
+                    "attn" if tr["started"] and tr["by_runner"] / tr["started"] < 0.5 else ""))
     # 2. needs you (only when something does)
     needs = (f'<section class="card attn"><h2>Needs you <span class="count">{len(s["needs_you"])}</span></h2>'
              f'<p class="sub">These issues wait for your answer or decision. They have no time estimate: they depend on you.</p>'
