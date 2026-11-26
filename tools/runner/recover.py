@@ -32,16 +32,42 @@ def hc_run_args(name, cwd, argv, space_id=""):
     return ["run", "--bg", "--no-parent", "--outlive-parent", "--name", name, "--cwd", cwd,
             *(["--label", f"herdr.space={space_id}"] if space_id else []), *argv]
 
+FINISHED = ("finished", "exited")   # #332: the only states that mean the program ended; status 'done' (idle between turns) is NOT one
+
+def _labels(t):
+    """herdr labels as {key: value}: a dict, or a list of 'k=v' strings."""
+    L = t.get("labels") or {}
+    if isinstance(L, dict): return {str(k): str(v) for k, v in L.items()}
+    return dict(str(x).split("=", 1) for x in L if "=" in str(x))
+
+def _argv(t):
+    a = t.get("argv") or t.get("command") or t.get("cmd") or []
+    return a.split() if isinstance(a, str) else [str(x) for x in a]
+
+def role_of(t):
+    """#332, the ONE matching used by recover and the watchdog: the control role (CONTROL) of a terminal row, else None.
+    Matched by herdr name OR label name=<role> OR '--remote-control oren-<role>' in its argv (a live session may have no herdr name)."""
+    if t.get("name") in CONTROL: return t["name"]
+    if _labels(t).get("name") in CONTROL: return _labels(t)["name"]
+    a = _argv(t)
+    for i, x in enumerate(a[:-1]):
+        if x == "--remote-control" and a[i + 1].startswith("oren-") and a[i + 1][5:] in CONTROL: return a[i + 1][5:]
+    return None
+
+def live_roles(ts):
+    """Control roles that have a live session (any of the three matches)."""
+    return {r for t in ts if t.get("state") == "live" for r in [role_of(t)] if r}
+
 def finished(ts):
     """Addresses of terminals whose program ended (a restart leaves them as 'finished')."""
-    return [t["address"] for t in ts if t.get("state") != "live" and t.get("address")]
+    return [t["address"] for t in ts if t.get("state") in FINISHED and t.get("address")]
 
 def finished_control(ts):
-    """Watchdog check: control windows (CONTROL + watchdog is not here: it is the one checking) that are finished and have no live twin.
-    -> [(name, address)]"""
-    live = {t.get("name") for t in ts if t.get("state") == "live"}
-    return [(t["name"], t["address"]) for t in ts
-            if t.get("name") in CONTROL and t.get("state") != "live" and t.get("address") and t["name"] not in live]
+    """Watchdog check: control windows (CONTROL + watchdog is not here: it is the one checking) that are finished and have no live twin
+    (a twin is matched by role_of, so an unnamed live inspector counts, #332). -> [(name, address)]"""
+    live = live_roles(ts)
+    return [(r, t["address"]) for t in ts for r in [role_of(t)]
+            if r and t.get("state") in FINISHED and t.get("address") and r not in live]
 
 def stale_locks(runs, alive, boot):
     """Remove lock files whose pid is dead or that were taken before this boot (a reused pid is not ours). -> removed names."""
@@ -69,7 +95,8 @@ def start_tabs(d, lines):
     ctl = sp.get(d["control_space"], "")
     for s in (d["control_space"], d["worker_space"]):
         if s not in sp: lines.append(f"space '{s}' not found in Herdr: its windows open in the default space")
-    live = {t.get("name") for t in d["terminals"]() if t.get("state") == "live"}
+    ts = d["terminals"]()
+    live = {t.get("name") for t in ts if t.get("state") == "live"} | live_roles(ts)   # #332: an unnamed live session counts
     for name in CONTROL:
         if name in live: continue
         rc = d["start"](name, ctl)
