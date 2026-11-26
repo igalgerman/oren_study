@@ -283,10 +283,10 @@ def observer_tick():
     import observer; observer.run_if_due()      # acting observer (observer.py)
 
 def ai_observer_tick():
-    import ai_observer; ai_observer.run_if_due(tell, log)   # #203: hourly AI check (thread; not reloaded: that would reset its never-two guard)
+    import ai_observer; ai_observer.run_if_due(tell, log)   # #203: hourly AI check (thread; its never-two guard survives a reload)
 
 def nightly_tick():
-    import nightly   # #219: not reloaded (that would reset its never-two guard)
+    import nightly   # #219 (its never-two guard survives a reload, #345)
     nightly.retro_if_due(tell, log)
     nightly.batch_tick(lambda t: R.hc("send", "inbox", t, timeout=30)[0], log)
     nightly.prune_if_due(log)   # #304
@@ -402,7 +402,7 @@ def alarm_tick():
         if t in new: _alarm["sent"][k] = now
     tell("IDLE ALARM (watchdog): " + " · ".join(new))
 
-KEEP = ("observer", "ai_observer", "nightly")   # #229: in-memory never-two guards: never reloaded (they use R in place, which is reloaded)
+KEEP = ()   # #345: empty; the never-two guards (observer/ai_observer/nightly `_running`, desks `_busy`) survive a reload
 
 def local_modules(here=None):
     """#300: names of the loaded modules that live in tools/runner (except watchdog itself / __main__)."""
@@ -503,19 +503,18 @@ def main():
 def loop(once):
     log("watchdog started")
     W = sys.modules[__name__]
-    st, force, seen = stamps(), False, set()
+    st, seen = stamps(), set()                # #345: the per-file stamps of the LAST clean reload
     while True:
         try:
             now = stamps()
-            if now != st or force:            # #300: a merged fix (any tools/runner file) or a half-updated tick: reload ALL, in dependency order, then watchdog.py
+            if now != st:                     # #300: a merged fix (any tools/runner file): reload ALL, in dependency order, then watchdog.py
                 reload_all(log)
                 W = reload_self(W); log("reloaded watchdog.py")
-                st, force = now, False        # only after a clean reload: a failed one is retried next tick
+                st = now                      # only after a clean reload: a failed one is retried next tick
             W.tick()
             _net["tick"] = 0
-        except AttributeError as e:           # #300: new code calling an old module: log once, full reload next tick
-            if repr(e) not in seen: seen.add(repr(e)); log(f"error: {e!r} (full reload)")
-            force = True
+        except AttributeError as e:           # #345: log once; no forced reload (that looped every tick); a real file change reloads
+            if repr(e) not in seen: seen.add(repr(e)); log(f"error: {e!r}")
         except Exception as e:
             k, alarm = net_streak(_net, "tick", repr(e))   # #304: a passing network/timeout error: quiet until NET_ALARM in a row
             if alarm: net_alarm("tick", f"error: {e!r}")
