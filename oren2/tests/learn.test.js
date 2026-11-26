@@ -274,16 +274,9 @@ async function ui(variant) {
   const V = variant + ': ';
   ok(await p.evaluate(() => !!(window.TAL.ACT['ln-math'] && window.TAL.ACT['ln-paper'] && window.TAL.ACT['ln-math'].b.id === 'think' && window.TAL.dailyPool().includes('ln-math'))), V + 'registered: math training + paper task in the thinking tower');
   await p.evaluate(() => { window.OREN.save.story.intro = 1; window.TAL.S().prof = { an: 'cat', col: '#3a8fc4', love: 'art' }; });
-  // math training: placement first
+  // math training: no placement test in the game (#57) — the round starts at once
   await p.evaluate(() => window.LEARN.run('ln-math', window.OREN.showMap)); await sleep(300);
-  ok(await p.locator('#sTal .whead h1').innerText() === 'מֵאֵיפֹה מַתְחִילִים?', V + 'first entry: the "where are you?" placement'); await shot(p, '1-placement');
-  await p.locator('#sTal .bigbtn').click(); await sleep(200);
-  let n = 0; while (n < 10 && await p.evaluate(() => !!document.querySelector('#sTal .lnq'))) { if (n === 1) await shot(p, '2-placement-q');
-    await p.evaluate(() => { const L = window.__learn; L.wrap.querySelectorAll('.chs .chb')[L.ans].click(); }); await sleep(250); n++; if (await p.evaluate(() => !document.getElementById('ov').hidden)) break; }
-  ok(n >= 3 && n <= 7, V + 'placement: a few questions', n); await shot(p, '3-placement-end');
-  const pl = await p.evaluate(() => JSON.parse(JSON.stringify(window.OREN.save.lrn)));
-  ok(pl.pl.math > 10, V + 'all right → placed high', JSON.stringify(pl.pl));
-  await p.locator('#ov .bigbtn').click(); await sleep(250);
+  ok(await p.evaluate(() => !!document.querySelector('#sTal .lnq') && !document.querySelector('#sTal .whead')), V + 'first entry: no placement test, the questions at once'); await shot(p, '1-first-q');
   // the training round itself
   let qn = 0, chart = false, wp = false; while (qn < 8 && await p.evaluate(() => !!document.querySelector('#sTal .lnq') && document.getElementById('ov').hidden)) {
     const info = await p.evaluate(() => ({ sk: window.__learn.q.sk, chart: !!document.querySelector('.lnhc') })); if (info.chart && !chart) { chart = true; await shot(p, '4-hundred-chart'); } if (info.sk === 'wp' && !wp) { wp = true; await shot(p, '5-word-problem'); }
