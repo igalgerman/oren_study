@@ -622,8 +622,12 @@ def process_locked(issue):
                 remove_worktree(wt, log)
                 run(["git", "branch", "-D", f"lane/{n}"], cwd=ROOT, log=log)
             if not wt.exists():                              # lane.sh continues from origin/lane/<n> when pushed work exists (never deleted)
-                rc, _ = run([BASH, "tools/lane.sh", str(n), BRANCH], cwd=ROOT, env={"REMOTE": REMOTE}, log=log)
-                if rc: raise Blocked("lane.sh failed")
+                for attempt in (1, 2):                       # #116: one lane.sh at a time (two at once race on .git/config), one retry
+                    with FileLock("lane", wait=True):
+                        rc, _ = run([BASH, "tools/lane.sh", str(n), BRANCH], cwd=ROOT, env={"REMOTE": REMOTE}, log=log)
+                    if not rc: break
+                    remove_worktree(wt, log); run(["git", "branch", "-D", f"lane/{n}"], cwd=ROOT, log=log)
+                if rc: raise Blocked("lane.sh failed twice (see run.log)")
 
         out, res = agent(f"issue-{n}", worker_prompt(n, lane, bug="bug" in issue["labels"]), wt, WORKER_TOOLS if lane != "review" else REVIEW_LANE_TOOLS,
                          d / "worker1.log", "RESULT:", n, "worker")
