@@ -17,7 +17,7 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  await p.fill('#pw1','sod1234');await p.fill('#pw2','sod1234');await p.keyboard.press('Enter');await sleep(400);
  ok('panel opens after creating password',await p.evaluate(()=>!document.querySelector('#sPar').hidden));
  ok('password stored as hash',await p.evaluate(()=>/^[0-9a-f]{64}$/.test(window.TAL.S().set.pw)));
- await sleep(300);ok('summary warns about pending permission',await p.locator('.pwarn',{hasText:'הרשאות'}).count()===1);await shot('sum');
+ await sleep(300);await p.evaluate(()=>window.TAL.parentPanel('more'));await sleep(300);ok('settings warn about pending permission (#359: on top of "הגדרות ועוד")',await p.locator('.pwarn',{hasText:'הרשאות'}).count()===1);await shot('sum');
  for(const t of ['perm','parts','prog','msg','set']){await p.evaluate(t=>window.TAL.parentPanel(t),t);await sleep(250);await shot(t);}
  // permissions
  await p.evaluate(()=>window.TAL.parentPanel('perm'));await sleep(300);const rows=await p.locator('#sPar .pst').allTextContents();ok('permission rows shown',rows.length>=3,rows.join(','));
@@ -80,16 +80,16 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
    const doors=document.querySelectorAll('#sHome .door').length;T.otherDay();await new Promise(r=>setTimeout(r,100));document.querySelector('#sTal .door.city').click();await new Promise(r=>setTimeout(r,200));const groups=document.querySelectorAll('.gdoor').length;
    const homeBtn=!document.querySelector('#btnHome').hidden;T.openBuilding(T.BUILD[0]);await new Promise(r=>setTimeout(r,100));const homeBtn2=!document.querySelector('#btnHome').hidden;document.querySelector('#btnHome').click();await new Promise(r=>setTimeout(r,200));
    const back=!document.querySelector('#sHome').hidden;document.querySelector('.today .bigbtn').click();await new Promise(r=>setTimeout(r,300));const math=!document.querySelector('#sPlay').hidden||!document.querySelector('#sLearn').hidden||!document.querySelector('#sWorld').hidden;
-   window.TAL.parentPanel('voice');const v=document.querySelector('#sPar').textContent.includes('Kore');window.TAL.parentPanel('plan');const pl=document.querySelectorAll('#sPar .plrow').length;
+   window.TAL.parentPanel('voice');const v=document.querySelector('#sPar').textContent.includes('Kore');window.TAL.parentPanel('tmpl');const pl=document.querySelectorAll('#sPar .plrow').length;
    return {steps,ok2,doors,groups,homeBtn,homeBtn2,back,math,v,pl};});
  ok('home: plan respected, no doors on home (inside "something else"), grouped city, home button, continue starts math, voice+plan tabs',r8.steps===3&&r8.ok2&&r8.doors===0&&r8.groups===4&&!r8.homeBtn&&r8.homeBtn2&&r8.back&&r8.math&&r8.v&&r8.pl===3,JSON.stringify(r8));
  await p.evaluate(()=>{window.TAL.parentPanel('voice');});await sleep(200);await shot('voice');await p.evaluate(()=>{window.OREN.showMap();});await sleep(300);await shot('home');
  // #7 simplicity P2: the parent panel (G8: one action per row, details on tap, no prose by default, hide empty sections)
  const vis=e=>!!e&&e.checkVisibility();
  const s1=await p.evaluate(()=>{const T=window.TAL,O=window.OREN;T.S().time[O.today()]=1260;T.parentPanel('sum');const b=document.querySelector('#sPar .pbody');
-   const top=[...b.children].filter(e=>e.checkVisibility()&&!e.matches('details,.pwarn'));const det=b.querySelector(':scope > details.pdet:not(.piss)');
-   return {top:top.map(e=>e.className),lines:b.querySelectorAll(':scope > .psum .psl').length,txt:(b.querySelector('.psum')||{}).textContent||'',det:det&&det.querySelector('summary').textContent,open:det&&det.open,tiles:!!b.querySelector('.ptiles')&&b.querySelector('.ptiles').checkVisibility()};});
- ok('P2 sum: 3 lines (minutes, streak, today), the rest in a closed "פירוט מלא"',s1.top.length===1&&s1.lines===3&&/21 דק/.test(s1.txt)&&/רצף/.test(s1.txt)&&s1.det&&s1.det.includes('פירוט מלא')&&!s1.open&&!s1.tiles,JSON.stringify(s1));
+   const tot=(b.querySelector('.pday .pdtot')||{}).textContent||'';const tiles=!!b.querySelector('.ptiles');T.parentPanel('more');const det=[...document.querySelectorAll('#sPar details.pdet')].find(d=>/פירוט מלא/.test(d.querySelector('summary').textContent));
+   return {tot,tiles,det:!!det,open:det&&det.open};});
+ ok('#359 the day view: today\'s minutes on top; the full detail is a closed section under "הגדרות ועוד"',/21 דק/.test(s1.tot)&&!s1.tiles&&s1.det&&!s1.open,JSON.stringify(s1));
  const s2=await p.evaluate(()=>{window.TAL.parentPanel('try');const d=document.querySelector('#sPar details[open] .pdin');const bs=[...d.querySelectorAll('button')].filter(x=>x.checkVisibility());return bs.map(x=>x.textContent.trim());});
  ok('P2 try: just 2 buttons "לשחק כהורה" / "להתחיל מחדש"',s2.length===2&&s2[0].includes('לשחק כהורה')&&s2[1].includes('להתחיל מחדש'),JSON.stringify(s2));
  const s2b=await p.evaluate(async()=>{const O=window.OREN;localStorage.setItem('oren4-v1-parent',JSON.stringify(Object.assign({},O.save,{gems:3})));
@@ -114,7 +114,7 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  const s7=await p.evaluate(()=>{const P=window.TAL.parentPanel;P('day');const day=document.querySelector('#sPar .pbody').textContent;P('more');const sm=[...document.querySelectorAll('#sPar summary')].map(x=>x.textContent).join('|');
    P('health');const hs=!!document.querySelector('#sPar details[open] .psec')&&/הפסקות, ארוחות/.test(document.querySelector('#sPar details[open]').textContent);P('read');const rd=/קורא לבד/.test((document.querySelector('#sPar details[open]')||{}).textContent||'');
    return {dayHealth:/הפסקות, ארוחות/.test(day),dayRead:/קורא לבד/.test(day),dayRem:/תזכורת לאורן/.test(day),sm,hs,rd};});
- ok('P2 day: break/meal settings and reading level moved to settings; today stays',!s7.dayHealth&&!s7.dayRead&&s7.dayRem&&s7.hs&&s7.rd,JSON.stringify(s7));
+ ok('#359 day: break/meal settings, reading level and reminders are under settings, not on the day view',!s7.dayHealth&&!s7.dayRead&&!s7.dayRem&&/תזכורת/.test(s7.sm)&&s7.hs&&s7.rd,JSON.stringify(s7));
  const s8=await p.evaluate(()=>{window.TAL.parentPanel('msg');const d=document.querySelector('#sPar details[open] .pdin');return {chips:d.querySelectorAll('.pchip').length,gift:/מתנה|💎/.test(d.textContent)};});
  ok('P2 msg: no gift chips',s8.chips===0&&!s8.gift,JSON.stringify(s8));
  ok('no JS errors',!errs.length,errs.slice(0,5).join(' | '));

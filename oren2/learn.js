@@ -393,7 +393,7 @@ const THK={'think-pat':'shp','think-ana':'ana','think-ser':'ser','think-rel':'re
 
 /* ---------- what the rest of the game knows ---------- */
 const offW=()=>(T.S().set.offW)||{};
-function journeyNext(){for(const w of O.WORLDS){if(offW()[w.id])continue;for(const lv of w.levels){if(!O.stars(lv.id)&&O.unlocked(lv))return lv;}}return null;}
+function journeyNext(){for(const w of O.WORLDS){if(offW()[w.id])continue;for(const lv of w.levels){if(!O.stars(lv.id)&&!(O.known&&O.known(lv.id))&&O.unlocked(lv))return lv;}}return null;}
 /* journey unit → the strategy drill that supports it (boosted while the unit is hard for him) */
 const SUPPORT=[[/^add-(2|3|4|8|11|12)$/,'mm-ten'],[/^add-1$|^time-h2$/,'mm-dbl'],[/^(add|sub)-(8|9)$/,'mm-comp'],[/^num-seq|^mul-[0-3]$/,'mm-skip'],[/^(add-[5-7]|sub-[4-6]|num-pv2)$/,'mm-pv'],[/^word-/,'wp']];
 const supportOf=id=>{for(const [re,sk] of SUPPORT)if(re.test(id))return sk;return null;};
