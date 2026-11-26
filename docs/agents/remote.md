@@ -32,6 +32,9 @@ Script: `tools/runner/remote.py start|status|send` (test: `python tools/runner/t
   do **not** know cloud sessions (`No session matching ...`).
 - So the state comes from GitHub: `remote.py status <n>` reads the issue's comments (last `RESULT: DONE|STUCK` or
   `QUESTION:` line wins; none = `working`) and the PR on `lane/<n>`.
+  Only comments from the latest `Runner: started` comment on count (the runner also passes its start time), so a reopened
+  issue never finishes on an earlier run's RESULT (#236). `remote.py cloud` lists label `cloud` issues plus in-progress
+  issues whose `.runs/<n>/where` is `remote`; the dashboard and panel count cloud lanes from it.
 - Owner/manual view: the URL, or `claude --teleport <session>` (interactive).
 
 ## Follow-up messages
