@@ -270,3 +270,16 @@ _n = {"r": 0}
 def _res(f): _n["r"] += 1; return True
 assert r.integrate_with_resolve(lambda: (7, "CI timed out"), _res, 2) == ("failed", 7, "CI timed out") and _n["r"] == 0
 print("ok ci-merge")
+
+# #72 express lane: own extra lane, starts first, may exceed max_core
+_e = lambda n, extra=(): I(n, [R, "express", *extra])
+assert nums(r.select([I(1, ["in-progress", "pack"]), I(2, ["in-progress", "pack"]), I(3, ["in-progress", "pack"]), _e(4, ["pack"])], 3, 2, 1)) == [4]
+assert nums(r.select([I(1, ["in-progress", "pack"]), I(2, ["in-progress", "pack"]), I(3, ["in-progress", "pack"]), _e(4, ["pack"])], 3, 2, 0)) == []   # no express lane configured
+assert nums(r.select([I(1, [R, "pack"]), _e(2, ["pack"])], 1, 1, 1)) == [2, 1]      # express first; normal lane still used
+assert nums(r.select([I(1, ["in-progress", "pack"]), I(2, ["in-progress", "pack"]), I(3, ["in-progress", "pack"]), _e(4, ["pack"]), _e(5, ["pack"])], 3, 2, 1)) == [4]   # only one express lane
+assert nums(r.select([I(1, ["in-progress", "pack", "express"]), _e(2, ["pack"])], 3, 2, 1)) == [2]   # express lane busy: 2 uses a normal slot
+assert nums(r.select([_c(1), _c(2), _e(3, ["core"])], 3, 2, 1)) == [3, 1, 2]       # express core first, doesn't use core limit
+assert nums(r.select([I(1, ["in-progress", "core"]), I(2, ["in-progress", "core"]), _e(3, ["core"]), _c(4)], 3, 2, 1)) == [3]   # express core despite max_core
+assert nums(r.select([_e(1, ["pack", "blocked"]), _e(2, ["pack"], )], 3, 2, 1)) == [2]
+assert r.CFG["express_lanes"] == 1
+print("ok express")

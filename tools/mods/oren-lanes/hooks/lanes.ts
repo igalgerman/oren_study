@@ -217,10 +217,13 @@ export function view(open: Issue[], closed: Issue[], wins: Win[], prBranches: st
     if (prBranches.includes(`lane/${n}`)) return has(new RegExp(`^issue-${n}$`)) ? 'PR opened' : 'merge + tests'
     return 'building'
   }
+  const exp = (i: Issue) => lab(i).has('express')
   const running = open.filter(i => lab(i).has('in-progress')).sort((a, b) => a.number - b.number)
-  const lanes = running.slice(0, max).map(i => `● #${i.number} ${short(i.title)} — ${step(i.number)}`)
+  const expRun = running.filter(exp)[0]   // #72: one extra lane for owner-approved issues
+  const lanes = running.filter(i => i !== expRun).slice(0, max).map(i => `● #${i.number} ${short(i.title)} — ${step(i.number)}`)
   const why = laneReasons(open, wins, max).filter(x => x.includes(' free — ')).map(x => x.replace(/^\d+\. free — /, ''))
   while (lanes.length < max) lanes.push(`○ free — ${why[0] ?? 'nothing ready'}`)
+  if (expRun) lanes.push(`⚡ #${expRun.number} ${short(expRun.title)} — ${step(expRun.number)}`)
   // owner's lane: only ready-for-human and needs-triage. blocked + needs-orchestrator is the orchestrator's job (separate dim line)
   const you = open.filter(i => lab(i).has('ready-for-human') || lab(i).has('needs-triage'))
     .map(i => (lab(i).has('needs-triage') ? `? #${i.number} ${short(i.title)} — answer questions${has(new RegExp(`^intake-?${i.number}`)) ? ' (window open)' : ''}`
@@ -228,8 +231,8 @@ export function view(open: Issue[], closed: Issue[], wins: Win[], prBranches: st
   const orchNums = open.filter(i => (lab(i).has('blocked') || lab(i).has('needs-orchestrator')) && !lab(i).has('ready-for-human') && !lab(i).has('needs-triage')).map(i => `#${i.number}`)
   const orch = orchNums.length ? [`orchestrator handling: ${orchNums.join(' ')}`] : []
   const next = open.filter(i => lab(i).has('ready-for-agent') && !lab(i).has('in-progress') && !lab(i).has('blocked'))
-    .sort((a, b) => (+!lab(a).has('bug') - +!lab(b).has('bug')) || prio(a) - prio(b) || a.number - b.number)
-    .map(i => { const w = parseBlockers(i.body).filter(b => b !== i.number && openNums.has(b)); return `[P${prio(i)}] #${i.number} ${short(i.title)}${w.length ? '  (after #' + w.join(', #') + ')' : '  (ready)'}` })
+    .sort((a, b) => (+!exp(a) - +!exp(b)) || (+!lab(a).has('bug') - +!lab(b).has('bug')) || prio(a) - prio(b) || a.number - b.number)
+    .map(i => { const w = parseBlockers(i.body).filter(b => b !== i.number && openNums.has(b)); return `${exp(i) ? '⚡ ' : ''}[P${prio(i)}] #${i.number} ${short(i.title)}${w.length ? '  (after #' + w.join(', #') + ')' : '  (ready)'}` })
   const done = closed.slice(0, 3).map(i => lab(i).has('needs-triage') ? `→ #${i.number} ${short(i.title)} (split into tasks)` : `✓ #${i.number} ${short(i.title)}`)
   return { lanes, you, orch, next, done }
 }
