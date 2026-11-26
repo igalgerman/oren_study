@@ -86,6 +86,12 @@ _rs = [{"name": "issue-38-resolve1", "state": "live", "status": "done", "marker"
 assert sorted(W.leftovers(_rs, closed={38}, blocked=set())) == ["issue-38-resolve1", "issue-38-resolve2", "issue-40-resolve1"], W.leftovers(_rs, {38}, set())
 assert W.leftovers(_rs, closed=set(), blocked={38}, stale={"issue-41-resolve1"}) == ["issue-40-resolve1", "issue-41-resolve1"]
 print("ok resolve windows")
+# #113: a closed issue whose runner still holds issue-<n>.lock keeps its windows (the runner is deploying)
+_bz = [{"name": "run-38", "state": "live", "status": "", "marker": False},
+       {"name": "issue-38", "state": "live", "status": "done", "marker": True}]
+assert W.leftovers(_bz, closed={38}, blocked=set(), busy={38}) == []
+assert sorted(W.leftovers(_bz, closed={38}, blocked=set())) == ["issue-38", "run-38"]
+print("ok busy run kept")
 
 # regression: a finished run-2 next to a live run-2 must not close anything (the live one is working)
 assert W.leftovers([{"name": "run-2", "state": "finished"}, {"name": "run-2", "state": "live", "status": ""}], set(), set()) == []

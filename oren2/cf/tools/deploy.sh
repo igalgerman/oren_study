@@ -15,6 +15,7 @@ if [ -z "$DBID" ]; then
 '%d.get('errors'))") || true
   [ -n "$DBID" ] && curl -sS -X POST $AUTH -H 'content-type: application/json'     -d "$(python3 -c "import json;print(json.dumps({'sql':open('cf/migrations/0001_init.sql').read()}))")" "$API/d1/database/$DBID/query" >/dev/null
 fi
+[ -z "$DBID" ] && echo "WARNING: D1 not bound (token lacks 'D1: Edit'?): family saves stay on KV (#109)"
 if [ -n "$DBID" ]; then
   curl -sS -X PATCH $AUTH -H 'content-type: application/json'     -d "{\"deployment_configs\":{\"production\":{\"d1_databases\":{\"DB\":{\"id\":\"$DBID\"}}},\"preview\":{\"d1_databases\":{\"DB\":{\"id\":\"$DBID\"}}}}}"     "$API/pages/projects/oren-game" >/dev/null
 fi

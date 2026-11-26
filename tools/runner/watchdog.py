@@ -115,10 +115,11 @@ FINISHED_RE = re.compile(r"^(run|issue|review|intake)-|^watchdog|^flowtest")
 IDLE_MIN = 15      # a live issue/review/intake window done/idle this long, with no live run-<n>, only holds RAM
 quiet_since = {}   # live window name -> first time seen done/idle
 
-def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset()):
+def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset(), busy=frozenset()):
     """Pure: names of windows to close. ts = hc terminals (name, state, status, marker True/False),
     closed = closed issue numbers, blocked = issue numbers labelled blocked (parked: keep their windows for the owner),
-    human = issue numbers labelled ready-for-human (owner may look), stale = live window names done/idle for IDLE_MIN+."""
+    human = issue numbers labelled ready-for-human (owner may look), stale = live window names done/idle for IDLE_MIN+,
+    busy = issue numbers whose runner still holds issue-<n>.lock (#113: a CI merge auto-closes the issue before the deploy)."""
     live = {t["name"] for t in ts if t.get("state") == "live"}
     live_run = {int(m.group(1)) for x in live for m in [re.match(r"^run-(\d+)(-\w+)?$", x)] if m}
     out = []
@@ -132,6 +133,7 @@ def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset()):
         n, role, suffix = int(m.group(2)), m.group(1), m.group(3) or ""
         if t.get("state") != "live": continue
         if n in blocked: continue                                           # parked: the owner looks at it later
+        if n in busy: continue                                              # #113: runner still deploying/closing it
         if n in closed: out.append(name); continue                          # issue done: everything for it goes
         if role != "run" and name in stale and n not in live_run and n not in human: out.append(name); continue
         if role in ("run", "intake") or t.get("status") not in ("done", "idle") or not t.get("marker"): continue
@@ -162,7 +164,9 @@ def cleanup(ts):
         mk = "VERDICT:" if name.startswith("review-") else "RESULT:"
         marker = t.get("state") == "live" and t.get("status") in ("done", "idle") and bool(R.find_marker(screen_tail(name, 40), mk))
         rows.append({**t, "name": name, "marker": marker})
-    for name in leftovers(rows, closed, blocked, human, stale):
+    nums = {int(m.group(1)) for t in rows for m in [re.match(r"^\w+-(\d+)", t["name"])] if m}
+    busy = {n for n in nums if R.FileLock(f"issue-{n}").held_by_other()}
+    for name in leftovers(rows, closed, blocked, human, stale, busy):
         # act on the ADDRESS of the matching row, never the bare name: a finished terminal can share its
         # name with a new live one, and `hc kill <name>` would hit the live one.
         for t in rows:

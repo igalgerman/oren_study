@@ -264,12 +264,12 @@ def gh(*args, **kw):
 def now():
     return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
-def stat(n, lane, event):
-    """Append one timing event to .runs/stats.jsonl; never raises."""
+def stat(n, lane, event, **extra):
+    """Append one timing event to .runs/stats.jsonl (extra fields, e.g. deploy ok/url/d1); never raises."""
     try:
         RUNS.mkdir(exist_ok=True)
         with open(RUNS / "stats.jsonl", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"ts": int(time.time()), "issue": n, "lane": lane, "event": event}) + chr(10))
+            f.write(json.dumps({"ts": int(time.time()), "issue": n, "lane": lane, "event": event, **extra}) + chr(10))
     except Exception: pass
 
 # ---------- pipeline for one issue ----------
@@ -514,9 +514,12 @@ def deploy_text(log):
         if k.startswith("CLOUDFLARE_"): env[k] = v
     rc, out = run([BASH, "oren2/cf/tools/deploy.sh"], cwd=INTEG, env=env, log=log, timeout=900)
     last = (out.strip().splitlines() or [""])[-1]           # deploy.sh prints progress lines first, "ok <url>" last (#50)
+    d1 = "D1 not bound" not in out                           # deploy.sh warns when the save database is not bound (#109)
     if rc != 0 or not last.startswith("ok"):
+        stat(0, "", "deploy", ok=False, d1=d1, why=last[:200])   # #114: deploy evidence
         raise Blocked("deploy failed")
     url = last
+    stat(0, "", "deploy", ok=True, d1=d1, url=last.split()[-1])
     if not CFG.get("pregen", False):                       # off until #68: pregen burns the free KV write limit
         return f"deployed {url} (pregen off)"
     rc, _ = run(["node", "oren2/cf/tools/pregen.js"], cwd=INTEG, env=env, log=log, timeout=1800)

@@ -80,6 +80,10 @@ test('stats lines', () => {
   expect(l[2]).toBe('avg build 8m · review 15m')
   expect(l[3]).toBe('last #2: build 5m · review - · merge -')
   expect(statsLines('', 0)).toEqual([])
+  // #114: last deploy line (Israel time)
+  const d = (ts: number, ok: boolean, d1: boolean) => JSON.stringify({ ts, issue: 0, lane: '', event: 'deploy', ok, d1, url: 'https://x.oren-game.pages.dev' })
+  expect(statsLines([text, d(1795671000, false, true), d(1795671559, true, false)].join('\n'), 91000)[4]).toBe('last deploy 07:39 ok · ⚠ no D1, saves on KV')
+  expect(statsLines(d(1795671000, false, true), 0)).toEqual(['last deploy 07:30 FAILED'])
 })
 
 import { laneReasons } from './lanes'
