@@ -104,8 +104,9 @@ def model(issues, prs, events, now, log_text="", cloud=()):
     cloud_done = [c for c in cloud if not RM.active(c)]                  # #263: finished sessions are no lane and not counted
     cloud = [c for c in cloud if RM.active(c)]
     done_n = {c["n"] for c in cloud_done}
-    cloud_n = {i["number"] for i in op if "cloud" in i["labels"] and i["number"] not in done_n} | {c["n"] for c in cloud if c["n"] in open_nums}   # #236: + remote runs
-    running = [r for r in running if r["n"] not in cloud_n]          # #136: cloud lanes have their own table
+    wait_n = {c["n"] for c in cloud if not RM.busy(c)}                 # #277: waiting for a core slot: listed, no busy lane
+    cloud_n = {i["number"] for i in op if "cloud" in i["labels"] and i["number"] not in done_n | wait_n} | {c["n"] for c in cloud if c["n"] in open_nums and RM.busy(c)}   # #236: + remote runs
+    running = [r for r in running if r["n"] not in cloud_n | wait_n]  # #136: cloud lanes have their own table
     recent = sorted(((closed_at[i["number"]], i) for i in issues if i["state"] == "CLOSED" and closed_at.get(i["number"])),
                     key=lambda x: -x[0])[:10]
     t = S.compute(events, now)["totals"]
@@ -369,7 +370,7 @@ def page(m):
                       + f'</td><td class="n sub">{hhmm(epoch(c["last"])) if epoch(c["last"]) else "-"}</td><td class="n">' + (f'<a href="{e(c["pr"])}">PR</a>' if c["pr"] else "-")
                       + '</td><td class="n">' + (f'<a href="{e(c["session"])}">session</a>' if c["session"] else "-") + '</td></tr>' for c in m["cloud"])
     cloud = (f'<section class="card"><h2>Cloud lanes <span class="count">{m["cloud_n"]}</span></h2><table><tr><th>#</th><th>issue</th><th>state</th>'
-             f'<th>last activity</th><th>PR</th><th>session</th></tr>{cl_rows}</table></section>') if m["cloud_n"] else ""
+             f'<th>last activity</th><th>PR</th><th>session</th></tr>{cl_rows}</table></section>') if m["cloud_n"] or m["cloud"] else ""
     if m.get("cloud_done"):   # #263: finished cloud sessions go to DONE, not the lanes
         cloud += ('<section class="card"><h2>Cloud done <span class="count">' + str(len(m["cloud_done"])) + '</span></h2><ul class="rows">'
                   + "".join(f'<li>✓ {link(c["n"])} {e(c["title"])}</li>' for c in m["cloud_done"]) + '</ul></section>')

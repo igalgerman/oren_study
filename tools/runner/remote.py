@@ -6,7 +6,7 @@
   python tools/runner/remote.py send <session> "<text>" -> JSON {ok, error}
   python tools/runner/remote.py cloud                  -> JSON list, one per open issue labelled cloud (#136) or in-progress with a remote run (#236):
       {n, title, state, line, last, stale, pr, session, manual}  last = ISO UTC of the newest comment/commit
-      state done = RESULT: DONE or the PR merged; waiting review = open PR quiet 10 min, no RESULT line (#297); manual = no .runs/<n> (started by hand). Lanes show only active() rows (#263).
+      state done = RESULT: DONE or the PR merged; waiting for core slot = the run waits in core_slot(), no busy lane (#277); waiting review = open PR quiet 10 min, no RESULT line (#297); manual = no .runs/<n> (started by hand). Lanes show only active() rows (#263).
 
 start needs a TTY (`claude --cloud` refuses piped output), so it runs inside a herdr terminal.
 The herdr server's env has CLAUDE_CODE_OAUTH_TOKEN (inference-only scope -> 403 on cloud);
@@ -202,17 +202,21 @@ def review_status(pr, run=sh, since=None):
 SESSION = re.compile(r"https://claude\.ai/code/session_\w+")
 STALE_MIN = int(float(CFG.get("stuck_hours", 1)) * 60)   # same threshold as the runner's stuck rule and the watchdog alarm
 
-def cloud_lane(issue, pr, commit_iso, now, manual=False):
+WAIT_CORE = "waiting for core slot"   # #277: the run waits in the runner's core_slot(); listed, but no busy lane
+
+def cloud_lane(issue, pr, commit_iso, now, manual=False, waiting=False, since=""):
     """Pure (#136): one cloud lane row from the issue (gh JSON with comments), its lane PR (or None) and the last commit time.
-    manual = started by hand (remote.py start, no run dir) (#263)."""
+    manual = started by hand (remote.py start, no run dir) (#263). #277: waiting = the run waits for a core slot;
+    since = ISO UTC start of this run: only activity from then on counts for 'last' / STALE."""
     comments = issue.get("comments") or []
     bodies = [c.get("body", "") for c in comments]
     st = state_from([c.get("body", "") for c in current_run(comments)], pr)    # #236: only this run's RESULT counts
     if (pr or {}).get("mergedAt"): st["state"] = "done"                        # #263: PR merged = done
     elif st["state"] == "working" and pr_quiet(pr, now, commit_iso=commit_iso or ""): st["state"] = "waiting review"   # #297: done by PR
+    elif waiting and st["state"] == "working": st["state"] = WAIT_CORE
     sess = next((m[0] for b in reversed(bodies) for m in [SESSION.search(b or "")] if m), "")
-    times = [t for t in [*(c.get("createdAt", "") for c in comments), commit_iso or ""] if t]
-    last = max(times) if times else issue.get("createdAt", "")
+    times = [t for t in [*(c.get("createdAt", "") for c in current_run(comments)), commit_iso or ""] if t and t >= since]
+    last = max(times) if times else (since or issue.get("createdAt", ""))
     stale = bool(last) and now - _epoch(last) > STALE_MIN * 60
     return {"n": issue["number"], "title": issue.get("title", ""), "state": st["state"], "line": st["line"],
             "last": last, "stale": stale, "pr": (pr or {}).get("url", ""), "session": sess, "manual": manual}
@@ -220,6 +224,26 @@ def cloud_lane(issue, pr, commit_iso, now, manual=False):
 def active(row):
     """#263: a cloud row that is still a lane (not done); done rows go to DONE and are not counted."""
     return row.get("state") != "done"
+
+def busy(row):
+    """#277: an active row that really holds a cloud lane (one waiting for a core slot does not)."""
+    return active(row) and row.get("state") != WAIT_CORE
+
+def run_since(n):
+    """#277: ISO UTC of when this run started (.runs/<n>/where is written at the start), '' when unknown."""
+    import time
+    try: return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime((RUNS / str(n) / "where").stat().st_mtime))
+    except OSError: return ""
+
+def waiting_core(n, runs=None):
+    """#277: the runner writes .runs/<n>/core_wait (its pid) while the run waits for a core slot."""
+    try: pid = int(((runs or RUNS) / str(n) / "core_wait").read_text().strip())
+    except (OSError, ValueError): return False
+    if os.name != "nt":
+        try: os.kill(pid, 0); return True
+        except OSError: return False
+    rc, out = sh(["tasklist", "/FI", f"PID eq {pid}", "/NH"])
+    return f" {pid} " in out
 
 def _epoch(iso):
     import calendar, time
@@ -253,7 +277,8 @@ def cloud(run=sh, now=None):
         if not pr:
             rc, out = run(["gh", "api", f"repos/{REPO}/branches/lane/{i['number']}", "--jq", ".commit.commit.committer.date"])
             commit = out.strip() if rc == 0 else ""
-        rows.append(cloud_lane(i, pr, commit, now, manual=not (RUNS / str(i["number"])).is_dir()))
+        rows.append(cloud_lane(i, pr, commit, now, manual=not (RUNS / str(i["number"])).is_dir(),
+                               waiting=waiting_core(i["number"]), since=run_since(i["number"])))
     return rows
 
 def main(argv):
