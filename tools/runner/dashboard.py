@@ -252,6 +252,8 @@ def text(m):
     if m.get("github"): lines.append(m["github"])                     # #329: calls/min, graphql/core left, alarm < 20%
     if m.get("canary"): lines.append("Canary: " + m["canary"])          # #330: flow ok HH:MM | NEEDS-ATTENTION ...
     if m.get("pc"): lines.append(m["pc"])                               # #293: PC: CPU x% · RAM y% free (· ALARM)
+    v = m.get("voice")                                                  # #400: kid sentences with no recording (after the last pregen)
+    if v and v["n"]: lines.append(f"Voice: {v['text']} (first 20 in the deploy log)")
     lines.append("Last deploy: " + (f"{hhmm(d['ts'])} {'ok' if d.get('ok') else 'FAILED'}" if d else "no record yet") + f" · deploys 24 h: {tr['deploys_ok']} ok, {tr['deploys_fail']} failed")
     if tr["stuck"]: lines.append("Top stuck reasons (24 h): " + "; ".join(f"{k} ({len(v)})" for k, v in tr["stuck"][:3]))
     sl = m.get("stuck_lanes") or []     # #248: runs unchanged past stuck_hours and still stuck 30 min after the alarm
@@ -550,6 +552,8 @@ def _health_card(m):
         checks.append((ok, "OK" if ok else "LOW", "Finished without help", f"{tr['by_runner']} of the {plural(tr['started'], 'issue', 'issues')} the runner started in 24 hours "
                        f"({pct(tr['by_runner'], tr['started'])}); the rest were finished by hand or not recorded"))
     else: checks.append((None, "NO DATA", "Finished without help", "the runner started no issue in 24 hours"))
+    v = m.get("voice")                                                # #400: shown, never counted as a failure (ok None)
+    if v and v["n"]: checks.append((None, "MISSING", "Voice recordings", v["text"] + "; the first 20 are in the deploy log (pregen job)"))
     checks.append((not blocked, "STUCK" if blocked else "OK", "Stuck issues", (f"{len(blocked)} blocked: " + " ".join(f"#{r['n']}" for r in blocked[:8])) if blocked else "no issue is blocked"))
     bad = sum(ok is False for ok, *_ in checks)
     cls = lambda ok: "sub" if ok is None else ("good" if ok else "warn")
@@ -622,6 +626,24 @@ def ci_deploys(n=8):
         rc, o = R.run(["gh", "api", u + "?per_page=1", "--jq", ".[0]"])
         st.append(None if rc or not o.strip() or o.strip() == "null" else json.loads(o))
     return deploy_events(st)
+
+def voice_missing(statuses):
+    """Pure (#400): the 'voice-missing' commit status the deploy workflow's pregen job posts -> {"n", "text"}; None if absent."""
+    for st in statuses or []:
+        if st and st.get("context") == "voice-missing":
+            d = st.get("description") or ""; n = re.match(r"\s*(\d+)", d)
+            return {"n": int(n.group(1)), "text": d} if n else None
+    return None
+
+def ci_voice(n=3):
+    """#400: the voice-missing status of the newest production deploy that has one (pregen runs after the deploy); None if gh fails."""
+    rc, out = R.run(["gh", "api", f"repos/{R.REPO}/deployments?environment=production&per_page={n}", "--jq", "[.[].sha]"])
+    if rc: return None
+    for sha in json.loads(out or "[]"):
+        rc, o = R.run(["gh", "api", f"repos/{R.REPO}/commits/{sha}/statuses?per_page=100"])
+        v = None if rc else voice_missing(json.loads(o or "[]"))
+        if v: return v
+    return None
 
 def runner_log():
     f = R.RUNS / "runner.log"
@@ -717,6 +739,7 @@ def gather():
     try: m["canary"] = json.loads((R.RUNS / "canary.json").read_text(encoding="utf-8")).get("text", "")   # #330 (written by canary.py)
     except Exception: m["canary"] = ""
     import pcload; m["pc"] = pc_line(pcload.load(), now)    # #293 (written by the watchdog)
+    m["voice"] = ci_voice() if ci else None                # #400
     return m
 
 def ai_tick(log=print):
