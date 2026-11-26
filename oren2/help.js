@@ -504,7 +504,7 @@ function stop(keepPend){if(S){clearTimeout(S.idleT);clearTimeout(S.exT);hidePane
    or answer() (when its question ends there). button(host,o): o = {clue()→html|'' , answer()→html, before}; mc(host,o) for choice rows:
    o = {row, ans, clue (text), explain (html), reveal()} — clue without text: wrong options go away until two are left. ---------- */
 const BT={lbl:'עֶזְרָה',clue:'רֶמֶז',offer:'צָרִיךְ עֶזְרָה? הִנֵּה רֶמֶז',elim:'הוֹרַדְתִּי תְּשׁוּבוֹת שֶׁלֹּא מַתְאִימוֹת.',again:'הַקְשֵׁב שׁוּב לַשְּׁאֵלָה וְחַשֵּׁב.',ans:'הַתְּשׁוּבָה הִיא'};
-function button(host,o){if(!host)return null;o=o||{};document.querySelectorAll('.helpq').forEach(x=>x.remove());
+function button(host,o){if(!host)return null;o=o||{};(host.isConnected?document:host).querySelectorAll('.helpq').forEach(x=>x.remove());/* a late timer of a closed screen never takes the live button away */
   const w=el('helpq'),box=el('helpbox');const b=btn('helpbtn','<span class="hq-i" aria-hidden="true">?</span><span>'+BT.lbl+'</span>',()=>tap(false));
   box.hidden=true;w.append(b,box);if(o.before&&o.before.parentNode===host)host.insertBefore(w,o.before);else host.appendChild(w);
   let n=0;const show=(html,voice)=>{box.hidden=false;box.innerHTML=html;box.classList.remove('in');void box.offsetWidth;box.classList.add('in');say(voice||html);};
