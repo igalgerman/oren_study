@@ -112,6 +112,15 @@ _pk = [{"name": "review-41", "state": "live", "status": "done", "marker": True},
 assert W.leftovers(_pk, closed={41}, blocked={41, 48, 49}) == ["review-41"]
 assert W.leftovers(_pk, closed=set(), blocked={41, 48, 49}, old={"issue-48-fix"}) == ["issue-48-fix"]
 print("ok parked windows")
+# #164: after review_pass the done worker/reviewer windows go even while the runner is busy; resolve windows stay
+_ps = [{"name": "issue-160", "state": "live", "status": "done", "marker": True}, {"name": "review-160-2", "state": "live", "status": "done", "marker": True},
+       {"name": "run-160", "state": "live", "status": "", "marker": False}, {"name": "issue-160-resolve1", "state": "live", "status": "working", "marker": False},
+       {"name": "issue-161", "state": "live", "status": "done", "marker": True}]
+assert W.leftovers(_ps, closed=set(), blocked=set(), busy={160, 161}, passed={160}) == ["issue-160", "review-160-2"]
+_ev = [{"ts": 1, "issue": 160, "event": "start"}, {"ts": 2, "issue": 160, "event": "review_pass"}, {"ts": 3, "issue": 161, "event": "review_pass"},
+       {"ts": 4, "issue": 162, "event": "start"}, {"ts": 5, "issue": 162, "event": "review_pass"}, {"ts": 6, "issue": 162, "event": "start"}]
+assert W.review_passed({160, 161, 162}, _ev) == {160}   # 161: no start; 162: a new run started after the pass
+print("ok review-passed windows")
 
 # regression: a finished run-2 next to a live run-2 must not close anything (the live one is working)
 assert W.leftovers([{"name": "run-2", "state": "finished"}, {"name": "run-2", "state": "live", "status": ""}], set(), set()) == []
@@ -293,6 +302,12 @@ assert _cm([_ck("pending"), _ck("pass")]) == (("merged",), ["sleep", "merge"])
 assert _cm([_ck("fail"), _ck("pending"), _ck("pass")]) == (("merged",), ["rerun", "sleep", "sleep", "merge"])   # flaky: rerun once, then green
 assert _cm([_ck("fail"), _ck("fail")])[0] == ("red", ["c0"]) and _cm([_ck("fail"), _ck("fail")])[1].count("rerun") == 1   # still red: back to the worker
 assert _cm([_ck("pass")], merge_ok=False)[0] == ("merge-failed",)
+assert _cm([_ck("pass")], merge_ok="conflict")[0] == ("conflict",)     # #160: CI green but main moved -> conflict, not a block
+assert r.merge_conflict("Pull Request has merge conflicts") and r.merge_conflict("not mergeable: the merge commit cannot be cleanly created") and not r.merge_conflict("required status check missing")
+_mr = iter([(2, "CONFLICTS"), (7, "x"), (0, "ok")])
+assert r.integrate_with_resolve(lambda: next(_mr), lambda f: True, 2)[0] == "failed"
+_mr = iter([(2, "CONFLICTS"), (0, "ok")])
+assert r.integrate_with_resolve(lambda: next(_mr), lambda f: True, 2)[0] == "merged"            # merge conflict -> resolve round -> retry -> merged
 assert _cm([_ck("pending")] * 99, timeout_s=60, poll_s=30)[0] == ("timeout",)
 assert r.deploy_needed("a", "b") and not r.deploy_needed("b", "b") and r.deploy_needed("", "b") and not r.deploy_needed("a", "")
 assert r.conflict_files("CI RED\nc0\n") == ["c0"]

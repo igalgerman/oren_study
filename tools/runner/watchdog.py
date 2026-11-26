@@ -4,6 +4,7 @@ Every minute it checks, deterministically:
   2. a worker/reviewer that stopped without its RESULT:/VERDICT: line for 10 min -> tells the orchestrator
   3. free lanes + ready issues but no runner pass running                       -> starts a runner pass
   3b. a window waiting for the owner longer than park_minutes (the runner parks it itself; this is the fallback): issue gets blocked + ready-for-human, lane freed
+  3c. owner lane: no intake window open + a needs-triage/needs-info issue -> opens ONE `intake-<n>` (oldest issue), `NEEDS YOU: intake-<n> is open`
   5. every observer_minutes: observer.py applies deterministic rules (make_ready, rerun, fix Blocked-by lines) within limits
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
@@ -98,6 +99,8 @@ def check_windows(ts):
             idle_since.pop(name, None); told.pop(name, None)
 
 def check_lanes(ts):
+    import freeze
+    if freeze.is_frozen(R.RUNS): return     # #139: frozen, start no runner pass
     if any((t.get("name") or "").startswith("run-pass") and t.get("state") == "live" for t in ts): return
     rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: return
@@ -111,12 +114,34 @@ def check_lanes(ts):
     rc, out = R.run(cmd, timeout=60)
     log(f"free lane + ready issue -> started {name} (rc {rc})")
 
+def pick_intake(issues, ts):
+    """Pure: the OLDEST open needs-triage / needs-info issue, unless an intake-* window is live (never two). issues: labels as names."""
+    if any((t.get("name") or "").startswith("intake") and t.get("state") == "live" for t in ts): return None
+    cand = [i for i in issues if {"needs-triage", "needs-info"} & set(i["labels"])]
+    return min(cand, key=lambda i: (i.get("createdAt") or "", i["number"])) if cand else None
+
+def check_intake(ts):
+    """Owner lane: open ONE `intake-<n>` window (grill-me) for the oldest issue that needs the owner; tell the orchestrator."""
+    if any((t.get("name") or "").startswith("intake") and t.get("state") == "live" for t in ts): return
+    rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,title")
+    if rc: return
+    i = pick_intake([{**x, "labels": [l["name"] for l in x["labels"]]} for x in json.loads(out)], ts)
+    if not i: return
+    n, name = i["number"], f"intake-{i['number']}"
+    prompt = (f"/grill-me issue #{n} (gh issue view {n} --repo {R.CFG['repo']} --comments), then /to-tickets for what comes out of it, "
+              f"then close #{n} with links to the new tickets.")
+    cmd = [R.HC, "run", "--bg", "--outlive-parent", *R.space_args(), "--name", name, "--cwd", R.CFG.get("main_checkout", str(R.ROOT)),
+           "--label", f"issue={n}", "--label", "role=intake", shutil.which("claude") or "claude", prompt]
+    rc, out = R.run(cmd, timeout=60)
+    log(f"owner lane: opened {name} (rc {rc})")
+    if rc == 0: tell(f"NEEDS YOU: {name} is open")
+
 FINISHED_RE = re.compile(r"^(run|issue|review|intake)-|^watchdog|^flowtest")
 IDLE_MIN = 15      # a live issue/review/intake window done/idle this long, with no live run-<n>, only holds RAM
 PARKED_MIN = 60    # #123: a parked (blocked) issue's done/idle windows, after this long
 quiet_since = {}   # live window name -> first time seen done/idle
 
-def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset(), busy=frozenset(), old=frozenset()):
+def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset(), busy=frozenset(), old=frozenset(), passed=frozenset()):
     """Pure: names of windows to close. ts = hc terminals (name, state, status, marker True/False),
     closed = closed issue numbers, blocked = issue numbers labelled blocked (parked: keep their windows for the owner),
     human = issue numbers labelled ready-for-human (owner may look), stale = live window names done/idle for IDLE_MIN+,
@@ -134,6 +159,8 @@ def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset(), busy=fr
         if not m: continue
         n, role, suffix = int(m.group(2)), m.group(1), m.group(3) or ""
         if t.get("state") != "live": continue
+        if n in passed and role in ("issue", "review") and not suffix.startswith("-resolve") and t.get("status") in ("done", "idle"):
+            out.append(name); continue                                      # #164: review passed, runner only merges now
         if n in busy: continue                                              # #113: runner still deploying/closing it
         if n in closed: out.append(name); continue                          # issue done: everything for it goes (#123: even if labelled blocked)
         if n in blocked:                                                    # parked: the owner may look, for PARKED_MIN
@@ -149,6 +176,18 @@ def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset(), busy=fr
                  "review": [f"issue-{n}-fix"] if not suffix else []}[role]
         if any(x in live for x in later): out.append(name)
     return out
+
+def review_passed(nums, events=None):
+    """#164: issues whose CURRENT run (after its last start) has a review_pass event in stats.jsonl."""
+    if events is None:
+        import stats; events = stats.read_events(R.RUNS / "stats.jsonl")
+    start, ok = {}, set()
+    for e in sorted(events, key=lambda e: e.get("ts", 0)):
+        n = e.get("issue")
+        if n not in nums: continue
+        if e.get("event") == "start": start[n] = e["ts"]; ok.discard(n)
+        elif e.get("event") == "review_pass" and n in start: ok.add(n)
+    return ok
 
 def cleanup(ts):
     rc, out = R.gh("issue", "list", "--state", "all", "--limit", "300", "--json", "number,state,labels")
@@ -172,7 +211,7 @@ def cleanup(ts):
         rows.append({**t, "name": name, "marker": marker})
     nums = {int(m.group(1)) for t in rows for m in [re.match(r"^\w+-(\d+)", t["name"])] if m}
     busy = {n for n in nums if R.FileLock(f"issue-{n}").held_by_other()}
-    for name in leftovers(rows, closed, blocked, human, stale, busy, old):
+    for name in leftovers(rows, closed, blocked, human, stale, busy, old, review_passed(nums)):
         # act on the ADDRESS of the matching row, never the bare name: a finished terminal can share its
         # name with a new live one, and `hc kill <name>` would hit the live one.
         for t in rows:
@@ -267,14 +306,32 @@ def main():
 
 def tick():
     """One watchdog pass (main() calls it on the newest loaded copy of this file)."""
+    try: (R.RUNS / "watchdog.beat").write_text(str(int(time.time())), encoding="utf-8")   # #171: liveness for the dashboard
+    except OSError: pass
     ts = windows()
     check_windows(ts)
     check_lanes(ts)
+    check_intake(ts)
     cleanup(R.hc_json("ls", "--all", "--json").get("terminals", []) or ts)
     observer_tick()
     sync_tick()
     alarm_tick()
     trends_tick()
+    ai_tick()
+
+_ai = {"running": False}
+def ai_tick():
+    """#171: hourly AI assessment for the dashboard, in a background thread (claude -p can take a minute)."""
+    if _ai["running"] or not R.CFG.get("ai_model", "haiku"): return
+    import dashboard; importlib.reload(dashboard)
+    a = dashboard.ai_load()
+    if a and time.time() - a.get("at", 0) < dashboard.AI_EVERY_MIN * 60: return
+    _ai["running"] = True
+    def work():
+        try: dashboard.ai_tick(log)
+        except Exception as e: log(f"ai assessment error: {e!r}")
+        finally: _ai["running"] = False
+    threading.Thread(target=work, daemon=True).start()
 
 def trends_tick():
     """#155: hourly patterns over 24 h (repeated BLOCKED reasons, finish/fix rates); reloaded so merged fixes apply."""

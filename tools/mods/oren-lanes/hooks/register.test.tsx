@@ -184,3 +184,37 @@ test('model label shows in up next and lanes, e.g. [P1·opus]', () => {
   expect(v.next).toEqual(['[P1·opus] #1 ui  (ready)', '[P2] #2 plain  (ready)'])
   expect(v.lanes[0]).toBe('1. #3 running [fable] · busy')
 })
+
+import { parseMaxCore } from './lanes'
+test('max_core is read from config.toml, default 1', () => {
+  expect(parseMaxCore('max_parallel = 3\nmax_core = 2   # core at once\n')).toBe(2)
+  expect(parseMaxCore('max_parallel = 3\n')).toBe(1)
+  expect(parseMaxCore('')).toBe(1)
+  expect(parseMaxCore('max_core = 0\n')).toBe(1)
+})
+
+test('core lanes follow max_core', () => {
+  const lab = (...n: string[]) => n.map(name => ({ name }))
+  const open = [
+    { number: 4, title: 'C', labels: lab('core', 'ready-for-agent', 'in-progress') },
+    { number: 5, title: 'G', labels: lab('core', 'ready-for-agent') },
+  ]
+  // limit 1: the second core issue waits and the reason says so
+  expect(laneReasons(open, [], 3, 1)[1]).toMatch(/#5 ready but only 1 core at a time/)
+  // limit 2: it can start
+  const r2 = laneReasons(open, [], 3, 2)[1]
+  expect(r2).toMatch(/starting soon: #5/)
+  expect(r2).not.toMatch(/core at a time/)
+  // message shows the real limit
+  const three = [...open, { number: 6, title: 'H', labels: lab('core', 'ready-for-agent', 'in-progress') }, { number: 7, title: 'I', labels: lab('core', 'ready-for-agent') }]
+  expect(laneReasons(three, [], 3, 2)[2]).toMatch(/#7 ready but only 2 core at a time/)
+})
+
+test('your lane shows the open intake window', () => {
+  const lab = (...n: string[]) => n.map(name => ({ name }))
+  const open = [{ number: 8, title: 'Idea about maps', labels: lab('needs-triage') }, { number: 9, title: 'Other', labels: lab('needs-info') }]
+  const v = view(open, [], [{ name: 'intake-8', state: 'live/working' }], [])
+  expect(v.you[0]).toBe('▶ #8 Idea about maps — intake window open')
+  expect(v.you[1]).toMatch(/^\? #9 /)
+  expect(v.lanes.some(l => l.includes('#8'))).toBe(false)
+})

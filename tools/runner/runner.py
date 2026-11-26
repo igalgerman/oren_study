@@ -135,13 +135,15 @@ def failed_checks(checks):
 def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_reruns=1, stamp=None, max_stale=10):
     """Pure decision loop (#74): wait for the PR checks, then merge. Red -> rerun the failed jobs once (flaky), still red -> send back to the worker.
     stamp() = run id/status/attempt of the latest run: after a rerun, red is ignored until it changes (the old failed run is still shown for a while).
-    Returns ('merged',) | ('red', [names]) | ('timeout',) | ('merge-failed',)."""
+    merge() -> True | False | 'conflict' (#160: main moved after green CI -> the caller resolves and retries).
+    Returns ('merged',) | ('red', [names]) | ('timeout',) | ('conflict',) | ('merge-failed',)."""
     waited, reruns, old, stale = 0, 0, None, 0
     while True:
         checks = get_checks()
         v = ci_verdict(checks)
         if v == "green":
-            return ("merged",) if merge() else ("merge-failed",)
+            m = merge()
+            return ("merged",) if m is True else ("conflict",) if m == "conflict" else ("merge-failed",)
         if v == "red":
             if reruns and stamp and old is not None and stamp() == old and stale < max_stale:
                 stale += 1; sleep(poll_s); waited += poll_s; continue      # still the old failed run: not judged yet
@@ -152,6 +154,11 @@ def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_rer
         if waited >= timeout_s:
             return ("timeout",)
         sleep(poll_s); waited += poll_s
+
+def merge_conflict(text):
+    """Pure (#160): does a failed `gh pr merge` output mean 'main moved, PR now conflicts'?"""
+    t = (text or "").lower()
+    return "conflict" in t or "not mergeable" in t or "cannot be cleanly created" in t
 
 def deploy_needed(deployed_sha, main_sha):
     """Pure (#74): batching. PRs merged one after another are deployed ONCE: the first deploy after the last merge covers all of them."""
@@ -569,10 +576,13 @@ def ci_integrate(n, wt, log):
     def rerun():
         rid = run(["gh", "run", "list", "--repo", REPO, "--branch", f"lane/{n}", "--limit", "1", "--json", "databaseId", "-q", ".[0].databaseId"], log=log)[1].strip()
         if rid.isdigit(): run(["gh", "run", "rerun", rid, "--failed", "--repo", REPO], log=log)
-    def merge(): return gh("pr", "merge", str(pr), "--squash", log=log)[0] == 0
+    def merge():
+        rc_, o_ = gh("pr", "merge", str(pr), "--squash", log=log)
+        return True if rc_ == 0 else ("conflict" if merge_conflict(o_) else False)
     res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp)
     if res[0] == "merged": return 0, "merged PR #%d" % pr
     if res[0] == "red": return 6, "CI RED\n" + "\n".join(res[1])
+    if res[0] == "conflict": return 2, "CONFLICT: main moved after green CI (gh pr merge reports merge conflicts)"
     return 7, "CI " + ("timed out" if res[0] == "timeout" else "green but `gh pr merge` failed")
 
 def find_pr_merged(n):
@@ -730,6 +740,11 @@ def process_locked(issue):
         block(n, str(e), log); return f"BLOCKED: {e}"
     except Exception as e:                      # any crash: never leave the issue in-progress
         stat(n, lane, "blocked")
+        try:                                    # full traceback in run.log: a bare FileNotFoundError(2, ...) names no file (#158)
+            import traceback
+            with open(log, "a", encoding="utf-8") as f:
+                f.write(f"\n[runner crash] sys.executable={sys.executable!r}\n{traceback.format_exc()}\n")
+        except Exception: pass
         block(n, f"runner error: {e!r}", log); return f"BLOCKED: runner error {e!r}"
 
 def close_windows(n):
@@ -755,7 +770,27 @@ def log_line(line):
     with open(RUNS / "runner.log", "a", encoding="utf-8") as f: f.write(line + chr(10))
     print(line)
 
+def do_freeze():
+    """#139: `--freeze` stops new work and parks running issues at a safe point; `--unfreeze` lets work start again."""
+    import freeze
+    if "--unfreeze" in sys.argv:
+        freeze.unfreeze(RUNS); print("unfrozen: runner and watchdog start work again"); return 0
+    def windows():
+        rc, out = hc("ls", "--json", timeout=30)
+        try: return json.loads(out.strip().splitlines()[-1]).get("terminals", [])
+        except Exception: return []
+    def remote(n):
+        try: return json.loads((RUNS / str(n) / "remote.json").read_text(encoding="utf-8")).get("session", "")
+        except Exception: return ""
+    res = freeze.freeze(RUNS, windows, lambda w, m: hc("send", w, m, timeout=30), lambda w: hc("read", w, "--lines", "60", timeout=30)[1],
+                        find_pr, lambda n, b: gh("issue", "comment", str(n), "--body", b), remote, time.sleep, time.time)
+    print(res["message"]); return 0 if not res["open"] else 1
+
 def main():
+    if "--freeze" in sys.argv or "--unfreeze" in sys.argv: return do_freeze()
+    import freeze
+    if freeze.is_frozen(RUNS) and not DRY:
+        print("frozen: nothing new starts (tools/runner/runner.py --unfreeze to continue)"); return 0
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     if USE_HERDR and not TERM:        # started from run.cmd / a shell: re-launch inside a herdr terminal and return at once
         return launch_self()
