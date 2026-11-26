@@ -570,6 +570,53 @@ assert W.orch_decision("done", [213], _st, _n + 31 * 60) == "escalate"
 _st["escalated"] = _n + 31 * 60
 assert W.orch_decision("done", [213], _st, _n + 40 * 60) == "nudge"              # no second escalation within 2 h
 print("ok watch the checker")
+
+# #239 usage governor (pure)
+from datetime import datetime as _dt, timezone as _tz
+_iso = lambda t: _dt.fromtimestamp(t, _tz.utc).isoformat()
+_now = 1_800_000_000.0
+_G = {"target": 90, "min": 2, "max": 8, "stop": 93, "pace": 3.5, "week_cap": 4, "stale_s": 900, "fallback": 4}
+def _u(pct, reset_h, week=10, week_reset_h=24 * 6, age=60):
+    return {"five_h_pct": pct, "five_h_reset": _iso(_now + reset_h * 3600), "week_pct": week, "week_reset": _iso(_now + week_reset_h * 3600), "at": _iso(_now - age)}
+# below target: 20% with 4h left, 3.5%/h/lane -> (90-20)/(3.5*4)=5 lanes
+g = r.governor(_u(20, 4), [], _now, _G); assert g["lanes"] == 5 and not g["stop"] and abs(g["projected"] - 90) < 0.01, g
+# far below: capped at max
+assert r.governor(_u(5, 1), [], _now, _G)["lanes"] == 8
+# above target: projection over 90 even at min -> min
+g = r.governor(_u(85, 3), [], _now, _G); assert g["lanes"] == 2 and g["projected"] > 90, g
+# 93% stop: no new run
+g = r.governor(_u(93, 1), [], _now, _G); assert g["stop"] and "STOP" in r.governor_text(g) and "governor: 0 lanes" in r.governor_text(g)
+assert not r.governor(_u(92.9, 0.1), [], _now, _G)["stop"]
+# weekly guard: 2 days into the week (even ~28.6%), week 45% > 38.6 -> cap 4; 30% -> no cap
+assert r.governor(_u(5, 1, week=45, week_reset_h=24 * 5), [], _now, _G)["lanes"] == 4
+assert r.governor(_u(5, 1, week=30, week_reset_h=24 * 5), [], _now, _G)["lanes"] == 8
+# stale / missing -> config remote_lanes
+assert r.governor(_u(20, 4, age=16 * 60), [], _now, _G)["lanes"] == 4
+assert r.governor(None, [], _now, _G)["lanes"] == 4 and not r.governor(None, [], _now, _G)["stop"]
+assert r.governor({"at": "junk"}, [], _now, _G)["lanes"] == 4
+assert "no fresh usage" in r.governor_text(r.governor(None, [], _now, _G))
+# pace from the last hour (same window): 10 pts in 1h with 5 busy lanes = 2%/h/lane -> 20% + 2*n*4 <= 90 -> 8
+_rs = _iso(_now + 4 * 3600)
+_h = [{"at": _now - 3600, "pct": 10, "reset": _rs, "busy": 5}, {"at": _now - 60, "pct": 20, "reset": _rs, "busy": 5}]
+assert abs(r.gov_pace(_h, _now, _rs, 3.5) - 10 / (3540 / 3600) / 5) < 1e-9
+assert r.governor(_u(20, 4), _h, _now, _G)["lanes"] == 8
+# samples from another window, too short a span, or no busy lanes -> default pace
+assert r.gov_pace(_h, _now, "other", 3.5) == 3.5
+assert r.gov_pace([{**_h[1], "at": _now - 300}, _h[1]], _now, _rs, 3.5) == 3.5
+assert r.gov_pace([{**x, "busy": 0} for x in _h], _now, _rs, 3.5) == 3.5
+t = r.governor_text(r.governor(_u(20, 4), [], _now, _G)); assert t.startswith("governor: 5 lanes (5h 20% -> ~90% at ") and len(t.split(" at ")[1]) == 6, t
+print("ok governor")
+# total_lanes follows a fresh governor.json (the watchdog uses it), else config
+import json as _json, time as _time
+(r.RUNS).mkdir(exist_ok=True)
+(r.RUNS / "governor.json").write_text(_json.dumps({"lanes": 7, "stop": False, "at": _time.time()}))
+assert r.total_lanes() == r.LOCAL_LANES + 7
+(r.RUNS / "governor.json").write_text(_json.dumps({"lanes": 7, "stop": True, "at": _time.time()}))
+assert r.total_lanes() == r.LOCAL_LANES
+(r.RUNS / "governor.json").write_text(_json.dumps({"lanes": 7, "stop": False, "at": _time.time() - 3600}))
+assert r.total_lanes() == r.LOCAL_LANES + r.REMOTE_LANES
+(r.RUNS / "governor.json").unlink()
+print("ok governor lanes")
 # #234: a run ends as DONE when its issue is closed or its lane PR is merged elsewhere (every wait loop checks, one gh call per poll)
 _S0 = "2026-11-26T12:00:00Z"                         # run start
 assert r.run_over("CLOSED", [], _S0) and r.run_over("OPEN", ["2026-11-26T12:30:00Z"], _S0)
@@ -653,3 +700,90 @@ assert al == [] and lanes == [8]
 al, lanes = W.stuck_runs(_sr, {8: 7300.0 + 9000, 9: 16000.0}, 7300.0 + 9001, 2, _stt)   # it moved: cleared
 assert al == [] and lanes == []
 print("ok stuck escalation (#248)")
+# #135: a cloud QUESTION parks the issue (lane freed, owner asked); the owner's answer resumes the same session
+import json
+_saved = {k: getattr(r, k) for k in ("gh", "set_labels", "tell_orchestrator")}
+_lab, _gh, _told = [], [], []
+r.gh = lambda *a, **k: (_gh.append(a), (0, ""))[1]
+r.set_labels = lambda n, add=(), remove=(): _lab.append((n, tuple(add), tuple(remove)))
+r.tell_orchestrator = _told.append
+import owner_q as _oq
+_posted, _oq_post = [], _oq.post
+_oq.post = lambda w, q, tail="", gh=None: _posted.append((w, q)) or "https://q"
+try:
+    try: r.park_remote(7, "QUESTION: red or green?"); assert False, "no Parked"
+    except r.Parked: pass
+    assert _lab == [(7, ("blocked", "ready-for-human"), ("in-progress",))], _lab
+    assert _posted == [("remote-7", "QUESTION: red or green?")]                      # 'needs you' in the questions issue, panel, dashboard
+    assert _told and "#7" in _told[0] and "red or green?" in _told[0]                 # the orchestrator is told
+    _c = [a for a in _gh if a[:3] == ("issue", "comment", "7")]
+    assert _c and _c[0][-1].startswith("Parked (cloud)") and not r.remote.MARK.search(_c[0][-1])   # the park comment is no new QUESTION/RESULT
+    # resume: answer stored for the next run, labels back, the orchestrator told
+    _lab.clear(); _gh.clear(); _told.clear()
+    r.resume_remote(7, "green")
+    assert r.take_answer(7) == "green" and r.take_answer(7) is None                  # read once
+    assert _lab == [(7, (), ("blocked", "ready-for-human"))] and _told
+    assert any(a[:3] == ("issue", "comment", "7") and a[-1].startswith("Runner:") for a in _gh)
+    # the watchdog tick: parked cloud issues with an answer resume; others stay
+    (r.RUNS / "8").mkdir(parents=True, exist_ok=True); (r.RUNS / "8" / "where").write_text("remote")
+    (r.RUNS / "9").mkdir(parents=True, exist_ok=True); (r.RUNS / "9" / "where").write_text("remote")
+    _lab.clear()
+    _list = [{"number": 8, "comments": [{"body": "QUESTION: a or b?"}, {"body": "Parked (cloud): x"}, {"body": "b"}]},
+             {"number": 9, "comments": [{"body": "QUESTION: a or b?"}]},                           # no answer yet
+             {"number": 10, "comments": [{"body": "QUESTION: a or b?"}, {"body": "b"}]}]           # not a cloud run: the old local flow
+    r.gh = lambda *a, **k: (_gh.append(a), (0, json.dumps(_list)) if a[:2] == ("issue", "list") else (0, ""))[1]
+    assert r.resume_answered() == [8]
+    assert r.take_answer(8) == "b" and r.take_answer(9) is None and r.take_answer(10) is None
+    _la = next(a for a in _gh if a[:2] == ("issue", "list"))
+    assert "blocked" in _la and "ready-for-human" in _la
+    r.gh = lambda *a, **k: (1, "gh down")
+    assert r.resume_answered() == []
+finally:
+    for k, v in _saved.items(): setattr(r, k, v)
+    _oq.post = _oq_post
+# remote_resume: the answer goes to the same session; send fails / no session -> a new session with the issue thread
+sent, starts = [], []
+_st = lambda n, task, cwd: starts.append(task) or {"ok": True, "session": "session_new", "url": "u"}
+done = lambda: {"state": "done", "line": "RESULT: DONE https://p"}
+assert r.remote_resume(7, "pack", False, "session_w", "green", lambda s, x: sent.append((s, x)) or {"ok": True}, _st, done, lambda s: None, lambda: 0) == "RESULT: DONE https://p"
+assert sent[0][0] == "session_w" and "green" in sent[0][1] and "RESULT: DONE" in sent[0][1] and not starts
+kept = []
+assert r.remote_resume(7, "pack", False, "session_w", "green", lambda s, x: {"ok": False}, _st, done, lambda s: None, lambda: 0, on_start=kept.append) == "RESULT: DONE https://p"
+assert len(starts) == 1 and "green" in starts[0] and "gh issue view 7" in starts[0] and "lane/7" in starts[0] and kept[0]["session"] == "session_new"
+assert r.remote_resume(7, "pack", False, "", "green", lambda s, x: 1 / 0, _st, done, lambda s: None, lambda: 0) == "RESULT: DONE https://p"
+assert r.remote_resume(7, "pack", False, "", "g", None, lambda n, t, c: {"ok": False, "error": "limit"}, done, lambda s: None, lambda: 0).startswith("RESULT: STUCK")
+assert r.remote_resume(7, "pack", False, "s", "g", lambda s, x: {"ok": True}, _st, lambda: {"state": "question", "line": "QUESTION: c?"}, lambda s: None, lambda: 0) == "QUESTION: c?"
+try: r.remote_resume(7, "pack", False, "s", "g", lambda s, x: {"ok": True}, _st, lambda: {"state": "working"}, lambda s: None, lambda: 0, ended=lambda: True); assert False
+except r.Ended: pass
+# process_locked: a stored answer resumes the saved session instead of starting a new worker; a QUESTION parks via park_remote
+_pl = (r.HERE / "runner.py").read_text(encoding="utf-8").split("def process_locked", 1)[1].split("def close_windows", 1)[0]
+assert "remote_resume(" in _pl and "take_answer(n)" in _pl and "park_remote(n, res)" in _pl
+_pr = (r.HERE / "runner.py").read_text(encoding="utf-8").split("\ndef process(", 1)[1].split("\ndef process_locked", 1)[0]
+assert "pending_answer(n)" in _pr                                  # a resumed issue always runs in the cloud (its session is there)
+_wd = (r.HERE / "watchdog.py").read_text(encoding="utf-8")
+assert "resume_tick()" in _wd.split("def tick():", 1)[1].split("\ndef ", 1)[0] and "R.resume_answered()" in _wd.split("def resume_tick():", 1)[1].split("\ndef ", 1)[0]
+print("ok #135 cloud question parks, answer resumes")
+# end to end: stored answer -> process_locked sends it to the saved session (no new start); a new QUESTION parks again
+_saved = {k: getattr(r, k) for k in ("gh", "run", "set_labels", "stat", "set_where", "issue_over", "tell_orchestrator")}
+_saved_remote = (r.remote.start, r.remote.send, r.remote.status)
+_sent, _starts, _lab = [], [], []
+r.gh = lambda *a, **k: (0, ""); r.run = lambda *a, **k: (0, ""); r.stat = lambda *a, **k: None; r.set_where = lambda *a: None
+r.issue_over = lambda n, since: False; r.tell_orchestrator = lambda t: None
+r.set_labels = lambda n, add=(), remove=(): _lab.append((tuple(add), tuple(remove)))
+r.remote.start = lambda *a: _starts.append(a) or {"ok": True, "session": "x", "url": "u"}
+r.remote.send = lambda s, t: _sent.append((s, t)) or {"ok": True}
+r.remote.status = lambda n, since=None: {"state": "question", "line": "QUESTION: and blue?"}
+_oq.post = lambda *a, **k: ""
+(r.RUNS / "11").mkdir(parents=True, exist_ok=True)
+(r.RUNS / "11" / "remote.json").write_text(json.dumps({"session": "session_old"}))
+r.answer_file(11).write_text(json.dumps({"answer": "green"}))
+try:
+    _res = r.process({"number": 11, "labels": ["pack"]}, "local")       # the pass chose local: the stored answer makes it remote
+finally:
+    for k, v in _saved.items(): setattr(r, k, v)
+    r.remote.start, r.remote.send, r.remote.status = _saved_remote
+    _oq.post = _oq_post
+assert _res.startswith("PARKED"), _res
+assert _sent and _sent[0][0] == "session_old" and "green" in _sent[0][1] and not _starts, (_sent, _starts)
+assert ("blocked", "ready-for-human") in [a for a, _ in _lab] and not r.pending_answer(11)
+print("ok #135 resume end to end")

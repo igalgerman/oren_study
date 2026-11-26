@@ -191,8 +191,80 @@ LOCAL_LANES = int(CFG.get("local_lanes", 1))
 REMOTE_LANES = int(CFG.get("remote_lanes", 0))
 
 def total_lanes():
-    """#133: lanes in total = local + remote (replaces max_parallel)."""
+    """#133: lanes in total = local + remote (replaces max_parallel). #239: remote = the governor's last count (.runs/governor.json, < 15 min old)."""
+    try:
+        gv = json.loads((RUNS / "governor.json").read_text(encoding="utf-8"))
+        if time.time() - gv["at"] < 15 * 60: return LOCAL_LANES + (0 if gv["stop"] else int(gv["lanes"]))
+    except Exception: pass
     return LOCAL_LANES + REMOTE_LANES
+
+# #239 usage governor: cloud lane count follows the 5h window (the panel writes .runs/usage.json every refresh)
+GOV = {"target": float(CFG.get("governor_target", 90)), "min": int(CFG.get("governor_min", 2)), "max": int(CFG.get("governor_max", 8)),
+       "stop": float(CFG.get("governor_stop", 93)), "pace": float(CFG.get("governor_pace", 3.5)), "week_cap": int(CFG.get("governor_week_cap", 4)),
+       "stale_s": 15 * 60, "fallback": REMOTE_LANES}
+
+def _ts(iso):
+    try: return datetime.fromisoformat(str(iso).replace("Z", "+00:00")).timestamp()
+    except Exception: return None
+
+def gov_pace(hist, now, reset, default):
+    """Pure (#239): 5h % used per hour per busy remote lane over the last hour of samples [{at, pct, reset, busy}] of the SAME window. Too little data -> default."""
+    s = [h for h in hist if now - 3600 <= h["at"] <= now and h.get("reset") == reset]
+    if len(s) < 2 or s[-1]["at"] - s[0]["at"] < 600: return default
+    busy = sum(h.get("busy", 0) for h in s) / len(s)
+    if busy < 0.5: return default
+    return max(0.0, (s[-1]["pct"] - s[0]["pct"]) / ((s[-1]["at"] - s[0]["at"]) / 3600) / busy)
+
+def governor(usage, hist, now, g=None):
+    """Pure (#239): usage.json dict (or None) + samples + now -> {lanes, stop, pct, projected, reset, why}.
+    Most remote lanes in [min, max] whose projection at the 5h reset stays <= target (min when even that is above); 5h >= stop -> no new run;
+    week above its even pace +10 pts -> at most week_cap lanes; usage missing or older than 15 min -> config remote_lanes."""
+    g = {**GOV, **(g or {})}
+    at = _ts((usage or {}).get("at"))
+    if not usage or at is None or now - at > g["stale_s"] or usage.get("five_h_pct") is None:
+        return {"lanes": g["fallback"], "stop": False, "pct": None, "projected": None, "reset": None, "why": "no fresh usage: config remote_lanes"}
+    pct = float(usage["five_h_pct"]); reset = _ts(usage.get("five_h_reset")) or now
+    hours = max(0.0, (reset - now) / 3600)
+    pace = gov_pace(hist, now, usage.get("five_h_reset"), g["pace"])
+    proj = lambda n: pct + pace * n * hours
+    lanes = max([n for n in range(g["min"], g["max"] + 1) if proj(n) <= g["target"]] or [g["min"]])
+    why = f"pace {pace:.1f}%/h per lane"
+    wk, wreset = usage.get("week_pct"), _ts(usage.get("week_reset"))
+    if wk is not None and wreset is not None:
+        even = 100 * min(1.0, max(0.0, 1 - (wreset - now) / (7 * 86400)))
+        if float(wk) > even + 10 and lanes > g["week_cap"]:
+            lanes = g["week_cap"]; why += f"; week {float(wk):.0f}% > even {even:.0f}%+10: cap {g['week_cap']}"
+    stop = pct >= g["stop"]
+    if stop: why = f"5h {pct:.0f}% >= {g['stop']:.0f}%: no new run"
+    return {"lanes": lanes, "stop": stop, "pct": pct, "projected": proj(lanes), "reset": reset, "why": why}
+
+def governor_text(gv):
+    """'governor: N lanes (5h X% -> ~Y% at HH:MM)' (local time)."""
+    if gv["pct"] is None: return f"governor: {gv['lanes']} lanes ({gv['why']})"
+    s = f"governor: {0 if gv['stop'] else gv['lanes']} lanes (5h {gv['pct']:.0f}% -> ~{min(100, gv['projected']):.0f}% at {time.strftime('%H:%M', time.localtime(gv['reset']))})"
+    return s + (" · STOP" if gv["stop"] else "")
+
+def governor_pass(remote_busy, now=None):
+    """Read .runs/usage.json, keep a sample in .runs/usage_hist.jsonl, write .runs/governor.json. Returns the governor dict; never raises."""
+    now = now or time.time()
+    try: usage = json.loads((RUNS / "usage.json").read_text(encoding="utf-8"))
+    except Exception: usage = None
+    hist = []
+    try:
+        for l in (RUNS / "usage_hist.jsonl").read_text(encoding="utf-8").splitlines()[-300:]:
+            try: hist.append(json.loads(l))
+            except Exception: pass
+    except Exception: pass
+    gv = governor(usage, hist, now)
+    if DRY: return gv
+    try:
+        RUNS.mkdir(exist_ok=True)
+        if gv["pct"] is not None:
+            hist = [h for h in hist if now - h.get("at", 0) < 2 * 3600] + [{"at": now, "pct": gv["pct"], "reset": usage.get("five_h_reset"), "busy": remote_busy}]
+            (RUNS / "usage_hist.jsonl").write_text("".join(json.dumps(h) + "\n" for h in hist), encoding="utf-8")
+        (RUNS / "governor.json").write_text(json.dumps({**gv, "text": governor_text(gv), "at": now}), encoding="utf-8")
+    except Exception: pass
+    return gv
 
 def assign_where(chosen, local_busy, remote_busy, local_lanes, remote_lanes):
     """Pure (#133): chosen issues (in priority order) -> [(issue, 'local'|'remote')]. A free local lane first, then a free remote slot; the rest wait."""
@@ -700,6 +772,69 @@ def remote_fix(n, session, review_text, send, start, get_status, sleep, clock, t
         return f"RESULT: STUCK remote fix silent for {timeout_s // 3600}h"
     return st["line"]
 
+def remote_resume(n, lane, bug, session, answer, send, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None):
+    """#135: the owner answered the cloud worker's QUESTION: the answer goes to the same session (send); no session or send failed ->
+    a new cloud session that reads the issue thread and continues lane/<n>. -> marker line, like remote_worker."""
+    text = (f"OWNER ANSWER to your QUESTION on #{n}: {answer}\nContinue the issue with this answer. Report on the issue as before, on its own line: "
+            "`RESULT: DONE <PR url>`, `RESULT: STUCK <why>`, or `QUESTION: <short question, with options>` and stop.")
+    if not (session and send(session, text).get("ok")):
+        s = start(n, remote_worker_prompt(n, lane, bug) + f"\nThe owner already answered a QUESTION on this issue (read its comments): {answer}\n"
+                  f"If lane/{n} is on GitHub, continue it (`git fetch {REMOTE} lane/{n} && git checkout lane/{n}`; no second PR).", CFG.get("main_checkout", "."))
+        if not s.get("ok"):
+            return f"RESULT: STUCK remote resume start failed: {s.get('error', '?')}"
+        if on_start: on_start(s)
+    st = wait_remote(get_status, sleep, clock, timeout_s, poll_s, ended)
+    if st["state"] == "ended": raise Ended("cloud resume")
+    if st["state"] == "timeout":
+        return f"RESULT: STUCK remote worker silent for {timeout_s // 3600}h after the owner's answer"
+    return st["line"]
+
+def park_remote(n, line):
+    """#135: the cloud session posted QUESTION: on the issue: park it (lane freed), the question goes to the owner, the orchestrator is told."""
+    set_labels(n, add=["blocked", "ready-for-human"], remove=["in-progress"])
+    gh("issue", "comment", str(n), "--body", "Parked (cloud): the cloud session waits for the owner (its question is above). The lane is free.\n\n"
+       "Answer here on the issue (or through the question window / the orchestrator): the runner sends the answer to the same session and the issue resumes.")
+    try:
+        import owner_q; owner_q.post(f"remote-{n}", line)          # 'needs you': questions issue -> question window, panel, dashboard
+    except Exception: pass
+    tell_orchestrator(f"#{n} parked: its cloud session asks the owner: {line[:300]} - a question window asks him; "
+                      f"his answer posted on #{n} resumes the session by itself (watchdog, within a minute).")
+    raise Parked(f"cloud session of #{n}: {line[:200]}")
+
+def answer_file(n):
+    return RUNS / str(n) / "answer.json"
+
+def pending_answer(n):
+    return answer_file(n).exists()
+
+def take_answer(n):
+    """The stored owner answer for the resumed run (read once), or None."""
+    try: a = json.loads(answer_file(n).read_text(encoding="utf-8")).get("answer")
+    except (OSError, ValueError): return None
+    answer_file(n).unlink(missing_ok=True)
+    return a
+
+def resume_remote(n, answer):
+    """#135: unpark a cloud issue: keep the answer for the next run (it sends it to the session), labels back, the next pass starts it."""
+    (RUNS / str(n)).mkdir(parents=True, exist_ok=True)
+    answer_file(n).write_text(json.dumps({"answer": answer}, ensure_ascii=False), encoding="utf-8")
+    set_labels(n, remove=["blocked", "ready-for-human"])
+    gh("issue", "comment", str(n), "--body", redact("Runner: the owner answered; the cloud session gets the answer and the issue resumes."))
+    tell_orchestrator(f"#{n} unparked: the owner answered ({answer[:200]}); the runner resumes its cloud session.")
+
+def resume_answered():
+    """#135 watchdog tick: parked cloud issues (blocked + ready-for-human, run in the cloud) whose QUESTION has an answer -> resume. -> numbers."""
+    rc, out = gh("issue", "list", "--state", "open", "--label", "blocked", "--label", "ready-for-human", "--limit", "50", "--json", "number,comments")
+    try: issues = json.loads(out) if rc == 0 and out.strip() else []
+    except ValueError: return []
+    done = []
+    for i in issues:
+        if where_of(i["number"]) != "remote": continue
+        a = remote.answer_after_question(i.get("comments") or [])
+        if a:
+            resume_remote(i["number"], a); done.append(i["number"])
+    return done
+
 def post_polish(n, lane, pr, notes):
     """BLUE notes: one line each (with the PR link) on the ONE rolling 'Polish backlog (<lane>)' issue; created when missing. Never one issue per note."""
     lines = polish_lines(notes, pr)
@@ -888,6 +1023,7 @@ def set_where(n, where):
 
 def process(issue, where="local"):
     n = issue["number"]
+    if pending_answer(n): where = "remote"          # #135: resumed after the owner's answer: its session is in the cloud
     try:
         with FileLock(f"issue-{n}"):
             if lane_of(issue["labels"]) == "core":
@@ -932,11 +1068,18 @@ def process_locked(issue, where="local"):
         def utc():
             return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         over = lambda: issue_over(n, started)                   # #234: every wait loop ends the run when the issue is closed / PR merged
-        def remote_question(res):                        # the session already posted it on the issue: park, the owner answers there
-            if res.startswith("QUESTION:"):
-                set_labels(n, add=["blocked", "ready-for-human"], remove=["in-progress"])
-                raise Parked(f"cloud session of #{n}: {res[:200]}")
-        if where == "remote":                            # #133: the cloud worker needs no worktree here; it is made after the review (resolve uses it, #134)
+        def remote_question(res):                        # the session already posted it on the issue: park, the owner answers there (#135)
+            if res.startswith("QUESTION:"): park_remote(n, res)
+        def saved_session():
+            try: return json.loads((d / "remote.json").read_text(encoding="utf-8")).get("session", "")
+            except (OSError, ValueError): return ""
+        answer = take_answer(n) if where == "remote" else None
+        if answer:                                       # #135: parked on a QUESTION, the owner answered: same session continues
+            res = remote_resume(n, lane, "bug" in issue["labels"], saved_session(), answer, remote.send, remote.start,
+                                lambda: remote.status(n, since=started), time.sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over)
+            remote_question(res)
+            out = res
+        elif where == "remote":                          # #133: the cloud worker needs no worktree here; it is made after the review (resolve uses it, #134)
             res = remote_worker(n, lane, "bug" in issue["labels"], remote.start, lambda: remote.status(n, since=started),
                                 time.sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over)
             remote_question(res)
@@ -983,9 +1126,7 @@ def process_locked(issue, where="local"):
             red = text or rv[-1500:]
             if where == "remote":                  # #134: FIX goes back to the cloud worker session (or a new cloud fix session)
                 since = utc()
-                try: sess = json.loads((d / "remote.json").read_text(encoding="utf-8")).get("session", "")
-                except (OSError, ValueError): sess = ""
-                res = remote_fix(n, sess, rv, remote.send, remote.start, lambda: remote.status(n, since=since), time.sleep, time.time,
+                res = remote_fix(n, saved_session(), rv, remote.send, remote.start, lambda: remote.status(n, since=since), time.sleep, time.time,
                                  3 * 3600, 60, on_start=save_session, ended=over)
                 remote_question(res)
             else:
@@ -1117,16 +1258,19 @@ def main():
     rc, out = gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: print("gh failed:", out); return 1
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
-    chosen = [c for c in select(issues, total_lanes(), MAX_CORE, EXPRESS) if not FileLock(f"issue-{c['number']}").held_by_other()]
     busy = [i["number"] for i in issues if "in-progress" in i["labels"]]
     remote_busy = sum(where_of(b) == "remote" for b in busy)
-    wmap = {c["number"]: w for c, w in assign_where(chosen, len(busy) - remote_busy, remote_busy, LOCAL_LANES, REMOTE_LANES)}
+    gv = governor_pass(remote_busy)                     # #239: remote lane count from the 5h usage
+    remote_lanes = gv["lanes"]
+    chosen = [] if gv["stop"] else [c for c in select(issues, LOCAL_LANES + remote_lanes, MAX_CORE, EXPRESS) if not FileLock(f"issue-{c['number']}").held_by_other()]
+    wmap = {c["number"]: w for c, w in assign_where(chosen, len(busy) - remote_busy, remote_busy, LOCAL_LANES, remote_lanes)}
     chosen = [c for c in chosen if c["number"] in wmap]
     cutoff = CFG["stuck_hours"] * 3600
     stuck = [i for i in issues if "in-progress" in i["labels"] and not FileLock(f"issue-{i['number']}").held_by_other()
              and (time.time() - datetime.fromisoformat(i["updatedAt"].replace("Z", "+00:00")).timestamp()) > cutoff]
     if DRY:
         print(f"[dry-run] repo={REPO} branch={BRANCH} model={MODEL} local_lanes={LOCAL_LANES} remote_lanes={REMOTE_LANES} max_core={MAX_CORE}")
+        print(f"[dry-run] {governor_text(gv)}; {gv['why']}")
         print(f"[dry-run] open issues: {len(issues)}; in-progress: {sum('in-progress' in i['labels'] for i in issues)}")
         for c in chosen: print(f"[dry-run] would start #{c['number']} ({lane_of(c['labels'])}): {c['title']}")
         for s in stuck: print(f"[dry-run] would block stuck #{s['number']} (in-progress, idle > {CFG['stuck_hours']}h, no runner process)")
