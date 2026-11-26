@@ -41,6 +41,14 @@ _q2 = [{"number": 5, "labels": ["pack", "ready-for-agent"], "createdAt": "1"},
 assert [i["number"] for i in _sel(_q2, 1)] == [6]
 print("ok bugs-first")
 
+# #177: hand work labelled 'manual' never takes a lane and is never started by the runner
+_q3 = [{"number": 10, "labels": ["manual", "in-progress", "core"], "createdAt": "1"},
+       {"number": 11, "labels": ["manual"], "createdAt": "1"},
+       {"number": 12, "labels": ["manual", "ready-for-agent"], "createdAt": "1"},
+       {"number": 13, "labels": ["core", "ready-for-agent"], "createdAt": "2"}]
+assert [i["number"] for i in _sel(_q3, 1)] == [13]
+print("ok manual")
+
 # questions + parking
 NL = chr(10)
 def scr(*lines): return NL.join(lines) + NL

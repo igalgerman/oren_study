@@ -73,13 +73,13 @@ def select(issues, max_parallel, max_core=1, express_lanes=0):
     #72: label 'express' = owner-approved. It gets its own extra lane (express_lanes), starts before any other ready issue,
     and an express core issue in that lane ignores max_core. When the express lane is busy it uses a normal slot."""
     open_nums = {i["number"] for i in issues}
-    active = [i for i in issues if "in-progress" in i["labels"]]
+    active = [i for i in issues if "in-progress" in i["labels"] and "manual" not in i["labels"]]   # #177: hand work (label manual) takes no lane
     core_running = sum(lane_of(i["labels"]) == "core" for i in active)
     exp_active = sum("express" in i["labels"] for i in active)
     exp_free = max(0, express_lanes - exp_active)
     slots = max_parallel - (len(active) - min(exp_active, express_lanes))
     ready = [i for i in issues if "ready-for-agent" in i["labels"]
-             and "in-progress" not in i["labels"] and "blocked" not in i["labels"]
+             and "in-progress" not in i["labels"] and "blocked" not in i["labels"] and "manual" not in i["labels"]
              and not any(b in open_nums for b in blockers(i.get("body")))]
     chosen = []
     for i in sorted(ready, key=lambda i: ("express" not in i["labels"], "bug" not in i["labels"], priority_of(i["labels"]), i["createdAt"])):   # express first, bugs, then P0..P3, then oldest
