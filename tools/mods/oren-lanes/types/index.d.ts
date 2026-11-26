@@ -1,28 +1,28 @@
+/** One panel line; tone red = stuck/blocked or owner needed, amber = waits > 30 min or off pace. */
+export type Row = { text: string; tone: 'red' | 'amber' | 'dim' | '' }
+
+/** #296: the panel, top = most important. */
+export type Panel = {
+  header: Row[]
+  needsYou: Row | null
+  pc: Row | null
+  lanesHead: string
+  starts: Row
+  lanes: Row[]
+  prs: Row
+  next: Row[]
+  nextMore: number
+  doneHead: string
+  done: Row[]
+  forecast: Row
+  issues: { lanes: number[]; next: number[]; done: number[]; you: number[] }
+  youCount: number
+  reviewCount: number
+}
+
 export type OrenLanesWindow = { name: string; state: string }
-export type OrenLanesGroup = { count: number; titles: string[] }
 export type OrenLanesData = {
-  windows: OrenLanesWindow[]
-  groups: {
-    running: OrenLanesGroup
-    ready: OrenLanesGroup
-    waiting: OrenLanesGroup
-    blocked: OrenLanesGroup
-    needsYou: OrenLanesGroup
-    triage: OrenLanesGroup
-  }
-  lastLog: string
-  usage?: string
-  governor?: string
-  flow?: string[]
-  done?: string
-  lanes?: string[]
-  view?: { lanes: string[]; you: string[]; orch?: string[]; next: string[]; done: string[] }
-  stats?: string[]
-  observer?: string
-  localMax?: number
-  cloudCount?: number
-  remoteMax?: number
-  cloud?: string[]
+  panel: Panel | null
   errors: string[]
   updatedAt: number
 }
