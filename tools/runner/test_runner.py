@@ -378,8 +378,8 @@ assert r.model_name(["model:fable"]) == "fable" and r.model_name([]) == "sonnet"
 print("ok model labels")
 
 # #133: remote lanes (local_lanes / remote_lanes), remote worker start, results from GitHub
-assert r.CFG["local_lanes"] == 1 and r.CFG["remote_lanes"] == 4 and "max_parallel" not in r.CFG
-assert r.total_lanes() == 5
+assert r.CFG["local_lanes"] == 0 and r.CFG["remote_lanes"] == 4 and "max_parallel" not in r.CFG
+assert r.total_lanes() == 4
 ch = [I(1, [R, "pack"]), I(2, [R, "pack"]), I(3, [R, "pack"])]
 assert [(i["number"], w) for i, w in r.assign_where(ch, 0, 0, 1, 4)] == [(1, "local"), (2, "remote"), (3, "remote")]
 assert [(i["number"], w) for i, w in r.assign_where(ch, 1, 0, 1, 4)] == [(1, "remote"), (2, "remote"), (3, "remote")]   # local busy -> remote
