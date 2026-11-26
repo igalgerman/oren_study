@@ -98,6 +98,24 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
   const bp = await p.evaluate(() => { const d = window.TAL.dailyEnsure(); return { n: d.t.length - (d.bs | 0), circles: document.querySelectorAll('#sHome .tpath .tstep2').length, go: !!document.querySelector('#sHome .bigbtn.huge') }; });
   ok('another path: 2-3 new steps, only they are on the path', bp.n >= 2 && bp.n <= 3 && bp.circles === bp.n && bp.go, JSON.stringify(bp));
   await L.shot(p, { path: L.SHOTDIR + '/friend-' + L.variant + '.png' });
+  // --- #433: an error in the middle of a mission: the friend says "oops, back to our path", home, progress kept, error logged ---
+  const OOPS = 'אוֹי, חוֹזְרִים לַמַּסָּע';
+  await p.evaluate(() => { const T = window.TAL, a = T.ACT['read-first'] || Object.values(T.ACT).find(x => !x.avail || x.avail()); a.run(() => {}); }); await sleep(400);
+  const inAct = await p.evaluate(() => !document.querySelector('#sTal').hidden || !document.querySelector('#sPlay').hidden);
+  const g0 = await p.evaluate(() => { const O = window.OREN; O.save.gems = (O.save.gems | 0) + 7; return O.save.gems; });   // not saved yet
+  s = await said(async () => { await p.addScriptTag({ content: 'setTimeout(function boom433(){throw new Error("test433 boom")},0)\n//# sourceURL=boom433.js' }); }, 600);
+  const rec = await p.evaluate(() => { const O = window.OREN; let st = {}; try { st = JSON.parse(localStorage.getItem('oren4-v1') || '{}'); } catch (e) {}
+    const e = (O.save.iss || []).find(x => x.k === 'err' && /test433/.test(x.m || ''));
+    return { home: !document.querySelector('#sHome').hidden, tal: !document.querySelector('#sTal').hidden, play: !document.querySelector('#sPlay').hidden,
+      gems: O.save.gems, stored: st.gems, last: window.FRIEND.last, m: e && e.m }; });
+  ok('#433 error in a mission: home appears', inAct && rec.home && !rec.tal && !rec.play, JSON.stringify({ inAct, rec }));
+  ok('#433 progress was saved first', rec.gems === g0 && rec.stored === g0, JSON.stringify({ g0, rec }));
+  ok('#433 the friend says "oops, back to our path" (nikud, in the voice list)', rec.last === OOPS && await has(s, OOPS) && (await p.evaluate(() => window.FRIEND.speakList())).includes(OOPS), JSON.stringify({ last: rec.last, s }));
+  ok('#433 the error is logged with file and line', /test433 boom @ boom433 boom433\.js:\d+:\d+/.test(rec.m || ''), rec.m);
+  const home2 = await p.evaluate(() => { window.OREN.showMap(); return 1; }); await sleep(100);
+  await p.addScriptTag({ content: 'setTimeout(function boom433b(){throw new Error("test433 home")},0)' }); await sleep(300);
+  ok('#433 an error on the home screen does not loop (home stays)', home2 && await p.evaluate(() => !document.querySelector('#sHome').hidden));
+  errs.splice(0, errs.length, ...errs.filter(m => !/test433/.test(m)));
   ok('no page errors', !errs.length, errs.join(' | '));
   await b.close(); L.finish('friend', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT friend 0 1'); process.exitCode = 1; });

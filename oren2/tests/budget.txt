@@ -14,3 +14,5 @@ voice-stop 60             # #401 adds a 1200-char text spoken in parts: ~10 s
 health-desktop 90         # breaks, meals, reminders + #353 parent message with simulated time: ~41 s alone
 health-phone 90           # same file on the phone viewport: ~40 s alone
 eventlog 60               # #348 event log: worker + fake D1, then the real page through the worker: ~15 s
+friend-desktop 60         # #433 adds the error-in-a-mission check (one thrown error, ~2 s): ~25 s in all
+friend-phone 60           # same file on the phone viewport
