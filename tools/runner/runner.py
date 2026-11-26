@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import remote
 ROOT = HERE.parent.parent                      # repo checkout (tools/runner/../..)
 RUNS = HERE / ".runs"
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -73,13 +75,13 @@ def select(issues, max_parallel, max_core=1, express_lanes=0):
     #72: label 'express' = owner-approved. It gets its own extra lane (express_lanes), starts before any other ready issue,
     and an express core issue in that lane ignores max_core. When the express lane is busy it uses a normal slot."""
     open_nums = {i["number"] for i in issues}
-    active = [i for i in issues if "in-progress" in i["labels"]]
+    active = [i for i in issues if "in-progress" in i["labels"] and "manual" not in i["labels"]]   # #177: hand work (label manual) takes no lane
     core_running = sum(lane_of(i["labels"]) == "core" for i in active)
     exp_active = sum("express" in i["labels"] for i in active)
     exp_free = max(0, express_lanes - exp_active)
     slots = max_parallel - (len(active) - min(exp_active, express_lanes))
     ready = [i for i in issues if "ready-for-agent" in i["labels"]
-             and "in-progress" not in i["labels"] and "blocked" not in i["labels"]
+             and "in-progress" not in i["labels"] and "blocked" not in i["labels"] and "manual" not in i["labels"]
              and not any(b in open_nums for b in blockers(i.get("body")))]
     chosen = []
     for i in sorted(ready, key=lambda i: ("express" not in i["labels"], "bug" not in i["labels"], priority_of(i["labels"]), i["createdAt"])):   # express first, bugs, then P0..P3, then oldest
@@ -180,6 +182,56 @@ def resolve_prompt(n, files):
             "run `python3 build_talents.py` (in oren2/) and the full tests (`oren2/tests/run.sh`; rerun a flaky suite alone once), commit, "
             f"and `git push {REMOTE} lane/{n}`. Never force-push, never rewrite {BRANCH}, never push to {BRANCH}. "
             "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
+
+LOCAL_LANES = int(CFG.get("local_lanes", 1))
+REMOTE_LANES = int(CFG.get("remote_lanes", 0))
+
+def total_lanes():
+    """#133: lanes in total = local + remote (replaces max_parallel)."""
+    return LOCAL_LANES + REMOTE_LANES
+
+def assign_where(chosen, local_busy, remote_busy, local_lanes, remote_lanes):
+    """Pure (#133): chosen issues (in priority order) -> [(issue, 'local'|'remote')]. A free local lane first, then a free remote slot; the rest wait."""
+    lf, rf, out = max(0, local_lanes - local_busy), max(0, remote_lanes - remote_busy), []
+    for i in chosen:
+        if lf > 0: lf -= 1; out.append((i, "local"))
+        elif rf > 0: rf -= 1; out.append((i, "remote"))
+        elif "express" in i.get("labels", []): out.append((i, "remote" if remote_lanes > 0 else "local"))   # #72: select() gave it the extra express slot: all lanes busy still starts it
+    return out
+
+def remote_worker_prompt(n, lane, bug=False):
+    """Task for a cloud worker (#133): no herdr, no local paths. It reports through an issue comment (the runner polls GitHub)."""
+    base = (f"You are an unattended worker for GitHub issue #{n} in repo {REPO} (lane: {lane}). Read CLAUDE.md and FLOW.md, then the issue "
+            f"(`gh issue view {n} --repo {REPO} --comments`). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n")
+    if bug:
+        base += "This is a BUG: use the mattpocock-skills:diagnosing-bugs skill, then tdd: reproduce it with a failing test, then fix it; say the root cause in the PR body.\n"
+    return base + (f"Work on branch lane/{n} (create it from {BRANCH}). Follow the worker rules in FLOW.md: run the tests you touched, commit "
+                   f"(not the built oren2/index.html or oren2/cf/public/index.html), `git push -u {REMOTE} lane/{n}`, and open a PR to {BRANCH} "
+                   f"with `gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Fixes #{n}`. Never deploy, never force-push, never push to {BRANCH}.\n"
+                   f"You have no terminal the owner can see, so report ONLY through an issue comment: when finished post `gh issue comment {n} --repo {REPO} --body \"RESULT: DONE <PR url>\"`; "
+                   f"if blocked post `RESULT: STUCK <why>`; if you need the owner post `QUESTION: <short question, with options>` and stop. "
+                   "The comment must have that line on its own line.")
+
+def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60):
+    """Pure loop (#133): poll the GitHub-based status until it is done/stuck/question. Returns that status dict, or {'state': 'timeout'}."""
+    start = clock()
+    while True:
+        st = get_status()
+        if st.get("state") in ("done", "stuck", "question"):
+            return st
+        if clock() - start >= timeout_s:
+            return {"state": "timeout", "line": "", "pr": st.get("pr")}
+        sleep(poll_s)
+
+def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60):
+    """Start the cloud worker and wait for its comment. Returns the marker line (`RESULT: ...` / `QUESTION: ...`) like agent() does."""
+    s = start(n, remote_worker_prompt(n, lane, bug), CFG.get("main_checkout", "."))
+    if not s.get("ok"):
+        return f"RESULT: STUCK remote start failed: {s.get('error', '?')}"
+    st = wait_remote(get_status, sleep, clock, timeout_s, poll_s)
+    if st["state"] == "timeout":
+        return f"RESULT: STUCK remote worker silent for {timeout_s // 3600}h ({s.get('url', '')})"
+    return st["line"]
 
 def find_marker(text, prefix):
     """Last RESULT:/VERDICT: line on a terminal screen (skips the echoed prompt: it has backticks / placeholders)."""
@@ -340,19 +392,32 @@ def pid_alive(pid):
     return f" {pid} " in out
 
 class FileLock:
-    """Cross-process lock: lock file holding our pid; stale (dead pid) locks are taken over. wait=0: give up at once."""
-    def __init__(self, name, wait=0):
-        self.path, self.wait = RUNS / f"{name}.lock", wait
-    def held_by_other(self):
+    """Cross-process lock: lock file holding our pid (+ #181: a note and the time taken); stale (dead pid) locks are taken over.
+    wait=0: give up at once."""
+    def __init__(self, name, wait=0, note=""):
+        self.path, self.wait, self.note = RUNS / f"{name}.lock", wait, note
+    def info(self):
+        """-> (pid, note, since) of the current holder, or None. Old files hold only a pid."""
         try:
-            return pid_alive(int(self.path.read_text().strip()))
-        except (OSError, ValueError):
-            return False
+            parts = self.path.read_text(encoding="utf-8").split("\n")
+            pid = int(parts[0].strip())
+        except (OSError, ValueError, IndexError):
+            return None
+        note = parts[1].strip() if len(parts) > 1 else ""
+        try: since = float(parts[2])
+        except (IndexError, ValueError):
+            try: since = self.path.stat().st_mtime
+            except OSError: since = time.time()
+        return pid, note, since
+    def held_by_other(self):
+        i = self.info()
+        return bool(i) and pid_alive(i[0])
     def __enter__(self):
         RUNS.mkdir(exist_ok=True)
         while True:
             try:
-                fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY); os.write(fd, str(os.getpid()).encode()); os.close(fd)
+                fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, f"{os.getpid()}\n{self.note}\n{time.time():.0f}".encode()); os.close(fd)
                 return self
             except FileExistsError:
                 if not self.held_by_other():
@@ -405,6 +470,12 @@ def parent_args():
         p = hc_json("get", TERM, "--json").get("parent", "")
     return ["--parent", p] if p else []
 
+def code_mode(n):
+    """Code Mode trial (owner, 26 Nov): issues whose number is a multiple of code_mode_every run their Claude windows with
+    CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 (interactive sessions only; 0 = off). Recorded in the 'start' stat for comparison."""
+    k = int(CFG.get("code_mode_every", 0) or 0)
+    return k > 0 and int(n) % k == 0
+
 def agent(name, prompt, cwd, tools, log, marker, n, role, model=MODEL):
     """Run an INTERACTIVE claude in a herdr terminal the owner can open; return (screen text, marker line).
     Terminals are closed after success and left open when BLOCKED/PARKED. A window of that name that is still live (parked earlier) is re-attached, not restarted.
@@ -419,7 +490,8 @@ def agent(name, prompt, cwd, tools, log, marker, n, role, model=MODEL):
     if not live(name):
         # bash wrapper only puts the python3 shim on PATH; the prompt goes after `--` ("--allowedTools" is variadic)
         cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), "--label", f"issue={n}", "--label", f"role={role}", *space_args(), *parent_args(),
-               BASH, "-c", 'export PATH="$1:$PATH"; shift; exec "$@"', "_", CFG["extra_path"],
+               BASH, "-c", 'export PATH="$1:$PATH"; shift; "$@"', "_", CFG["extra_path"],
+               *(["env", "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1"] if code_mode(n) else []),   # Code Mode trial (owner, 26 Nov)
                shutil.which("claude") or "claude", "--model", model, "--permission-mode", "auto",
                "--allowedTools", *tools, "--", prompt + INTERACTIVE_NOTE]
         rc, out = run(cmd, log=log)
@@ -609,7 +681,7 @@ def ci_integrate(n, wt, log):
         rid = run(["gh", "run", "list", "--repo", REPO, "--branch", f"lane/{n}", "--limit", "1", "--json", "databaseId", "-q", ".[0].databaseId"], log=log)[1].strip()
         if rid.isdigit(): run(["gh", "run", "rerun", rid, "--failed", "--repo", REPO], log=log)
     def merge():
-        with FileLock("integrate", wait=True):                   # #166: the lock covers only the merge itself
+        with FileLock("integrate", wait=True, note=f"#{n} CI merge"):                   # #166: the lock covers only the merge itself
             rc_, o_ = gh("pr", "merge", str(pr), "--squash", log=log)
         return True if rc_ == 0 else ("conflict" if merge_conflict(o_) else False)
     res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp)
@@ -659,49 +731,72 @@ class core_slot:
     def __exit__(self, *a):
         self.lock.__exit__()
 
-def process(issue):
+def where_of(n):
+    """'remote' when this issue's worker runs in the cloud (#133): .runs/<n>/where, written when the run starts."""
+    try: return (RUNS / str(n) / "where").read_text().strip() or "local"
+    except OSError: return "local"
+
+def set_where(n, where):
+    (RUNS / str(n)).mkdir(parents=True, exist_ok=True)
+    (RUNS / str(n) / "where").write_text(where)
+
+def process(issue, where="local"):
     n = issue["number"]
     try:
         with FileLock(f"issue-{n}"):
             if lane_of(issue["labels"]) == "core":
                 with core_slot():                   # at most max_core core issues run; an extra one waits here, it does not fail
-                    return process_locked(issue)
-            return process_locked(issue)
+                    return process_locked(issue, where)
+            return process_locked(issue, where)
     except Blocked:
         return "BLOCKED: already running"
 
-def process_locked(issue):
+def process_locked(issue, where="local"):
     n = issue["number"]; lane = lane_of(issue["labels"])
     d = RUNS / str(n); d.mkdir(parents=True, exist_ok=True)
+    set_where(n, where)
     log = d / "run.log"
     wt = Path(CFG["worktree_prefix"] + str(n))
     wm, rm = model_of(issue["labels"]), reviewer_model(issue["labels"])
+    started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")      # remote: only issue comments after this count as the cloud worker's report
     try:
-        stat(n, lane, "start", model=model_name(issue["labels"]))
-        set_labels(n, add=["in-progress"]); gh("issue", "comment", str(n), "--body", f"Runner: started ({lane} lane, worker {model_name(issue['labels'])}, reviewer {rm}).")
+        stat(n, lane, "start", model=model_name(issue["labels"]), where=where, code_mode=code_mode(n))
+        set_labels(n, add=["in-progress"]); gh("issue", "comment", str(n), "--body", f"Runner: started ({lane} lane, {where}, worker {model_name(issue['labels'])}, reviewer {rm}).")
         run(["git", "fetch", "-q", REMOTE], cwd=ROOT, log=log)
-        pushed = bool(find_pr(n)) or bool(run(["git", "ls-remote", "--heads", REMOTE, f"lane/{n}"], cwd=ROOT)[1].strip())
-        resume = any(live(w) for w in (f"issue-{n}", f"issue-{n}-fix", f"review-{n}", f"review-{n}-2"))
-        if resume and wt.exists():
-            pass                                             # parked earlier: re-attach to its windows and worktree, change nothing
-        else:
-            if (wt.exists() or run(["git", "rev-parse", "--verify", f"lane/{n}"], cwd=ROOT)[0] == 0) and not pushed:   # leftovers of an unfinished try
-                remove_worktree(wt, log)
-                run(["git", "branch", "-D", f"lane/{n}"], cwd=ROOT, log=log)
-            if not wt.exists():                              # lane.sh continues from origin/lane/<n> when pushed work exists (never deleted)
-                for attempt in (1, 2):                       # #116: one lane.sh at a time (two at once race on .git/config), one retry
-                    with FileLock("lane", wait=True):
-                        rc, _ = run([BASH, "tools/lane.sh", str(n), BRANCH], cwd=ROOT, env={"REMOTE": REMOTE}, log=log)
-                    if not rc: break
-                    remove_worktree(wt, log); run(["git", "branch", "-D", f"lane/{n}"], cwd=ROOT, log=log)
-                if rc: raise Blocked("lane.sh failed twice (see run.log)")
+        def prep_worktree():
+            pushed = bool(find_pr(n)) or bool(run(["git", "ls-remote", "--heads", REMOTE, f"lane/{n}"], cwd=ROOT)[1].strip())
+            resume = any(live(w) for w in (f"issue-{n}", f"issue-{n}-fix", f"review-{n}", f"review-{n}-2"))
+            if resume and wt.exists():
+                pass                                             # parked earlier: re-attach to its windows and worktree, change nothing
+            else:
+                if (wt.exists() or run(["git", "rev-parse", "--verify", f"lane/{n}"], cwd=ROOT)[0] == 0) and not pushed:   # leftovers of an unfinished try
+                    remove_worktree(wt, log)
+                    run(["git", "branch", "-D", f"lane/{n}"], cwd=ROOT, log=log)
+                if not wt.exists():                              # lane.sh continues from origin/lane/<n> when pushed work exists (never deleted)
+                    for attempt in (1, 2):                       # #116: one lane.sh at a time (two at once race on .git/config), one retry
+                        with FileLock("lane", wait=True):
+                            rc, _ = run([BASH, "tools/lane.sh", str(n), BRANCH], cwd=ROOT, env={"REMOTE": REMOTE}, log=log)
+                        if not rc: break
+                        remove_worktree(wt, log); run(["git", "branch", "-D", f"lane/{n}"], cwd=ROOT, log=log)
+                    if rc: raise Blocked("lane.sh failed twice (see run.log)")
 
-        out, res = agent(f"issue-{n}", worker_prompt(n, lane, bug="bug" in issue["labels"]), wt, WORKER_TOOLS if lane != "review" else REVIEW_LANE_TOOLS,
-                         d / "worker1.log", "RESULT:", n, "worker", wm)
+
+        if where == "remote":                            # #133: the cloud worker needs no worktree here; it is made after the worker pushed (reviewer / resolve use it)
+            res = remote_worker(n, lane, "bug" in issue["labels"], remote.start, lambda: remote.status(n, since=started),
+                                time.sleep, time.time, 3 * 3600, 60)
+            if res.startswith("QUESTION:"):                # the session already posted it on the issue: park, the owner answers there
+                set_labels(n, add=["blocked", "ready-for-human"], remove=["in-progress"])
+                raise Parked(f"cloud session of #{n}: {res[:200]}")
+            out = res
+            if res.startswith("RESULT: DONE"): prep_worktree()
+        else:
+            prep_worktree()
+            out, res = agent(f"issue-{n}", worker_prompt(n, lane, bug="bug" in issue["labels"]), wt, WORKER_TOOLS if lane != "review" else REVIEW_LANE_TOOLS,
+                             d / "worker1.log", "RESULT:", n, "worker", wm)
         (d / "worker1.out").write_text(redact(out), encoding="utf-8")
         if not res.startswith("RESULT: DONE"):
             raise Blocked(res or "worker gave no RESULT line")
-        stat(n, lane, "worker_done")
+        stat(n, lane, "worker_done", where=where)
         if lane == "review":
             gh("issue", "close", str(n), "--comment", "Review report posted above (runner).")
             set_labels(n, remove=["in-progress"]); close_windows(n); return "DONE report posted"
@@ -732,7 +827,7 @@ def process_locked(issue):
                 rc, out = ci_integrate(n, wt, log)           # #166: takes the lock itself, only around `gh pr merge`
                 kind["ci"] = rc == 6
                 return rc, out
-            with FileLock("integrate", wait=True):          # fallback: local merge + full suite
+            with FileLock("integrate", wait=True, note=f"#{n} local merge"):          # fallback: local merge + full suite
                 rc, out = run([BASH, "tools/integrate.sh", f"lane/{n}", BRANCH], cwd=ROOT,
                               env={"REMOTE": REMOTE, "JOBS": "4", "RUNNER": "1"}, log=log, timeout=3600)
                 if rc:
@@ -753,7 +848,7 @@ def process_locked(issue):
             return "BLOCKED: merge conflicts after 2 resolve rounds"
         if outcome[0] == "failed":
             raise Blocked(outcome[2] if outcome[1] == 7 else f"integrate.sh exit {outcome[1]}")
-        with FileLock("integrate", wait=True):
+        with FileLock("integrate", wait=True, note=f"#{n} deploy"):
             stat(n, lane, "merged")
             dep = deploy_main(log) if CFG.get("ci_merge", True) and find_pr_merged(n) else deploy_text(log)
         if dep.startswith("deployed"): start_pregen(log)    # #175: after the lock, in the background
@@ -834,7 +929,7 @@ def main():
             print(f"[dry-run] would run #{n} ({lane_of(issue['labels'])}): {issue['title']}"
                   + ("; core: waits for any running core issue" if lane_of(issue["labels"]) == "core" else "")); return 0
         ensure_labels()
-        res = process(issue)
+        res = process(issue, "remote" if "--remote" in sys.argv else "local")
         log_line(f"{now()} #{n}: {res}")
         print(f"ISSUE {n}: {res}")
         if USE_HERDR and TERM: spawn([])        # keep the lanes full: a fresh pass picks the next ready issues
@@ -842,12 +937,16 @@ def main():
     rc, out = gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: print("gh failed:", out); return 1
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
-    chosen = [c for c in select(issues, CFG["max_parallel"], MAX_CORE, EXPRESS) if not FileLock(f"issue-{c['number']}").held_by_other()]
+    chosen = [c for c in select(issues, total_lanes(), MAX_CORE, EXPRESS) if not FileLock(f"issue-{c['number']}").held_by_other()]
+    busy = [i["number"] for i in issues if "in-progress" in i["labels"]]
+    remote_busy = sum(where_of(b) == "remote" for b in busy)
+    wmap = {c["number"]: w for c, w in assign_where(chosen, len(busy) - remote_busy, remote_busy, LOCAL_LANES, REMOTE_LANES)}
+    chosen = [c for c in chosen if c["number"] in wmap]
     cutoff = CFG["stuck_hours"] * 3600
     stuck = [i for i in issues if "in-progress" in i["labels"] and not FileLock(f"issue-{i['number']}").held_by_other()
              and (time.time() - datetime.fromisoformat(i["updatedAt"].replace("Z", "+00:00")).timestamp()) > cutoff]
     if DRY:
-        print(f"[dry-run] repo={REPO} branch={BRANCH} model={MODEL} max_parallel={CFG['max_parallel']} max_core={MAX_CORE}")
+        print(f"[dry-run] repo={REPO} branch={BRANCH} model={MODEL} local_lanes={LOCAL_LANES} remote_lanes={REMOTE_LANES} max_core={MAX_CORE}")
         print(f"[dry-run] open issues: {len(issues)}; in-progress: {sum('in-progress' in i['labels'] for i in issues)}")
         for c in chosen: print(f"[dry-run] would start #{c['number']} ({lane_of(c['labels'])}): {c['title']}")
         for s in stuck: print(f"[dry-run] would block stuck #{s['number']} (in-progress, idle > {CFG['stuck_hours']}h, no runner process)")
@@ -861,12 +960,13 @@ def main():
     if chosen and USE_HERDR and TERM:
         for c in chosen:
             set_labels(c["number"], add=["in-progress"])          # claim now so the next pass doesn't pick it twice
-            if spawn([str(c["number"])]):                         # could not start (e.g. name_taken): give it back, log it, don't count it
+            set_where(c["number"], wmap[c["number"]])
+            if spawn([str(c["number"])] + (["--remote"] if wmap[c["number"]] == "remote" else [])):                         # could not start (e.g. name_taken): give it back, log it, don't count it
                 set_labels(c["number"], remove=["in-progress"]); results.append((c["number"], "not started (hc run failed)"))
             else: results.append((c["number"], "started"))
     elif chosen:
         with ThreadPoolExecutor(max_workers=len(chosen)) as ex:
-            results = list(ex.map(lambda c: (c["number"], process(c)), chosen))
+            results = list(ex.map(lambda c: (c["number"], process(c, wmap[c["number"]])), chosen))
     log_line(f"{now()} pass: started={sum(r == 'started' for _, r in results) if results else len(chosen)} stuck={len(stuck)} " + " ".join(f"#{n}:{r}" for n, r in results))
     for n, r in results: print(f"ISSUE {n}: {r}")
     return 0

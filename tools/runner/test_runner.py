@@ -41,6 +41,14 @@ _q2 = [{"number": 5, "labels": ["pack", "ready-for-agent"], "createdAt": "1"},
 assert [i["number"] for i in _sel(_q2, 1)] == [6]
 print("ok bugs-first")
 
+# #177: hand work labelled 'manual' never takes a lane and is never started by the runner
+_q3 = [{"number": 10, "labels": ["manual", "in-progress", "core"], "createdAt": "1"},
+       {"number": 11, "labels": ["manual"], "createdAt": "1"},
+       {"number": 12, "labels": ["manual", "ready-for-agent"], "createdAt": "1"},
+       {"number": 13, "labels": ["core", "ready-for-agent"], "createdAt": "2"}]
+assert [i["number"] for i in _sel(_q3, 1)] == [13]
+print("ok manual")
+
 # questions + parking
 NL = chr(10)
 def scr(*lines): return NL.join(lines) + NL
@@ -149,7 +157,7 @@ assert nums(r.select([_c(1), _c(2), _c(3)], 3, 2)) == [1, 2]
 assert nums(r.select([I(1, ["in-progress", "core"]), _c(2), _c(3)], 3, 2)) == [2]
 assert nums(r.select([I(1, ["in-progress", "core"]), I(2, ["in-progress", "core"]), _c(3), I(4, [R, "pack"])], 3, 2)) == [4]
 assert nums(r.select([_c(1), _c(2)], 3)) == [1]          # default max_core = 1
-assert r.CFG["max_core"] == 2
+assert r.CFG["max_core"] >= 2        # 3 since 26 Nov (#183)
 print("ok max_core")
 
 # conflict -> resolve -> retry, at most 2 resolve rounds
@@ -368,6 +376,50 @@ assert r.reviewer_model(["model:opus"]) == "opus"
 assert r.reviewer_model(["model:haiku"]) == "sonnet" and r.reviewer_model([]) == "sonnet" and r.reviewer_model(["model:fable"]) == "sonnet"
 assert r.model_name(["model:fable"]) == "fable" and r.model_name([]) == "sonnet"
 print("ok model labels")
+
+# #133: remote lanes (local_lanes / remote_lanes), remote worker start, results from GitHub
+assert r.CFG["local_lanes"] == 0 and r.CFG["remote_lanes"] == 4 and "max_parallel" not in r.CFG
+assert r.total_lanes() == 4
+ch = [I(1, [R, "pack"]), I(2, [R, "pack"]), I(3, [R, "pack"])]
+assert [(i["number"], w) for i, w in r.assign_where(ch, 0, 0, 1, 4)] == [(1, "local"), (2, "remote"), (3, "remote")]
+assert [(i["number"], w) for i, w in r.assign_where(ch, 1, 0, 1, 4)] == [(1, "remote"), (2, "remote"), (3, "remote")]   # local busy -> remote
+assert [(i["number"], w) for i, w in r.assign_where(ch, 1, 3, 1, 4)] == [(1, "remote")]                                 # one remote slot left
+assert r.assign_where(ch, 1, 4, 1, 4) == []                                                                              # all busy
+ex = [{"number": 9, "labels": ["express"]}]
+assert [(i["number"], w) for i, w in r.assign_where(ex, 1, 4, 1, 4)] == [(9, "remote")]   # #72: express beyond the cap still gets a slot
+assert [(i["number"], w) for i, w in r.assign_where(ex, 1, 0, 1, 0)] == [(9, "local")]    # no remote lanes: local
+assert r.assign_where([{"number": 9, "labels": []}], 1, 4, 1, 4) == []                    # a normal issue still waits
+assert [(i["number"], w) for i, w in r.assign_where(ch, 0, 0, 1, 0)] == [(1, "local")]                                  # no remote lanes configured
+p = r.remote_worker_prompt(7, "core", bug=True)
+assert "#7" in p and "lane/7" in p and "FLOW.md" in p and "Fixes #7" in p and "gh issue comment 7" in p
+assert "RESULT: DONE" in p and "QUESTION:" in p and "diagnosing-bugs" in p
+assert "diagnosing-bugs" not in r.remote_worker_prompt(7, "core")
+# wait_remote polls GitHub state (no herdr screen) until a final state
+seq = iter([{"state": "working"}, {"state": "working"}, {"state": "done", "line": "RESULT: DONE x", "pr": {"number": 9}}])
+t = [0]
+def sl(s): t[0] += s
+res = r.wait_remote(lambda: next(seq), sl, lambda: t[0], 3600, 30)
+assert res["state"] == "done" and t[0] == 60
+t[0] = 0
+res = r.wait_remote(lambda: {"state": "working"}, sl, lambda: t[0], 100, 30)
+assert res["state"] == "timeout"
+assert r.wait_remote(lambda: {"state": "question", "line": "QUESTION: a or b?"}, sl, lambda: 0, 100, 30)["state"] == "question"
+# a started remote issue records where=remote in stats
+import json as _j
+r.RUNS = r.HERE / ".runs-test133"
+r.stat(5, "core", "start", where="remote")
+ev = _j.loads((r.RUNS / "stats.jsonl").read_text().splitlines()[-1]); assert ev["where"] == "remote"
+import shutil as _sh; _sh.rmtree(r.RUNS)
+# remote_worker(): start via remote.py, poll GitHub, map to RESULT line; fake remote + fake gh
+calls = []
+def fake_start(n, task, cwd): calls.append(("start", n, task)); return {"ok": True, "session": "session_x", "url": "https://claude.ai/code/session_x"}
+res = r.remote_worker(7, "pack", False, fake_start, lambda: {"state": "done", "line": "RESULT: DONE https://p", "pr": {"number": 3}}, lambda s: None, lambda: 0, 60, 30)
+assert res == "RESULT: DONE https://p" and calls[0][0] == "start" and calls[0][1] == 7 and "lane/7" in calls[0][2]
+res = r.remote_worker(7, "pack", False, lambda n, t, cwd: {"ok": False, "error": "403"}, lambda: {"state": "working"}, lambda s: None, lambda: 0, 60, 30)
+assert res.startswith("RESULT: STUCK") and "403" in res
+res = r.remote_worker(7, "pack", False, fake_start, lambda: {"state": "question", "line": "QUESTION: x?"}, lambda s: None, lambda: 0, 60, 30)
+assert res == "QUESTION: x?"
+print("ok remote lanes")
 # #175: voice pregen runs in the background AFTER the merge lock, one at a time, never blocking an issue
 import os as _os
 class _P:
@@ -381,7 +433,7 @@ assert r.start_pregen(popen=_P) == "already running" and len(_P.calls) == 1     
 r.CFG["pregen"] = False; assert r.start_pregen(popen=_P) == "off"
 r.CFG["pregen"] = _old
 _src = (r.HERE / "runner.py").read_text(encoding="utf-8")
-_blk = _src.split('with FileLock("integrate", wait=True):\n            stat(n, lane, "merged")', 1)[1].split("\n        m = sync_main", 1)[0]
+_blk = _src.split('with FileLock("integrate", wait=True, note=f"#{n} deploy"):\n            stat(n, lane, "merged")', 1)[1].split("\n        m = sync_main", 1)[0]
 assert "pregen.js" not in _src.split("def deploy_text", 1)[1].split("def pregen_cmd", 1)[0] and "start_pregen(log)" in _blk
 print("ok pregen outside the merge lock")
 # #166: merge straight on green; update the branch only on a real conflict; lock only around `gh pr merge`
@@ -392,3 +444,27 @@ assert "needs_branch_update" in _ci and 'FileLock("integrate"' in _ci.split("def
 _ib = _src.split("def integrate():", 1)[1].split("rounds = [0]", 1)[0]
 assert _ib.index("kind[\"ci\"] = rc == 6") < _ib.index("FileLock(\"integrate\"")   # CI path takes no lock; only the fallback does
 print("ok #166 merge on green, lock only around gh pr merge")
+# #181 merge lock watch: the lock says who/why/since; dead holders cleared; held > 20 min -> alarm
+r.RUNS.mkdir(exist_ok=True)
+_lk = r.FileLock("test181", note="#5 deploy"); _lk.path.unlink(missing_ok=True)
+with _lk:
+    _i = _lk.info()
+    assert _i[0] == _os.getpid() and _i[1] == "#5 deploy" and abs(_i[2] - __import__("time").time()) < 5, _i
+assert _lk.info() is None
+_lk.path.write_text("999999999", encoding="utf-8")                      # old pid-only file, dead pid
+assert _lk.info()[:2] == (999999999, "") and not _lk.held_by_other()
+_lk.path.unlink(missing_ok=True)
+_t = 10_000.0
+assert W.lock_alarm(None, True, _t) is None
+assert W.lock_alarm((7, "#1 CI merge", _t - 5 * 60), True, _t) is None                   # 5 min: fine
+_a = W.lock_alarm((7, "#122 deploy", _t - 31 * 60), True, _t, [167, 176])
+assert _a[0] == "alarm" and "31 min" in _a[1] and "#122 deploy" in _a[1] and "#167, #176" in _a[1], _a
+assert W.lock_alarm((7, "#1 CI merge", _t - 60), False, _t)[0] == "clear"
+print("ok merge lock watch")
+# Code Mode trial: every 3rd issue number; 0 = off
+_cm = r.CFG.get("code_mode_every")
+r.CFG["code_mode_every"] = 3; assert [n for n in range(1, 10) if r.code_mode(n)] == [3, 6, 9]
+r.CFG["code_mode_every"] = 0; assert not any(r.code_mode(n) for n in range(1, 10))
+r.CFG["code_mode_every"] = _cm
+assert '"CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1"] if code_mode(n)' in (r.HERE / "runner.py").read_text(encoding="utf-8")
+print("ok code mode trial")

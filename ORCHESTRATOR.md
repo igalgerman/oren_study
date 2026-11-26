@@ -12,7 +12,7 @@ Keep your own context small: do the work through the runner (herdr windows) or S
 - Runner: `tools/runner/run.cmd <n>` (one issue now) or `run.cmd` (one pass over the ready queue). Opens herdr windows
   `run-<n>` → `issue-<n>` (worker, interactive Sonnet, owner can talk to it) → `review-<n>` → integrate (wait for green CI, squash-merge, ONE build + deploy; #74)
   → deploy if `.env` has `CLOUDFLARE_API_TOKEN` → pregen → closes the issue. The `run-<n>` window's exit note lands in your terminal.
-  Config: `tools/runner/config.toml` (remote, branch, max_parallel=3, model, hc path). Not yet proven on a real issue.
+  Config: `tools/runner/config.toml` (remote, branch, local_lanes=1 + remote_lanes=4, model, hc path). Not yet proven on a real issue.
 - herdr CLI: `C:\Users\97254\AppData\Local\Programs\herdr-core\hc.exe` (`hc ls`, `hc read <t>`, `hc run --bg --name X claude ...`).
   Never touch the owner's other terminals.
 - Panel mod: `tools/mods/oren-lanes` (loaded with --plugin-dir by `tools/orchestrator.cmd`; `/lanes` opens it).
@@ -38,10 +38,15 @@ idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → r
    watch it (`hc read run-2`, `hc read issue-2`), fix the runner if it breaks, one line per issue to the owner.
 2. Keep the queue moving: #4 → #5 → #6 → #7 → #8; #9 after #7. #11 needs grilling with the owner (`/idea`).
 
+## Phone (Remote Control) and push notifications (owner, 26 Nov)
+- tools/orchestrator.cmd starts you with `--remote-control "oren-orchestrator"`: the owner can see and answer you from his phone.
+- Use the PushNotification tool ONLY when the owner must act: a review PURPLE question, a P0 problem (main red, deploy failed, live site or family saves broken), the PC restart test (#141), or a decision only he can make. One line, under 200 characters, what to do first. Never for routine progress.
+- Code Mode does not work with Remote Control: you run without it; workers of every 3rd issue run with it (trial, config code_mode_every).
+
 ## Owner decisions, 26 Nov 2026 (after the flow analysis)
 - Order: first the flow fixes (#62 line endings, #149 review severity, #166 merge on green, #177 hand-work label, #153 chains), then remote lanes (#134-#137 carry Blocked-by lines).
 - Freeze on NEW tool features (runner, watchdog, panel, dashboard, remote, freeze/recover) until #152 (CI runs the tool tests) is merged. Bug fixes to the system and all game work continue. After #152: tooling gets at most 1 lane, the game at least 2.
-- Your own hand work never carries `in-progress` (the runner counts it as a lane) and tooling never gets `core`. Until #177 adds a `manual` label, leave hand work unlabelled and link the PR.
+- Your own hand work never carries `in-progress` (the runner counts it as a lane) and tooling never gets `core`. Label hand work `manual` (the runner ignores it: no lane, never started) and link the PR.
 - Do not split work into many tiny issues: a problem you find while working goes into the existing issue as a comment unless it is a separate real defect.
 
 ## Your job, always (owner's wish: everything automatic)

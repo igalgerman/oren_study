@@ -105,7 +105,7 @@ def check_lanes(ts):
     rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: return
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
-    if not R.select(issues, R.CFG["max_parallel"], R.MAX_CORE, R.EXPRESS): return
+    if not R.select(issues, R.total_lanes(), R.MAX_CORE, R.EXPRESS): return
     orch = R.hc_json("get", "orchestrator", "--json").get("address", "")
     name = f"run-pass-{int(time.time()) % 100000}"
     cmd = [R.HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(R.ROOT), "--label", "role=runner"]
@@ -264,10 +264,10 @@ def alarms_once(now=None):
     if rc or rc2: return None
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
     running = sum("in-progress" in i["labels"] for i in issues)
-    free = running < R.CFG["max_parallel"] and bool(R.select(issues, R.CFG["max_parallel"]))
+    free = running < R.total_lanes() and bool(R.select(issues, R.total_lanes()))
     if not free: _alarm["free_since"] = None
     elif _alarm["free_since"] is None: _alarm["free_since"] = now
-    return idle_alarms(issues, json.loads(out2), now, _alarm["free_since"], R.CFG["max_parallel"])
+    return idle_alarms(issues, json.loads(out2), now, _alarm["free_since"], R.total_lanes())
 
 def alarm_tick():
     """Every 10 min: idle alarms to the orchestrator (+ watchdog.log); the same alarm at most once an hour."""
@@ -282,6 +282,13 @@ def alarm_tick():
     tell("IDLE ALARM (watchdog): " + " · ".join(new))
 
 def main():
+    if "--lock" in sys.argv:                 # #181: who holds the merge lock, why, for how long
+        sys.stdout.reconfigure(encoding="utf-8")
+        _, info, alive = lock_state()
+        if not info: print("merge lock: free"); return
+        pid, note, since = info
+        print(f"merge lock: held by {note or 'unknown step'} (pid {pid}, {'alive' if alive else 'DEAD'}) for {int((time.time() - since) / 60)} min")
+        w = green_waiting(); print("green PRs waiting: " + (", ".join(f"#{n}" for n in w) if w else "none")); return
     if "--alarms-once" in sys.argv:          # #117: one command: is anything idle or stuck?
         sys.stdout.reconfigure(encoding="utf-8")
         al = alarms_once()
@@ -318,6 +325,48 @@ def tick():
     alarm_tick()
     trends_tick()
     ai_tick()
+    lock_tick()
+
+# ---------- #181: merge lock watch ----------
+LOCK_WARN_MIN, LOCK_REPEAT_MIN = 20, 30
+_lock = {"sent": 0.0, "key": None}
+
+def lock_alarm(info, alive, now, waiting=()):
+    """Pure: -> ('clear', text) when the holder is dead, ('alarm', text) when held > LOCK_WARN_MIN, else None.
+    info = (pid, note, since) from FileLock.info(); waiting = green open PR numbers."""
+    if not info: return None
+    pid, note, since = info
+    mins = int((now - since) / 60)
+    who = f"{note or 'unknown step'} (pid {pid})"
+    if not alive:
+        return ("clear", f"merge lock held by a dead process: {who}, {mins} min; removed")
+    if mins >= LOCK_WARN_MIN:
+        w = f"; green PRs waiting: #{', #'.join(map(str, waiting))}" if waiting else ""
+        return ("alarm", f"MERGE LOCK held {mins} min by {who}{w}. Check that step; nothing slow belongs inside the lock (#181)")
+    return None
+
+def green_waiting():
+    rc, out = R.gh("pr", "list", "--state", "open", "--json", "number,isDraft,statusCheckRollup")
+    if rc: return []
+    ok = lambda p: p.get("statusCheckRollup") and all((c.get("conclusion") or c.get("status")) in ("SUCCESS", "SKIPPED", "NEUTRAL") for c in p["statusCheckRollup"])
+    return [p["number"] for p in json.loads(out) if not p.get("isDraft") and ok(p)]
+
+def lock_state(now=None):
+    lk = R.FileLock("integrate"); info = lk.info()
+    return lk, info, (bool(info) and R.pid_alive(info[0]))
+
+def lock_tick(now=None):
+    now = now or time.time()
+    lk, info, alive = lock_state()
+    if not info: _lock["key"] = None; return
+    if not alive:
+        a = lock_alarm(info, False, now)
+        lk.path.unlink(missing_ok=True); log(a[1]); return
+    if (now - info[2]) / 60 < LOCK_WARN_MIN: return
+    key = (info[0], info[1])
+    if _lock["key"] == key and now - _lock["sent"] < LOCK_REPEAT_MIN * 60: return
+    a = lock_alarm(info, True, now, green_waiting())
+    _lock.update(sent=now, key=key); tell(a[1])
 
 _ai = {"running": False}
 def ai_tick():
