@@ -7,7 +7,9 @@ The watchdog calls tick() every minute:
       phone: after 2 min without an answer, a Hebrew PushNotification with numbered options (answer by number in Remote Control),
     first answer wins (the other path is stopped), then `qwin.py answer <key> "<answer>"` and stops.
   - never two windows for the same question (a question gets one window, ever); at most MAX_WINDOWS at once, the rest wait (oldest first)
-  - answered (gone from the open list) -> window unpinned and closed
+  - answered (gone from the open list) -> window unpinned and closed; `qwin.py answer` also closes its own window (#310)
+  - a live question-* window with no open question of its own (leftover) -> unpinned and closed (#310)
+  - the owner is never asked inside the terminal: AskUserQuestion is disallowed (Hebrew shows reversed there, #310)
   - unanswered for 2 h -> one reminder (the window sends one more push); the window stays
 Usage: python tools/runner/qwin.py answer <key> "<answer>"
 """
@@ -64,7 +66,7 @@ def plan(open_qs, ts, st, now):
     live = {t.get("name") for t in ts if t.get("state") == "live"}
     close = [k for k in st if k not in keys]
     remind = [k for k in st if k in keys and st[k]["name"] in live and now - st[k]["since"] >= REMIND_S and not st[k].get("reminded")]
-    busy = {n for n in live if (n or "").startswith("question-")} - {st[k]["name"] for k in close}
+    busy = {n for n in live if (n or "").startswith("question-")} & {st[k]["name"] for k in st if k in keys}   # leftovers do not count (#310)
     start = []
     for q in open_qs:
         if q["key"] in st: continue                     # one window per question, ever (no duplicates after a restart either)
@@ -73,11 +75,21 @@ def plan(open_qs, ts, st, now):
         busy.add(name); start.append(q)
     return start, close, remind
 
+def leftovers(ts, st):
+    """#310: live question-* windows that belong to no question we track (e.g. answered in the terminal, state lost)."""
+    mine = {v.get("name") for v in st.values()}
+    return sorted({t["name"] for t in ts if t.get("state") == "live" and (t.get("name") or "").startswith("question-")} - mine)
+
+def close_window(name):
+    pin(name, False); _hc("kill", name, timeout=30); _hc("rm", name, timeout=30)
+
 def prompt(q, name, qfile):
     py, ref = sys.executable.replace("\\", "/"), OQ.issue_ref(q.get("source") or "") or q.get("source") or "האורקסטרטור"
     return (f"You are the owner-question window {name} (#220). ONE question waits for the owner (he reads Hebrew):\n"
             f"From: {q.get('source') or '?'} ({ref}). In the pinned issue: {q.get('url', '')}\n"
             f"Question: {q.get('text', '')}\n\n"
+            "NEVER ask the owner inside this terminal (no AskUserQuestion, no question dialog: Hebrew shows reversed here). "
+            "He answers only on the Hebrew web page or by a number in the chat.\n"
             "Do exactly this, nothing else:\n"
             f"1. Write {qfile} (UTF-8) for the Hebrew question page: "
             '{"title": "שאלה - ' + ref + '", "intro": "<one short line of context>", "questions": [{"id": "a", "text": "<the question in plain words>", '
@@ -85,13 +97,14 @@ def prompt(q, name, qfile):
             "2-4 options, the recommended one first marked (מומלץ). Parent-facing Hebrew without nikud; words Oren sees or hears keep their nikud exactly.\n"
             f"2. In the BACKGROUND (Bash run_in_background) start: {py} tools/ask/ask.py {qfile} --timeout-min 1440   (the page opens in his browser). "
             f"Also in the background: sleep {PUSH_AFTER_S}\n"
-            "3. Print one line: 'ענה בדף שנפתח בדפדפן, או במספר כאן' and end your turn (wait).\n"
+            "3. Read the page URL (the first line ask.py writes, http://127.0.0.1:...) from its output and print two lines: the page URL, "
+            "and 'ענה בדף שנפתח בדפדפן, או במספר כאן'. Then end your turn (wait).\n"
             f"4. When the {PUSH_AFTER_S}s sleep ends and there is no answer yet: send ONE PushNotification in Hebrew: the question and the numbered options "
             "(1. ... 2. ...), 'ענה במספר בצ'אט'. Then wait again.\n"
             "5. The FIRST answer wins: the page (ask.py prints {\"answers\": {\"a\": ...}}) or his chat message here (a number = that option, other text = his own answer). "
             "If the chat won, stop ask.py (TaskStop) so the page is closed.\n"
             f"6. Run: {py} tools/runner/qwin.py answer {q['key']} \"<the answer, as given>\"  (posts it on the issue and in the questions issue, tells the orchestrator, "
-            "sends a cloud session its answer). Then print 'תודה' and stop. The watchdog closes this window.\n"
+            "sends a cloud session its answer, then closes this window). Then print 'תודה' and stop.\n"
             "A message that starts with WATCHDOG REMINDER is not an answer: send ONE PushNotification reminder (same question, numbered options) and wait again.")
 
 def pin(name, on):
@@ -117,7 +130,8 @@ def open_window(q, name):
                   # #281: through Git Bash like the worker windows (runner.agent): hc cannot start claude.CMD itself
                   R.BASH, "-c", 'export PATH="$1:$PATH"; shift; "$@"', "_", R.CFG["extra_path"],
                   shutil.which("claude") or "claude", "--model", "haiku", "--remote-control", f"oren-{name}",
-                  "--permission-mode", "auto", "--allowedTools", *TOOLS, "--", prompt(q, name, qfile), timeout=60)
+                  "--permission-mode", "auto", "--allowedTools", *TOOLS, "--disallowedTools", "AskUserQuestion",
+                  "--", prompt(q, name, qfile), timeout=60)
     if rc: log(f"could not open {name}: {out.strip()[:200]}"); return False
     pin(name, True)
     return True
@@ -129,6 +143,8 @@ def tick(ts, now=None):
     if qs is None: return
     st = load()
     start, close, remind = plan(qs, ts, st, now)
+    for name in leftovers(ts, st):
+        close_window(name); log(f"{name}: leftover window closed (no open question of its own)")
     for k in close:
         name = st.pop(k)["name"]
         if any(t.get("name") == name and t.get("state") == "live" for t in ts):
@@ -187,6 +203,9 @@ def answer(key, text):
     _hc("send", "orchestrator", f"OWNER ANSWERED (question window, {src or key}): {info.get('text', '')[:200]} -> {text}\n"
         + ("The runner resumes the cloud session with it (#135). " if resumes else "The cloud session got it (remote.py send). " if done.get("remote") else f"Relay it to {src or 'the asker'} (hc send / the menu option). ")
         + "Unpark the issue if it was parked.", timeout=30)
+    name = info.get("name")
+    if name:                                             # #310: the answer is recorded: this window goes now (last step: it may be our own)
+        sys.stdout.flush(); close_window(name); done["closed"] = True
     return done
 
 def main(argv):

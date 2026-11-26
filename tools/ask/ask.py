@@ -71,6 +71,21 @@ def page(data):
             % (title, CSS, title, intro, "".join(parts), JS % json.dumps(data).replace("</", "<\\/")))
 
 
+def open_browser(url, win=os.name == "nt"):
+    """#310: open the page in the owner's default browser, also from a hidden background window.
+    Windows: os.startfile (shell default browser), fallback webbrowser.open; elsewhere webbrowser.open. -> opened?"""
+    if win:
+        try:
+            os.startfile(url)
+            return True
+        except Exception:
+            pass
+    try:
+        return bool(webbrowser.open(url))
+    except Exception:
+        return False
+
+
 def main():
     args = sys.argv[1:]
     timeout = 60.0
@@ -111,8 +126,8 @@ def main():
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     url = "http://127.0.0.1:%d/" % srv.server_port
     print(url, file=sys.stderr, flush=True)
-    if not os.environ.get("ASK_NO_BROWSER"):
-        webbrowser.open(url)
+    if not os.environ.get("ASK_NO_BROWSER") and not open_browser(url):
+        print("could not open the browser: open %s by hand" % url, file=sys.stderr, flush=True)
     sys.stdout.reconfigure(encoding="utf-8")
     if not done.wait(timeout * 60):
         print(json.dumps({"timeout": True}))
