@@ -3,7 +3,7 @@ boundary (subprocess) is faked, so a call with a wrong signature (desks -> remot
 function (stats.finish_rate) fails here. And: the tick itself reloads modules that are older than their file,
 so even a loop() started from old code (it never picks up its own new code) runs fully updated modules.
 Run: python3 tools/runner/test_tick_real.py"""
-import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # tests never write to the live .runs
+import os, tempfile; os.environ["OREN_TEST"] = "1"; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # tests never write to the live .runs
 import json, subprocess, sys
 sys.argv.append("--dry-run"); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
