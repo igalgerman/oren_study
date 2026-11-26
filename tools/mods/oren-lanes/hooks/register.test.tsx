@@ -185,7 +185,6 @@ test('model label shows in up next and lanes, e.g. [P1·opus]', () => {
   expect(v.lanes[0]).toBe('1. #3 running [fable] · busy')
 })
 
-import { view } from './lanes'
 test('your lane shows the open intake window', () => {
   const lab = (...n: string[]) => n.map(name => ({ name }))
   const open = [{ number: 8, title: 'Idea about maps', labels: lab('needs-triage') }, { number: 9, title: 'Other', labels: lab('needs-info') }]
