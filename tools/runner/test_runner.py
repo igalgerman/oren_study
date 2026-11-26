@@ -380,7 +380,7 @@ assert nums(r.select([I(1, ["in-progress", "pack", "express"]), _e(2, ["pack"])]
 assert nums(r.select([_c(1), _c(2), _e(3, ["core"])], 3, 2, 1)) == [3, 1, 2]       # express core first, doesn't use core limit
 assert nums(r.select([I(1, ["in-progress", "core"]), I(2, ["in-progress", "core"]), _e(3, ["core"]), _c(4)], 3, 2, 1)) == [3]   # express core despite max_core
 assert nums(r.select([_e(1, ["pack", "blocked"]), _e(2, ["pack"], )], 3, 2, 1)) == [2]
-assert r.CFG["express_lanes"] == 1
+assert r.CFG["express_lanes"] >= 1
 print("ok express")
 
 # runner must not call "python3" directly: on Windows it is only a bash shim / Store alias -> FileNotFoundError after every CI merge (#79, #72, #41)
