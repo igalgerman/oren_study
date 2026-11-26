@@ -8,9 +8,10 @@
    - refreshes the UPDATE section of INSPECTOR_HANDOFF.md (config inspector_handoff, outside the repo)
    - refreshes the '## Handoff (nightly)' section of ORCHESTRATOR.md through a PR on branch nightly/handoff-<date> (never a direct push).
 2. Batch trigger: tells the inbox to run /batch once a day, and early when >= BATCH_MIN P2/P3 ready, unbatched issues share a lane.
+3. Prune (#304): once a day removes .runs/<n> of issues closed > PRUNE_HOURS (stats.jsonl and other root files stay).
 Usage: python tools/runner/nightly.py retro   (one retro run now)
 """
-import base64, json, re, shutil, subprocess, sys, threading, time
+import base64, calendar, json, re, shutil, subprocess, sys, threading, time
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -27,6 +28,7 @@ _batch_chk = {"at": 0.0}  # the issue list is read at most every BATCH_CHECK_MIN
 BATCH_CHECK_MIN = 30
 ORCH_HEADING, INSPECTOR_HEADING = "## Handoff (nightly)", "## UPDATE"
 BATCH_MIN, BATCH_EARLY_H = 8, 6
+PRUNE_HOURS = 24
 LANES = ("core", "pack", "review")
 
 PROMPT = """You are the NIGHTLY RETRO of the Oren study automatic flow ({date}). Read-only: you change NOTHING.
@@ -134,6 +136,11 @@ def batch_due(by_lane, now, st):
     if st.get("batch_day") == day and not (full and now - st.get("batch_at", 0) >= BATCH_EARLY_H * 3600): return None
     why = ("; ".join(f"{len(ns)} ready P2/P3 issues in lane {l}" for l, ns in full.items()) if full else "daily batch check")
     return f"WATCHDOG: run /batch ({why}). Follow .claude/skills/batch and docs/agents/skills/to-tickets.md."
+
+def prunable(names, closed, now, hours=None):
+    """Pure (#304): numbers of the .runs/<n> dir names whose issue closed more than `hours` ago. closed: n -> closedAt epoch."""
+    hours = PRUNE_HOURS if hours is None else hours
+    return sorted(int(d) for d in names if d.isdigit() and int(d) in closed and now - closed[int(d)] > hours * 3600)
 
 # ---------- side effects ----------
 def load_state():
@@ -270,6 +277,23 @@ def batch_tick(send, log, issues=None, now=None):
         st.update(batch_day=time.strftime("%Y-%m-%d", time.localtime(now)), batch_at=now); save_state(st)
     log(f"batch trigger -> inbox (rc {rc}): {msg[:150]}")
     return msg if rc == 0 else None
+
+def prune_if_due(log, now=None):
+    """Watchdog hook (#304): once a day remove .runs/<n> of issues closed > PRUNE_HOURS. -> numbers pruned, or None."""
+    now = now or time.time(); day = time.strftime("%Y-%m-%d", time.localtime(now))
+    st = load_state()
+    if st.get("prune_day") == day or not R.RUNS.is_dir(): return None
+    rc, out = gh("issue", "list", "--state", "closed", "--limit", "1000", "--json", "number,closedAt")
+    if rc: return None                      # GitHub unreadable: try again next tick
+    closed = {}
+    for i in json.loads(out):
+        try: closed[i["number"]] = calendar.timegm(time.strptime(i["closedAt"][:19], "%Y-%m-%dT%H:%M:%S"))
+        except (KeyError, TypeError, ValueError): pass
+    gone = prunable([d.name for d in R.RUNS.iterdir() if d.is_dir()], closed, now)
+    for n in gone: shutil.rmtree(R.RUNS / str(n), ignore_errors=True)
+    st["prune_day"] = day; save_state(st)
+    if gone: log(f"pruned .runs of {len(gone)} closed issue(s): " + " ".join(f"#{n}" for n in gone))
+    return gone
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
