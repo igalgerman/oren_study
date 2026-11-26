@@ -274,6 +274,11 @@ def tick():
     observer_tick()
     sync_tick()
     alarm_tick()
+    trends_tick()
+
+def trends_tick():
+    """#155: hourly patterns over 24 h (repeated BLOCKED reasons, finish/fix rates); reloaded so merged fixes apply."""
+    import trends; importlib.reload(trends); trends.tick(tell, log)
 
 if __name__ == "__main__":
     main()
