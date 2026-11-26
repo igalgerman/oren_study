@@ -7,6 +7,8 @@ Backlog = GitHub issues. Owner guide: `HOWTO.md`. Main session: `ORCHESTRATOR.md
 idea → `/grill-me` → `/to-tickets` → issue (backlog) → runner → worker → reviewer → merge to main → all tests → deploy → issue closed.
 Everything after the issue is automatic (`tools/runner`). Up to 3 issues at once, at most TWO `core` issues. If merging into main conflicts, the runner has the worker merge main in and retries (2 rounds, then the issue is parked).
 
+Priority: label `P0` (urgent) / `P1` / `P2` (normal, default) / `P3` (low) orders the queue: bugs first, then P0→P3, then oldest.
+
 ## If you are a WORKER (window `issue-<n>`, in worktree `wt-<n>`, branch `lane/<n>`)
 Do the WHOLE job yourself, then report. Nobody merges for you by hand.
 1. Read CLAUDE.md, this file, and the issue (`gh issue view <n> --repo igalgerman/oren_study --comments`). Do only that issue.
@@ -23,7 +25,7 @@ Never push to main, never deploy, never force-push. Found another problem? Open 
 Read-only. Use the `mattpocock-skills:code-review` skill (Standards = CLAUDE.md + FLOW.md, Spec = the issue), then check the PR against the issue: correct, simple (one main action per screen), Hebrew nikud, facts, no unrelated changes. One PR comment; last line `VERDICT: PASS` or `VERDICT: FIX`.
 
 ## The runner does the rest
-On PASS: `tools/integrate.sh` merges into main, rebuilds, runs ALL tests, pushes, deploys (token in `.env`), prepares voice, closes the issue, closes the windows, and starts the next ready issues. On any failure: nothing goes live, the issue gets `blocked` + `needs-orchestrator` with the reason; the orchestrator handles it (the owner only sees `ready-for-human` / `needs-triage`).
+On PASS (config `ci_merge = true`, #74): the runner merges main into the lane (conflict -> worker resolves), pushes, waits for the PR's CI checks (`gh pr checks`), then `gh pr merge --squash`. A red check is rerun once (flaky); still red -> the worker fixes it (same FIX loop). No full local suite. Then ONE build + deploy of main (PRs merged back to back share one deploy; pregen only if `pregen = true`), closes the issue and the windows, and starts the next ready issues. `ci_merge = false` or no PR: the old `tools/integrate.sh` (local merge + all tests). On any failure: nothing goes live, the issue gets `blocked` + `needs-orchestrator` with the reason; the orchestrator handles it (the owner only sees `ready-for-human` / `needs-triage`).
 
 ## Lanes
 | label | what | parallel |
@@ -35,4 +37,9 @@ On PASS: `tools/integrate.sh` merges into main, rebuilds, runs ALL tests, pushes
 Known: `worker` suite fails only on Windows (ESM c:\ path); `reading`/`activities`/`time-missions` can be flaky under load — rerun alone once.
 
 ## Observer
-Every `observer_minutes` the watchdog runs `tools/runner/observer.py`, an observer that ACTS within limits (make_ready, rerun, fix Blocked-by lines, nudge the orchestrator; max 5 per run, each commented on the issue). Result in `.runs/observer.last`; `observer_minutes = 0` stops it.
+Every `observer_minutes` the watchdog runs `tools/runner/observer.py` (deterministic rules, no LLM): make_ready (needs-orchestrator/P0 untouched 30+ min while the orchestrator is idle), rerun (in-progress with no live run window for 10+ min), fix Blocked-by lines. Max 5 actions per run, each commented on the issue; never on ready-for-human, on an issue with an open lane/<n> PR, or while integrate.lock is alive. Result in `tools/runner/.runs/observer.last`; `observer_minutes = 0` stops it.
+
+Questions to the owner: in Hebrew, through tools/ask/ask.py (browser page), one round at a time; never ask in the terminal when the owner prefers Hebrew.
+
+## CI (GitHub Actions, #73)
+`.github/workflows/tests.yml` runs all suites on every PR to main and every push to main: 6 parallel shards (`SUITES_SHARD=i/6 tests/run.sh`, a failed suite is retried alone once) and one summary job `tests`. **A PR is mergeable when the `tests` check is green.** No secrets in CI; deploy stays local.

@@ -4,20 +4,25 @@ remote = "origin"
 branch = "main"
 model = "sonnet"
 max_parallel = 3
+express_lanes = 1               # #72: extra lane for issues labelled express (owner-approved), on top of max_parallel
 max_core = 2                    # core issues running at once (conflicts at merge are resolved automatically)
 worktree_prefix = "C:/work/Oren_study/wt-"
 bash = "C:/Program Files/Git/bin/bash.exe"   # Git Bash (not WSL's bash)
 extra_path = "/c/work/Oren_study/bin"        # python3 shim
+main_checkout = "C:/work/Oren_study/a"   # fast-forwarded after each integrate and every sync_minutes by the watchdog
+sync_minutes = 3
 stuck_hours = 2
 park_minutes = 30               # a worker/reviewer waiting for the owner this long: issue parked (blocked + ready-for-human), lane freed, windows stay open
 hc = "C:/Users/97254/AppData/Local/Programs/herdr-core/hc.exe"   # herdr CLI; if missing the runner falls back to hidden `claude -p`
 parent = ""                     # herdr terminal that gets the notes (e.g. "t2g"); empty = the terminal that started run.cmd
 
 # give each worker/reviewer its own tab in the Herdr app
-show = true
 # Herdr space where worker/reviewer tabs open (by name)
 herdr_space = "Oren_study_orech"
 
-# acting observer (observer.py, observer_prompt.md), started headless by the watchdog every N minutes
-observer_minutes = 10   # 0 = observer off
-pregen = false   # voice pregen after each deploy; off until #68 (KV free write limit)
+# acting observer (observer.py, rules only), run by the watchdog every N minutes
+observer_minutes = 10   # 0 = off
+pregen = true    # voice pregen after each deploy; on since #68 (KV write budget) went live 26 Nov
+
+ci_merge = true                 # #74: merge on a green PR "tests" check (gh pr merge --squash) instead of the local full suite; false = old integrate.sh
+ci_timeout_minutes = 60

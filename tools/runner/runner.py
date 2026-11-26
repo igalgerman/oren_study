@@ -36,28 +36,41 @@ def lane_of(labels):
             return l
     return "core"
 
+def priority_of(labels):
+    """0-3 from a P0..P3 label; P2 (normal) when missing."""
+    for n in range(4):
+        if f"P{n}" in labels:
+            return n
+    return 2
+
 def blockers(body):
     """Issue numbers in 'Blocked by: #1, #2' lines."""
     out = []
     for line in (body or "").splitlines():
-        if line.strip().lower().startswith("blocked by"):
+        if line.lstrip(" 	-*>").lower().startswith("blocked by"):
             out += [int(x) for x in re.findall(r"#(\d+)", line)]
     return out
 
-def select(issues, max_parallel, max_core=1):
-    """issues: [{number, labels:[names], createdAt, body}] -> issues to start now (oldest first).
-    An issue waits while any issue in its 'Blocked by:' line is still open (= in this list)."""
+def select(issues, max_parallel, max_core=1, express_lanes=0):
+    """issues: [{number, labels:[names], createdAt, body}] -> issues to start now (express first, then oldest).
+    An issue waits while any issue in its 'Blocked by:' line is still open (= in this list).
+    #72: label 'express' = owner-approved. It gets its own extra lane (express_lanes), starts before any other ready issue,
+    and an express core issue in that lane ignores max_core. When the express lane is busy it uses a normal slot."""
     open_nums = {i["number"] for i in issues}
     active = [i for i in issues if "in-progress" in i["labels"]]
     core_running = sum(lane_of(i["labels"]) == "core" for i in active)
-    slots = max_parallel - len(active)
+    exp_active = sum("express" in i["labels"] for i in active)
+    exp_free = max(0, express_lanes - exp_active)
+    slots = max_parallel - (len(active) - min(exp_active, express_lanes))
     ready = [i for i in issues if "ready-for-agent" in i["labels"]
              and "in-progress" not in i["labels"] and "blocked" not in i["labels"]
              and not any(b in open_nums for b in blockers(i.get("body")))]
     chosen = []
-    for i in sorted(ready, key=lambda i: ("bug" not in i["labels"], i["createdAt"])):   # bugs first
+    for i in sorted(ready, key=lambda i: ("express" not in i["labels"], "bug" not in i["labels"], priority_of(i["labels"]), i["createdAt"])):   # express first, bugs, then P0..P3, then oldest
+        if "express" in i["labels"] and exp_free > 0:
+            exp_free -= 1; chosen.append(i); continue
         if slots <= 0:
-            break
+            continue
         if lane_of(i["labels"]) == "core":
             if core_running >= max_core:
                 continue
@@ -69,26 +82,70 @@ def conflict_files(out):
     """File names listed after the CONFLICTS line of integrate.sh output."""
     lines = out.splitlines()
     for k, l in enumerate(lines):
-        if l.startswith("CONFLICTS"):
+        if l.startswith(("CONFLICTS", "CI RED")):
             return [x.strip() for x in lines[k + 1:] if x.strip() and not x.startswith(("[", "$"))]
     return []
 
 def integrate_with_resolve(integrate, resolve, max_rounds=2):
     """integrate() -> (rc, out); resolve(files) -> True when the worker merged main in and pushed.
-    rc 2 (merge conflict) or 5 (push rejected: main moved) -> up to max_rounds resolve rounds, each followed by a retry.
+    rc 2 (merge conflict), 5 (push rejected / CI timeout) or 6 (CI red after one rerun, #74) -> up to max_rounds resolve rounds, each followed by a retry.
     Returns ('merged', out) | ('giveup', files, out) | ('failed', rc, out)."""
     files = []
     for rnd in range(max_rounds + 1):
         rc, out = integrate()
         if rc == 0:
             return ("merged", out)
-        if rc not in (2, 5):
+        if rc not in (2, 5, 6):
             return ("failed", rc, out)
         files = conflict_files(out) or files
         if rnd == max_rounds:
             return ("giveup", files, out)
         if not resolve(files):
             return ("failed", rc, out)
+
+def ci_verdict(checks):
+    """Pure (#74): `gh pr checks --json name,bucket` list -> 'none' (no checks yet) | 'pending' | 'red' | 'green'.
+    A missing or pending check is never green; skipped checks are ignored."""
+    b = [(c.get("name", ""), c.get("bucket", "")) for c in checks or []]
+    b = [x for x in b if x[1] != "skipping"]
+    if not b: return "none"
+    if any(x[1] in ("fail", "cancel") for x in b): return "red"
+    if any(x[1] != "pass" for x in b): return "pending"
+    return "green"
+
+def failed_checks(checks):
+    return [c.get("name", "?") for c in checks or [] if c.get("bucket") in ("fail", "cancel")]
+
+def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_reruns=1, stamp=None, max_stale=10):
+    """Pure decision loop (#74): wait for the PR checks, then merge. Red -> rerun the failed jobs once (flaky), still red -> send back to the worker.
+    stamp() = run id/status/attempt of the latest run: after a rerun, red is ignored until it changes (the old failed run is still shown for a while).
+    Returns ('merged',) | ('red', [names]) | ('timeout',) | ('merge-failed',)."""
+    waited, reruns, old, stale = 0, 0, None, 0
+    while True:
+        checks = get_checks()
+        v = ci_verdict(checks)
+        if v == "green":
+            return ("merged",) if merge() else ("merge-failed",)
+        if v == "red":
+            if reruns and stamp and old is not None and stamp() == old and stale < max_stale:
+                stale += 1; sleep(poll_s); waited += poll_s; continue      # still the old failed run: not judged yet
+            if reruns >= max_reruns:
+                return ("red", failed_checks(checks))
+            old = stamp() if stamp else None
+            reruns += 1; rerun(); sleep(poll_s); waited += poll_s; continue
+        if waited >= timeout_s:
+            return ("timeout",)
+        sleep(poll_s); waited += poll_s
+
+def deploy_needed(deployed_sha, main_sha):
+    """Pure (#74): batching. PRs merged one after another are deployed ONCE: the first deploy after the last merge covers all of them."""
+    return bool(main_sha) and deployed_sha != main_sha
+
+def ci_fix_prompt(n, names):
+    return (f"Issue #{n}: the CI check(s) {', '.join(names) or '(see the PR)'} failed on lane/{n} even after one rerun. "
+            f"Use `gh run list --branch lane/{n}` and `gh run view <id> --log-failed`, fix the real cause in this worktree, "
+            f"run the affected suites locally, commit, and `git push {REMOTE} lane/{n}`. Never force-push, never push to {BRANCH}. "
+            "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
 
 def resolve_prompt(n, files):
     return (f"Issue #{n}: merging lane/{n} into {BRANCH} failed because {BRANCH} moved on" + (f" (conflicting files: {', '.join(files)})" if files else "") + ". "
@@ -127,6 +184,11 @@ def waiting_now(status, screen):
     """True when the window waits for a person: a permission/trust menu (blocked) or a finished turn ending in QUESTION:."""
     return status == "blocked" or (status in ("done", "idle") and bool(pending_question(screen)))
 
+def is_stale_window(status, screen):
+    """A live window found when an agent starts is from an earlier run, so if its turn already finished (done/idle) its marker is old news.
+    Only windows still working, blocked, or waiting for an answer are re-attached."""
+    return status in ("done", "idle") and not pending_question(screen)
+
 def should_park(since, now, minutes):
     """since = when the window started waiting (epoch) or None. Park (give the lane back) after `minutes` of waiting."""
     return since is not None and now - since >= minutes * 60
@@ -159,6 +221,48 @@ def run(cmd, cwd=None, env=None, input=None, log=None, timeout=None):
         with open(log, "a", encoding="utf-8") as f:
             f.write(f"\n$ {' '.join(map(str, cmd))[:300]}\n{out}\n[exit {p.returncode}]\n")
     return p.returncode, out
+
+MAIN_CHECKOUT = Path(CFG.get("main_checkout", str(ROOT)))   # the checkout the watchdog/runner/panel import code from
+
+def is_dirty(status):
+    """Pure: True when `git status --porcelain` shows tracked changes (untracked files '??' are fine)."""
+    return any(l.strip() and not l.startswith("??") for l in status.splitlines())
+
+def sync_decision(branch, into, dirty, behind):
+    """Pure: ('pull', '') | ('skip', reason). reason '' = nothing to report."""
+    if behind <= 0: return ("skip", "")
+    if branch != into: return ("skip", f"main checkout is on {branch}, not {into}")
+    if dirty: return ("skip", "main checkout has uncommitted changes")
+    return ("pull", "")
+
+def sync_main(log=None):
+    """Fast-forward the main checkout to origin/main when that is harmless. Returns a message ('' = nothing to say); never raises."""
+    try:
+        g = lambda *a: run(["git", "-C", str(MAIN_CHECKOUT), *a], timeout=120)
+        rc, out = g("fetch", "-q", REMOTE)
+        if rc: return f"sync failed: fetch rc {rc} {out.strip()[:200]}"
+        branch = g("rev-parse", "--abbrev-ref", "HEAD")[1].strip()
+        behind = int(g("rev-list", "--count", f"HEAD..{REMOTE}/{BRANCH}")[1].strip() or 0)
+        act, why = sync_decision(branch, BRANCH, is_dirty(g("status", "--porcelain")[1]), behind)
+        if act == "pull":
+            rc, out = g("merge", "-q", "--ff-only", f"{REMOTE}/{BRANCH}")
+            return f"main checkout fast-forwarded ({behind} commits)" if rc == 0 else f"sync failed: ff-only rc {rc} {out.strip()[:200]}"
+        return f"sync skipped ({behind} behind): {why}" if why else ""
+    except Exception as e:
+        return f"sync error: {e!r}"
+
+def remove_worktree(wt, log=None):
+    """Remove a lane worktree. oren2/node_modules is a JUNCTION to the real modules: take the junction off alone first
+    (rmdir, never /s, never rmtree: that would delete the real modules), then remove the worktree and any leftover folder (#82)."""
+    wt = Path(wt)
+    nm = wt / "oren2" / "node_modules"
+    if os.path.isjunction(nm):
+        run(["cmd", "/c", "rmdir", str(nm)])
+    elif nm.is_symlink():
+        nm.unlink()
+    run(["git", "worktree", "remove", "--force", str(wt)], cwd=ROOT, log=log)
+    if wt.exists() and not (wt / ".git").exists():       # half-made worktree (no checkout): leftovers only, safe now the junction is gone
+        shutil.rmtree(wt, ignore_errors=True)
 
 def gh(*args, **kw):
     return run(["gh", *args, "--repo", REPO], **kw)
@@ -255,16 +359,6 @@ def space_args():
             pass
     return ["--label", f"herdr.space={_SPACE}"] if _SPACE else []
 
-def show(name):
-    """Fallback when no Herdr space was found: give the terminal its own tab (herdr-app do terminal.keep).
-    config: show = false turns it off."""
-    app = HERDR_APP
-    if not CFG.get("show", True) or not Path(app).exists() or space_args(): return   # already in a space via its label
-    addr = hc_json("get", name, "--json").get("address")
-    for _ in range(6):               # the app learns a new terminal a moment late ("no running terminal"): retry
-        if addr and run([app, "do", "terminal.keep", "--terminal", addr, "--place", "tab"], timeout=30)[0] == 0: return
-        time.sleep(2)
-
 def hc(*args, timeout=300):
     return run([HC, *args], timeout=timeout)
 
@@ -291,6 +385,10 @@ def agent(name, prompt, cwd, tools, log, marker, n, role):
     if not USE_HERDR:
         out = claude_hidden(prompt, cwd, tools, log)
         return out, last_line(out, marker)
+    if live(name):
+        info0 = hc_json("get", name, "--json"); screen0 = hc("read", name, "--lines", "400")[1]
+        if is_stale_window(info0.get("status"), screen0):      # finished before this run: its old verdict/result must not be reused
+            hc("kill", name, timeout=30); hc("rm", name, timeout=30)
     if not live(name):
         # bash wrapper only puts the python3 shim on PATH; the prompt goes after `--` ("--allowedTools" is variadic)
         cmd = [HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), "--label", f"issue={n}", "--label", f"role={role}", *space_args(), *parent_args(),
@@ -299,7 +397,6 @@ def agent(name, prompt, cwd, tools, log, marker, n, role):
                "--allowedTools", *tools, "--", prompt + INTERACTIVE_NOTE]
         rc, out = run(cmd, log=log)
         if rc: raise Blocked(f"cannot start terminal {name}: {out.strip()[:200]}")
-    show(name)
     deadline, screen = time.time() + 3 * 3600, ""
     waiting = marker_since = None; last_check = 0
     try:
@@ -431,7 +528,61 @@ def deploy_text(log):
     rc, _ = run(["node", "oren2/cf/tools/pregen.js"], cwd=INTEG, env=env, log=log, timeout=1800)
     return f"deployed {url}" + ("" if rc == 0 else " (pregen failed, see log)")
 
+def ci_integrate(n, wt, log):
+    """CI-based integrate (#74): update the lane with main, push, wait for the PR checks, `gh pr merge --squash`. -> (rc, out) like integrate.sh:
+    0 merged, 2 conflict, 4 no PR, 5 push failed, 6 CI red after one rerun, 7 CI timeout / merge failed (blocked, real reason in out)."""
+    pr = find_pr(n)
+    if not pr: return 4, "no open PR for lane/%d" % n
+    run(["git", "fetch", "-q", REMOTE], cwd=wt, log=log)
+    rc, out = run(["git", "merge", "--no-edit", f"{REMOTE}/{BRANCH}"], cwd=wt, log=log)
+    if rc:
+        files = run(["git", "diff", "--name-only", "--diff-filter=U"], cwd=wt, log=log)[1].split()
+        run(["git", "merge", "--abort"], cwd=wt, log=log)
+        return 2, "CONFLICTS (fix by hand, or send back to the lane):\n" + "\n".join(files)
+    if run(["git", "rev-parse", "HEAD"], cwd=wt)[1] != run(["git", "rev-parse", f"{REMOTE}/lane/{n}"], cwd=wt)[1]:
+        if run(["git", "push", "-q", REMOTE, f"lane/{n}"], cwd=wt, log=log)[0]: return 5, "push failed"
+        time.sleep(20)                                           # let GitHub start the new run
+    def get_checks():
+        try: return json.loads(gh("pr", "checks", str(pr), "--json", "name,bucket", log=log)[1] or "[]")
+        except ValueError: return []
+    def stamp():
+        return run(["gh", "run", "list", "--repo", REPO, "--branch", f"lane/{n}", "--limit", "1", "--json", "databaseId,status,attempt", "-q", ".[0]|[.databaseId,.status,.attempt]|join(\":\")"], log=log)[1].strip()
+    def rerun():
+        rid = run(["gh", "run", "list", "--repo", REPO, "--branch", f"lane/{n}", "--limit", "1", "--json", "databaseId", "-q", ".[0].databaseId"], log=log)[1].strip()
+        if rid.isdigit(): run(["gh", "run", "rerun", rid, "--failed", "--repo", REPO], log=log)
+    def merge(): return gh("pr", "merge", str(pr), "--squash", log=log)[0] == 0
+    res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp)
+    if res[0] == "merged": return 0, "merged PR #%d" % pr
+    if res[0] == "red": return 6, "CI RED\n" + "\n".join(res[1])
+    return 7, "CI " + ("timed out" if res[0] == "timeout" else "green but `gh pr merge` failed")
+
+def find_pr_merged(n):
+    rc, out = gh("pr", "list", "--head", f"lane/{n}", "--state", "merged", "--json", "number")
+    try: return bool(json.loads(out))
+    except ValueError: return False
+
+def deploy_main(log):
+    """After CI merges (#74): bring the integrate checkout to main, rebuild, commit the built files if changed, deploy ONCE (skipped when this sha is already deployed)."""
+    run(["git", "fetch", "-q", REMOTE], cwd=ROOT, log=log)
+    if not (INTEG / ".git").exists():
+        run(["git", "worktree", "prune"], cwd=ROOT); run(["git", "worktree", "add", "-B", "integrate", str(INTEG), f"{REMOTE}/{BRANCH}"], cwd=ROOT, log=log)
+    run(["git", "merge", "--abort"], cwd=INTEG); run(["git", "reset", "-q", "--hard"], cwd=INTEG)
+    run(["git", "checkout", "-q", "-B", "integrate", f"{REMOTE}/{BRANCH}"], cwd=INTEG, log=log)
+    if run(["python3", "build_talents.py"], cwd=INTEG / "oren2", log=log)[0]: raise Blocked("build failed after CI merge")
+    run(["git", "add", "oren2/index.html", "oren2/cf/public/index.html"], cwd=INTEG)
+    if run(["git", "diff", "--cached", "--quiet"], cwd=INTEG)[0]:
+        run(["git", "commit", "-qm", "Rebuild index.html\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"], cwd=INTEG, log=log)
+        if run(["git", "push", "-q", REMOTE, f"HEAD:{BRANCH}"], cwd=INTEG, log=log)[0]: raise Blocked("push of rebuilt index.html failed")
+    sha = run(["git", "rev-parse", "HEAD"], cwd=INTEG)[1].strip()
+    mark = RUNS / "deployed.sha"
+    if not deploy_needed(mark.read_text().strip() if mark.exists() else "", sha):
+        return "already deployed with an earlier PR (batch)"
+    dep = deploy_text(log)
+    if dep.startswith("deployed"): mark.write_text(sha)       # never mark a sha that was not deployed (no token)
+    return dep
+
 MAX_CORE = int(CFG.get("max_core", 1))
+EXPRESS = int(CFG.get("express_lanes", 0))
 
 class core_slot:
     """One of MAX_CORE core slot locks (cross-process)."""
@@ -472,7 +623,7 @@ def process_locked(issue):
             pass                                             # parked earlier: re-attach to its windows and worktree, change nothing
         else:
             if (wt.exists() or run(["git", "rev-parse", "--verify", f"lane/{n}"], cwd=ROOT)[0] == 0) and not pushed:   # leftovers of an unfinished try
-                run(["git", "worktree", "remove", "--force", str(wt)], cwd=ROOT, log=log)
+                remove_worktree(wt, log)
                 run(["git", "branch", "-D", f"lane/{n}"], cwd=ROOT, log=log)
             if not wt.exists():                              # lane.sh continues from origin/lane/<n> when pushed work exists (never deleted)
                 rc, _ = run([BASH, "tools/lane.sh", str(n), BRANCH], cwd=ROOT, env={"REMOTE": REMOTE}, log=log)
@@ -508,8 +659,14 @@ def process_locked(issue):
                 raise Blocked(res or "fix worker gave no RESULT line")
             stat(n, lane, "fix_done")
 
+        kind = {"ci": False}
         def integrate():
-            with FileLock("integrate", wait=True):          # one merge at a time
+            if CFG.get("ci_merge", True) and find_pr(n):     # #74: CI decides, no local full suite
+                with FileLock("integrate", wait=True):
+                    rc, out = ci_integrate(n, wt, log)
+                    kind["ci"] = rc == 6
+                    return rc, out
+            with FileLock("integrate", wait=True):          # fallback: local merge + full suite
                 rc, out = run([BASH, "tools/integrate.sh", f"lane/{n}", BRANCH], cwd=ROOT,
                               env={"REMOTE": REMOTE, "JOBS": "4", "RUNNER": "1"}, log=log, timeout=3600)
                 if rc:
@@ -519,7 +676,7 @@ def process_locked(issue):
         def resolve(files):
             rounds[0] += 1
             stat(n, lane, "resolve")
-            o, r_ = agent(f"issue-{n}-resolve{rounds[0]}", resolve_prompt(n, files), wt, WORKER_TOOLS, d / f"resolve{rounds[0]}.log", "RESULT:", n, "worker")
+            o, r_ = agent(f"issue-{n}-resolve{rounds[0]}", ci_fix_prompt(n, files) if kind["ci"] else resolve_prompt(n, files), wt, WORKER_TOOLS, d / f"resolve{rounds[0]}.log", "RESULT:", n, "worker")
             return r_.startswith("RESULT: DONE")
         outcome = integrate_with_resolve(integrate, resolve, 2)
         if outcome[0] == "giveup":
@@ -529,13 +686,15 @@ def process_locked(issue):
             gh("issue", "comment", str(n), "--body", redact("Runner: merge conflicts not resolved after 2 rounds. Conflicting files: " + (", ".join(files) or "(see log)")))
             return "BLOCKED: merge conflicts after 2 resolve rounds"
         if outcome[0] == "failed":
-            raise Blocked(f"integrate.sh exit {outcome[1]}")
+            raise Blocked(outcome[2] if outcome[1] == 7 else f"integrate.sh exit {outcome[1]}")
         with FileLock("integrate", wait=True):
             stat(n, lane, "merged")
-            dep = deploy_text(log)
+            dep = deploy_main(log) if CFG.get("ci_merge", True) and find_pr_merged(n) else deploy_text(log)
+        m = sync_main(log)                       # result logged (review of #47)
+        if m: log_line(m)
         gh("issue", "close", str(n), "--comment", f"Merged to {BRANCH}, tests green, {dep}.")
         set_labels(n, remove=["in-progress"])
-        run(["git", "worktree", "remove", "--force", str(wt)], cwd=ROOT, log=log)
+        remove_worktree(wt, log)
         close_windows(n)
         stat(n, lane, "deployed")
         return f"DONE {dep}"
@@ -591,7 +750,7 @@ def main():
     rc, out = gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: print("gh failed:", out); return 1
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
-    chosen = [c for c in select(issues, CFG["max_parallel"], MAX_CORE) if not FileLock(f"issue-{c['number']}").held_by_other()]
+    chosen = [c for c in select(issues, CFG["max_parallel"], MAX_CORE, EXPRESS) if not FileLock(f"issue-{c['number']}").held_by_other()]
     cutoff = CFG["stuck_hours"] * 3600
     stuck = [i for i in issues if "in-progress" in i["labels"] and not FileLock(f"issue-{i['number']}").held_by_other()
              and (time.time() - datetime.fromisoformat(i["updatedAt"].replace("Z", "+00:00")).timestamp()) > cutoff]

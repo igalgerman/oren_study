@@ -85,7 +85,7 @@ function quiz(o){const qs=[],seen=new Set();let t=0;while(qs.length<o.n&&t++<400
     wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});const row=h('div','chs'+(q.ltr?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');if(q.auto&&q.play)setTimeout(()=>{if(qs[i]===q)q.play();},D(350));};
   const resolve=(q)=>{const ex=wrap.querySelector('.hintbox');if(q.explain){ex.hidden=false;ex.innerHTML=`<div class="cap">${q.explain}</div>`;}if(q.reveal)q.reveal(wrap.querySelector('.tqc'));};
-  function pickA(k,b){if(lock||b.disabled)return;const q=qs[i];if(!tries)O.emit('tq',o.id,k===q.ans);
+  function pickA(k,b){if(lock||b.disabled)return;const q=qs[i];if(!tries){O.emit('tq',o.id,k===q.ans);if(q.bank&&window.LEARN)window.LEARN.seen(q.bank,q.key,k===q.ans,false);}
     if(k===q.ans){if(window.TAL.rdA)window.TAL.rdA(q,tries,b);lock=true;if(window.FRIEND)window.FRIEND.onCorrect({tries});b.classList.add('ok');sfx.ok(i);const g=tries?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);resolve(q);setTimeout(next,D(q.explain||q.reveal?2300:1000));return;}
     tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();const fin=tries>=2||q.opts.length<=2;if(window.FRIEND)window.FRIEND.onWrong({final:fin});
     if(fin){lock=true;const c=wrap.querySelector('.chs').children[q.ans];c.classList.add('show');resolve(q);setTimeout(next,D(2600));}}
@@ -948,7 +948,7 @@ function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(
   s.appendChild(h('div','whead',`<h1>לוח הורים</h1>`));const tb=h('div','ptabs');TABS.forEach(([id,n])=>{const b=h('button','ptab'+(id===curTab?' on':''),n);b.onclick=()=>{openSec=null;panel(id);};tb.appendChild(b);});s.appendChild(tb);
   const body=h('div','pbody');s.appendChild(body);
   if(curTab==='sum')sumTab(body);
-  else if(curTab==='day'){timeTab(body);if(window.HEALTH)window.HEALTH.panel(body,sec,()=>panel('day'));planTab(body);if(window.DAYLOG)window.DAYLOG.panel(body,sec);if(T.rdSettings)T.rdSettings(body,sec,()=>panel('day'));}
+  else if(curTab==='day'){timeTab(body);if(window.HEALTH)window.HEALTH.panel(body,sec,()=>panel('day'));planTab(body);if(window.DAYLOG)window.DAYLOG.panel(body,sec);if(window.LEARN)window.LEARN.parentPanel(body,sec,()=>panel('day'));if(T.rdSettings)T.rdSettings(body,sec,()=>panel('day'));}
   else MORE.forEach(([id,n])=>{const d=document.createElement('details');d.className='pdet';const sm=document.createElement('summary');sm.textContent=n;d.appendChild(sm);const inner=h('div','pdin');d.appendChild(inner);let done=false;
     const fill=()=>{if(done)return;done=true;FN[id](inner);};d.addEventListener('toggle',()=>{if(d.open){openSec=id;fill();}});if(openSec===id){d.open=true;fill();}body.appendChild(d);});
   const out=h('div','btnrow');const bb=h('button','bigbtn plain sm',ICON.home+'<span>יציאה מלוח ההורים</span>');bb.onclick=exitParent;out.appendChild(bb);s.appendChild(out);window.__par=curTab;parLiveOn();
@@ -969,7 +969,7 @@ function sumTab(box){const s0=T.S(),sv=O.save;
   permStates().then(st=>{if(st&&Object.values(st).some(v=>v==='prompt'||v==='denied')){const w=h('button','pwarn','⚠️ יש הרשאות שעוד לא אושרו (למשל מיקרופון). לחצו כאן כדי לאשר מראש, כדי שאורן לא ייתקע באמצע.');w.onclick=()=>panel('perm');box.prepend(w);}});
   if(!SET().voiceOk){const w=h('button','pwarn','🔊 עוד לא בדקתם את הקול של המשחק. לחצו כאן — לוקח דקה: שומעים דוגמה ואומרים אוקי.');w.onclick=()=>panel('voice');box.appendChild(w);}
   issues(box);
-  if(window.DAYLOG)window.DAYLOG.nowBox(box);if(T.thinkSummary)T.thinkSummary(box,sec);
+  if(window.DAYLOG)window.DAYLOG.nowBox(box);if(window.LEARN){const rl=window.LEARN.runwayLine();if(rl)box.appendChild(h('div','pnote',rl));}if(T.thinkSummary)T.thinkSummary(box,sec);
   const acc=sv.ans?Math.round((sv.ok|0)/sv.ans*100):0;const totT=Object.values(s0.time).reduce((a,v)=>a+(v|0),0);const talSt=Object.values(s0.tl).reduce((a,c)=>a+(c.s|0),0);
   sec(box,'במבט אחד',`<div class="ptiles">
     <div><b>${new Set([...(sv.days||[]),...Object.keys(s0.time).filter(k=>(s0.time[k]|0)>=60)]).size}</b><span>ימי משחק</span></div><div><b>${O.dayStreak()}</b><span>רצף ימים</span></div>
@@ -1047,8 +1047,9 @@ function limitToday(){const x=limNow();return x&&x.min?x.min:0;}
 T.limLeft=()=>{const x=limNow();if(!x)return null;return x.n?{n:Math.max(0,x.n-doneN())}:{min:Math.max(0,x.min-usedMin())};};
 T.timeLeft=()=>{const x=T.limLeft();return x&&x.min!=null?x.min:null;};
 /* more for today: minutes or activities, on top of what is left */
+const pnow=()=>{O.persist();O.famNow&&O.famNow();};
 function grant(kind,v){const l=LIM(),x=limNow();if(kind==='min'){const base=x&&x.min&&x.min>usedMin()?x.min:usedMin();l.today={d:O.today(),min:base+v};}
-  else{const base=x&&x.n&&x.n>doneN()?x.n:doneN();l.today={d:O.today(),n:base+v};}O.persist();}
+  else{const base=x&&x.n&&x.n>doneN()?x.n:doneN();l.today={d:O.today(),n:base+v};}pnow();}
 const pdOpen={};/* which "more" sections stay open when the panel redraws */
 const pdet=(box,key,title)=>{const d=document.createElement('details');d.className='pdet';d.innerHTML=`<summary>${title}</summary>`;const inner=h('div','pdin');d.appendChild(inner);if(pdOpen[key])d.open=true;d.addEventListener('toggle',()=>{pdOpen[key]=d.open;});box.appendChild(d);return inner;};
 function timeTab(box){const l=LIM(),x=limNow(),left=T.limLeft(),t=todayL();
@@ -1058,9 +1059,9 @@ function timeTab(box){const l=LIM(),x=limNow(),left=T.limLeft(),t=todayL();
   const mk=(row,n,fn,on)=>{const b=h('button','pchip big'+(on?' on':''),n);b.onclick=()=>{fn();sfx.ok&&sfx.ok(1);panel('time');};row.appendChild(b);return b;};
   const g=h('div','pbig');[['+15 דק׳',()=>grant('min',15)],['+ משימה',()=>grant('n',1)]].forEach(([n,f])=>{const b=h('button','bigbtn sm','<span>'+n+'</span>');b.onclick=()=>{f();sfx.ok&&sfx.ok(1);panel('time');};g.appendChild(b);});ts.appendChild(g);
   const more=pdet(ts,'tmore','עוד אפשרויות');
-  const pr=h('div','popt','<span>רק להיום:</span>');[20,30,45,60].forEach(v=>mk(pr,v+' דק׳',()=>{l.today={d:O.today(),min:v};O.persist();},t&&t.min===v));[3,5,8].forEach(v=>mk(pr,v+' משימות',()=>{l.today={d:O.today(),n:v};O.persist();},t&&t.n===v));
-  mk(pr,'ללא הגבלה',()=>{l.today={d:O.today(),none:1};O.persist();},t&&t.none);if(t)mk(pr,'↺ כמו כל יום',()=>{l.today=null;O.persist();});
-  mk(pr,'⏹ לסיים עכשיו',()=>{l.today={d:O.today(),min:Math.max(1,usedMin())};O.persist();}).classList.add('bad');more.appendChild(pr);
+  const pr=h('div','popt','<span>רק להיום:</span>');[20,30,45,60].forEach(v=>mk(pr,v+' דק׳',()=>{l.today={d:O.today(),min:v};pnow();},t&&t.min===v));[3,5,8].forEach(v=>mk(pr,v+' משימות',()=>{l.today={d:O.today(),n:v};pnow();},t&&t.n===v));
+  mk(pr,'ללא הגבלה',()=>{l.today={d:O.today(),none:1};pnow();},t&&t.none);if(t)mk(pr,'↺ כמו כל יום',()=>{l.today=null;pnow();});
+  mk(pr,'⏹ לסיים עכשיו',()=>{l.today={d:O.today(),min:Math.max(1,usedMin())};pnow();}).classList.add('bad');more.appendChild(pr);
   const ds=sec(pdet(box,'tdaily','🗓️ הגבלה קבועה לכל יום'),'הגבלה קבועה לכל יום','<div class="pnote">נספר רק זמן פעיל. אורן רואה למעלה כמה נשאר. בסוף הזמן — מסך "נתראה מחר"; אם אורן באמצע פעילות, הוא מסיים אותה (עד 5 דקות). שינוי מהטלפון שלכם מגיע למכשיר של אורן תוך כדקה.</div>');
   const dr=h('div','popt','<span>דקות ביום:</span>');[[0,'ללא'],[20,'20'],[30,'30'],[45,'45'],[60,'60'],[90,'90']].forEach(([v,n])=>{const b=h('button','pchip'+((l.daily|0)===v?' on':''),n);b.onclick=()=>{l.daily=v;O.persist();panel('time');};dr.appendChild(b);});ds.appendChild(dr);
   const br=h('div','popt','<span>לא לשחק אחרי:</span>');[[0,'ללא'],[18,'18:00'],[19,'19:00'],[20,'20:00'],[21,'21:00']].forEach(([v,n])=>{const b=h('button','pchip'+((l.bed|0)===v?' on':''),n);b.onclick=()=>{l.bed=v;O.persist();panel('time');};br.appendChild(b);});ds.appendChild(br);
@@ -1073,7 +1074,7 @@ function timeUp(kind){if(lockEl&&lockEl.isConnected)return;endGrace();O.hush&&O.
   const head=kind==='bed'?'זְמַן לָנוּחַ':left&&left.n!=null?'סִיַּמְתָּ אֶת הַמְּשִׂימוֹת שֶׁל הַיּוֹם!':'הַזְּמַן שֶׁל הַיּוֹם נִגְמַר';
   lockEl=h('div','tlock',`<div class="card"><div class="callp bob">${T.friend()}</div><h2>${head}</h2><div class="sub">כָּל הַכָּבוֹד הַיּוֹם, אוֹרֶן!${n?` סִיַּמְתָּ ${n===1?'מְשִׂימָה אַחַת':`${n} מְשִׂימוֹת`}.`:''}<br>הַמֹּחַ וְהַגּוּף צְרִיכִים גַּם לָנוּחַ וּלְשַׂחֵק בַּחוּץ.<br>הַכֹּל שָׁמוּר. נִתְרָאֶה מָחָר 👋</div></div>`);
   const row=h('div','btnrow');const pb=h('button','bigbtn plain sm','🔒 <span>הוֹרֶה: עוֹד זְמַן</span>');pb.onclick=()=>login(()=>{const ov=$('#ov');ov.hidden=false;ov.innerHTML='<div class="card"><h2>כמה להוסיף להיום?</h2></div>';const r=h('div','btnrow');
-      const give=f=>{f();if(kind==='bed')LIM().bedOff=O.today();O.persist();ov.hidden=true;parentOn=false;unlock(false);};
+      const give=f=>{f();if(kind==='bed')LIM().bedOff=O.today();pnow();ov.hidden=true;parentOn=false;unlock(false);};
       [[10,'+10 דק׳'],[20,'+20 דק׳'],[30,'+30 דק׳']].forEach(([v,n2])=>{const b=h('button','bigbtn sm','<span>'+n2+'</span>');b.onclick=()=>give(()=>grant('min',v));r.appendChild(b);});
       const b1=h('button','bigbtn sm','<span>עוד משימה אחת</span>');b1.onclick=()=>give(()=>grant('n',1));r.appendChild(b1);
       const c=h('button','bigbtn plain sm','<span>ביטול</span>');c.onclick=()=>{ov.hidden=true;parentOn=false;};r.appendChild(c);ov.firstChild.appendChild(r);});
@@ -1107,7 +1108,7 @@ function pill(left){const hud=$('#hud');if(!hud)return;if(!pillEl){pillEl=h('but
   const show=left&&(left.min!=null?left.min>0:left.n>0)&&!O.isParentPlay&&$('#sPar').hidden;pillEl.hidden=!show;document.body.classList.toggle('haspill',!!show);if(!show)return;const tx=pillText(left);if(pillEl.textContent!==tx)pillEl.textContent=tx;pillEl.classList.toggle('low',left.min!=null?left.min<=5:left.n<=1);}
 O.on('screen',()=>setTimeout(()=>pill(T.limLeft()),0));O.on('synced',()=>limCheck());
 setInterval(()=>{limCheck();const left=T.limLeft();/* near the end or locked: look for the parent's grant more often */
-  if(O.family&&(lockEl||(left&&(left.n!=null?left.n<=1:left.min<=5)))&&Date.now()-lastPull>(window.__pullGap!=null?window.__pullGap:20000)){lastPull=Date.now();O.famPull&&O.famPull();}},2000);
+  if(O.family&&(lockEl||(left&&(left.n!=null?left.n<=1:left.min<=5)))&&Date.now()-lastPull>(window.__pullGap!=null?window.__pullGap:lockEl?5000:20000)){lastPull=Date.now();O.famPull&&O.famPull();}},2000);
 T.limCheck=limCheck;
 /* --- voice --- *//* --- voice --- */
 const SAMPLE='שָׁלוֹם אוֹרֶן! הַיּוֹם נִלְמַד יַחַד. הֶחָתוּל יָשֵׁן עַל הַכִּסֵּא. כַּמָּה זֶה שָׁלוֹשׁ וְעוֹד אַרְבַּע? נָכוֹן, שֶׁבַע!';
@@ -1165,7 +1166,7 @@ function progTab(box){const sv=O.save,s0=T.S();
   const gs=sec(box,'יהלומים',`<div class="pnote">כרגע: <b>${sv.gems|0}</b> יהלומים. אפשר להעניק בונוס (או להוריד).</div>`);const gr=h('div','popt');
   [10,50,-10].forEach(n=>{const b=h('button','pchip',(n>0?'+':'')+n);b.onclick=()=>{sv.gems=Math.max(0,(sv.gems|0)+n);O.persist();O.updateGems&&O.updateGems();panel('prog');};gr.appendChild(b);});gs.appendChild(gr);
   const rs=sec(box,'איפוס מלא','<div class="pnote">מוחק את כל ההתקדמות של אורן (כוכבים, יהלומים, ממלכה, ציורים, תגים). הסיסמה, ההגדרות והכרטיס האישי נשמרים.</div>');
-  const rr=h('div','popt');rr.appendChild(armBtn('🗑️ איפוס כל ההתקדמות','bad',()=>{const keep={set:SET(),prof:prof()};O.resetAll(keep);}));rs.appendChild(rr);}
+  const rr=h('div','popt');rr.appendChild(armBtn('🗑️ איפוס כל ההתקדמות','bad',()=>{const keep={set:SET(),prof:prof()};O.resetAll(keep);}));rs.appendChild(rr);if(window.LEARN)window.LEARN.skillsPanel(box,sec,()=>panel('prog'));}
 /* --- message to Oren --- */
 function msgTab(box){const st=SET();const m=st.msg;
   const ms=sec(box,'הודעה לאורן','<div class="pnote">ההודעה תופיע לאורן בפעם הבאה שייכנס למפה, תוקרא לו בקול, והוא יוכל לשלוח לכם תגובה באימוג׳י. אפשר לצרף מתנה של יהלומים.</div>');
@@ -1249,7 +1250,10 @@ const grpOf=bid=>T.GROUPS.find(g=>g.ids.includes(bid))||{};
 const gid=dm=>String(dm).startsWith('b:')?grpOf(dm.slice(2)).id:dm;
 const domOf=id=>id==='math'?'math':ACT[id]?grpOf(ACT[id].b.id).id:null;
 function doms(){const out=[];if(nextLevel()&&!rest('math'))out.push(MATH);T.GROUPS.forEach(g=>{if(poolOf(g.ids).length)out.push(g);});return out;}
-function stepsOf(dm,n,used){if(dm==='math')return Array(n).fill('math');const bid=String(dm).startsWith('b:')?dm.slice(2):null;
+/* "what next?": the learning engine (learn.js) picks the steps of a domain by his level, due reviews and what he has not seen; the old random pick fills what it leaves */
+function stepsOf(dm,n,used){let out=[];if(window.LEARN&&LEARN.plan&&!String(dm).startsWith('b:')&&dm!=='tog'){try{out=(LEARN.plan(dm,n,used)||[]).filter(x=>x&&(ACT[x]||x==='math')).slice(0,n);}catch(e){out=[];}}
+  if(out.length>=n)return out;const rest=stepsOfRnd(dm,n-out.length,new Set([...used,...out.filter(x=>x!=='math')]));return out.concat(rest);}
+function stepsOfRnd(dm,n,used){if(dm==='math')return Array(n).fill('math');const bid=String(dm).startsWith('b:')?dm.slice(2):null;
   let pool=shuffle(poolOf(bid?[bid]:(T.GROUPS.find(g=>g.id===dm)||{ids:[]}).ids).filter(x=>!used.has(x)));
   if(bid&&pool.length<n)pool=pool.concat(shuffle(poolOf(grpOf(bid).ids||[]).filter(x=>!used.has(x)&&!pool.includes(x))));return pool.slice(0,n);}
 /* quiet balancing: a domain not chosen for a while weighs more */
@@ -1324,7 +1328,7 @@ function home(){const S0=T.S();
   const say=!d?`${T.hello()}, אוֹרֶן! בְּמָה נְשַׂחֵק?`:dayDone?window.FRIEND.homeSay(d):pickDay?'שָׁלוֹם אוֹרֶן! מָה בָּא לְךָ הַיּוֹם?':nx>=0?`${q.e} ${q.a}`:d.claimed?'כָּל הַכָּבוֹד! עַכְשָׁו זְמַן חוֹפְשִׁי 🎈':'סִיַּמְתָּ אֶת הַשְּׁבִיל! בּוֹא נִרְאֶה אֵיךְ נִגְמַר הַסִּפּוּר.';
   const tl='';
   s.appendChild(h('div','hstage',`<div class="hbub2" style="--fc:${pr.col||'#4fae4f'}">${say}${tl}</div><div class="hpair" role="button" aria-label="מָה אֶפְשָׁר לַעֲשׂוֹת כָּאן?"><span class="hav bob">${O.AV()}</span><span class="hpet2 bob" style="animation-delay:-.7s">${T.friend()}</span></div>`));
-  s.querySelector('.hpair').onclick=()=>{sfx.pop(2);if(dayDone&&d.free)window.FRIEND.bonus();else tour();};
+  s.querySelector('.hpair').onclick=()=>{sfx.pop(2);if(dayDone&&d.free)window.FRIEND.bonus();else if(window.TOPIC)window.TOPIC.open();else tour();};
   O.sayNow=T.spk(say);
   if(pickDay){/* "what do you feel like today?": 3 big cards (one is "continue" when there is a last activity) + something else */
     const all=doms(),ln=lastStep(),lg=ln&&domOf(ln);if(!d.o||all.some(x=>!d.o.includes(x.id))){d.o=wpick(all,all.length).map(x=>x.id);O.persist();}

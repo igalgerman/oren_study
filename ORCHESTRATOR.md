@@ -10,7 +10,7 @@ Keep your own context small: do the work through the runner (herdr windows) or S
 - Backlog: GitHub issues in **igalgerman/oren_study** (#1–#11). Labels: lane `core`/`pack`/`review`, `bug`, `ready-for-agent`,
   `ready-for-human`, `needs-triage`, `in-progress`, `blocked`. Dependencies as a `Blocked by: #n` line in the body.
 - Runner: `tools/runner/run.cmd <n>` (one issue now) or `run.cmd` (one pass over the ready queue). Opens herdr windows
-  `run-<n>` → `issue-<n>` (worker, interactive Sonnet, owner can talk to it) → `review-<n>` → integrate (merge, build, full tests)
+  `run-<n>` → `issue-<n>` (worker, interactive Sonnet, owner can talk to it) → `review-<n>` → integrate (wait for green CI, squash-merge, ONE build + deploy; #74)
   → deploy if `.env` has `CLOUDFLARE_API_TOKEN` → pregen → closes the issue. The `run-<n>` window's exit note lands in your terminal.
   Config: `tools/runner/config.toml` (remote, branch, max_parallel=3, model, hc path). Not yet proven on a real issue.
 - herdr CLI: `C:\Users\97254\AppData\Local\Programs\herdr-core\hc.exe` (`hc ls`, `hc read <t>`, `hc run --bg --name X claude ...`).
@@ -24,6 +24,7 @@ idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → r
 - Bugs: same flow, label `bug`, no grilling, go first in the queue, worker writes a failing test first.
 - Clear tasks (already specified) skip grilling. Fuzzy ideas get `/grill-me` in the `intake` window, not in your context.
 - Deploy after every green merge (owner OK'd the flow). Never force-push. No secrets in chat.
+- Owner writes `approve #n` or `express #n`: add the label `express` to that issue at once (`gh issue edit n --repo igalgerman/oren_study --add-label express`) and answer in one line. Express issues get their own extra lane (`express_lanes` in config.toml), start first, and may exceed max_core (#72).
 - Open the intake window: `hc run --bg --name intake --cwd C:\work\Oren_study\a claude "/grill-me"`.
 
 ## State at handoff (25 Nov 2026)
@@ -64,10 +65,10 @@ Resume when the owner answers: type the answer into the window (`hc send issue-<
 The runner labels such an issue `blocked` + `needs-orchestrator` (NOT `ready-for-human`) and sends you `STUCK #n: <why> — decide: unblock, split, or ask the owner`. It is YOUR job: read the issue comment and the window, fix it yourself (rewrite/split the issue, fix the runner, do the missing step), then remove `blocked` + `needs-orchestrator` and `tools/runner/run.cmd <n>`. Ask the owner only if it is truly his decision (then ask in your window; if he is away it becomes a parked question with `ready-for-human`). The panel shows these in a dim "orchestrator handling" line, not in the owner's lane.
 
 ## Observer (acting, within limits)
-Every `observer_minutes` (config.toml, default 10) the watchdog runs `tools/runner/observer.py`: python rules plus a headless Sonnet pass (`observer_prompt.md`) propose actions; only the python executor acts: `make_ready` (needs-orchestrator/P0 untouched 30+ min while you are idle, never while `integrate.lock` is alive), `rerun` (in-progress with no live run-n terminal for 10+ min), `fix_blocked_by` (normalize dependency lines), `nudge_orchestrator`/`ask_owner` (typed into your window). Limits: max 5 actions per run, same action+issue once per 60 min, never touches ready-for-human except ask_owner, never edits code/merges/closes issues. Each action is commented on the issue ("Observer: ...") and logged in `tools/runner/.runs/observer.log`; last result `observer.last`; state `observer.state.json`. To stop it: `observer_minutes = 0`. Dry run: `python tools/runner/observer.py --once --dry`. Use `needs-orchestrator` on purpose to keep the observer off an issue for 30 min.
+Every `observer_minutes` (config.toml, default 10) the watchdog runs `tools/runner/observer.py`, python rules only (no LLM): `make_ready` (needs-orchestrator/P0 untouched 30+ min while you are idle), `rerun` (in-progress with no live run-n terminal for 10+ min), `fix_blocked_by` (normalize dependency lines). Limits: max 5 actions per run, same action+issue once per 60 min, never on ready-for-human, never on an issue with an open lane/<n> PR, never while `integrate.lock` is alive (re-checked before each action). Each action is commented on the issue ("Observer: ...") and logged in `tools/runner/.runs/observer.log`; last result `observer.last`. To stop it: `observer_minutes = 0`. Dry run: `python tools/runner/observer.py --dry`. Use `needs-orchestrator` on purpose to keep the observer off an issue for 30 min.
 
 ## Code changes
 - runner.py changes apply to the NEXT issue run (every run is a fresh `python runner.py` process; running runs keep the code they started with). The watchdog reloads runner.py by itself when the file changes; a change in watchdog.py itself needs the `watchdog` window restarted (kill it, run the watchdog line of tools/orchestrator.cmd) at a quiet moment.
-- tools/integrate.sh works in its own checkout `C:\work\Oren_study\wt-integrate` (branch `integrate`), so uncommitted edits in this checkout never block a merge; this checkout is fast-forwarded afterwards when clean. Deploy and pregen run there too.
+- Normal path (#74): the runner merges on a green PR `tests` check. tools/integrate.sh is the fallback (`ci_merge = false`) and works in its own checkout `C:\work\Oren_study\wt-integrate` (branch `integrate`), so uncommitted edits in this checkout never block a merge; this checkout is fast-forwarded afterwards when clean. Deploy and pregen run there too.
 
 Owner asks for stats → `python tools/runner/stats.py`, answer in ≤5 lines.

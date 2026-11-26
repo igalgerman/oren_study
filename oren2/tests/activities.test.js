@@ -16,8 +16,17 @@ const URL=L.URL;const sleep=ms=>new Promise(r=>setTimeout(r,ms));
  const OPENED=async()=>{const n=await p.evaluate(()=>document.querySelector('#sTal').children.length+(document.querySelector('#ov').hidden?0:1));return n>0?'skip':'EMPTY SCREEN';};
  /* batch B: the thinking tracks and reading comprehension are answered through window.__think (always the right option) */
  const THK=async()=>{for(let k=0;k<500&&!(await ovOpen());k++){await p.evaluate(()=>{const q=window.__think;if(!q||!q.wrap.isConnected)return;const c=q.wrap.querySelector('.chs');if(c&&c.children[q.ans])c.children[q.ans].click();});await sleep(120);}};
+ /* batch C: math training (answers through window.__learn; the placement screen first when it comes) and paper & pencil (math: type the result, writing: tick "done") */
+ const LNM=async()=>{for(let r=0;r<4&&!(await tl('ln-math'));r++){if(await ovOpen()){await click('#ov .bigbtn');await sleep(200);}
+   for(let k=0;k<400&&!(await ovOpen());k++){await p.evaluate(()=>{const q=window.__learn,w=document.querySelector('#sTal'),row=w.querySelector('.chs');
+     if(row&&q&&q.wrap&&q.wrap.isConnected&&row.children[q.ans]&&!row.children[q.ans].disabled){row.children[q.ans].click();return;}
+     const nb=w.querySelector('.hintbox:not([hidden]) .bigbtn')||(!row&&w.querySelector('.btnrow .bigbtn'));if(nb)nb.click();});await sleep(100);}}};
+ const LNP=async()=>{await p.evaluate(()=>{window.__learn=null;});await click('#sTal .lnpaper .btnrow .bigbtn');await sleep(200);
+   const t=await p.evaluate(()=>{const q=window.__learn;if(q&&q.type){q.type(q.ans);return 1;}const d=document.querySelector('.lnchk .btnrow .bigbtn');if(d){d.click();return 2;}return 0;});
+   if(!t){await click('#sTal .lnpaper .btnrow .bigbtn');await sleep(200);await click('.lnchk .btnrow .bigbtn');}await sleep(300);};
  const S={
   'read-rc':THK,'think-pat':THK,'think-ana':THK,'think-ser':THK,'think-rel':THK,'think-mat':THK,'think-sen':THK,
+  'ln-math':LNM,'ln-paper':LNP,
   'write-mix':OPENED,
   'write-paper':OPENED,
   'read-nik':OPENED,

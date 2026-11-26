@@ -24,6 +24,10 @@ print("ok")
 # blocked-by: #3 waits while #1 is open; starts when #1 is gone
 from runner import select as _sel, blockers as _bl
 assert _bl("x\nBlocked by: #1, #2\n") == [1, 2]
+assert _bl("- Blocked by: #23") == [23]
+assert _bl("  * blocked by: #4, #5") == [4, 5]
+assert _bl("> Blocked by: #6") == [6]
+assert _bl("see Blocked by #7 in text") == []
 _q = [{"number": 1, "labels": ["core"], "createdAt": "1"},
       {"number": 3, "labels": ["core", "ready-for-agent"], "createdAt": "3", "body": "Blocked by: #1"},
       {"number": 4, "labels": ["pack", "ready-for-agent"], "createdAt": "4", "body": ""}]
@@ -63,6 +67,17 @@ _ts = [
 ]
 assert sorted(W.leftovers(_ts, closed={5}, blocked={7})) == ["issue-2", "issue-5", "run-5", "run-9"], W.leftovers(_ts, {5}, {7})
 print("ok cleanup")
+# #43: every finished record goes; idle windows with no live run-<n> go (unless ready-for-human)
+_f = [{"name": n, "state": "finished"} for n in ("run-pass-123", "run-4-r", "watchdog", "flowtest-1", "intake-3", "review-25")]
+assert sorted(W.leftovers(_f, set(), set())) == sorted(x["name"] for x in _f)
+_idle = [{"name": "review-25", "state": "live", "status": "idle"}, {"name": "issue-26", "state": "live", "status": "idle"},
+         {"name": "run-26", "state": "live", "status": ""}, {"name": "intake-27", "state": "live", "status": "done"},
+         {"name": "issue-28", "state": "live", "status": "idle"}, {"name": "issue-29", "state": "live", "status": "idle"}]
+_st = {"review-25", "issue-26", "intake-27", "issue-28", "issue-29"}
+assert sorted(W.leftovers(_idle, set(), set(), human={28}, stale=_st)) == ["intake-27", "issue-29", "review-25"]   # 26 has live run, 28 is for the owner
+assert W.leftovers(_idle, set(), set(), human={28}, stale=set()) == []                                          # not idle long enough
+print("ok orphans")
+
 # regression: a finished run-2 next to a live run-2 must not close anything (the live one is working)
 assert W.leftovers([{"name": "run-2", "state": "finished"}, {"name": "run-2", "state": "live", "status": ""}], set(), set()) == []
 print("ok same-name")
@@ -117,14 +132,6 @@ import inspect
 assert '"ready-for-human"' in inspect.getsource(r.park_issue) and "ready-for-human" not in inspect.getsource(r.block)
 print("ok routing")
 
-# observer scheduling + parse
-assert W.observer_due(0, 1800, 30, False) and not W.observer_due(0, 1799, 30, False) and not W.observer_due(0, 99999, 30, True)
-assert W.parse_observer("OBSERVER: OK\nOBSERVER-END") == []
-_p = W.parse_observer("noise\nOBSERVER: #3 needs no owner → label ready-for-agent\nOBSERVER: backlog low → add work\nOBSERVER-END")
-assert _p == ["OBSERVER: #3 needs no owner → label ready-for-agent", "OBSERVER: backlog low → add work"]
-assert len(W.parse_observer(NL.join(f"OBSERVER: p{i} → f" for i in range(12)))) == 8
-print("ok observer")
-
 # ---- acting observer ----
 import observer as ob
 def _I(n, L, touched=60, norun=0, body=""): return {"number": n, "labels": L, "touched_min_ago": touched, "no_run_min": norun, "body": body}
@@ -138,16 +145,34 @@ assert ob.rules(_S([_I(2, ["in-progress"], 5, norun=11)]))[0][:2] == ("rerun", 2
 assert ob.rules(_S([_I(2, ["in-progress"], 5, norun=3)])) == []
 assert ob.normalize_body("x\n- Blocked by 56, 7\nBlocked by: 8\nBlocked by: #1, #2\n") == ("x\nBlocked by: #56, #7\nBlocked by: #8\nBlocked by: #1, #2\n", True)
 assert ob.normalize_body("Blocked by: #1\n")[1] is False
-_p, _a = ob.parse_output("OBSERVER: x -> y\nACTION make_ready #5 stuck\nACTION nudge_orchestrator - hello there\nACTION delete_all 3 no\nOBSERVER-END")
-assert _a == [("make_ready", 5, "stuck"), ("nudge_orchestrator", None, "hello there")] and len(_p) == 1
 _s = _S([_I(n, ["x"]) for n in range(1, 9)])
 assert len(ob.select_actions([("make_ready", n, "r") for n in range(1, 9)], _s, {}, 10**6)) == 5          # max 5
 assert ob.select_actions([("make_ready", 1, "r")], _s, {"acted": {"make_ready:1": 10**6 - 59 * 60}}, 10**6) == []   # repeat < 60 min
 assert len(ob.select_actions([("make_ready", 1, "r")], _s, {"acted": {"make_ready:1": 10**6 - 61 * 60}}, 10**6)) == 1
 assert ob.select_actions([("rerun", 1, "r")], _S([_I(1, ["ready-for-human"])]), {}, 10**6) == []          # never on ready-for-human
-assert len(ob.select_actions([("ask_owner", None, "q")], _s, {}, 10**6)) == 1
 assert ob.select_actions([("rerun", 1, "r")], _S([_I(1, ["x"])], integ=True), {}, 10**6) == []
+_pr = _S([_I(1, ["x"]), _I(2, ["x"])]); _pr["open_prs"] = [{"headRefName": "lane/1"}, {"headRefName": "lane/12"}]
+assert ob.select_actions([("make_ready", 1, "r"), ("fix_blocked_by", 1, "r"), ("rerun", 2, "r")], _pr, {}, 10**6) == [("rerun", 2, "r")]   # open lane/1 PR: being merged
+_sets = []; _old = (ob.integrating, ob.R.set_labels, ob.comment)
+ob.R.set_labels = lambda n, add=(), remove=(): _sets.append(n); ob.comment = lambda *a: None
+ob.integrating = lambda: True; assert ob.execute("make_ready", 1, "r", {"terminals": []}) is False and ob.execute("rerun", 1, "r", {"terminals": []}) is False and _sets == []   # lock appeared after snapshot
+ob.integrating = lambda: False; assert ob.execute("make_ready", 1, "r", {"terminals": []}) is True and _sets == [1]
+ob.integrating, ob.R.set_labels, ob.comment = _old
 print("observer ok")
+# priority: bug first, then P0<P1<P2<P3 (missing = P2), then oldest
+assert nums(r.select([I(1,[R,"pack","P3"]), I(2,[R,"pack"]), I(3,[R,"pack","P1"]), I(4,[R,"pack","P0"])], 4)) == [4,3,2,1]
+assert nums(r.select([I(1,[R,"pack","P0"]), I(2,[R,"pack","bug","P3"])], 2)) == [2,1]
+assert nums(r.select([I(5,[R,"pack","P1"]), I(3,[R,"pack","P1"])], 2)) == [3,5]
+assert r.priority_of(["P1", "x"]) == 1 and r.priority_of([]) == 2
+print("ok priority")
+# stale window on resume: a finished (done/idle) window is stale, because every window found at the start of a run is older than this run
+# (and than the latest push); only working / blocked / waiting-for-an-answer windows are re-attached
+assert r.is_stale_window("done", scr("● hi", "  VERDICT: FIX", "❯"))                       # old finished review: stale
+assert r.is_stale_window("idle", scr("  RESULT: DONE"))
+assert not r.is_stale_window("working", scr("  VERDICT: FIX"))
+assert not r.is_stale_window("blocked", "")
+assert not r.is_stale_window("done", q)                                                      # finished but asked the owner: keep
+print("ok stale-window")
 # deploy_text: "ok <url>" is the LAST line of deploy.sh; pregen only when config pregen = true (#50)
 _calls = []
 NL = chr(10)
@@ -162,3 +187,118 @@ r.CFG["pregen"] = True; _calls.clear()
 assert r.deploy_text(None).startswith("deployed ok https://") and any("pregen.js" in " ".join(map(str, c)) for c in _calls)
 r.run, r.env_file = _orig_run, _orig_env; r.CFG["pregen"] = False
 print("ok deploy")
+# sync_decision: keep the main checkout up to date with origin/main (#47)
+assert r.sync_decision("main", "main", False, 3) == ("pull", "")
+assert r.sync_decision("main", "main", False, 0) == ("skip", "")                 # already current: nothing to say
+assert r.sync_decision("main", "main", True, 3)[0] == "skip" and "uncommitted" in r.sync_decision("main", "main", True, 3)[1]
+assert r.sync_decision("lane/9", "main", False, 3)[0] == "skip" and "lane/9" in r.sync_decision("lane/9", "main", False, 3)[1]
+# git status lines: untracked files are fine, tracked edits are dirty
+assert r.is_dirty("?? tools/x.txt\n?? y\n") is False
+assert r.is_dirty(" M tools/runner/runner.py\n?? y\n") is True
+assert r.is_dirty("") is False
+print("ok sync-main")
+
+
+# #16: space lookup (mock herdr-app), pin/unpin, NEEDS YOU line, terminal.keep workaround is gone
+import json as _json
+_ran = []
+def _mock_run(out):
+    def f(cmd, **kw):
+        _ran.append(list(map(str, cmd))); return (0, out)
+    return f
+_orig_run16 = r.run
+r.run = _mock_run(_json.dumps({"spaces": [{"id": "s1", "name": "other"}, {"id": "s2", "name": r.CFG.get("herdr_space", "Oren_study_orech")}]}))
+r._SPACE = None
+assert r.space_args() == ["--label", "herdr.space=s2"]; assert len(_ran) == 1
+r.space_args(); assert len(_ran) == 1                                                       # cached
+r.run = _mock_run(_json.dumps({"spaces": [{"id": "s1", "name": "other"}]})); r._SPACE = None
+assert r.space_args() == []                                                                   # no such space: no label
+r.run = _mock_run("not json"); r._SPACE = None
+assert r.space_args() == []                                                                   # bad output: no label, no crash
+r.run = _orig_run16; r._SPACE = None
+assert not hasattr(r, "show")                                                                 # terminal.keep workaround removed
+
+_orig_run_w, _orig_app = W.R.run, W.R.HERDR_APP
+W.R.run = _mock_run(""); W.R.HERDR_APP = sys.executable
+_ran.clear(); W.pin({"address": "t:1"}, True)
+assert _ran[-1][1:] == ["do", "terminal.pin", "--terminal", "t:1", "--pinned", "true"], _ran
+W.pin({"address": "t:1"}, False); assert _ran[-1][-1] == "false"
+n = len(_ran); W.pin({}, True); assert len(_ran) == n                                         # no address: nothing to pin
+W.R.HERDR_APP = r"C:\no\such\herdr-app.exe"; W.pin({"address": "t:1"}, True); assert len(_ran) == n   # app missing: nothing
+W.R.run, W.R.HERDR_APP = _orig_run_w, _orig_app
+assert W.needs_you_line("issue-16", "QUESTION: a or b?", "tail") == "NEEDS YOU: #16 a or b?"
+assert W.needs_you_line("review-7", "", "x\nlast line") == "NEEDS YOU: #7 (waiting for an answer) last line"
+assert W.needs_you_line("intake", "QUESTION: ok?", "") == "NEEDS YOU: intake ok?"
+print("ok herdr-leftovers")
+# remove_worktree: the node_modules junction goes alone, the real modules survive; a half-made worktree is cleaned (#82)
+import tempfile, subprocess, os
+from pathlib import Path as _P
+_t = _P(tempfile.mkdtemp()); _real = _t / "real_modules"; _real.mkdir(); (_real / "keep.txt").write_text("x")
+_wt = _t / "wt-x"; (_wt / "oren2").mkdir(parents=True)
+subprocess.run(["cmd", "/c", "mklink", "/J", str(_wt / "oren2" / "node_modules"), str(_real)], capture_output=True, check=True)
+assert os.path.isjunction(_wt / "oren2" / "node_modules")
+r.remove_worktree(_wt)
+assert not _wt.exists() and (_real / "keep.txt").exists()
+import shutil; shutil.rmtree(_t, ignore_errors=True)
+print("ok remove-worktree")
+
+# CI merge decisions (#74)
+def _ck(*b): return [{"name": f"c{i}", "bucket": x} for i, x in enumerate(b)]
+assert r.ci_verdict([]) == "none" and r.ci_verdict(None) == "none"
+assert r.ci_verdict(_ck("pass", "pass")) == "green" and r.ci_verdict(_ck("pass", "skipping")) == "green"
+assert r.ci_verdict(_ck("pass", "pending")) == "pending"             # a pending check is never green
+assert r.ci_verdict(_ck("pending", "fail")) == "red" and r.ci_verdict(_ck("cancel")) == "red"
+assert r.ci_verdict(_ck("skipping")) == "none"
+def _cm(seq, merge_ok=True, **kw):
+    it, log = iter(seq), []
+    out = r.ci_merge(lambda: next(it), lambda: log.append("rerun"), lambda: log.append("merge") or merge_ok, lambda s: log.append("sleep"), **kw)
+    return out, log
+assert _cm([_ck("pass")]) == (("merged",), ["merge"])
+assert _cm([_ck("pending"), _ck("pass")]) == (("merged",), ["sleep", "merge"])
+assert _cm([_ck("fail"), _ck("pending"), _ck("pass")]) == (("merged",), ["rerun", "sleep", "sleep", "merge"])   # flaky: rerun once, then green
+assert _cm([_ck("fail"), _ck("fail")])[0] == ("red", ["c0"]) and _cm([_ck("fail"), _ck("fail")])[1].count("rerun") == 1   # still red: back to the worker
+assert _cm([_ck("pass")], merge_ok=False)[0] == ("merge-failed",)
+assert _cm([_ck("pending")] * 99, timeout_s=60, poll_s=30)[0] == ("timeout",)
+assert r.deploy_needed("a", "b") and not r.deploy_needed("b", "b") and r.deploy_needed("", "b") and not r.deploy_needed("a", "")
+assert r.conflict_files("CI RED\nc0\n") == ["c0"]
+assert r.integrate_with_resolve(iter([(6, "CI RED\nc0\n"), (0, "ok")]).__next__, lambda f: f == ["c0"], 2)[0] == "merged"
+assert "c0" in r.ci_fix_prompt(7, ["c0"]) and "RESULT: DONE" in r.ci_fix_prompt(7, [])
+assert r.CFG["ci_merge"] is True
+# rerun race: after the rerun the old failed run may still show; red is judged only once the run stamp changed
+def _race(stamps, checks):
+    it, st, log = iter(checks), iter(stamps), []
+    out = r.ci_merge(lambda: next(it), lambda: log.append("rerun"), lambda: True, lambda s: None, stamp=lambda: next(st))
+    return out, log
+assert _race(["a", "a", "a", "b"], [_ck("fail"), _ck("fail"), _ck("pending"), _ck("pass")])[0] == ("merged",)       # old red ignored
+assert _race(["a", "a", "b", "b"], [_ck("fail"), _ck("fail"), _ck("fail"), _ck("fail")])[0] == ("red", ["c0"])       # new run red: judged
+assert _race(["a", "a", "a", "a"] + ["a"] * 20, [_ck("fail")] * 30)[0] == ("red", ["c0"])                          # stamp never changes: bounded
+# deploy_main writes deployed.sha only when the text says "deployed" (not "not deployed: no token")
+import tempfile; from pathlib import Path
+_t = Path(tempfile.mkdtemp()); (_t / ".git").mkdir()
+_o = (r.run, r.INTEG, r.RUNS, r.deploy_text)
+r.run = lambda cmd, **kw: (0, "abc123" + chr(10)) if "rev-parse" in cmd else (0, "")
+r.INTEG, r.RUNS = _t, _t
+(_t / "oren2").mkdir()
+r.deploy_text = lambda log: "not deployed: no token"
+assert r.deploy_main(None) == "not deployed: no token" and not (_t / "deployed.sha").exists()
+r.deploy_text = lambda log: "deployed ok https://x"
+assert r.deploy_main(None).startswith("deployed") and (_t / "deployed.sha").read_text() == "abc123"
+r.run, r.INTEG, r.RUNS, r.deploy_text = _o
+# CI timeout / failed merge (rc 7) -> blocked with the real reason, no resolve round
+_n = {"r": 0}
+def _res(f): _n["r"] += 1; return True
+assert r.integrate_with_resolve(lambda: (7, "CI timed out"), _res, 2) == ("failed", 7, "CI timed out") and _n["r"] == 0
+print("ok ci-merge")
+
+# #72 express lane: own extra lane, starts first, may exceed max_core
+_e = lambda n, extra=(): I(n, [R, "express", *extra])
+assert nums(r.select([I(1, ["in-progress", "pack"]), I(2, ["in-progress", "pack"]), I(3, ["in-progress", "pack"]), _e(4, ["pack"])], 3, 2, 1)) == [4]
+assert nums(r.select([I(1, ["in-progress", "pack"]), I(2, ["in-progress", "pack"]), I(3, ["in-progress", "pack"]), _e(4, ["pack"])], 3, 2, 0)) == []   # no express lane configured
+assert nums(r.select([I(1, [R, "pack"]), _e(2, ["pack"])], 1, 1, 1)) == [2, 1]      # express first; normal lane still used
+assert nums(r.select([I(1, ["in-progress", "pack"]), I(2, ["in-progress", "pack"]), I(3, ["in-progress", "pack"]), _e(4, ["pack"]), _e(5, ["pack"])], 3, 2, 1)) == [4]   # only one express lane
+assert nums(r.select([I(1, ["in-progress", "pack", "express"]), _e(2, ["pack"])], 3, 2, 1)) == [2]   # express lane busy: 2 uses a normal slot
+assert nums(r.select([_c(1), _c(2), _e(3, ["core"])], 3, 2, 1)) == [3, 1, 2]       # express core first, doesn't use core limit
+assert nums(r.select([I(1, ["in-progress", "core"]), I(2, ["in-progress", "core"]), _e(3, ["core"]), _c(4)], 3, 2, 1)) == [3]   # express core despite max_core
+assert nums(r.select([_e(1, ["pack", "blocked"]), _e(2, ["pack"], )], 3, 2, 1)) == [2]
+assert r.CFG["express_lanes"] == 1
+print("ok express")

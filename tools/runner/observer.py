@@ -1,11 +1,9 @@
-"""Acting observer of the automatic flow. Called by the watchdog (observer.run_if_due()); also: python observer.py --once [--dry].
-1. snapshot() (deterministic)  2. deterministic rules  3. headless Claude pass proposes `ACTION <name> <issue> <reason>` lines
-4. execute() is the ONLY place that acts, inside strict limits (max actions per run, same action+issue once per 60 min,
-   never on ready-for-human except ask_owner, never make_ready/rerun while a manual integration runs (integrate.lock),
-   never edits code / merges / closes issues / touches other windows except send+enter to the orchestrator).
-Stop it: config.toml observer_minutes = 0.
+"""Acting observer of the automatic flow (deterministic rules only, no LLM). Called by the watchdog (observer.run_if_due()); also: python observer.py [--dry].
+1. snapshot()  2. rules()  3. select_actions() applies the limits (max actions per run, same action+issue once per 60 min,
+   never on ready-for-human, never on an issue with an open lane/<n> PR)  4. execute() acts; integrate.lock is re-checked before every make_ready/rerun.
+Never edits code, merges or closes issues. Stop it: config.toml observer_minutes = 0.
 """
-import json, re, shutil, sys, threading, time
+import json, re, sys, threading, time
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -14,9 +12,7 @@ import runner as R
 
 STATE, LOG, LAST = R.RUNS / "observer.state.json", R.RUNS / "observer.log", R.RUNS / "observer.last"
 LOCK = R.RUNS / "integrate.lock"
-PROMPT = HERE / "observer_prompt.md"
-TOOLS = ["Read", "Grep", "Glob", "Bash(gh:*)", "Bash(git log:*)", "Bash(git show:*)"]
-ACTIONS = ("nudge_orchestrator", "make_ready", "rerun", "fix_blocked_by", "ask_owner")
+ACTIONS = ("make_ready", "rerun", "fix_blocked_by")
 MAX_ACTIONS, REPEAT_MIN = 5, 60
 ORCH_MIN, NORUN_MIN = 30, 10          # needs-orchestrator / P0 untouched this long; in-progress without run terminal this long
 _running = {"v": False}
@@ -71,12 +67,10 @@ def snapshot(now=None, st=None):
     for i in issues: i["no_run_min"] = int((now - nr[str(i["number"])]) / 60) if str(i["number"]) in nr else 0
     rc, out = R.gh("pr", "list", "--state", "open", "--json", "number,title,headRefName,updatedAt")
     prs = json.loads(out) if rc == 0 else []
-    try: log_tail = "\n".join((R.RUNS / "runner.log").read_text(encoding="utf-8", errors="replace").splitlines()[-15:])
-    except Exception: log_tail = ""
     lab = lambda x: [i["number"] for i in issues if x in i["labels"]]
     return {"issues": issues, "in_progress": lab("in-progress"), "blocked": lab("blocked"), "needs_orchestrator": lab("needs-orchestrator"),
             "ready_for_human": lab("ready-for-human"), "terminals": terms, "orchestrator": orch, "orchestrator_idle_min": idle_min,
-            "runner_log_tail": log_tail, "open_prs": prs, "integrating": integrating()}
+            "open_prs": prs, "integrating": integrating()}
 
 # ---------- deterministic rules ----------
 BLOCK_LINE = re.compile(r"^\s*(?:[-*]\s*)?blocked\s+by\b(.*)$", re.I)
@@ -109,36 +103,17 @@ def rules(snap):
         if normalize_body(i["body"])[1]: acts.append(("fix_blocked_by", n, "malformed dependency line"))
     return acts
 
-# ---------- LLM pass ----------
-ACT_RE = re.compile(r"^ACTION (\w+) (\S+)\s*(.*)$")
-
-def parse_output(text):
-    """Pure: (problem lines, [(action, issue|None, reason)]) from the LLM output."""
-    probs = [l.strip() for l in text.splitlines() if l.strip().startswith("OBSERVER:") and l.strip() != "OBSERVER: OK"][:8]
-    acts = []
-    for l in text.splitlines():
-        m = ACT_RE.match(l.strip())
-        if not m or m.group(1) not in ACTIONS: continue
-        n = m.group(2).lstrip("#")
-        if n.isdigit(): acts.append((m.group(1), int(n), m.group(3).strip()))
-        elif m.group(1) in ("nudge_orchestrator", "ask_owner"): acts.append((m.group(1), None, m.group(3).strip()))
-    return probs, acts
-
-def llm_pass(snap):
-    prompt = PROMPT.read_text(encoding="utf-8").replace("{HC}", R.HC) + "\n\nSNAPSHOT:\n" + json.dumps(snap, ensure_ascii=False)
-    cmd = [shutil.which("claude") or "claude", "-p", "--model", "sonnet", "--permission-mode", "auto", "--allowedTools", *TOOLS]
-    return R.run(cmd, cwd=str(R.ROOT), input=prompt, timeout=900)
-
 # ---------- executor ----------
 def select_actions(cands, snap, st, now):
     """Pure: dedupe, drop forbidden, apply the 60-min repeat limit and the max per run."""
     labels = {i["number"]: i["labels"] for i in snap["issues"]}
+    merging = {int(m.group(1)) for p in snap.get("open_prs", []) if (m := re.fullmatch(r"lane/(\d+)", p.get("headRefName") or ""))}
     done = st.setdefault("acted", {}); picked, seen = [], set()
     for a, n, why in cands:
         key = f"{a}:{n}"
         if key in seen or a not in ACTIONS: continue
         if a in ("make_ready", "rerun", "fix_blocked_by"):
-            if n not in labels or "ready-for-human" in labels[n]: continue
+            if n not in labels or "ready-for-human" in labels[n] or n in merging: continue
         if a in ("make_ready", "rerun") and snap.get("integrating"): continue
         if now - done.get(key, 0) < REPEAT_MIN * 60: continue
         seen.add(key); picked.append((a, n, why))
@@ -154,13 +129,8 @@ def close_issue_windows(n, terms):
             if t["state"] == "live": R.hc("kill", t["address"], timeout=30)
             R.hc("rm", t["address"], timeout=30)
 
-def nudge(text, kind="OBSERVER"):
-    R.hc("send", "orchestrator", f"{kind}: {text}", timeout=30)
-    time.sleep(1)
-    rc, scr = R.hc("read", "orchestrator", "--lines", "8", timeout=30)
-    if "[Pasted text" in scr: R.hc("keys", "orchestrator", "enter", timeout=30)
-
 def execute(a, n, why, snap):
+    if a in ("make_ready", "rerun") and integrating(): return False       # lock re-read right before acting
     if a == "make_ready":
         R.set_labels(n, add=["ready-for-agent"], remove=["blocked", "needs-orchestrator", "in-progress"]); comment(n, a, why)
     elif a == "rerun":
@@ -171,30 +141,24 @@ def execute(a, n, why, snap):
         body, ch = normalize_body(json.loads(out)["body"] or "") if rc == 0 else ("", False)
         if not ch: return False
         R.gh("issue", "edit", str(n), "--body", body); comment(n, a, why)
-    elif a == "nudge_orchestrator": nudge(why)
-    elif a == "ask_owner": nudge(why, "NEEDS YOU (owner)")
     return True
 
-def run_once(dry=False, now=None, llm=True):
+def run_once(dry=False, now=None):
     now = now or time.time(); st = load_state(); snap = snapshot(now, st)
-    cands = rules(snap)
-    rc, out = llm_pass(snap) if llm else (0, "OBSERVER-END")
-    probs, llm_acts = parse_output(out)
-    chosen = select_actions(cands + llm_acts, snap, st, now)
+    chosen = select_actions(rules(snap), snap, st, now)
     n_done = 0
     for a, n, why in chosen:
         olog(f"{'WOULD ' if dry else ''}{a} #{n} {why}")
         if dry: continue
         try:
             if execute(a, n, why, snap): st.setdefault("acted", {})[f"{a}:{n}"] = now; n_done += 1
+            else: olog(f"skipped {a} #{n}")
         except Exception as e: olog(f"error {a} #{n}: {e!r}")
-    hhmm = time.strftime("%H:%M")
-    res = f"{hhmm} failed (rc {rc})" if rc or not out.strip() else f"{hhmm} · {len(probs)} problems · {len(chosen) if dry else n_done} actions"
+    res = f"{time.strftime('%H:%M')} · {len(chosen) if dry else n_done} actions"
     if not dry:
         st["acted"] = {k: v for k, v in st.get("acted", {}).items() if now - v < 86400}
-        save_state(st); LAST.write_text(res + "\n", encoding="utf-8", newline="\n")
-        with open(LOG, "a", encoding="utf-8", newline="\n") as f: f.write(f"=== {time.strftime('%Y-%m-%d %H:%M:%S')} rc={rc}\n{out}\n")
-    return snap, probs, chosen, res
+        save_state(st); LAST.write_text(res + chr(10), encoding="utf-8", newline=chr(10))
+    return snap, chosen, res
 
 def run_if_due(minutes=None):
     """Called by the watchdog every tick: starts a background run when due. observer_minutes = 0 switches it off."""
@@ -212,8 +176,7 @@ def run_if_due(minutes=None):
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     dry = "--dry" in sys.argv
-    snap, probs, chosen, res = run_once(dry=dry, llm="--no-llm" not in sys.argv)
+    snap, chosen, res = run_once(dry=dry)
     print(f"issues {len(snap['issues'])} | in-progress {snap['in_progress']} blocked {snap['blocked']} needs-orch {snap['needs_orchestrator']} human {snap['ready_for_human']}")
     print(f"orchestrator {snap['orchestrator']} idle {snap['orchestrator_idle_min']} min | terminals {len(snap['terminals'])} | PRs {len(snap['open_prs'])} | integrating {snap['integrating']}")
-    print("\n".join(probs) or "no problems")
-    print("\n".join(f"{'WOULD ' if dry else ''}{a} #{n} {w}" for a, n, w in chosen) or "no actions"); print(res)
+    print(chr(10).join(f"{'WOULD ' if dry else ''}{a} #{n} {w}" for a, n, w in chosen) or "no actions"); print(res)

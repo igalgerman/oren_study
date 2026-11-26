@@ -8,6 +8,8 @@ test('blocked-by parsing', () => {
   expect(parseBlockers('Blocked by: #7, #9\ntext')).toEqual([7, 9])
   expect(parseBlockers('**Blocked by:** #3')).toEqual([3])
   expect(parseBlockers('see #4 only')).toEqual([])
+  expect(parseBlockers('- Blocked by: #23')).toEqual([23])
+  expect(parseBlockers('> * Blocked by: #5, #6')).toEqual([5, 6])
   expect(parseBlockers(null)).toEqual([])
 })
 
@@ -106,7 +108,7 @@ test('readable view', () => {
   expect(v.lanes[1]).toMatch(/^○ free — /)
   expect(v.you).toEqual(['! #10 voice — your task', '? #11 math ideas — answer questions'])
   expect(v.orch).toEqual([])
-  expect(v.next).toEqual(['#5 G1-G8  (after #4)'])
+  expect(v.next).toEqual(['[P2] #5 G1-G8  (after #4)'])
   expect(v.done).toEqual(['✓ #3 Batch B'])
 })
 
@@ -119,4 +121,51 @@ test('blocked + needs-orchestrator stays out of your lane', () => {
   ], [], [], [])
   expect(v.you).toEqual(['! #23 parked q — your task'])
   expect(v.orch).toEqual(['orchestrator handling: #22 #24'])
+})
+
+test('up next shows priority and sorts bug, then P0-P3, then number', () => {
+  const lab = (...n: string[]) => n.map(name => ({ name }))
+  const v = view([
+    { number: 1, title: 'low', labels: lab('ready-for-agent', 'P3') },
+    { number: 2, title: 'normal', labels: lab('ready-for-agent') },
+    { number: 3, title: 'high', labels: lab('ready-for-agent', 'P1') },
+    { number: 4, title: 'urgent', labels: lab('ready-for-agent', 'P0') },
+    { number: 5, title: 'bugfix', labels: lab('ready-for-agent', 'bug', 'P3') },
+  ], [], [], [])
+  expect(v.next).toEqual([
+    '[P3] #5 bugfix  (ready)', '[P0] #4 urgent  (ready)', '[P1] #3 high  (ready)',
+    '[P2] #2 normal  (ready)', '[P3] #1 low  (ready)',
+  ])
+})
+
+test('status line counts distinct issues, capped at 3', () => {
+  const live = (name: string) => ({ name, state: 'live' })
+  const d = {
+    windows: ['issue-12', 'issue-12-fix', 'issue-13', 'issue-14', 'issue-15'].map(live),
+    groups: groupIssues([]), lastLog: '', errors: [], updatedAt: 0,
+  }
+  expect(statusLine(d)).toMatch(/^lanes 3\/3 /)
+  d.windows = ['issue-12', 'issue-12-fix'].map(live)
+  expect(statusLine(d)).toMatch(/^lanes 1\/3 /)
+})
+
+test('express lane shows as ⚡ and express issues go first in up next', () => {
+  const lab = (...n: string[]) => n.map(name => ({ name }))
+  const v = view([
+    { number: 1, title: 'a', labels: lab('ready-for-agent', 'in-progress') },
+    { number: 2, title: 'b', labels: lab('ready-for-agent', 'in-progress') },
+    { number: 3, title: 'c', labels: lab('ready-for-agent', 'in-progress') },
+    { number: 4, title: 'fast one', labels: lab('ready-for-agent', 'in-progress', 'express') },
+    { number: 5, title: 'normal', labels: lab('ready-for-agent', 'P0') },
+    { number: 6, title: 'approved', labels: lab('ready-for-agent', 'express', 'P3') },
+  ], [], [], [])
+  expect(v.lanes.length).toBe(4)
+  expect(v.lanes[3]).toBe('⚡ #4 fast one — building')
+  expect(v.lanes.slice(0, 3).some(l => l.includes('#4'))).toBe(false)
+  expect(v.next).toEqual(['⚡ [P3] #6 approved  (ready)', '[P0] #5 normal  (ready)'])
+})
+
+test('no express issue: no ⚡ line', () => {
+  const v = view([], [], [], [])
+  expect(v.lanes.some(l => l.startsWith('⚡'))).toBe(false)
 })

@@ -6,6 +6,9 @@ const B=window.THINK_BANK;
 let rnd=Math.random;
 const ri=(a,b)=>a+Math.floor(rnd()*(b-a+1));
 const pk=a=>a[Math.floor(rnd()*a.length)];
+/* a random item of a finite bank, chosen by the learning engine (LEARN.pickItem: wrong ones back on schedule, unseen first, no repeats) and marked seen; plain random without it */
+const bkey=x=>JSON.stringify(x).slice(0,80);
+function lpick(bank,arr){const LN=typeof window!=='undefined'&&window.LEARN;if(LN&&LN.pickItem&&arr.length>1){try{const r=LN.pickItem(bank,arr.map(x=>({k:bkey(x)})));const it=r&&arr.find(x=>bkey(x)===r.item.k);if(it){LN.seen(bank,r.item.k,true,false);return it;}}catch(e){}}return pk(arr);}
 const shuf=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
 const L=t=>`<span class="ltr">${t}</span>`;
 const MAXLV=5;
@@ -110,7 +113,7 @@ function genAna(lv){
     const ds=tileDs(ans,ch,(lv<=3?3:4)-1,[C]);
     return mk('ana',lv,{kind:'analogy',a:{t:'tile',v:A},b:{t:'tile',v:Bt},c:{t:'tile',v:C},ans:{t:'tile',v:ans},ds,text:'כְּמוֹ בַּזּוּג הָרִאשׁוֹן — מָה חָסֵר?',
       rule:`בַּזּוּג הָרִאשׁוֹן הִשְׁתַּנָּה ${ch.map(k=>TRN[k]).join(' וְ')}. אוֹתוֹ דָּבָר בַּזּוּג הַשֵּׁנִי.`,key:'t'+[A,Bt,C].map(x=>okey({t:'tile',v:x})).join()});}
-  const lvB=lv===2?3:lv;const it=pk(B.ANA.filter(x=>x[0]===lvB));const [,a,b,c,ans,ds,rule]=it;const n=lv<=3?3:4;
+  const lvB=lv===2?3:lv;const it=lpick('th-ana',B.ANA.filter(x=>x[0]===lvB));const [,a,b,c,ans,ds,rule]=it;const n=lv<=3?3:4;
   const dd=shuf([...new Set(ds.filter(d=>d!==ans))]).slice(0,n-1);
   return mk('ana',lv,{kind:'analogy',a:{t:'txt',v:a},b:{t:'txt',v:b},c:{t:'txt',v:c},ans:{t:'txt',v:ans},ds:dd.map(v=>({t:'txt',v})),text:'כְּמוֹ בַּזּוּג הָרִאשׁוֹן — מָה חָסֵר?',rule:'הַקֶּשֶׁר: '+rule,key:'w'+a+c});}
 
@@ -119,7 +122,7 @@ function picOdd(lv){const n=nOpts(lv);const cats=Object.keys(B.PICCAT);for(let t
     if(B.PICNO.some(([x,y])=>(x===A&&y===Bk)||(x===Bk&&y===A)))continue;const wa=B.PICCAT[A].w;if(wa.length<n-1)continue;
     const same=shuf(wa).slice(0,n-1),odd=pk(B.PICCAT[Bk].w);
     return mk('rel',lv,{kind:'words',html:'',text:'מִי לֹא שַׁיָּךְ?',ans:spr(odd),ds:same.map(v=>spr(v)),rule:`הַשְּׁאָר הֵם ${B.PICCAT[A].n}`,key:'po'+odd+same.join()});}}
-function opp(lv){const n=nOpts(lv);const [w1,w2,k]=pk(B.OPP);const [q,a]=rnd()<.5?[w1,w2]:[w2,w1];
+function opp(lv){const n=nOpts(lv);const [w1,w2,k]=lpick('th-rel',B.OPP);const [q,a]=rnd()<.5?[w1,w2]:[w2,w1];
   const pool=shuf(B.OPP.filter(x=>x[2][0]===k[0]&&x[2]!==k)).flatMap(x=>[x[0],x[1]]).filter(x=>x!==q&&x!==a);const ds=shuf([...new Set(pool)]).slice(0,n-1);
   return mk('rel',lv,{kind:'words',html:`<div class="thw">${q}</div>`,text:'מָה הַהֵפֶךְ?',ans:{t:'txt',v:a},ds:ds.map(v=>({t:'txt',v})),rule:`הַהֵפֶךְ שֶׁל ${q} הוּא ${a}`,key:'op'+q});}
 function catPair(){const ks=Object.keys(B.CAT);for(;;){const A=pk(ks),Bk=pk(ks);if(A!==Bk&&!B.CATNO.some(([x,y])=>(x===A&&y===Bk)||(x===Bk&&y===A)))return [A,Bk];}}
@@ -127,16 +130,16 @@ function wordOdd(lv){const [A,Bk]=catPair();const same=shuf(B.CAT[A][1]).slice(0
   return mk('rel',lv,{kind:'words',html:'',text:'אֵיזוֹ מִלָּה לֹא שַׁיֶּכֶת?',ans:{t:'txt',v:odd},ds:same.map(v=>({t:'txt',v})),rule:`הַשְּׁאָר הֵם ${B.CAT[A][0]}`,key:'wo'+odd+same.join()});}
 function belongs(lv){const [A]=catPair();const ws=shuf(B.CAT[A][1]);const shown=ws.slice(0,3),a=ws[3];const others=shuf(Object.keys(B.CAT).filter(k=>k!==A&&!B.CATNO.some(([x,y])=>(x===A&&y===k)||(x===k&&y===A)))).slice(0,3).map(k=>pk(B.CAT[k][1]));
   return mk('rel',lv,{kind:'words',html:`<div class="thw sm">${shown.join(' · ')}</div>`,text:'מָה עוֹד שַׁיָּךְ לַקְּבוּצָה?',ans:{t:'txt',v:a},ds:others.map(v=>({t:'txt',v})),rule:`כֻּלָּם ${B.CAT[A][0]}`,key:'be'+shown.join()});}
-function part(lv){const [p,w,g,ds]=pk(B.PART);
+function part(lv){const [p,w,g,ds]=lpick('th-rel',B.PART);
   return mk('rel',lv,{kind:'words',html:`<div class="thw">${p}</div>`,text:g==='f'?'הִיא חֵלֶק שֶׁל...':'הוּא חֵלֶק שֶׁל...',ans:{t:'txt',v:w},ds:shuf(ds).slice(0,nOpts(lv)-1).map(v=>({t:'txt',v})),rule:`${p} — חֵלֶק שֶׁל ${w}`,key:'pa'+p});}
-function syn(lv){const [w,s,ds]=pk(B.SYN);
+function syn(lv){const [w,s,ds]=lpick('th-rel',B.SYN);
   return mk('rel',lv,{kind:'words',html:`<div class="thw">${w}</div>`,text:'אֵיזוֹ מִלָּה אוֹמֶרֶת כִּמְעַט אוֹתוֹ דָּבָר?',ans:{t:'txt',v:s},ds:shuf(ds).slice(0,nOpts(lv)-1).map(v=>({t:'txt',v})),rule:`${w} וְ${s} — כִּמְעַט אוֹתוֹ דָּבָר`,key:'sy'+w});}
-function hardOdd(lv){const [three,odd,why]=pk(B.ODD);
+function hardOdd(lv){const [three,odd,why]=lpick('th-rel',B.ODD);
   return mk('rel',lv,{kind:'words',html:'',text:'אֵיזוֹ מִלָּה לֹא שַׁיֶּכֶת?',ans:{t:'txt',v:odd},ds:three.map(v=>({t:'txt',v})),rule:`הַשְּׁאָר ${why}`,key:'ho'+odd});}
 function genRel(lv){const f=pk({1:[picOdd],2:[picOdd,opp,opp],3:[wordOdd,opp,belongs],4:[part,syn,wordOdd,belongs],5:[hardOdd,hardOdd,syn,part]}[lv]);return f(lv);}
 
 /* ---------- sentence completion ---------- */
-function genSen(lv){const it=pk(B.SEN.filter(x=>x[0]===lv));const [,s,a,ds]=it;const two=/…/.test(a);
+function genSen(lv){const it=lpick('th-sen',B.SEN.filter(x=>x[0]===lv));const [,s,a,ds]=it;const two=/…/.test(a);
   const html=s.split('___').map(x=>x).join('<span class="blank">____</span>');
   return mk('sen',lv,{kind:'words',html:`<div class="sent2">${html}</div>`,text:two?'אֵילוּ מִלִּים מַשְׁלִימוֹת אֶת הַמִּשְׁפָּט?':'אֵיזוֹ מִלָּה מַשְׁלִימָה אֶת הַמִּשְׁפָּט?',
     ans:{t:'txt',v:a},ds:shuf(ds).slice(0,nOpts(lv)-1).map(v=>({t:'txt',v})),rule:`<div class="sent2">${s.split('___').reduce((acc,x,i)=>acc+(i?`<b class="fill">${a.split(' … ')[i-1]||a}</b>`:'')+x,'')}</div>`,key:'se'+s});}
@@ -176,7 +179,9 @@ const easyWord=p=>{const b=bare(p);return EASY.has(b)||(/^[והבלמשכ]/.test
 /* nikud stage: 0 = full nikud · 1 = common words without nikud · 2 = passage without nikud · 3 = passage and question without nikud */
 function nikud(t,p,stage){if(!stage||!p)return t;if(stage>=2)return p;const tw=t.split(' '),pw=p.split(' ');if(tw.length!==pw.length)return t;return tw.map((w,i)=>easyWord(pw[i])?pw[i]:w).join(' ');}
 /* a passage (not used recently) with its questions as ready options */
-function rcPick(lv,recent){const pool=B.RC.map((x,i)=>i).filter(i=>B.RC[i].lv===lv);const fresh=pool.filter(i=>!(recent||[]).includes(i));const i=pk(fresh.length?fresh:pool);const P=B.RC[i];const n=nOpts(lv>=4?4:2);
+function rcPick(lv,recent){const pool=B.RC.map((x,i)=>i).filter(i=>B.RC[i].lv===lv);const fresh=pool.filter(i=>!(recent||[]).includes(i));let i=pk(fresh.length?fresh:pool);
+  const LN=typeof window!=='undefined'&&window.LEARN;if(LN&&LN.pickItem&&pool.length){try{const r=LN.pickItem('rc',(fresh.length?fresh:pool).map(j=>({k:B.RC[j].p})));const j=r&&(fresh.length?fresh:pool).find(j=>B.RC[j].p===r.item.k);if(j!=null){i=j;LN.seen('rc',B.RC[j].p,true,false);}}catch(e){}}
+  const P=B.RC[i];const n=nOpts(lv>=4?4:2);
   const qs=P.q.map(([q,qp,a,ds],k)=>{const o=x=>x[0]==='@'?spr(x.slice(1)):{t:'txt',v:x};return mk('rc',lv,{kind:'rc',text:q,textP:qp,ans:o(a),ds:shuf(ds).slice(0,n-1).map(o),key:'rc'+i+'-'+k});});
   return {i,P,qs};}
 
@@ -436,7 +441,8 @@ const DESC={'read-first':'זיהוי הצליל הראשון במילה','read-p
   'code-maze':'תכנות: רצף פקודות ולולאות','think-sudoku':'סודוקו — היגיון','think-maze':'מבוך — תכנון דרך','think-mem':'זיכרון חזותי','write-trace':'כתיבת אותיות'};
 const packs=()=>Object.keys(window).map(k=>{try{return window[k];}catch(e){return null;}}).filter(x=>x&&typeof x==='object'&&x.SKILLS&&typeof x.register==='function');
 const descOf=a=>{if(a.desc)return a.desc;for(const p of packs())if(p.SKILLS[a.id])return p.SKILLS[a.id];if(/^story-/.test(a.id))return 'סיפור קצר עם שאלות הבנה';return DESC[a.id]||'';};
-const lvOf=a=>{for(const p of packs())if(typeof p.levelOf==='function'){const v=p.levelOf(a.id);if(v)return v;}return '';};
+const lvOf=a=>{let v='';for(const p of packs())if(p!==window.LEARN&&typeof p.levelOf==='function'){v=p.levelOf(a.id);if(v)break;}
+  const ru=window.LEARN&&window.LEARN.runwayOf?window.LEARN.runwayOf(a.id):'';return v&&ru?v+' · '+ru:v||ru;};
 /* review: the parent tries each item in the sandbox and ticks "checked" (saved in the synced settings: set.reviewed{id:day}) */
 const REV=()=>{const st=O.realSave.set=O.realSave.set||{};st.reviewed=st.reviewed||{};return st.reviewed;};
 let cmOnlyNew=false,cmLast=null;

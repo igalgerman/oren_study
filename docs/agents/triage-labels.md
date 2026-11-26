@@ -31,4 +31,8 @@ Every ticket also gets exactly one lane label, so parallel sessions don't collid
 | `blocked` + `needs-orchestrator` | the orchestrator (unblocks, splits, or asks the owner only if it is truly his decision) | worker `RESULT: STUCK`, runner error, reviewer asked for fixes twice |
 | `blocked` + `ready-for-human` | the owner | a real owner question parked after `park_minutes`; or a task a human must do by hand |
 
-The owner's lane (panel "YOUR LANE") shows only `ready-for-human` and `needs-triage`. The read-only observer (`tools/runner/observer_prompt.md`) checks this every `observer_minutes`.
+The owner's lane (panel "YOUR LANE") shows only `ready-for-human` and `needs-triage`. The observer (`tools/runner/observer.py`) checks this every `observer_minutes`.
+
+## Priority labels
+
+`P0` urgent, `P1` high, `P2` normal (default when missing), `P3` low. The runner starts bugs first, then P0 before P3, then the oldest; the panel shows `[Pn]` in UP NEXT.

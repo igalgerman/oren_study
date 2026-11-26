@@ -833,7 +833,11 @@ R.level=level;
 R.levelOf=id=>{const sk={'read-first':'word','read-pw':'word','read-wp':'word','read-build':'word','read-sent':'sent','story-new':'story','write-mix':'mix','write-paper':'paper'}[id];
   if(!sk)return '';const L=level(sk);const lvs=R.levels[sk==='mix'?'write':sk]||[];const d=lvs.find(x=>x.lv===L);return `רמה ${L}/${MAX[sk]}`+(d&&d.p?' · '+d.p:'');};
 /* 70% from the current level, the rest reviews the levels below */
-const lvPick=(arr,L,f)=>{const cur=arr.filter(x=>x.lv===L&&(!f||f(x))),low=arr.filter(x=>x.lv<L&&(!f||f(x)));return (Math.random()<.7||!low.length)&&cur.length?pick(cur):pick(low.length?low:cur);};
+/* a random item at level L (70% at the level, else lower). With a bank id the learning engine chooses (LEARN.pickItem: wrong ones back on schedule, unseen first, no repeats) */
+const lvPick=(arr,L,f,bank,kf)=>{if(bank&&kf&&window.LEARN){try{const ok=arr.filter(x=>!f||f(x));const r=LEARN.pickItem(bank,ok.map(x=>({k:kf(x),lv:x.lv})),{lv:L});
+    const it=r&&ok.find(x=>kf(x)===r.item.k);if(it)return it;}catch(e){}}
+  const cur=arr.filter(x=>x.lv===L&&(!f||f(x))),low=arr.filter(x=>x.lv<L&&(!f||f(x)));return (Math.random()<.7||!low.length)&&cur.length?pick(cur):pick(low.length?low:cur);};
+const wk=x=>x.w;
 /* the activity card keeps its own record (stars, daily mission) */
 const MAIN={first:'read-first',pw:'read-pw',wp:'read-wp',build:'read-build',sent:'read-sent',mix:'write-mix'};
 O.on('tlDone',id=>{let m=/^rb2-(first|pw|wp|build|sent|mix)-\d$/.exec(id);if(m){T.record(MAIN[m[1]],st(id));return;}
@@ -842,15 +846,15 @@ const W=R.words,withPic=W.filter(w=>w.pic);
 const otherWords=(w,n,f)=>shuffle(W.filter(x=>x!==w&&x.w!==w.w&&!R.near(x,w)&&(!f||f(x)))).slice(0,n);
 
 /* ---- library: the same activity ids, bigger graded pools ---- */
-function first(back){const L=level('word');T.quiz({id:'rb2-first-'+L,title:'אוֹת רִאשׁוֹנָה',bg:'city',back,n:8,gen:()=>{const w=lvPick(withPic,L);const f=w.f;
+function first(back){const L=level('word');T.quiz({id:'rb2-first-'+L,title:'אוֹת רִאשׁוֹנָה',bg:'city',back,n:8,gen:()=>{const w=lvPick(withPic,L,null,'rb-word',wk);const f=w.f;
   const pool=shuffle([...new Set(W.map(x=>x.f))].filter(c=>!R.sameSound(c,f)));const opts=shuffle([f,pool[0],pool.find(c=>!R.sameSound(c,pool[0]))]);
-  return {pr:`${pic(w.pic,1)}<div class="qq">${UI.first}</div>`,opts,ans:opts.indexOf(f),cls:'tx big2',say:'באיזו אות מתחילה המילה?',word:w.w,explain:`<span class="bigw">${w.w}</span>`,key:w.w};}});}
-function pw(back){const L=level('word');T.quiz({id:'rb2-pw-'+L,title:'אֵיזוֹ מִלָּה?',bg:'city',back,n:8,gen:()=>{const w=lvPick(withPic,L);
+  return {pr:`${pic(w.pic,1)}<div class="qq">${UI.first}</div>`,opts,ans:opts.indexOf(f),cls:'tx big2',say:'באיזו אות מתחילה המילה?',word:w.w,explain:`<span class="bigw">${w.w}</span>`,key:w.w,bank:'rb-word'};}});}
+function pw(back){const L=level('word');T.quiz({id:'rb2-pw-'+L,title:'אֵיזוֹ מִלָּה?',bg:'city',back,n:8,gen:()=>{const w=lvPick(withPic,L,null,'rb-word',wk);
   const like=otherWords(w,2,x=>x.lv<=L&&(x.f===w.f||x.plain.length===w.plain.length));const ds=like.length>=2?like:otherWords(w,2,x=>x.lv<=L);const opts=shuffle([w,...ds]);
-  return {pr:`${pic(w.pic,1)}<div class="qq">${UI.pw}</div>`,opts:opts.map(x=>x.w),ans:opts.indexOf(w),cls:'tx',reveal:()=>say(w.w),key:w.w};}});}
-function wp(back){const L=level('word');T.quiz({id:'rb2-wp-'+L,title:'אֵיזוֹ תְּמוּנָה?',bg:'city',back,n:8,gen:()=>{const w=lvPick(withPic,L);const ds=[];
+  return {pr:`${pic(w.pic,1)}<div class="qq">${UI.pw}</div>`,opts:opts.map(x=>x.w),ans:opts.indexOf(w),cls:'tx',reveal:()=>say(w.w),key:w.w,bank:'rb-word'};}});}
+function wp(back){const L=level('word');T.quiz({id:'rb2-wp-'+L,title:'אֵיזוֹ תְּמוּנָה?',bg:'city',back,n:8,gen:()=>{const w=lvPick(withPic,L,null,'rb-word',wk);const ds=[];
   for(const x of shuffle(withPic)){if(ds.length>=3)break;if(x!==w&&x.pic!==w.pic&&!R.near(x,w)&&!ds.some(d=>R.near(d,x)))ds.push(x);}const opts=shuffle([w,...ds]);
-  return {pr:`<div class="bigw">${w.w}</div><div class="qq">${UI.wp}</div>`,opts:opts.map(x=>pic(x.pic)),ans:opts.indexOf(w),cls:'picb',reveal:()=>say(w.w),key:w.w};}});}
+  return {pr:`<div class="bigw">${w.w}</div><div class="qq">${UI.wp}</div>`,opts:opts.map(x=>pic(x.pic)),ans:opts.indexOf(w),cls:'picb',reveal:()=>say(w.w),key:w.w,bank:'rb-word'};}});}
 /* tap tiles in order (syllables, letters or words); calls done(errors) */
 function tiles(s,o,done){let k=0,err=0,miss=0;s.innerHTML='';const card=h('div','prq tqc',`${o.head||''}<div class="slots">${o.need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
   if(o.play){const pb=h('button','hintbtn',ICON.say+'<span>הַשְׁמַע</span>');pb.onclick=o.play;card.appendChild(pb);}s.appendChild(card);
@@ -864,17 +868,19 @@ function tiles(s,o,done){let k=0,err=0,miss=0;s.innerHTML='';const card=h('div',
       if(o.fin&&k===o.need.length-1&&R.FINAL[o.need[k]]===x)fb.innerHTML=`${UI.finHint}: <b>${o.need[k]}</b>`;
       if(miss>=2){const t=[...row.children].find(y=>!y.disabled&&y.dataset.t===o.need[k]);if(t)t.classList.add('show');}}}
   window.__rb2={get need(){return o.need;},get k(){return k;},row};}
-function build(back){const L=level('word');const pool=[];for(let t=0;pool.length<6&&t<200;t++){const w=lvPick(W,L,x=>x.syl.length>1);if(!pool.includes(w))pool.push(w);}
+function build(back){const L=level('word');const pool=[];for(let t=0;pool.length<6&&t<200;t++){const w=lvPick(W,L,x=>x.syl.length>1,'rb-word',wk);if(!pool.includes(w))pool.push(w);}
   let i=0,err=0;O.setScreen('sTal','city',back);const s=$('#sTal');
   const run=()=>{const w=pool[i];T.hudT('בּוֹנִים מִלָּה',T.progressBar(i,pool.length));O.sayNow=T.spk(w.w);
     tiles(s,{need:w.syl,tiles:w.syl,head:w.pic?pic(w.pic,1):'',play:()=>say(w.w),tip:UI.build,end:()=>say(w.w)},e=>{err+=e;i++;if(i<pool.length)run();else T.finishAct('rb2-build-'+L,err,pool.length,pool.length*2,back,()=>build(back));});
     if(!w.pic)setTimeout(()=>say(w.w),D(300));};run();}
-function sent(back){const L=level('sent');T.quiz({id:'rb2-sent-'+L,title:'קוֹרְאִים מִשְׁפָּט',bg:'city',back,n:8,gen:()=>{const q=lvPick(R.sentences,L);const opts=shuffle([q.a,...q.ds]);
-  return {pr:`<div class="sent">${nk(q.t,q.p)}</div><div class="qq">${nk(q.q,q.qp,1)}</div>`,opts:opts.map(ansHTML),ans:opts.indexOf(q.a),cls:q.a[0]==='@'?'picb':'tx',say:T.spk(q.q),key:q.t};}});}
+function sent(back){const L=level('sent');T.quiz({id:'rb2-sent-'+L,title:'קוֹרְאִים מִשְׁפָּט',bg:'city',back,n:8,gen:()=>{const q=lvPick(R.sentences,L,null,'rb-sent',x=>x.t);const opts=shuffle([q.a,...q.ds]);
+  return {pr:`<div class="sent">${nk(q.t,q.p)}</div><div class="qq">${nk(q.q,q.qp,1)}</div>`,opts:opts.map(ansHTML),ans:opts.indexOf(q.a),cls:q.a[0]==='@'?'picb':'tx',say:T.spk(q.q),key:q.t,bank:'rb-sent'};}});}
 
 /* ---- stories: one card, the next story at Oren's level ---- */
-function nextStory(){const L=level('story');const at=R.stories.filter(x=>x.lv===L);return at.find(x=>st('rb2-st-'+x.id)<2)||pick(at);}
-function story(back,k){const sto=k!=null?R.stories[k]:nextStory();O.setScreen('sTal','final',back);T.hudT('סִפּוּר');const s=$('#sTal');s.innerHTML='';
+function nextStory(){const L=level('story');const at=R.stories.filter(x=>x.lv===L);
+  if(window.LEARN){try{const r=LEARN.pickItem('rb-story',at.map(x=>({k:x.t,lv:x.lv})),{lv:L});const it=r&&at.find(x=>x.t===r.item.k);if(it)return it;}catch(e){}}
+  return at.find(x=>st('rb2-st-'+x.id)<2)||pick(at);}
+function story(back,k){const sto=k!=null?R.stories[k]:nextStory();if(window.LEARN)try{LEARN.seen('rb-story',sto.t,true,false);}catch(e){}O.setScreen('sTal','final',back);T.hudT('סִפּוּר');const s=$('#sTal');s.innerHTML='';
   const page=h('div','story');page.innerHTML=`<div class="sth"><span>${pic(sto.spr[0])}</span><h2>${nk(sto.t,sto.tp)}</h2><span>${pic(sto.spr[1])}</span></div>`+sto.s.map((x,i)=>`<p class="sl" data-i="${i}">${nk(x,sto.p[i])}</p>`).join('');s.appendChild(page);
   const row=h('div','btnrow');const rd=h('button','bigbtn blue sm',ICON.say+`<span>${UI.storyRead}</span>`);const go=h('button','bigbtn',ICON.play+`<span>${UI.storyQ}</span>`);row.append(rd,go);s.appendChild(row);
   const mark=i=>page.querySelectorAll('.sl').forEach(p=>p.classList.toggle('cur',+p.dataset.i===i));

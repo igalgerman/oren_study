@@ -5,7 +5,16 @@ try{const pw=require(require.resolve('playwright',{paths:[process.cwd(),__dirnam
 if(!c.__muted){c.__muted=1;const orig=c.launch.bind(c);
   const SILENT=()=>{try{const s=window.speechSynthesis;if(s&&!s.__muted){s.__muted=1;const sp=s.speak.bind(s);s.speak=u=>{try{u.volume=0;}catch(e){}return sp(u);};}
     const P=HTMLMediaElement.prototype,pl=P.play;P.play=function(){this.muted=true;this.volume=0;return pl.apply(this,arguments);};}catch(e){}};
+  // Fake daytime clock (#89): the game locks at bedtime, so tests that run at night must not see night.
+  // The page's Date is shifted so the clock starts at TEST_HOUR:00 (default 10:00, between the 07:30 and 13:00 meal pauses); it still ticks. TEST_REAL_CLOCK=1 turns it off.
+  const HOUR=+(process.env.TEST_HOUR||10),REAL=process.env.TEST_REAL_CLOCK==='1';
+  const CLOCK=h=>{const D=Date,n=new D();const off=new D(n.getFullYear(),n.getMonth(),n.getDate(),h,0,0)-n;
+    const F=function(...a){return a.length?new D(...a):new D(D.now()+off);};F.prototype=D.prototype;F.UTC=D.UTC;F.parse=D.parse;F.now=()=>D.now()+off;window.Date=F;};
+  // #79: the random 'explain how you did it' card (HELP.teach, 8% / 50%) must not pop up in tests: it covers #ov and blocks clicks/reads. Held off in every suite; help.test.js sets teachP itself when it tests the card. TEST_HELP_TEACH=1 turns this off.
+  const NOTEACH=()=>{const t=setInterval(()=>{try{const h=window.HELP;if(h&&h.cfg){h.cfg.teachP=0;h.cfg.teachSoloP=0;clearInterval(t);}}catch(e){}},20);setTimeout(()=>clearInterval(t),20000);};
+  const noTeach=async x=>{if(process.env.TEST_HELP_TEACH!=='1')await x.addInitScript(NOTEACH);};
+  const fakeClock=async x=>{if(!REAL)await x.addInitScript(CLOCK,HOUR);};
   c.launch=async(o={})=>{const b=await orig({...o,args:[...(o.args||[]),'--mute-audio']});
     const nc=b.newContext.bind(b),np=b.newPage.bind(b);
-    b.newContext=async(...a)=>{const x=await nc(...a);await x.addInitScript(SILENT);return x;};
-    b.newPage=async(...a)=>{const p=await np(...a);await p.addInitScript(SILENT);return p;};return b;};}}catch(e){}
+    b.newContext=async(...a)=>{const x=await nc(...a);await x.addInitScript(SILENT);await fakeClock(x);await noTeach(x);return x;};
+    b.newPage=async(...a)=>{const p=await np(...a);await p.addInitScript(SILENT);await fakeClock(p);await noTeach(p);return p;};return b;};}}catch(e){}

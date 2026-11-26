@@ -96,12 +96,31 @@ function heNum(t){if(!/\d/.test(t))return t;
 '''
 js='''const HTML=%s;const LISTEN=%s;%sconst MAN=%s;const SW=%s;const IC={'/icon-192.png':'%s','/icon-512.png':'%s'};
 const JH={'content-type':'application/json','cache-control':'no-store'};
+/* Storage (#71): Cloudflare D1 (free ~100k row writes a day) instead of Workers KV (1k writes a day). Reads: D1 first, then the old KV
+   data (copied to D1 on read); writes: D1 only. No D1 binding (tests, old deploys) = plain KV. Tables: saves(id,data,updated),
+   tts_audio(key,bin,created), meta(k,v) for counters and settings. */
+const isId=k=>/^[a-f0-9]{32}$/.test(k);const tbl=k=>isId(k)?'saves':/^tts:/.test(k)?'tts_audio':'meta';
+const TC={saves:['id','data'],tts_audio:['key','bin'],meta:['k','v']};let dbReady=false;
+async function dbInit(env){if(dbReady||!env.DB.exec)return;await env.DB.exec("CREATE TABLE IF NOT EXISTS tts_audio(key TEXT PRIMARY KEY,bin BLOB,created INTEGER);CREATE TABLE IF NOT EXISTS saves(id TEXT PRIMARY KEY,data TEXT,updated INTEGER);CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY,v TEXT);");dbReady=true;}
+const toAB=b=>b instanceof ArrayBuffer?b:Array.isArray(b)?new Uint8Array(b).buffer:ArrayBuffer.isView(b)?b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength):b;
+async function dbPut(env,k,v){await dbInit(env);const t=tbl(k),c=TC[t];
+ await env.DB.prepare('INSERT INTO '+t+'('+c[0]+','+c[1]+(t==='meta'?'':','+(t==='saves'?'updated':'created'))+') VALUES(?,?'+(t==='meta'?'':',?')+') ON CONFLICT('+c[0]+') DO UPDATE SET '+c[1]+'=excluded.'+c[1])
+  .bind(...(t==='meta'?[k,String(v)]:[k,t==='tts_audio'?toAB(v):String(v),Date.now()])).run();}
+async function kvGet(env,k,type){
+ if(!env.DB)return env.SAVES.get(k,type);
+ await dbInit(env);const t=tbl(k),c=TC[t];
+ const r=await env.DB.prepare('SELECT '+c[1]+' FROM '+t+' WHERE '+c[0]+'=?').bind(k).first();
+ if(r&&r[c[1]]!=null){const x=r[c[1]];return type==='arrayBuffer'?toAB(x):type==='json'?JSON.parse(x):x;}
+ const o=await env.SAVES.get(k,type==='arrayBuffer'?'arrayBuffer':undefined);
+ if(o!=null){try{await dbPut(env,k,o);}catch(e){}return type==='json'?JSON.parse(o):o;}
+ return null;}
+async function kvPut(env,k,v,o){if(!env.DB)return env.SAVES.put(k,v,o);return dbPut(env,k,v);}
 const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 async function api(req,env,id){if(!/^[a-f0-9]{32}$/.test(id))return new Response('{"error":"bad id"}',{status:400,headers:JH});
- if(req.method==='GET'){const v=await env.SAVES.get(id);return v?new Response(v,{headers:JH}):new Response('{}',{status:404,headers:JH});}
+ if(req.method==='GET'){const v=await kvGet(env,id);return v?new Response(v,{headers:JH}):new Response('{}',{status:404,headers:JH});}
  if(req.method==='PUT'){const t=await req.text();if(t.length>300000)return new Response('{"error":"too big"}',{status:413,headers:JH});
   try{const o=JSON.parse(t);if(!o||typeof o!=='object'||o.v!==4)throw 0;}catch(e){return new Response('{"error":"bad json"}',{status:400,headers:JH});}
-  await env.SAVES.put(id,t);return new Response('{"ok":true}',{headers:JH});}
+  await kvPut(env,id,t);return new Response('{"ok":true}',{headers:JH});}
  return new Response('{"error":"method"}',{status:405,headers:JH});}
 /* Google voice (game voice: Chirp3-HD Kore at 0.9), every sentence created once and kept forever in KV,
    plus a monthly character cap far below Google's free tier. */
@@ -109,7 +128,7 @@ const TTS_CAP=250000;const GAME_VOICE='he-IL-Chirp3-HD-Kore',GAME_RATE=0.9;const
 async function sha(t){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');}
 async function tts(req,env,u){if(!env.GOOGLE_TTS_KEY)return new Response('{"ok":false,"why":"no key"}',{status:503,headers:JH});
  if(u.pathname==='/api/tts/status')return J({ok:true,ver:await ttsVer(env)});/* the game adds &k=ver to its audio URLs: a bump = fresh audio everywhere */
- if(u.pathname==='/api/tts/ver'&&req.method==='POST'){const v=(await ttsVer(env,true))+1;await env.SAVES.put('ttsver',String(v));verV=v;verAt=Date.now();return J({ok:true,ver:v});}
+ if(u.pathname==='/api/tts/ver'&&req.method==='POST'){const v=(await ttsVer(env,true))+1;await kvPut(env,'ttsver',String(v));verV=v;verAt=Date.now();return J({ok:true,ver:v});}
  if(u.pathname==='/api/tts/gm'){if(!env.GEMINI_KEY)return new Response('{"ok":false,"why":"no GEMINI_KEY"}',{status:503,headers:JH});const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',{headers:{'x-goog-api-key':env.GEMINI_KEY}});const j=await r.json();return new Response(JSON.stringify((j.models||[]).map(m=>m.name).filter(n=>/gemini/.test(n))),{status:r.status,headers:JH});}
  if(u.pathname==='/api/tts/verify'&&req.method==='POST'){/* Gemini listens to the stored audio and reports pronunciation */
   if(!env.GEMINI_KEY)return new Response('{"ok":false,"why":"no GEMINI_KEY"}',{status:503,headers:JH});
@@ -139,8 +158,8 @@ async function tts(req,env,u){if(!env.GOOGLE_TTS_KEY)return new Response('{"ok":
    body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:'application/json',temperature:0.4}})});
   const gj=await g.json();const txt=((((gj.candidates||[])[0]||{}).content||{}).parts||[]).map(x=>x.text||'').join('');let res=null;try{res=JSON.parse(txt);}catch(e){}
   return new Response(JSON.stringify({ok:g.ok,status:g.status,res,err:gj.error&&gj.error.message}),{status:200,headers:JH});}
- if(u.pathname==='/api/tts/review'){if(req.method==='POST'){await env.SAVES.put('ttsreview',await req.text());return new Response('{"ok":true}',{headers:JH});}
-  const d=await env.SAVES.get('ttsreview','json')||[];
+ if(u.pathname==='/api/tts/review'){if(req.method==='POST'){await kvPut(env,'ttsreview',await req.text());return new Response('{"ok":true}',{headers:JH});}
+  const d=await kvGet(env,'ttsreview','json')||[];
   const html=`<!doctype html><html lang="he" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>בדיקת הגייה</title><style>body{font-family:system-ui,Arial;margin:0;padding:16px;background:#f6f2e8}main{max-width:640px;margin:auto}h1{font-size:22px}.c{background:#fff;border-radius:12px;padding:10px 12px;margin:8px 0;display:flex;gap:10px;align-items:flex-start}.c.bad{border-right:6px solid #e4572e}.c.fix{border-right:6px solid #4fbf63}.c b{display:block;font-size:17px}.c small{color:#666;display:block}button{font-size:18px;border:0;border-radius:10px;background:#3a8fc4;color:#fff;padding:8px 12px;cursor:pointer}.f{margin:8px 0}.f button{background:#888;font-size:14px;padding:6px 10px}.f button.on{background:#333}</style><main><h1>בדיקת הגייה של הקולות</h1><p id="s"></p><div class="f"><button class="on" onclick="f('all',this)">הכל</button><button onclick="f('bad',this)">בעייתיים</button><button onclick="f('fix',this)">תוקנו</button><button onclick="f('ok',this)">תקינים</button></div><div id="l"></div></main>
 <script>const D=${JSON.stringify(d)};let a,F='all';function draw(){const L=D.filter(x=>F==='all'||x.st===F);document.getElementById('s').textContent='נבדקו '+D.length+' · תקינים '+D.filter(x=>x.st==='ok').length+' · תוקנו '+D.filter(x=>x.st==='fix').length+' · בעייתיים '+D.filter(x=>x.st==='bad').length;
 document.getElementById('l').innerHTML=L.map((x,i)=>'<div class="c '+x.st+'"><button onclick="pl('+D.indexOf(x)+')">▶</button><div><b>'+x.n+'</b>'+(x.note?'<small>'+x.note+'</small>':'')+'</div></div>').join('');}
@@ -201,12 +220,14 @@ step();</script></html>`;
  const text=(u.searchParams.get('t')||'').slice(0,400).trim(),voice=u.searchParams.get('v')||GAME_VOICE,rate=Math.min(1.3,Math.max(.7,+u.searchParams.get('r')||GAME_RATE));
  if(!text||!VOICES.test(voice))return new Response('{"error":"bad request"}',{status:400,headers:JH});
  const key=await ttsKey(voice,rate,text);
- const hit=await env.SAVES.get(key,'arrayBuffer');if(hit)return new Response(hit,{headers:AH});
+ const hit=await kvGet(env,key,'arrayBuffer');if(hit)return new Response(hit,{headers:AH});
  if(req.headers.get('x-cache-only'))return new Response('{"ok":false,"why":"not made yet"}',{status:404,headers:JH});/* "download all voices" never creates new sentences */
- const month=monthKey();const used=+(await env.SAVES.get(month))||0;
+ const du=await dayUsed(env);if(du>=dayBudget(env))return overBudget();
+ const month=monthKey();const used=+(await kvGet(env,month))||0;
  if(used+text.length>TTS_CAP)return new Response('{"ok":false,"why":"monthly cap"}',{status:429,headers:JH});
  const bin=await synth(env,voice,rate,text);if(!bin.length)return new Response(JSON.stringify({ok:false,why:'google '+bin.status}),{status:502,headers:JH});
- await env.SAVES.put(key,bin);await env.SAVES.put(month,String(used+text.length),{expirationTtl:60*60*24*62});
+ await kvPut(env,key,bin);await kvPut(env,month,String(used+text.length),{expirationTtl:60*60*24*62});
+ await dayPut(env,du+1);
  return new Response(bin,{headers:AH});}
 /* English voice for the game's English words: blind "A or B" like /api/tts/final (winner stays, a new voice challenges it) */
 function enPage(){const F=['Kore','Leda','Sulafat','Aoede','Achernar','Despina'];
@@ -224,13 +245,22 @@ function done(){S.forEach((x,i)=>fetch(url(champ,i)));m.innerHTML='<h1>הקול 
 step();</script></html>`;
  return new Response(html,{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store'}});}
 const AH={'content-type':'audio/mpeg','cache-control':'public, max-age=31536000, immutable'};/* fixed audio reaches devices through &k=ver (see /api/tts/status) */
-let verV=null,verAt=0;async function ttsVer(env,fresh){if(fresh||verV==null||Date.now()-verAt>FX_TTL){verV=+(await env.SAVES.get('ttsver'))||1;verAt=Date.now();}return verV;}
+let verV=null,verAt=0;async function ttsVer(env,fresh){if(fresh||verV==null||Date.now()-verAt>FX_TTL){verV=+(await kvGet(env,'ttsver'))||1;verAt=Date.now();}return verV;}
 const monthKey=()=>'ttsuse:'+new Date().toISOString().slice(0,7);
+/* Daily KV write budget (Workers KV free tier: ~1000 writes a day, shared with the family save). Voice (TTS) writes stop at
+   TTS_DAY_BUDGET (env, default 600 new sentences a day); the family save (api) never looks at it. State: one KV key 'ttsday:YYYY-MM-DD',
+   written once per batch (pregen, queue) and at most every 5th single sentence. When it is used up /api/tts answers 429
+   and the game plays the browser voice for audio that is not made yet. */
+const dayBudget=env=>+env.TTS_DAY_BUDGET||600;
+const dayKey=()=>'ttsday:'+new Date().toISOString().slice(0,10);
+const dayUsed=async env=>+(await kvGet(env,dayKey()))||0;
+const dayPut=(env,n)=>kvPut(env,dayKey(),String(n),{expirationTtl:172800});
+const overBudget=()=>J({ok:false,error:'daily voice budget used, retry tomorrow',why:'daily budget'},429);
 const ttsKey=async(voice,rate,text)=>'tts:'+await sha(voice+'|'+rate.toFixed(2)+'|'+text);
 /* Pronunciation dictionary for the Hebrew voices: KV 'ttsfixw' = {plainWord: vocalized or respelled}, exact whole words only
    (a word = a run of Hebrew letters/nikud; prefixed forms like ועשרות are their own entries). Kept in isolate memory for 5 minutes. */
 let fxW=null,fxAt=0;const FX_TTL=300000;
-async function fixWords(env,fresh){if(fresh||!fxW||Date.now()-fxAt>FX_TTL){let w=null;try{w=JSON.parse(await env.SAVES.get('ttsfixw'));}catch(e){}fxW=w&&typeof w==='object'?w:{};fxAt=Date.now();}return fxW;}
+async function fixWords(env,fresh){if(fresh||!fxW||Date.now()-fxAt>FX_TTL){let w=null;try{w=JSON.parse(await kvGet(env,'ttsfixw'));}catch(e){}fxW=w&&typeof w==='object'?w:{};fxAt=Date.now();}return fxW;}
 const fxApply=(text,W)=>text.replace(/[\\u0590-\\u05FF]+/g,x=>Object.prototype.hasOwnProperty.call(W,x)?W[x]:x);
 async function fixText(env,text,only){if(only)text=fxApply(text,only);return fxApply(text,await fixWords(env));}
 const FX_KEY=/^[\\u05D0-\\u05EA]{1,30}$/,FX_VAL=/^[\\u0591-\\u05F4'\\- ]{1,60}$/;
@@ -245,34 +275,35 @@ async function fix(req,env){if(req.method==='GET')return J(await fixWords(env,tr
  const t=String(b&&b.t||'').slice(0,400).trim(),v=b.v||GAME_VOICE,rate=Math.min(1.3,Math.max(.7,+b.r||GAME_RATE));
  const words=fxMap(b.words),only=fxMap(b.only);
  if(!t||!VOICES.test(v)||!words||!only)return J({error:'bad request'},400);
+ const du=await dayUsed(env);if(du>=dayBudget(env))return overBudget();
  const W={...await fixWords(env,true)};let changed=false;
  for(const k in words){if(words[k]===null){if(k in W){delete W[k];changed=true;}}else if(W[k]!==words[k]){W[k]=words[k];changed=true;}}
- if(changed){await env.SAVES.put('ttsfixw',JSON.stringify(W));fxW=W;fxAt=Date.now();}
- const used=+(await env.SAVES.get(monthKey()))||0;if(used+t.length>TTS_CAP)return J({ok:false,why:'monthly cap'},429);
+ if(changed){await kvPut(env,'ttsfixw',JSON.stringify(W));fxW=W;fxAt=Date.now();}
+ const used=+(await kvGet(env,monthKey()))||0;if(used+t.length>TTS_CAP)return J({ok:false,why:'monthly cap'},429);
  const sent=v.startsWith('he-')?await fixText(env,heNum(noEmoji(t)),only):noEmoji(t);
  const bin=await synth(env,v,rate,t,only);if(!bin.length)return J({ok:false,why:'google '+bin.status},502);
- await env.SAVES.put(await ttsKey(v,rate,t),bin);
+ await kvPut(env,await ttsKey(v,rate,t),bin);await dayPut(env,du+1);
  return J({ok:true,sent,changed,words:Object.keys(W).length});}
 /* a sentence made fresh (with the dictionary) and NOT stored: variants to choose from, checks of a respelling */
-async function tryTts(env,t,v,rt){const used=+(await env.SAVES.get(monthKey()))||0;if(used+t.length>TTS_CAP)return J({ok:false,why:'monthly cap'},429);
+async function tryTts(env,t,v,rt){const used=+(await kvGet(env,monthKey()))||0;if(used+t.length>TTS_CAP)return J({ok:false,why:'monthly cap'},429);
  const bin=await synth(env,v,rt,t);if(!bin.length)return J({ok:false,why:'google '+bin.status},502);
  return new Response(bin,{headers:{'content-type':'audio/mpeg','cache-control':'public, max-age=86400'}});}
 /* /api/tts/listen: the parent's page. 'ttslisten' = {choose:[{w,s,vars}],sample:[{t,v,r}],sid} (voicecheck.js posts it),
    'ttsvote' = {word: chosen spelling ('' = none is right)}, 'ttsmarks' = [{t,v,r,ok,w:[words],at}] (sent in batches of 5) */
 async function listen(req,env,u){const p=u.pathname;
- const get=async k=>{try{return JSON.parse(await env.SAVES.get(k));}catch(e){return null;}};
+ const get=async k=>{try{return JSON.parse(await kvGet(env,k));}catch(e){return null;}};
  if(p==='/api/tts/listen')return new Response(LISTEN,{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store'}});
  if(p==='/api/tts/listen/data'){const q=await get('ttslisten')||{};return J({choose:q.choose||[],sample:q.sample||[],sid:q.sid||'',votes:await get('ttsvote')||{},marks:u.searchParams.has('marks')?(await get('ttsmarks')||[]):undefined});}
  if(req.method!=='POST')return J({error:'method'},405);
  let b;try{b=JSON.parse(await req.text());}catch(e){return J({error:'bad json'},400);}
  if(p==='/api/tts/listen/q'){if(!b||!Array.isArray(b.choose)||!Array.isArray(b.sample))return J({error:'bad request'},400);
-  await env.SAVES.put('ttslisten',JSON.stringify({choose:b.choose.slice(0,200),sample:b.sample.slice(0,300),sid:String(Date.now())}));return J({ok:true});}
+  await kvPut(env,'ttslisten',JSON.stringify({choose:b.choose.slice(0,200),sample:b.sample.slice(0,300),sid:String(Date.now())}));return J({ok:true});}
  if(p==='/api/tts/listen/vote'){const w=String(b&&b.w||''),v=b&&b.v;if(!/^[\u05D0-\u05EA]{1,30}(#[0-9]{1,3})?$/.test(w)||typeof v!=='string'||(v&&!FX_VAL.test(v)))return J({error:'bad request'},400);
   const half=(Array.isArray(b.half)?b.half:[]).filter(x=>typeof x==='string'&&FX_VAL.test(x)).slice(0,5),note=String(b.note||'').slice(0,300);
-  const V=await get('ttsvote')||{};V[w]={v,half,note,at:Date.now()};await env.SAVES.put('ttsvote',JSON.stringify(V));return J({ok:true});}
+  const V=await get('ttsvote')||{};V[w]={v,half,note,at:Date.now()};await kvPut(env,'ttsvote',JSON.stringify(V));return J({ok:true});}
  if(p==='/api/tts/listen/marks'){if(!Array.isArray(b)||b.length>50)return J({error:'bad request'},400);const M=await get('ttsmarks')||[];
   for(const x of b)if(x&&typeof x.t==='string')M.push({t:x.t.slice(0,400),v:VOICES.test(x.v||'')?x.v:GAME_VOICE,r:+x.r||GAME_RATE,ok:!!x.ok,w:(Array.isArray(x.w)?x.w:[]).slice(0,10).map(w=>String(w).slice(0,30)),note:String(x.note||'').slice(0,300),at:Date.now()});
-  if(M.length>3000)M.splice(0,M.length-3000);await env.SAVES.put('ttsmarks',JSON.stringify(M));return J({ok:true});}
+  if(M.length>3000)M.splice(0,M.length-3000);await kvPut(env,'ttsmarks',JSON.stringify(M));return J({ok:true});}
  return J({error:'not found'},404);}
 /* what the voice must not read aloud: emoji and pictographs (with their variation selectors, joiners, keycaps, flags) and ✓ ✗ */
 const noEmoji=t=>{const c=t.replace(/\\s*[\\u2190-\\u21FF]\\s*/g,', ').replace(/[\\p{Extended_Pictographic}\\p{Regional_Indicator}\\p{Emoji_Modifier}\\u{E0020}-\\u{E007F}\\u200D\\uFE0E\\uFE0F\\u20E3\\u2713\\u2717\\u2714\\u2718]/gu,'').replace(/[ ]{2,}/g,' ').trim();return c||t;};
@@ -284,14 +315,16 @@ async function synth(env,voice,rate,text,only){text=noEmoji(text);if(voice.start
    one KV write per new sentence and the month counter written once per call. */
 async function pregen(req,env){if(req.method!=='POST')return new Response('{"error":"method"}',{status:405,headers:JH});
  let L;try{L=(await req.json()).texts;if(!Array.isArray(L)||L.length>15||L.some(t=>typeof t!=='string'&&!(t&&typeof t==='object'&&typeof t.t==='string')))throw 0;}catch(e){return new Response('{"error":"bad request"}',{status:400,headers:JH});}
- const month=monthKey();let used=+(await env.SAVES.get(month))||0;const u0=used;const out=[];
+ const month=monthKey();let used=+(await kvGet(env,month))||0;const u0=used;const out=[];const du=await dayUsed(env);let made=0;
  for(const x of L){const c=qClean(x);if(c==null){out.push(typeof x==='string'||!x.t.trim()?'empty':'bad voice');continue;}const i=qItem(c),text=i[0],voice=i[1],rate=+i[2];
   const key=await ttsKey(voice,rate,text);
-  if(await env.SAVES.get(key,'arrayBuffer')){out.push('hit');continue;}
+  if(await kvGet(env,key,'arrayBuffer')){out.push('hit');continue;}
+  if(du+made>=dayBudget(env)){out.push('budget');continue;}
   if(used+text.length>TTS_CAP){out.push('cap');continue;}
   const bin=await synth(env,voice,rate,text);if(!bin.length){out.push('google '+bin.status);continue;}
-  await env.SAVES.put(key,bin);used+=text.length;out.push('new');}
- if(used!==u0)await env.SAVES.put(month,String(used),{expirationTtl:60*60*24*62});
+  await kvPut(env,key,bin);used+=text.length;made++;out.push('new');}
+ if(used!==u0)await kvPut(env,month,String(used),{expirationTtl:60*60*24*62});
+ if(made)await dayPut(env,du+made);
  return new Response(JSON.stringify({ok:true,res:out,used,cap:TTS_CAP}),{headers:JH});}
 const J=(o,s)=>new Response(JSON.stringify(o),{status:s||200,headers:JH});
 /* Automatic pregen queue (no cron, no person): cf/tools/pregen.js POSTs the sentences the server does not have yet
@@ -307,7 +340,7 @@ const qId=x=>{const i=qItem(x);return i[1]+'|'+(+i[2]).toFixed(2)+'|'+i[0];};
 function qClean(x){const o=typeof x==='string'?{t:x}:x;if(!o||typeof o!=='object'||typeof o.t!=='string')return null;
  const t=o.t.slice(0,400).trim(),v=o.v||GAME_VOICE,r=Math.min(1.3,Math.max(.7,+o.r||GAME_RATE));
  if(!t||!VOICES.test(v))return null;return v===GAME_VOICE&&r===GAME_RATE?t:[t,v,r];}
-async function qLoad(env){let s=null;try{s=JSON.parse(await env.SAVES.get('ttsq'));}catch(e){}
+async function qLoad(env){let s=null;try{s=JSON.parse(await kvGet(env,'ttsq'));}catch(e){}
  if(!s||!Array.isArray(s.q))s={q:[],at:0,day:'',n:0};if(s.day!==today()){s.day=today();s.n=0;}return s;}
 async function queue(req,env){
  if(req.method==='GET'){const s=await qLoad(env);return J({ok:true,left:s.q.length,doneToday:s.n,dayMax:QDAY});}
@@ -315,28 +348,29 @@ async function queue(req,env){
  let L;try{L=await req.json();if(!Array.isArray(L)||L.length>QMAX)throw 0;}catch(e){return J({error:'bad request'},400);}
  const s=await qLoad(env);const seen=new Set(s.q.map(qId));let added=0;
  for(const x of L){const c=qClean(x);if(c==null)continue;const id=qId(c);if(seen.has(id)||s.q.length>=QMAX)continue;seen.add(id);s.q.push(c);added++;}
- if(added)await env.SAVES.put('ttsq',JSON.stringify(s));
+ if(added)await kvPut(env,'ttsq',JSON.stringify(s));
  return J({ok:true,added,left:s.q.length,doneToday:s.n});}
 async function qRun(env){if(!env.GOOGLE_TTS_KEY)return;const now=Date.now();if(now-qAt<QGAP)return;qAt=now;
  const s=await qLoad(env);if(!s.q.length||s.n>=QDAY||now-(s.at||0)<QGAP)return;
- const month=monthKey();let used=+(await env.SAVES.get(month))||0;const u0=used,done=new Set();let made=0,looked=0;
+ const month=monthKey();let used=+(await kvGet(env,month))||0;const u0=used,done=new Set();let made=0,looked=0;const du=await dayUsed(env);
  for(const x of s.q){if(made>=QN||s.n>=QDAY||looked>=4*QN)break;looked++;const i=qItem(x),t=i[0],v=i[1],r=+i[2];
   const key=await ttsKey(v,r,t);
-  if(await env.SAVES.get(key,'arrayBuffer')){done.add(qId(x));continue;}
-  if(used+t.length>TTS_CAP)break;
+  if(await kvGet(env,key,'arrayBuffer')){done.add(qId(x));continue;}
+  if(du+made>=dayBudget(env)||used+t.length>TTS_CAP)break;
   const bin=await synth(env,v,r,t);if(!bin.length){if(bin.status===400)done.add(qId(x));else break;continue;}/* 400: Google will never make it */
-  await env.SAVES.put(key,bin);used+=t.length;made++;s.n++;done.add(qId(x));}
- if(used!==u0)await env.SAVES.put(month,String(used),{expirationTtl:60*60*24*62});
+  await kvPut(env,key,bin);used+=t.length;made++;s.n++;done.add(qId(x));}
+ if(used!==u0)await kvPut(env,month,String(used),{expirationTtl:60*60*24*62});
+ if(made)await dayPut(env,du+made);
  if(!done.size)return;
  const s2=await qLoad(env);/* read again so sentences queued meanwhile are kept */
- s2.q=s2.q.filter(x=>!done.has(qId(x)));s2.at=now;s2.day=s.day;s2.n=s.n;await env.SAVES.put('ttsq',JSON.stringify(s2));}
+ s2.q=s2.q.filter(x=>!done.has(qId(x)));s2.at=now;s2.day=s.day;s2.n=s.n;await kvPut(env,'ttsq',JSON.stringify(s2));}
 /* the list of all game sentences (pregen.js POSTs it, texts or {t,v,r}; one KV write), for "download all voices to this device" */
 const ttsUrl=x=>{const i=qItem(x);return '/api/tts?t='+encodeURIComponent(i[0])+'&v='+i[1]+'&r='+i[2];};
 async function list(req,env){
- if(req.method==='GET'){let L=[];try{L=JSON.parse(await env.SAVES.get('ttsall'))||[];}catch(e){}const k=await ttsVer(env);return J({ver:k,urls:L.map(x=>ttsUrl(x)+'&k='+k)});}
+ if(req.method==='GET'){let L=[];try{L=JSON.parse(await kvGet(env,'ttsall'))||[];}catch(e){}const k=await ttsVer(env);return J({ver:k,urls:L.map(x=>ttsUrl(x)+'&k='+k)});}
  if(req.method!=='POST')return J({error:'method'},405);
  let L;try{L=await req.json();if(!Array.isArray(L)||L.length>QMAX)throw 0;}catch(e){return J({error:'bad request'},400);}
- const seen=new Set();L=L.map(qClean).filter(c=>c!=null&&!seen.has(qId(c))&&seen.add(qId(c)));await env.SAVES.put('ttsall',JSON.stringify(L));return J({ok:true,n:L.length});}
+ const seen=new Set();L=L.map(qClean).filter(c=>c!=null&&!seen.has(qId(c))&&seen.add(qId(c)));await kvPut(env,'ttsall',JSON.stringify(L));return J({ok:true,n:L.length});}
 export default{async fetch(req,env,ctx){const u=new URL(req.url);const p=u.pathname;
  if(ctx&&ctx.waitUntil&&(p==='/'||p==='/index.html'||p.startsWith('/api/save/')))ctx.waitUntil(qRun(env).catch(()=>{}));
  if(p==='/sw.js')return new Response(SW,{headers:{'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache'}});
