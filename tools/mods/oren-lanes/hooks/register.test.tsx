@@ -252,3 +252,14 @@ test('#136 cloud issues stay out of the local lane rows; local rows unchanged', 
   expect(v.lanes[0]).toBe('● #1 local one — building')
   expect(v.lanes.some(s => s.includes('#2'))).toBe(false)
 })
+
+import { usageJson, governorLine } from './lanes'
+test('usage.json and governor line (#239)', () => {
+  const u = usageJson([{ kind: 'five_hour', percentUsed: 40, resetsAt: '2026-11-26T15:00:00Z' }, { kind: 'seven_day', percentUsed: 60, resetsAt: '2026-11-28T07:00:00Z' }], 1_800_000_000_000)
+  expect(u).toEqual({ five_h_pct: 40, five_h_reset: '2026-11-26T15:00:00Z', week_pct: 60, week_reset: '2026-11-28T07:00:00Z', at: 1_800_000_000 })
+  expect(usageJson([], 0)).toBe(null)
+  const g = JSON.stringify({ text: 'governor: 6 lanes (5h 40% -> ~88% at 17:00)', at: 1_800_000_000 })
+  expect(governorLine(g, 1_800_000_000_000 + 60_000)).toBe('governor: 6 lanes (5h 40% -> ~88% at 17:00)')
+  expect(governorLine(g, 1_800_000_000_000 + 16 * 60_000)).toBe('')
+  expect(governorLine('nope', 0)).toBe('')
+})

@@ -570,3 +570,49 @@ assert W.orch_decision("done", [213], _st, _n + 31 * 60) == "escalate"
 _st["escalated"] = _n + 31 * 60
 assert W.orch_decision("done", [213], _st, _n + 40 * 60) == "nudge"              # no second escalation within 2 h
 print("ok watch the checker")
+
+# #239: usage governor (pure): remote lanes from the 5h window
+_N = 1_800_000_000.0
+_cfg = {"remote_lanes": 4, "governor_target": 90, "governor_min": 2, "governor_max": 8, "governor_stop": 93, "governor_week_cap": 4, "governor_pace": 3.5}
+def _u(pct, hours_left, week=None, week_left_h=None, age=60):
+    u = {"five_h_pct": pct, "five_h_reset": _N + hours_left * 3600, "at": _N - age}
+    if week is not None: u.update(week_pct=week, week_reset=_N + week_left_h * 3600)
+    return u
+_g = r.governor(_u(20, 4), _N, [], _cfg)                        # far below target: (90-20)/(3.5*4)=5 lanes
+assert _g["lanes"] == 5 and not _g["stop"] and _g["source"] == "governor", _g
+assert _g["text"].startswith("governor: 5 lanes (5h 20% -> ~90% at "), _g["text"]
+assert r.governor(_u(10, 4.5), _N, [], _cfg)["lanes"] == 5        # (80)/(15.75)=5.08
+assert r.governor(_u(10, 1), _N, [], _cfg)["lanes"] == 8          # little time left, lots of room: max
+_g = r.governor(_u(80, 3), _N, [], _cfg)                        # above target pace: fewer lanes, floor at min
+assert _g["lanes"] == 2 and _g["projected"] > 90, _g
+_g = r.governor(_u(93, 2), _N, [], _cfg)                        # 93%: no new runs
+assert _g["stop"] and _g["lanes"] == 0 and "stop" in _g["text"], _g
+assert not r.governor(_u(92.9, 2), _N, [], _cfg)["stop"]
+# measured pace: 10 pts in the last hour with 2 busy lanes = 5 %/h/lane -> (90-30)/(5*2) = 6
+_s = [{"at": _N - 3600 + 60, "five_h_pct": 20, "five_h_reset": _N + 7200, "busy": 2}, {"at": _N - 60, "five_h_pct": 29.66, "five_h_reset": _N + 7200, "busy": 2}]
+assert abs(r.pace_per_lane(_s, _N, _N + 7200) - 5.0) < 0.01, r.pace_per_lane(_s, _N, _N + 7200)
+assert r.governor(_u(30, 2), _N, _s, _cfg)["lanes"] == 6
+assert r.pace_per_lane(_s, _N, _N + 9999) is None                 # samples of an older 5h window are not used
+assert r.pace_per_lane(_s[1:], _N, _N + 7200) is None             # one sample: default pace
+assert r.pace_per_lane([dict(x, busy=0) for x in _s], _N, _N + 7200) is None
+# weekly guard: 2 days left = 71% of the week gone; 85% used > 71+10 -> cap 4; 75% is fine
+assert r.governor(_u(20, 4, week=85, week_left_h=48), _N, [], _cfg)["lanes"] == 4
+assert r.governor(_u(10, 1, week=75, week_left_h=48), _N, [], _cfg)["lanes"] == 8
+assert "week cap" in r.governor(_u(10, 1, week=85, week_left_h=48), _N, [], _cfg)["text"]
+# stale / missing / past reset -> config remote_lanes
+for _bad in (None, {}, _u(20, 4, age=16 * 60), _u(20, -0.1)):
+    _g = r.governor(_bad, _N, [], _cfg)
+    assert _g["lanes"] == 4 and _g["source"] == "config" and not _g["stop"], (_bad, _g)
+assert r.governor(_u(20, 4, age=14 * 60), _N, [], _cfg)["source"] == "governor"
+assert r.governor({"five_h_pct": 20, "five_h_reset": "2027-01-15T10:00:00Z", "at": _N}, _N, [], _cfg)["source"] == "governor"   # ISO reset (as the panel writes it)
+# gov_now: reads .runs/usage.json, keeps one sample per 5 min, writes governor.json
+import json as _jg
+r.RUNS.mkdir(exist_ok=True)
+(r.RUNS / "usage.json").write_text(_jg.dumps(_u(20, 4)))
+assert r.gov_now(busy=3, now=_N)["source"] == "governor"
+r.gov_now(busy=3, now=_N + 60)                                   # within 5 min: no second sample
+assert len((r.RUNS / "usage_hist.jsonl").read_text().splitlines()) == 1
+assert _jg.loads((r.RUNS / "governor.json").read_text())["text"].startswith("governor: ")
+(r.RUNS / "usage.json").unlink()
+assert r.total_lanes() == r.LOCAL_LANES + r.REMOTE_LANES          # no usage: config lanes
+print("ok usage governor")

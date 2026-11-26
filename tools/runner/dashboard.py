@@ -220,7 +220,7 @@ def text(m):
     d = m["last_deploy"]
     lines.append("Last deploy: " + (f"{hhmm(d['ts'])} {'ok' if d.get('ok') else 'FAILED'}" if d else "no record yet") + f" · runner deploys 24 h: {tr['deploys_ok']} ok, {tr['deploys_fail']} failed")
     if tr["stuck"]: lines.append("Top stuck reasons (24 h): " + "; ".join(f"{k} ({len(v)})" for k, v in tr["stuck"][:3]))
-    lines.append("Lanes: " + m["lanes"])
+    lines.append("Lanes: " + m["lanes"] + (" · " + m["governor"] if m.get("governor") else ""))
     for c in m["cloud"]:
         lines.append(f"  cloud #{c['n']} {c['title'][:40]} — {c['state']} · last {hhmm(epoch(c['last'])) if epoch(c['last']) else '-'}"
                      + (" · STALE" if c["stale"] else "") + (f" · {c['pr']}" if c["pr"] else "") + (f" · {c['session']}" if c["session"] else ""))
@@ -474,7 +474,7 @@ def page(m):
             f'<title>Oren game: status {hhmm(now)}</title><style>{CSS}</style></head><body><main>'
             f'<h1>Oren game: work status</h1><div class="sub">Updated {time.strftime("%a %d %b %H:%M", time.localtime(now))} (Israel time). '
             f'For fresh numbers run tools\\dashboard.cmd again.</div>'
-            f'{top}<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}</div>{qcard}{needs}{bottom}{timeline}{cloud}{_health_card(m)}{_ai_card(m)}'
+            f'{top}<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}{(" · " + e(m["governor"])) if m.get("governor") else ""}</div>{qcard}{needs}{bottom}{timeline}{cloud}{_health_card(m)}{_ai_card(m)}'
             f'<h2 class="more">More details</h2><div class="sub">Everything else is here. Click a line to open it.</div>'
             f'{lists}{recent}{truth}{charts}{speed}{_ov_card(m)}{how}</main></body></html>')
 
@@ -621,6 +621,8 @@ def gather():
     m["ov"] = oversight(w, wmt, rmt, ol, omt, now)
     import owner_q
     m["questions"] = owner_q.open_list() or []            # #193
+    try: m["governor"] = R.gov_now()["text"]                # #239
+    except Exception: m["governor"] = ""
     return m
 
 def ai_tick(log=print):
