@@ -288,3 +288,8 @@ test('#263 a done cloud session is not a lane, not counted, and goes to DONE; ma
   expect(rows).toEqual(['☁ #208 t208 — working · last 11:41', '☁ #230 t230 — working · manual · last 11:41'])
   expect(cloudDone(lanes)).toEqual(['✓ #219 t219 (cloud)'])
 })
+
+test('#297 a quiet PR without a RESULT line shows waiting review with the PR number', () => {
+  expect(cloudRows([{ n: 269, title: 'Quiet', state: 'waiting review', last: '2026-11-26T12:24:00Z', stale: false, pr: 'https://github.com/x/y/pull/270', session: '' }]))
+    .toEqual(['☁ #269 Quiet — waiting review PR #270 · last 14:24', '   PR https://github.com/x/y/pull/270'])
+})

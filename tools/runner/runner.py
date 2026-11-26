@@ -394,9 +394,10 @@ def remote_worker_prompt(n, lane, bug=False, retry=False):
     return base + (f"Work on branch lane/{n} (create it from {BRANCH}). Follow the worker rules in FLOW.md: run the tests you touched, commit "
                    f"(not the built oren2/index.html or oren2/cf/public/index.html), `git push -u {REMOTE} lane/{n}`, and open a PR to {BRANCH} "
                    f"with `gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Fixes #{n}` (if you may only push claude/* branches, use your claude/* branch instead; the runner finds the PR by `Fixes #{n}`). Never deploy, never force-push, never push to {BRANCH}.\n"
-                   f"You have no terminal the owner can see, so report ONLY through an issue comment: when finished post `gh issue comment {n} --repo {REPO} --body \"RESULT: DONE <PR url>\"`; "
-                   f"if blocked post `RESULT: STUCK <why>`; if you need the owner post `QUESTION: <short question, with options>` and stop. "
-                   "The comment must have that line on its own line.")
+                   f"You have no terminal the owner can see, so report ONLY through an issue comment (that line on its own line): "
+                   f"if blocked post `RESULT: STUCK <why>`; if you need the owner post `QUESTION: <short question, with options>` and stop.\n"
+                   f"LAST STEP (mandatory), after the PR is open: post `gh issue comment {n} --repo {REPO} --body \"RESULT: DONE <PR url>\"`. "
+                   "Your work is not finished until that comment is on the issue.")
 
 def run_over(issue_state, merged_at, since):
     """Pure (#234): the run has nothing left to do when its issue is CLOSED or a lane PR was merged AFTER this run started
