@@ -749,7 +749,49 @@ ST(5,'לַיְלָה בָּאֹהֶל','לילה באוהל',['⛺','lantern'],
  [['lit','מִי עָשָׂה אֶת הָרַעַשׁ?','מי עשה את הרעש?','צְרָצָרִים',['צְפַרְדְּעִים','כְּלָבִים']],['seq','אוֹרֶן עָזַר לִמְתֹּחַ חֲבָלִים',['אִמָּא הִדְלִיקָה פָּנָס','אוֹרֶן נִרְדַּם']],
   ['les','אֵיךְ הַצְּרָצָרִים עוֹשִׂים אֶת הַקּוֹל?','איך הצרצרים עושים את הקול?','מְשַׁפְשְׁפִים כְּנָפַיִם',['פּוֹתְחִים אֶת הַפֶּה','דּוֹפְקִים עַל עֵצִים']]],
  ['sci','צרצרים משמיעים קול כשהם משפשפים את הכנפיים'])];
-stories.forEach((s,i)=>{s.id=i;});
+/* #420: 2-3 hard words of each story, met before it ("words we will meet"): [word as in the story, with nikud; picture] */
+const HW=[
+[['לַשַּׁעַר','🥅'],['פַּעֲמַיִם','✌️'],['גּוֹלִים','⚽']],
+[['בּוּעָה','🫧'],['וְהִתְפּוֹצְצָה','💥'],['אֲוִיר','💨']],
+[['פְּסַנְתֵּר','🎹'],['וְהַצְּלִיל','🎵'],['נָמוּךְ','⬇️']],
+[['הַגַּג','🏠'],['סֻלָּם','🪜']],
+[['קַרְטוֹן','📦'],['חֲלָלִית','🚀'],['הַמְרָאָה','🛫']],
+[['שְׁלוּלִית','💦'],['חִמְּמָה','☀️'],['נֶעֶלְמָה','🫥']],
+[['אַרְמוֹן','🏰'],['רָטֹב','💧'],['גַּל','🌊']],
+[['לַסַּל','🏀'],['זָרַק','🤾'],['תִּסְתַּכֵּל','👀']],
+[['שְׂחִיָּה','🏊'],['הַמְּאַמֶּנֶת','👩‍🏫'],['קֶרֶשׁ','🏄']],
+[['קֻפְסָאוֹת','📦'],['וּפְקָקִים','🍾'],['רוֹבּוֹט','🤖']],
+[['אַרְנָב','🐇'],['עֵשֶׂב','🌾'],['שִׁנַּיִם','🦷']],
+[['תִּזְמֹרֶת','🎺'],['סִירִים','🍲'],['תּוֹפֵף','🥁']],
+[['מֵטֵאוֹר','☄️'],['הַכּוֹכָבִים','⭐'],['מֵהֶחָלָל','🌌']],
+[['עַכְבָּר','🐭'],['הָאֱגוֹז','🌰'],['הַחֶדֶק','🐘']],
+[['מִבְצָר','🏰'],['מִכִּסְאוֹת','🪑'],['וּשְׂמִיכוֹת','🛏️']],
+[['בַּהַפְסָקָה','🔔'],['כַּדּוּרֶגֶל','⚽'],['הִבְקִיעַ','🥅']],
+[['אָחוֹת','👧'],['הַפְּסַנְתֵּר','🎹'],['נִרְדְּמָה','😴']],
+[['כַּדּוּרְסַל','🏀'],['הִפְסִידוּ','😞'],['הַמְּאַמֵּן','🧑‍🏫']],
+[['בַּבְּרֵכָה','🏊'],['מַקְפֵּצָה','🤸'],['פָּחֲדָה','😨']],
+[['גֶּשֶׁר','🌉'],['נָהָר','🏞️'],['מְהַנְדֵּס','👷']],
+[['נָבַח','🐕'],['הַשָּׁטִיחַ','🧶'],['בָּרְחָה','🏃']],
+[['טֶלֶסְקוֹפּ','🔭'],['הַיָּרֵחַ','🌙'],['מַכְתְּשִׁים','🕳️']],
+[['בִּשְׁבִיל','🥾'],['הַפְתָּעָה','🎁'],['מַעְיָן','💧']],
+[['פִּיתוֹת','🫓'],['קֶמַח','🌾'],['הַבָּצֵק','🥣']],
+[['הַמִּגְרָשׁ','🏟️'],['לַבֹּץ','🟤'],['מְלֻכְלָכִים','🧼']],
+[['לִפְסַנְתֵּר','🎹'],['הַשּׁוּרָה','📝'],['שֶׁהִתְאַמַּנְתָּ','💪']],
+[['אַסְטְרוֹנָאוּט','👨‍🚀'],['חֲלִיפָה','🧥'],['רִחֵף','🎈']],
+[['יוֹנָה','🕊️'],['זְרָדִים','🪵'],['גּוֹזָלִים','🐣']],
+[['הַגָּדֵר','🚧'],['הַשָּׁכֵן','🏡'],['דָּפְקוּ','🚪']],
+[['לִשְׂחוֹת','🏊'],['בּוּעוֹת','🫧'],['מֶטְרִים','📏']],
+[['קְרָשִׁים','🪵'],['מַסְמְרִים','🔨'],['סֻלָּם','🪜']],
+[['לַכִּתָּה','🏫'],['דִּינוֹזָאוּרִים','🦕'],['וְדִפְדְּפוּ','📖']],
+[['טוּרְנִיר','🏀'],['בְּפִגּוּר','📉'],['בַּגָּבִיעַ','🏆']],
+[['מְבֻלְגָּן','🧦'],['צַעֲצוּעִים','🧸'],['מְסֻדָּר','✅']],
+[['דּוֹלְפִין','🐬'],['בְּרֶשֶׁת','🕸️'],['לְמַצִּילִים','🛟']],
+[['חָלִיל','🪈'],['גִּיטָרָה','🎸'],['הַקֶּצֶב','🥁']],
+[['הַיָּרֵחַ','🌙'],['עִגּוּל','⭕'],['בַּמַּחְבֶּרֶת','📓']],
+[['עֲפִיפוֹן','🪁'],['זָנָב','〰️'],['דֶּבֶק','🧴']],
+[['לִשְׁלֹחַ','📤'],['בַּטֶּלֶפוֹן','📱'],['לְצַלֵּם','📷']],
+[['בְּאֹהֶל','⛺'],['צְרָצָרִים','🦗'],['כְּרִיכִים','🥪']]];
+stories.forEach((s,i)=>{s.id=i;s.hw=HW[i];});
 
 /* ---------- 4. WRITING ---------- */
 const FINAL={'ך':'כ','ם':'מ','ן':'נ','ף':'פ','ץ':'צ'};
@@ -833,14 +875,14 @@ function itemsFor(skill,level){const L=+level;
 /* everything the game may say (for the voice pregen); with nikud, like T.spk */
 function speakList(){const out=new Set();const add=s=>{if(s)out.add(String(s).replace(/\s+/g,' ').trim());};
   words.forEach(w=>add(w.w));sentences.forEach(s=>{add(s.t);add(s.q);if(s.a[0]!=='@')add(s.a);s.ds.forEach(d=>{if(d[0]!=='@')add(d);});});
-  stories.forEach(st=>{add(st.t);st.s.forEach(add);st.q.forEach(q=>{add(q[1]);add(q[3]);q[4].forEach(add);});});
+  stories.forEach(st=>{add(st.t);st.s.forEach(add);st.q.forEach(q=>{add(q[1]);add(q[3]);q[4].forEach(add);});(st.hw||[]).forEach(x=>add(x[0]));});
   order.forEach(o=>add(o.t));paper.forEach(p=>{add(p.t);p.chk.forEach(add);});Object.values(UI).forEach(add);
   return [...out];}
 /* fixed kid-facing lines of the activities */
 const UI={first:'בְּאֵיזוֹ אוֹת מַתְחִילָה הַמִּלָּה?',pw:'אֵיזוֹ מִלָּה מַתְאִימָה לַתְּמוּנָה?',wp:'אֵיזוֹ תְּמוּנָה מַתְאִימָה לַמִּלָּה?',build:'לוֹחֲצִים עַל הַהֲבָרוֹת לְפִי הַסֵּדֶר, מִיָּמִין לִשְׂמֹאל',
  copy:'כְּתֹב אֶת הַמִּלָּה: לוֹחֲצִים עַל הָאוֹתִיּוֹת לְפִי הַסֵּדֶר',dict:'שׁוֹמְעִים אֶת הַמִּלָּה וְכוֹתְבִים אוֹתָהּ',miss:'אֵיזוֹ אוֹת חֲסֵרָה?',order:'סַדֵּר אֶת הַמִּלִּים לְמִשְׁפָּט',
  paperGo:'סִיַּמְתִּי לִכְתֹּב',paperChk:'בּוֹא נִבְדֹּק:',paperOk:'בָּדַקְתִּי',paperPar:'הַרְאֵה לְאַבָּא אוֹ לְאִמָּא',paperParOk:'אַבָּא אוֹ אִמָּא רָאוּ',paperEx:'דֻּגְמָאוֹת:',
- paperTake:'קַח דַּף וְעִפָּרוֹן',storyRead:'הַקְרֵא לִי',storyQ:'לַשְּׁאֵלוֹת',finHint:'בְּסוֹף מִלָּה כּוֹתְבִים אוֹת סוֹפִית',again:'נַסֵּה שׁוּב'};
+ paperTake:'קַח דַּף וְעִפָּרוֹן',storyRead:'הַקְרֵא לִי',storyQ:'לַשְּׁאֵלוֹת',finHint:'בְּסוֹף מִלָּה כּוֹתְבִים אוֹת סוֹפִית',again:'נַסֵּה שׁוּב',heard:'אֵיזוֹ מִלָּה שָׁמַעְתָּ?'};
 
 /* parent names of the activities (no nikud; read by the parents' content map) */
 const SKILLS={'read-first':'אות ראשונה: 300 מילים מדורגות לפי ניקוד (7 רמות)','read-pw':'מילה ותמונה: קריאת מילה מדורגת לפי ניקוד','read-wp':'תמונה למילה: קריאת מילה מדורגת לפי ניקוד',
@@ -884,18 +926,35 @@ const MAIN={first:'read-first',pw:'read-pw',wp:'read-wp',build:'read-build',sent
 O.on('tlDone',id=>{let m=/^rb2-(first|pw|wp|build|sent|mix)-\d$/.exec(id);if(m){T.record(MAIN[m[1]],st(id));return;}
   if(/^rb2-st-\d+$/.test(id)){T.record('story-new',st(id));return;}if(/^rb2-pp-\d+$/.test(id))T.record('write-paper',st(id));});
 const W=R.words,withPic=W.filter(w=>w.pic);
+/* #420: words he tapped while reading a story (T.S().askw, newest last). Each tap = a "helped" item of the bank 'rb-asked',
+   so the learning engine brings it back the next day (then 2, 4, 8 days while he gets it right). The next word rounds start with the due ones. */
+const ASK='rb-asked',AW=()=>{const s=T.S();if(!Array.isArray(s.askw))s.askw=[];return s.askw;};
+const askEntry=w=>{const L=window.LEARN;if(!L||!L.state)return null;const wr=(L.state().wr||{})[ASK]||{};return wr[L.hash(w)]||null;};
+R.ask=w=>{if(!w)return;const a=AW();const i=a.indexOf(w);if(i>=0)a.splice(i,1);a.push(w);if(a.length>40)a.splice(0,a.length-40);
+  if(window.LEARN)try{LEARN.seen(ASK,w,false,true);}catch(e){}O.persist();};
+R.asked=()=>AW().slice();
+R.askedDue=()=>{const L=window.LEARN;if(!L)return [];const t=L.dayNum();const a=AW();
+  for(let i=a.length-1;i>=0;i--)if(!askEntry(a[i]))a.splice(i,1);   /* gone from the engine's list = learned */
+  return a.filter(w=>{const e=askEntry(w);return e&&e[0]<=t;});};
+/* "which word did you hear?": the word is said, he picks it among 3 written words of the stories */
+const STW=()=>{const out=new Set();R.stories.forEach(st=>st.s.forEach(l=>l.split(/\s+/).forEach(x=>{x=x.replace(/[^\u0591-\u05C7\u05D0-\u05EA]/g,'');if(x.length>2)out.add(x);})));return [...out];};
+const bareW=x=>x.replace(/[\u0591-\u05C7]/g,'');
+function askedQ(w){const n=bareW(w).length;const ds=shuffle(STW().filter(x=>bareW(x)!==bareW(w)&&Math.abs(bareW(x).length-n)<=1)).slice(0,2);const opts=shuffle([w,...ds]);
+  return {pr:`<div class="qq">${UI.heard}</div>`,opts,ans:opts.indexOf(w),cls:'tx',play:()=>O.say(w),auto:1,playLbl:'שׁוּב',say:UI.heard,explain:`<span class="bigw">${w}</span>`,key:'ask'+w,bank:ASK,bkey:w};}
+/* a word round (first / pw / wp): the due tapped words first, at most 3 */
+const withAsked=gen=>{const due=R.askedDue().slice(0,3);return i=>i<due.length?askedQ(due[i]):gen(i);};
 const otherWords=(w,n,f)=>shuffle(W.filter(x=>x!==w&&x.w!==w.w&&!R.near(x,w)&&(!f||f(x)))).slice(0,n);
 
 /* ---- library: the same activity ids, bigger graded pools ---- */
-function first(back){const L=level('word');T.quiz({id:'rb2-first-'+L,title:'אוֹת רִאשׁוֹנָה',bg:'city',back,n:8,gen:()=>{const w=lvPick(withPic,L,null,'rb-word',wk);const f=w.f;
+function first(back){const L=level('word');T.quiz({id:'rb2-first-'+L,title:'אוֹת רִאשׁוֹנָה',bg:'city',back,n:8,gen:withAsked(()=>{const w=lvPick(withPic,L,null,'rb-word',wk);const f=w.f;
   const pool=shuffle([...new Set(W.map(x=>x.f))].filter(c=>!R.sameSound(c,f)));const opts=shuffle([f,pool[0],pool.find(c=>!R.sameSound(c,pool[0]))]);
-  return {pr:`${pic(w.pic,1)}<div class="qq">${UI.first}</div>`,opts,ans:opts.indexOf(f),cls:'tx big2',say:'באיזו אות מתחילה המילה?',word:w.w,explain:`<span class="bigw">${w.w}</span>`,key:w.w,bank:'rb-word'};}});}
-function pw(back){const L=level('word');T.quiz({id:'rb2-pw-'+L,title:'אֵיזוֹ מִלָּה?',bg:'city',back,n:8,gen:()=>{const w=lvPick(withPic,L,null,'rb-word',wk);
+  return {pr:`${pic(w.pic,1)}<div class="qq">${UI.first}</div>`,opts,ans:opts.indexOf(f),cls:'tx big2',say:'באיזו אות מתחילה המילה?',word:w.w,explain:`<span class="bigw">${w.w}</span>`,key:w.w,bank:'rb-word'};})});}
+function pw(back){const L=level('word');T.quiz({id:'rb2-pw-'+L,title:'אֵיזוֹ מִלָּה?',bg:'city',back,n:8,gen:withAsked(()=>{const w=lvPick(withPic,L,null,'rb-word',wk);
   const like=otherWords(w,2,x=>x.lv<=L&&(x.f===w.f||x.plain.length===w.plain.length));const ds=like.length>=2?like:otherWords(w,2,x=>x.lv<=L);const opts=shuffle([w,...ds]);
-  return {pr:`${pic(w.pic,1)}<div class="qq">${UI.pw}</div>`,opts:opts.map(x=>x.w),ans:opts.indexOf(w),cls:'tx',reveal:()=>say(w.w),key:w.w,bank:'rb-word'};}});}
-function wp(back){const L=level('word');T.quiz({id:'rb2-wp-'+L,title:'אֵיזוֹ תְּמוּנָה?',bg:'city',back,n:8,gen:()=>{const w=lvPick(withPic,L,null,'rb-word',wk);const ds=[];
+  return {pr:`${pic(w.pic,1)}<div class="qq">${UI.pw}</div>`,opts:opts.map(x=>x.w),ans:opts.indexOf(w),cls:'tx',reveal:()=>say(w.w),key:w.w,bank:'rb-word'};})});}
+function wp(back){const L=level('word');T.quiz({id:'rb2-wp-'+L,title:'אֵיזוֹ תְּמוּנָה?',bg:'city',back,n:8,gen:withAsked(()=>{const w=lvPick(withPic,L,null,'rb-word',wk);const ds=[];
   for(const x of shuffle(withPic)){if(ds.length>=3)break;if(x!==w&&x.pic!==w.pic&&!R.near(x,w)&&!ds.some(d=>R.near(d,x)))ds.push(x);}const opts=shuffle([w,...ds]);
-  return {pr:`<div class="bigw">${w.w}</div><div class="qq">${UI.wp}</div>`,opts:opts.map(x=>pic(x.pic)),ans:opts.indexOf(w),cls:'picb',reveal:()=>say(w.w),key:w.w,bank:'rb-word'};}});}
+  return {pr:`<div class="bigw">${w.w}</div><div class="qq">${UI.wp}</div>`,opts:opts.map(x=>pic(x.pic)),ans:opts.indexOf(w),cls:'picb',reveal:()=>say(w.w),key:w.w,bank:'rb-word'};})});}
 /* tap tiles in order (syllables, letters or words); calls done(errors) */
 function tiles(s,o,done){let k=0,err=0,miss=0;s.innerHTML='';const card=h('div','prq tqc',`${o.head||''}<div class="slots">${o.need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
   if(o.play){const pb=h('button','hintbtn',ICON.say+'<span>הַשְׁמַע</span>');pb.onclick=o.play;card.appendChild(pb);}s.appendChild(card);
@@ -924,7 +983,7 @@ function nextStory(){const L=level('story');const at=R.stories.filter(x=>x.lv===
 /* recorded once per story, after its questions (#360): any wrong answer, or the story read aloud to him → back after 1 day */
 function story(back,k){const sto=k!=null?R.stories[k]:nextStory();
   /* the shared story screen (talents.js, #355): read first, listen later; 📖 back to the story from every question */
-  T.storyScreen({act:'story-new',id:'rb2-st-'+sto.id,title:nk(sto.t,sto.tp),name:sto.t,tp:sto.tp,goal:sto.goal,spr:sto.spr.map(x=>pic(x)),lines:sto.s.map((x,i)=>nk(x,sto.p[i])),
+  T.storyScreen({act:'story-new',id:'rb2-st-'+sto.id,title:nk(sto.t,sto.tp),name:sto.t,tp:sto.tp,goal:sto.goal,spr:sto.spr.map(x=>pic(x)),lines:sto.s.map((x,i)=>nk(x,sto.p[i])),vl:sto.s,hw:sto.hw,
     q:sto.q.map(([,q,qp,a,ds])=>({pr:nk(q,qp,1),say:T.spk(q),a,ds})),back,end:(err,heard)=>{if(window.LEARN)try{LEARN.seen('rb-story',sto.t,!err,heard);}catch(e){}}});}
 
 /* ---- writing: a mixed graded session (copy, dictation, missing letter, sentence order) ---- */
