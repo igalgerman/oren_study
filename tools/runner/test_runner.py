@@ -394,8 +394,8 @@ assert r.model_name(["model:fable"]) == "fable" and r.model_name([]) == "sonnet"
 print("ok model labels")
 
 # #133: remote lanes (local_lanes / remote_lanes), remote worker start, results from GitHub
-assert r.CFG["local_lanes"] == 0 and r.CFG["remote_lanes"] == 4 and "max_parallel" not in r.CFG
-assert r.total_lanes() == 4
+assert r.CFG["local_lanes"] == 0 and r.CFG["remote_lanes"] >= 1 and "max_parallel" not in r.CFG
+assert r.total_lanes() == r.CFG["local_lanes"] + r.CFG["remote_lanes"]   # count set by the owner / usage governor (#239)
 ch = [I(1, [R, "pack"]), I(2, [R, "pack"]), I(3, [R, "pack"])]
 assert [(i["number"], w) for i, w in r.assign_where(ch, 0, 0, 1, 4)] == [(1, "local"), (2, "remote"), (3, "remote")]
 assert [(i["number"], w) for i, w in r.assign_where(ch, 1, 0, 1, 4)] == [(1, "remote"), (2, "remote"), (3, "remote")]   # local busy -> remote
@@ -594,3 +594,65 @@ assert 'f"lane/{n}"' not in _ci and "f\"{REMOTE}/lane/{n}\"" not in _ci, "ci_int
 _pl = _src.split("def process_locked", 1)[1].split("def close_windows", 1)[0]
 assert '"tools/integrate.sh", f"lane/{n}"' not in _pl and "no open PR for lane/%d" not in _pl
 print("ok #246 claude/* PR heads")
+# #234: a run ends as DONE when its issue is closed or its lane PR is merged elsewhere (every wait loop checks, one gh call per poll)
+_S0 = "2026-11-26T12:00:00Z"                         # run start
+assert r.run_over("CLOSED", [], _S0) and r.run_over("OPEN", ["2026-11-26T12:30:00Z"], _S0)
+assert not r.run_over("OPEN", [], _S0) and not r.run_over("", [], _S0) and not r.run_over(None, None, _S0)
+assert not r.run_over("OPEN", ["2026-11-20T09:00:00Z"], _S0)          # reopened issue: lane/<n> PR merged BEFORE this run -> keep working
+assert not r.run_over("OPEN", [None], _S0)
+def _gq_(state, merged): return _j.dumps({"data": {"repository": {"issue": {"state": state}, "pullRequests": {"nodes": [{"mergedAt": m} for m in merged]}}}})
+_calls = []
+def _fr(out, rc=0):
+    def f(cmd, **kw): _calls.append(cmd); return rc, out
+    return f
+assert r.issue_over(7, _S0, run_=_fr(_gq_("CLOSED", []))) and r.issue_over(7, _S0, run_=_fr(_gq_("OPEN", ["2026-11-26T13:00:00Z"])))
+assert not r.issue_over(7, _S0, run_=_fr(_gq_("OPEN", [])))
+assert not r.issue_over(7, _S0, run_=_fr(_gq_("OPEN", ["2026-11-01T13:00:00Z"])))      # #234 review: old merged lane PR of a reopened issue
+assert not r.issue_over(7, _S0, run_=_fr("boom", rc=1)) and not r.issue_over(7, _S0, run_=_fr("not json"))   # gh failed: never end a run on an error
+assert all(c[:3] == ["gh", "api", "graphql"] for c in _calls[:1]) and any("h=lane/7" in c for c in _calls)   # graphql first
+# wait_remote: ended() -> {'state': 'ended'}; a final status still wins
+_t = [0]
+_seq = iter([{"state": "working"}, {"state": "working"}])
+_ends = iter([False, True])
+assert r.wait_remote(lambda: next(_seq), lambda s: _t.__setitem__(0, _t[0] + s), lambda: _t[0], 3600, 30, ended=lambda: next(_ends))["state"] == "ended" and _t[0] == 30
+assert r.wait_remote(lambda: {"state": "done", "line": "RESULT: DONE x"}, lambda s: None, lambda: 0, 100, 30, ended=lambda: True)["state"] == "done"
+# remote_worker / remote_review / remote_fix raise Ended instead of waiting 3 h
+_ok = lambda *a: {"ok": True, "session": "s", "url": "u"}
+for _f in (lambda: r.remote_worker(7, "pack", False, _ok, lambda: {"state": "working"}, lambda s: None, lambda: 0, ended=lambda: True),
+           lambda: r.remote_review(7, 9, "", _ok, lambda: {"state": "working"}, lambda s: None, lambda: 0, ended=lambda: True),
+           lambda: r.remote_fix(7, "s", "fix", lambda *a: {"ok": True}, _ok, lambda: {"state": "working"}, lambda s: None, lambda: 0, ended=lambda: True)):
+    try: _f(); assert False, "no Ended"
+    except r.Ended: pass
+# ci_merge: merged / closed elsewhere -> ('ended',), never merges or reruns
+def _cm2(seq, **kw):
+    it, log = iter(seq), []
+    return r.ci_merge(lambda: next(it), lambda: log.append("rerun"), lambda: log.append("merge") or True, lambda s: log.append("sleep"), **kw), log
+assert _cm2([_ck("pending")] * 3, ended=iter([False, True]).__next__) == (("ended",), ["sleep"])
+assert _cm2([_ck("pass")], ended=lambda: True) == (("ended",), [])
+# process_locked: a remote run whose issue got closed -> DONE, in-progress dropped, worktree + windows cleaned, no block
+_saved = {k: getattr(r, k) for k in ("gh", "run", "set_labels", "stat", "remove_worktree", "close_windows", "block", "issue_over", "set_where")}
+_saved_remote = (r.remote.start, r.remote.status)
+_lab, _did = [], []
+r.gh = lambda *a, **k: (0, ""); r.run = lambda *a, **k: (0, ""); r.stat = lambda *a, **k: None; r.set_where = lambda *a: None
+r.set_labels = lambda n, add=(), remove=(): _lab.append((tuple(add), tuple(remove)))
+r.remove_worktree = lambda *a, **k: _did.append("wt"); r.close_windows = lambda n: _did.append("win")
+r.block = lambda *a, **k: _did.append("block"); r.issue_over = lambda n, since: bool(since)
+r.remote.start = _ok; r.remote.status = lambda n, since=None: {"state": "working"}
+try:
+    _res = r.process_locked({"number": 7, "labels": ["pack"]}, "remote")
+finally:
+    for k, v in _saved.items(): setattr(r, k, v)
+    r.remote.start, r.remote.status = _saved_remote
+assert _res.startswith("DONE") and "block" not in _did and "wt" in _did and "win" in _did, (_res, _did)
+assert _lab[-1] == ((), ("in-progress",)), _lab
+# #246: a MERGED claude/* PR (found by remote.find_pr) ends the run too
+def _fr246(cmd, **kw):
+    line = " ".join(map(str, cmd))
+    if "graphql" in line: return 0, _gq_("OPEN", [])
+    if "--head lane/7" in line: return 0, "[]"
+    if "issue view 7" in line: return 0, _j.dumps({"comments": []})
+    if "pr list" in line and "--state merged" in line: return 0, _j.dumps([{"number": 9, "headRefName": "claude/github-issue-7-abc", "mergedAt": "2026-11-26T13:00:00Z", "body": "Fixes #7"}])
+    return 0, "[]"
+assert r.issue_over(7, _S0, run_=_fr246)
+assert not r.issue_over(7, "2026-11-26T14:00:00Z", run_=_fr246)         # merged before this run started
+print("ok run ends when its issue is closed or PR merged (#234)")
