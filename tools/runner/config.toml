@@ -6,7 +6,7 @@ model = "sonnet"
 local_lanes = 0                 # #133: worker windows on this PC (owner 26 Nov: 0, the PC froze; all workers in the cloud)
 remote_lanes = 6                # #133: cloud sessions (tools/runner/remote.py); a local lane busy + a remote slot free -> the worker runs in the cloud
 # #239 usage governor: the cloud lane count follows the 5h window (panel writes .runs/usage.json); usage missing or > 15 min old -> remote_lanes
-governor_target = 90            # aim: 5h usage at its reset close to this %
+governor_target = 99            # aim: 5h usage at its reset close to this % (owner 26 Nov 14:30: was 90)
 governor_min = 2
 governor_max = 8
 governor_stop = 99              # 5h at/above this %: no new run (owner 26 Nov 14:10: was 93)
