@@ -578,7 +578,8 @@ def process_locked(issue):
         with FileLock("integrate", wait=True):
             stat(n, lane, "merged")
             dep = deploy_text(log)
-        sync_main(log)
+        m = sync_main(log)                       # result logged (review of #47)
+        if m: log_line(m)
         gh("issue", "close", str(n), "--comment", f"Merged to {BRANCH}, tests green, {dep}.")
         set_labels(n, remove=["in-progress"])
         run(["git", "worktree", "remove", "--force", str(wt)], cwd=ROOT, log=log)
