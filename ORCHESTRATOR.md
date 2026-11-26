@@ -38,6 +38,12 @@ idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → r
    watch it (`hc read run-2`, `hc read issue-2`), fix the runner if it breaks, one line per issue to the owner.
 2. Keep the queue moving: #4 → #5 → #6 → #7 → #8; #9 after #7. #11 needs grilling with the owner (`/idea`).
 
+## Owner decisions, 26 Nov 2026 (after the flow analysis)
+- Order: first the flow fixes (#62 line endings, #149 review severity, #166 merge on green, #177 hand-work label, #153 chains), then remote lanes (#134-#137 carry Blocked-by lines).
+- Freeze on NEW tool features (runner, watchdog, panel, dashboard, remote, freeze/recover) until #152 (CI runs the tool tests) is merged. Bug fixes to the system and all game work continue. After #152: tooling gets at most 1 lane, the game at least 2.
+- Your own hand work never carries `in-progress` (the runner counts it as a lane) and tooling never gets `core`. Until #177 adds a `manual` label, leave hand work unlabelled and link the PR.
+- Do not split work into many tiny issues: a problem you find while working goes into the existing issue as a comment unless it is a separate real defect.
+
 ## Your job, always (owner's wish: everything automatic)
 - Lanes refill by themselves (each finished run starts a new pass). When a `run-<n>` note arrives: read its last line, tell the owner ONE line (done / tests / live link, or blocked + why), fix the runner if it broke, then `/go` again if a lane is free.
 - Guide the owner only when something needs HIM (a `ready-for-human` issue, a grilling question). Never ask him to run skills, wizards or commands you can run yourself.
