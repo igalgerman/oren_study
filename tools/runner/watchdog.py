@@ -10,6 +10,7 @@ Every minute it checks, deterministically:
   5b. every ai_observer_minutes (#203): ai_observer.py, ONE read-only headless Sonnet check in a thread; new findings -> the orchestrator
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
+  4b. orchestrator / inbox / inspector terminal finished (#140)                -> removed by address and started again (recover.py commands)
 It never answers questions or presses keys in other windows; it only tells the orchestrator and starts the runner.
 Usage: python watchdog.py [--once]
 """
@@ -227,6 +228,15 @@ def cleanup(ts):
             R.hc("rm", t["address"], timeout=30)
             log(f"closed window {name} ({t['address']}, was {t.get('state')})")
 
+def check_control(ts):
+    """#140: a finished orchestrator / inbox / inspector terminal is removed (by address) and started again, same command as recover."""
+    import recover
+    for name, address in recover.finished_control(ts):
+        R.hc("rm", address, timeout=30)
+        rc = recover.start_control(R, name)
+        log(f"{name} had finished: restarted (rc {rc})")
+        if rc == 0 and name != "orchestrator": tell(f"WATCHDOG: {name} had finished; restarted it")
+
 def observer_tick():
     import observer; observer.run_if_due()      # acting observer (observer.py)
 
@@ -343,7 +353,9 @@ def tick():
     OQ.answers_tick(tell)
     check_lanes(ts)
     check_intake(ts)
-    cleanup(R.hc_json("ls", "--all", "--json").get("terminals", []) or ts)
+    all_ts = R.hc_json("ls", "--all", "--json").get("terminals", []) or ts
+    check_control(all_ts)
+    cleanup(all_ts)
     observer_tick()
     ai_observer_tick()
     sync_tick()
