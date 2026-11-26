@@ -22,7 +22,7 @@ class FakeHerdr:
             name = a[a.index("--name") + 1]; self.t[name] = {"name": name, "state": "live", "address": f"w{len(self.calls)}", "argv": a}
             return 0, "ok"
         if a[0] == "get": return 0, json.dumps(self.t.get(a[1], {}))
-        if a[0] == "kill": self.t[a[1]]["state"] = "done"; return 0, ""
+        if a[0] == "kill": (a[1] in self.t) and self.t[a[1]].update(state="done"); return 0, ""
         if a[0] == "rm": self.t.pop(a[1], None); return 0, ""
         if a[0] == "send": self.sent.append((a[1], a[2])); return 0, ""
         return 0, ""
@@ -54,6 +54,9 @@ assert argv[argv.index(R.BASH) + 3] == "_" and argv[argv.index(R.BASH) + 4] == R
 p = argv[-1]
 assert "tools/ask/ask.py" in p and "PushNotification" in p and "(מומלץ)" in p and "qwin.py answer k3" in p and "שאלה 3?" in p and "TaskStop" in p
 assert [x for x in h.pins if x[1] == "true"].__len__() == 3                     # pinned on top
+# #310: the owner is never asked inside the terminal (AskUserQuestion shows reversed Hebrew there): tool removed + prompt says so
+assert argv[argv.index("--disallowedTools") + 1] == "AskUserQuestion" and argv.index("--disallowedTools") < argv.index("--"), argv
+assert "never" in p.lower() and "AskUserQuestion" in p and "page URL" in p, p
 # a second question of the same issue waits for the first one's window
 assert QW.plan([qs[0], {**qs[0], "key": "k1b"}], [], {}, 0)[0] == [qs[0]]
 # question 1 answered: its window is unpinned + closed, the oldest waiting (#4) opens
@@ -80,11 +83,13 @@ OQ.mark_answered = lambda key, answer="", gh=None: (marked.append((key, answer))
 QW._send_remote = lambda s, t: (remote_sent.append((s, t)), {"ok": True})[1]
 h.sent.clear()
 d = QW.answer("k3", "ירוק")
-assert d == {"issue": True, "answered": True, "remote": True}, d
+assert d == {"issue": True, "answered": True, "remote": True, "closed": True}, d
 assert any(a[:3] == ("issue", "comment", "3") and "ירוק" in a[-1] for a in gh_calls), gh_calls
 assert marked == [("k3", "ירוק")]
 assert remote_sent and remote_sent[0][0] == "session_01ABC" and "ירוק" in remote_sent[0][1]
 assert any(s[0] == "orchestrator" and "ירוק" in s[1] for s in h.sent), h.sent
+# #310: the window closes itself once the answer is recorded (unpinned + killed)
+assert ("kill", "question-3") in [a[:2] for a in h.calls] and h.t.get("question-3", {}).get("state") != "live", h.t.get("question-3")
 # a local window's answer: the orchestrator relays it (no remote send)
 remote_sent.clear(); h.sent.clear()
 QW.answer("k2", "1")
@@ -125,3 +130,16 @@ assert "PushNotification" in told[0][1] and "צבע כפתור?" in told[0][1] a
 opened.clear(); QW.tick(h2.ts(), now=30000)
 assert QW.load() == {} and len([s for s in h2.sent if s[0] == "orchestrator"]) == 1
 print("ok qwin open failure -> one push via the orchestrator")
+
+# #310: the watchdog closes leftover question windows (no open question of its own, e.g. answered in the terminal)
+h3 = FakeHerdr()
+QW._hc, QW._run = h3.hc, h3.run
+QW.STATE, QW.FAILS = tmp / "qwin3.json", tmp / "qwin3_fails.json"
+h3.t["question-cb326d"] = {"name": "question-cb326d", "state": "live", "address": "wx"}
+h3.t["question-7"] = {"name": "question-7", "state": "live", "address": "wy"}
+QW.save({"k7": {"name": "question-7", "since": 40000}})
+opened[:] = [{"key": "k7", "window": "#7", "source": "issue-7", "text": "?", "url": "u"}]
+QW.tick(h3.ts(), now=40060)
+assert "question-cb326d" not in h3.t and ("wx", "false") in h3.pins, h3.t          # leftover: unpinned + gone
+assert h3.t["question-7"]["state"] == "live"                                         # its question is still open: stays
+print("ok qwin leftovers closed")
