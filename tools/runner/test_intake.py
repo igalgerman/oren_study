@@ -29,6 +29,17 @@ assert c[c.index("--name") + 1] == "intake-3" and "--outlive-parent" in c and "h
 assert "/grill-me" in c[-1] and "#3" in c[-1] and "/to-tickets" in c[-1], c[-1]
 assert "## Acceptance" in c[-1] and "{n}" not in c[-1], c[-1]          # #186: the intake writes the Acceptance section
 assert told == ["NEEDS YOU: intake-3 is open"], told
+# #29: every new ticket goes through the triage steps (mattpocock-skills:triage)
+for step in ("mattpocock-skills:triage", "docs/agents/triage-labels.md", "P-level", "lane label", "Blocked by", "duplicate check", "CLAUDE.md"):
+    assert step in c[-1], (step, c[-1])
 W.check_intake([{"name": "intake-3", "state": "live"}])
 assert len(runs) == 1
+import recover as RC                    # #29: the inbox prompt and the commands that make issues say the same
+for step in ("mattpocock-skills:triage", "docs/agents/triage-labels.md", "P-level", "lane label", "Blocked by", "duplicate check"):
+    assert step in RC.INBOX_PROMPT, (step, RC.INBOX_PROMPT)
+_cmds = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".claude", "commands")
+for f in ("task.md", "bug.md", "idea.md"):
+    t = open(os.path.join(_cmds, f), encoding="utf-8").read()
+    for step in ("mattpocock-skills:triage", "docs/agents/triage-labels.md", "P-level", "Blocked by", "One backlog, no duplicates"):
+        assert step in t, (f, step)
 print("ok intake")
