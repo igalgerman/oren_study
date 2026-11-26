@@ -66,12 +66,15 @@ const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + 
   await p.evaluate(() => { const T = window.TAL; T.S().prof = { col: '#3a8fc4', love: 'art' }; delete T.S().prof; T.profile(() => {}); }); await sleep(150);
   ok('profile does not ask for an animal', await p.evaluate(() => !/חַיָּה/.test(document.querySelector('#sTal').textContent)));
   // --- parent "today": compact ---
-  await p.evaluate(() => { window.TAL.parentPanel('day'); }); await sleep(200);
-  const pt = await p.evaluate(() => { const s = document.querySelector('#sPar .pbody .psec'); const row = document.querySelector('#sPar .tdrow');
+  await p.evaluate(() => { window.TAL.parentPanel('time'); }); await sleep(200);
+  const pt = await p.evaluate(() => { const s = document.querySelector('#sPar .pbody .psec'); const row = null;
     return { h: s.querySelector('h3').textContent, big: [...s.querySelectorAll('.pbig .bigbtn')].map(x => x.textContent.trim()), vis: [...s.querySelectorAll('.pchip')].filter(x => x.checkVisibility()).length,
       rowBtns: row ? [...row.querySelectorAll('button')].filter(x => x.offsetParent).map(x => x.textContent) : [], gems: getComputedStyle(document.querySelector('#gemc')).display }; });
+  /* #359: the mission rows live on the day view ("plan ahead"): one ✕ per row, the rest behind a tap */
+  const rb = await p.evaluate(() => { const T = window.TAL, d = T.dailyEnsure(); if (!d.t.length) { d.t = ['math', T.dailyPool()[0]]; d.done = [0, 0]; } T.parentPanel('day');
+    const row = document.querySelector('#sPar .pdplan'); const r = row ? [...row.querySelectorAll('button')].filter(x => x.offsetParent).map(x => x.textContent) : []; return r; });
   ok('parent today: status + the big button (+15 min), the rest folded', pt.h === '⏱️ היום' && pt.big.join('|') === '+15 דק׳' && pt.vis === 0, JSON.stringify(pt));
-  ok('parent today: mission row shows only ✓ and ✕', pt.rowBtns.length === 2 && pt.rowBtns[0] === '✓' && pt.rowBtns[1] === '✕', JSON.stringify(pt.rowBtns));
+  ok('parent day view: a mission row shows only ✕', rb.length === 1 && rb[0] === '✕', JSON.stringify(rb));
   ok('parent panel hides the kid gems', pt.gems === 'none');
   await p.locator('#sPar .tdrow').first().click(); await sleep(100);
   ok('tap a mission row: more options', await p.evaluate(() => [...document.querySelectorAll('#sPar .tdrow')[0].querySelectorAll('.tdmore .pchip')].some(x => x.offsetParent)));

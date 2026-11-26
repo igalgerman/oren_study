@@ -27,7 +27,7 @@ const shot = async (page, name) => { if (!process.env.SHOTS) return; fs.mkdirSyn
   ok(await page.evaluate(() => /נשארו \d+ חדשים/.test(LEARN.runwayOf('read-sent'))), 'content map line: "נשארו N חדשים" for a finite bank');
   await page.evaluate(() => { window.OREN.showMap(); });
 
-  await page.evaluate(() => window.TAL.parentPanel('day')); await page.waitForTimeout(400);
+  await page.evaluate(() => window.TAL.parentPanel('learn')); await page.waitForTimeout(400);
   if (await page.locator('#pw1').count()) { await page.fill('#pw1', 'sod1234'); await page.fill('#pw2', 'sod1234'); await page.keyboard.press('Enter'); await page.waitForTimeout(500); }
   const par = { day: await page.evaluate(() => document.querySelector('#sPar').textContent) };
   await page.evaluate(() => { const b = [...document.querySelectorAll('#sPar *')].find(e => e.children.length === 0 && /המסלול של אורן/.test(e.textContent)); if (b) b.scrollIntoView({ block: 'start' }); }); await page.waitForTimeout(200);
