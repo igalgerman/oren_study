@@ -164,6 +164,13 @@ def integrate_with_resolve(integrate, resolve, max_rounds=2):
         if not resolve(files):
             return ("failed", rc, out)
 
+def integrate_failure(rc, out):
+    """Pure (#302): the BLOCKED reason of a failed merge step: its own first output line, never a bare 'integrate.sh exit N'."""
+    lines = [l.strip() for l in (out or "").splitlines() if l.strip()]
+    if rc == 6 and lines and lines[0] == "CI RED": return "CI red: " + (", ".join(lines[1:]) or "?")
+    if not lines: return f"merge step failed (exit {rc}, no output)"
+    return lines[0][:200] if lines[0].startswith("CI ") else "merge step failed: " + lines[0][:200]
+
 def ci_verdict(checks):
     """Pure (#74): `gh pr checks --json name,bucket` list -> 'none' (no checks yet) | 'pending' | 'red' | 'green'.
     A missing or pending check is never green; skipped checks are ignored."""
@@ -1243,6 +1250,7 @@ def ci_integrate(n, wt, log, over=None, sha=""):
             if run(["git", "push", "-q", REMOTE, f"HEAD:{br}"], cwd=wt, log=log)[0]: return 5, "push failed"
             sha = run(["git", "rev-parse", "HEAD"], cwd=wt)[1].strip()   # #185: the runner's own merge-main commit is the new head to match
             time.sleep(20)                                           # let GitHub start the new run
+    why = {"merge": ""}
     def get_checks():
         try: return json.loads(gh("pr", "checks", str(pr), "--json", "name,bucket", log=log)[1] or "[]")
         except ValueError: return []
@@ -1256,7 +1264,9 @@ def ci_integrate(n, wt, log, over=None, sha=""):
     def merge():                                                 # #185: no lock: GitHub merges atomically; the deploy keeps its own lock
         if refused(): return False
         rc_, o_ = gh("pr", "merge", str(pr), "--squash", "--match-head-commit", sha, log=log)
-        return True if rc_ == 0 else ("conflict" if merge_conflict(o_) else False)
+        if rc_ == 0 or state() == "merged": return True          # #302: GitHub's auto-merge may have merged it a moment earlier
+        why["merge"] = " ".join(o_.split())[:160]
+        return "conflict" if merge_conflict(o_) else False
     def mark():                                                  # #185: only reached after VERDICT PASS (process() calls us after the review loop)
         if refused(): return False
         rc_, o_ = gh("pr", "merge", str(pr), "--auto", "--squash", "--match-head-commit", sha, log=log)
@@ -1272,7 +1282,7 @@ def ci_integrate(n, wt, log, over=None, sha=""):
     disable_auto(pr, log)                                        # #185: not merged -> a later (unreviewed) push must not auto-merge
     if res[0] == "red": return 6, "CI RED\n" + "\n".join(res[1])
     if res[0] == "conflict": return 2, "CONFLICT: main moved after green CI (gh pr merge reports merge conflicts)"
-    return 7, "CI " + ("timed out" if res[0] == "timeout" else "green but `gh pr merge` failed")
+    return 7, "CI " + ("timed out" if res[0] == "timeout" else "green but `gh pr merge` failed" + (": " + why["merge"] if why["merge"] else ""))
 
 def find_pr_merged(n):
     return remote.pr_for(n, run=run, state="merged")[0] is not None     # #246: lane/<n> or claude/* head
@@ -1469,7 +1479,7 @@ def process_locked(issue, where="local"):
 
         kind = {"ci": False}
         def integrate():
-            if CFG.get("ci_merge", True) and find_pr(n):     # #74: CI decides, no local full suite
+            if CFG.get("ci_merge", True):                    # #74: CI decides, no local full suite; #302: no PR -> rc 4, never the local integrate.sh
                 rc, out = ci_integrate(n, wt, log, over, reviewed["sha"])           # #166: takes the lock itself, only around `gh pr merge`
                 kind["ci"] = rc == 6
                 return rc, out
@@ -1493,7 +1503,7 @@ def process_locked(issue, where="local"):
             gh("issue", "comment", str(n), "--body", redact("Runner: merge conflicts not resolved after 2 rounds. Conflicting files: " + (", ".join(files) or "(see log)")))
             return "BLOCKED: merge conflicts after 2 resolve rounds"
         if outcome[0] == "failed":
-            raise Blocked(outcome[2] if outcome[1] == 7 else f"integrate.sh exit {outcome[1]}")
+            raise Blocked(integrate_failure(outcome[1], outcome[2]))
         with FileLock("integrate", wait=True, note=f"#{n} deploy"):
             stat(n, lane, "merged")
             dep = deploy_main(log) if CFG.get("ci_merge", True) and find_pr_merged(n) else deploy_text(log)
