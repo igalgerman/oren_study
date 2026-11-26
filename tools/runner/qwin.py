@@ -8,9 +8,13 @@ worker/reviewer PURPLE/cloud QUESTION:/intake/orchestrator). The watchdog calls 
     session 'active' and skips the push). One `hc send` line to a long-lived Remote Control session that is idle (PUSHERS:
     inbox, else orchestrator): send this exact push, write a PUSH-RESULT line, and run `qwin.py answer <key> "<reply>"` when
     the owner answers in that chat. Busy sessions get nothing; the push waits for the next tick with an idle one.
-  - its result is read from that session's screen and logged once in watchdog.log: sent / NOT sent (second channel:
-    Telegram #440, once set up) / no result line in 10 min / no idle session for 10 min
-  - first answer wins (page or chat); the other side closes (answer() stops ask.py)
+  - its result is read from that session's screen and logged once in watchdog.log: sent / NOT sent / no result line in
+    10 min / no idle session for 10 min (Claude Code skips the push while the owner is active on this PC)
+  - #440 Telegram, also at the SAME time (telegram.py; token + chat id only in ~/.oren/telegram.env, never logged): the
+    question with numbered options; getUpdates polled every tick (offset in .runs/telegram.json); a reply (a number = that
+    option, other text = his own answer; Reply to the question's message, or plain text when one question is open) is
+    recorded with answer(); a PC/chat answer posts a short 'answered' note there; 2 h reminder there too
+  - first answer wins (page, chat or Telegram); the other side closes (answer() stops ask.py)
   - never two pages for the same question; at most MAX_WINDOWS questions at once, the rest wait (oldest first)
   - answered elsewhere (gone from the open list) -> ask.py stopped
   - question-* windows are not used any more: a live one (old) is unpinned and closed (#310)
@@ -25,6 +29,7 @@ HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 import runner as R
 import owner_q as OQ
+import telegram as TG
 
 MAX_WINDOWS = 3
 REMIND_S = 2 * 3600
@@ -35,6 +40,7 @@ IDLE = ("idle", "done")
 STATE = R.RUNS / "qwin.json"
 DIR = R.RUNS / "questions"
 ASK = (HERE.parent / "ask" / "ask.py").as_posix()
+TG_STATE = R.RUNS / "telegram.json"                  # #440: the getUpdates offset
 
 # swapped by the tests
 def _hc(*a, **kw): return R.hc(*a, **kw)
@@ -116,6 +122,50 @@ def push_text(q):
     return text + "".join(f"\n{i}. {o}" for i, o in enumerate(opts, 1)) + (
         "\nענה במספר בצ'אט, או בדף שנפתח בדפדפן" if opts else "\nענה בצ'אט, או בדף שנפתח בדפדפן")
 
+def tg_text(q):
+    """#440: the Telegram message: the question, numbered options, how to answer."""
+    text, opts = split_options(q.get("text", ""))
+    return text + "".join(f"\n{i}. {o}" for i, o in enumerate(opts, 1)) + (
+        "\nענה במספר או במילים (Reply להודעה הזו), או בדף שנפתח במחשב" if opts else "\nענה כאן (Reply להודעה הזו), או בדף שנפתח במחשב")
+
+def tg_answer(q_text, reply):
+    """#440: '2' -> the 2nd option's text; anything else is his own answer."""
+    opts = split_options(q_text)[1]
+    return opts[int(reply) - 1] if reply.isdigit() and 1 <= int(reply) <= len(opts) else reply
+
+def tg_send(st, now):
+    """#440: every open question goes to Telegram too (once); a failure is logged once and retried next tick."""
+    if not TG.config(): return
+    for key, e in st.items():
+        if e.get("answered") or e.get("tg"): continue
+        mid = TG.send(tg_text(e))
+        if mid: e["tg"] = mid; log(f"{e['name']}: telegram message sent for {key}")
+        elif not e.get("tg_fail"): e["tg_fail"] = True; log(f"{e['name']}: telegram NOT sent for {key} (retried every tick)")
+    for key, e in st.items():                             # 2 h unanswered: one reminder there, as a reply to the question
+        if e.get("tg") and not e.get("answered") and not e.get("tg_reminded") and now - e["since"] >= REMIND_S:
+            r = TG.send("תזכורת: שעתיים בלי תשובה.\n" + tg_text(e), reply_to=e["tg"])
+            if r: e["tg_reminded"], e["tg_r"] = True, r; log(f"{e['name']}: 2 h reminder in telegram")
+
+def tg_poll(st):
+    """#440: read the owner's Telegram replies (getUpdates, offset in .runs) and record each one like a page answer."""
+    wait = {k: e for k, e in st.items() if e.get("tg") and not e.get("answered")}
+    if not wait or not TG.config(): return
+    try: off = json.loads(TG_STATE.read_text(encoding="utf-8")).get("offset", 0)
+    except Exception: off = 0
+    new, msgs = TG.messages(off)
+    if new != off: R.RUNS.mkdir(parents=True, exist_ok=True); TG_STATE.write_text(json.dumps({"offset": new}), encoding="utf-8")
+    for m in msgs:
+        wait = {k: e for k, e in st.items() if e.get("tg") and not e.get("answered")}
+        key = next((k for k, e in st.items() if m["reply_to"] and m["reply_to"] in (e.get("tg"), e.get("tg_r"))), None)
+        if key is None and not m["reply_to"]:
+            fresh = [k for k, e in wait.items() if m["date"] >= e["since"] - 60]   # never an old message for a new question
+            if len(fresh) == 1: key = fresh[0]
+            elif len(fresh) > 1: TG.send("יש כמה שאלות פתוחות: ענה ב-Reply להודעה של השאלה.", reply_to=m["id"]); continue
+        if key not in wait: continue                      # answered already (first answer wins) or not a question
+        e = wait[key]
+        answer(key, tg_answer(e.get("text", ""), m["text"]), from_tg=True); e["answered"] = True
+        log(f"{e['name']}: answered in telegram")
+
 def push_message(q):
     """#390: the ONE line a long-lived idle session gets (hc send): push this text, report, relay the chat answer."""
     py = sys.executable.replace("\\", "/")
@@ -167,6 +217,7 @@ def tick(ts, now=None):
     for k in close:
         e = st.pop(k)
         if e.get("pid") and not e.get("answered"): _kill(e["pid"])          # answered elsewhere: the page goes too
+        if e.get("tg") and not e.get("answered"): TG.send("✓ השאלה נענתה", reply_to=e["tg"])   # #440
         log(f"{e['name']}: answered, closed")
     for q in start:                                       # #368: the page, started by python itself
         name, key = win_name(q), q["key"]
@@ -179,7 +230,7 @@ def tick(ts, now=None):
         if not e.get("page") and page_url(key): e["page"] = page_url(key); log(f"{e['name']}: page at {e['page']}")
         a = page_answer(key)
         if a is not None:                                 # #368: the page answered: relay it ourselves
-            answer(key, a, from_page=True); e["answered"] = True; log(f"{e['name']}: answered on the page")
+            answer(key, a, from_page=True, tg=e.get("tg", 0)); e["answered"] = True; log(f"{e['name']}: answered on the page")
             continue
         if e.get("via"): continue
         if not idle:                                      # #390: busy sessions get nothing; next tick
@@ -196,6 +247,7 @@ def tick(ts, now=None):
         if _hc("send", e["via"], "WATCHDOG REMINDER: 2 hours without an answer. " + push_message({"key": k, "text": e.get("text", "")}), timeout=30)[0] == 0:
             e["reminded"] = True; log(f"{e['name']}: 2 h reminder via {e['via']}")
     check_pushes(st, now)
+    tg_send(st, now); tg_poll(st)                         # #440
     save(st)
 
 def push_result(screen, key):
@@ -213,8 +265,8 @@ def check_pushes(st, now=None):
         r = push_result(_hc("read", e["via"], "--lines", "80", timeout=30)[1], next(k for k, v in st.items() if v is e))
         if r == "failed":
             e["not_sent"] = True
-            log(f"{e['name']}: phone push NOT sent by {e['via']} (Claude Code: owner active in that terminal); only the browser page "
-                "has the question; second channel: Telegram (#440) once it is set up")
+            log(f"{e['name']}: phone push NOT sent by {e['via']} (Claude Code: owner active in that terminal); the browser page "
+                "and Telegram (#440) have the question")
         elif r == "ok":
             e["push_ok"] = True; log(f"{e['name']}: phone push sent by {e['via']}")
         elif now - e.get("pushed", now) >= RESULT_S and not e.get("no_result"):
@@ -228,7 +280,7 @@ def session_of(n):
     except ValueError: bodies = []
     return next((m[0].rsplit("/", 1)[-1] for b in reversed(bodies) for m in [re.search(r"https://claude\.ai/code/session_\w+", b or "")] if m), "")
 
-def answer(key, text, from_page=False):
+def answer(key, text, from_page=False, from_tg=False, tg=0):
     """Relay the owner's answer: comment on the source issue, ANSWERED in the questions issue, tell the orchestrator,
     and a cloud worker (remote-<n>) gets it in its session. -> dict of what was done."""
     st = load()
@@ -246,6 +298,9 @@ def answer(key, text, from_page=False):
         + "Unpark the issue if it was parked.", timeout=30)
     if info.get("pid") and not from_page and not info.get("answered"):
         _kill(info["pid"]); done["stopped"] = True            # #368: the chat won: the page (ask.py) goes
+    tg = tg or info.get("tg", 0)
+    if tg and not from_tg and not info.get("answered"):
+        done["telegram"] = bool(TG.send(f"✓ נענתה במחשב: {text}", reply_to=tg))   # #440: the PC answer, a short note there
     if key in st: st[key]["answered"] = True; save(st)
     return done
 

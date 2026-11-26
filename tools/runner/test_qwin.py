@@ -1,6 +1,7 @@
 """#220/#368/#390 owner questions with fakes: page + phone push together (through an idle inbox/orchestrator), no duplicates, max 3, 2 h reminder, push result logged, answer relayed.
 Run: python3 tools/runner/test_qwin.py"""
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
+os.environ["OREN_TELEGRAM_ENV"] = os.path.join(os.environ["RUNNER_RUNS"], "no-telegram.env")   # #440: off unless a test sets it up
 os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 import json, re, sys, tempfile
 from pathlib import Path
@@ -204,6 +205,81 @@ QW.tick(h3.ts(), now=40060)
 assert "question-cb326d" not in h3.t and ("wx", "false") in h3.pins and "question-7" not in h3.t, h3.t
 assert "k7" in QW.load()                                                             # its question is still open
 print("ok qwin leftovers closed")
+
+# #440 Telegram, the second channel, with a fake Telegram API (a local HTTP server): every owner question goes to the page
+# AND Telegram at the same time (numbered options); a Telegram reply (number or text) is recorded like a page answer and
+# closes the page; a PC answer posts a short 'answered' note in Telegram; one reminder after 2 h; token never logged.
+import threading, http.server
+import telegram as TG
+class FakeTG(http.server.BaseHTTPRequestHandler):
+    calls, updates, n, down = [], [], [100], [False]
+    def log_message(self, *a): pass
+    def do_POST(self):
+        if FakeTG.down[0]: self.send_response(502); self.end_headers(); return
+        tok, method = self.path.split("/")[1], self.path.split("/")[2]
+        p = json.loads(self.rfile.read(int(self.headers["Content-Length"])).decode("utf-8"))
+        FakeTG.calls.append((tok, method, p))
+        if method == "sendMessage": FakeTG.n[0] += 1; res = {"message_id": FakeTG.n[0], "text": p["text"]}
+        else: res = [u for u in FakeTG.updates if u["update_id"] >= p.get("offset", 0)]
+        b = json.dumps({"ok": True, "result": res}).encode(); self.send_response(200); self.end_headers(); self.wfile.write(b)
+srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeTG); threading.Thread(target=srv.serve_forever, daemon=True).start()
+TG.API = f"http://127.0.0.1:{srv.server_port}"
+sent = lambda: [c[2] for c in FakeTG.calls if c[1] == "sendMessage"]
+upd = lambda uid, text, chat=777, reply=0, date=50000: FakeTG.updates.append(
+    {"update_id": uid, "message": {"message_id": 900 + uid, "date": date, "chat": {"id": chat}, "text": text,
+                                   **({"reply_to_message": {"message_id": reply}} if reply else {})}})
+logged = []; QW.log = logged.append
+h6 = FakeHerdr(); h6.status = {"inbox": "working", "orchestrator": "working"}; QW._hc, QW._run = h6.hc, h6.run
+QW.STATE = tmp / "qwin6.json"
+marked.clear(); n_kill = len(sp.killed)
+# not set up (no telegram.env): nothing is called, the page still works
+opened[:] = [{"key": "t0", "window": "#20", "source": "issue-20", "text": "בלי טלגרם?", "url": "u"}]
+QW.tick(h6.ts(), now=49000); assert not FakeTG.calls and QW.load()["t0"].get("pid"), FakeTG.calls
+QW.STATE = tmp / "qwin7.json"
+TG.ENV = tmp / "telegram.env"; TG.ENV.write_text('TELEGRAM_BOT_TOKEN=SECRET123:abc\nTELEGRAM_CHAT_ID="777"\n', encoding="utf-8")
+opened[:] = [{"key": "t1", "window": "#21", "source": "issue-21", "text": "איזה צבע? 1) ירוק 2) כחול", "url": "u"},
+             {"key": "t2", "window": "#22", "source": "issue-22", "text": "שם לדמות?", "url": "u"}]
+QW.tick(h6.ts(), now=50000)                                   # the pages and the Telegram messages at the same tick
+assert asked()[-2:] == ["t1", "t2"], asked()
+assert [(p["chat_id"], p["text"].split("\n")[0]) for p in sent()] == [("777", "איזה צבע?"), ("777", "שם לדמות?")], sent()
+assert "1. ירוק" in sent()[0]["text"] and "2. כחול" in sent()[0]["text"], sent()
+assert all(c[0] == "botSECRET123:abc" for c in FakeTG.calls)
+QW.tick(h6.ts(), now=50060); assert len(sent()) == 2           # one message per question
+t1, t2 = QW.load()["t1"]["tg"], QW.load()["t2"]["tg"]
+# a message from another chat is ignored; a reply '2' to t1's message = option 2, recorded like a page answer
+upd(1, "1", chat=555); upd(2, "2", reply=t1)
+QW.tick(h6.ts(), now=50120)
+assert marked == [("t1", "כחול")], marked
+assert QW.load()["t1"]["answered"] and 4000 + asked().index("t1") + 1 in sp.killed        # the page closes
+assert json.loads((R.RUNS / "telegram.json").read_text())["offset"] == 3                  # offset kept in .runs
+gu = [c[2] for c in FakeTG.calls if c[1] == "getUpdates"]; assert gu[0]["offset"] == 0 and gu[-1]["offset"] == 0, gu
+QW.tick(h6.ts(), now=50180); assert marked == [("t1", "כחול")]                              # recorded once
+assert [c[2] for c in FakeTG.calls if c[1] == "getUpdates"][-1]["offset"] == 3
+assert not any(p.get("reply_to_message_id") == t1 for p in sent()), sent()                # no 'answered' note for its own answer
+# t2: answered on the PC page -> a short 'answered' note in Telegram (a reply to its message); a late Telegram text is ignored
+(QW.DIR / "t2.answers.json").write_text(json.dumps({"answers": {"a": "בּוֹבּוֹ"}}, ensure_ascii=False), encoding="utf-8")
+QW.tick(h6.ts(), now=50240)
+assert marked[-1] == ("t2", "בּוֹבּוֹ"), marked
+note = [p for p in sent() if p.get("reply_to_message_id") == t2]
+assert len(note) == 1 and "בּוֹבּוֹ" in note[0]["text"], sent()
+upd(3, "טוטו", reply=t2); QW.tick(h6.ts(), now=50300); assert marked[-1] == ("t2", "בּוֹבּוֹ") and len(marked) == 2
+# free text (not a reply) with ONE open question = its answer; 2 h unanswered = one reminder in Telegram
+opened[:] = [{"key": "t3", "window": "#23", "source": "issue-23", "text": "מתי? 1) עכשיו 2) מחר", "url": "u"}]
+QW.tick(h6.ts(), now=60000); t3 = QW.load()["t3"]["tg"]
+QW.tick(h6.ts(), now=60000 + 7200); QW.tick(h6.ts(), now=60000 + 7300)
+rem = [p for p in sent() if p.get("reply_to_message_id") == t3]; assert len(rem) == 1, sent()
+upd(4, "בעוד שעה", date=60000 + 7400); QW.tick(h6.ts(), now=60000 + 7460)
+assert marked[-1] == ("t3", "בעוד שעה"), marked
+# Telegram down: the page still has the question, 'NOT sent' logged once, sent on a later tick
+FakeTG.down[0] = True
+opened[:] = [{"key": "t4", "window": "#24", "source": "issue-24", "text": "עוד?", "url": "u"}]
+QW.tick(h6.ts(), now=70000); QW.tick(h6.ts(), now=70060)
+assert QW.load()["t4"].get("pid") and not QW.load()["t4"].get("tg")
+assert sum("telegram" in l.lower() and "not sent" in l.lower() for l in logged) == 1, logged
+FakeTG.down[0] = False; QW.tick(h6.ts(), now=70120); assert QW.load()["t4"]["tg"]
+assert not any("SECRET123" in l for l in logged), logged                                  # the token never in watchdog.log
+srv.shutdown(); TG.ENV = tmp / "no-telegram.env"; QW.log = lambda m: None
+print("ok qwin telegram second channel")
 
 # #368 real process: the real _spawn starts the real ask.py (no browser), the URL is read from its log,
 # an answer POSTed to the page lands in <key>.answers.json and page_answer reads it
