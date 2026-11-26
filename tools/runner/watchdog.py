@@ -181,7 +181,7 @@ def check_intake(ts):
               f"+ the tests that prove them, and 'Out of scope' (#186). If #{n} is only waiting because it has no Acceptance section, "
               f"skip the grilling: write that section into #{n}'s body.")
     cmd = [R.HC, "run", "--bg", "--outlive-parent", *R.space_args(), "--name", name, "--cwd", R.CFG.get("main_checkout", str(R.ROOT)),
-           "--label", f"issue={n}", "--label", "role=intake", shutil.which("claude") or "claude", prompt]
+           "--label", f"issue={n}", "--label", "role=intake", shutil.which("claude") or "claude", R.argv_prompt(name, prompt)]
     rc, out = R.run(cmd, timeout=60)
     log(f"owner lane: opened {name} (rc {rc})")
     if rc == 0: tell(f"NEEDS YOU: {name} is open")

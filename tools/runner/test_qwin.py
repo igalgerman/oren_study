@@ -81,13 +81,14 @@ assert "herdr.space=ctl" in argv and "role=question" in argv
 # #281: claude starts through Git Bash like the worker windows (hc cannot start claude.CMD directly)
 assert R.BASH in argv and argv[argv.index(R.BASH) + 1] == "-c" and argv.index(R.BASH) < argv.index("--model"), argv
 assert argv[argv.index(R.BASH) + 3] == "_" and argv[argv.index(R.BASH) + 4] == R.CFG["extra_path"], argv
-p = argv[-1]
+assert "\n" not in argv[-1] and "prompts/question-3.md" in argv[-1], argv[-1]   # #390: cmd.exe cuts argv at a newline
+p = (R.RUNS / "prompts" / "question-3.md").read_text(encoding="utf-8")
 assert "PushNotification" in p and "qwin.py answer k3" in p and "שאלה 3?" in p, p
 assert "ask.py" not in p and "TaskStop" not in p                                       # the page is python's job now
 assert not re.search(r"#\d", p.replace("שאלה 3?", "")), p                              # #368: no issue refs (it read #220 last time)
 assert QW.push_text({"text": "איזה צבע? 1) ירוק 2) כחול"}) in QW.prompt({"key": "z", "text": "איזה צבע? 1) ירוק 2) כחול"}, "question-9")
 assert "1. ירוק" in QW.push_text({"text": "איזה צבע? 1) ירוק 2) כחול"})
-assert [x for x in h.pins if x[1] == "true"].__len__() == 3                     # pinned on top
+assert not [x for x in h.pins if x[1] == "true"], h.pins                         # #390: never pinned (pinned = 'active', push suppressed)
 # #310: the owner is never asked inside the terminal (AskUserQuestion shows reversed Hebrew there): tool removed + prompt says so
 assert argv[argv.index("--disallowedTools") + 1] == "AskUserQuestion" and argv.index("--disallowedTools") < argv.index("--"), argv
 assert "never" in p.lower() and "AskUserQuestion" in p, p
