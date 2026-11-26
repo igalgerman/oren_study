@@ -149,7 +149,7 @@ assert nums(r.select([_c(1), _c(2), _c(3)], 3, 2)) == [1, 2]
 assert nums(r.select([I(1, ["in-progress", "core"]), _c(2), _c(3)], 3, 2)) == [2]
 assert nums(r.select([I(1, ["in-progress", "core"]), I(2, ["in-progress", "core"]), _c(3), I(4, [R, "pack"])], 3, 2)) == [4]
 assert nums(r.select([_c(1), _c(2)], 3)) == [1]          # default max_core = 1
-assert r.CFG["max_core"] == 2
+assert r.CFG["max_core"] == 3
 print("ok max_core")
 
 # conflict -> resolve -> retry, at most 2 resolve rounds
@@ -401,3 +401,22 @@ _a = W.lock_alarm((7, "#122 deploy", _t - 31 * 60), True, _t, [167, 176])
 assert _a[0] == "alarm" and "31 min" in _a[1] and "#122 deploy" in _a[1] and "#167, #176" in _a[1], _a
 assert W.lock_alarm((7, "#1 CI merge", _t - 60), False, _t)[0] == "clear"
 print("ok merge lock watch")
+
+# #149: four review colours. GREEN pass / BLUE pass-with-notes / PURPLE owner question / RED fix
+assert r.parse_verdict("VERDICT: PASS") == ("pass", "", "")
+assert r.parse_verdict("VERDICT: PASS-NOTES rename x; add test y") == ("notes", "rename x; add test y", "")
+assert r.parse_verdict("VERDICT: FIX button crashes: no test") == ("fix", "button crashes: no test", "")
+assert r.parse_verdict("VERDICT: PURPLE should Oren hear a or b? merge-safe") == ("purple", "should Oren hear a or b?", "merge-safe")
+assert r.parse_verdict("VERDICT: PURPLE should it speak? hold") == ("purple", "should it speak?", "hold")
+assert r.parse_verdict("VERDICT: PURPLE should it speak?") == ("purple", "should it speak?", "hold")   # no flag: safe default = hold
+assert r.parse_verdict("") == ("none", "", "") and r.parse_verdict("VERDICT: MAYBE") == ("none", "", "")
+assert r.find_marker("● VERDICT: PURPLE a or b? hold\n", "VERDICT:") == "VERDICT: PURPLE a or b? hold"   # ' or ' in a question is fine for VERDICT
+assert r.find_marker("❯ end with `VERDICT: PASS`, `VERDICT: PASS-NOTES <list>` ...\n", "VERDICT:") == ""
+assert r.polish_lines("a; b ;", 5) == ["- a (PR #5)", "- b (PR #5)"]
+assert r.polish_title("pack") == "Polish backlog (pack)"
+# round 2 checks only the round-1 RED points; FIX only for RED reasons
+_p = r.review_prompt(7, 9, round1="button crashes")
+assert "button crashes" in _p and "ONLY" in _p
+assert "VERDICT: PASS-NOTES" in r.review_prompt(7, 9) and "VERDICT: PURPLE" in r.review_prompt(7, 9) and "RED" in r.review_prompt(7, 9)
+assert r.FIX_ROUNDS == 2          # one more fix round before blocking (2 fixes, 3 reviews)
+print("ok #149")
