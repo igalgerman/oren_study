@@ -622,3 +622,33 @@ finally:
 assert _res.startswith("DONE") and "block" not in _did and "wt" in _did and "win" in _did, (_res, _did)
 assert _lab[-1] == ((), ("in-progress",)), _lab
 print("ok run ends when its issue is closed or PR merged (#234)")
+
+# #186: no '## Acceptance' section -> the runner refuses the issue (needs-info, back to triage, orchestrator told)
+assert r.has_acceptance("Goal\n\n## Acceptance\n- [ ] a\n")
+assert r.has_acceptance("### Acceptance (3 points)\n- a")
+assert not r.has_acceptance("see the acceptance list") and not r.has_acceptance("") and not r.has_acceptance(None)
+_qa = [{"number": 1, "labels": [R, "pack"], "createdAt": "1", "body": "## Acceptance\n- a"},
+       {"number": 2, "labels": [R, "pack"], "createdAt": "2", "body": "no section"},
+       {"number": 3, "labels": ["in-progress", "pack"], "createdAt": "3", "body": ""},        # already running: never refused
+       {"number": 4, "labels": [R, "pack", "manual"], "createdAt": "4", "body": ""}]       # hand work: runner ignores it
+assert nums(r.no_acceptance(_qa)) == [2]
+_saved = {k: getattr(r, k) for k in ("set_labels", "gh", "tell_orchestrator")}
+_al, _ac, _at = [], [], []
+r.set_labels = lambda n, add=(), remove=(): _al.append((n, tuple(add), tuple(remove)))
+r.gh = lambda *a, **k: (_ac.append(a), (0, ""))[1]
+r.tell_orchestrator = lambda t: _at.append(t)
+try:
+    _left = r.refuse_no_acceptance(_qa)
+finally:
+    for k, v in _saved.items(): setattr(r, k, v)
+assert nums(_left) == [1, 2, 3, 4] and _left[1]["labels"] == ["pack", "needs-info"], _left   # stays listed: 'Blocked by: #2' still waits
+assert nums(r.select(_left + [{"number": 5, "labels": [R, "pack"], "createdAt": "5", "body": "## Acceptance\nBlocked by: #2"}], 4)) == [1], r.select(_left, 4)
+assert _al == [(2, ("needs-info",), ("ready-for-agent",))], _al
+assert len(_ac) == 1 and _ac[0][:3] == ("issue", "comment", "2") and "## Acceptance" in _ac[0][-1], _ac
+assert len(_at) == 1 and "#2" in _at[0], _at
+# worker: build exactly the Acceptance list; reviewer: FIX only for a missed acceptance point, wrong behaviour or a failing test
+for _w in (r.worker_prompt(7, "pack"), r.remote_worker_prompt(7, "pack")):
+    assert "## Acceptance" in _w and "Out of scope" in _w, _w
+for _v in (r.review_prompt(7, 9), r.remote_review_prompt(7, 9)):
+    assert "missed Acceptance point" in _v and "PASS-NOTES" in _v, _v
+print("ok acceptance (#186)")

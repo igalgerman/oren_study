@@ -70,6 +70,32 @@ def blockers(body):
             out += [int(x) for x in re.findall(r"#(\d+)", line)]
     return out
 
+ACCEPT_RE = re.compile(r"^#{2,3}\s*Acceptance\b", re.I | re.M)
+
+def has_acceptance(body):
+    """#186: the issue body has an '## Acceptance' heading (checkable points + tests + Out of scope)."""
+    return bool(ACCEPT_RE.search(body or ""))
+
+def no_acceptance(issues):
+    """#186: ready issues the runner would start but that have no '## Acceptance' section."""
+    return [i for i in issues if "ready-for-agent" in i["labels"] and "in-progress" not in i["labels"]
+            and "manual" not in i["labels"] and not has_acceptance(i.get("body"))]
+
+def refuse_no_acceptance(issues):
+    """#186: no worker starts without an Acceptance section: label needs-info (the intake writes it), tell the orchestrator.
+    -> the same list with those issues relabelled (they stay in it, so a 'Blocked by' on them still waits)."""
+    bad = no_acceptance(issues)
+    for i in bad:
+        n = i["number"]
+        set_labels(n, add=["needs-info"], remove=["ready-for-agent"])
+        gh("issue", "comment", str(n), "--body", "Runner: not started, the body has no `## Acceptance` section (3-7 checkable points + the tests "
+           "that prove them, and `Out of scope`). Labelled needs-info: triage writes it, then sets ready-for-agent again.")
+        tell_orchestrator(f"Runner: #{n} has no ## Acceptance section; labelled needs-info (triage writes it).")
+    return [demote(i) if i in bad else i for i in issues]
+
+def demote(i):
+    return {**i, "labels": [l for l in i["labels"] if l != "ready-for-agent"] + ["needs-info"]}
+
 def select(issues, max_parallel, max_core=1, express_lanes=0):
     """issues: [{number, labels:[names], createdAt, body}] -> issues to start now (express first, then oldest).
     An issue waits while any issue in its 'Blocked by:' line is still open (= in this list).
@@ -203,12 +229,15 @@ def assign_where(chosen, local_busy, remote_busy, local_lanes, remote_lanes):
         elif "express" in i.get("labels", []): out.append((i, "remote" if remote_lanes > 0 else "local"))   # #72: select() gave it the extra express slot: all lanes busy still starts it
     return out
 
+ACCEPT = ("Build exactly the issue's `## Acceptance` list (every point, with the tests it names) and nothing in its `Out of scope` (#186).")
+
 def remote_worker_prompt(n, lane, bug=False):
     """Task for a cloud worker (#133): no herdr, no local paths. It reports through an issue comment (the runner polls GitHub)."""
     base = (f"You are an unattended worker for GitHub issue #{n} in repo {REPO} (lane: {lane}). If its title starts with 'Batch:', follow "
             f"its 'How to work' section: independent members (different files) may go to sub-agents (Agent tool); you integrate, test once "
             f"and open ONE PR with a 'Fixes #m' line per member. Read CLAUDE.md and FLOW.md, then the issue "
-            f"(`gh issue view {n} --repo {REPO} --comments`). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n")
+            f"(`gh issue view {n} --repo {REPO} --comments`). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
+            f"{ACCEPT}\n")
     if bug:
         base += "This is a BUG: use the mattpocock-skills:diagnosing-bugs skill, then tdd: reproduce it with a failing test, then fix it; say the root cause in the PR body.\n"
     return base + (f"Work on branch lane/{n} (create it from {BRANCH}). Follow the worker rules in FLOW.md: run the tests you touched, commit "
@@ -617,7 +646,8 @@ def worker_prompt(n, lane, review_text=None, bug=False):
     base = (f"You are an unattended worker for GitHub issue #{n} in repo {REPO} (lane: {lane}). If its title starts with 'Batch:', follow "
             f"its 'How to work' section: independent members (different files) may go to sub-agents (Agent tool); you integrate, test once "
             f"and open ONE PR with a 'Fixes #m' line per member. Read CLAUDE.md and FLOW.md, then the issue "
-            f"(`gh issue view {n} --repo {REPO} --comments`). Work only inside this worktree (your cwd). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n")
+            f"(`gh issue view {n} --repo {REPO} --comments`). Work only inside this worktree (your cwd). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
+            f"{ACCEPT}\n")
     if lane == "review":
         return base + (f"This is a read-only review issue: change NO files, make no commits, open no PR. Post your report as ONE issue comment "
                        f"(`gh issue comment {n} --repo {REPO} --body-file <file>`; write the file under oren2/tests/.tmp/). "
@@ -642,7 +672,8 @@ def review_colours(round1=""):
                "`VERDICT: PASS-NOTES <note>; <note>` (BLUE: nothing wrong for Oren or the parent, only polish such as naming, small cleanup, extra test idea, comment wording; one line, notes split by `;`); "
                "`VERDICT: PURPLE <question in one line> merge-safe` or `... hold` (PURPLE: a real product/design choice only the owner can make, e.g. what Oren sees or hears or what the parent can do, the code works; "
                "merge-safe = merge now and ask, hold = park until he answers; never for code style); "
-               "`VERDICT: FIX <points>` (RED). RED ONLY for: wrong behaviour for Oren or the parent, a failing or missing test for the change, a spec/acceptance miss, security, data loss, a broken build. "
+               "`VERDICT: FIX <points>` (RED). Judge against the issue's `## Acceptance` list (#186). RED ONLY for: a missed Acceptance point, wrong behaviour for Oren or the parent, "
+               "a failing or missing test for the change, security, data loss, a broken build. "
                "Justify each RED point in one line. Everything else is a BLUE note, never FIX.")
     if round1:
         colours += ("\nThis is a re-review: check ONLY whether these round-1 RED points are fixed, raise NO new nits and no new points "
@@ -1117,6 +1148,8 @@ def main():
     rc, out = gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
     if rc: print("gh failed:", out); return 1
     issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
+    refused = no_acceptance(issues)                         # #186: no Acceptance section -> not started
+    issues = [demote(i) if i in refused else i for i in issues] if DRY else refuse_no_acceptance(issues)
     chosen = [c for c in select(issues, total_lanes(), MAX_CORE, EXPRESS) if not FileLock(f"issue-{c['number']}").held_by_other()]
     busy = [i["number"] for i in issues if "in-progress" in i["labels"]]
     remote_busy = sum(where_of(b) == "remote" for b in busy)
@@ -1128,6 +1161,7 @@ def main():
     if DRY:
         print(f"[dry-run] repo={REPO} branch={BRANCH} model={MODEL} local_lanes={LOCAL_LANES} remote_lanes={REMOTE_LANES} max_core={MAX_CORE}")
         print(f"[dry-run] open issues: {len(issues)}; in-progress: {sum('in-progress' in i['labels'] for i in issues)}")
+        for i in refused: print(f"[dry-run] would refuse #{i['number']} (no ## Acceptance section -> needs-info)")
         for c in chosen: print(f"[dry-run] would start #{c['number']} ({lane_of(c['labels'])}): {c['title']}")
         for s in stuck: print(f"[dry-run] would block stuck #{s['number']} (in-progress, idle > {CFG['stuck_hours']}h, no runner process)")
         if not chosen and not stuck: print("[dry-run] nothing to do")
