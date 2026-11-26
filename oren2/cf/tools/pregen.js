@@ -117,6 +117,7 @@ async function collect() {
       tryf(() => W.EXPLORE2.kidTexts().forEach(s => add(sp(s))));
       tryf(() => W.FRIEND.speakList().forEach(s => add(sp(s))));
       tryf(() => W.HELP.allTexts().forEach(s => add(sp(s))));
+      tryf(() => W.LESSONS.speakList().forEach(s => add(sp(s))));
       tryf(() => W.HEALTH.remTexts().forEach(add));
       tryf(() => W.ENGLISH2.speakList().forEach(t => { t = sp(t); if (/[א-ת]/.test(t)) add(t); else if (t) out.push({ t, v: 'en-US-Chirp3-HD-Despina', r: 0.85 }); }));
       return out; }, DATA);
