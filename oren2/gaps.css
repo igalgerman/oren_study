@@ -7,7 +7,7 @@
 .gp-intro .gp-new{background:#ffcf4d;font-weight:900;padding:2px 14px;font-size:20px}
 .gp-intro .gp-sign{font-family:var(--read);font-size:96px;font-weight:700;line-height:1.15;color:#c0392b;letter-spacing:12px}
 .gp-exs{display:flex;flex-wrap:wrap;gap:12px;justify-content:center}
-.gp-ex{display:flex;align-items:center;gap:6px;font-family:var(--read);font-size:30px;font-weight:700;cursor:pointer}.gp-ex .pic svg{width:36px;height:36px}
+.gp-ex{display:flex;align-items:center;gap:6px;font-family:var(--read);font-size:30px;font-weight:700}.gp-ex .pic svg{width:36px;height:36px}
 .gp-cur .gp-sign{font-size:120px}.gp-st{display:flex;gap:4px;direction:ltr}.gp-st svg{width:30px;height:30px}
 .gp-ladder{display:flex;flex-direction:column-reverse;gap:8px;width:min(460px,100%)}
 .gp-rung{display:grid;grid-template-columns:70px 1fr auto;align-items:center;gap:10px;padding:8px 14px;background:var(--birch);font-weight:900;box-shadow:inset -4px -4px 0 rgba(0,0,0,.14),inset 4px 4px 0 rgba(255,255,255,.55),0 5px 0 rgba(0,0,0,.22);text-align:right}
