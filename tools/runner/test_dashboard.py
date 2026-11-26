@@ -192,3 +192,10 @@ tl = D.text(ml)
 assert "Not triaged (no live state, #280): 3 (#50 #53 #54)" in tl, tl
 assert "waiting for owner 30h" in tl, tl
 print("dashboard #280 OK")
+# 26 Nov (#465): the 'waiting for another issue' count uses select()'s rule: an open 'later' blocker counts as done
+_li = [I(20, "OPEN", ["later", "pack"]), I(21, "OPEN", ["pack"]),
+       I(22, "OPEN", ["ready-for-agent"], body="Blocked by: #20"), I(23, "OPEN", ["ready-for-agent"], body="Blocked by: #21")]
+_lm = D.model(_li, [], [], now)
+assert [r["n"] for r in _lm["by_state"]["waiting"]] == [23] and 22 in [r["n"] for r in _lm["by_state"]["ready"]], _lm["by_state"]
+assert {r["n"]: r["blockers"] for r in _lm["rows"]}[22] == [], _lm["rows"]
+print("dashboard #465 OK")
