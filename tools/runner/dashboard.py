@@ -61,14 +61,15 @@ def model(issues, prs, events, now, log_text="", cloud=(), qnums=frozenset()):
     cloud = rows of remote.cloud() (#136), qnums = issue numbers with an open owner question (#280)."""
     op = [i for i in issues if i["state"] == "OPEN"]
     open_nums = {i["number"] for i in op}
+    pend = R.pending_nums(op)   # #465: same rule as select(): an open 'later' blocker counts as done
     closed_at = {i["number"]: epoch(i.get("closedAt")) for i in issues if i["state"] == "CLOSED"}
     created = {i["number"]: epoch(i.get("createdAt")) for i in issues}
     bm = PK.batch_map(issues)
     left = [i["number"] for i in SK.leftovers(issues, [p for p in prs if p.get("state") == "OPEN"], set(qnums), now)]
-    rows = sorted(({"n": i["number"], "title": i["title"], "state": state_of(i, open_nums, bm, set(left)), "prio": prio_of(i),
+    rows = sorted(({"n": i["number"], "title": i["title"], "state": state_of(i, pend, bm, set(left)), "prio": prio_of(i),
                     "batch": bm[i["number"]]["number"] if i["number"] in bm else None,
                     "age_h": (now - (created[i["number"]] or now)) / 3600,
-                    "blockers": [b for b in R.blockers(i.get("body")) if b in open_nums and b != i["number"]]} for i in op),
+                    "blockers": [b for b in R.blockers(i.get("body")) if b in pend and b != i["number"]]} for i in op),
                   key=lambda r: (r["prio"], r["n"]))
     by_state = {k: [r for r in rows if r["state"] == k] for k, _ in STATES}
     by_prio = {p: sum(r["prio"] == p for r in rows) for p in ("P0", "P1", "P2", "P3", "-")}

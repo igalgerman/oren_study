@@ -132,13 +132,18 @@ def gate(issues):
     refused = no_acceptance(issues)
     return [demote(i) if i in refused else i for i in issues], refused
 
+def pending_nums(issues):
+    """#465: numbers of the given (open) issues that still block their dependents. An open issue labelled 'later'
+    (code merged, only a live/owner check left, #453) counts as done. Shared by select() and the dashboard."""
+    return {i["number"] for i in issues if "later" not in i.get("labels", [])}
+
 def select(issues, max_parallel, max_core=1, express_lanes=0, core_held=0):
     """issues: [{number, labels:[names], createdAt, body}] -> issues to start now (express first, then oldest).
-    An issue waits while any issue in its 'Blocked by:' line is still open (= in this list).
+    An issue waits while any issue in its 'Blocked by:' line is still open (= in this list) and not 'later' (#465).
     #72: label 'express' = owner-approved. It gets its own extra lane (express_lanes), starts before any other ready issue,
     and an express core issue in that lane ignores max_core. When the express lane is busy it uses a normal slot.
     #277: core_held = core runs holding or waiting for a core slot; a core run counts even when its label says otherwise."""
-    open_nums = {i["number"] for i in issues}
+    open_nums = pending_nums(issues)   # #465: an open 'later' blocker is done
     active = [i for i in issues if "in-progress" in i["labels"] and "manual" not in i["labels"]]   # #177: hand work (label manual) takes no lane
     core_running = max(core_held, sum(lane_of(i["labels"]) == "core" for i in active))
     exp_active = sum("express" in i["labels"] for i in active)

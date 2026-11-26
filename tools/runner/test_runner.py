@@ -1315,3 +1315,9 @@ _iss = [{"number": 900, "labels": ["ready-for-agent", "later", "pack", "P2"], "c
         {"number": 901, "labels": ["ready-for-agent", "pack", "P2"], "createdAt": "2026-11-26T00:00:01Z", "body": ""}]
 assert [c["number"] for c in r.select(_iss, 4, 3, 0)] == [901]
 print("ok later skipped")
+# 26 Nov (#465): an open blocker labelled 'later' (code merged, only a live check left) counts as done; without 'later' it still blocks
+_b = lambda n, labels: {"number": n, "labels": labels, "createdAt": f"2026-11-26T00:00:{n % 60:02d}Z", "body": ""}
+_dep = {"number": 911, "labels": ["ready-for-agent", "pack", "P2"], "createdAt": "2026-11-26T00:01:00Z", "body": "Blocked by: #910"}
+assert [c["number"] for c in r.select([_b(910, ["later", "pack"]), _dep], 4)] == [911]
+assert [c["number"] for c in r.select([_b(910, ["pack"]), _dep], 4)] == []
+print("ok later blocker counts as done")
