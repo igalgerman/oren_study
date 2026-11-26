@@ -244,3 +244,59 @@ f = Fake(("--label cloud", 0, "[]"), ("--label in-progress", 0, json.dumps([i57]
 row = r.cloud(run=f, now=NOW277)[0]
 assert row["state"] == "waiting for core slot" and not row["stale"] and row["last"] == "2026-11-26T14:25:00Z", row
 print("ok #277")
+
+# ---------- #289: ONE poller serves all cloud lanes (lanes.py) ----------
+import tempfile as _tf
+from pathlib import Path as _P
+import lanes as L
+runs = _P(_tf.mkdtemp(prefix="lanes-test-"))
+alive = lambda pid: pid == 4242
+# a cloud pick is queued, and while queued it already counts as a live run-<n> (no observer rerun, no recover restart)
+L.queue(runs, {"number": 12, "labels": ["pack"]}); L.queue(runs, {"number": 7, "labels": ["core"]})
+assert [i["number"] for i in L.queued(runs)] == [7, 12]
+assert L.held(runs, alive) == {7, 12}
+v = L.with_virtual([{"name": "run-7", "state": "live", "address": "w1"}, {"name": "orchestrator", "state": "live"}], runs, alive)
+assert [t["name"] for t in v] == ["run-7", "orchestrator", "run-12"] and v[-1]["virtual"] and "address" not in v[-1], v
+# serve: ONE loop runs every queued lane (here inline), writes lanes.json while it runs, logs each result, exits when idle
+clock = {"t": 1000.0}
+seen, results = [], []
+def proc(issue):
+    seen.append((issue["number"], L.held(runs, alive)))     # while it runs, the poller holds it
+    return f"DONE #{issue['number']}"
+def fake_sleep(s): clock["t"] += s
+n = L.serve(runs, proc, lambda k, res: results.append((k, res)), pid=4242, clock=lambda: clock["t"], sleep=fake_sleep,
+            idle_s=60, step_s=10, start=lambda fn: fn())
+assert n == 2 and [k for k, _ in seen] == [7, 12] and 12 in seen[1][1], seen
+assert results == [(7, "DONE #7"), (12, "DONE #12")], results
+assert L.queued(runs) == [] and not (runs / "lanes.json").exists()      # idle -> state cleared, process ends
+assert L.held(runs, alive) == set() and L.virtual(runs, alive) == []
+# a crashing lane never kills the poller (the other lanes go on), the result says why
+L.queue(runs, {"number": 3}); L.queue(runs, {"number": 4})
+out = []
+def boom(issue):
+    if issue["number"] == 3: raise RuntimeError("x")
+    return "DONE"
+L.serve(runs, boom, lambda k, res: out.append((k, res)), pid=4242, clock=lambda: clock["t"], sleep=fake_sleep, idle_s=30, start=lambda fn: fn())
+assert out[0][0] == 3 and out[0][1].startswith("BLOCKED: lanes error") and out[1] == (4, "DONE"), out
+# a dead poller holds nothing (its lanes are free for recover / the observer)
+L.write_state(runs, 999, {5}); assert L.held(runs, alive) == set()
+L.write_state(runs, 4242, {5}); assert L.held(runs, alive) == {5}
+# stop (#364 safety net on a virtual run): a flag the lane's wait loop reads; a new start clears it
+L.stop(runs, 5); assert L.stopped(runs, 5); L.clear_stop(runs, 5); assert not L.stopped(runs, 5)
+# aligned_sleep: every lane wakes on the same minute grid (one shared poll)
+naps = []
+L.aligned_sleep(60, clock=lambda: 600_015.0, sleep=naps.append); L.aligned_sleep(60, clock=lambda: 600_050.0, sleep=naps.append)
+L.aligned_sleep(60, clock=lambda: 600_000.0, sleep=naps.append)
+assert naps == [45.0, 10.0, 60.0] and len({600_015 + naps[0], 600_050 + naps[1]}) == 1, naps
+print("ok #289 lanes poller")
+
+# ---------- #289: launch = start a cloud session without waiting (the watchdog tick stays short) ----------
+f = Fake()
+res = r.launch(262, "resolve it", cwd=".", run=f, name="resolve-262")
+assert res["ok"] and [c[0][1] for c in f.calls] == ["rm", "run"], f.calls
+run_cmd = f.calls[1][0]
+assert "--name" in run_cmd and run_cmd[run_cmd.index("--name") + 1] == "resolve-262" and "issue=262" in run_cmd and "role=remote" in run_cmd, run_cmd
+assert not any("wait" == c[0][1] for c in f.calls)
+f = Fake(("run --bg", 3, "name_taken"))
+assert r.launch(262, "x", cwd=".", run=f, name="resolve-262") == {"ok": False, "session": "", "url": "", "error": "name_taken"}
+print("ok #289 launch")

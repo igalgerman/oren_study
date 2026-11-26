@@ -305,7 +305,8 @@ const path = require('path');
     const d = vc.voteScope('רבע', { v: '', half: [], note: 'לא נכון', at: 1 }, [{ id: 'רבע', w: 'רבע', s: 'רבע', vars: ['רבע'], global: true }], [], {});
     ok('voicecheck: a new "none is right" with a note still gets new variants', d.ask === true && d.global === true, JSON.stringify(d));
     const t = require('fs').readFileSync(path.join(L.ROOT, 'talents.js'), 'utf8');
-    ok('the sentence with ישן writes כיסא in full (#86)', t.includes("'הֶחָתוּל יָשֵׁן עַל הַכִּיסֵּא.'") && !t.includes("'הֶחָתוּל יָשֵׁן עַל הַכִּסֵּא.'")); }
+    ok('the sentence with ישן writes כיסא in full (#86)', t.includes("'הֶחָתוּל יָשֵׁן עַל הַכִּיסֵּא.'") && !t.includes("'הֶחָתוּל יָשֵׁן עַל הַכִּסֵּא.'"));
+    ok('every sentence with ישן writes כיסא in full, the voice sample too (#86)', !t.includes('יָשֵׁן עַל הַכִּסֵּא') && /const SAMPLE='[^']*יָשֵׁן עַל הַכִּיסֵּא/.test(t)); }
   globalThis.fetch = realFetch;
   L.finish('worker', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT worker 0 1'); process.exitCode = 1; });

@@ -117,7 +117,10 @@ O.on('screen',id=>{FR.reset();
   else FR.unmount();});
 O.on('levelDone',()=>setTimeout(FR.stepCheck,D(600)));
 
-FR.speakList=()=>[READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
+/* #433: an error in the middle of a mission sent Oren home (core error handler): the friend says it on the home screen */
+const OOPS='אוֹי, חוֹזְרִים לַמַּסָּע';
+FR.oops=()=>{FR.mount();anim('sad');return talk(OOPS,{ms:3000});};
+FR.speakList=()=>[OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
   ...[...Object.values(STORY),STORY0].flatMap(([a,b])=>[a,FIRST+' '+a,LAST+' '+a,b,b+' '+ALL])];
 FR._cur=()=>cur;FR._lines={ok:OK,streak:[...Object.values(STREAK),STREAK_MORE],effort:EFFORT,wrong:WRONG,shown:SHOWN};
 window.FRIEND=FR;window.PATHBAR=PATHBAR;

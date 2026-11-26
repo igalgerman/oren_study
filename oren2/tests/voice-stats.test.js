@@ -125,5 +125,30 @@ const INIT = () => {
   { const src = fs.readFileSync(require('path').join(L.ROOT, 'index.html'), 'utf8');
     const n = (src.match(/new SpeechSynthesisUtterance/g) || []).length;
     ok('only browserSay creates a browser utterance', n === 1 && /function browserSay[^\n]*new SpeechSynthesisUtterance/.test(src), n + ' found'); }
+  // #400: after pregen, a read-only report counts the kid sentences with no recording yet (fake sentence list, no network)
+  { const path = require('path'), os = require('os'), cp = require('child_process');
+    const tool = path.join(L.ROOT, 'cf', 'tools', 'voicemissing.js');
+    const run = (dir, extra = {}) => { const sum = path.join(dir, 'summary.md'), out = path.join(dir, 'out.txt'); fs.writeFileSync(sum, ''); fs.writeFileSync(out, '');
+      const r = cp.spawnSync(process.execPath, [tool], { encoding: 'utf8', env: { ...process.env, PREGEN_DIR: dir, GITHUB_STEP_SUMMARY: sum, GITHUB_OUTPUT: out, ...extra } });
+      return { code: r.status, log: r.stdout + r.stderr, sum: fs.readFileSync(sum, 'utf8'), out: fs.readFileSync(out, 'utf8') }; };
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vmiss-'));
+    const list = Array.from({ length: 24 }, (_, i) => 'מִשְׁפָּט ' + (i + 1) + '.').concat([{ t: 'Hello Oren', v: 'en-US-Chirp3-HD-Despina', r: 0.85 }]);
+    const done = { 'מִשְׁפָּט 1.': 1, 'מִשְׁפָּט 2.': 1, 'en-US-Chirp3-HD-Despina|0.85|Hello Oren': 1 };
+    fs.writeFileSync(path.join(dir, 'said.json'), JSON.stringify(list)); fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ day: '2026-11-26', newToday: 3, done }));
+    const before = fs.readFileSync(path.join(dir, 'said.json'), 'utf8') + fs.readFileSync(path.join(dir, 'state.json'), 'utf8');
+    const a = run(dir);
+    ok('missing report: exits 0 even when sentences are missing (not a failure)', a.code === 0, a.code + ' ' + a.log.slice(0, 200));
+    ok('missing report: count of sentences with no recording', /22 of 25 /.test(a.log) && /^missing=22$/m.test(a.out), a.log.split('\n')[0] + ' | ' + a.out.trim());
+    const shown = (a.log.match(/^\s+\d+\. /gm) || []).length;
+    ok('missing report: lists the first 20', shown === 20 && a.log.includes('מִשְׁפָּט 3.') && !a.log.includes('מִשְׁפָּט 23.'), shown + ' listed');
+    ok('missing report: in the job summary too', /22 of 25/.test(a.sum) && a.sum.includes('מִשְׁפָּט 3.'), a.sum.slice(0, 120));
+    ok('missing report: one-line status text for the dashboard', /^text=22 of 25 kid sentences have no recording yet$/m.test(a.out), a.out.trim());
+    ok('missing report: read-only (list and state unchanged)', before === fs.readFileSync(path.join(dir, 'said.json'), 'utf8') + fs.readFileSync(path.join(dir, 'state.json'), 'utf8')
+      && !/fetch\(|writeFileSync\((LIST|STATE)/.test(fs.readFileSync(tool, 'utf8')));
+    fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ done: Object.fromEntries(list.map(x => [typeof x === 'string' ? x : x.v + '|' + x.r + '|' + x.t, 1])) }));
+    const z = run(dir);
+    ok('missing report: all recorded -> 0', z.code === 0 && /^missing=0$/m.test(z.out) && /0 of 25 /.test(z.log), z.out.trim());
+    const e = run(fs.mkdtempSync(path.join(os.tmpdir(), 'vmiss-')));
+    ok('missing report: no sentence list yet -> says so, exits 0', e.code === 0 && /no sentence list/.test(e.log) && !/^missing=/m.test(e.out), e.log.trim() + ' | ' + e.out.trim()); }
   await b.close(); L.finish('voice-stats', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT voice-stats 0 1'); process.exitCode = 1; });

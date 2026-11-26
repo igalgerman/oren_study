@@ -8,9 +8,9 @@ Every minute it checks, deterministically:
   3b. a window waiting for the owner longer than park_minutes (the runner parks it itself; this is the fallback): issue gets blocked + ready-for-human, lane freed
   3c. owner lane: no intake window open + a needs-triage/needs-info issue -> opens ONE `intake-<n>` (oldest issue), `NEEDS YOU: intake-<n> is open`
   5. every observer_minutes: observer.py applies deterministic rules (make_ready, rerun, fix Blocked-by lines) within limits
-  5b. every ai_observer_minutes (#203): ai_observer.py, ONE read-only headless Sonnet check in a thread; new findings -> the orchestrator
-  5c. every tick (#262): an open PR that conflicts with main and has auto-merge or a review PASS -> a resolve run (window resolve-<n>, conflicts.py)
-  5c. #219 nightly.py: once a day at retro_hour ONE read-only headless Sonnet retro + handoff (issue 'Daily retro <date>', handoff PR);
+  5b. every ai_observer_minutes (#203): ai_observer.py, ONE read-only headless Sonnet check in a thread, or the cloud task relay (#289); new findings -> the orchestrator
+  5c. every tick (#262): an open PR that conflicts with main and has auto-merge or a review PASS -> a cloud resolve session (#289, conflicts.py)
+  5c. #219 nightly.py: once a day at retro_hour ONE read-only headless Sonnet retro, or the cloud task relay (#289), + handoff (issue 'Daily retro <date>', handoff PR);
       batch trigger: tells the inbox to run /batch once a day, and early when >= 8 ready P2/P3 issues share a lane
   5d. #282 parked.py, once an hour: closed batch -> its open members get ready-for-agent back; a polish list at 5 notes or 24 h -> ready-for-agent P3;
       later/manual 2 h+ with no owner question, run, PR or future date -> 'parked without owner question: #n' to the orchestrator; night report at retro_hour
@@ -33,6 +33,7 @@ Every minute it checks, deterministically:
      orchestrator on the NET_ALARM-th in a row; nightly.prune_if_due removes .runs/<n> of issues closed > 24 h once a day
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
   4b. orchestrator / inbox / inspector terminal finished (#140)                -> removed by address and started again (recover.py commands)
+  4c. #492 a finished run-/run-pass-/issue-/review-/resolve-/question- terminal 5+ min old -> removed by address (sweep_tick, no gh needed)
 It never answers questions or presses keys in other windows; it only tells the orchestrator and starts the runner.
 Usage: python watchdog.py [--once | --lock | --alarms-once]
 """
@@ -55,6 +56,10 @@ def log(msg):
     R.RUNS.mkdir(parents=True, exist_ok=True)
     with open(LOG, "a", encoding="utf-8") as f:
         f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + msg + "\n")
+
+def run_rows(ts):
+    """#289: the live windows + one virtual live run-<n> per lane of the ONE poller (`lanes` window), which has no run-<n> window."""
+    return R.with_lanes(ts)
 
 def windows():
     rc, out = R.hc("ls", "--json", timeout=30)
@@ -273,6 +278,32 @@ def cleanup(ts):
             if t.get("state") == "live": R.hc("kill", t["address"], timeout=30)
             R.hc("rm", t["address"], timeout=30)
             log(f"closed window {name} ({t['address']}, was {t.get('state')})")
+
+# ---------- #492: finished lane terminals go 5 min after they finished, even when GitHub can't be read ----------
+SWEEP_RE = re.compile(r"^(run|issue|review|resolve|question)-")   # run-pass-* too; never control windows
+SWEEP_MIN = 5
+_finished_seen = {}   # address -> first time seen finished (herdr gives no finish time)
+
+def finished_old(ts, seen, now, min_age=SWEEP_MIN):
+    """Pure: [(name, address)] of finished/exited lane terminals first seen finished min_age+ min ago. Updates seen."""
+    import recover
+    out, fin = [], set()
+    for t in ts:
+        a, name = t.get("address"), t.get("name") or ""
+        if not a or t.get("state") not in recover.FINISHED or not SWEEP_RE.match(name): continue
+        fin.add(a)
+        if now - seen.setdefault(a, now) >= min_age * 60: out.append((name, a))
+    for a in [a for a in seen if a not in fin]: seen.pop(a)
+    return out
+
+def sweep_tick(ts, now=None, seen=None, hc=None, say=None):
+    """#492: rm (by address) the finished lane terminals; one log line with the count, none when 0. -> count."""
+    seen = _finished_seen if seen is None else seen
+    hc, say = hc or R.hc, say or log
+    gone = [(n, a) for n, a in finished_old(ts, seen, now or time.time()) if hc("rm", a, timeout=30)[0] == 0]
+    for _, a in gone: seen.pop(a, None)
+    if gone: say(f"sweep: removed {len(gone)} finished terminal(s) older than {SWEEP_MIN} min: " + " ".join(n for n, _ in gone[:20]))
+    return len(gone)
 
 def check_control(ts):
     """#140: a finished orchestrator / inbox / inspector terminal is removed (by address) and started again, same command as recover."""
@@ -610,10 +641,12 @@ def tick():
         all_ts = (step("all_windows", R.hc_json, "ls", "--all", "--json") or {}).get("terminals", []) or ts
         step("check_control", check_control, all_ts)
         step("cleanup", cleanup, all_ts)
-        step("reap_tick", reap_tick, ts)       # #248
-        step("stuck_tick", stuck_tick, ts)
-        step("net_due_tick", net_due_tick, ts) # #364
-        step("conflicts_tick", conflicts_tick, ts)  # #262
+        rts = step("run_rows", run_rows, ts) or ts   # #289: + the ONE poller's cloud lanes as virtual run-<n> rows
+        step("sweep_tick", sweep_tick, all_ts)  # #492
+        step("reap_tick", reap_tick, ts)       # #248 (a virtual run ends itself when its issue closes)
+        step("stuck_tick", stuck_tick, rts)
+        step("net_due_tick", net_due_tick, rts) # #364
+        step("conflicts_tick", conflicts_tick, rts)  # #262
         step("pc_tick", pc_tick, ts)                # #293
         for name, fn in (("observer_tick", observer_tick), ("ai_observer_tick", ai_observer_tick), ("nightly_tick", nightly_tick),
                          ("parked_tick", parked_tick), ("due_tick", due_tick), ("garden_tick", garden_tick),   # #282 #241 #187
@@ -623,18 +656,21 @@ def tick():
             step(name, fn)
 
 # ---------- #262: a green/approved PR that conflicts with main gets a resolve run by itself ----------
-def resolve_cmd(a):
-    """hc command for one resolve run: terminal resolve-<n> runs `runner.py <n> --resolve-pr --round=<k>` (the runner's resolve worker)."""
-    name = f"resolve-{a['n']}"
-    return [R.HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(R.ROOT), "--label", f"issue={a['n']}", "--label", "role=runner",
-            *R.parent_args(), sys.executable, str(HERE / "runner.py"), str(a["n"]), "--resolve-pr", f"--round={a['round']}", f"--term={name}"]
+def resolve_start(a, launch=None):
+    """#289: one resolve round = a CLOUD session on the PR's branch (remote.launch: returns at once, no local worker or worktree).
+    Window resolve-<n> only lives while `claude --cloud` creates the session; conflicts.py waits RESOLVE_WAIT_MIN per round."""
+    import remote
+    launch = launch or remote.launch
+    s = launch(a["n"], R.remote_resolve_prompt(a["n"], [], a["branch"]), R.CFG.get("main_checkout", str(R.ROOT)), name=f"resolve-{a['n']}")
+    if s.get("ok"): R.stat(a["n"], "", "resolve", by="watchdog", round=a["round"], where="remote")
+    return bool(s.get("ok"))
 
 def conflicts_tick(ts):
     import conflicts
     def start(a):
-        rc, out = R.run(resolve_cmd(a))
-        log(f"#262 PR #{a['pr']} conflicts with main: " + (f"resolve round {a['round']} started (resolve-{a['n']})" if rc == 0 else f"could not start resolve-{a['n']}: {out.strip()[:200]}"))
-        return rc == 0
+        ok = resolve_start(a)
+        log(f"#262 PR #{a['pr']} conflicts with main: " + (f"cloud resolve round {a['round']} started" if ok else f"could not start the cloud resolve for #{a['n']}"))
+        return ok
     conflicts.tick(conflicts.busy(ts), review_passed, R.gh, start, tell, R.RUNS / "conflicts.json")
 
 # ---------- #248: backstop: a lane is never held for a closed issue or a silent run ----------
@@ -692,7 +728,7 @@ def net_tick(ts, now=None, gh=None, hc=None, say=None, events=None, find_pr=None
     done = []
     for t in ts:
         m = re.match(r"^run-(\d+)$", t.get("name") or "")
-        if not m or t.get("state") != "live" or not t.get("address"): continue
+        if not m or t.get("state") != "live" or not (t.get("address") or t.get("virtual")): continue
         n = int(m.group(1))
         phase = R.run_phase(events, n)
         if phase not in ("start", "review_fix"): continue
@@ -706,7 +742,9 @@ def net_tick(ts, now=None, gh=None, hc=None, say=None, events=None, find_pr=None
         try:
             if mark.read_text(encoding="utf-8").strip() == pj.get("headRefOid", ""): continue
         except OSError: pass
-        hc("kill", t["address"], timeout=30)
+        if t.get("virtual"):
+            import lanes; lanes.stop(R.RUNS, n)       # #289: a lane of the ONE poller: its wait loop ends the run
+        else: hc("kill", t["address"], timeout=30)
         R.set_resume(n, "review")
         mark.write_text(pj.get("headRefOid", ""), encoding="utf-8")
         gh("issue", "edit", str(n), "--remove-label", "in-progress", "--add-label", "ready-for-agent")
