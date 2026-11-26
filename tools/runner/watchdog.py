@@ -141,7 +141,7 @@ IDLE_MIN = 15      # a live issue/review/intake window done/idle this long, with
 PARKED_MIN = 60    # #123: a parked (blocked) issue's done/idle windows, after this long
 quiet_since = {}   # live window name -> first time seen done/idle
 
-def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset(), busy=frozenset(), old=frozenset()):
+def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset(), busy=frozenset(), old=frozenset(), passed=frozenset()):
     """Pure: names of windows to close. ts = hc terminals (name, state, status, marker True/False),
     closed = closed issue numbers, blocked = issue numbers labelled blocked (parked: keep their windows for the owner),
     human = issue numbers labelled ready-for-human (owner may look), stale = live window names done/idle for IDLE_MIN+,
@@ -159,6 +159,8 @@ def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset(), busy=fr
         if not m: continue
         n, role, suffix = int(m.group(2)), m.group(1), m.group(3) or ""
         if t.get("state") != "live": continue
+        if n in passed and role in ("issue", "review") and not suffix.startswith("-resolve") and t.get("status") in ("done", "idle"):
+            out.append(name); continue                                      # #164: review passed, runner only merges now
         if n in busy: continue                                              # #113: runner still deploying/closing it
         if n in closed: out.append(name); continue                          # issue done: everything for it goes (#123: even if labelled blocked)
         if n in blocked:                                                    # parked: the owner may look, for PARKED_MIN
@@ -174,6 +176,18 @@ def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset(), busy=fr
                  "review": [f"issue-{n}-fix"] if not suffix else []}[role]
         if any(x in live for x in later): out.append(name)
     return out
+
+def review_passed(nums, events=None):
+    """#164: issues whose CURRENT run (after its last start) has a review_pass event in stats.jsonl."""
+    if events is None:
+        import stats; events = stats.read_events(R.RUNS / "stats.jsonl")
+    start, ok = {}, set()
+    for e in sorted(events, key=lambda e: e.get("ts", 0)):
+        n = e.get("issue")
+        if n not in nums: continue
+        if e.get("event") == "start": start[n] = e["ts"]; ok.discard(n)
+        elif e.get("event") == "review_pass" and n in start: ok.add(n)
+    return ok
 
 def cleanup(ts):
     rc, out = R.gh("issue", "list", "--state", "all", "--limit", "300", "--json", "number,state,labels")
@@ -197,7 +211,7 @@ def cleanup(ts):
         rows.append({**t, "name": name, "marker": marker})
     nums = {int(m.group(1)) for t in rows for m in [re.match(r"^\w+-(\d+)", t["name"])] if m}
     busy = {n for n in nums if R.FileLock(f"issue-{n}").held_by_other()}
-    for name in leftovers(rows, closed, blocked, human, stale, busy, old):
+    for name in leftovers(rows, closed, blocked, human, stale, busy, old, review_passed(nums)):
         # act on the ADDRESS of the matching row, never the bare name: a finished terminal can share its
         # name with a new live one, and `hc kill <name>` would hit the live one.
         for t in rows:
