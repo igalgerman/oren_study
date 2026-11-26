@@ -42,3 +42,12 @@ Script: `tools/runner/remote.py start|status|send` (test: `python tools/runner/t
 Any failed start (no `Created cloud session` line, non-zero exit) prints `Error: Cloud session create failed: ...`;
 `remote.py start` returns `{"ok": false, "error": "<that line>"}` with exit 1 -> the runner runs the issue locally (#137).
 Seen: 403 (wrong token). **Not seen:** a usage-limit refusal (cannot be forced on purpose); assumed to take the same path.
+
+## Reviewer and fix rounds for cloud issues (#134)
+An issue whose worker ran in the cloud is also reviewed in the cloud: the runner starts a fresh cloud session with
+`remote_review_prompt` (read-only, same four colours as FLOW.md). It posts ONE PR comment; the runner polls
+`remote.review_status(pr, since=<round start>)` and takes the last `VERDICT:` line (on its own line) of a comment from this round.
+No verdict within 60 min (or a refused start) -> the issue is blocked for the orchestrator.
+RED (`VERDICT: FIX`) goes back to the worker's session (`remote.py send`, id kept in `.runs/<n>/remote.json`); if there is no
+session or the send fails, a new cloud fix session checks out `lane/<n>`. The fix reports `RESULT: DONE` on the issue as before.
+Same limits as local: 2 fix rounds, then blocked. The local worktree is made only after the last round (for merge/resolve).

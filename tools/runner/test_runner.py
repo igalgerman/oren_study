@@ -434,7 +434,46 @@ res = r.remote_worker(7, "pack", False, lambda n, t, cwd: {"ok": False, "error":
 assert res.startswith("RESULT: STUCK") and "403" in res
 res = r.remote_worker(7, "pack", False, fake_start, lambda: {"state": "question", "line": "QUESTION: x?"}, lambda s: None, lambda: 0, 60, 30)
 assert res == "QUESTION: x?"
+kept = []
+r.remote_worker(7, "pack", False, fake_start, lambda: {"state": "done", "line": "RESULT: DONE"}, lambda s: None, lambda: 0, 60, 30, on_start=kept.append)
+assert kept and kept[0]["session"] == "session_x"                  # #134: the session id is kept for the FIX round
 print("ok remote lanes")
+
+# #134: remote reviewer = a cloud session; its VERDICT comes from a PR comment
+_rp = r.remote_review_prompt(7, 9, "button crashes")
+assert "PR #9" in _rp and "#7" in _rp and "gh pr comment 9" in _rp and "gh pr diff 9" in _rp and "own line" in _rp
+assert "VERDICT: PASS-NOTES" in _rp and "VERDICT: PURPLE" in _rp and "RED" in _rp and "button crashes" in _rp   # same four colours + round-2 rule
+assert "C:/work" not in _rp and "Change NO files" in _rp                                                           # cloud: no local paths, read-only
+starts = []
+def _st(n, task, cwd): starts.append(task); return {"ok": True, "session": "session_rv", "url": "https://claude.ai/code/session_rv"}
+seq = iter([{"state": "working"}, {"state": "done", "line": "VERDICT: FIX no test", "body": "x\nVERDICT: FIX no test\n"}])
+assert r.remote_review(7, 9, "", _st, lambda: next(seq), lambda s: None, lambda: 0, 3600, 60) == ("x\nVERDICT: FIX no test\n", "VERDICT: FIX no test")
+assert "gh pr comment 9" in starts[-1]
+rv, v = r.remote_review(7, 9, "", lambda n, t, c: {"ok": False, "error": "403"}, lambda: {"state": "working"}, lambda s: None, lambda: 0, 60, 30)
+assert v == "" and "403" in rv
+t[0] = 0
+rv, v = r.remote_review(7, 9, "", _st, lambda: {"state": "working"}, sl, lambda: t[0], 120, 60)
+assert v == "" and "no VERDICT" in rv                                                # silent reviewer -> no verdict -> runner blocks
+assert r.parse_verdict(r.remote_review(7, 9, "", _st, lambda: {"state": "done", "line": "VERDICT: PURPLE a or b? merge-safe", "body": ""},
+                                       lambda s: None, lambda: 0, 60, 30)[1]) == ("purple", "a or b?", "merge-safe")
+# FIX: sent to the worker's session; send fails / no session -> a new cloud fix session (with the branch to check out)
+sent, starts[:] = [], []
+done = lambda: {"state": "done", "line": "RESULT: DONE https://p"}
+assert r.remote_fix(7, "session_w", "VERDICT: FIX no test", lambda s, x: sent.append((s, x)) or {"ok": True}, _st, done, lambda s: None, lambda: 0) == "RESULT: DONE https://p"
+assert sent[0][0] == "session_w" and "no test" in sent[0][1] and "lane/7" in sent[0][1] and "RESULT: DONE" in sent[0][1] and not starts
+kept = []
+assert r.remote_fix(7, "session_w", "FIX x", lambda s, x: {"ok": False}, _st, done, lambda s: None, lambda: 0, on_start=kept.append) == "RESULT: DONE https://p"
+assert len(starts) == 1 and "git checkout lane/7" in starts[0] and kept[0]["session"] == "session_rv"
+assert r.remote_fix(7, "", "FIX x", lambda s, x: 1 / 0, _st, done, lambda s: None, lambda: 0) == "RESULT: DONE https://p"   # no session: no send
+assert r.remote_fix(7, "", "FIX x", None, lambda n, t, c: {"ok": False, "error": "limit"}, done, lambda s: None, lambda: 0).startswith("RESULT: STUCK")
+t[0] = 0
+assert "silent" in r.remote_fix(7, "s", "FIX x", lambda s, x: {"ok": True}, _st, lambda: {"state": "working"}, sl, lambda: t[0], 120, 60)
+assert r.remote_fix(7, "s", "FIX x", lambda s, x: {"ok": True}, _st, lambda: {"state": "question", "line": "QUESTION: a?"}, sl, lambda: 0) == "QUESTION: a?"
+# process_locked: remote issues use the cloud reviewer and cloud fix; local ones keep the herdr agent
+_pl = (r.HERE / "runner.py").read_text(encoding="utf-8").split("def process_locked", 1)[1].split("def close_windows", 1)[0]
+assert "remote.review_status(pr, since=since)" in _pl and "remote_fix(" in _pl and 'agent(f"review-{n}"' in _pl
+assert _pl.index('if where == "remote": prep_worktree()') > _pl.index("remote_fix(")          # worktree made after the last cloud fix
+print("ok #134 remote reviewer")
 # #175: voice pregen runs in the background AFTER the merge lock, one at a time, never blocking an issue
 import os as _os
 class _P:

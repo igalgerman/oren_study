@@ -2,6 +2,7 @@
 
   python tools/runner/remote.py start <n> "<task>"     -> JSON {ok, session, url, error}
   python tools/runner/remote.py status <n>             -> JSON {state: working|done|stuck|question, line, pr}
+  (runner only) review_status(pr, since)               -> {state: working|done, line: last VERDICT line of a PR comment, body} (#134)
   python tools/runner/remote.py send <session> "<text>" -> JSON {ok, error}
   python tools/runner/remote.py cloud                  -> JSON list, one per open issue labelled cloud (#136):
       {n, title, state, line, last, stale, pr, session}  last = ISO UTC of the newest comment/commit
@@ -80,6 +81,26 @@ def status(n, run=sh, since=None):
                    "--json", "number,url,isDraft"])
     prs = json.loads(out) if rc == 0 and out.strip() else []
     return state_from(comments, prs[0] if prs else None)
+
+VERDICT = re.compile(r"^\s*VERDICT:.*", re.M)
+
+def verdict_from(comments):
+    """#134: (last VERDICT line on its own line, that comment's body) from PR comments; ('', '') when none yet."""
+    for body in reversed(comments):
+        hits = VERDICT.findall(body or "")
+        if hits:
+            return hits[-1].strip(), body
+    return "", ""
+
+def review_status(pr, run=sh, since=None):
+    """#134: the cloud reviewer's verdict comment on the PR -> {state: done|working, line, body}. since = ISO UTC start of this review round."""
+    rc, out = run(["gh", "pr", "view", str(pr), "--repo", REPO, "--json", "comments"])
+    try:
+        comments = [c.get("body", "") for c in json.loads(out).get("comments", []) if not since or c.get("createdAt", "") >= since] if rc == 0 else []
+    except ValueError:
+        comments = []
+    line, body = verdict_from(comments)
+    return {"state": "done" if line else "working", "line": line, "body": body}
 
 SESSION = re.compile(r"https://claude\.ai/code/session_\w+")
 STALE_MIN = int(float(CFG.get("stuck_hours", 1)) * 60)   # same threshold as the runner's stuck rule and the watchdog alarm
