@@ -3,7 +3,7 @@ import type { Register } from 'claude-code'
 
 import type { OrenLanesData, Row } from '../types/index'
 import {
-  finishedRuns, isLive, parseWindows, statusLine, trunc, usageJson, parseGov, parseConfig, parseEvents, panel,
+  finishedRuns, isLive, parseWindows, statusLine, trunc, usageJson, parseGov, parseConfig, parseEvents, panel, quietArgv,
 } from './lanes'
 import type { CloudLane, Gov, Issue, Limit, Pr, Win } from './lanes'
 
@@ -15,6 +15,9 @@ const CONFIG = 'C:/work/Oren_study/a/tools/runner/config.toml'
 const PY = 'C:\\Users\\97254\\miniforge3\\python.exe'
 const REMOTE = 'C:/work/Oren_study/a/tools/runner/remote.py'
 const OWNER_Q = 'C:/work/Oren_study/a/tools/runner/owner_q.py'
+// $.process.run has no hide-window option: every call goes through pythonw (no console) -> quiet.py (CREATE_NO_WINDOW child)
+const quietRun = ($: { process: { run: (argv: string[], init?: any) => Promise<any> } }, argv: string[], init?: any) =>
+  $.process.run(quietArgv(argv), init)
 const ROOT = /^c:[\\/]+work[\\/]+oren_study([\\/]|$)/i
 const DATA = { plugin: 'oren-lanes', key: 'data' } as const
 // an atom, so every refresh REDRAWS the pane (a plain $.state.get in render did not subscribe)
@@ -33,7 +36,7 @@ export const register: Register = on => {
     const readText = async (p: string) => { try { return (await $.fs.read(p)) as string } catch { return '' } }
     const json = async <T,>(argv: string[], what: string, errors: string[]): Promise<T | null> => {
       try {
-        const r = await $.process.run(argv, { timeoutMs: 90000 })
+        const r = await quietRun($, argv, { timeoutMs: 90000 })
         if (r.exitCode !== 0) throw new Error(trunc(r.stderr.trim() || `exit ${r.exitCode}`, 60))
         return JSON.parse(r.stdout) as T
       } catch (err) { errors.push(`${what} unavailable: ${trunc(String(err), 60)}`); return null }
@@ -46,13 +49,13 @@ export const register: Register = on => {
         const errors: string[] = []
         let windows: Win[] = []
         try {
-          const r = await $.process.run([HC, 'ls', '--json'], { timeoutMs: 10000 })
+          const r = await quietRun($, [HC, 'ls', '--json'], { timeoutMs: 10000 })
           if (r.exitCode !== 0) throw new Error(`hc exit ${r.exitCode}`)
           windows = parseWindows(r.stdout)
           // guard: the watchdog must always run — start it again if its window is gone
           // (`hc ls` lists live terminals only)
           if (!/"name":\s*"watchdog"/.test(r.stdout)) {
-            await $.process.run([HC, 'run', '--bg', '--no-parent', '--outlive-parent', '--name', 'watchdog',
+            await quietRun($, [HC, 'run', '--bg', '--no-parent', '--outlive-parent', '--name', 'watchdog',
               '--cwd', 'C:\\work\\Oren_study\\a', PY, 'tools\\runner\\watchdog.py'], { timeoutMs: 15000 })
             $.ui.toast('watchdog restarted')
           }
@@ -66,7 +69,7 @@ export const register: Register = on => {
 
         let questions = 0
         try {   // #193: open owner questions (the pinned 'Questions for the owner' issue)
-          const r = await $.process.run([PY, OWNER_Q, 'open'], { timeoutMs: 60000 })
+          const r = await quietRun($, [PY, OWNER_Q, 'open'], { timeoutMs: 60000 })
           if (r.exitCode !== 0) throw new Error(`owner_q exit ${r.exitCode}`)
           questions = r.stdout.split('\n').filter(l => /^[0-9a-f]{12}\s/.test(l)).length
         } catch (err) { errors.push(`owner questions unavailable: ${trunc(String(err), 50)}`) }

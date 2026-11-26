@@ -1,7 +1,8 @@
+import { readFileSync } from 'node:fs'
 import { expect, test } from 'claude-code/testing'
 
 import {
-  finishedRuns, parseBlockers, parseWindows, usageJson, parseGov, parseConfig, parseEvents, panel, statusLine, laneStep, eta,
+  finishedRuns, parseBlockers, parseWindows, usageJson, parseGov, parseConfig, parseEvents, panel, statusLine, laneStep, eta, quietArgv,
 } from './lanes'
 import type { PanelIn, Pr } from './lanes'
 
@@ -65,7 +66,7 @@ test('#296 one lane list: an issue with a PR is a lane, never in UP NEXT; no iss
   const all = [...p.issues.lanes, ...p.issues.next, ...p.issues.done, ...p.issues.you]
   expect(new Set(all).size).toBe(all.length)
   expect(p.lanes.filter(r => r.text.includes('#269')).length).toBe(1)
-  expect(p.lanes.find(r => r.text.includes('#269'))!.text).toMatch(/^☁ #269 Governor stop — waiting review · PR #270 · since \d\d:\d\d$/)
+  expect(p.lanes.find(r => r.text.includes('#269'))!.text).toMatch(/^☁ #269 Governor stop — waiting review · PR #270 · \d\d:\d\d$/)
   expect(p.lanes.find(r => r.text.includes('#274'))!.text).toMatch(/^⚡ #274 /)
   expect(p.lanes.some(r => r.text.includes('#219'))).toBe(false)   // finished sessions never listed
   expect(p.lanesHead).toBe('LANES 3/8')
@@ -102,7 +103,7 @@ test('#296 amber after 30 min in a step, red when blocked; red sorts first', () 
   const prs = (m: number) => panel(base({ prs: [pr(9, 99, { createdAt: minAgo(m) })] })).prs
   expect(prs(29).tone).toBe('')
   expect(prs(31).tone).toBe('amber')
-  expect(prs(31).text).toBe('PRs 1 open · 1 need review · 0 conflict · 0 red · 0 auto-merge · oldest #9 31m')
+  expect(prs(31).text).toBe('PRs 1 open · 1 need review · oldest #9 31m')
 })
 
 test('#296 NEEDS YOU hidden when nothing waits on the owner; shown red with questions', () => {
@@ -136,4 +137,18 @@ test('#296 forecast from the net close rate', () => {
   expect(eta(3, [NOW - h, NOW - 2 * h, NOW - 3 * h], [], NOW)).toBe(NOW + 6 * h)   // 3 closed in 6 h = 0.5/h
   expect(eta(3, [], [NOW - h], NOW)).toBe(null)
   expect(panel(base()).forecast.text).toBe('Forecast: no open P0 · nothing open')
+})
+
+test('#296 usage line says (stale) when governor.json is older than 15 min', () => {
+  const lim = [{ kind: 'five_hour', percentUsed: 15, resetsAt: new Date(NOW + 3600e3).toISOString() }] as any
+  const at = (m: number) => (NOW - m * 60e3) / 1000
+  expect(panel(base({ limits: lim, gov: { at: at(5) } })).header[1]!.text).not.toMatch('(stale)')
+  expect(panel(base({ limits: lim, gov: { at: at(16) } })).header[1]!.text).toMatch('(stale)')
+})
+
+test('#305 every process call goes through pythonw + quiet.py', () => {
+  expect(quietArgv(['gh', 'x']).slice(0, 2).map(a => a.replace(/^.*[/]/, ''))).toEqual(['pythonw.exe', 'quiet.py'])
+  const src = readFileSync(new URL('./register.tsx', import.meta.url), 'utf8')
+  const direct = src.split(String.fromCharCode(10)).filter(l => /\$\.process\.(run|spawn|exec)\(/.test(l) && !l.includes('quietArgv('))
+  expect(direct).toEqual([])
 })

@@ -35,6 +35,8 @@ Script: `tools/runner/remote.py start|status|send` (test: `python tools/runner/t
   Only comments from the latest `Runner: started` comment on count (the runner also passes its start time), so a reopened
   issue never finishes on an earlier run's RESULT (#236). `remote.py cloud` lists label `cloud` issues plus in-progress
   issues whose `.runs/<n>/where` is `remote`; the dashboard and panel count cloud lanes from it.
+  #297: no RESULT line but this run's PR is open and its head has had no commit for 10 min -> `done` (goes to review;
+  `runner.log` says `done by PR (no RESULT line)`); the panel row shows `waiting review PR #n`.
 - Owner/manual view: the URL, or `claude --teleport <session>` (interactive).
 
 ## Follow-up messages

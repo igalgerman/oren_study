@@ -62,7 +62,7 @@ export function usageJson(limits: Limit[], nowMs: number) {
 }
 
 /** #239: the runner's governor state from .runs/governor.json (reset in epoch seconds). */
-export type Gov = { lanes?: number; stop?: boolean; pct?: number | null; projected?: number | null; reset?: number | null; text?: string }
+export type Gov = { lanes?: number; stop?: boolean; pct?: number | null; projected?: number | null; reset?: number | null; text?: string; at?: number }
 
 export function parseGov(json: string): Gov | null {
   try { const g = JSON.parse(json); return g && typeof g === 'object' ? g as Gov : null } catch { return null }
@@ -217,7 +217,7 @@ export function panel(p: PanelIn): Panel {
   lanes.sort((a, b) => rank[a.tone] - rank[b.tone] || a.n - b.n)
   const icon = { local: '●', cloud: '☁', express: '⚡' }
   const laneRows: Row[] = lanes.map(x => ({
-    text: `${icon[x.kind]} #${x.n} ${short(x.title)} — ${x.step}${x.pr ? ` · PR #${x.pr}` : ''} · since ${clock(x.since, now)}`, tone: x.tone,
+    text: `${icon[x.kind]} #${x.n} ${short(x.title)} — ${x.step}${x.pr ? ` · PR #${x.pr}` : ''} · ${clock(x.since, now)}`, tone: x.tone,
   }))
 
   // UP NEXT: ready work that has no lane, no PR and is not waiting on the owner
@@ -248,9 +248,10 @@ export function panel(p: PanelIn): Panel {
   const stuckPrs = [...review, ...conflict, ...red]
   const oldest = stuckPrs.reduce<Pr | undefined>((a, b) => (!a || Date.parse(b.createdAt) < Date.parse(a.createdAt) ? b : a), undefined)
   const oldMin = oldest ? (now - Date.parse(oldest.createdAt)) / 60e3 : 0
+  const prParts = [`${p.prs.length} open`, review.length && `${review.length} need review`, conflict.length && `${conflict.length} conflict`,
+    red.length && `${red.length} red`, auto.length && `${auto.length} auto-merge`, oldest && `oldest #${oldest.number} ${ago(oldMin)}`].filter(Boolean)
   const prRow: Row = {
-    text: `PRs ${p.prs.length} open · ${review.length} need review · ${conflict.length} conflict · ${red.length} red · ${auto.length} auto-merge`
-      + (oldest ? ` · oldest #${oldest.number} ${ago(oldMin)}` : ''),
+    text: `PRs ${prParts.join(' · ')}`,
     tone: oldMin > AMBER_MIN ? 'amber' : '',
   }
 
@@ -284,7 +285,8 @@ export function panel(p: PanelIn): Panel {
     parts.push(`week ${Math.round(week.percentUsed)}%${even !== null ? ` (even ${Math.round(even)}%)` : ''}`)
     if (even !== null && week.percentUsed > even + 10) warn = true
   }
-  if (parts.length) header.push({ text: parts.join(' · '), tone: warn ? 'amber' : 'dim' })
+  const stale = p.gov?.at !== undefined && now - p.gov.at * 1000 > 15 * 60e3   // the runner's own cutoff
+  if (parts.length) header.push({ text: parts.join(' · ') + (stale ? ' (stale)' : ''), tone: warn ? 'amber' : 'dim' })
 
   const youShown = youIssues.filter(i => !laneNums.has(i.number))   // a lane already shows 'blocked: waits for you'
   const you = [...(p.questions ? [`${p.questions} question${p.questions > 1 ? 's' : ''}${p.questionIssue ? ` (#${p.questionIssue})` : ''}`] : []),
@@ -317,3 +319,7 @@ export function statusLine(pn: Panel): string {
   const usage = (pn.header[1]?.text ?? '').replace(/ \(goal \d+\)/, '').replace(/ at \S+/, '')
   return [pn.lanesHead.toLowerCase(), `PRs need review ${pn.reviewCount}`, pn.youCount ? `needs you ${pn.youCount}` : '', usage].filter(Boolean).join(' · ')
 }
+
+/** #305: a process call with no console window: pythonw (no console) -> quiet.py (CREATE_NO_WINDOW child). */
+export const quietArgv = (argv: string[]): string[] =>
+  ['C:/Users/97254/miniforge3/pythonw.exe', 'C:/work/Oren_study/a/tools/runner/quiet.py', ...argv]
