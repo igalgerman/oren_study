@@ -112,6 +112,15 @@ _pk = [{"name": "review-41", "state": "live", "status": "done", "marker": True},
 assert W.leftovers(_pk, closed={41}, blocked={41, 48, 49}) == ["review-41"]
 assert W.leftovers(_pk, closed=set(), blocked={41, 48, 49}, old={"issue-48-fix"}) == ["issue-48-fix"]
 print("ok parked windows")
+# #164: after review_pass the done worker/reviewer windows go even while the runner is busy; resolve windows stay
+_ps = [{"name": "issue-160", "state": "live", "status": "done", "marker": True}, {"name": "review-160-2", "state": "live", "status": "done", "marker": True},
+       {"name": "run-160", "state": "live", "status": "", "marker": False}, {"name": "issue-160-resolve1", "state": "live", "status": "working", "marker": False},
+       {"name": "issue-161", "state": "live", "status": "done", "marker": True}]
+assert W.leftovers(_ps, closed=set(), blocked=set(), busy={160, 161}, passed={160}) == ["issue-160", "review-160-2"]
+_ev = [{"ts": 1, "issue": 160, "event": "start"}, {"ts": 2, "issue": 160, "event": "review_pass"}, {"ts": 3, "issue": 161, "event": "review_pass"},
+       {"ts": 4, "issue": 162, "event": "start"}, {"ts": 5, "issue": 162, "event": "review_pass"}, {"ts": 6, "issue": 162, "event": "start"}]
+assert W.review_passed({160, 161, 162}, _ev) == {160}   # 161: no start; 162: a new run started after the pass
+print("ok review-passed windows")
 
 # regression: a finished run-2 next to a live run-2 must not close anything (the live one is working)
 assert W.leftovers([{"name": "run-2", "state": "finished"}, {"name": "run-2", "state": "live", "status": ""}], set(), set()) == []
