@@ -50,6 +50,18 @@ const { chromium } = require('playwright');
     ok('problem log counts and merges', iss.e === 2 && iss.v === 2, JSON.stringify(iss));
     await ctx.close();
   }
+  // #350: a real crash keeps the message AND its first stack line (file:line:col), so the next one is findable
+  {
+    const ctx = await b.newContext(L.VIEWPORT);
+    await ctx.addInitScript(() => { try { localStorage.clear(); } catch (e) {} });
+    const p = await ctx.newPage(); p.on('pageerror', () => {});
+    await p.goto(L.URL); await p.waitForFunction(() => window.OREN && window.OREN.save);
+    await p.addScriptTag({ content: 'function oopsCrash(){const o={};const [a]=o.missing;return a;}' });
+    const m = await p.evaluate(() => new Promise(r => { window.__fast = false; setTimeout(window.oopsCrash, 0); setTimeout(() => { window.__fast = true; const e = (window.OREN.save.iss || []).find(x => x.k === 'err'); r(e && e.m); }, 100); }));
+    ok('crash record keeps the message', /undefined is not iterable/.test(m || ''), m);
+    ok('crash record keeps the first stack line (file:line:col)', / @ oopsCrash \S*:\d+:\d+$/.test(m || '') && !/file:\/\//.test(m || ''), m);
+    await ctx.close();
+  }
   // journey map (#7): no cage and no "0/49" count on the world cards; one progress bar per card that grows with the stars
   {
     const ctx = await b.newContext(L.VIEWPORT);
