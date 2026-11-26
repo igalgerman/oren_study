@@ -12,6 +12,8 @@ Every minute it checks, deterministically:
   5c. every tick (#262): an open PR that conflicts with main and has auto-merge or a review PASS -> a resolve run (window resolve-<n>, conflicts.py)
   5c. #219 nightly.py: once a day at retro_hour ONE read-only headless Sonnet retro + handoff (issue 'Daily retro <date>', handoff PR);
       batch trigger: tells the inbox to run /batch once a day, and early when >= 8 ready P2/P3 issues share a lane
+  5d. #282 parked.py, once an hour: closed batch -> its open members get ready-for-agent back; a polish list at 5 notes or 24 h -> ready-for-agent P3;
+      later/manual 2 h+ with no owner question, run, PR or future date -> 'parked without owner question: #n' to the orchestrator; night report at retro_hour
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
   4b. orchestrator / inbox / inspector terminal finished (#140)                -> removed by address and started again (recover.py commands)
@@ -259,6 +261,12 @@ def nightly_tick():
     import nightly   # #219: not reloaded (that would reset its never-two guard)
     nightly.retro_if_due(tell, log)
     nightly.batch_tick(lambda t: R.hc("send", "inbox", t, timeout=30)[0], log)
+    nightly.night_report_if_due(tell, log)   # #282
+
+def parked_tick():
+    """#282, once an hour: orphaned batch members / due polish lists get ready-for-agent; parked later/manual -> the orchestrator."""
+    import parked
+    parked.tick(tell=tell, log=log)
 
 SYNC_MIN = int(R.CFG.get("sync_minutes", 3))
 _sync = {"last": 0.0, "msg": ""}
@@ -411,6 +419,7 @@ def tick():
     observer_tick()
     ai_observer_tick()
     nightly_tick()
+    parked_tick()       # #282
     sync_tick()
     alarm_tick()
     trends_tick()
