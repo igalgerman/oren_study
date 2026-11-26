@@ -156,6 +156,19 @@ assert "ALARM" not in line and "graphql 4000/5000 (80%)" in line
 assert G.status_line(None, 3, now=NOW) == "GitHub: 3 calls/min · no cache yet (watchdog reads GitHub once a minute)"
 assert "ALARM cache" in G.status_line({"ts": NOW, "rate": {}}, 3, now=NOW + 600)
 print("ok dashboard line: calls/min, remaining graphql/core, alarm < 20%")
+# #363: with the GitHub App the bots and the owner have their own budget: one line, per identity
+line = G.status_line({"ts": NOW, "rate": {"graphql": [4000, 5000], "core": [4900, 5000]}, "rate_owner": {"graphql": [800, 5000], "core": [5000, 5000]}}, 3, now=NOW + 20)
+assert line == ("GitHub: 3 calls/min · app graphql 4000/5000 (80%) · app core 4900/5000 (98%) · owner graphql 800/5000 (16%) · "
+                "owner core 5000/5000 (100%) · cache 20 s old · ALARM GitHub budget < 20%"), line
+owner_seen = []
+def owner_gh(cmd):
+    owner_seen.append(cmd)
+    return 0, json.dumps({"resources": {"core": {"limit": 5000, "remaining": 4000}, "graphql": {"limit": 5000, "remaining": 3000}}})
+c = G.refresh(fake_gh, now=NOW + 61, run_owner=owner_gh)
+assert owner_seen == [["gh", "api", "rate_limit"]] and c["rate_owner"] == {"graphql": [3000, 5000], "core": [4000, 5000]}, c.get("rate_owner")
+assert c["rate"] == {"graphql": [900, 5000], "core": [4900, 5000]}, "the bots' own budget"
+assert "rate_owner" not in G.refresh(fake_gh, now=NOW + 62), "no App: one identity, no owner line"
+print("ok #363 budget per identity (app / owner)")
 # ---------- runner.run: the real entry point, with a fake gh ----------
 import subprocess, runner as RN
 class P:
@@ -176,6 +189,24 @@ try:
 finally:
     RN.subprocess.run, G.time.sleep = real_sub, real_sleep
 print("ok runner.run: cache first, rate limit retried")
+# #363: runner.run gives gh (and only gh) the App token; OWNER marker -> owner login
+import ghauth
+envs, real_tok = [], ghauth.token
+ghauth.token = lambda *a, **k: "ghs_app"
+RN.subprocess.run = lambda cmd, **k: (envs.append(k["env"]), P(0, "{}"))[1]
+try:
+    RN.run(["gh", "api", "repos/x/y/commits", "--jq", "."]); RN.run(["claude", "-p", "x"]); RN.run(["gh", "api", "rate_limit"], env={ghauth.OWNER: "1"})
+finally:
+    RN.subprocess.run, ghauth.token = real_sub, real_tok
+assert envs[0].get("GH_TOKEN") == "ghs_app" and envs[1].get("GH_TOKEN") != "ghs_app" and "GH_TOKEN" not in envs[2] and ghauth.OWNER not in envs[2], [e.get("GH_TOKEN") for e in envs]
+import remote as RM
+envs.clear(); ghauth.token = lambda *a, **k: "ghs_app"
+real_rsub = RM.subprocess.run
+RM.subprocess.run = lambda cmd, **k: (envs.append(k["env"]), P(0, "{}"))[1]
+try: RM.sh(["gh", "api", "repos/x/y/commits"]); RM.sh(["claude", "--version"], env={"A": "1"})
+finally: RM.subprocess.run, ghauth.token = real_rsub, real_tok
+assert envs[0].get("GH_TOKEN") == "ghs_app" and (envs[1] or {}).get("GH_TOKEN") != "ghs_app", "remote.py (panel, cloud polls) too; Claude sessions keep the owner"
+print("ok #363 runner.run / remote.sh: App token for gh only")
 # ---------- watchdog: the one reader, in a thread, never two at once ----------
 import watchdog as W
 started = []

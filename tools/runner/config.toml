@@ -45,3 +45,9 @@ ai_model = "haiku"              # #171: model for the dashboard AI assessment (h
 
 ci_merge = true                 # #74: merge on a green PR "tests" check (gh pr merge --squash) instead of the local full suite; false = old integrate.sh
 ci_timeout_minutes = 60
+
+# #363 step A: the bots' gh calls use a GitHub App installation token (own rate limits); Claude sessions keep the owner login.
+# Not secret: the ids. The key file stays OUTSIDE the repo (never commit, print or copy it). Remove/0 the id = owner login again.
+github_app_id = 5939551
+github_app_installation_id = 186191764
+github_app_key = "C:/Users/97254/.oren/app.pem"

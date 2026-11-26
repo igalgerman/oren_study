@@ -8,7 +8,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import remote, ghcache
+import remote, ghcache, ghauth
 ROOT = HERE.parent.parent                      # repo checkout (tools/runner/../..)
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # #229: tests point this at a temp dir
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -780,6 +780,7 @@ def is_transient(e):
 def run(cmd, cwd=None, env=None, input=None, log=None, timeout=None):
     e = dict(os.environ); e.update(env or {})
     e["PATH"] = CFG["extra_path"].replace("/c/", "C:/", 1) + os.pathsep + e["PATH"]
+    ghauth.apply(cmd, e)                                 # #363: gh runs as the GitHub App (own rate limits); claude/git keep the owner login
     def raw():
         p = subprocess.run(cmd, cwd=cwd, env=e, input=input, capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=timeout, creationflags=no_window())
