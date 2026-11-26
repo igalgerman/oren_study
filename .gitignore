@@ -4,3 +4,4 @@ oren2/package.json
 oren2/package-lock.json
 oren2/tests/.tmp/
 __pycache__/
+tools/runner/.runs-test*/
