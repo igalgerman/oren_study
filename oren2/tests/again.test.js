@@ -48,4 +48,4 @@ const NIK=/[ְ-ּ]/;
  ok('closed by mistake (opened and closed at once) comes first in the list',first===a5,first+' vs '+a5);
  ok('...but the parent day log still skips it',await p.evaluate(id=>!window.DAYLOG.rows(window.OREN.today()).some(e=>e[1]===id),a5));
  ok('no page errors',!errs.length,errs.join(' | '));
- await b.close();L.finish('again '+L.variant,res);})().catch(e=>{console.error(e);process.exit(1);});
+ await b.close();L.finish('again-'+L.variant,res);})().catch(e=>{console.error(e);process.exit(1);});
