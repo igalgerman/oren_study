@@ -38,6 +38,11 @@ idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → r
    watch it (`hc read run-2`, `hc read issue-2`), fix the runner if it breaks, one line per issue to the owner.
 2. Keep the queue moving: #4 → #5 → #6 → #7 → #8; #9 after #7. #11 needs grilling with the owner (`/idea`).
 
+## Phone (Remote Control) and push notifications (owner, 26 Nov)
+- tools/orchestrator.cmd starts you with `--remote-control "oren-orchestrator"`: the owner can see and answer you from his phone.
+- Use the PushNotification tool ONLY when the owner must act: a review PURPLE question, a P0 problem (main red, deploy failed, live site or family saves broken), the PC restart test (#141), or a decision only he can make. One line, under 200 characters, what to do first. Never for routine progress.
+- Code Mode does not work with Remote Control: you run without it; workers of every 3rd issue run with it (trial, config code_mode_every).
+
 ## Owner decisions, 26 Nov 2026 (after the flow analysis)
 - Order: first the flow fixes (#62 line endings, #149 review severity, #166 merge on green, #177 hand-work label, #153 chains), then remote lanes (#134-#137 carry Blocked-by lines).
 - Freeze on NEW tool features (runner, watchdog, panel, dashboard, remote, freeze/recover) until #152 (CI runs the tool tests) is merged. Bug fixes to the system and all game work continue. After #152: tooling gets at most 1 lane, the game at least 2.
