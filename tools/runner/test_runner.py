@@ -164,3 +164,28 @@ r.CFG["pregen"] = True; _calls.clear()
 assert r.deploy_text(None).startswith("deployed ok https://") and any("pregen.js" in " ".join(map(str, c)) for c in _calls)
 r.run, r.env_file = _orig_run, _orig_env; r.CFG["pregen"] = False
 print("ok deploy")
+
+# CI merge decisions (#74)
+def _ck(*b): return [{"name": f"c{i}", "bucket": x} for i, x in enumerate(b)]
+assert r.ci_verdict([]) == "none" and r.ci_verdict(None) == "none"
+assert r.ci_verdict(_ck("pass", "pass")) == "green" and r.ci_verdict(_ck("pass", "skipping")) == "green"
+assert r.ci_verdict(_ck("pass", "pending")) == "pending"             # a pending check is never green
+assert r.ci_verdict(_ck("pending", "fail")) == "red" and r.ci_verdict(_ck("cancel")) == "red"
+assert r.ci_verdict(_ck("skipping")) == "none"
+def _cm(seq, merge_ok=True, **kw):
+    it, log = iter(seq), []
+    out = r.ci_merge(lambda: next(it), lambda: log.append("rerun"), lambda: log.append("merge") or merge_ok, lambda s: log.append("sleep"), **kw)
+    return out, log
+assert _cm([_ck("pass")]) == (("merged",), ["merge"])
+assert _cm([_ck("pending"), _ck("pass")]) == (("merged",), ["sleep", "merge"])
+assert _cm([_ck("fail"), _ck("pending"), _ck("pass")]) == (("merged",), ["rerun", "sleep", "sleep", "merge"])   # flaky: rerun once, then green
+assert _cm([_ck("fail"), _ck("fail")])[0] == ("red", ["c0"]) and _cm([_ck("fail"), _ck("fail")])[1].count("rerun") == 1   # still red: back to the worker
+assert _cm([_ck("pass")], merge_ok=False)[0] == ("merge-failed",)
+assert _cm([_ck("pending")] * 99, timeout_s=60, poll_s=30)[0] == ("timeout",)
+assert r.deploy_needed("a", "b") and not r.deploy_needed("b", "b") and r.deploy_needed("", "b") and not r.deploy_needed("a", "")
+assert r.conflict_files("CI RED\nc0\n") == ["c0"]
+assert r.integrate_with_resolve(iter([(6, "CI RED\nc0\n"), (0, "ok")]).__next__, lambda f: f == ["c0"], 2)[0] == "merged"
+assert "c0" in r.ci_fix_prompt(7, ["c0"]) and "RESULT: DONE" in r.ci_fix_prompt(7, [])
+assert r.nightly_due(0, 30 * 3600, 3, 3) and not r.nightly_due(0, 30 * 3600, 3, 2) and not r.nightly_due(15 * 3600, 30 * 3600, 3, 5)
+assert r.CFG["ci_merge"] is True
+print("ok ci-merge")

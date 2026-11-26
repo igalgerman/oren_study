@@ -21,3 +21,7 @@ herdr_space = "Oren_study_orech"
 # read-only auditor (observer_prompt.md), started headless by the watchdog every N minutes
 observer_minutes = 30
 pregen = true    # voice pregen after each deploy; on since #68 (KV write budget) went live 26 Nov
+
+ci_merge = true                 # #74: merge on a green PR "tests" check (gh pr merge --squash) instead of the local full suite; false = old integrate.sh
+ci_timeout_minutes = 60
+nightly_hour = 3                # local full suite once a day from this hour (watchdog), result goes to the orchestrator

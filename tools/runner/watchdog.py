@@ -5,6 +5,7 @@ Every minute it checks, deterministically:
   3. free lanes + ready issues but no runner pass running                       -> starts a runner pass
   3b. a window waiting for the owner longer than park_minutes (the runner parks it itself; this is the fallback): issue gets blocked + ready-for-human, lane freed
   5. every observer_minutes: a read-only headless Claude audits the flow (observer_prompt.md); problems go to the orchestrator
+  6. once a day (nightly_hour): the full local suite on main in the integrate checkout; result goes to the orchestrator (#74)
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
 It never answers questions or presses keys in other windows; it only tells the orchestrator and starts the runner.
 Usage: python watchdog.py [--once]
@@ -202,6 +203,28 @@ def observer_tick():
         finally: _obs["running"] = False
     threading.Thread(target=work, daemon=True).start()
 
+NIGHT_LAST = R.RUNS / "nightly.last"
+_night = {"running": False}
+
+def nightly_tick():
+    """#74: the full local suite as a daily sanity run (CI merges no longer run it). Result -> orchestrator, plus .runs/nightly.last."""
+    last = NIGHT_LAST.stat().st_mtime if NIGHT_LAST.exists() else 0
+    if _night["running"] or not R.nightly_due(last, time.time(), int(R.CFG.get("nightly_hour", 3)), time.localtime().tm_hour): return
+    _night["running"] = True
+    def work():
+        try:
+            R.RUNS.mkdir(parents=True, exist_ok=True)
+            NIGHT_LAST.write_text("running" + chr(10), encoding="utf-8")
+            rc, out = R.run([R.BASH, "-c", "git fetch -q origin && git checkout -q -B integrate origin/main && cd oren2 && python3 build_talents.py >/dev/null && JOBS=3 RETRY_ALONE=1 bash tests/run.sh"],
+                            cwd=R.INTEG, timeout=7200)
+            res = f"{time.strftime('%Y-%m-%d %H:%M')} " + ("green" if rc == 0 else f"FAILED rc {rc}")
+            NIGHT_LAST.write_text(res + chr(10), encoding="utf-8")
+            tell("NIGHTLY full suite on main: " + res + ("" if rc == 0 else chr(10) + chr(10).join(out.strip().splitlines()[-8:])))
+            log("nightly: " + res)
+        except Exception as e: log(f"nightly error: {e!r}")
+        finally: _night["running"] = False
+    threading.Thread(target=work, daemon=True).start()
+
 def main():
     if "--observe-once" in sys.argv:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -218,6 +241,7 @@ def main():
             check_lanes(ts)
             cleanup(R.hc_json("ls", "--all", "--json").get("terminals", []) or ts)
             observer_tick()
+            nightly_tick()
         except Exception as e:
             log(f"error: {e!r}")
         if "--once" in sys.argv: return
