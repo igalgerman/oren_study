@@ -376,6 +376,7 @@ function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save
   const b0={};P.qs.forEach(s=>{if(!(s.k in b0))b0[s.k]=E2.box(save,s.k);});P.teach.forEach(g=>E2.teachCard(g).items.forEach(k=>{b0[k]=0;}));
   const res={};const asked=new Set();
   let i=0,err=0,gems=0,nq=0;O.setScreen('sTal','sea',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq e2');s.appendChild(wrap);
+  if(lv===1&&window.LESSONS)s.appendChild(window.LESSONS.againBtn('eng-abc',back,()=>round(1,back)));
   const title=()=>P.unit?P.unit.he:'חֲזָרָה';
   let cur=null;
   function render(){const st=steps[i];hush();T.hudT(title(),T.progressBar(i,steps.length));wrap.innerHTML='';
@@ -438,7 +439,15 @@ function sing(song,back){hush();O.setScreen('sTal','sea',back);T.hudT('אַנְ�
 
 /* ---------- the acts of the 'eng' building ---------- */
 const ICONS={'eng-voc':()=>T.X.ball,'eng-abc':()=>T.X.abc,'eng-read':()=>T.X.bookS,'eng-talk':()=>'<span style="font-size:34px">🗣️</span>','eng-song':()=>'<span style="font-size:34px">🎵</span>'};
-const ACTS=NAMES.map((id,lv)=>({id,name:ACTN[id],icon:ICONS[id],avail:()=>lv===4?E2.openSongs(O.save).length>0:E2.levelOpen(O.save,lv),run:back=>lv===4?songs(back):round(lv,back)}));
+/* a lesson card before the first letter round (#56): letters, big and small, a letter has a sound */
+const LN=window.LESSONS;
+if(LN)LN.add('eng-abc',{title:'אוֹתִיּוֹת בְּאַנְגְּלִית',bg:'sea',cards:[
+  {art:()=>`<div class="e2let">${L_('A B C')}</div><div class="lcarr">→</div>`,t:'אֵלֶּה אוֹתִיּוֹת בְּאַנְגְּלִית. קוֹרְאִים אוֹתָן מִשְּׂמֹאל לְיָמִין.',after:()=>talk([['en','A, B, C.']])},
+  {art:()=>`<div class="lcrow"><div class="e2let e2one">B</div><div class="e2let e2one">b</div></div>`,t:'לְכָל אוֹת יֵשׁ צוּרָה גְּדוֹלָה וְצוּרָה קְטַנָּה. שְׁתֵּיהֶן אוֹתָהּ אוֹת.',after:()=>talk([['en','B']])},
+  {art:()=>`<div class="lcrow"><div class="e2let e2one">B</div><div class="e2kw">${pic('ball')}<span class="e2word sm"><b>b</b>all</span></div></div>`,t:'לְכָל אוֹת יֵשׁ צְלִיל. הָאוֹת הַזֹּאת נִשְׁמַעַת כְּמוֹ בּ, כְּמוֹ בַּהַתְחָלָה שֶׁל בּוֹל.',after:()=>talk([['en',E2.sayIsFor('B','ball')]])}]});
+const ABC=back=>round(1,back);
+const runLv=(lv,back)=>lv===4?songs(back):lv===1&&LN?LN.first('eng-abc',back,()=>ABC(back)):round(lv,back);
+const ACTS=NAMES.map((id,lv)=>({id,name:ACTN[id],icon:ICONS[id],avail:()=>lv===4?E2.openSongs(O.save).length>0:E2.levelOpen(O.save,lv),run:back=>runLv(lv,back)}));
 function register(){const b=T.BUILD.find(x=>x.id==='eng');if(!b||b._e2)return;b._e2=1;
   b.acts.forEach(a=>{if(T.ACT[a.id]===a)delete T.ACT[a.id];});b.acts=ACTS.slice();ACTS.forEach(a=>{a.b=b;T.ACT[a.id]=a;});
   b.blurb='לוֹמְדִים אַנְגְּלִית צַעַד אַחַר צַעַד. לוֹחֲצִים עַל הָרַמְקוֹל כְּדֵי לִשְׁמֹעַ.';}

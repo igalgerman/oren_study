@@ -357,6 +357,8 @@ def assign_where(chosen, local_busy, remote_busy, local_lanes, remote_lanes):
     return out
 
 ACCEPT = ("Build exactly the issue's `## Acceptance` list (every point, with the tests it names) and nothing in its `Out of scope` (#186).")
+SPEC = ("A 'Batch:' issue (title starts with Batch:) or an issue labelled 'spec': follow docs/agents/skills/implement-spec.md "
+        "(one branch, sub-agents in parallel for independent parts, integrate, test once, one PR).\n")
 
 def remote_worker_prompt(n, lane, bug=False, retry=False):
     """Task for a cloud worker (#133): no herdr, no local paths. It reports through an issue comment (the runner polls GitHub)."""
@@ -366,7 +368,7 @@ def remote_worker_prompt(n, lane, bug=False, retry=False):
             f"(`gh issue view {n} --repo {REPO} --comments`). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
             f"{ACCEPT}\n")
     if bug:
-        base += "This is a BUG: use the mattpocock-skills:diagnosing-bugs skill, then tdd: reproduce it with a failing test, then fix it; say the root cause in the PR body.\n"
+        base += "This is a BUG: follow docs/agents/skills/diagnosing-bugs.md, then tdd: reproduce it with a failing test, then fix it; say the root cause in the PR body.\n"
     if retry:                                    # #137: an earlier cloud session died without a RESULT comment
         base += (f"An earlier cloud session for this issue ended without a RESULT comment: if lane/{n} exists on GitHub, "
                  f"continue from it (`git fetch {REMOTE} lane/{n}` and check it out) instead of starting over.\n")
@@ -839,7 +841,7 @@ def worker_prompt(n, lane, review_text=None, bug=False):
                        f"(`gh issue comment {n} --repo {REPO} --body-file <file>`; write the file under oren2/tests/.tmp/). "
                        "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
     if bug:
-        base += ("This is a BUG: use the mattpocock-skills:diagnosing-bugs skill, then tdd: reproduce it with a failing test (add it to the relevant suite in oren2/tests/), then fix it so the test passes; "
+        base += ("This is a BUG: follow docs/agents/skills/diagnosing-bugs.md, then tdd: reproduce it with a failing test (add it to the relevant suite in oren2/tests/), then fix it so the test passes; "
                  "say the root cause in the PR body.\n")
     steps = ("Steps: 1) implement; 2) python3 build_talents.py (in oren2/, PATH already has python3) and run the build + the suites for what you changed, muted "
              "(see FLOW.md); 3) for each changed screen take screenshots (skip them when no oren2/ file changed) at phone 390x844 and desktop 1366x768 into "
