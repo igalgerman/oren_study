@@ -97,10 +97,10 @@ print("ok park_issue labels")
 
 # ---- end to end: process() picks up the stored step ----
 _names = ("gh", "run", "set_labels", "stat", "set_where", "issue_over", "tell_orchestrator", "find_pr", "branch_of", "agent",
-          "ci_integrate", "remote_review", "remote_fix", "remote_worker", "find_pr_merged", "deploy_main", "sync_main", "remove_worktree", "close_windows")
+          "ci_integrate", "remote_review", "remote_fix", "remote_worker", "remote_task", "find_pr_merged", "deploy_main", "sync_main", "remove_worktree", "close_windows")
 _saved = {k: getattr(r, k) for k in _names}
 def e2e(n, step, verdicts, integ, where="remote", stored="", real_review=False):
-    calls = {"agent": [], "review": 0, "fix": 0, "worker": 0, "labels": [], "comments": []}
+    calls = {"agent": [], "cloud": [], "review": 0, "fix": 0, "worker": 0, "labels": [], "comments": []}
     r.gh = lambda *a, **k: (calls["comments"].append(a[3]) if a[:2] == ("issue", "comment") else None) or (0, "sha1")
     r.run = lambda *a, **k: (0, ""); r.stat = lambda *a, **k: None; r.set_where = lambda *a: None
     r.issue_over = lambda n, since: False; r.tell_orchestrator = lambda t: None
@@ -112,6 +112,7 @@ def e2e(n, step, verdicts, integ, where="remote", stored="", real_review=False):
         r.remote_review = lambda *a, **k: (calls.__setitem__("review", calls["review"] + 1), ("", vs.pop(0)))[1]
     r.remote_fix = lambda *a, **k: calls.__setitem__("fix", calls["fix"] + 1) or "RESULT: DONE"
     r.agent = lambda name, *a, **k: calls["agent"].append(name) or ("", "RESULT: STUCK cannot")
+    r.remote_task = lambda n, text, *a, **k: calls["cloud"].append(text) or "RESULT: STUCK cannot"     # #289: a cloud lane resolves in the cloud
     ig = list(integ)
     r.ci_integrate = lambda *a, **k: ig.pop(0)
     r.find_pr_merged = lambda n: True; r.deploy_main = lambda log: "deployed"; r.sync_main = lambda log=None: ""
@@ -129,7 +130,7 @@ assert res.startswith("DONE") and c["worker"] == 0 and c["fix"] == 1 and c["revi
 res, c = e2e(187, "merge", [], [(0, "")])
 assert res.startswith("DONE") and c["worker"] == c["review"] == c["fix"] == 0, (res, c)
 res, c = e2e(188, "resolve", [], [(2, "CONFLICTS\na.js"), (2, "CONFLICTS\na.js")], stored="VERDICT: PASS")
-assert res.startswith("BLOCKED") and c["worker"] == c["review"] == 0 and c["agent"], (res, c)
+assert res.startswith("BLOCKED") and c["worker"] == c["review"] == 0 and len(c["cloud"]) == 1 and c["agent"] == [], (res, c)   # #289: no local resolve worker
 assert not any("ready-for-human" in a for a, _ in c["labels"]) and any("needs-orchestrator" in a for a, _ in c["labels"]), c["labels"]   # never the owner
 print("ok process resumes at review / fix / merge / resolve; conflicts -> needs-orchestrator")
 
@@ -139,7 +140,7 @@ assert res.startswith("DONE") and c["fix"] == 1 and c["review"] == 1, (res, c)
 res, c = e2e(191, "resolve", ["VERDICT: PASS"], [(0, "")], stored="")
 assert res.startswith("DONE") and c["fix"] == 0 and c["review"] == 1, (res, c)                # no review yet: review first
 res, c = e2e(193, "resolve", [], [(2, "CONFLICTS\na.js"), (0, "")], stored="VERDICT: PASS")
-assert c["review"] == 0 and c["agent"], (res, c)                                              # PASS head: resolve in integrate, no new review
+assert c["review"] == 0 and c["cloud"] and not c["agent"], (res, c)                              # PASS head: resolve in integrate (#289: in the cloud), no new review
 print("ok resolve-resume reviews a head without a PASS before merging")
 
 # #322: the cloud reviewer never starts (3 tries) -> blocked + needs-orchestrator with the real error, no local reviewer, PR kept

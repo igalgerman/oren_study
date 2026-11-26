@@ -217,7 +217,7 @@ def main():
     try:                                              # #27: blocked = double beep, done = soft chime (herdr [ui.sound])
         if sounds.apply(): print("herdr sounds set:", sounds.config_path()); R.hc("server", "reload-config", timeout=30)
     except Exception as e: print("herdr sounds not set:", e)
-    def terminals(): return R.hc_json("ls", "--all", "--json").get("terminals", [])
+    def terminals(): return R.with_lanes(R.hc_json("ls", "--all", "--json").get("terminals", []))   # #289: + the poller's cloud lanes
     def herdr_up(): return R.hc("ls", "--json", timeout=30)[0] == 0 and bool(spaces(R))
     def start_herdr():
         try: subprocess.Popen([R.HERDR_APP])

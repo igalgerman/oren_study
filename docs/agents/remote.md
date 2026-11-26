@@ -79,3 +79,14 @@ qwin does not send the answer itself for these issues (no double send); a cloud 
   every `desk_probe_hours` (12) a short `PING` goes to it (`remote.send`); no `ok` from the send = ended -> a new session, links updated.
   A refused start is retried after 30 min. State: `.runs/desks_state.json`; panel/dashboard line: `.runs/desks.json` (`cloud desks: inbox ok · ask down`).
 - Subscription only (`claude --cloud`, `claude -p --cloud`): no paid API.
+
+## One poller for all cloud lanes, cloud resolve (#289)
+- Cloud picks are not started as one `run-<n>` process each. The pass queues them (`.runs/lanes/<n>.json`) and keeps ONE herdr
+  window `lanes` (`runner.py --lanes`, `tools/runner/lanes.py`) live: it runs each cloud lane's flow in a thread, all of them poll
+  GitHub on the same minute (one ghcache read answers all), and it exits after 5 idle minutes (the next pass starts it again).
+  `.runs/lanes.json` lists its lanes; the watchdog, observer and recover see them as virtual `run-<n>` rows. The #364 safety net
+  stops such a lane with `.runs/<n>/lanes_stop` instead of killing a window.
+- Resolve runs are cloud sessions on the PR's branch: the watchdog's #262 backstop (`watchdog.resolve_start`, no wait; a round
+  counts as running for `conflicts.RESOLVE_WAIT_MIN` = 40 min while the head does not move) and the resolve / red-CI fix inside a
+  cloud lane's flow (`runner.remote_task`). Local `run-<n>` lanes (`local_lanes`) keep their local worker.
+- The orchestrator's reviews and fixes: `runner.py <n> --cloud-review` / `runner.py <n> --cloud-fix="<points>"` (ORCHESTRATOR.md).

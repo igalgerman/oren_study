@@ -34,9 +34,11 @@ recover_issue = 138              # #140: recover reports what it did in one comm
 # acting observer (observer.py, rules only), run by the watchdog every N minutes
 observer_minutes = 10   # 0 = off
 ai_observer_minutes = 60   # #203: AI observer (ai_observer.py, headless Sonnet, read-only), findings to the orchestrator; 0 = off
+ai_observer_where = "cloud"     # #289: "cloud" = an hourly cloud scheduled task posts on the ai-observer issue, the watchdog relays it (no claude on the PC); "local" = headless run here
 status_minutes = 10             # #306: cloud desks (desks.py): pinned links + live status every N min; keep-alive of the two cloud sessions; 0 = off
 desk_probe_hours = 12           # #306: a PING to each cloud desk this often; no answer -> a new session
 retro_hour = 23                 # #219: nightly retro + handoff (nightly.py, headless Sonnet, read-only) at this local hour; 0 = off
+retro_where = "cloud"           # #289: "cloud" = a nightly cloud scheduled task opens 'Daily retro <date>'; the watchdog only writes the handoffs; "local" = headless run here
 inspector_handoff = "C:/work/Oren_study/INSPECTOR_HANDOFF.md"   # #219: the nightly run refreshes its UPDATE section
 pregen = false   # #325: voice pregen runs in GitHub Actions after each deploy (deploy_in_ci); the PC never starts it
 deploy_in_ci = true             # #192: deploy + voice pregen run in GitHub Actions (.github/workflows/deploy.yml); false = the runner deploys from the PC with .env

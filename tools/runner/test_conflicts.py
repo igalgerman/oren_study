@@ -77,6 +77,7 @@ ts = [{"name": "run-221", "state": "live"}, {"name": "resolve-238", "state": "li
 assert C.busy(ts) == {221, 238, 240}, C.busy(ts)
 print("ok busy")
 
+T0 = 1_000_000
 # tick with fakes: starts, escalates with needs-orchestrator (never ready-for-human), writes the dashboard count, keeps state on disk
 calls = []
 def gh(*a):
@@ -86,10 +87,12 @@ def gh(*a):
 started, told = [], []
 path = Path(os.environ["RUNNER_RUNS"]) / "conflicts.json"
 PRS = [pr(10, "lane/221", auto=True), pr(20, "lane/300")]
-C.tick(set(), lambda nums: set(), gh=gh, start=lambda a: started.append((a["n"], a["pr"], a["round"])) or True, say=told.append, path=path)
+C.tick(set(), lambda nums: set(), gh=gh, start=lambda a: started.append((a["n"], a["pr"], a["round"])) or True, say=told.append, path=path, now=T0)
 assert started == [(221, 10, 1)], started
+C.tick(set(), lambda nums: set(), gh=gh, start=lambda a: started.append((a["n"], a["pr"], a["round"])) or True, say=told.append, path=path, now=T0 + 60)
+assert started == [(221, 10, 1)], started                                     # #289: round 1 (cloud) still running
 assert json.loads((path.parent / "pr_conflicts.json").read_text()) == [10, 20]       # dashboard: every open PR with conflicts
-for _ in range(2): C.tick(set(), lambda nums: set(), gh=gh, start=lambda a: started.append((a["n"], a["pr"], a["round"])) or True, say=told.append, path=path)
+for k in (1, 2): C.tick(set(), lambda nums: set(), gh=gh, start=lambda a: started.append((a["n"], a["pr"], a["round"])) or True, say=told.append, path=path, now=T0 + k * (C.RESOLVE_WAIT_MIN + 1) * 60)
 assert started == [(221, 10, 1), (221, 10, 2)], started
 edits = [c for c in calls if c[:2] == ("issue", "edit")]
 assert edits and "needs-orchestrator" in edits[0] and "blocked" in edits[0] and "ready-for-human" not in " ".join(edits[0]), edits
@@ -109,15 +112,30 @@ assert "PRs with conflicts: 2" in dashboard.conflicts_line([10, 20]) and dashboa
 print("ok dashboard")
 print("ALL OK")
 
-# the watchdog starts the run as terminal resolve-<n>: runner.py <n> --resolve-pr --round=<k>
+# #289: the resolve run is a CLOUD session on the PR branch (no local worker): the watchdog launches it without waiting
 import watchdog as W
-cmd = W.resolve_cmd({"n": 221, "pr": 10, "round": 2, "branch": "lane/221"})
-assert "--name" in cmd and cmd[cmd.index("--name") + 1] == "resolve-221" and cmd[-4:] == ["221", "--resolve-pr", "--round=2", "--term=resolve-221"], cmd
-assert W.FINISHED_RE.match("resolve-221")          # a finished resolve terminal is removed like the others
-print("ok watchdog command")
+calls = []
+ok = W.resolve_start({"n": 221, "pr": 10, "round": 2, "branch": "claude/x-221"}, launch=lambda n, task, cwd, name=None: calls.append((n, task, name)) or {"ok": True})
+assert ok and calls[0][0] == 221 and calls[0][2] == "resolve-221", calls
+task = calls[0][1]
+assert "claude/x-221" in task and "merge" in task and "RESULT: DONE" in task and "#221" in task and "never force-push" in task.lower(), task
+assert "C:/" not in task and "worktree" not in task.lower(), task          # a cloud session has no PC paths
+assert not W.resolve_start({"n": 5, "pr": 1, "round": 1, "branch": "lane/5"}, launch=lambda *a, **k: {"ok": False, "error": "403"})
+assert not hasattr(W, "resolve_cmd")                                       # no local `runner.py --resolve-pr` window any more
+assert W.FINISHED_RE.match("resolve-221")          # the short-lived launch terminal is removed like the others
+print("ok watchdog cloud resolve")
+
+# #289: a cloud resolve round has no live window to wait on: the round counts as running for RESOLVE_WAIT_MIN (same head)
+st = {}
+T0 = 1_000_000
+assert [a["round"] for a in C.decide([pr(10, "lane/221", auto=True)], set(), set(), st, now=T0)] == [1] and st["10"]["at"] == T0
+assert C.decide([pr(10, "lane/221", auto=True)], set(), set(), st, now=T0 + 10 * 60) == []            # the session is still working
+a2 = C.decide([pr(10, "lane/221", auto=True)], set(), set(), st, now=T0 + (C.RESOLVE_WAIT_MIN + 1) * 60)
+assert [(a["do"], a["round"]) for a in a2] == [("start", 2)], a2                                      # still dirty, same head -> round 2
+print("ok cloud round wait")
 
 # two failed rounds inside the runner's own flow also go to the orchestrator, never to the owner (owner rule)
 import inspect, runner as R
 assert "ready-for-human" not in inspect.getsource(R.process), "process() must not park conflicts for the owner"
-assert "--resolve-pr" in inspect.getsource(R.main) and "resolve_prompt" in inspect.getsource(R.resolve_pr)
+assert "--resolve-pr" in inspect.getsource(R.main) and "remote_resolve_prompt" in inspect.getsource(R.resolve_pr)
 print("ok never ready-for-human")

@@ -1343,6 +1343,68 @@ assert [c["number"] for c in r.select([_b(910, ["later", "pack"]), _dep], 4)] ==
 assert [c["number"] for c in r.select([_b(910, ["pack"]), _dep], 4)] == []
 print("ok later blocker counts as done")
 
+# ---------- #289: no worker / resolve Claude on the PC for cloud lanes ----------
+# the resolve/CI-fix round inside a cloud lane's flow is a cloud session too: start + wait for its RESULT on the issue
+_st = []
+_done = lambda: {"state": "done", "line": "RESULT: DONE https://p"}
+assert r.remote_task(7, "resolve it", lambda n, t, cwd: _st.append((n, t)) or {"ok": True}, _done, lambda s: None, lambda: 0) == "RESULT: DONE https://p"
+assert _st == [(7, "resolve it")]
+assert r.remote_task(7, "x", lambda n, t, cwd: {"ok": False, "error": "403"}, _done, lambda s: None, lambda: 0).startswith("RESULT: STUCK cloud start failed: 403")
+_t = iter(range(0, 10**6, 3600))
+assert r.remote_task(7, "x", lambda n, t, cwd: {"ok": True}, lambda: {"state": "working"}, lambda s: None, lambda: next(_t), timeout_s=3600).startswith("RESULT: STUCK")
+try:
+    r.remote_task(7, "x", lambda n, t, cwd: {"ok": True}, lambda: {"state": "working"}, lambda s: None, lambda: 0, ended=lambda: True); raise AssertionError("no Ended")
+except r.Ended: pass
+_p = r.remote_resolve_prompt(7, ["a.js"], "claude/x")
+assert "claude/x" in _p and "a.js" in _p and "RESULT: DONE" in _p and "C:/" not in _p and "worktree" not in _p
+assert "gh run view" in r.remote_resolve_prompt(7, ["tests"], "lane/7", ci=True)
+import inspect as _insp
+_psrc = _insp.getsource(r.process_locked)
+assert "remote_task(" in _psrc and "remote_resolve_prompt(" in _psrc, "a cloud lane's resolve must not start a local agent"
+print("ok #289 cloud resolve in the flow")
+
+# the pass hands cloud picks to the ONE poller (queue + one `lanes` window), local picks still get their own run-<n>
+import lanes as _L
+for _i in _L.queued(r.RUNS): _L.take(r.RUNS, _i["number"])     # earlier start_chosen tests queued their cloud picks too
+_spawned, _lanes_started = [], []
+_res = r.start_chosen([{"number": 501, "labels": ["pack"]}, {"number": 502, "labels": ["pack"]}, {"number": 503, "labels": ["pack"]}],
+                      {501: "remote", 502: "remote", 503: "local"}, spawn_=lambda a: _spawned.append(a) or (0, ""), terms_=lambda: [],
+                      lanes_=lambda: _lanes_started.append(1) or (0, ""))
+assert _res == [(501, "started"), (502, "started"), (503, "started")], _res
+assert _spawned == [["503"]], _spawned                       # no run-501 / run-502 process
+assert _lanes_started == [1] and [i["number"] for i in _L.queued(r.RUNS)] == [501, 502], (_lanes_started, _L.queued(r.RUNS))
+for _k in (501, 502): _L.take(r.RUNS, _k)
+# the lanes window cannot start (not name_taken = not already live): the picks go back to the queue owner (ready again)
+_res = r.start_chosen([{"number": 504, "labels": ["pack"]}], {504: "remote"}, spawn_=lambda a: (0, ""), terms_=lambda: [], lanes_=lambda: (1, "hc down"))
+assert _res == [(504, "not started (hc run failed)")] and _L.queued(r.RUNS) == [], _res
+_res = r.start_chosen([{"number": 505, "labels": ["pack"]}], {505: "remote"}, spawn_=lambda a: (0, ""), terms_=lambda: [], lanes_=lambda: (1, "name_taken"))
+assert _res == [(505, "started")] and [i["number"] for i in _L.queued(r.RUNS)] == [505]   # already live: it picks the queue up
+_L.take(r.RUNS, 505)
+# a stop from the watchdog (#364 safety net on a virtual run-<n>) ends that lane's wait loops
+_L.stop(r.RUNS, 506); assert r.lane_stopped(506); _L.clear_stop(r.RUNS, 506); assert not r.lane_stopped(506)
+# runner.py --lanes serves the queue; the virtual run-<n> rows reach the pass's live_terminals (no double start)
+assert "--lanes" in _insp.getsource(r.main)
+_L.write_state(r.RUNS, os.getpid(), {507})
+assert any(t["name"] == "run-507" for t in r.with_lanes([]))
+(r.RUNS / "lanes.json").unlink()
+_naps, _real = [], r.time.sleep
+r.time.sleep = _naps.append
+try: r.poll_sleep(300); r.poll_sleep(60)
+finally: r.time.sleep = _real
+assert _naps[0] == 300 and 0 < _naps[1] <= 60, _naps          # a back-off keeps its length; the poll aligns to the minute
+print("ok #289 one poller for cloud lanes")
+
+# the orchestrator's reviews / fixes go to cloud sessions (ORCHESTRATOR.md): runner.py <n> --cloud-review | --cloud-fix=<points>
+_calls = []
+assert r.cloud_job(7, "review", "", pr_for=lambda n: (70, "claude/x"), start=lambda n, t, cwd: _calls.append(t) or {"ok": True, "url": "https://claude.ai/code/session_1"}) == "started https://claude.ai/code/session_1"
+assert "VERDICT" in _calls[-1] and "70" in _calls[-1]
+assert r.cloud_job(7, "fix", "FIX a; b", pr_for=lambda n: (70, "claude/x"), start=lambda n, t, cwd: _calls.append(t) or {"ok": True, "url": "u"}) == "started u"
+assert "FIX a; b" in _calls[-1] and "claude/x" in _calls[-1]
+assert r.cloud_job(7, "review", "", pr_for=lambda n: (None, None), start=None) == "no open PR for #7"
+_orch = (r.ROOT / "ORCHESTRATOR.md").read_text(encoding="utf-8")
+assert "--cloud-review" in _orch and "--cloud-fix" in _orch and "read-only lookups" in _orch
+print("ok #289 orchestrator reviews/fixes in the cloud")
+
 # 26 Nov (#26): an ended issue's worker/reviewer tabs are settled with herdr-app tab.settle (once per tab), running issues are left alone
 _saved = {k: getattr(r, k) for k in ("hc", "hc_json", "run", "USE_HERDR", "HERDR_APP")}
 try:
