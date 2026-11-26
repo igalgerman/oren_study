@@ -6,7 +6,7 @@ not again within 6 h), and posts a finding for the OWNER in the 'Questions for t
 The AI observer never edits, merges, labels or comments by itself.
 #289: `ai_observer_where = "cloud"` (default): the check runs as an hourly CLOUD scheduled task (docs/agents/cloud-tasks.md, the
 subscription, no claude on the PC). It posts its lines as a comment on the open issue labelled `ai-observer` ('AI observer (cloud)');
-the watchdog only relays the newest unseen comment through the same path (.last file, 6 h repeat filter, orchestrator, #193).
+the watchdog only relays the newest comment (gh lastComment) when unseen, through the same path (.last file, 6 h repeat filter, orchestrator, #193).
 Silent for SILENT_H h -> one note to the orchestrator. "local" = the old headless run on the PC.
 Usage: python tools/runner/ai_observer.py   (one local run now, prints the findings)
 """
@@ -159,11 +159,12 @@ def relay(tell, log, now, gh=None):
     st = load_state()
     if now - st.get("relay_at", 0) < RELAY_MIN * 60: return None
     st["relay_at"] = now; save_state(st)
-    rc, out = (gh or R.gh)("issue", "list", "--state", "open", "--label", CLOUD_LABEL, "--limit", "5", "--json", "number,title,comments")
+    # review of #485: `--json comments` is GraphQL comments(first: 100) (an hourly task fills that in ~4 days); lastComment = the newest one
+    rc, out = (gh or R.gh)("issue", "list", "--state", "open", "--label", CLOUD_LABEL, "--limit", "5", "--json", "number,title,lastComment")
     try: issues = json.loads(out) if rc == 0 else None
     except ValueError: issues = None
     if issues is None: return None
-    comments = sorted((c for i in issues for c in i.get("comments") or []), key=lambda c: c.get("createdAt", ""))
+    comments = sorted((i["lastComment"] for i in issues if i.get("lastComment")), key=lambda c: c.get("createdAt", ""))
     readable = [c for c in comments if parse(c.get("body")) is not None]
     last = readable[-1] if readable else None
     st = load_state()

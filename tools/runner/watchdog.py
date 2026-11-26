@@ -8,9 +8,9 @@ Every minute it checks, deterministically:
   3b. a window waiting for the owner longer than park_minutes (the runner parks it itself; this is the fallback): issue gets blocked + ready-for-human, lane freed
   3c. owner lane: no intake window open + a needs-triage/needs-info issue -> opens ONE `intake-<n>` (oldest issue), `NEEDS YOU: intake-<n> is open`
   5. every observer_minutes: observer.py applies deterministic rules (make_ready, rerun, fix Blocked-by lines) within limits
-  5b. every ai_observer_minutes (#203): ai_observer.py, ONE read-only headless Sonnet check in a thread; new findings -> the orchestrator
+  5b. every ai_observer_minutes (#203): ai_observer.py, ONE read-only headless Sonnet check in a thread, or the cloud task relay (#289); new findings -> the orchestrator
   5c. every tick (#262): an open PR that conflicts with main and has auto-merge or a review PASS -> a cloud resolve session (#289, conflicts.py)
-  5c. #219 nightly.py: once a day at retro_hour ONE read-only headless Sonnet retro + handoff (issue 'Daily retro <date>', handoff PR);
+  5c. #219 nightly.py: once a day at retro_hour ONE read-only headless Sonnet retro, or the cloud task relay (#289), + handoff (issue 'Daily retro <date>', handoff PR);
       batch trigger: tells the inbox to run /batch once a day, and early when >= 8 ready P2/P3 issues share a lane
   5d. #282 parked.py, once an hour: closed batch -> its open members get ready-for-agent back; a polish list at 5 notes or 24 h -> ready-for-agent P3;
       later/manual 2 h+ with no owner question, run, PR or future date -> 'parked without owner question: #n' to the orchestrator; night report at retro_hour
