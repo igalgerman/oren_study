@@ -3,6 +3,7 @@
 const L = require('./lib');
 const fs = require('fs'), path = require('path');
 const src = fs.readFileSync(path.join(L.ROOT, 'index.html'), 'utf8');
+const nm = src.match(/function numWords[\s\S]*?\nwindow.__numWords=numWords;/);
 const m = src.match(/function fullSpell\(str\)\{[\s\S]*?\nwindow.__fullSpell=fullSpell;/);
 const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + n + (i ? ' — ' + i : ''));
 const W = [
@@ -19,7 +20,7 @@ const W = [
   ['בְּיַחַד','ביחד'],['יְרוּשָׁלַיִם','ירושלים'],['לִוְיָתָן','לווייתן'],['עֲלִיָּה','עלייה'],['לְיַד','ליד'],['הַבְּרֵכָה','הבריכה'],['הַבַּיְתָה','הביתה'],['בַּלַּיְלָה','בלילה'],
   ['הַלִּוְיָתָן','הלווייתן'],['בַּבְּרֵכָה','בבריכה'],['וְשִׁלְּמָה','ושילמה']];
 if (!m) ok('fullSpell found in index.html', false); else {
-  const fullSpell = new Function(m[0].replace('window.__fullSpell=fullSpell;', '') + ';return fullSpell;')();
+  const fullSpell = new Function(nm[0].replace('window.__numWords=numWords;', '') + m[0].replace('window.__fullSpell=fullSpell;', '') + ';return fullSpell;')();
   for (const [w, want] of W) { const got = fullSpell(w); ok('spell ' + want, got === want, got); }
   ok('sentence: words, prefixes and punctuation', fullSpell('אִמָּא, הַשָּׁמַיִם כְּחֻלִּים!') === 'אמא, השמיים כחולים!', fullSpell('אִמָּא, הַשָּׁמַיִם כְּחֻלִּים!'));
   ok('text without nikud is unchanged', fullSpell('ברכה שלום') === 'ברכה שלום');
