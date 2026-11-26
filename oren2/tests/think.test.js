@@ -179,6 +179,23 @@ ok(!bankBad.length, `word banks consistent: ${B.ANA.length} analogies, ${B.SEN.l
       if (diff.length === 1 && diff[0] === 'z' && Math.abs((A.z ?? 1) - (Bq.z ?? 1)) < 2 && probs.length < 3) probs.push(`lv${lv} ${tk(q.opts[a])} ~ ${tk(q.opts[b2])}`); } }
   ok(!probs.length, 'analogy options: a size-only difference is always small vs big ' + probs.join(' | ')); }
 
+/* ---------- 7c. content review fixes (#210) ---------- */
+{ const hard = ['קָשֶׁה', 'רַךְ'], light = ['קַל', 'כָּבֵד']; let oppBad = [], addBad = [], ruleBad = [], vavBad = [];
+  const kOf = w => (B.OPP.find(x => x[0] === w || x[1] === w) || [])[2];
+  if (kOf('קַל') !== kOf('קָשֶׁה')) oppBad.push('kinds ' + kOf('קַל') + ' ' + kOf('קָשֶׁה'));
+  for (let i = 0; i < N * 4; i++) { const q = C.GEN.rel(2 + (i % 2)); if (!/^op/.test(q.key)) continue; const w = q.key.slice(2), vs = q.opts.map(o => o.v);
+    if ((hard.includes(w) && vs.some(v => light.includes(v))) || (light.includes(w) && vs.some(v => hard.includes(v)))) oppBad.push(w + ': ' + vs.join(',')); }
+  for (let lv = 2; lv <= 5; lv++) for (let i = 0; i < N; i++) { const q = C.GEN.mth(lv); if (!/^ad/.test(q.key)) continue; const m = /הָיוּ (\d+)/.exec(q.html); if (!m || +m[1] < 2) addBad.push(C.strip(q.html)); }
+  for (let lv = 2; lv <= 5; lv++) for (let i = 0; i < N; i++) { const q = C.GEN.ana(lv); if (q.key[0] !== 't') continue; const m = /הִשְׁתַּנ\S* (.*)\. /.exec(q.rule); if (!m) continue;
+    const two = / וְ/.test(m[1]), fem = /^(הַצּוּרָה|הַכַּמּוּת)$/.test(m[1]), verb = /(הִשְׁתַּנ\S*)/.exec(q.rule)[1];
+    if (verb !== (two ? 'הִשְׁתַּנּוּ' : fem ? 'הִשְׁתַּנְּתָה' : 'הִשְׁתַּנָּה')) ruleBad.push(q.rule); }
+  for (let i = 0; i < N * 4; i++) { const q = C.GEN.rel(4 + (i % 2)); if (!/^sy/.test(q.key)) continue; const m = / (וְ|וּ)(.)(.)/.exec(q.rule);
+    const want = /[במפ]/.test(m[2]) || /ְ/.test(/^[֑-ׇ]*/.exec(q.rule.slice(m.index + 4))[0]) ? 'וּ' : 'וְ'; if (m[1] !== want) vavBad.push(q.rule); }
+  ok(!oppBad.length, 'opposites: קַל/כָּבֵד are never offered against קָשֶׁה/רַךְ ' + [...new Set(oppBad)].slice(0, 3).join(' | '));
+  ok(!addBad.length, 'math story "add": he starts with at least 2 (no "הָיוּ 1") ' + addBad.slice(0, 2).join(' | '));
+  ok(!ruleBad.length, 'shape analogy rule: the verb agrees (הִשְׁתַּנָּה / הִשְׁתַּנְּתָה / הִשְׁתַּנּוּ) ' + [...new Set(ruleBad)].slice(0, 2).join(' | '));
+  ok(!vavBad.length, 'close meaning rule: "and" is וּ before shva or ב/מ/פ ' + [...new Set(vavBad)].slice(0, 2).join(' | ')); }
+
 /* ---------- 8. the compare question in the page: the sign the kid sees is the sign the button holds (#208) ---------- */
 (async () => {
   const L = require('./lib'); const { chromium } = require('playwright');
