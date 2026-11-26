@@ -161,6 +161,30 @@ const shot = async (page, name) => { if (!process.env.SHOTS) return; fs.mkdirSyn
   if (tbDay.nextDay) { await page.click('.hlp-tb .hlp-aloud'); await page.waitForTimeout(1700); }
   await page.evaluate(() => { HELP.cfg.teachP = 0; });
 
+  // #356: every help popup can be closed right away (✕), and the phone back gesture closes just the popup
+  const xOn = () => page.evaluate(() => { const x = document.querySelector('#ov:not([hidden]) .hlpc > .tpx'); if (!x) return false; const r = x.getBoundingClientRect(); const t = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return t === x; });
+  await startMake10(); await page.evaluate(() => { window.__presented = null; HELP.wrong(); HELP.wrong(); HELP.wrong(); HELP.wrong(); });
+  ok(await page.evaluate(() => !!document.querySelector('#ov:not([hidden]) .hlp-ex') && !document.querySelector('.hlp-ex .hlp-go')) && await xOn(), '#356 worked example: ✕ to close from the first moment');
+  await page.click('.hlp-ex > .tpx');
+  ok(await page.evaluate(() => document.querySelector('#ov').hidden && !!window.__presented && !document.querySelector('#sPlay').hidden), '#356 ✕ on the example → back to the game, a similar question to try');
+  await page.evaluate(() => { window.__done = null; HELP.start(window.__presented, window.__ctx); HELP.wrong(); HELP.wrong(); });
+  ok(await page.evaluate(() => !!document.querySelector('#ov:not([hidden]) .hlp-par-call')) && await xOn(), '#356 call-a-parent card: ✕ to close');
+  await page.click('.hlp-par-call > .tpx');
+  ok(await page.evaluate(() => document.querySelector('#ov').hidden && !HELP.state && window.__done !== 'parents' && !document.querySelector('#sPlay').hidden), '#356 ✕ on the parent card → back to the same question');
+  const tbN = await page.evaluate(() => { const t = new Date(); t.setDate(t.getDate() + 3); window.__tday = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); HELP._today = () => window.__tday;
+    HELP.cfg.teachP = 1; HELP.start({ k: 'bin', l: 7, op: '+', r: 6, res: 13, miss: 'res', ans: 13 }, window.__ctx); HELP.wrong(); HELP.wrong(); HELP.right(); return HELP.teachLog().length; });
+  await page.waitForSelector('#ov:not([hidden]) .hlp-tb', { timeout: 5000 }).catch(() => {});
+  ok(await xOn(), '#356 teach-back: ✕ to close');
+  await page.click('.hlp-tb > .tpx').catch(() => {});
+  ok(await page.evaluate(n => document.querySelector('#ov').hidden && HELP.teachLog().length === n, tbN), '#356 ✕ on teach-back closes it, nothing logged');
+  await page.evaluate(() => { HELP.cfg.teachP = 0; HELP._today = null; });
+  await startMake10(); await page.evaluate(() => { HELP.wrong(); HELP.wrong(); HELP.wrong(); HELP.wrong(); });
+  await page.keyboard.press('Shift'); await page.goBack().catch(() => {}); await page.waitForTimeout(300);
+  ok(await page.evaluate(() => document.querySelector('#ov').hidden && !document.querySelector('#sPlay').hidden), '#356 phone back with the example open closes just the popup');
+  if (process.env.SHOTDIR356) { await page.evaluate(() => { HELP.start({ k: 'bin', l: 9, op: '+', r: 5, res: 14, miss: 'res', ans: 14 }, window.__ctx); HELP.wrong(); HELP.wrong(); HELP.wrong(); HELP.wrong(); });
+    await page.waitForTimeout(800); fs.mkdirSync(process.env.SHOTDIR356, { recursive: true }); await page.screenshot({ path: path.join(process.env.SHOTDIR356, '2-help-example-' + L.variant + '.png') }); await page.click('.hlp-ex > .tpx'); }
+  await page.evaluate(() => HELP.stop());
+
   // spaced return + parent list
   const sp = await page.evaluate(() => { const list = HELP.stuckList(); const it = list.find(x => x.example === '8 + 5 = ?');
     const sameDay = HELP.due(5).length; const t = new Date(); t.setDate(t.getDate() + 1); const tom = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');

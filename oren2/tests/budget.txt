@@ -7,5 +7,6 @@ explore2-phone 90         # same file on the phone viewport: ~70 s
 edge-cases 90             # real-speed level transitions and timers: ~68 s
 help-desktop 90           # every generated question's explainer: ~68 s
 help-phone 90             # same file on the phone viewport: ~67 s
+regressions 60            # #356 walks all ~114 activities, taps back on each: ~42 s under load
 playthrough-desktop 300   # FULL=1 only: plays every world level by level
 playthrough-phone 300     # FULL=1 only: same on the phone viewport
