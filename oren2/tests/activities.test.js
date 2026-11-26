@@ -58,15 +58,15 @@ const URL=L.URL;const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   'blk-view':OPENED,
   'blk-free':OPENED,
   'read-build':async()=>{for(let k=0;k<200&&!(await ovOpen());k++){await p.evaluate(()=>{const b=[...document.querySelectorAll('#sTal .chs .chb')].filter(x=>!x.disabled);if(b.length)b[Math.floor(Math.random()*b.length)].click();});await sleep(60);}},
-  'type-lessons':async()=>{await click('#sTal .acts .actc');await sleep(200);const inv=await p.evaluate(()=>{const C=window.TAL.TYPE.CODE;const o={};for(const k in C)o[C[k]]=k;return o;});
+  'type-lessons':async()=>{await click('#sTal .lvgo');await sleep(200);const inv=await p.evaluate(()=>{const C=window.TAL.TYPE.CODE;const o={};for(const k in C)o[C[k]]=k;return o;});
     for(let k=0;k<400&&!(await ovOpen());k++){const ch=await p.evaluate(()=>{const c=document.querySelector('#sTal .tc.cur');return c?c.textContent:null;});if(ch==null){await sleep(100);continue;}const code=ch.trim()===''?'Space':inv[ch];if(!code){console.log('no code for',JSON.stringify(ch));break;}await p.keyboard.press(code);await sleep(20);}},
   'type-rain':async()=>{await sleep(500);await p.evaluate(()=>{window.__rain.blocks.slice().forEach(o=>window.__rain.hit(o.ch));window.__rain.finish();});await sleep(500);},
   'mus-rhythm':async()=>{for(let k=0;k<12&&!(await ovOpen());k++){await click('#sTal .bigbtn');await sleep(30);await p.evaluate(()=>{const on=window.__rhythm.onsets();on.forEach(t=>setTimeout(()=>window.__rhythm.tap(),Math.max(0,t-performance.now())));});await sleep(1500);}},
-  'mus-piano':async()=>{await click('#sTal .acts .actc');await sleep(200);for(let k=0;k<200&&!(await ovOpen());k++){await p.evaluate(()=>{const P=window.__piano;if(P.song&&P.pos<P.song[1].length)P.press(P.song[1][P.pos]);});await sleep(40);}},
+  'mus-piano':async()=>{await click('#sTal .pmode:nth-child(2)');await sleep(200);for(let k=0;k<200&&!(await ovOpen());k++){await p.evaluate(()=>{const P=window.__piano;if(P.song&&P.pos<P.song[1].length)P.press(P.song[1][P.pos]);});await sleep(40);}},
   'sci-plant':async()=>{for(let k=0;k<4;k++){await p.evaluate(()=>{window.__plant.water();window.__plant.next();});await sleep(50);}await sleep(400);await quizLoop();},
   'sci-states':async()=>{await click('#sTal > .bigbtn');await quizLoop();},'sci-day':async()=>{await click('#sTal > .bigbtn');await quizLoop();},
   'sci-circ':async()=>{const bs=await p.$$('#sTal .btnrow button');await bs[0].click();await bs[1].click();await sleep(500);await quizLoop();},
-  'art-draw':async()=>{await p.evaluate(()=>{window.__art.paint(0,2);window.__art.mirror(true);window.__art.paint(17,5);window.__art.fill(100,8);window.__art.save();});},
+  'art-draw':async()=>{await p.evaluate(()=>{window.__art.paint(0,2);window.__art.paint(17,5);window.__art.fill(100,8);window.__art.save();});},
   'art-cbn':async()=>{await p.evaluate(()=>window.__cbn.solve());await sleep(500);},
   'art-mix':async()=>{await p.evaluate(()=>{const b=document.querySelectorAll('#sTal .mixb');b[0].click();b[1].click();});await click('#sTal .btnrow .bigbtn');await quizLoop();},
   'art-sym':async()=>{for(let k=0;k<5;k++){await p.evaluate(()=>window.__sym.solve());await sleep(300);}},
@@ -75,7 +75,7 @@ const URL=L.URL;const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   'mind-jar':async()=>{await p.evaluate(()=>{const b=document.querySelectorAll('#sTal .thb');[0,3,5].forEach(i=>b[i].click());});await click('#sTal .btnrow .bigbtn');},
   'mind-sounds':async()=>{await click('#sTal .ambb');await sleep(300);await click('#sTal .ambb:nth-child(2)');await sleep(300);return 'skip';},
   'mind-scan':async()=>{for(let k=0;k<9&&!(await ovOpen());k++){await click('#sTal .btnrow .bigbtn');await sleep(50);}},
-  'code-maze':async()=>{let ok=0;for(let i=0;i<15;i++){await p.evaluate(()=>{document.querySelector('#ov').hidden=true;window.TAL.ACT['code-maze'].run(()=>{});});await sleep(100);await p.locator('#sTal .lvb').nth(i).click();await sleep(100);
+  'code-maze':async()=>{let ok=0;for(let i=0;i<15;i++){await p.evaluate(()=>{document.querySelector('#ov').hidden=true;window.TAL.ACT['code-maze'].run(()=>{});});await sleep(100);await p.locator('#sTal .lvgo').click();await sleep(100);
       const L=await p.evaluate(()=>({n:window.__code.L.n,opt:window.__code.L.opt,len:window.__code.L.len,rep:window.__code.L.rep}));await p.evaluate(()=>window.__code.solve());for(let k=0;k<150&&!(await ovOpen());k++)await sleep(50);if(await ovOpen())ok++;console.log('  code lvl',i+1,JSON.stringify(L));}
     return 'levels '+ok+'/15 stars '+JSON.stringify(await p.evaluate(()=>window.TAL.S().code));},
   'think-sudoku':async()=>{for(let k=0;k<3;k++){await p.evaluate(()=>window.__sud.solve());await sleep(300);}},
