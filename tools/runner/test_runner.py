@@ -112,6 +112,11 @@ assert [k for k, _ in _al] == ["free", "pr70", "bl5"], _al
 assert _al[0][1] == "2 lane(s) free for 20 min while work is ready" and _al[1][1].startswith("PR #70 has not moved for 90 min"), _al
 assert _al[2][1] == "#5 blocked for 3.0 h (waits for the owner)", _al
 assert [k for k, _ in W.idle_alarms(_iss, [], _now, _now - 5 * 60, 3)] == ["bl5"]   # free only 5 min: no alarm yet
+_cl = [{"n": 7, "state": "working", "last": "2026-11-26T09:00:00Z"}, {"n": 8, "state": "working", "last": "2026-11-26T11:30:00Z"}, {"n": 9, "last": ""}]
+_cn = _c.timegm((2026, 11, 26, 12, 0, 0, 0, 0, 0))
+_ca = W.cloud_stuck_alarms(_cl, _cn, 2)
+assert [k for k, _ in _ca] == ["cl7"] and "#7" in _ca[0][1] and "3.0 h" in _ca[0][1], _ca   # quiet 3 h > 2 h; #8 recent; #9 no data
+assert W.cloud_stuck_alarms(_cl, _cn, 4) == []
 print("ok idle alarm")
 # #123: closed wins over blocked; parked windows go after PARKED_MIN idle, never while waiting on a prompt
 _pk = [{"name": "review-41", "state": "live", "status": "done", "marker": True},
@@ -235,11 +240,18 @@ def _fake_run(cmd, **kw):
     return (0, "injected 1 2" + NL + "website copy written" + NL + "worker 3" + NL + "ok https://x.oren-game.pages.dev" + NL) if "deploy.sh" in " ".join(map(str, cmd)) else (0, "")
 _orig_run, _orig_env = r.run, r.env_file
 r.run, r.env_file = _fake_run, (lambda: {"CLOUDFLARE_API_TOKEN": "t"})
+# #192: deploy runs in GitHub Actions by default: the runner never calls deploy.sh, never starts pregen, never marks deployed.sha
+_dic = r.CFG.get("deploy_in_ci"); r.CFG.pop("deploy_in_ci", None)
+assert r.deploy_text(None).startswith("deploy runs in GitHub Actions") and _calls == []
+assert not r.deploy_text(None).startswith("deployed")          # so process() skips start_pregen and deploy_main skips deployed.sha
+r.CFG["deploy_in_ci"] = False
 r.CFG["pregen"] = False
 assert r.deploy_text(None) == "deployed ok https://x.oren-game.pages.dev (pregen off)" and not any("pregen.js" in " ".join(map(str, c)) for c in _calls)
 r.CFG["pregen"] = True; _calls.clear()
 assert r.deploy_text(None).startswith("deployed ok https://") and not any("pregen.js" in " ".join(map(str, c)) for c in _calls)   # #175: pregen runs later, outside the lock
 r.run, r.env_file = _orig_run, _orig_env; r.CFG["pregen"] = False
+if _dic is None: r.CFG.pop("deploy_in_ci", None)
+else: r.CFG["deploy_in_ci"] = _dic
 print("ok deploy")
 # sync_decision: keep the main checkout up to date with origin/main (#47)
 assert r.sync_decision("main", "main", False, 3) == ("pull", "")
@@ -289,8 +301,11 @@ import tempfile, subprocess, os
 from pathlib import Path as _P
 _t = _P(tempfile.mkdtemp()); _real = _t / "real_modules"; _real.mkdir(); (_real / "keep.txt").write_text("x")
 _wt = _t / "wt-x"; (_wt / "oren2").mkdir(parents=True)
-subprocess.run(["cmd", "/c", "mklink", "/J", str(_wt / "oren2" / "node_modules"), str(_real)], capture_output=True, check=True)
-assert os.path.isjunction(_wt / "oren2" / "node_modules")
+if os.name == "nt":
+    subprocess.run(["cmd", "/c", "mklink", "/J", str(_wt / "oren2" / "node_modules"), str(_real)], capture_output=True, check=True)
+    assert os.path.isjunction(_wt / "oren2" / "node_modules")
+else:                                                # CI on Linux (#152): the same case with a symlink
+    os.symlink(_real, _wt / "oren2" / "node_modules")
 r.remove_worktree(_wt)
 assert not _wt.exists() and (_real / "keep.txt").exists()
 import shutil; shutil.rmtree(_t, ignore_errors=True)
@@ -436,6 +451,14 @@ _src = (r.HERE / "runner.py").read_text(encoding="utf-8")
 _blk = _src.split('with FileLock("integrate", wait=True, note=f"#{n} deploy"):\n            stat(n, lane, "merged")', 1)[1].split("\n        m = sync_main", 1)[0]
 assert "pregen.js" not in _src.split("def deploy_text", 1)[1].split("def pregen_cmd", 1)[0] and "start_pregen(log)" in _blk
 print("ok pregen outside the merge lock")
+# #166: merge straight on green; update the branch only on a real conflict; lock only around `gh pr merge`
+assert r.needs_branch_update("CONFLICTING") and not r.needs_branch_update("MERGEABLE") and not r.needs_branch_update("UNKNOWN") and not r.needs_branch_update("")
+_src = (r.HERE / "runner.py").read_text(encoding="utf-8")
+_ci = _src.split("def ci_integrate", 1)[1].split("def find_pr_merged", 1)[0]
+assert "needs_branch_update" in _ci and 'FileLock("integrate"' in _ci.split("def merge():", 1)[1]
+_ib = _src.split("def integrate():", 1)[1].split("rounds = [0]", 1)[0]
+assert _ib.index("kind[\"ci\"] = rc == 6") < _ib.index("FileLock(\"integrate\"")   # CI path takes no lock; only the fallback does
+print("ok #166 merge on green, lock only around gh pr merge")
 # #181 merge lock watch: the lock says who/why/since; dead holders cleared; held > 20 min -> alarm
 r.RUNS.mkdir(exist_ok=True)
 _lk = r.FileLock("test181", note="#5 deploy"); _lk.path.unlink(missing_ok=True)
@@ -453,6 +476,28 @@ _a = W.lock_alarm((7, "#122 deploy", _t - 31 * 60), True, _t, [167, 176])
 assert _a[0] == "alarm" and "31 min" in _a[1] and "#122 deploy" in _a[1] and "#167, #176" in _a[1], _a
 assert W.lock_alarm((7, "#1 CI merge", _t - 60), False, _t)[0] == "clear"
 print("ok merge lock watch")
+
+# #149: four review colours. GREEN pass / BLUE pass-with-notes / PURPLE owner question / RED fix
+assert r.parse_verdict("VERDICT: PASS") == ("pass", "", "")
+assert r.parse_verdict("VERDICT: PASS-NOTES rename x; add test y") == ("notes", "rename x; add test y", "")
+assert r.parse_verdict("VERDICT: FIX button crashes: no test") == ("fix", "button crashes: no test", "")
+assert r.parse_verdict("VERDICT: PURPLE should Oren hear a or b? merge-safe") == ("purple", "should Oren hear a or b?", "merge-safe")
+assert r.parse_verdict("VERDICT: PURPLE should it speak? hold") == ("purple", "should it speak?", "hold")
+assert r.parse_verdict("VERDICT: PURPLE should it speak?") == ("purple", "should it speak?", "hold")   # no flag: safe default = hold
+assert r.parse_verdict("") == ("none", "", "") and r.parse_verdict("VERDICT: MAYBE") == ("none", "", "")
+assert r.find_marker("● VERDICT: PURPLE a or b? hold\n", "VERDICT:") == "VERDICT: PURPLE a or b? hold"   # ' or ' in a question is fine for VERDICT
+assert r.find_marker("❯ end with `VERDICT: PASS`, `VERDICT: PASS-NOTES <list>` ...\n", "VERDICT:") == ""
+assert r.polish_lines("a; b ;", 5) == ["- a (PR #5)", "- b (PR #5)"]
+assert r.polish_title("pack") == "Polish backlog (pack)"
+# round 2 checks only the round-1 RED points; FIX only for RED reasons
+_p = r.review_prompt(7, 9, round1="button crashes")
+assert "button crashes" in _p and "ONLY" in _p
+assert "VERDICT: PASS-NOTES" in r.review_prompt(7, 9) and "VERDICT: PURPLE" in r.review_prompt(7, 9) and "RED" in r.review_prompt(7, 9)
+assert r.FIX_ROUNDS == 2          # one more fix round before blocking (2 fixes, 3 reviews)
+print("ok #149")
+# #149: no screenshots when no oren2/ file changed
+assert "no oren2/ file changed" in r.worker_prompt(7, "pack", "") and "no oren2/ file changed" in r.review_prompt(7, 9)
+print("ok skip screenshots")
 # Code Mode trial: every 3rd issue number; 0 = off
 _cm = r.CFG.get("code_mode_every")
 r.CFG["code_mode_every"] = 3; assert [n for n in range(1, 10) if r.code_mode(n)] == [3, 6, 9]
@@ -460,3 +505,8 @@ r.CFG["code_mode_every"] = 0; assert not any(r.code_mode(n) for n in range(1, 10
 r.CFG["code_mode_every"] = _cm
 assert '"CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1"] if code_mode(n)' in (r.HERE / "runner.py").read_text(encoding="utf-8")
 print("ok code mode trial")
+# batch skill: workers may use sub-agents; the worker prompt knows batch issues
+assert "Agent" in r.WORKER_TOOLS
+assert "Batch:" in r.worker_prompt(7, "core") and "sub-agents" in r.worker_prompt(7, "core")
+assert (r.HERE.parent.parent / ".claude" / "skills" / "batch" / "SKILL.md").exists()
+print("ok batch skill")

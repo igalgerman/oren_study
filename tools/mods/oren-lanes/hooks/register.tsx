@@ -3,9 +3,9 @@ import type { Register } from 'claude-code'
 
 import type { OrenLanesData } from '../types/index'
 import {
-  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, flowRows, laneReasons, view, statsLines, parseMaxCore,
+  finishedRuns, groupIssues, isLive, parseWindows, statusLine, trunc, usageText, flowRows, laneReasons, view, statsLines, parseMaxCore, parseLocalLanes, parseRemoteLanes, cloudRows, isCloud,
 } from './lanes'
-import type { Issue, View, Win } from './lanes'
+import type { CloudLane, Issue, View, Win } from './lanes'
 
 const PANE = 'oren-lanes'
 const HC = 'C:/Users/97254/AppData/Local/Programs/herdr-core/hc.exe'
@@ -14,6 +14,8 @@ const LOG = 'C:/work/Oren_study/a/tools/runner/.runs/runner.log'
 const OBSERVER = 'C:/work/Oren_study/a/tools/runner/.runs/observer.last'
 const CONFIG = 'C:/work/Oren_study/a/tools/runner/config.toml'
 const STATS = 'C:/work/Oren_study/a/tools/runner/.runs/stats.jsonl'
+const PY = 'C:\\Users\\97254\\miniforge3\\python.exe'
+const REMOTE = 'C:/work/Oren_study/a/tools/runner/remote.py'
 const ROOT = /^c:[\\/]+work[\\/]+oren_study([\\/]|$)/i
 const DATA = { plugin: 'oren-lanes', key: 'data' } as const
 // an atom, so every refresh REDRAWS the pane (a plain $.state.get in render did not subscribe)
@@ -73,7 +75,16 @@ export const register: Register = on => {
         let observer = ''
         try { observer = ((await $.fs.read(OBSERVER)) as string).trim() } catch { /* no observer run yet */ }
         let maxCore = 1
-        try { maxCore = parseMaxCore((await $.fs.read(CONFIG)) as string) } catch { /* default 1 */ }
+        let localMax = 3, remoteMax = 0
+        try { const t = (await $.fs.read(CONFIG)) as string; maxCore = parseMaxCore(t); localMax = parseLocalLanes(t); remoteMax = parseRemoteLanes(t) } catch { /* defaults */ }
+        let cloud: string[] = []
+        try {   // #136: one row per cloud lane, state from tools/runner/remote.py
+          const r = await $.process.run([PY, REMOTE, 'cloud'], { timeoutMs: 120000 })
+          if (r.exitCode !== 0) throw new Error(`remote.py exit ${r.exitCode}`)
+          cloud = cloudRows(JSON.parse(r.stdout) as CloudLane[])
+        } catch (err) {
+          errors.push(`cloud lanes unavailable: ${trunc(String(err), 60)}`)
+        }
         let flow: string[] = []
         let vw: View | undefined
         let done = ''
@@ -104,11 +115,12 @@ export const register: Register = on => {
         const prevData = await read($, dataAtom)
         const ghFailed = errors.some(x => x.startsWith('backlog'))
         const data: OrenLanesData = ghFailed && prevData ? {
-          ...prevData, windows, usage, stats, observer, lastLog,
+          ...prevData, windows, usage, stats, observer, lastLog, localMax, remoteMax,
           errors: [`GitHub slow — showing data from ${new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(prevData.updatedAt))}`],
           updatedAt: prevData.updatedAt,
         } : {
           windows, groups: groupIssues(issues), lastLog, errors, usage, flow, done, lanes: laneReasons(issues, windows, 3, maxCore), view: vw, stats, observer,
+          localMax, remoteMax, cloudCount: issues.filter(isCloud).length, cloud,
           updatedAt: await $.clock.now(),
         }
         await update($, dataAtom, () => data)
@@ -154,6 +166,8 @@ export const register: Register = on => {
         {d.errors.map(dim)}
         {v && head('LANES')}
         {v && v.lanes.map(line)}
+        {(d.cloudCount ?? 0) > 0 && head(`CLOUD LANES ${d.cloudCount}`)}
+        {(d.cloud ?? []).map(s => s.startsWith('☁') ? (s.includes(' · STALE') ? <Text color="red">{trunc(s, width)}</Text> : line(s)) : <Text dimColor>{s}</Text>)}
         {v && v.you.length > 0 && head('YOUR LANE — needs you')}
         {v && v.you.map(s => <Text color="yellow">{trunc(s, width)}</Text>)}
         {v && (v.orch ?? []).map(dim)}

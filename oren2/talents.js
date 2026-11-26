@@ -106,8 +106,8 @@ const groupOf=b=>GROUPS.find(g=>g.ids.includes(b.id))||GROUPS[GROUPS.length-1];
 const visB=g=>g.ids.map(id=>BUILD.find(b=>b.id===id)).filter(b=>b&&bState(b)!=='off');
 const bStars=b=>[b.acts.reduce((a,x)=>a+actStars(x.id),0),b.acts.length*3];
 function bldCard(b,back){const bs=bState(b);const [got,max]=bStars(b);
-  const c=h('button','wcard2 bld',`<span class="ico">${b.icon()}</span><span class="nm">${b.name}</span><span class="bar"><i style="width:${got/max*100}%"></i></span><span class="cnt">${SPR.star}${got}/${max}</span>`);c.style.setProperty('--lc',b.color);
-  if(bs!=='on'){c.classList.add('lockb');c.querySelector('.cnt').innerHTML='🔒 '+bs.lock;c.onclick=()=>{sfx.no();window.TAL_locked&&window.TAL_locked(b);};}else c.onclick=()=>{sfx.pop(2);openBuilding(b);};return c;}
+  const c=h('button','wcard2 bld',`<span class="ico">${b.icon()}</span><span class="nm">${b.name}</span><span class="bar"><i style="width:${got/max*100}%"></i></span>`);c.style.setProperty('--lc',b.color);
+  if(bs!=='on'){c.classList.add('lockb');c.appendChild(h('span','cnt','🔒 '+bs.lock));c.onclick=()=>{sfx.no();window.TAL_locked&&window.TAL_locked(b);};}else c.onclick=()=>{sfx.pop(2);openBuilding(b);};return c;}
 /* level 1: four big doors */
 function openHub(){KEY=null;O.setScreen('sTal','valley',O.showMap);O.hud(`<div class="starcount">${SPR.star}<span>${Object.values(S().tl).reduce((a,c)=>a+(c.s|0),0)}</span></div>`);
   O.sayNow='עיר הכישרונות. מה נשחק?';const s=$('#sTal');s.innerHTML='';
@@ -120,12 +120,15 @@ function openHub(){KEY=null;O.setScreen('sTal','valley',O.showMap);O.hud(`<div c
 /* level 2: just the buildings of one door */
 function openGroup(g){KEY=null;O.setScreen('sTal','valley',openHub);O.hud('');O.sayNow=spk(g.n);const s=$('#sTal');s.innerHTML='';
   s.appendChild(h('div','whead',`<span class="gd">${g.e}</span><h1>${g.n}</h1>`));const grid=h('div','hub gsub');visB(g).forEach(b=>grid.appendChild(bldCard(b)));s.appendChild(grid);O.emit('group',s,g);}
-function openBuilding(b){KEY=null;const gg=groupOf(b);O.setScreen('sTal',b.bg,visB(gg).length>1?()=>openGroup(gg):openHub);O.hud('');O.sayNow=spk(b.name);const s=$('#sTal');s.innerHTML='';
-  s.appendChild(h('div','whead',`<span class="gd">${b.icon()}</span><h1>${b.name}</h1>`));if(b.blurb)s.appendChild(h('div','lsent',b.blurb));
+/* the activities a building shows: the ones already tried + new ones up to 4 (at least one new), so the rest open gradually; the parent's "all open" shows them all */
+function menuActs(b){const list=b.acts.filter(a=>(!a.avail||a.avail())&&!actOff(a.id)&&!a.noMenu);if(S().set.all)return list;
+  const tried=a=>!!(S().tl[a.id]||{}).n;let k=Math.max(1,4-list.filter(tried).length);return list.filter(a=>tried(a)||k-->0);}
+function openBuilding(b){KEY=null;const gg=groupOf(b);O.setScreen('sTal',b.bg,visB(gg).length>1?()=>openGroup(gg):openHub);O.hud('');const say=spk(b.name+(b.blurb?'. '+b.blurb:''));O.sayNow=say;const s=$('#sTal');s.innerHTML='';
+  s.appendChild(h('div','whead',`<span class="gd">${b.icon()}</span><h1>${b.name}</h1>`));
   const grid=h('div','acts');
-  b.acts.forEach(a=>{if(a.avail&&!a.avail())return;if(actOff(a.id))return;const st=actStars(a.id);const c=h('button','actc',`<span class="ai">${a.icon()}</span><span class="an">${a.name}</span><span class="st">${[0,1,2].map(k=>k<st?SPR.star:SPR.starOff).join('')}</span>`);
+  menuActs(b).forEach(a=>{const st=actStars(a.id);const c=h('button','actc',`<span class="ai">${a.icon()}</span><span class="an">${a.name}</span><span class="st">${[0,1,2].map(k=>k<st?SPR.star:SPR.starOff).join('')}</span>`);
     c.onclick=()=>{sfx.pop(2);a.run(()=>openBuilding(b));};grid.appendChild(c);});
-  s.appendChild(grid);}
+  s.appendChild(grid);if(b.blurb)setTimeout(()=>{if(grid.isConnected)O.say(say);},D(400));}
 
 /* ---------- daily missions ---------- */
 const dailyPool=()=>Object.keys(ACT).filter(id=>bState(ACT[id].b)==='on'&&!actOff(id)&&!ACT[id].noDaily&&(!ACT[id].avail||ACT[id].avail()));
@@ -487,11 +490,11 @@ function mixLab(back){O.setScreen('sTal','valley',back);T.hudT('מְעַרְבְ
   const show=()=>{const p=pot.firstChild;if(sel.length<2){p.style.background=sel[0]?CN[sel[0]][1]:'#e8eef2';lab.innerHTML=sel.length?`${CN[sel[0]][0]} + ...`:'בַּחֲרוּ שְׁנֵי צְבָעִים וְעַרְבְּבוּ';return;}
     const m=MIX.find(x=>(x[0]===sel[0]&&x[1]===sel[1])||(x[0]===sel[1]&&x[1]===sel[0]));p.classList.remove('swirl');void p.offsetWidth;p.classList.add('swirl');
     if(sel[0]===sel[1]){p.style.background=CN[sel[0]][1];lab.innerHTML=`${CN[sel[0]][0]} + ${CN[sel[0]][0]} = ${CN[sel[0]][0]}`;}
-    else if(m){p.style.background=CN[m[2]][1];lab.innerHTML=`${CN[sel[0]][0]} + ${CN[sel[1]][0]} = <b>${CN[m[2]][0]}</b>!`;sfx.ok(2);tried.add(m[2]);}
+    else if(m){p.style.background=CN[m[2]][1];lab.innerHTML=`${CN[sel[0]][0]} + ${CN[sel[1]][0]} = <b>${CN[m[2]][0]}</b>!`;sfx.ok(2);tried.add(m[2]);go.hidden=false;}
     else{const wk=sel.includes('white')?'white':'black',oth=sel[0]===wk?sel[1]:sel[0];const hx=c=>[1,3,5].map(k=>parseInt(c.slice(k,k+2),16));const a=hx(CN[oth][1]),b=hx(CN[wk][1]);const m=a.map((v,k)=>Math.round(v*.6+b[k]*.4));
       p.style.background=`rgb(${m.join(',')})`;lab.innerHTML=`${CN[sel[0]][0]} + ${CN[sel[1]][0]} = ${CN[oth][0]} ${wk==='white'?'בָּהִיר':'כֵּהֶה'}`;sfx.ok(1);}
     sel=[];};
-  const tried=new Set();const go=h('button','bigbtn',ICON.play+'<span>לַחִידוֹן</span>');go.onclick=()=>mixQuiz(back);const r2=h('div','btnrow');r2.appendChild(go);
+  const tried=new Set();const go=h('button','bigbtn',ICON.play+'<span>לַחִידוֹן</span>');go.hidden=true;go.onclick=()=>mixQuiz(back);const r2=h('div','btnrow');r2.appendChild(go);
   s.append(pot,lab,row,r2);show();}
 function mixQuiz(back){quiz({id:'art-mix',title:'מְעַרְבְּבִים צְבָעִים',bg:'valley',back,n:6,gen:i=>{const m=MIX[i%MIX.length];const rev=Math.random()<.35&&i>2;
   if(rev){const opts=shuffle([m[1],...shuffle(['red','blue','yellow','white','black'].filter(x=>x!==m[0]&&x!==m[1])).slice(0,2)]);return {pr:`<div class="mixq">${blob(m[0])}<b>+</b><span class="blob q">?</span><b>=</b>${blob(m[2])}</div><div class="qq">${CN[m[0]][0]} וְעוֹד אֵיזֶה צֶבַע נוֹתְנִים ${CN[m[2]][0]}?</div>`,opts:opts.map(swatch),ans:opts.indexOf(m[1]),cls:'tx sw2',key:'r'+m[2]};}
@@ -1271,13 +1274,16 @@ function choose(dm,first){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.bs|0)>
   if(!bonus){st=st.concat(d.cr||[]);d.cr=[];}st.forEach(x=>{d.t.push(x);d.done.push(0);});d.ch=dm;
   if(dm!=='tog'){S0.dom=S0.dom||{};S0.dom[gid(dm)]=dayNum();}O.persist();sfx.ok(2);home();}
 function lastStep(){const l=T.S().last;if(!l)return null;if(l.id==='math')return nextLevel()?'math':null;return T.dailyPool().includes(l.id)?l.id:null;}
-/* "something else": every enabled world and building, and together time */
-function other(){O.setScreen('sTal','meadow',O.showMap);O.hud('');const say='מָה בָּא לְךָ? בְּחַר מָה שֶׁתִּרְצֶה.';O.sayNow=T.spk(say);const s=$('#sTal');s.innerHTML='';
-  s.appendChild(h('div','whead',`<span class="gd">🔍</span><h1>מָה בָּא לְךָ?</h1>`));const g=h('div','dall');
+/* "something else": a few big tiles (math, the doors, together time); a door drills down to its buildings */
+function other(gr){O.setScreen('sTal','meadow',gr?()=>other():O.showMap);O.hud('');const say=gr?gr.n:'מָה בָּא לְךָ? בְּחַר מָה שֶׁתִּרְצֶה.';O.sayNow=T.spk(say);const s=$('#sTal');s.innerHTML='';
+  s.appendChild(h('div','whead',`<span class="gd">${gr?gr.e:'🔍'}</span><h1>${gr?gr.n:'מָה בָּא לְךָ?'}</h1>`));const g=h('div','dall');
   const add=(ic,n,c,fn)=>{const b=h('button','dcard',`<span class="dic">${ic}</span><b>${n}</b>`);b.style.setProperty('--dc',c);b.onclick=()=>{sfx.pop(3);fn();};g.appendChild(b);};
-  if(nextLevel())add(`<span>${MATH.e}</span>`,MATH.n,MATH.c,()=>choose('math'));
-  T.GROUPS.flatMap(gr=>gr.ids).forEach(bid=>{const b=T.BUILD.find(x=>x.id===bid);if(b&&poolOf([bid]).length)add(b.icon(),b.name,b.color,()=>choose('b:'+bid));});
-  add('<span>🤝</span>','מְשַׂחֲקִים עִם אַבָּא אוֹ אִמָּא','#e0794a',()=>choose('tog'));s.appendChild(g);s.appendChild(doorsEl());O.emit('other',s);}
+  const blds=x=>x.ids.map(bid=>T.BUILD.find(b=>b.id===bid)).filter(b=>b&&poolOf([b.id]).length);
+  if(gr)blds(gr).forEach(b=>add(b.icon(),b.name,b.color,()=>choose('b:'+b.id)));
+  else{if(nextLevel())add(`<span>${MATH.e}</span>`,MATH.n,MATH.c,()=>choose('math'));
+    T.GROUPS.forEach(x=>{const bs=blds(x);if(bs.length)add(`<span>${x.e}</span>`,x.n,x.c,()=>bs.length>1?other(x):choose('b:'+bs[0].id));});
+    add('<span>🤝</span>','מְשַׂחֲקִים עִם אַבָּא אוֹ אִמָּא','#e0794a',()=>choose('tog'));}
+  s.appendChild(g);if(!gr)s.appendChild(doorsEl());O.emit('other',s);}
 /* ---------- path steps ---------- */
 function special(i,id){const [kind,k]=id.split(':');const isT=kind==='tog';const a=isT?TOG.find(x=>x.k===k):RW[k];
   const fin=()=>{const d=T.dailyEnsure();const j=i>=0&&d.t[i]===id?i:d.t.findIndex((x,n)=>x===id&&!d.done[n]);if(j>=0)d.done[j]=1;O.persist();};
@@ -1329,7 +1335,7 @@ function home(){const S0=T.S();
   const dayDone=!!(d&&nx<0&&d.claimed&&d.ch&&window.FRIEND);
   const say=!d?`${T.hello()}, אוֹרֶן! בְּמָה נְשַׂחֵק?`:dayDone?window.FRIEND.homeSay(d):pickDay?'שָׁלוֹם אוֹרֶן! מָה בָּא לְךָ הַיּוֹם?':nx>=0?`${q.e} ${q.a}`:d.claimed?'כָּל הַכָּבוֹד! עַכְשָׁו זְמַן חוֹפְשִׁי 🎈':'סִיַּמְתָּ אֶת הַשְּׁבִיל! בּוֹא נִרְאֶה אֵיךְ נִגְמַר הַסִּפּוּר.';
   const tl='';
-  s.appendChild(h('div','hstage',`<div class="hbub2" style="--fc:${pr.col||'#4fae4f'}">${say}${tl}</div><div class="hpair" role="button" aria-label="מָה אֶפְשָׁר לַעֲשׂוֹת כָּאן?"><span class="hav bob">${O.AV()}</span><span class="hpet2 bob" style="animation-delay:-.7s">${T.friend()}</span></div>`));
+  s.appendChild(h('div','hstage',`${say?`<div class="hbub2" style="--fc:${pr.col||'#4fae4f'}">${say}${tl}</div>`:''}<div class="hpair" role="button" aria-label="מָה אֶפְשָׁר לַעֲשׂוֹת כָּאן?"><span class="hav bob">${O.AV()}</span><span class="hpet2 bob" style="animation-delay:-.7s">${T.friend()}</span></div>`));
   s.querySelector('.hpair').onclick=()=>{sfx.pop(2);if(dayDone&&d.free)window.FRIEND.bonus();else if(window.TOPIC)window.TOPIC.open();else tour();};
   O.sayNow=T.spk(say);
   if(pickDay){/* "what do you feel like today?": 3 big cards (one is "continue" when there is a last activity) + something else */
@@ -1354,6 +1360,7 @@ function home(){const S0=T.S();
     const more=h('button','dmore','🔍 <span>מַשֶּׁהוּ אַחֵר</span>');more.onclick=()=>{sfx.pop(2);other();};s.appendChild(h('div','dpick')).appendChild(more);}
   /* the round doors live inside "something else"; on home only when there is no daily path */
   if(!d)s.appendChild(doorsEl());
+  if(window.AGAIN)window.AGAIN.button(s);
   const pb=h('button','parbtn','🔒');pb.title='כניסת הורים';pb.setAttribute('aria-label','כניסת הורים');pb.onclick=()=>window.TAL_parentGate();s.appendChild(pb);
   T.checkMsg&&T.checkMsg();}
 function doorsEl(){const doors=h('div','doors2');

@@ -33,8 +33,8 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  await p.evaluate(()=>{const T=window.TAL;delete T.S().daily;T.S().set.offW={};});await home();await sleep(200);
  await p.locator('#sHome .dmore').click();await sleep(300);
  const o=await p.evaluate(()=>({names:[...document.querySelectorAll('#sTal .dall .dcard b')].map(x=>x.textContent)}));
- const exp=await p.evaluate(()=>{const T=window.TAL;return T.BUILD.filter(b=>T.dailyPool().some(id=>T.ACT[id].b===b)).length+2;});
- ok('something else lists every enabled world/building + together',o.names.length===exp&&!o.names.some(n=>/מַעְבָּדָה|אָמָּנוּת/.test(n))&&o.names.some(n=>n.includes('אַבָּא')),JSON.stringify(o.names));
+ const exp=await p.evaluate(()=>{const T=window.TAL;return T.GROUPS.filter(g=>g.ids.some(id=>T.dailyPool().some(a=>T.ACT[a].b.id===id))).length+2;});
+ ok('something else: math, the doors with something in them + together (no building list)',o.names.length===exp&&o.names.length<=6&&!o.names.some(n=>/מַעְבָּדָה|אָמָּנוּת/.test(n))&&o.names.some(n=>n.includes('אַבָּא')),JSON.stringify(o.names));
  await p.locator('#sTal .dall .dcard',{hasText:'אַבָּא'}).click();await sleep(300);
  const d3=await p.evaluate(()=>{const d=window.TAL.S().daily;return {t:d.t,ch:d.ch,lead:window.TAL.TOG.find(a=>'tog:'+a.k===d.t[0]).lead};});
  ok('"together" from something else: an Oren-led together step + 2 surprises',d3.ch==='tog'&&/^tog:/.test(d3.t[0])&&d3.lead===1&&d3.t.length===3,JSON.stringify(d3));

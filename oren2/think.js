@@ -310,12 +310,13 @@ function track(sk,back){round({id:SK[sk].id,sk,title:SK[sk].n,bg:'mount',back,n:
 function readRC(back){const th=TH();th.rcR=th.rcR||[];let lv=C.level(th,'rc');let pi=0,err=0,gems=0;const NP=lv<=2?3:2;O.setScreen('sTal','city',back);const s=$('#sTal');
   let wrapNow=null;const passage=()=>{lv=C.level(TH(),'rc');const pick=C.rcPick(lv,th.rcR);th.rcR=[...th.rcR,pick.i].slice(-12);let qi=0;
     const ask=()=>{const q=pick.qs[qi];const nk=TH().nk|0;let tries=0,lock=false,first=true;
-      T.hudT('קוֹרְאִים וּמְבִינִים',T.progressBar(pi,NP));O.sayNow=qi?'':'קרא את הסיפור ובחר תשובה';s.innerHTML='';const wrap=h('div','tq thq rcq');wrapNow=wrap;s.appendChild(wrap);
+      T.hudT('קוֹרְאִים וּמְבִינִים',T.progressBar(pi,NP));s.innerHTML='';const wrap=h('div','tq thq rcq');wrapNow=wrap;s.appendChild(wrap);
       const card=h('div','prq tqc');const ps=h('div','thp'+(nk?' nk':''),T.nikudText(pick.P.t,pick.P.p));
-      /* 🔊 for the passage: always at levels 1–2, after a mistake at level 3, not above */
-      const addSay=()=>{if(card.querySelector('.thsay'))return;const b=h('button','hintbtn thsay',O.ICON.say+'<span>הַקְרֵא לִי</span>');b.onclick=()=>{sfx.pop(1);if(T.readSeq)T.readSeq([ps,qq]);else O.say(T.plainHe(pick.P.t+' '+q.text));};card.appendChild(b);};
-      /* the question is not a .qq, so it gets no second 🔊: one "read to me" button reads the story and the question */
+      /* one audio control, the top 🔊: it reads the story and the question at levels 1–2 (level 3: after a mistake), above that it repeats the instruction */
+      const INSTR='קְרָא אֶת הַסִּפּוּר וּבְחַר תְּשׁוּבָה';const addSay=()=>{O.sayNow=T.plainHe(pick.P.t+' '+q.text);};O.sayNow=T.plainHe(INSTR);
+      /* the question is not a .qq, so it gets no second 🔊 */
       const qq=h('div','rcqq',T.nikudText(q.text,q.textP,true));card.append(ps,qq);if(lv<=2)addSay();wrap.appendChild(card);
+      if(!qi)setTimeout(()=>{if(wrap.isConnected)O.say(INSTR);},D(400));
       const row=h('div','chs n'+q.opts.length);q.opts.forEach((op,k)=>{const b=h('button','chb '+optCls(op),optHTML(op));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
       const done=ok=>{if(!first)return;first=false;const ch=C.answer(TH(),'rc',ok);hit('rc',ok);if(nk||ch.nk)hit('nk',ok);O.persist();if(ch.lv===1)O.floatText(card,'🎉 עָלִיתָ שָׁלָב!');else if(ch.nk===1)O.floatText(card,'🎉 קוֹרֵא גַּם בְּלִי נִקּוּד!');};
       function pickA(k,b){if(lock||b.disabled)return;

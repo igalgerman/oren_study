@@ -18,6 +18,25 @@ assert len(m["days"]) == 14 and m["days"][0]["label"] == "13 Nov" and m["days"][
 t = D.text(m)
 assert t.startswith("Open issues: 6  (P0 1, P1 1, P2 2, P3 0, no priority 2)") and "Needs you: #2 t2" in t and "Last deploy:" in t, t
 assert "<svg" in D.page(m) and "#2</a>" in D.page(m)
+# the answer at the top (verdict): worst thing first, every sentence from the model's own numbers
+v = D.verdict(m)
+assert (v["level"], v["head"]) == ("you", "1 issue needs you") and "1 issue waits for your answer or decision." in v["why"], v
+pg = D.page(m)
+assert "NEEDS YOU" in pg and "<h2>Needs you" in pg and "Is the system healthy?" in pg and "Watcher status is not available" in pg
+calm = [i for i in issues if i["number"] != 2]
+v = D.verdict(D.model(calm, prs, ev, now))
+assert v["level"] == "ok" and v["head"] == "On track" and "closing 0.2 per hour, new 0.0 per hour" in v["why"][0], v      # 1 closed in the last 6 h, none opened
+idle = D.model([i for i in calm if i["number"] != 1], prs, ev, now)                    # nothing runs, #5 is ready
+v = D.verdict(idle)
+assert v["level"] == "slow" and v["head"] == "Nothing is being worked on right now", v
+pg = D.page(idle)
+assert "<h2>Needs you" not in pg and "Nothing is being worked on right now.</p>" in pg  # no empty 'Needs you' card; honest empty state
+grow = D.verdict(D.model(calm + [I(20 + k, "OPEN", ["ready-for-agent"], c="2026-11-26T07:30:00Z") for k in range(3)], prs, ev, now))
+assert grow["level"] == "slow" and grow["why"] == ["In the last 24 hours 1 issue was closed and 3 new ones came in."], grow
+failed = D.verdict(D.model(calm, prs, ev[:2] + [{"ts": now - 600, "issue": 0, "event": "deploy", "ok": False}], now))
+assert failed["level"] == "bad" and "failed" in failed["why"][0], failed
+esc = D.page(D.model([{**I(31, "OPEN", ["ready-for-agent"]), "title": "<i>x</i> & y"}], prs, ev, now))
+assert "&lt;i&gt;x&lt;/i&gt; &amp; y" in esc and "<i>x" not in esc                       # issue titles are escaped
 print("ok dashboard")
 # v2 (#169): forecast ranges and honesty, truth numbers, running step
 f = D.forecast(10, [now - 600 * k for k in range(12)], [now - 3600], now, 48)     # 12 closed in the last 2 h, 1 opened
@@ -49,6 +68,51 @@ assert "STOPPED" not in D.ov_text(o) and "STOPPED" in D.ov_text(D.oversight("", 
 m2["ov"] = o; m2["ai"] = {"at": now - 60, "model": "haiku", "text": "- **Good:** things go well.\n- Risk: <b>x</b>"}
 pg = D.page(m2)
 assert "Oversight: who watches the system" in pg and "STOPPED?" in pg     # observer last ran 67 min ago > 60
+vb = D.verdict(m2)
+assert vb["level"] == "bad" and vb["head"] == "Something looks wrong" and vb["why"][0].startswith("The observer looks stopped"), vb
+assert "PROBLEM" in pg and "2 of 6 checks need a look" in pg and "1 idle alarm and 1 trend alarm" in pg     # observer stopped + #3 blocked
+assert [(n, ok) for n, _, _, ok in D.watcher_health(o)] == [("runner", True), ("watchdog", True), ("observer", False)]
 assert "<b>Good:</b>" in pg and "AI assessment" in pg and "&lt;b&gt;x&lt;/b&gt;" in pg and "may be wrong" in pg
 m2["ai"] = None; assert "Not written yet" in D.page(m2)
 print("ok dashboard ai/oversight")
+# #173 merge ETA per issue + bottom line
+t0 = {"avg_build": 1200, "avg_review": 300, "avg_merge": 3600}
+fc0 = {"c6": 2.0, "c24": 1.0}
+rows0 = [{"n": 1, "prio": "P0", "state": "ready", "blockers": []}, {"n": 2, "prio": "P1", "state": "ready", "blockers": []},
+         {"n": 3, "prio": "P1", "state": "waiting", "blockers": [1]}, {"n": 4, "prio": "P2", "state": "needs_you", "blockers": []},
+         {"n": 5, "prio": "P2", "state": "waiting", "blockers": [4]}, {"n": 6, "prio": "P1", "state": "running", "blockers": []}]
+run0 = [{"n": 6, "step": "merging (CI)", "for_s": 3000}]
+pl = D.eta_plan(rows0, run0, t0, fc0, now, lanes=3)
+assert pl[6] == (now + 1050, now + 1575), pl[6]                                  # merging: half the CI/merge wait (2100 s)
+assert pl[1] == (now + 3600, now + 5400) and pl[2] == (now + 3600, now + 7200), (pl[1], pl[2])   # at least one cycle; place 2 at 1/h = 2 h
+assert pl[3][0] >= pl[1][0] + 3600 and pl[3][1] >= pl[1][1] + 5400, pl[3]           # after its blocker + one cycle
+assert pl[4] == "waits for you" and pl[5] == "after #4", (pl[4], pl[5])
+assert D.eta_str("waits for you", now) == "waits for you" and "–" in D.eta_str(pl[2], now)
+mm = {"plan": pl, "rows": [{**r, "title": "t"} for r in rows0], "now": now}
+bl = dict(D.bottom_line(mm))
+assert "all 1 P0" in bl and "2 without an estimate" in bl["everything open now"], bl
+pg = D.page(m2)
+assert "When will it be finished?" in pg and "<h2>Timeline" in pg and "ESTIMATE" in pg and "Next in line" in pg
+assert "≈ " + D.eta_str(m2["plan"][1], now) in pg and "merged, now going live" in pg     # the running issue: its estimate and its step in plain words
+assert "No estimate for" in pg and "(waits for you)" in pg                              # the P0 that waits for the owner is named, not hidden
+assert pg.count("<details") >= 6 and "How these numbers are made" in pg and "stats.jsonl" in pg.split("How these numbers are made")[1]
+assert "stats.jsonl" not in pg.split("More details")[0]                                # no internal file names on the first screen
+assert D.last_eta(mm, mm["rows"])[0] == (max(x[0] for x in pl.values() if isinstance(x, tuple)), max(x[1] for x in pl.values() if isinstance(x, tuple)))
+assert "Bottom line (estimate)" in D.text(m2)
+pl1 = D.eta_plan(rows0, run0, t0, {"c6": 50.0, "c24": 50.0}, now, lanes=1)        # 1 lane, busy until #6 merges
+assert pl1[1][0] == now + 1050 + 3600 and pl1[2][0] == now + 1050 + 7200, (pl1[1], pl1[2])   # lane frees, then one cycle each
+print("ok merge eta")
+# #136 cloud lanes: lanes line, one row per cloud lane, STALE, not in "Running now"
+ic = issues + [I(11, "OPEN", ["in-progress", "cloud", "P0"]), I(12, "OPEN", ["cloud"])]
+cl = [{"n": 11, "title": "t11", "state": "working", "line": "", "last": "2026-11-26T06:30:00Z", "stale": True, "pr": "", "session": "https://claude.ai/code/session_01A"},
+      {"n": 12, "title": "t12", "state": "done", "line": "RESULT: DONE", "last": "2026-11-26T07:50:00Z", "stale": False, "pr": "https://github.com/x/y/pull/201", "session": ""}]
+m3 = D.model(ic, prs, ev, now, "", cl)
+assert m3["lanes"] == f"local 1/{D.R.CFG.get('local_lanes', 3)} · cloud 2/{D.R.CFG.get('remote_lanes', 0)}", m3["lanes"]
+assert [r["n"] for r in m3["running"]] == [1], m3["running"]
+t3 = D.text(m3)
+assert "Lanes: local 1/" in t3 and "cloud #11 t11 — working · last " in t3 and " · STALE · https://claude.ai/code/session_01A" in t3, t3
+assert "cloud #12 t12 — done" in t3 and "STALE" not in t3.split("cloud #12")[1].split("\n")[0], t3
+pg3 = D.page(m3)
+assert "Cloud lanes" in pg3 and '<a href="https://github.com/x/y/pull/201">PR</a>' in pg3 and ">session</a>" in pg3 and "STALE" in pg3
+assert "Cloud lanes" not in D.page(m)
+print("ok dashboard cloud")

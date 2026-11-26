@@ -18,6 +18,10 @@ export type OrenLanesData = {
   view?: { lanes: string[]; you: string[]; orch?: string[]; next: string[]; done: string[] }
   stats?: string[]
   observer?: string
+  localMax?: number
+  cloudCount?: number
+  remoteMax?: number
+  cloud?: string[]
   errors: string[]
   updatedAt: number
 }

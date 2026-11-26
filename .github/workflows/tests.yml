@@ -40,11 +40,33 @@ jobs:
           RETRY_ALONE: '1'      # a suite that fails under load is rerun alone once (#60)
           JOBS: '3'
         run: bash tests/run.sh
+  tools:
+    # Runner / watchdog / ask / panel tests (#152): python + node, no install, < 1 min.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python tool tests
+        run: |
+          fail=0
+          for t in tools/runner/test_*.py tools/ask/test/idle_test.py; do
+            echo "== $t"; python3 "$t" || { echo "FAILED: $t"; fail=1; }
+          done
+          exit $fail
+      - name: Panel tests
+        run: node tools/mods/oren-lanes/run-tests.mjs
   tests:
     # The one required check: a PR is mergeable when this is green.
     if: always()
-    needs: shard
+    needs: [shard, tools]
     runs-on: ubuntu-latest
     steps:
       - run: |
           [ "${{ needs.shard.result }}" = success ] || { echo "a test shard failed: ${{ needs.shard.result }}"; exit 1; }
+          [ "${{ needs.tools.result }}" = success ] || { echo "the tools tests failed: ${{ needs.tools.result }}"; exit 1; }

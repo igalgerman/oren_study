@@ -5,7 +5,7 @@ Backlog = GitHub issues. Owner guide: `HOWTO.md`. Main session: `ORCHESTRATOR.md
 
 ## The flow
 idea → `/grill-me` → `/to-tickets` → issue (backlog) → runner → worker → reviewer → merge to main → all tests → deploy → issue closed.
-Everything after the issue is automatic (`tools/runner`). Up to 3 issues at once, at most TWO `core` issues. If merging into main conflicts, the runner has the worker merge main in and retries (2 rounds, then the issue is parked).
+Everything after the issue is automatic (`tools/runner`). Lanes: `local_lanes` on this PC (0 now) + `remote_lanes` cloud sessions (4), at most `max_core` (3) `core` issues at once (see `tools/runner/config.toml`). If merging into main conflicts, the runner has the worker merge main in and retries (2 rounds, then the issue is parked).
 
 Hand work by the orchestrator/inspector carries the label `manual`, never `in-progress` and no `core` on tooling: the runner ignores `manual` (no lane, never started) (#177).
 
@@ -24,15 +24,15 @@ Do the WHOLE job yourself, then report. Nobody merges for you by hand.
 Never push to main, never deploy, never force-push. Found another problem? Open a new issue (see "One backlog, no duplicates" in CLAUDE.md).
 
 ## If you are a REVIEWER (window `review-<n>`)
-Read-only. Use the `mattpocock-skills:code-review` skill (Standards = CLAUDE.md + FLOW.md, Spec = the issue), then check the PR against the issue: correct, simple (one main action per screen), Hebrew nikud, facts, no unrelated changes. One PR comment; last line `VERDICT: PASS` or `VERDICT: FIX`.
+Read-only. Use the `mattpocock-skills:code-review` skill (Standards = CLAUDE.md + FLOW.md, Spec = the issue), then check the PR against the issue: correct, simple (one main action per screen), Hebrew nikud, facts, no unrelated changes. One PR comment; last line one of four colours: `VERDICT: PASS` (green, merge); `VERDICT: PASS-NOTES a; b` (blue: polish only, merges, notes go to the rolling 'Polish backlog (lane)' issue); `VERDICT: PURPLE <question> merge-safe|hold` (owner decision, code works); `VERDICT: FIX <points>` (red: only wrong behaviour, missing/failing test, spec miss, security, data loss, broken build; one-line reason each). Round 2+ checks only the earlier RED points; two fix rounds before the issue is blocked.
 
 ## The runner does the rest
-On PASS (config `ci_merge = true`, #74): the runner merges main into the lane (conflict -> worker resolves), pushes, waits for the PR's CI checks (`gh pr checks`), then `gh pr merge --squash`. A red check is rerun once (flaky); still red -> the worker fixes it (same FIX loop). No full local suite. Then ONE build + deploy of main (PRs merged back to back share one deploy; pregen only if `pregen = true`), closes the issue and the windows, and starts the next ready issues. `ci_merge = false` or no PR: the old `tools/integrate.sh` (local merge + all tests). On any failure: nothing goes live, the issue gets `blocked` + `needs-orchestrator` with the reason; the orchestrator handles it (the owner only sees `ready-for-human` / `needs-triage`).
+On PASS (config `ci_merge = true`, #74): the runner waits for the PR's CI checks (`gh pr checks`) and runs `gh pr merge --squash` (only then takes the integrate lock). It merges main into the lane only when GitHub reports the PR as CONFLICTING (worker resolves) (#166). A red check is rerun once (flaky); still red -> the worker fixes it (same FIX loop). No full local suite. Then ONE build + deploy of main (PRs merged back to back share one deploy; pregen only if `pregen = true`), closes the issue and the windows, and starts the next ready issues. `ci_merge = false` or no PR: the old `tools/integrate.sh` (local merge + all tests). On any failure: nothing goes live, the issue gets `blocked` + `needs-orchestrator` with the reason; the orchestrator handles it (the owner only sees `ready-for-human` / `needs-triage`).
 
 ## Lanes
 | label | what | parallel |
 |---|---|---|
-| `core` | touches talents.js / index.html core / reading.js / build_talents.py / wire.js / tests/run.sh | max 2 at a time (`max_core`) |
+| `core` | touches talents.js / index.html core / reading.js / build_talents.py / wire.js / tests/run.sh | max 3 at a time (`max_core`) |
 | `pack` | only inside one pack file + its own test | yes |
 | `review` | read-only check, report as an issue comment | yes |
 
@@ -43,7 +43,11 @@ Known: `worker` suite fails only on Windows (ESM c:\ path); `reading`/`activitie
 ## Observer
 Every `observer_minutes` the watchdog runs `tools/runner/observer.py` (deterministic rules, no LLM): make_ready (needs-orchestrator/P0 untouched 30+ min while the orchestrator is idle), rerun (in-progress with no live run window for 10+ min), fix Blocked-by lines. Max 5 actions per run, each commented on the issue; never on ready-for-human, on an issue with an open lane/<n> PR, or while integrate.lock is alive. Result in `tools/runner/.runs/observer.last`; `observer_minutes = 0` stops it.
 
+AI observer (#203): every `ai_observer_minutes` (60; 0 = off) the watchdog starts ONE headless `claude -p --model sonnet` (`tools/runner/ai_observer.py`, read-only tools, 10 min timeout, never two at once). It checks open issues/labels/Blocked-by, open PRs, cloud issues (`remote.py status`), runner/watchdog log tails and the merge lock, and reports at most 5 `OBSERVER: <problem #n> -> <fix, who>` lines (or `no problems`) in `.runs/ai_observer.last`. New findings go to the orchestrator (same issue + text start not again within 6 h); one for the owner also goes to #193. It never edits, merges, labels or comments itself. Issues labelled `cloud` have no local window/worktree by design: neither observer flags that.
+
 Questions to the owner: in Hebrew, through tools/ask/ask.py (browser page), one round at a time; never ask in the terminal when the owner prefers Hebrew.
+Every owner question also lands in ONE place: the pinned issue 'Questions for the owner' (#193, `tools/runner/owner_q.py`; the watchdog posts window questions itself). Write `QUESTION:` lines in Hebrew, with the options.
 
 ## CI (GitHub Actions, #73)
-`.github/workflows/tests.yml` runs all suites on every PR to main and every push to main: 6 parallel shards (`SUITES_SHARD=i/6 tests/run.sh`, a failed suite is retried alone once) and one summary job `tests`. **A PR is mergeable when the `tests` check is green.** No secrets in CI; deploy stays local.
+`.github/workflows/tests.yml` runs all suites on every PR to main and every push to main: 6 parallel shards (`SUITES_SHARD=i/6 tests/run.sh`, a failed suite is retried alone once), a `tools` job (runner/watchdog/ask tests with python, panel tests with `node tools/mods/oren-lanes/run-tests.mjs`, #152) and one summary job `tests`. **A PR is mergeable when the `tests` check is green.** No secrets in the tests workflow.
+Deploy (#192): `.github/workflows/deploy.yml` runs after `tests` is green on a push to main (newest commit only): build + `deploy.sh` (repo secret `CLOUDFLARE_API_TOKEN`), job summary (ok/fail, URL, D1), live smoke check (`tools/ci/deploy_ci.py`), then voice pregen in its own job. A failed deploy opens/comments the issue `Deploy failed` (P0). The runner no longer deploys (`deploy_in_ci = true`; `false` = old PC deploy with `.env`).
