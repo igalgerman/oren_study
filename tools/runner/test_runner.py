@@ -381,6 +381,23 @@ assert r.start_pregen(popen=_P) == "already running" and len(_P.calls) == 1     
 r.CFG["pregen"] = False; assert r.start_pregen(popen=_P) == "off"
 r.CFG["pregen"] = _old
 _src = (r.HERE / "runner.py").read_text(encoding="utf-8")
-_blk = _src.split('with FileLock("integrate", wait=True):\n            stat(n, lane, "merged")', 1)[1].split("\n        m = sync_main", 1)[0]
+_blk = _src.split('with FileLock("integrate", wait=True, note=f"#{n} deploy"):\n            stat(n, lane, "merged")', 1)[1].split("\n        m = sync_main", 1)[0]
 assert "pregen.js" not in _src.split("def deploy_text", 1)[1].split("def pregen_cmd", 1)[0] and "start_pregen(log)" in _blk
 print("ok pregen outside the merge lock")
+# #181 merge lock watch: the lock says who/why/since; dead holders cleared; held > 20 min -> alarm
+r.RUNS.mkdir(exist_ok=True)
+_lk = r.FileLock("test181", note="#5 deploy"); _lk.path.unlink(missing_ok=True)
+with _lk:
+    _i = _lk.info()
+    assert _i[0] == _os.getpid() and _i[1] == "#5 deploy" and abs(_i[2] - __import__("time").time()) < 5, _i
+assert _lk.info() is None
+_lk.path.write_text("999999999", encoding="utf-8")                      # old pid-only file, dead pid
+assert _lk.info()[:2] == (999999999, "") and not _lk.held_by_other()
+_lk.path.unlink(missing_ok=True)
+_t = 10_000.0
+assert W.lock_alarm(None, True, _t) is None
+assert W.lock_alarm((7, "#1 CI merge", _t - 5 * 60), True, _t) is None                   # 5 min: fine
+_a = W.lock_alarm((7, "#122 deploy", _t - 31 * 60), True, _t, [167, 176])
+assert _a[0] == "alarm" and "31 min" in _a[1] and "#122 deploy" in _a[1] and "#167, #176" in _a[1], _a
+assert W.lock_alarm((7, "#1 CI merge", _t - 60), False, _t)[0] == "clear"
+print("ok merge lock watch")
