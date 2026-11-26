@@ -511,6 +511,55 @@ def assign_where(chosen, local_busy, remote_busy, local_lanes, remote_lanes):
 
 ACCEPT = ("Build exactly the issue's `## Acceptance` list (every point, with the tests it names) and nothing in its `Out of scope` (#186). "
           "New tests: add the test to an existing suite unless a new one is clearly needed; give it a budget line in oren2/tests/budget.txt (#187).")
+
+def live_rule(n):
+    """#453: worker rule for an Acceptance item that can only be checked after merge."""
+    return (f"Live checks (#453): if any Acceptance item can only be checked after merge (live on the site, by the owner, on the phone, "
+            f"after deploy, a measurement, a screenshot on a device), the PR body says `Refs #{n}` (NOT Fixes/Closes, so the merge does not close the issue), "
+            f"and you add label `later` to the issue (`gh issue edit {n} --repo {REPO} --add-label later`) and append to its body a line "
+            f"`Due: YYYY-MM-DD HH:MM <the remaining live items>` (`gh issue edit {n} --repo {REPO} --body-file <file>`).\n")
+
+LIVE_WORDS = re.compile(r"\b(?:live|owner|phone|after deploy|measur\w*|screenshot on (?:a |the )?device)\b", re.I)
+
+def acceptance_items(body):
+    """Pure (#453): the bullet lines of the issue's `## Acceptance` section (until the next heading)."""
+    m = re.search(r"(?im)^#{1,6}\s*Acceptance\b.*$", body or "")
+    if not m: return []
+    out = []
+    for line in body[m.end():].splitlines():
+        if re.match(r"^\s*#{1,6}\s", line): break
+        b = re.match(r"^\s*[-*]\s+(?:\[[ xX]\]\s+)?(.*\S)", line)
+        if b: out.append(b[1])
+    return out
+
+def live_items(body):
+    """Pure (#453): Acceptance items that look like a live check after merge."""
+    return [i for i in acceptance_items(body) if LIVE_WORDS.search(i)]
+
+def live_close(n, issue_body, pr_body):
+    """Pure (#453): the live Acceptance items when the PR body would close issue n (Fixes/Closes/Resolves), else []."""
+    return live_items(issue_body) if re.search(rf"\b(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?)\s+#{n}(?!\d)", pr_body or "", re.I) else []
+
+def live_hint(n, pr):
+    """#453: reviewer hint when PR `pr` would close issue n while an Acceptance item looks like a live check ('' = none / gh failed)."""
+    try:
+        ib = json.loads(gh("issue", "view", str(n), "--json", "body")[1] or "{}").get("body", "")
+        pb = json.loads(gh("pr", "view", str(pr), "--json", "body")[1] or "{}").get("body", "")
+    except (ValueError, AttributeError): return ""
+    items = live_close(n, ib, pb)
+    if not items: return ""
+    return (f"\nRunner check (#453): the PR body closes #{n} (Fixes/Closes), but these Acceptance items look like a live check after merge:\n"
+            + "".join(f"- {i}\n" for i in items)
+            + f"If one of them really can only be checked after merge, give RED with the fix: write `Refs #{n}` instead, add label `later` "
+              "and a `Due:` line with the remaining items to the issue. If none really needs a check after merge (the words only describe the change), ignore this.")
+
+def finish_issue(n, text):
+    """#453: the run's DONE step: close issue n, except one labelled `later` (a live check is left; its Due line reminds)."""
+    if "later" in (issue_labels(n) or []):
+        gh("issue", "comment", str(n), "--body", redact(f"{text} Kept open: label `later` (a live check is left, see the Due line) (#453)."))
+        return False
+    gh("issue", "close", str(n), "--comment", text)
+    return True
 SPEC = ("A 'Batch:' issue (title starts with Batch:) or an issue labelled 'spec': follow docs/agents/skills/implement-spec.md "
         "(one branch, sub-agents in parallel for independent parts, integrate, test once, one PR).\n")
 
@@ -520,7 +569,7 @@ def remote_worker_prompt(n, lane, bug=False, retry=False):
             f"its 'How to work' section: independent members (different files) may go to sub-agents (Agent tool); you integrate, test once "
             f"and open ONE PR with a 'Fixes #m' line per member. Read CLAUDE.md and FLOW.md, then the issue "
             f"(`gh issue view {n} --repo {REPO} --comments`). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
-            f"{ACCEPT}\n" + SPEC)
+            f"{ACCEPT}\n" + SPEC + live_rule(n))
     if bug:
         base += "This is a BUG: follow docs/agents/skills/diagnosing-bugs.md, then tdd: reproduce it with a failing test, then fix it; say the root cause in the PR body.\n"
     if retry:                                    # #137: an earlier cloud session died without a RESULT comment
@@ -1223,7 +1272,7 @@ def worker_prompt(n, lane, review_text=None, bug=False):
             f"its 'How to work' section: independent members (different files) may go to sub-agents (Agent tool); you integrate, test once "
             f"and open ONE PR with a 'Fixes #m' line per member. Read CLAUDE.md and FLOW.md, then the issue "
             f"(`gh issue view {n} --repo {REPO} --comments`). Work only inside this worktree (your cwd). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
-            f"{ACCEPT}\n" + SPEC)
+            f"{ACCEPT}\n" + SPEC + live_rule(n))
     if lane == "review":
         return base + (f"This is a read-only review issue: change NO files, make no commits, open no PR. Post your report as ONE issue comment "
                        f"(`gh issue comment {n} --repo {REPO} --body-file <file>`; write the file under oren2/tests/.tmp/). "
@@ -1248,7 +1297,9 @@ def review_colours(round1=""):
                "`VERDICT: PURPLE <question in one line> merge-safe` or `... hold` (PURPLE: a real product/design choice only the owner can make, e.g. what Oren sees or hears or what the parent can do, the code works; "
                "merge-safe = merge now and ask, hold = park until he answers; never for code style); "
                "`VERDICT: FIX <points>` (RED). Judge against the issue's `## Acceptance` list (#186). RED ONLY for: a missed Acceptance point, wrong behaviour for Oren or the parent, "
-               "a failing or missing test for the change, security, data loss, a broken build. "
+               "a failing or missing test for the change, security, data loss, a broken build, "
+               "a PR body that closes the issue (Fixes/Closes #n) while an Acceptance item still needs a live check after merge (owner, phone, after deploy, a measurement, a screenshot on a device; "
+               "the fix: `Refs #n` + label `later` + a `Due:` line on the issue, #453). "
                "Justify each RED point in one line. Everything else is a BLUE note, never FIX.")
     if round1:
         colours += ("\nThis is a re-review: check ONLY whether these round-1 RED points are fixed, raise NO new nits and no new points "
@@ -1768,9 +1819,10 @@ def process_locked(issue, where="local"):
                 rv = verdict = red0 or f"VERDICT: FIX see the last VERDICT comment on PR #{pr}"
             elif where == "remote":                  # #134: the reviewer is a cloud session too; its VERDICT is a PR comment
                 since = utc()
-                rv, verdict = remote_review(n, pr, red, remote.start, lambda: fresh_remote().review_status(pr, since=since), time.sleep, time.time, 3600, 60, ended=over)
+                rv, verdict = remote_review(n, pr, red, remote.start, lambda: fresh_remote().review_status(pr, since=since), time.sleep, time.time, 3600, 60, ended=over,
+                                            task=remote_review_prompt(n, pr, red) + live_hint(n, pr))
             else:
-                rv, verdict = agent(f"review-{n}" + ("" if rnd == 1 else f"-{rnd}"), review_prompt(n, pr, red), wt, READ_TOOLS,
+                rv, verdict = agent(f"review-{n}" + ("" if rnd == 1 else f"-{rnd}"), review_prompt(n, pr, red) + live_hint(n, pr), wt, READ_TOOLS,
                                     d / f"review{rnd}.log", "VERDICT:", n, "reviewer", rm, over=over)
             if not (rnd == 1 and step == "fix"): (d / f"review{rnd}.out").write_text(redact(rv), encoding="utf-8")
             kind, text, extra = parse_verdict(verdict)
@@ -1859,7 +1911,7 @@ def process_locked(issue, where="local"):
         pre = start_pregen(log) if dep.startswith("deployed") else ""    # #175: after the lock, in the background; #301: never blocks
         m = sync_main(log)                       # result logged (review of #47)
         if m: log_line(m)
-        gh("issue", "close", str(n), "--comment", f"Merged to {BRANCH}, tests green, {dep}.{pregen_note(pre)}")
+        finish_issue(n, f"Merged to {BRANCH}, tests green, {dep}.{pregen_note(pre)}")
         set_labels(n, remove=["in-progress"])
         remove_worktree(wt, log)
         close_windows(n)
