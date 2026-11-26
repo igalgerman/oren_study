@@ -263,7 +263,7 @@ T.openStories=openStories;
 })();
 
 /* ===== TYPING (Hebrew keyboard) ===== */
-(()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;const {h,$,rand,pick,SPR}=O;const {X,building}=T;const sfx=O.sfx;
+(()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;const {h,$,rand,pick,SPR,ICON}=O;const {X,building}=T;const sfx=O.sfx;
 const CODE={KeyE:'ק',KeyR:'ר',KeyT:'א',KeyY:'ט',KeyU:'ו',KeyI:'ן',KeyO:'ם',KeyP:'פ',KeyA:'ש',KeyS:'ד',KeyD:'ג',KeyF:'כ',KeyG:'ע',KeyH:'י',KeyJ:'ח',KeyK:'ל',KeyL:'ך',Semicolon:'ף',KeyZ:'ז',KeyX:'ס',KeyC:'ב',KeyV:'ה',KeyB:'נ',KeyN:'מ',KeyM:'צ',Comma:'ת',Period:'ץ',Space:' '};
 const ROWS=[['ק','ר','א','ט','ו','ן','ם','פ'],['ש','ד','ג','כ','ע','י','ח','ל','ך','ף'],['ז','ס','ב','ה','נ','מ','צ','ת','ץ']];
 const FINGER={'ש':0,'ז':0,'ד':1,'ס':1,'ק':2,'ג':2,'ב':2,'ר':3,'כ':3,'ע':3,'ה':3,'נ':3,'א':3,'ט':4,'י':4,'ח':4,'מ':4,'צ':4,'ו':4,'ן':5,'ל':5,'ת':5,'ם':6,'ך':6,'ץ':6,'פ':7,'ף':7};
@@ -285,11 +285,10 @@ function typeLesson(n,back){const text=lessonText(n);let i=0,err=0,t0=0;O.setScr
         const st=acc>=95?3:acc>=85?2:1;const ty=T.S().typ;ty.best[n]=Math.max(ty.best[n]|0,st);ty.wpm=Math.max(ty.wpm|0,wpm);ty.acc=acc;O.addGems(5+st*2);T.record('type-lessons',st);
         T.result({title:'סִיַּמְתָּ אֶת הַשִּׁעוּר!',sub:`דִּיּוּק ${acc}% · ${wpm} מִלִּים בְּדַקָּה`,stars:st,gems:5+st*2,back,again:()=>typeLesson(n,back)});return;}draw();}
     else{err++;sfx.no();box.classList.remove('shake');void box.offsetWidth;box.classList.add('shake');}});}
-function lessonsMenu(back){O.setScreen('sTal','city',back);T.hudT('שִׁעוּרֵי הַקְלָדָה');O.sayNow='בְּחַר שִׁעוּר הַקְלָדָה.';const s=$('#sTal');s.innerHTML='';const ty=T.S().typ;
-  s.appendChild(h('div','lsent','מַנִּיחִים אֶצְבָּעוֹת עַל <b>ש ד ג כ</b> וְעַל <b>ח ל ך ף</b>. כָּל אֶצְבַּע לוֹחֶצֶת עַל הַמַּקָּשִׁים בַּצֶּבַע שֶׁלָּהּ.'));
-  const g=h('div','acts');
-  LESSONS.forEach((l,n)=>{const open=n===0||(ty.best[n-1]|0)>0;const st=ty.best[n]|0;const c=h('button','actc'+(open?'':' locked'),`<span class="an ltr" style="font-size:24px">${l.join(' ')}</span><span class="an">שִׁעוּר ${n+1}</span><span class="st">${[0,1,2].map(k=>k<st?SPR.star:SPR.starOff).join('')}</span>`);
-    c.disabled=!open;c.onclick=()=>typeLesson(n,()=>lessonsMenu(back));g.appendChild(c);});s.appendChild(g);}
+/* one big button: the next lesson (the first one not done yet) */
+function lessonsMenu(back){O.setScreen('sTal','city',back);T.hudT('שִׁעוּרֵי הַקְלָדָה');O.sayNow='לְחַץ, וְנַתְחִיל אֶת הַשִּׁעוּר.';const s=$('#sTal');s.innerHTML='';const ty=T.S().typ;
+  let n=LESSONS.findIndex((_,k)=>!(ty.best[k]|0));if(n<0)n=LESSONS.length-1;
+  const b=h('button','bigbtn lvgo',ICON.play+`<span>שִׁעוּר ${n+1}</span>`);b.onclick=()=>typeLesson(n,()=>lessonsMenu(back));s.appendChild(b);}
 function rainGame(back){const ty=T.S().typ;let top=0;Object.keys(ty.best).forEach(k=>{top=Math.max(top,+k);});const al=learned(Math.max(1,top));
   O.setScreen('sTal','city',back);T.hudT('גֶּשֶׁם אוֹתִיּוֹת');O.sayNow='לְחַץ בַּמִּקְלֶדֶת עַל הָאוֹת שֶׁנּוֹפֶלֶת, לִפְנֵי שֶׁהִיא נוֹגַעַת בַּדֶּשֶׁא!';const s=$('#sTal');s.innerHTML='';const field=h('div','rainf');const sc=h('div','score','⭐ 0');s.append(h('div','lsent','לְחַץ בַּמִּקְלֶדֶת עַל הָאוֹת שֶׁנּוֹפֶלֶת, לִפְנֵי שֶׁהִיא נוֹגַעַת בַּדֶּשֶׁא!'),sc,field);
   let score=0,blocks=[],t0=performance.now(),last=t0,spawn=0,alive=true,end=t0+60000;const H=()=>field.clientHeight;
@@ -342,27 +341,24 @@ function rhythm(back){const rounds=shuffle(PATS.slice()).slice(0,4);let r=0,tota
 /* piano */
 const WHITE=[60,62,64,65,67,69,71,72,74,76],BLACK={61:0,63:1,66:3,68:4,70:5,73:7,75:8};
 const KMAP={KeyA:60,KeyS:62,KeyD:64,KeyF:65,KeyG:67,KeyH:69,KeyJ:71,KeyK:72,KeyL:74,Semicolon:76,KeyW:61,KeyE:63,KeyT:66,KeyY:68,KeyU:70,KeyO:73,KeyP:75};
-const nameOf=m=>{const pc=(m-60+120)%12;const i=SC.indexOf(pc);return i>=0?SOL[i]:'';};
 const SONGS=[['נַצְנְצִי כּוֹכָב',[60,60,67,67,69,69,67,65,65,64,64,62,62,60,67,67,65,65,64,64,62,67,67,65,65,64,64,62,60,60,67,67,69,69,67,65,65,64,64,62,62,60]],
  ['שִׁיר הַשִּׂמְחָה',[64,64,65,67,67,65,64,62,60,60,62,64,64,62,62,64,64,65,67,67,65,64,62,60,60,62,64,62,60,60]],
  ['יוֹנָתָן הַקָּטָן',[67,64,64,65,62,62,60,62,64,65,67,67,67,67,64,64,65,62,62,60,64,67,67,60]],
  ['אָחִי יַעֲקֹב',[67,69,71,67,67,69,71,67,71,72,74,71,72,74,74,76,74,72,71,67,74,76,74,72,71,67,67,62,67,67,62,67]]];
+/* first a choice: 🎹 free play or 🎵 a song (the next one in turn) */
+function pianoMenu(back){O.setScreen('sTal','final',back);T.hudT('פְּסַנְתֵּר');O.sayNow='נְגִינָה חָפְשִׁית, אוֹ שִׁיר?';const s=$('#sTal');s.innerHTML='';
+  const me=()=>pianoMenu(back);const k=((T.S().tl['mus-piano']||{}).n|0)%SONGS.length;const row=h('div','pmodes');
+  const f=h('button','bigbtn pmode','<span class="pme">🎹</span><span>נְגִינָה חָפְשִׁית</span>');f.onclick=()=>piano(me);
+  const g=h('button','bigbtn blue pmode','<span class="pme">🎵</span><span>שִׁיר</span>');g.onclick=()=>piano(me,k);row.append(f,g);s.appendChild(row);}
 function piano(back,songIdx){O.setScreen('sTal','final',back);const s=$('#sTal');s.innerHTML='';const song=songIdx!=null?SONGS[songIdx]:null;
-  T.hudT(song?song[0]:'פְּסַנְתֵּר');O.sayNow=song?'לְחַץ עַל הַמַּקָּשׁ שֶׁדּוֹלֵק.':'נַגֵּן עַל הַפְּסַנְתֵּר, אוֹ בְּחַר שִׁיר.';let pos=0,err=0,rec=null,recT=0,last=[];
-  const top=h('div','ptop');const kb=h('div','piano');s.append(top,kb);
-  WHITE.forEach((m,i)=>{const k=h('button','pw',`<span>${nameOf(m)}</span><small class="ltr">${'ASDFGHJKL;'[i]}</small>`);k.dataset.m=m;k.onpointerdown=e=>{e.preventDefault();press(m);};kb.appendChild(k);});
+  T.hudT(song?song[0]:'פְּסַנְתֵּר',song?T.progressBar(0,song[1].length):'');O.sayNow=song?'לְחַץ עַל הַמַּקָּשׁ שֶׁדּוֹלֵק.':'נַגֵּן עַל הַפְּסַנְתֵּר מָה שֶׁבָּא לְךָ.';let pos=0,err=0;
+  const kb=h('div','piano');s.append(kb);
+  WHITE.forEach(m=>{const k=h('button','pw','');k.dataset.m=m;k.onpointerdown=e=>{e.preventDefault();press(m);};kb.appendChild(k);});
   Object.entries(BLACK).forEach(([m,i])=>{const k=h('button','pb2','');k.dataset.m=m;k.style.left=`calc(${(i+1)*10}% - 3%)`;k.onpointerdown=e=>{e.preventDefault();press(+m);};kb.appendChild(k);});
-  const glow=()=>{kb.querySelectorAll('[data-m]').forEach(k=>k.classList.toggle('next',!!song&&+k.dataset.m===song[1][pos]));if(song)top.innerHTML=`<div class="seq">${song[1].slice(pos,pos+8).map((m,i)=>`<span class="${i===0?'cur':''}">${nameOf(m)}</span>`).join('')}</div><div class="progress">${T.progressBar(pos,song[1].length).replace('<div class="progress">','').replace(/<\/div>$/,'')}</div>`;};
+  const glow=()=>{kb.querySelectorAll('[data-m]').forEach(k=>k.classList.toggle('next',!!song&&+k.dataset.m===song[1][pos]));if(song)T.hudT(song[0],T.progressBar(pos,song[1].length));};
   function press(m){playMidi(m);const k=kb.querySelector(`[data-m="${m}"]`);if(k){k.classList.add('dn');setTimeout(()=>k.classList.remove('dn'),180);}
-    if(rec)rec.push([m,performance.now()-recT]);
     if(song){if(m===song[1][pos]){pos++;if(pos>=song[1].length){T.setKey(null);const st=err<=2?3:err<=6?2:1;O.addGems(5+st*2);T.record('mus-piano',st);setTimeout(()=>T.result({title:'נִגַּנְתָּ אֶת הַשִּׁיר!',sub:song[0],stars:st,gems:5+st*2,back,again:()=>piano(back,songIdx)}),D(700));return;}}else err++;glow();}}
   T.setKey(e=>{const m=KMAP[e.code];if(m&&!e.repeat){e.preventDefault();press(m);}});
-  if(!song){const row=h('div','btnrow');const rb=h('button','bigbtn sm','⏺ <span>הַקְלָטָה</span>');const pb=h('button','bigbtn blue sm',ICON.play+'<span>הַשְׁמָעָה</span>');
-    rb.onclick=()=>{if(rec){last=rec;rec=null;rb.innerHTML='⏺ <span>הַקְלָטָה</span>';rb.classList.remove('rec');}else{rec=[];recT=performance.now();rb.innerHTML='⏹ <span>עֲצֹר</span>';rb.classList.add('rec');}};
-    pb.onclick=()=>{last.forEach(([m,t])=>setTimeout(()=>{playMidi(m);const k=kb.querySelector(`[data-m="${m}"]`);if(k){k.classList.add('dn');setTimeout(()=>k.classList.remove('dn'),180);}},t));};
-    row.append(rb,pb);s.appendChild(row);
-    const sr=h('div','acts');SONGS.forEach((sg,i)=>{const c=h('button','actc',`<span class="ai">${X.note}</span><span class="an">${sg[0]}</span>`);c.onclick=()=>piano(back,i);sr.appendChild(c);});s.appendChild(h('div','lcap','אוֹ בְּחַר שִׁיר לְנַגֵּן לְפִי הָאוֹר:'));s.appendChild(sr);}
-  else{const b=h('button','bigbtn plain sm',ICON.redo+'<span>לִשְׁמֹעַ אֶת הַשִּׁיר</span>');b.onclick=()=>song[1].forEach((m,i)=>playMidi(m,.45,.8,i*.42));s.appendChild(b);}
   glow();window.__piano={press,get pos(){return pos;},song};}
 building({id:'music',name:'אוּלַם הַמּוּזִיקָה',color:'#b8860b',bg:'final',icon:()=>X.note,blurb:'תָּוִים, קֶצֶב וּנְגִינָה. אֶפְשָׁר לְנַגֵּן גַּם בַּמִּקְלֶדֶת.',acts:[
   {id:'mus-notes',name:'שְׁמוֹת הַתָּוִים',icon:()=>X.note,run:back=>quiz({id:'mus-notes',title:'שְׁמוֹת הַתָּוִים',bg:'final',back,n:8,gen:i=>{const lvl=i<3?[0,2,4]:i<6?[0,1,2,3,4,5,6]:[0,1,2,3,4,5,6,7];const idx=pick(lvl);const right=SOL[idx%7];const opts=shuffle([right,...shuffle(SOL.filter(x=>x!==right)).slice(0,2)]);
@@ -372,8 +368,8 @@ building({id:'music',name:'אוּלַם הַמּוּזִיקָה',color:'#b8860b
   {id:'mus-ear',name:'אֹזֶן מוּזִיקָלִית',icon:()=>'<span style="font-size:34px">👂</span>',run:back=>quiz({id:'mus-ear',title:'אֹזֶן מוּזִיקָלִית',bg:'final',back,n:8,gen:i=>{const a=rand(60,72);const same=i%4===3;const b=same?a:a+(Math.random()<.5?-1:1)*rand(3,7);const opts=['גָּבוֹהַּ יוֹתֵר','נָמוּךְ יוֹתֵר','אוֹתוֹ צְלִיל'];const ans=same?2:b>a?0:1;
      return {pr:`<div class="qq">הַקְשֵׁב לִשְׁנֵי צְלִילִים. הַשֵּׁנִי...</div>`,opts,ans,cls:'tx',play:()=>{playMidi(a,.5);playMidi(b,.5,1,.6);},auto:1,playLbl:'שׁוּב',key:a+'-'+b+'-'+i};}})},
   {id:'mus-rhythm',name:'קֶצֶב',icon:()=>'<span style="font-size:34px">🥁</span>',run:rhythm},
-  {id:'mus-piano',name:'פְּסַנְתֵּר',icon:()=>X.keys,run:back=>piano(back)}]});
-T.MUSIC={SONGS,staff,midiOf,piano};
+  {id:'mus-piano',name:'פְּסַנְתֵּר',icon:()=>X.keys,run:pianoMenu}]});
+T.MUSIC={SONGS,staff,midiOf,piano,pianoMenu};
 })();
 
 /* ===== SCIENCE LAB ===== */
@@ -441,44 +437,31 @@ const HEX='0123456789abcdef';const N=16;
 function artSVG(str,cls){if(!str)return '';let r='';for(let i=0;i<N*N;i++){const c=str[i];if(c&&c!=='.')r+=`<rect x="${i%N}" y="${(i/N)|0}" width="1.05" height="1.05" fill="${PAL[HEX.indexOf(c)]}"/>`;}
   return `<svg class="${cls||'artsvg'}" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true"><rect width="16" height="16" fill="#fffaf0"/>${r}</svg>`;}
 window.TAL_artSVG=s=>artSVG(s,'artsvg framed');
-/* --- pixel editor --- */
-function editor(back,loadIdx){const s0=T.S();let cells=(loadIdx!=null&&s0.art[loadIdx]?s0.art[loadIdx]:'.'.repeat(N*N)).split('');let col=2,tool='brush',mirror=false,editing=loadIdx;
-  O.setScreen('sTal','valley',back);T.hudT('סְטוּדְיוֹ פִּיקְסֶלִים');O.sayNow='ציירו ציור משלכם';const s=$('#sTal');s.innerHTML='';
+/* --- pixel editor: 8 colours, 3 tools, one save (the saved picture hangs in the kingdom) --- */
+const EDPAL=[0,2,3,4,5,8,10,12];
+function editor(back){let cells='.'.repeat(N*N).split('');let col=2,tool='brush',editing=null;
+  O.setScreen('sTal','valley',back);T.hudT('סְטוּדְיוֹ פִּיקְסֶלִים');O.sayNow='צַיְּרוּ צִיּוּר מִשֶּׁלָּכֶם.';const s=$('#sTal');s.innerHTML='';
   const wrap=h('div','pxed');const grid=h('div','pxg');grid.style.setProperty('--n',N);
   for(let i=0;i<N*N;i++){const c=h('i','px');c.dataset.i=i;grid.appendChild(c);}
-  const pal=h('div','pxpal');PAL.forEach((p,k)=>{const b=h('button','sw'+(k===col?' on':''));b.style.background=p;b.setAttribute('aria-label','צבע '+(k+1));b.onclick=()=>{col=k;if(tool==='erase')setTool('brush');pal.querySelectorAll('.sw').forEach((x,j)=>x.classList.toggle('on',j===k));sfx.pop(2);};pal.appendChild(b);});
+  const pal=h('div','pxpal');EDPAL.forEach((k,j)=>{const b=h('button','sw'+(k===col?' on':''));b.style.background=PAL[k];b.setAttribute('aria-label','צבע '+(j+1));b.onclick=()=>{col=k;if(tool==='erase')setTool('brush');pal.querySelectorAll('.sw').forEach((x,q)=>x.classList.toggle('on',q===j));sfx.pop(2);};pal.appendChild(b);});
   const tools=h('div','pxtools');const TB={};
   [['brush','🖌️','מִכְחוֹל'],['fill','🪣','דְּלִי'],['erase','🧽','מַחַק']].forEach(([id,ic,nm])=>{const b=h('button','tbtn'+(id===tool?' on':''),`<span>${ic}</span><small>${nm}</small>`);b.onclick=()=>setTool(id);TB[id]=b;tools.appendChild(b);});
-  const mb=h('button','tbtn',`<span>🦋</span><small>מַרְאָה</small>`);mb.onclick=()=>{mirror=!mirror;mb.classList.toggle('on',mirror);sfx.pop(3);};tools.appendChild(mb);
-  const cb=h('button','tbtn',`<span>🗑️</span><small>נִקּוּי</small>`);cb.onclick=()=>{if(!confirmClear())return;cells=cells.map(()=>'.');draw();sfx.whoosh&&sfx.whoosh();};tools.appendChild(cb);
-  let clearArm=0;function confirmClear(){if(Date.now()-clearArm<2500)return true;clearArm=Date.now();O.floatText(cb,'שׁוּב לְאִשּׁוּר');return false;}
   function setTool(t){tool=t;Object.entries(TB).forEach(([k,b])=>b.classList.toggle('on',k===t));sfx.pop(1);}
   function draw(){const ch=grid.children;for(let i=0;i<N*N;i++){const c=cells[i];ch[i].style.background=c==='.'?'':PAL[HEX.indexOf(c)];}}
-  function setCell(i,v){if(cells[i]===v)return false;cells[i]=v;return true;}
   function paint(i){const v=tool==='erase'?'.':HEX[col];if(tool==='fill'){flood(i,v);draw();sfx.pop(4);return;}
-    let ch=setCell(i,v);if(mirror){const x=i%N,y=(i/N)|0;ch=setCell(y*N+(N-1-x),v)||ch;}if(ch){draw();sfx.key&&sfx.key();}}
+    if(cells[i]!==v){cells[i]=v;draw();sfx.key&&sfx.key();}}
   function flood(i,v){const from=cells[i];if(from===v)return;const st=[i];while(st.length){const j=st.pop();if(cells[j]!==from)continue;cells[j]=v;const x=j%N,y=(j/N)|0;if(x>0)st.push(j-1);if(x<N-1)st.push(j+1);if(y>0)st.push(j-N);if(y<N-1)st.push(j+N);}}
   let down=false;const at=e=>{const r=grid.getBoundingClientRect();const x=Math.floor((e.clientX-r.left)/r.width*N),y=Math.floor((e.clientY-r.top)/r.height*N);return x>=0&&y>=0&&x<N&&y<N?y*N+x:-1;};
   grid.onpointerdown=e=>{e.preventDefault();down=true;try{grid.setPointerCapture(e.pointerId);}catch(_){}const i=at(e);if(i>=0)paint(i);};
   grid.onpointermove=e=>{if(!down||tool==='fill')return;const i=at(e);if(i>=0)paint(i);};
   grid.onpointerup=grid.onpointercancel=()=>{down=false;};
-  const row=h('div','btnrow');const sv=h('button','bigbtn',SPR.star+'<span>שְׁמֹר בַּגָּלֶרְיָה</span>');const gl=h('button','bigbtn plain sm','🖼️ <span>גָּלֶרְיָה</span>');row.append(gl,sv);
+  const row=h('div','btnrow');const sv=h('button','bigbtn','<span>שְׁמֹר</span>');row.append(sv);
   sv.onclick=()=>{const str=cells.join('');if(!/[^.]/.test(str)){O.floatText(sv,'עוֹד רֵיק!');sfx.no();return;}const s=T.S();
     if(editing!=null&&s.art[editing]!=null)s.art[editing]=str;else{if(s.art.length>=12){s.art.shift();if(s.kpic!=null)s.kpic=s.kpic>0?s.kpic-1:null;}s.art.push(str);editing=s.art.length-1;}
-    s.artT=Date.now();const first=!(s.tl['art-draw']);T.record('art-draw',3);if(first)O.addGems(10,sv);sfx.build&&sfx.build();O.burst(...O.center(grid),30);O.floatText(sv,'נִשְׁמַר!');};
-  gl.onclick=()=>gallery(back);
+    s.kpic=editing;s.artT=s.kpicT=Date.now();const first=!(s.tl['art-draw']);T.record('art-draw',3);if(first)O.addGems(10,sv);sfx.build&&sfx.build();O.burst(...O.center(grid),30);O.floatText(sv,'נִשְׁמַר!');};
   wrap.append(grid,h('div','pxside'));wrap.lastChild.append(pal,tools);s.append(wrap,row);draw();
   T.setKey(null);
-  window.__art={paint:(i,c)=>{col=c;tool='brush';paint(i);},fill:(i,c)=>{col=c;tool='fill';paint(i);setTool('brush');},save:()=>sv.click(),get cells(){return cells.join('');},mirror:v=>{mirror=v;}};}
-function gallery(back){const s0=T.S();O.setScreen('sTal','valley',back);T.hudT('הַגָּלֶרְיָה שֶׁלִּי');const s=$('#sTal');s.innerHTML='';
-  s.appendChild(h('div','whead',`<span class="gd">🖼️</span><h1>הַגָּלֶרְיָה שֶׁלִּי</h1>`));
-  if(!s0.art.length){s.appendChild(h('div','lsent','עוֹד אֵין צִיּוּרִים. בּוֹא נְצַיֵּר!'));}
-  const g=h('div','gal');s0.art.forEach((a,i)=>{const c=h('div','gcard'+(s0.kpic===i?' hung':''),artSVG(a));const r=h('div','grow');
-    const e=h('button','gb','✏️');e.title='לַעֲרֹךְ';e.setAttribute('aria-label','לערוך');e.onclick=()=>editor(back,i);
-    const k=h('button','gb','🏰');k.title='תְּלֵה בַּמַּמְלָכָה';k.setAttribute('aria-label','לתלות בממלכה');k.onclick=()=>{s0.kpic=i;s0.kpicT=Date.now();O.persist();sfx.build&&sfx.build();gallery(back);O.floatText(k,'נִתְלָה בַּמַּמְלָכָה!');};
-    const d=h('button','gb','🗑️');d.title='לִמְחֹק';d.setAttribute('aria-label','למחוק');let arm=0;d.onclick=()=>{if(Date.now()-arm>2500){arm=Date.now();O.floatText(d,'שׁוּב לִמְחִיקָה');return;}s0.art.splice(i,1);if(s0.kpic===i)s0.kpic=null;else if(s0.kpic>i)s0.kpic--;s0.artT=Date.now();O.persist();gallery(back);};
-    r.append(e,k,d);c.appendChild(r);g.appendChild(c);});
-  s.appendChild(g);const nb=h('button','bigbtn',ICON.play+'<span>צִיּוּר חָדָשׁ</span>');nb.onclick=()=>editor(back);const row=h('div','btnrow');row.appendChild(nb);s.appendChild(row);}
+  window.__art={paint:(i,c)=>{col=c;tool='brush';paint(i);},fill:(i,c)=>{col=c;tool='fill';paint(i);setTool('brush');},save:()=>sv.click(),get cells(){return cells.join('');}};}
 /* --- colour mixing --- */
 const CN={red:['אָדֹם','#e63946'],yellow:['צָהֹב','#ffd166'],blue:['כָּחֹל','#3a8fc4'],white:['לָבָן','#ffffff'],black:['שָׁחֹר','#1d2631'],orange:['כָּתֹם','#ff8a3d'],green:['יָרֹק','#4fae4f'],purple:['סָגֹל','#8e6fd1'],pink:['וָרֹד','#ff9cc2'],sky:['תְּכֵלֶת','#9ad8f5'],gray:['אָפֹר','#8d939a'],brown:['חוּם','#94613a']};
 const MIX=[['red','yellow','orange'],['blue','yellow','green'],['blue','red','purple'],['red','white','pink'],['blue','white','sky'],['black','white','gray']];
@@ -518,19 +501,20 @@ function symmetry(back){const R=5,M=8;let r=0,err=0,gems=0;O.setScreen('sTal','v
     window.__sym={solve:()=>{for(let y=0;y<M;y++)for(let x=M/2;x<M;x++){const i=y*M+x;cur[i]=tgt[y*M+(M-1-x)];}chk.click();}};};
   run();}
 /* --- colour by number (each cell = exercise) --- */
+/* 6x6 pictures, 2-3 colours each; every answer is one digit */
 const PICS=[
- {n:'לֵב',p:['........','.RR..RR.','RPPRRRRR','RPRRRRRR','.RRRRRR.','..RRRR..','...RR...','........'],c:{R:2,P:11}},
- {n:'עֵץ',p:['...GG...','..GGGG..','.GGgGGG.','GGGGGgGG','.GgGGGG.','...BB...','...BB...','..BBBB..'],c:{G:5,g:6,B:12}},
- {n:'בַּיִת',p:['...RR...','..RRRR..','.RRRRRR.','RRRRRRRR','.WWWWWW.','.WKWWBW.','.WKWWWW.','.WKWWWW.'],c:{R:2,W:13,K:12,B:8}},
- {n:'דָּג',p:['........','..OOO..O','.OOOOOOO','OEOOOOO.','OOOOOOO.','.OOOOOOO','..OOO..O','........'],c:{O:3,E:0}},
- {n:'פִּטְרִיָּה',p:['..RRRR..','.RWRRWR.','RRRRRRRR','RWRRRRWR','...WW...','...WW...','..WWWW..','........'],c:{R:2,W:1}},
- {n:'כּוֹכָב',p:['...YY...','...YY...','YYYOOYYY','.YYOOYY.','..YYYY..','.YY..YY.','YY....YY','........'],c:{Y:4,O:3}}];
+ {n:'לֵב',p:['RR..RR','RPRRRR','RRRRRR','RRRRRR','.RRRR.','..RR..'],c:{R:2,P:11}},
+ {n:'עֵץ',p:['..GG..','.GGGG.','GGGGGG','.GGGG.','..BB..','..BB..'],c:{G:5,B:12}},
+ {n:'בַּיִת',p:['..RR..','.RRRR.','RRRRRR','.WWWW.','.WBWW.','.WBWW.'],c:{R:2,W:13,B:12}},
+ {n:'דָּג',p:['..OO..','.OOO.O','OEOOOO','OOOOOO','.OOO.O','..OO..'],c:{O:3,E:0}},
+ {n:'פִּטְרִיָּה',p:['.RRRR.','RWRRWR','RRRRRR','..WW..','..WW..','.WWWW.'],c:{R:2,W:13}},
+ {n:'כּוֹכָב',p:['..YY..','..YY..','YYOOYY','.YOOY.','.YYYY.','YY..YY'],c:{Y:4,O:3}}];
 function exFor(ans,lvl){const t=lvl===0?pick(['+','-']):lvl===1?pick(['+','-','+']):pick(['×','+','-']);
-  if(t==='×'){const f=[];for(let a=2;a<=10;a++)if(ans%a===0&&ans/a<=10&&ans/a>=1)f.push(a);if(f.length){const a=pick(f);return `${a}×${ans/a}`;}}
-  const cap=lvl===0?10:20;if((t==='-'||ans<3)&&ans<cap){const b=rand(1,Math.min(9,cap-ans));return `${ans+b}-${b}`;}const a=rand(1,ans-1);return `${a}+${ans-a}`;}
-function colorByNum(back,pi){const lvl=Math.min(2,((T.S().tl['art-cbn']||{}).n|0)>>1);pi=pi==null?((T.S().tl['art-cbn']||{}).n|0)%PICS.length:pi;const P=PICS[pi];const M=8;
-  O.setScreen('sTal','valley',back);T.hudT('צְבִיעָה לְפִי מִסְפָּרִים');O.sayNow='פתרו את התרגיל וצבעו בצבע של התשובה';const s=$('#sTal');s.innerHTML='';
-  const keys=Object.keys(P.c);const nums=shuffle(Array.from({length:lvl===0?9:lvl===1?13:19},(_,k)=>k+2)).slice(0,keys.length);const ansOf={};keys.forEach((k,j)=>ansOf[k]=nums[j]);
+  if(t==='×'){const f=[];for(let a=2;a<=ans/2;a++)if(ans%a===0)f.push(a);if(f.length){const a=pick(f);return `${a}×${ans/a}`;}}
+  if(t==='-'&&ans<9){const b=rand(1,9-ans);return `${ans+b}-${b}`;}const a=rand(1,ans-1);return `${a}+${ans-a}`;}
+function colorByNum(back,pi){const lvl=Math.min(2,((T.S().tl['art-cbn']||{}).n|0)>>1);pi=pi==null?((T.S().tl['art-cbn']||{}).n|0)%PICS.length:pi;const P=PICS[pi];const M=6;
+  O.setScreen('sTal','valley',back);T.hudT('צְבִיעָה לְפִי מִסְפָּרִים');O.sayNow='פִּתְרוּ אֶת הַתַּרְגִּיל, וְצִבְעוּ בַּצֶּבַע שֶׁל הַתְּשׁוּבָה.';const s=$('#sTal');s.innerHTML='';
+  const keys=Object.keys(P.c);const nums=shuffle([2,3,4,5,6,7,8,9]).slice(0,keys.length);const ansOf={};keys.forEach((k,j)=>ansOf[k]=nums[j]);
   let sel=0,err=0,left=0;const legend=h('div','cleg');
   keys.forEach((k,j)=>{const b=h('button','lg'+(j===0?' on':''),`<span class="swc" style="--c:${PAL[P.c[k]]}"></span><b>${ansOf[k]}</b>`);b.onclick=()=>{sel=j;legend.querySelectorAll('.lg').forEach((x,q)=>x.classList.toggle('on',q===j));sfx.pop(2);};legend.appendChild(b);});
   const g=h('div','cbn');g.style.setProperty('--n',M);
@@ -539,7 +523,7 @@ function colorByNum(back,pi){const lvl=Math.min(2,((T.S().tl['art-cbn']||{}).n|0
       if(k===ch){c.classList.add('done');c.style.background=PAL[P.c[ch]];c.textContent='';sfx.pop(3+((left%4)));left--;if(left===0)win();}
       else{err++;c.classList.add('bad');sfx.no();setTimeout(()=>c.classList.remove('bad'),D(500));}};c.dataset.k=ch;}
     g.appendChild(c);}));
-  s.append(h('div','lsent',`פִּתְרוּ, בַּחֲרוּ צֶבַע לְפִי הַתְּשׁוּבָה, וְגַלּוּ: מָה בַּתְּמוּנָה?`),legend,g);
+  s.append(legend,g);
   function win(){g.classList.add('done');sfx.build&&sfx.build();setTimeout(()=>{if(!g.isConnected)return;T.setKey(null);T.finishAct('art-cbn',Math.floor(err/2),12,4,back,()=>colorByNum(back),`גִּלִּיתָ: ${P.n}!`);},D(900));}
   T.setKey(e=>{const n=+e.key;if(n>=1&&n<=keys.length)legend.children[n-1].click();});
   window.__cbn={solve:()=>{[...g.children].forEach(c=>{if(c.dataset.k&&!c.classList.contains('done')){sel=keys.indexOf(c.dataset.k);c.click();}});},ans:ansOf,get left(){return left;}};}
@@ -600,13 +584,15 @@ function feel(back){clearT();O.setScreen('sTal','forest',back);T.hudT('אֵיך�
   s.appendChild(g);const hist=T.S().mood.slice(-7);if(hist.length)s.appendChild(h('div','mhist',`<span>הָרְגָשׁוֹת הָאַחֲרוֹנִים שֶׁלִּי:</span>${hist.map(m=>FACES[m.f]?`<i>${FACES[m.f].s}</i>`:'').join('')}`));}
 /* --- gratitude jar --- */
 const THX=[['🏠','הַמִּשְׁפָּחָה שֶׁלִּי'],['🧑‍🤝‍🧑','חֲבֵרִים'],['🐱','חַיּוֹת'],['🍎','אֹכֶל טָעִים'],['☀️','מֶזֶג אֲוִיר יָפֶה'],['⚽','מִשְׂחָק בַּחוּץ'],['📚','סִפּוּר טוֹב'],['🎨','צִיּוּר'],['🛏️','מִטָּה חַמָּה'],['🎵','מוּזִיקָה'],['🤗','חִבּוּק'],['🏫','מַשֶּׁהוּ שֶׁלָּמַדְתִּי']];
+/* the kid sees 6 of them (saved days keep the index into THX) */
+const JAR6=[0,1,2,3,5,10];
 const BALL=['#e63946','#ffd166','#4fae4f','#3a8fc4','#8e6fd1','#ff9cc2','#ff8a3d','#7fd6f5'];
 function jarSVG(n){const k=Math.min(n,40);let b='';for(let i=0;i<k;i++){const x=24+((i*37)%5)*14+(i%2)*5,y=150-Math.floor(i/5)*12;b+=`<circle cx="${x}" cy="${y}" r="7" fill="${BALL[i%BALL.length]}"/>`;}
   return `<svg viewBox="0 0 120 170" class="jarsvg" aria-hidden="true"><rect x="30" y="4" width="60" height="14" rx="4" fill="#c8925a"/><path d="M28 20 H92 Q100 24 100 34 V156 Q100 166 90 166 H30 Q20 166 20 156 V34 Q20 24 28 20Z" fill="rgba(200,235,255,.35)" stroke="#5a7f9a" stroke-width="3"/>${b}<path d="M30 34 V150" stroke="#fff" stroke-opacity=".6" stroke-width="4" stroke-linecap="round"/></svg>`;}
 function jar(back){clearT();O.setScreen('sTal','forest',back);T.hudT('צִנְצֶנֶת הַתּוֹדָה');O.sayNow='על מה אתה מודה היום? בחר שלושה דברים';const s=$('#sTal');s.innerHTML='';const sel=new Set();
   const total=()=>T.S().jar.reduce((a,j)=>a+(j.i?j.i.length:0),0);
   const top=h('div','jartop',`<div class="jarw">${jarSVG(total())}</div><div class="lsent">עַל מָה אַתָּה מוֹדֶה הַיּוֹם? בְּחַר 3 דְּבָרִים 💛</div>`);const g=h('div','thx');
-  THX.forEach(([e,n],k)=>{const b=h('button','thb',`<span class="ae">${e}</span><span>${n}</span>`);b.onclick=()=>{if(sel.has(k)){sel.delete(k);b.classList.remove('on');}else if(sel.size<3){sel.add(k);b.classList.add('on');sfx.pop(sel.size+1);}upd();};g.appendChild(b);});
+  JAR6.forEach(k=>{const [e,n]=THX[k];const b=h('button','thb',`<span class="ae">${e}</span><span>${n}</span>`);b.onclick=()=>{if(sel.has(k)){sel.delete(k);b.classList.remove('on');}else if(sel.size<3){sel.add(k);b.classList.add('on');sfx.pop(sel.size+1);}upd();};g.appendChild(b);});
   const row=h('div','btnrow');const ok=h('button','bigbtn',SPR.heart?SPR.heart:'💛');ok.innerHTML='💛 <span>לְהַכְנִיס לַצִּנְצֶנֶת</span>';ok.disabled=true;row.appendChild(ok);
   const upd=()=>{ok.disabled=sel.size<1;};
   ok.onclick=()=>{const s0=T.S();const d=O.today();const ex=s0.jar.find(j=>j.d===d);if(ex)ex.i=[...new Set([...ex.i,...sel])];else s0.jar.push({d,i:[...sel]});if(s0.jar.length>200)s0.jar=s0.jar.slice(-200);s0.jarT=Date.now();
@@ -640,10 +626,10 @@ function level(i){const n=i<3?4:i<8?5:6;const r=rng(1000+i*77);const dens=.12+Ma
   return {n:4,w:new Set(),s:0,g:15,len:6,opt:6,rep:i>=6};}
 const LV=Array.from({length:NL},(_,i)=>level(i));
 const C=()=>{const s=T.S();s.code=s.code||{};return s.code;};
-function menu(back){O.setScreen('sTal','city',back);T.hudT('רוֹבּוֹט הַקּוֹד');O.sayNow='בחרו שלב';const s=$('#sTal');s.innerHTML='';
-  s.appendChild(h('div','whead',`<span class="gd">🤖</span><h1>רוֹבּוֹט הַקּוֹד</h1>`));s.appendChild(h('div','lsent','תַּכְנְתוּ אֶת הָרוֹבּוֹט: סַדְּרוּ חִצִּים כְּדֵי שֶׁיַּגִּיעַ לַיַּהֲלוֹם.'));
-  const g=h('div','lvgrid');const cs=C();LV.forEach((L,i)=>{const st=cs[i]|0;const open=i===0||(cs[i-1]|0)>0||(T.S().set.all);const b=h('button','lvb'+(open?'':' locked'),`<b>${i+1}</b><span>${[0,1,2].map(k=>k<st?SPR.star:SPR.starOff).join('')}</span>`);
-    b.disabled=!open;b.onclick=()=>play(i,back);g.appendChild(b);});s.appendChild(g);}
+/* one big button: the next level (the first one not done yet) */
+function menu(back){O.setScreen('sTal','city',back);T.hudT('רוֹבּוֹט הַקּוֹד');O.sayNow='תַּכְנְתוּ אֶת הָרוֹבּוֹט: סַדְּרוּ חִצִּים כְּדֵי שֶׁיַּגִּיעַ לַיַּהֲלוֹם.';const s=$('#sTal');s.innerHTML='';const cs=C();
+  let i=LV.findIndex((_,k)=>!(cs[k]|0));if(i<0)i=NL-1;
+  const b=h('button','bigbtn lvgo',ICON.play+`<span>שָׁלָב ${i+1}</span>`);b.onclick=()=>play(i,back);s.appendChild(b);}
 function play(li,back){const L=LV[li];const n=L.n;let prog=[],running=false;const mback=()=>menu(back);O.setScreen('sTal','city',mback);T.hudT(`רוֹבּוֹט הַקּוֹד · שָׁלָב ${li+1}`);O.sayNow='סַדֵּר חִצִּים כְּדֵי שֶׁהָרוֹבּוֹט יַגִּיעַ לַיַּהֲלוֹם, וּלְחַץ הַפְעֵל.';
   const s=$('#sTal');s.innerHTML='';const maxB=L.opt+4;
   const board=h('div','cboard');board.style.setProperty('--n',n);for(let c=0;c<n*n;c++){const d=h('i','ct'+(L.w.has(c)?' wall':''));if(L.w.has(c))d.innerHTML=X.stone;if(c===L.g)d.innerHTML=`<span class="cg bob">${SPR.gem}</span>`;board.appendChild(d);}
@@ -877,33 +863,39 @@ O.on('group',s=>{const pr=prof();if(!pr)return;s.querySelectorAll('.bld').forEac
 Object.values(ACT).forEach(a=>{const r=a.run;a.run=back=>{const s=T.S();s.last={id:a.id,d:O.today()};return r(back);};});
 /* ---------- badges ---------- */
 const tl=id=>T.S().tl[id]||{};const actsOf=bid=>(BUILD.find(b=>b.id===bid)||{acts:[]}).acts;
+/* each test gives how far along (1 = earned) so the wall can show the next one */
+const part=(a,b)=>b?Math.min(1,a/b):1;
 const BADGES=[
- ['star1','כּוֹכָב רִאשׁוֹן','⭐','לְסַיֵּם פְּעִילּוּת בָּעִיר',s=>Object.values(s.tl).some(c=>c.s>0)],
- ['explore','סַקְרָן','🧭','לְבַקֵּר בְּ-6 בִּנְיָנִים',s=>BUILD.filter(b=>b.acts.some(a=>tl(a.id).n)).length>=6],
- ['painter','צַיָּר','🎨','לְצַיֵּר 3 צִיּוּרִים',s=>(s.art||[]).length>=3],
- ['reader','תּוֹלַעַת סְפָרִים','📚','לִקְרֹא 3 סִפּוּרִים',s=>[0,1,2,3,4,5].filter(k=>tl('story-'+k).s).length>=3],
- ['typist','אֶצְבָּעוֹת זְרִיזוֹת','⌨️','לְסַיֵּם 5 שִׁעוּרֵי הַקְלָדָה',s=>Object.keys((s.typ||{}).best||{}).length>=5],
- ['coder','מְתַכְנֵת','🤖','לְסַיֵּם 10 שְׁלַבֵּי קוֹד',s=>Object.values(s.code||{}).filter(v=>v>0).length>=10],
- ['music','מוּזִיקַאי','🎵','לְנַגֵּן שִׁיר וּלְתוֹפֵף בַּקֶּצֶב',s=>tl('mus-piano').s&&tl('mus-rhythm').s],
- ['science','מַדְעָן','🧪','6 נִסּוּיִים בַּמַּעְבָּדָה',s=>actsOf('lab').filter(a=>tl(a.id).s).length>=6],
- ['calm','שַׁלְוָה','🫧','לִנְשֹׁם עִם הַבּוּעָה 5 פְּעָמִים',s=>(tl('mind-breath').n|0)>=5],
- ['heart','לֵב טוֹב','💛','15 דְּבָרִים טוֹבִים בַּצִּנְצֶנֶת',s=>(s.jar||[]).reduce((a,j)=>a+(j.i?j.i.length:0),0)>=15],
- ['writer','כּוֹתֵב אַלּוּף','✏️','לִכְתֹּב אֶת כָּל הָאוֹתִיּוֹת',s=>Object.keys(s.wr||{}).length>=22],
- ['thinker','רֹאשׁ גָּדוֹל','🧩','כָּל הַחִידוֹת בְּמִגְדַּל הַחֲשִׁיבָה',s=>actsOf('think').every(a=>tl(a.id).s)],
- ['world','מְטַיֵּל','🌍','3 כּוֹכָבִים בְּכָל הָעוֹלָם',s=>actsOf('world').every(a=>tl(a.id).s>=3)],
- ['streak3','שְׁלוֹשָׁה יָמִים בָּרֶצֶף','🔥','לְשַׂחֵק 3 יָמִים בָּרֶצֶף',s=>O.dayStreak()>=3],
- ['streak7','שָׁבוּעַ שָׁלֵם','🏆','לְשַׂחֵק 7 יָמִים בָּרֶצֶף',s=>O.dayStreak()>=7],
- ['times','אַלּוּף הַכֶּפֶל','✖️','50 תַּרְגִּילִים בְּלוּחַ הַכֶּפֶל',s=>O.masteredCount()>=50],
- ['math','כּוֹכַב הַחֶשְׁבּוֹן','🌟','100 כּוֹכָבִים בַּמַּסָּע',s=>O.totalStars()>=100],
- ['daily','מְשִׂימָה מֻשְׁלֶמֶת','✅','לְסַיֵּם אֶת כָּל הַשְּׁבִיל שֶׁל הַיּוֹם',s=>!!(s.daily&&s.daily.claimed)]];
+ ['star1','כּוֹכָב רִאשׁוֹן','⭐','לְסַיֵּם פְּעִילּוּת בָּעִיר',s=>Object.values(s.tl).some(c=>c.s>0)?1:0],
+ ['explore','סַקְרָן','🧭','לְבַקֵּר בְּ-6 בִּנְיָנִים',s=>part(BUILD.filter(b=>b.acts.some(a=>tl(a.id).n)).length,6)],
+ ['painter','צַיָּר','🎨','לְצַיֵּר 3 צִיּוּרִים',s=>part((s.art||[]).length,3)],
+ ['reader','תּוֹלַעַת סְפָרִים','📚','לִקְרֹא 3 סִפּוּרִים',s=>part([0,1,2,3,4,5].filter(k=>tl('story-'+k).s).length,3)],
+ ['typist','אֶצְבָּעוֹת זְרִיזוֹת','⌨️','לְסַיֵּם 5 שִׁעוּרֵי הַקְלָדָה',s=>part(Object.keys((s.typ||{}).best||{}).length,5)],
+ ['coder','מְתַכְנֵת','🤖','לְסַיֵּם 10 שְׁלַבֵּי קוֹד',s=>part(Object.values(s.code||{}).filter(v=>v>0).length,10)],
+ ['music','מוּזִיקַאי','🎵','לְנַגֵּן שִׁיר וּלְתוֹפֵף בַּקֶּצֶב',s=>part((tl('mus-piano').s?1:0)+(tl('mus-rhythm').s?1:0),2)],
+ ['science','מַדְעָן','🧪','6 נִסּוּיִים בַּמַּעְבָּדָה',s=>part(actsOf('lab').filter(a=>tl(a.id).s).length,6)],
+ ['calm','שַׁלְוָה','🫧','לִנְשֹׁם עִם הַבּוּעָה 5 פְּעָמִים',s=>part(tl('mind-breath').n|0,5)],
+ ['heart','לֵב טוֹב','💛','15 דְּבָרִים טוֹבִים בַּצִּנְצֶנֶת',s=>part((s.jar||[]).reduce((a,j)=>a+(j.i?j.i.length:0),0),15)],
+ ['writer','כּוֹתֵב אַלּוּף','✏️','לִכְתֹּב אֶת כָּל הָאוֹתִיּוֹת',s=>part(Object.keys(s.wr||{}).length,22)],
+ ['thinker','רֹאשׁ גָּדוֹל','🧩','כָּל הַחִידוֹת בְּמִגְדַּל הַחֲשִׁיבָה',s=>{const a=actsOf('think');return part(a.filter(x=>tl(x.id).s).length,a.length);}],
+ ['world','מְטַיֵּל','🌍','3 כּוֹכָבִים בְּכָל הָעוֹלָם',s=>{const a=actsOf('world');return part(a.filter(x=>tl(x.id).s>=3).length,a.length);}],
+ ['streak3','שְׁלוֹשָׁה יָמִים בָּרֶצֶף','🔥','לְשַׂחֵק 3 יָמִים בָּרֶצֶף',s=>part(O.dayStreak(),3)],
+ ['streak7','שָׁבוּעַ שָׁלֵם','🏆','לְשַׂחֵק 7 יָמִים בָּרֶצֶף',s=>part(O.dayStreak(),7)],
+ ['times','אַלּוּף הַכֶּפֶל','✖️','50 תַּרְגִּילִים בְּלוּחַ הַכֶּפֶל',s=>part(O.masteredCount(),50)],
+ ['math','כּוֹכַב הַחֶשְׁבּוֹן','🌟','100 כּוֹכָבִים בַּמַּסָּע',s=>part(O.totalStars(),100)],
+ ['daily','מְשִׂימָה מֻשְׁלֶמֶת','✅','לְסַיֵּם אֶת כָּל הַשְּׁבִיל שֶׁל הַיּוֹם',s=>s.daily&&s.daily.claimed?1:0]];
 function earned(){const s=T.S();s.bdg=s.bdg||{};return s.bdg;}
+const howFar=f=>{try{return +f(T.S())||0;}catch(x){return 0;}};
 /* badges are a quiet collection: earned silently, seen in the kingdom */
-function checkBadges(){const s=T.S(),e=earned();let got=0;for(const [id,,,,f] of BADGES){if(e[id])continue;let ok=false;try{ok=!!f(s);}catch(x){}if(ok){e[id]=Date.now();got=1;}}if(got)O.persist();}
+function checkBadges(){const e=earned();let got=0;for(const [id,,,,f] of BADGES){if(e[id])continue;if(howFar(f)>=1){e[id]=Date.now();got=1;}}if(got)O.persist();}
 function toast(html){if(parentOn||!$('#sPar').hidden)return;document.querySelectorAll('.toast').forEach(x=>x.remove());const t=h('div','toast',html);document.body.appendChild(t);sfx.star(1);setTimeout(()=>t.classList.add('out'),D(2400));setTimeout(()=>t.remove(),D(2900));}
 setInterval(()=>{if(!$('#ov').hidden||$('#hud').hidden||!$('#sPlay').hidden)return;checkBadges();},4000);
-function badges(back){O.setScreen('sTal','valley',back);const e=earned();T.hudT('הַתַּגִּים שֶׁלִּי',`<div class="starcount">🏅<span>${Object.keys(e).length}/${BADGES.length}</span></div>`);O.sayNow='התגים שלי';const s=$('#sTal');s.innerHTML='';
+/* the wall: the earned badges + one "next badge" (the closest one to earn) */
+function badges(back){O.setScreen('sTal','valley',back);const e=earned();T.hudT('הַתַּגִּים שֶׁלִּי');O.sayNow='הַתַּגִּים שֶׁלִּי';const s=$('#sTal');s.innerHTML='';
   s.appendChild(h('div','whead',`<span class="gd">🏅</span><h1>הַתַּגִּים שֶׁלִּי</h1>`));const g=h('div','bdgg');
-  BADGES.forEach(([id,n,ic,how])=>{g.appendChild(h('div','bdg'+(e[id]?' got':''),`<span class="bi">${e[id]?ic:'🔒'}</span><b>${n}</b><small>${how}</small>`));});s.appendChild(g);}
+  BADGES.filter(b=>e[b[0]]).forEach(([id,n,ic])=>g.appendChild(h('div','bdg got',`<span class="bi">${ic}</span><b>${n}</b>`)));
+  let nx=null,best=-1;BADGES.forEach(b=>{if(e[b[0]])return;const f=howFar(b[4]);if(f>best){best=f;nx=b;}});
+  if(nx)g.appendChild(h('div','bdg next',`<span class="bi">${nx[2]}</span><b>${nx[1]}</b><small>${nx[3]}</small>`));s.appendChild(g);}
 T.badges=badges;
 /* ---------- message from the parents ---------- */
 O.on('map',m=>{const st=SET();
@@ -941,10 +933,12 @@ const fmtMin=sec=>{const m=Math.round(sec/60);return m<60?m+' דק׳':(m/60).toF
 function lastDays(n){const out=[];const d=new Date();for(let i=n-1;i>=0;i--){const x=new Date(d);x.setDate(d.getDate()-i);const k=x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');out.push([k,x]);}return out;}
 /* three simple tabs; everything else lives in closed sections under "settings" */
 const TABS=[['sum','📊 סיכום'],['day','📅 היום של אורן'],['more','⚙️ הגדרות']];
-const MORE=[['voice','🔊 קול — בדיקה ובחירה'],['try','🎮 לשחק כהורה (ניסיון)'],['msg','💌 הודעה לאורן'],['parts','🧩 להפעיל / לכבות חלקים'],['prog','⏭️ דילוג, איפוס ויהלומים'],['perm','🎤 הרשאות'],['set','🔑 סיסמה וגיבוי'],['map','🗺️ מפת התוכן']];
-const GROUP={plan:'day',time:'day',map:'more',voice:'more',try:'more',msg:'more',parts:'more',prog:'more',perm:'more',set:'more'};
-const FN={map:box=>{if(T.contentMap)T.contentMap(box,sec,BAR);},sum:sumTab,try:tryTab,plan:planTab,time:timeTab,voice:voiceTab,perm:permTab,parts:partsTab,prog:progTab,msg:msgTab,set:setTab};
+const MORE=[['voice','🔊 קול — בדיקה ובחירה'],['try','🎮 לשחק כהורה (ניסיון)'],['msg','💌 הודעה לאורן'],['parts','🧩 להפעיל / לכבות חלקים'],['health','🥤 הפסקות וארוחות'],['read','📖 קריאה'],['prog','⏭️ דילוג, איפוס ויהלומים'],['perm','🎤 הרשאות'],['set','🔑 סיסמה וגיבוי'],['map','🗺️ מפת התוכן']];
+const GROUP={plan:'day',time:'day',health:'more',read:'more',map:'more',voice:'more',try:'more',msg:'more',parts:'more',prog:'more',perm:'more',set:'more'};
+const FN={map:box=>{if(T.contentMap)T.contentMap(box,sec,BAR);},sum:sumTab,try:tryTab,plan:planTab,time:timeTab,health:box=>{if(window.HEALTH)window.HEALTH.panel(box,sec,()=>panel('health'),'set');},read:box=>{if(T.rdSettings)T.rdSettings(box,sec,()=>panel('read'));},voice:voiceTab,perm:permTab,parts:partsTab,prog:progTab,msg:msgTab,set:setTab};
 let curTab='sum',openSec=null;
+/* on the website there is nothing to approve: no permissions section (G8: hide empty sections) */
+const permNone=()=>!!window.__site&&!(window.claude&&window.claude.use);
 const exitParent=()=>{parentOn=false;O.showMap();};
 function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(dl&&!dl.hidden)dl.hidden=true;if(!parentOn)return login(()=>panel(tab));
   if(tab&&GROUP[tab]){openSec=tab;curTab=GROUP[tab];}else if(tab){curTab=tab;if(tab!=='more')openSec=null;}
@@ -952,8 +946,8 @@ function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(
   s.appendChild(h('div','whead',`<h1>לוח הורים</h1>`));const tb=h('div','ptabs');TABS.forEach(([id,n])=>{const b=h('button','ptab'+(id===curTab?' on':''),n);b.onclick=()=>{openSec=null;panel(id);};tb.appendChild(b);});s.appendChild(tb);
   const body=h('div','pbody');s.appendChild(body);
   if(curTab==='sum')sumTab(body);
-  else if(curTab==='day'){timeTab(body);if(window.HEALTH)window.HEALTH.panel(body,sec,()=>panel('day'));planTab(body);if(window.DAYLOG)window.DAYLOG.panel(body,sec);if(window.LEARN)window.LEARN.parentPanel(body,sec,()=>panel('day'));if(window.KNOW)window.KNOW.panel(body,sec,()=>panel('day'));if(T.rdSettings)T.rdSettings(body,sec,()=>panel('day'));}
-  else MORE.forEach(([id,n])=>{const d=document.createElement('details');d.className='pdet';const sm=document.createElement('summary');sm.textContent=n;d.appendChild(sm);const inner=h('div','pdin');d.appendChild(inner);let done=false;
+  else if(curTab==='day'){timeTab(body);if(window.HEALTH)window.HEALTH.panel(body,sec,()=>panel('day'),'today');planTab(body);if(window.DAYLOG)window.DAYLOG.panel(body,sec);if(window.LEARN)window.LEARN.parentPanel(body,sec,()=>panel('day'));if(window.KNOW)window.KNOW.panel(body,sec,()=>panel('day'));}
+  else MORE.filter(([id])=>id!=='perm'||!permNone()).forEach(([id,n])=>{const d=document.createElement('details');d.className='pdet';const sm=document.createElement('summary');sm.textContent=n;d.appendChild(sm);const inner=h('div','pdin');d.appendChild(inner);let done=false;
     const fill=()=>{if(done)return;done=true;FN[id](inner);};d.addEventListener('toggle',()=>{if(d.open){openSec=id;fill();}});if(openSec===id){d.open=true;fill();}body.appendChild(d);});
   const out=h('div','btnrow');const bb=h('button','bigbtn plain sm',ICON.home+'<span>יציאה מלוח ההורים</span>');bb.onclick=exitParent;out.appendChild(bb);s.appendChild(out);window.__par=curTab;parLiveOn();
   if(GROUP[tab]&&openSec)setTimeout(()=>{const o=s.querySelector('details[open]');if(o&&tab===openSec&&curTab==='more')o.scrollIntoView({block:'start'});else $('#screens').scrollTop=sy;},0);}
@@ -968,13 +962,17 @@ const sec=(box,t,html)=>{const d=h('section','psec',`<h3>${t}</h3>`);if(html)d.i
 const ISS={voice:'🔊 הקול של Google לא ענה בזמן — הושמע קול גיבוי',sync:'☁️ השמירה לענן לא הצליחה',err:'🐞 תקלה במשחק'};
 const WHY={off:'(המכשיר לא היה מחובר לאינטרנט)',full:'(השרת לא קיבל שמירות באותו זמן — המשחק ניסה שוב אחר כך)'};/* #129: the real reason, 'no internet' only when offline */
 function issues(box){const from=lastDays(14)[0][0];const L=(O.realSave.iss||[]).filter(x=>x.d>=from).sort((a,b)=>a.d<b.d?1:-1);
-  if(!L.length){box.appendChild(h('div','pissok','✅ אין תקלות בשבועיים האחרונים'));return;}
+  if(!L.length)return;/* no problems: nothing to show (G8) */
   const d=document.createElement('details');d.className='pdet piss';d.innerHTML=`<summary>⚠️ היו ${L.length} תקלות בשבועיים האחרונים — לחצו לפרטים</summary>`+L.map(x=>`<div class="prow"><span class="pn">${x.d.slice(8)}.${x.d.slice(5,7)} · ${ISS[x.k]||x.k}${WHY[x.m]?' '+WHY[x.m]:x.m?` <small dir="ltr">${String(x.m).replace(/[<>&]/g,'')}</small>`:''}${x.r?' · 📨 נשלח דיווח לבדיקה':''}</span><span class="pc">×${x.n}</span></div>`).join('');box.appendChild(d);}
 function sumTab(box){const s0=T.S(),sv=O.save;
   permStates().then(st=>{if(st&&Object.values(st).some(v=>v==='prompt'||v==='denied')){const w=h('button','pwarn','⚠️ יש הרשאות שעוד לא אושרו (למשל מיקרופון). לחצו כאן כדי לאשר מראש, כדי שאורן לא ייתקע באמצע.');w.onclick=()=>panel('perm');box.prepend(w);}});
   if(!SET().voiceOk){const w=h('button','pwarn','🔊 עוד לא בדקתם את הקול של המשחק. לחצו כאן — לוקח דקה: שומעים דוגמה ואומרים אוקי.');w.onclick=()=>panel('voice');box.appendChild(w);}
+  /* three lines: today's minutes, streak, what he did today; everything else in "פירוט מלא" (G8) */
+  const DL=window.DAYLOG,done=DL?[...new Set(DL.rows(O.today()).filter(e=>e[6]==='c').map(e=>DL.nameOf(e[1])))]:[];const st0=O.dayStreak();
+  box.appendChild(h('div','psum',`<div class="psl">⏱️ היום: <b>${usedMin()} דק׳</b> משחק</div><div class="psl">🔥 רצף: <b>${st0===1?'יום אחד':st0+' ימים'}</b></div><div class="psl">🎯 היום: ${done.length?done.join(' · '):DL?'עוד לא סיים פעילות':doneN()+' פעילויות'}</div>`));
   issues(box);
-  if(window.DAYLOG)window.DAYLOG.nowBox(box);if(window.LEARN){const rl=window.LEARN.runwayLine();if(rl)box.appendChild(h('div','pnote',rl));}if(T.thinkSummary)T.thinkSummary(box,sec);
+  const det=document.createElement('details');det.className='pdet';det.innerHTML='<summary>📈 פירוט מלא</summary>';const dbox=h('div','pdin');det.appendChild(dbox);box.appendChild(det);box=dbox;
+  if(DL)DL.nowBox(box);if(window.LEARN){const rl=window.LEARN.runwayLine();if(rl)box.appendChild(h('div','pnote',rl));}if(T.thinkSummary)T.thinkSummary(box,sec);
   const acc=sv.ans?Math.round((sv.ok|0)/sv.ans*100):0;const totT=Object.values(s0.time).reduce((a,v)=>a+(v|0),0);const talSt=Object.values(s0.tl).reduce((a,c)=>a+(c.s|0),0);
   sec(box,'במבט אחד',`<div class="ptiles">
     <div><b>${new Set([...(sv.days||[]),...Object.keys(s0.time).filter(k=>(s0.time[k]|0)>=60)]).size}</b><span>ימי משחק</span></div><div><b>${O.dayStreak()}</b><span>רצף ימים</span></div>
@@ -983,7 +981,7 @@ function sumTab(box){const s0=T.S(),sv=O.save;
     <div><b>${talSt}</b><span>כוכבים בעיר הכשרונות</span></div><div><b>${Object.keys(s0.bdg||{}).length}/${BADGES.length}</b><span>תגים</span></div></div>`);
   const days=lastDays(14);const mx=Math.max(600,...days.map(([k])=>s0.time[k]|0));
   sec(box,'זמן משחק — 14 ימים אחרונים',`<div class="pchart">${days.map(([k,x])=>{const v=s0.time[k]|0;return `<div class="pcol" title="${k}: ${fmtMin(v)}"><span class="pv">${v?Math.round(v/60):''}</span><i style="height:${v/mx*100}%"></i><small>${'אבגדהוש'[x.getDay()]}</small></div>`;}).join('')}</div><div class="pnote">בדקות, היום מימין. נספר רק זמן פעיל.</div>`);
-  const det=document.createElement('details');det.className='pdet';det.innerHTML='<summary>📈 פירוט מלא (עולמות, נושאים, בניינים, רגשות)</summary>';const dbox=h('div','pdin');det.appendChild(dbox);box.appendChild(det);box=dbox;if(T.thinkSkills)T.thinkSkills(box,sec,BAR);
+  if(T.thinkSkills)T.thinkSkills(box,sec,BAR);
   sec(box,'התקדמות בעולמות המסע',O.WORLDS.map(w=>{const got=w.levels.reduce((a,l)=>a+O.stars(l.id),0),max=w.levels.length*3;return `<div class="prow"><span class="pn">${w.name}${SET().offW[w.id]?' <small>(כבוי)</small>':''}</span>${BAR(got,max,w.color)}<span class="pc">${got}/${max}</span></div>`;}).join(''));
   const st=sv.st||{};const units=O.ALLU.filter(u=>!u.boss&&st[u.id]&&st[u.id].a>=4).map(u=>({u,r:st[u.id].o/st[u.id].a}));
   const weak=[...units].sort((a,b)=>a.r-b.r).slice(0,5),strong=[...units].sort((a,b)=>b.r-a.r).slice(0,3);
@@ -1027,10 +1025,10 @@ function planTab(box){const st=SET();let plan=(st.plan&&st.plan.slice())||['math
 /* --- try it yourself (parent sandbox) --- */
 function enterTry(fresh){parentOn=false;O.parentPlay(true,fresh);}
 function tryIt(id){enterTry();if(id==='math'){O.showJourney();return;}const a=ACT[id];if(a)a.run(O.showMap);else O.showMap();}
-function tryTab(box){const ts=sec(box,'משתמש הורה — לשחק ולנסות',`<div class="pnote">כאן אתם נכנסים למשחק <b>כמשתמש נפרד</b>: הכל פתוח, יש 500 יהלומים, ואפשר לדלג על כל שלב. שום דבר שתעשו לא משפיע על ההתקדמות של אורן. בתחתית המסך יופיע פס הורה עם "⏭ דלג" ו"חזרה ללוח".</div>`);
-  const r=h('div','btnrow');const go=h('button','bigbtn','🎮 <span>כניסה למשחק כהורה</span>');go.onclick=()=>{enterTry();O.showMap();};const rs=h('button','bigbtn plain sm','↺ <span>להתחיל את הניסיון מחדש</span>');rs.onclick=()=>{try{localStorage.removeItem('oren4-v1-parent');}catch(e){}O.floatText(rs,'אופס ✓');};r.append(go,rs);ts.appendChild(r);
-  const ws=sec(box,'עולמות החשבון');const wr=h('div','popt');O.WORLDS.forEach(w=>{const b=h('button','pchip','▶ '+w.name);b.onclick=()=>{enterTry();O.showWorld(w);};wr.appendChild(b);});ws.appendChild(wr);
-  const bs=sec(box,'כל הפעילויות בעיר הכשרונות');BUILD.forEach(b=>{const row=h('div','pbld',`<b>${b.name}</b>`);const a2=h('div','pacts');b.acts.forEach(a=>{const c=h('button','pchip','▶ '+plain(a.name));c.onclick=()=>tryIt(a.id);a2.appendChild(c);});row.appendChild(a2);bs.appendChild(row);});}
+/* two buttons (G8): play as the parent user, or start that parent user over (fresh: all open, 500 gems) */
+function tryTab(box){const ts=sec(box,'משתמש הורה',`<div class="pnote">משתמש נפרד: הכל פתוח. ההתקדמות של אורן לא מושפעת.</div>`);
+  const r=h('div','btnrow');const go=h('button','bigbtn','🎮 <span>לשחק כהורה</span>');go.onclick=()=>{enterTry();O.showMap();};
+  const rs=h('button','bigbtn plain sm','↺ <span>להתחיל מחדש</span>');rs.onclick=()=>{try{localStorage.removeItem('oren4-v1-parent');}catch(e){}enterTry(true);O.showMap();};r.append(go,rs);ts.appendChild(r);}
 (()=>{const bar=h('div','pbar2',`<span class="pbt">👤 מצב הורה — ניסיון. אורן לא מושפע.</span>`);bar.hidden=true;
   const sk=h('button','pchip','⏭ דלג / סיים');sk.onclick=()=>{$('#ov').hidden=true;if(O.skipLevel())return toast('דילגת על השלב ✓');if(!$('#sTal').hidden){const l=T.S().last;if(l&&ACT[l.id]){T.record(l.id,3);toast('סומן כהושלם ✓');}$('#btnBack').click();}else $('#btnBack').click();};
   const hm=h('button','pchip','🏠 בית');hm.onclick=()=>O.showMap();const ex=h('button','pchip on','🚪 חזרה ללוח ההורים');ex.onclick=()=>{O.parentPlay(false);parentOn=true;panel('try');};
@@ -1120,11 +1118,14 @@ T.limCheck=limCheck;
 const SAMPLE='שָׁלוֹם אוֹרֶן! הַיּוֹם נִלְמַד יַחַד. הֶחָתוּל יָשֵׁן עַל הַכִּסֵּא. כַּמָּה זֶה שָׁלוֹשׁ וְעוֹד אַרְבַּע? נָכוֹן, שֶׁבַע!';
 /* one fixed game voice (Google Kore at 0.9, chosen by the parents); no voice options */
 function voiceTab(box){const st=SET();const g=(window.__gv||{}).ok;
-  const vc=sec(box,'בדיקת קול — דקה אחת',`<div class="pnote">לחצו ▶ ושמעו דוגמה. אם הקול נשמע טוב — "אוקי, הקול טוב" וסיימתם.</div><div class="vnow">${g?'קול: <b>Kore</b> — אותו קול בכל המכשירים':'קול: <b>הקול של המכשיר</b> (באתר המשחק: Kore — אותו קול בכל המכשירים)'}${st.voiceOk?' · <span class="pst ok">אושר ✓</span>':''}</div><div class="vsample">${SAMPLE}</div>`);
+  const vc=sec(box,'בדיקת קול — דקה אחת',`<div class="vnow">${g?'קול: <b>Kore</b> — אותו קול בכל המכשירים':'קול: <b>הקול של המכשיר</b> (באתר המשחק: Kore — אותו קול בכל המכשירים)'}${st.voiceOk?' · <span class="pst ok">אושר ✓</span>':''}</div><div class="vsample">${SAMPLE}</div>`);
   const r=h('div','btnrow');const pl=h('button','bigbtn','▶ <span>השמיעו דוגמה</span>');pl.onclick=()=>O.say(SAMPLE);
   const okb=h('button','bigbtn sm','👍 <span>אוקי, הקול טוב</span>');okb.onclick=()=>{st.voiceOk={t:Date.now()};O.persist();sfx.win();panel('voice');};
-  r.append(pl,okb);vc.appendChild(r);const ar=h('button','pchip'+(st.autoRead===0?'':' on'),(st.autoRead===0?'':'✓ ')+'הקראה אוטומטית');ar.onclick=()=>{st.autoRead=st.autoRead===0?1:0;O.persist();panel('voice');};vc.appendChild(ar);const sw=navigator.serviceWorker;if(g&&sw&&sw.controller){const dl=h('button','bigbtn plain sm','⬇️ <span>הורדת כל הקולות למכשיר הזה (כ-15MB)</span>');dl.onclick=()=>{dl.disabled=true;sw.onmessage=e=>{const d=e.data||{};if(d.type==='prefetch')dl.lastChild.textContent=d.left?'מוריד… נשארו '+d.left:'✓ '+d.ok+' קולות שמורים במכשיר';};sw.controller.postMessage({type:'prefetch',k:(window.__gv&&window.__gv.ver)|0});};vc.appendChild(dl);}if(g)return;
-  sec(box,'איך מקבלים קול עברי טוב יותר — בחינם',`<div class="pnote">• <b>במחשב Windows עם Edge:</b> יש קולות עבריים טבעיים מובנים (Hila / Avri). פשוט פותחים את המשחק ב-Edge.<br>• <b>Windows בלי חיבור:</b> הגדרות ← זמן ושפה ← דיבור ← הוספת קולות ← עברית.<br>• <b>טלפון Android:</b> הגדרות ← נגישות ← המרת טקסט לדיבור ← מנוע Google ← להתקין עברית.<br>• <b>אייפון/אייפד:</b> הגדרות ← נגישות ← תוכן מוקרא ← קולות ← עברית ← להוריד את Carmit (משופר).</div>`);
+  r.append(pl,okb);vc.appendChild(r);const ar=h('button','pchip'+(st.autoRead===0?'':' on'),(st.autoRead===0?'':'✓ ')+'הקראה אוטומטית');ar.onclick=()=>{st.autoRead=st.autoRead===0?1:0;O.persist();panel('voice');};vc.appendChild(ar);const sw=navigator.serviceWorker;if(g&&sw&&sw.controller){const dl=h('button','bigbtn plain sm','⬇️ <span>הורדת כל הקולות למכשיר הזה (כ-15MB)</span>');dl.onclick=()=>{dl.disabled=true;sw.onmessage=e=>{const d=e.data||{};if(d.type==='prefetch')dl.lastChild.textContent=d.left?'מוריד… נשארו '+d.left:'✓ '+d.ok+' קולות שמורים במכשיר';};sw.controller.postMessage({type:'prefetch',k:(window.__gv&&window.__gv.ver)|0});};vc.appendChild(dl);}
+  /* the explanations wait behind "עזרה" (G8) */
+  const help=document.createElement('details');help.className='pdet';help.innerHTML='<summary>❓ עזרה</summary>';const hin=h('div','pdin');help.appendChild(hin);vc.appendChild(help);
+  hin.appendChild(h('div','pnote','לחצו ▶ ושמעו דוגמה. אם הקול נשמע טוב — "אוקי, הקול טוב" וסיימתם.'));if(g)return;
+  sec(hin,'איך מקבלים קול עברי טוב יותר — בחינם',`<div class="pnote">• <b>במחשב Windows עם Edge:</b> יש קולות עבריים טבעיים מובנים (Hila / Avri). פשוט פותחים את המשחק ב-Edge.<br>• <b>Windows בלי חיבור:</b> הגדרות ← זמן ושפה ← דיבור ← הוספת קולות ← עברית.<br>• <b>טלפון Android:</b> הגדרות ← נגישות ← המרת טקסט לדיבור ← מנוע Google ← להתקין עברית.<br>• <b>אייפון/אייפד:</b> הגדרות ← נגישות ← תוכן מוקרא ← קולות ← עברית ← להוריד את Carmit (משופר).</div>`);
 }
 /* --- permissions --- */
 async function permTab(box){const d=sec(box,'הרשאות','<div class="pnote">בודק…</div>');const P=await getPerm();
@@ -1141,6 +1142,7 @@ async function permTab(box){const d=sec(box,'הרשאות','<div class="pnote">�
   d.appendChild(h('div','pnote','קריאה בקול עובדת ב-Chrome או Edge במחשב. בדפדפנים אחרים הפעילות פשוט לא תופיע.'));}
 /* --- parts: enable / disable / gradual --- */
 function toggle(on,lbl,fn){const b=h('button','pchip'+(on?' on':''),(on?'✓ ':'')+lbl);b.onclick=()=>{fn();O.persist();panel('parts');};return b;}
+let partsOpen=null;
 function partsTab(box){const st=SET();const g=st.grad;
   if(T.thinkSettings)T.thinkSettings(box,sec,()=>panel('parts'));
   const gs=sec(box,'פתיחה הדרגתית של עיר הכשרונות','<div class="pnote">כשההפעלה ההדרגתית פועלת, אורן מתחיל עם 2 בניינים ובניין חדש נפתח כל כמה ימי משחק — זה שומר על עניין ועל הפתעה. אורן רואה את הבניינים הסגורים ומתי ייפתחו.</div>');
@@ -1148,38 +1150,44 @@ function partsTab(box){const st=SET();const g=st.grad;
   if(g.on){const r2=h('div','popt','<span>בניין חדש כל:</span>');[1,2,3,7].forEach(n=>r2.appendChild(toggle((g.every|0)===n,n===1?'יום משחק':n+' ימי משחק',()=>{g.every=n;})));gs.appendChild(r2);
     const gi=gradInfo();gs.appendChild(h('div','pnote',`פתוחים ${gi.open.length} מתוך ${gi.ord.length}.${gi.next?` הבא בתור: ${(BUILD.find(b=>b.id===gi.next)||{}).name} (בעוד ${gi.left} ימי משחק).`:''}`));
     const r3=h('div','btnrow');const nx=h('button','bigbtn sm','<span>פתחו את הבא עכשיו</span>');nx.disabled=!gi.next;nx.onclick=()=>{g.extra=(g.extra|0)+1;O.persist();panel('parts');};r3.appendChild(nx);gs.appendChild(r3);
-    const ol=h('div','gord');gs.appendChild(h('div','psub','סדר הפתיחה (אפשר להזיז):'));
+    const ol=h('div','gord');const od=pdet(gs,'gord','סדר הפתיחה (אפשר להזיז)');
     gi.ord.forEach((id,i)=>{const b=BUILD.find(x=>x.id===id);const row=h('div','gro'+(gi.open.includes(id)?' open':''),`<span>${i+1}. ${b.name} ${gi.open.includes(id)?'✓':'🔒'}</span>`);
       const up=h('button','pchip','▲');up.disabled=i===0;up.onclick=()=>{const o=order();const a=o.indexOf(id);const prev=gi.ord[i-1];const bI=o.indexOf(prev);o[a]=prev;o[bI]=id;g.order=o;O.persist();panel('parts');};row.appendChild(up);ol.appendChild(row);});
-    gs.appendChild(ol);}
-  const bs=sec(box,'בניינים ופעילויות','<div class="pnote">כבו בניין שלם או פעילות בודדת. דברים כבויים לא מופיעים לאורן ולא נבחרים למשימות היום.</div>');
-  BUILD.forEach(b=>{const on=!st.hide[b.id];const row=h('div','pbld');row.appendChild(toggle(on,b.name,()=>{if(on)st.hide[b.id]=1;else delete st.hide[b.id];}));
-    if(on){const acts=h('div','pacts');b.acts.forEach(a=>{const aon=!st.offA[a.id];acts.appendChild(toggle(aon,plain(a.name),()=>{if(aon)st.offA[a.id]=1;else delete st.offA[a.id];}));});row.appendChild(acts);}bs.appendChild(row);});
+    od.appendChild(ol);}
+  /* one toggle per building; its activities show only after a tap on the building's name (G8) */
+  const bs=sec(box,'בניינים ופעילויות','<div class="pnote">דברים כבויים לא מופיעים לאורן. לחיצה על שם הבניין: הפעילויות שלו.</div>');
+  BUILD.forEach(b=>{const on=!st.hide[b.id];const row=h('div','pbld'+(partsOpen===b.id?' open':''));const nb=h('button','pbn',(on?'◂ ':'')+b.name);nb.disabled=!on;
+    row.appendChild(nb);row.appendChild(toggle(on,on?'פועל':'כבוי',()=>{if(on)st.hide[b.id]=1;else delete st.hide[b.id];}));
+    if(on){const acts=h('div','pacts');b.acts.forEach(a=>{const aon=!st.offA[a.id];acts.appendChild(toggle(aon,plain(a.name),()=>{if(aon)st.offA[a.id]=1;else delete st.offA[a.id];}));});row.appendChild(acts);
+      nb.onclick=()=>{partsOpen=partsOpen===b.id?null:b.id;bs.querySelectorAll('.pbld.open').forEach(x=>{if(x!==row)x.classList.remove('open');});row.classList.toggle('open',partsOpen===b.id);};}bs.appendChild(row);});
   const ws=sec(box,'עולמות החשבון','<div class="pnote">עולם כבוי לא מופיע במפה, וגם לא נדרש כדי להגיע לקרב האחרון.</div>');const wr=h('div','popt');
   O.WORLDS.filter(w=>w.id!=='fin').forEach(w=>{const on=!st.offW[w.id];wr.appendChild(toggle(on,w.name,()=>{if(on)st.offW[w.id]=1;else delete st.offW[w.id];}));});ws.appendChild(wr);
   const os=sec(box,'עוד');const r4=h('div','popt','<span>משימות היום:</span>');r4.appendChild(toggle(!st.noDaily,st.noDaily?'כבוי':'פועל',()=>{st.noDaily=st.noDaily?0:1;}));os.appendChild(r4);
   const r5=h('div','popt','<span>כל השלבים פתוחים (בלי לחכות לכוכבים):</span>');r5.appendChild(toggle(!!st.all,st.all?'פתוח':'כבוי',()=>{st.all=!st.all;}));os.appendChild(r5);}
 /* --- progress: skip / reset / gems --- */
 function armBtn(lbl,cls,fn){const b=h('button','pchip '+(cls||''),lbl);let arm=0;b.onclick=()=>{if(Date.now()-arm>3000){arm=Date.now();b.textContent='בטוחים? לחצו שוב';b.classList.add('arm');return;}fn();O.persist();sfx.ok(1);panel('prog');};return b;}
+/* one "⋯" per row (its actions open on tap); the one big reset is last (G8) */
+function moreRow(row,...btns){const m=h('button','pchip pmore','⋯');m.setAttribute('aria-label','עוד');const a=h('span','practs');btns.forEach(b=>a.appendChild(b));
+  m.onclick=()=>row.classList.toggle('open');row.append(m,a);return row;}
 function progTab(box){const sv=O.save,s0=T.S();
-  const ws=sec(box,'עולמות החשבון','<div class="pnote"><b>דילוג</b> מסמן את כל שלבי העולם כעבורים (כוכב אחד), כדי שאורן יוכל להמשיך הלאה. <b>איפוס</b> מוחק את הכוכבים של העולם כדי לעבור עליו מחדש.</div>');
+  const ws=sec(box,'עולמות החשבון','<div class="pnote">לחיצה על ⋯: דילוג (כל השלבים עבורים) או איפוס.</div>');
   O.WORLDS.forEach(w=>{const got=w.levels.filter(l=>O.stars(l.id)).length;const row=h('div','prow',`<span class="pn">${w.name}</span>${BAR(got,w.levels.length,w.color)}<span class="pc">${got}/${w.levels.length}</span>`);
-    row.appendChild(armBtn('⏭️ דילוג','',()=>{w.levels.forEach(l=>{if(!O.stars(l.id))sv.s[l.id]=1;});sv.story[w.id+'-in']=1;sv.story[w.id+'-out']=1;}));
-    row.appendChild(armBtn('↺ איפוס','bad',()=>{w.levels.forEach(l=>{delete sv.s[l.id];});delete sv.story[w.id+'-in'];delete sv.story[w.id+'-out'];w.units.forEach(u=>{if(sv.st)delete sv.st[u.id];});}));ws.appendChild(row);});
-  const bs=sec(box,'בנייני עיר הכשרונות','<div class="pnote">איפוס מוחק כוכבים והתקדמות של הבניין (הציורים בגלריה נשמרים).</div>');
+    moreRow(row,armBtn('⏭️ דילוג','',()=>{w.levels.forEach(l=>{if(!O.stars(l.id))sv.s[l.id]=1;});sv.story[w.id+'-in']=1;sv.story[w.id+'-out']=1;}),
+      armBtn('↺ איפוס','bad',()=>{w.levels.forEach(l=>{delete sv.s[l.id];});delete sv.story[w.id+'-in'];delete sv.story[w.id+'-out'];w.units.forEach(u=>{if(sv.st)delete sv.st[u.id];});}));ws.appendChild(row);});
+  const bs=sec(box,'בנייני עיר הכשרונות','<div class="pnote">לחיצה על ⋯: איפוס הבניין (הציורים נשמרים).</div>');
   BUILD.forEach(b=>{const got=b.acts.reduce((a,x)=>a+((s0.tl[x.id]||{}).s|0),0);const row=h('div','prow',`<span class="pn">${b.name}</span>${BAR(got,b.acts.length*3,b.color)}<span class="pc">${got}/${b.acts.length*3}</span>`);
-    row.appendChild(armBtn('↺ איפוס','bad',()=>{b.acts.forEach(a=>delete s0.tl[a.id]);if(b.id==='code')s0.code={};if(b.id==='write')s0.wr={};if(b.id==='type')s0.typ={best:{},wpm:0};}));bs.appendChild(row);});
-  const gs=sec(box,'יהלומים',`<div class="pnote">כרגע: <b>${sv.gems|0}</b> יהלומים. אפשר להעניק בונוס (או להוריד).</div>`);const gr=h('div','popt');
+    moreRow(row,armBtn('↺ איפוס','bad',()=>{b.acts.forEach(a=>delete s0.tl[a.id]);if(b.id==='code')s0.code={};if(b.id==='write')s0.wr={};if(b.id==='type')s0.typ={best:{},wpm:0};}));bs.appendChild(row);});
+  const gs=sec(box,'יהלומים',`<div class="pnote">כרגע: <b>${sv.gems|0}</b> יהלומים.</div>`);const gr=h('div','popt');
   [10,50,-10].forEach(n=>{const b=h('button','pchip',(n>0?'+':'')+n);b.onclick=()=>{sv.gems=Math.max(0,(sv.gems|0)+n);O.persist();O.updateGems&&O.updateGems();panel('prog');};gr.appendChild(b);});gs.appendChild(gr);
-  const rs=sec(box,'איפוס מלא','<div class="pnote">מוחק את כל ההתקדמות של אורן (כוכבים, יהלומים, ממלכה, ציורים, תגים). הסיסמה, ההגדרות והכרטיס האישי נשמרים.</div>');
-  const rr=h('div','popt');rr.appendChild(armBtn('🗑️ איפוס כל ההתקדמות','bad',()=>{const keep={set:SET(),prof:prof()};O.resetAll(keep);}));rs.appendChild(rr);if(window.LEARN)window.LEARN.skillsPanel(box,sec,()=>panel('prog'));}
+  if(window.LEARN)window.LEARN.skillsPanel(pdet(box,'skills','📶 רמות לפי מיומנות'),sec,()=>panel('prog'));
+  const rs=sec(box,'איפוס מלא','<div class="pnote">מוחק את כל ההתקדמות של אורן. הסיסמה, ההגדרות והכרטיס האישי נשמרים.</div>');
+  const rr=h('div','popt');rr.appendChild(armBtn('🗑️ איפוס כל ההתקדמות','bad',()=>{const keep={set:SET(),prof:prof()};O.resetAll(keep);}));rs.appendChild(rr);}
 /* --- message to Oren --- */
 function msgTab(box){const st=SET();const m=st.msg;
-  const ms=sec(box,'הודעה לאורן','<div class="pnote">ההודעה תופיע לאורן בפעם הבאה שייכנס למפה, תוקרא לו בקול, והוא יוכל לשלוח לכם תגובה באימוג׳י. אפשר לצרף מתנה של יהלומים.</div>');
+  const ms=sec(box,'הודעה לאורן','<div class="pnote">אורן ישמע אותה בפעם הבאה שייכנס, ויוכל להגיב באימוג׳י.</div>');
   if(m&&m.text)ms.appendChild(h('div','pmsgold',`<div>${esc(m.text)}</div><small>${m.seen?`נקראה ✓ ${m.reply?'· אורן הגיב: <span class="emo">'+m.reply+'</span>':''}`:'עוד לא נקראה'}</small>`));
   const ta=h('textarea','pta big');ta.rows=3;ta.placeholder='למשל: אורן, כל הכבוד על השבוע! אוהבים אותך 💛';ta.setAttribute('aria-label','הודעה');ta.onkeydown=e=>e.stopPropagation();ms.appendChild(ta);
-  const gr=h('div','popt','<span>מתנה:</span>');let gift=0;[0,5,10,20].forEach(n=>{const b=h('button','pchip'+(n===0?' on':''),n?'+'+n+' 💎':'בלי');b.onclick=()=>{gift=n;gr.querySelectorAll('.pchip').forEach(x=>x.classList.toggle('on',x===b));};gr.appendChild(b);});ms.appendChild(gr);
-  const row=h('div','btnrow');const sd=h('button','bigbtn sm','💌 <span>שליחה</span>');sd.onclick=()=>{const t=ta.value.trim();if(!t){O.floatText(sd,'כתבו משהו');return;}st.msg={text:t.slice(0,300),gems:gift,t:Date.now(),seen:0};O.persist();sfx.win();panel('msg');};row.appendChild(sd);ms.appendChild(row);}
+  const row=h('div','btnrow');const sd=h('button','bigbtn sm','💌 <span>שליחה</span>');sd.onclick=()=>{const t=ta.value.trim();if(!t){O.floatText(sd,'כתבו משהו');return;}st.msg={text:t.slice(0,300),t:Date.now(),seen:0};O.persist();sfx.win();panel('msg');};row.appendChild(sd);ms.appendChild(row);}
 /* --- settings --- */
 function setTab(box){const st=SET();
   const ps=sec(box,'סיסמת הורה','<div class="pnote">החלפת הסיסמה. (אם תשכחו: במסך הכניסה יש "שכחתי סיסמה".)</div>');const p1=h('input','pgin sm');p1.type='password';p1.placeholder='סיסמה חדשה';const p2=h('input','pgin sm');p2.type='password';p2.placeholder='שוב';

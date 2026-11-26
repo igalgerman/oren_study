@@ -86,6 +86,53 @@ const { chromium } = require('playwright');
   ok('P1.9 jump break: one counter, no clock', !r.j.clock && r.j.counters === 1, JSON.stringify(r.j));
   ok('P1.9 water break / meal: no clock digits', !r.w.clock && !r.m.clock && r.w.counters === 0 && r.m.counters === 0, JSON.stringify([r.w, r.m]));
   ok('P1.9 break and meal buttons fill as progress', [r.j, r.w, r.m].every(x => x.fill !== ''), JSON.stringify(r));
+  /* ---------- P2 kid (docs/simplicity-spec.md) ---------- */
+  const btns = () => p.evaluate(() => [...document.querySelectorAll('#sTal button')].filter(b => b.offsetParent !== null).map(b => b.textContent.replace(/\s+/g, ' ').trim()).filter(t => t !== '🔊'));
+  // P2.1 code robot: one big "שָׁלָב N ▶" (the next unfinished level), no level grid
+  r = await p.evaluate(() => { const T = window.TAL; T.S().code = { 0: 3, 1: 2 }; T.ACT['code-maze'].run(() => window.OREN.showMap()); return { grid: document.querySelectorAll('#sTal .lvb').length, go: [...document.querySelectorAll('#sTal .lvgo')].map(b => b.textContent.trim()) }; });
+  ok('P2.1 code menu: no level tiles, one big "שָׁלָב 3" button', r.grid === 0 && r.go.length === 1 && /שָׁלָב 3\b/.test(r.go[0]), JSON.stringify(r));
+  ok('P2.1 code menu: that is the only button', (await btns()).length === 1, JSON.stringify(await btns()));
+  await p.evaluate(() => document.querySelector('#sTal .lvgo')?.click()); await L.sleep(150);
+  ok('P2.1 code menu: the button opens level 3', await p.evaluate(() => !!document.querySelector('#sTal .cboard') && /שָׁלָב 3\b/.test(document.querySelector('#hud').textContent)), await p.evaluate(() => document.querySelector('#hud').textContent));
+  // typing lessons: one big "שִׁעוּר N" button
+  r = await p.evaluate(() => { const T = window.TAL; T.S().typ = { best: { 0: 2 } }; T.ACT['type-lessons'].run(() => window.OREN.showMap()); return { tiles: document.querySelectorAll('#sTal .actc').length, go: [...document.querySelectorAll('#sTal .lvgo')].map(b => b.textContent.trim()), lsent: !!document.querySelector('#sTal .lsent') }; });
+  ok('P2.1 typing: no lesson tiles, one big "שִׁעוּר 2" button', r.tiles === 0 && r.go.length === 1 && /שִׁעוּר 2\b/.test(r.go[0]) && !r.lsent, JSON.stringify(r));
+  ok('P2.1 typing: that is the only button', (await btns()).length === 1, JSON.stringify(await btns()));
+  // P2.2 pixel editor: 8 colours, 3 tools, one "שְׁמֹר"
+  r = await p.evaluate(() => { window.TAL.ACT['art-draw'].run(() => window.OREN.showMap()); const s = document.querySelector('#sTal');
+    return { sw: s.querySelectorAll('.pxpal .sw').length, tools: [...s.querySelectorAll('.pxtools .tbtn')].map(b => b.textContent.trim()), big: [...s.querySelectorAll('.btnrow button')].map(b => b.textContent.trim()) }; });
+  ok('P2.2 pixel editor: 8 colours', r.sw === 8, JSON.stringify(r));
+  ok('P2.2 pixel editor: 3 tools', r.tools.length === 3, JSON.stringify(r.tools));
+  ok('P2.2 pixel editor: one "שְׁמֹר" button', r.big.length === 1 && r.big[0] === 'שְׁמֹר', JSON.stringify(r.big));
+  // P2.3 colour by number: 6x6, 2-3 colours, single-digit numbers, text >= 18px
+  r = await p.evaluate(() => { const T = window.TAL; const out = []; for (let k = 0; k < 8; k++) { T.S().tl['art-cbn'] = { s: 1, n: k }; T.ACT['art-cbn'].run(() => window.OREN.showMap()); const s = document.querySelector('#sTal');
+    const cells = [...s.querySelectorAll('.cbn .cbc')]; const txt = cells.filter(c => !c.classList.contains('bg')).map(c => c.textContent);
+    out.push({ n: cells.length, cols: s.querySelectorAll('.cleg .lg').length, nums: Object.values(window.__cbn.ans), multi: txt.filter(t => /\d\d/.test(t)), fs: Math.min(...cells.filter(c => !c.classList.contains('bg')).map(c => parseFloat(getComputedStyle(c).fontSize))) }); } delete T.S().tl['art-cbn']; return out; });
+  ok('P2.3 colour by number: 6x6 grid', r.every(x => x.n === 36), JSON.stringify(r.map(x => x.n)));
+  ok('P2.3 colour by number: 2-3 colours', r.every(x => x.cols >= 2 && x.cols <= 3), JSON.stringify(r.map(x => x.cols)));
+  ok('P2.3 colour by number: single-digit numbers only', r.every(x => x.nums.every(n => n >= 1 && n <= 9) && !x.multi.length), JSON.stringify(r.map(x => [x.nums, x.multi])));
+  ok('P2.3 colour by number: cell text >= 18px', r.every(x => x.fs >= 18), JSON.stringify(r.map(x => x.fs)));
+  // P2.4 piano: first a choice of two big buttons; free play has no recording; song lights the key, no note names
+  r = await p.evaluate(() => { window.TAL.ACT['mus-piano'].run(() => window.OREN.showMap()); const s = document.querySelector('#sTal');
+    return { modes: [...s.querySelectorAll('.pmode')].map(b => b.textContent.trim()), keys: s.querySelectorAll('.piano').length, all: [...s.querySelectorAll('button')].filter(b => b.textContent.trim() !== '🔊').length }; });
+  ok('P2.4 piano: a choice screen with two big buttons 🎹 / 🎵', r.modes.length === 2 && r.modes[0].includes('🎹') && r.modes[1].includes('🎵') && r.keys === 0 && r.all === 2, JSON.stringify(r));
+  r = await p.evaluate(() => { document.querySelectorAll('#sTal .pmode')[0]?.click(); const s = document.querySelector('#sTal');
+    return { keys: s.querySelectorAll('.piano .pw').length, rec: /הַקְלָטָה|הַשְׁמָעָה/.test(s.textContent), songs: s.querySelectorAll('.acts .actc').length, extra: [...s.querySelectorAll('button')].filter(b => !b.closest('.piano') && b.textContent.trim() !== '🔊').length }; });
+  ok('P2.4 piano free play: keys only, no recording, no song list', r.keys >= 8 && !r.rec && !r.songs && r.extra === 0, JSON.stringify(r));
+  r = await p.evaluate(() => { window.TAL.ACT['mus-piano'].run(() => window.OREN.showMap()); document.querySelectorAll('#sTal .pmode')[1]?.click(); const s = document.querySelector('#sTal'); const P = window.__piano;
+    const lit = [...s.querySelectorAll('.piano .next')].map(k => +k.dataset.m); const names = ['דּוֹ', 'רֶה', 'מִי', 'פָה', 'סוֹל', 'לָה', 'סִי']; return { song: !!P.song, lit, want: P.song && P.song[1][P.pos], noteText: names.filter(n => s.textContent.includes(n)) }; });
+  ok('P2.4 piano song: the key to press is lit', r.song && r.lit.length === 1 && r.lit[0] === r.want, JSON.stringify(r));
+  ok('P2.4 piano song: no note-name text', !r.noteText.length, JSON.stringify(r.noteText));
+  // P2.5 gratitude jar: 6 options
+  r = await p.evaluate(() => { window.TAL.ACT['mind-jar'].run(() => window.OREN.showMap()); return document.querySelectorAll('#sTal .thb').length; });
+  ok('P2.5 jar: 6 options', r === 6, String(r));
+  // P2.6 badges: earned ones + one "next badge"; no "x/N" in the top bar
+  r = await p.evaluate(() => { const T = window.TAL; const S = T.S(); S.tl = {}; S.bdg = { star1: 1 }; S.art = ['.', '.']; S.jar = []; S.typ = { best: {} }; S.code = {}; S.wr = {}; T.badges(() => window.OREN.showMap());
+    const c = [...document.querySelectorAll('#sTal .bdg')]; return { n: c.length, got: c.filter(x => x.classList.contains('got')).length, next: c.filter(x => x.classList.contains('next')).map(x => x.textContent), hud: document.querySelector('#hud').textContent }; });
+  ok('P2.6 badges: only the earned ones + one next', r.n === 2 && r.got === 1 && r.next.length === 1, JSON.stringify(r));
+  ok('P2.6 badges: the next one is the closest (2 of 3 pictures → צַיָּר)', r.next.length === 1 && r.next[0].includes('צַיָּר'), JSON.stringify(r.next));
+  ok('P2.6 badges: no "x/N" count in the top bar', !/\d+\s*\/\s*\d+/.test(r.hud), r.hud);
+  await p.evaluate(() => window.OREN.showMap());
   ok('no page errors', !errs.length, errs.join(' | '));
   await b.close();
   L.finish('simplicity', res);

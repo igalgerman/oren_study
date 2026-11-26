@@ -123,9 +123,14 @@ const SH = process.env.HSHOTS; if (SH) fs.mkdirSync(SH, { recursive: true });
   ok('only movement on, every 15 minutes', l && /hjump|hstretch/.test(l.cls)); await clock(31000); await sleep(350); await pressBack(); await sleep(300);
   // parent panel
   if (BUILT) {
-    await p.evaluate(() => window.TAL.parentPanel('time')); await sleep(400);
-    const pn = await p.evaluate(() => { const s = [...document.querySelectorAll('#sPar .psec')].find(x => /הפסקות, ארוחות/.test(x.textContent)); const lg = [...document.querySelectorAll('#sPar .psec')].find(x => /הפסקות וזמן לפי תחום/.test(x.textContent));
-      return { sec: !!s, chips: s ? s.querySelectorAll('.pchip').length : 0, times: s ? s.querySelectorAll('input[type=time]').length : 0, log: lg ? lg.textContent : '', old: /תזכורת הפסקה אחרי/.test(document.getElementById('sPar').textContent) }; });
+    /* #7: the settings live under הגדרות, today's log stays on the day tab */
+    await p.evaluate(() => window.TAL.parentPanel('day')); await sleep(400);
+    const lg0 = await p.evaluate(() => { const lg = [...document.querySelectorAll('#sPar .psec')].find(x => /הפסקות וזמן לפי תחום/.test(x.textContent)); return { log: lg ? lg.textContent : '', set: /הפסקות, ארוחות/.test(document.getElementById('sPar').textContent), old: /תזכורת הפסקה אחרי/.test(document.getElementById('sPar').textContent) }; });
+    await p.evaluate(() => window.TAL.parentPanel('health')); await sleep(400);
+    const pn = await p.evaluate(() => { const s = [...document.querySelectorAll('#sPar .psec')].find(x => /הפסקות, ארוחות/.test(x.textContent));
+      return { sec: !!s, chips: s ? s.querySelectorAll('.pchip').length : 0, times: s ? s.querySelectorAll('input[type=time]').length : 0, old: /תזכורת הפסקה אחרי/.test(document.getElementById('sPar').textContent) }; });
+    pn.log = lg0.log; pn.old = pn.old || lg0.old; pn.onDay = lg0.set;
+    ok('#7 break settings are not on the day tab', !pn.onDay);
     ok('parent panel: reminders, interval, meal times, topic threshold', pn.sec && pn.chips === 11 && pn.times === 3, JSON.stringify(pn));
     ok('parent panel: today\'s log (breaks, minutes per domain)', /קריאה וכתיבה/.test(pn.log) && /💧/.test(pn.log), pn.log.slice(0, 200));
     ok('the old break reminder row is gone', !pn.old);
