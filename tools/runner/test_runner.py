@@ -164,3 +164,35 @@ r.CFG["pregen"] = True; _calls.clear()
 assert r.deploy_text(None).startswith("deployed ok https://") and any("pregen.js" in " ".join(map(str, c)) for c in _calls)
 r.run, r.env_file = _orig_run, _orig_env; r.CFG["pregen"] = False
 print("ok deploy")
+
+# #16: space lookup (mock herdr-app), pin/unpin, NEEDS YOU line, terminal.keep workaround is gone
+import json as _json
+_ran = []
+def _mock_run(out):
+    def f(cmd, **kw):
+        _ran.append(list(map(str, cmd))); return (0, out)
+    return f
+_orig_run16 = r.run
+r.run = _mock_run(_json.dumps({"spaces": [{"id": "s1", "name": "other"}, {"id": "s2", "name": r.CFG.get("herdr_space", "Oren_study_orech")}]}))
+r._SPACE = None
+assert r.space_args() == ["--label", "herdr.space=s2"]; assert len(_ran) == 1
+r.space_args(); assert len(_ran) == 1                                                       # cached
+r.run = _mock_run(_json.dumps({"spaces": [{"id": "s1", "name": "other"}]})); r._SPACE = None
+assert r.space_args() == []                                                                   # no such space: no label
+r.run = _mock_run("not json"); r._SPACE = None
+assert r.space_args() == []                                                                   # bad output: no label, no crash
+r.run = _orig_run16; r._SPACE = None
+assert not hasattr(r, "show")                                                                 # terminal.keep workaround removed
+
+_orig_run_w, _orig_app = W.R.run, W.R.HERDR_APP
+W.R.run = _mock_run(""); W.R.HERDR_APP = sys.executable
+_ran.clear(); W.pin({"address": "t:1"}, True)
+assert _ran[-1][1:] == ["do", "terminal.pin", "--terminal", "t:1", "--pinned", "true"], _ran
+W.pin({"address": "t:1"}, False); assert _ran[-1][-1] == "false"
+n = len(_ran); W.pin({}, True); assert len(_ran) == n                                         # no address: nothing to pin
+W.R.HERDR_APP = r"C:\no\such\herdr-app.exe"; W.pin({"address": "t:1"}, True); assert len(_ran) == n   # app missing: nothing
+W.R.run, W.R.HERDR_APP = _orig_run_w, _orig_app
+assert W.needs_you_line("issue-16", "QUESTION: a or b?", "tail") == "NEEDS YOU: #16 a or b?"
+assert W.needs_you_line("review-7", "", "x\nlast line") == "NEEDS YOU: #7 (waiting for an answer) last line"
+assert W.needs_you_line("intake", "QUESTION: ok?", "") == "NEEDS YOU: intake ok?"
+print("ok herdr-leftovers")
