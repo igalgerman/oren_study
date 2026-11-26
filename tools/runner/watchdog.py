@@ -403,19 +403,45 @@ def alarms_once(now=None):
         log(f"cloud lanes unreadable: {e!r}"); cloud = []
     import stats
     finish = stats.finish_rate(stats.read_events(R.RUNS / "stats.jsonl"), now)    # #148
+    _alarm["finish"] = finish                                                     # #376: pick_alarms compares the rate
     return idle_alarms(issues, json.loads(out2), now, _alarm["free_since"], R.total_lanes(), finish) + cloud_stuck_alarms(cloud, now, float(R.CFG.get("stuck_hours", 2)))
 
+FINISH_EVERY_H, FINISH_DROP = 6, 5   # #376: finish-rate alarm at most once per 6 h, sooner only if the rate drops 5+ points
+FINISH_STATE = R.RUNS / "finish_alarm.json"   # on disk: a watchdog restart must not resend it
+
+def load_finish_state(path=None):
+    try: return json.loads(Path(path or FINISH_STATE).read_text(encoding="utf-8"))
+    except (OSError, ValueError): return {}
+
+def save_finish_state(st, path=None):
+    try: Path(path or FINISH_STATE).write_text(json.dumps(st), encoding="utf-8")
+    except OSError as e: log(f"finish alarm state not saved: {e!r}")
+
+def pick_alarms(al, sent, fin, finish, now):
+    """Pure (#376): -> (texts to send, new sent, new fin). Every alarm is keyed by kind/PR (hourly); the 'finish' alarm
+    (its text changes every pass) also needs FINISH_EVERY_H since the last one or a drop of FINISH_DROP+ points (fin = {ts, pct})."""
+    sent, fin, new = dict(sent), dict(fin), []
+    done, started = finish
+    pct = 100 * done / started if started else 0
+    for k, t in al:
+        if k == "finish":
+            if fin and now - fin.get("ts", 0) < FINISH_EVERY_H * 3600 and fin.get("pct", 0) - pct < FINISH_DROP: continue
+            fin = {"ts": now, "pct": pct}
+        elif now - sent.get(k, 0) < ALARM_EVERY_MIN * 60: continue
+        else: sent[k] = now
+        new.append(t)
+    return new, sent, fin
+
 def alarm_tick():
-    """Every 10 min: idle alarms to the orchestrator (+ watchdog.log); the same alarm at most once an hour."""
+    """Every 10 min: idle alarms to the orchestrator (+ watchdog.log); the same alarm at most once an hour (finish: #376)."""
     now = time.time()
     if now - _alarm["last"] < 600: return
     _alarm["last"] = now
     al = alarms_once(now) or []
-    new = [t for k, t in al if now - _alarm["sent"].get(k, 0) >= ALARM_EVERY_MIN * 60]
-    if not new: return
-    for k, t in al:
-        if t in new: _alarm["sent"][k] = now
-    tell("IDLE ALARM (watchdog): " + " · ".join(new))
+    fin = load_finish_state()
+    new, _alarm["sent"], fin2 = pick_alarms(al, _alarm["sent"], fin, _alarm.get("finish", (0, 0)), now)
+    if fin2 != fin: save_finish_state(fin2)
+    if new: tell("IDLE ALARM (watchdog): " + " · ".join(new))
 
 KEEP = ()   # #345: empty; the never-two guards (observer/ai_observer/nightly `_running`, desks `_busy`) survive a reload
 
