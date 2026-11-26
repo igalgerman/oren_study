@@ -827,14 +827,14 @@ HERDR_APP = CFG.get("herdr_app", r"C:\Users\97254\AppData\Local\Programs\herdr-a
 _SPACE = None
 def space_args():
     """`--label herdr.space=<id>`: the terminal opens as a tab in that Herdr space, shows in the Agents panel and
-    gets Herdr's own blocked/done alerts. Space chosen by name (config herdr_space, default Oren_study_orech)."""
+    gets Herdr's own blocked/done alerts. Space chosen by name (config herdr_space, default oren-workers)."""
     global _SPACE
     if _SPACE is None:
         _SPACE = ""
         try:
             rc, out = run([HERDR_APP, "ls"], timeout=30)
             for sp in json.loads(out).get("spaces", []):
-                if sp.get("name") == CFG.get("herdr_space", "Oren_study_orech"): _SPACE = sp["id"]
+                if sp.get("name") == CFG.get("herdr_space", "oren-workers"): _SPACE = sp["id"]
         except Exception:
             pass
     return ["--label", f"herdr.space={_SPACE}"] if _SPACE else []

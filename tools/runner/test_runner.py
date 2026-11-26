@@ -278,7 +278,7 @@ def _mock_run(out):
         _ran.append(list(map(str, cmd))); return (0, out)
     return f
 _orig_run16 = r.run
-r.run = _mock_run(_json.dumps({"spaces": [{"id": "s1", "name": "other"}, {"id": "s2", "name": r.CFG.get("herdr_space", "Oren_study_orech")}]}))
+r.run = _mock_run(_json.dumps({"spaces": [{"id": "s1", "name": "other"}, {"id": "s2", "name": r.CFG.get("herdr_space", "oren-workers")}]}))
 r._SPACE = None
 assert r.space_args() == ["--label", "herdr.space=s2"]; assert len(_ran) == 1
 r.space_args(); assert len(_ran) == 1                                                       # cached

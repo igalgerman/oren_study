@@ -1,7 +1,7 @@
 """#220 Owner questions pop up: ONE short Claude window per open owner question (the questions in the pinned issue
 'Questions for the owner', owner_q.py #193: worker/reviewer PURPLE/cloud QUESTION:/intake/orchestrator).
 The watchdog calls tick() every minute:
-  - a new open question -> window `question-<issue>` in the 'Oren control' space:
+  - a new open question -> window `question-<issue>` in the 'oren' space:
     `claude --model haiku --remote-control oren-question-<issue>`, pinned (herdr alert). The window
       PC:    writes a questions.json and runs tools/ask/ask.py in the background (the Hebrew page opens in the browser),
       phone: after 2 min without an answer, a Hebrew PushNotification with numbered options (answer by number in Remote Control),

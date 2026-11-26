@@ -27,8 +27,8 @@ parent = ""                     # herdr terminal that gets the notes (e.g. "t2g"
 
 # give each worker/reviewer its own tab in the Herdr app
 # Herdr space where worker/reviewer tabs open (by name)
-herdr_space = "Oren workers"
-control_space = "Oren control"   # #140: tabs orchestrator, inbox, inspector (started by tools/recover.cmd and the watchdog)
+herdr_space = "oren-workers"   # #25: worker/review windows, kept out of the main space
+control_space = "oren"           # #140/#25: the ONE main space: tabs orchestrator, inbox, inspector (tools/orchestrator.cmd, recover.cmd, the watchdog); runner + watchdog have no tab
 recover_issue = 138              # #140: recover reports what it did in one comment on this issue (freeze/recover epic)
 
 # acting observer (observer.py, rules only), run by the watchdog every N minutes
