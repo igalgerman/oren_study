@@ -209,3 +209,12 @@ test('core lanes follow max_core', () => {
   const three = [...open, { number: 6, title: 'H', labels: lab('core', 'ready-for-agent', 'in-progress') }, { number: 7, title: 'I', labels: lab('core', 'ready-for-agent') }]
   expect(laneReasons(three, [], 3, 2)[2]).toMatch(/#7 ready but only 2 core at a time/)
 })
+
+test('your lane shows the open intake window', () => {
+  const lab = (...n: string[]) => n.map(name => ({ name }))
+  const open = [{ number: 8, title: 'Idea about maps', labels: lab('needs-triage') }, { number: 9, title: 'Other', labels: lab('needs-info') }]
+  const v = view(open, [], [{ name: 'intake-8', state: 'live/working' }], [])
+  expect(v.you[0]).toBe('▶ #8 Idea about maps — intake window open')
+  expect(v.you[1]).toMatch(/^\? #9 /)
+  expect(v.lanes.some(l => l.includes('#8'))).toBe(false)
+})

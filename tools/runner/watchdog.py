@@ -4,6 +4,7 @@ Every minute it checks, deterministically:
   2. a worker/reviewer that stopped without its RESULT:/VERDICT: line for 10 min -> tells the orchestrator
   3. free lanes + ready issues but no runner pass running                       -> starts a runner pass
   3b. a window waiting for the owner longer than park_minutes (the runner parks it itself; this is the fallback): issue gets blocked + ready-for-human, lane freed
+  3c. owner lane: no intake window open + a needs-triage/needs-info issue -> opens ONE `intake-<n>` (oldest issue), `NEEDS YOU: intake-<n> is open`
   5. every observer_minutes: observer.py applies deterministic rules (make_ready, rerun, fix Blocked-by lines) within limits
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
@@ -110,6 +111,28 @@ def check_lanes(ts):
     cmd += [sys.executable, str(HERE / "runner.py"), f"--term={name}"]
     rc, out = R.run(cmd, timeout=60)
     log(f"free lane + ready issue -> started {name} (rc {rc})")
+
+def pick_intake(issues, ts):
+    """Pure: the OLDEST open needs-triage / needs-info issue, unless an intake-* window is live (never two). issues: labels as names."""
+    if any((t.get("name") or "").startswith("intake") and t.get("state") == "live" for t in ts): return None
+    cand = [i for i in issues if {"needs-triage", "needs-info"} & set(i["labels"])]
+    return min(cand, key=lambda i: (i.get("createdAt") or "", i["number"])) if cand else None
+
+def check_intake(ts):
+    """Owner lane: open ONE `intake-<n>` window (grill-me) for the oldest issue that needs the owner; tell the orchestrator."""
+    if any((t.get("name") or "").startswith("intake") and t.get("state") == "live" for t in ts): return
+    rc, out = R.gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,title")
+    if rc: return
+    i = pick_intake([{**x, "labels": [l["name"] for l in x["labels"]]} for x in json.loads(out)], ts)
+    if not i: return
+    n, name = i["number"], f"intake-{i['number']}"
+    prompt = (f"/grill-me issue #{n} (gh issue view {n} --repo {R.CFG['repo']} --comments), then /to-tickets for what comes out of it, "
+              f"then close #{n} with links to the new tickets.")
+    cmd = [R.HC, "run", "--bg", "--outlive-parent", *R.space_args(), "--name", name, "--cwd", R.CFG.get("main_checkout", str(R.ROOT)),
+           "--label", f"issue={n}", "--label", "role=intake", shutil.which("claude") or "claude", prompt]
+    rc, out = R.run(cmd, timeout=60)
+    log(f"owner lane: opened {name} (rc {rc})")
+    if rc == 0: tell(f"NEEDS YOU: {name} is open")
 
 FINISHED_RE = re.compile(r"^(run|issue|review|intake)-|^watchdog|^flowtest")
 IDLE_MIN = 15      # a live issue/review/intake window done/idle this long, with no live run-<n>, only holds RAM
@@ -270,6 +293,7 @@ def tick():
     ts = windows()
     check_windows(ts)
     check_lanes(ts)
+    check_intake(ts)
     cleanup(R.hc_json("ls", "--all", "--json").get("terminals", []) or ts)
     observer_tick()
     sync_tick()
