@@ -162,6 +162,10 @@ def merge_conflict(text):
     t = (text or "").lower()
     return "conflict" in t or "not mergeable" in t or "cannot be cleanly created" in t
 
+def needs_branch_update(mergeable):
+    """Pure (#166): update the lane with main only when GitHub says the PR really conflicts; otherwise merge straight on green (one CI run, not two)."""
+    return (mergeable or "").upper() == "CONFLICTING"
+
 def deploy_needed(deployed_sha, main_sha):
     """Pure (#74): batching. PRs merged one after another are deployed ONCE: the first deploy after the last merge covers all of them."""
     return bool(main_sha) and deployed_sha != main_sha
@@ -234,9 +238,32 @@ def find_marker(text, prefix):
     hits = []
     for l in text.splitlines():
         s = l.strip().lstrip("\u25cf\u23fa\u2022").strip()
-        if s.startswith(prefix) and "`" not in s and "<why>" not in s and " or " not in s:
+        if s.startswith(prefix) and "`" not in s and "<why>" not in s and (" or " not in s or prefix == "VERDICT:"):
             hits.append(s)
     return hits[-1] if hits else ""
+
+# #149: four review colours. GREEN `VERDICT: PASS` merge / BLUE `VERDICT: PASS-NOTES a; b` merge + notes to the polish backlog /
+# PURPLE `VERDICT: PURPLE <question> merge-safe|hold` owner question / RED `VERDICT: FIX <list>` only for wrong behaviour, missing test, spec miss, security, data loss, broken build.
+FIX_ROUNDS = 2          # fix rounds before blocking (one more than before): up to 3 reviews
+
+def parse_verdict(line):
+    """VERDICT line -> (kind, text, extra); kind pass|notes|purple|fix|none. PURPLE extra = merge-safe|hold (no flag = hold)."""
+    m = re.match(r"VERDICT:\s*(PASS-NOTES|PASS|PURPLE|FIX)\b\s*(.*)$", (line or "").strip(), re.S)
+    if not m: return ("none", "", "")
+    kind, text = m.group(1), m.group(2).strip()
+    if kind == "PURPLE":
+        flag = "hold"
+        m2 = re.search(r"\s*\b(merge-safe|hold)\s*$", text)
+        if m2: flag, text = m2.group(1), text[:m2.start()].strip()
+        return ("purple", text, flag)
+    return ({"PASS-NOTES": "notes", "PASS": "pass", "FIX": "fix"}[kind], text, "")
+
+def polish_title(lane):
+    return f"Polish backlog ({lane})"
+
+def polish_lines(notes, pr):
+    """'a; b' -> one backlog line per note, each with the PR number."""
+    return [f"- {x.strip()} (PR #{pr})" for x in notes.split(";") if x.strip()]
 
 def last_line(text, prefix):
     hits = [l.strip() for l in text.splitlines() if l.strip().startswith(prefix)]
@@ -559,7 +586,7 @@ def worker_prompt(n, lane, review_text=None, bug=False):
         base += ("This is a BUG: use the mattpocock-skills:diagnosing-bugs skill, then tdd: reproduce it with a failing test (add it to the relevant suite in oren2/tests/), then fix it so the test passes; "
                  "say the root cause in the PR body.\n")
     steps = ("Steps: 1) implement; 2) python3 build_talents.py (in oren2/, PATH already has python3) and run the build + the suites for what you changed, muted "
-             "(see FLOW.md); 3) for each changed screen take screenshots at phone 390x844 and desktop 1366x768 into "
+             "(see FLOW.md); 3) for each changed screen take screenshots (skip them when no oren2/ file changed) at phone 390x844 and desktop 1366x768 into "
              f"C:/work/Oren_study/shots/{n}/ and LOOK at them (simple, one main action, Hebrew with nikud); 4) commit (do NOT commit oren2/index.html "
              f"or oren2/cf/public/index.html, node_modules, package*.json, tests/.tmp); 5) `git push -u {REMOTE} lane/{n}`; 6) open a PR to {BRANCH} with "
              f"`gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Closes #{n}` (use the mattpocock-skills:pr skill to write the PR body; skip if a PR already exists). "
@@ -570,13 +597,44 @@ def worker_prompt(n, lane, review_text=None, bug=False):
                   "re-run tests and screenshots:\n---\n" + review_text[-6000:] + "\n---")
     return base + steps
 
-def review_prompt(n, pr):
+def review_prompt(n, pr, round1=""):
+    colours = ("Verdict colours (the last line, exactly one): `VERDICT: PASS` (GREEN, nothing to say); "
+               "`VERDICT: PASS-NOTES <note>; <note>` (BLUE: nothing wrong for Oren or the parent, only polish such as naming, small cleanup, extra test idea, comment wording; one line, notes split by `;`); "
+               "`VERDICT: PURPLE <question in one line> merge-safe` or `... hold` (PURPLE: a real product/design choice only the owner can make, e.g. what Oren sees or hears or what the parent can do, the code works; "
+               "merge-safe = merge now and ask, hold = park until he answers; never for code style); "
+               "`VERDICT: FIX <points>` (RED). RED ONLY for: wrong behaviour for Oren or the parent, a failing or missing test for the change, a spec/acceptance miss, security, data loss, a broken build. "
+               "Justify each RED point in one line. Everything else is a BLUE note, never FIX.")
+    if round1:
+        colours += ("\nThis is a re-review: check ONLY whether these round-1 RED points are fixed, raise NO new nits and no new points "
+                    "(a new RED only if the fix itself broke something):\n---\n" + round1[-3000:] + "\n---")
     return (f"You are a fresh, read-only reviewer for PR #{pr} (issue #{n}) in {REPO}. You may not edit files. Read CLAUDE.md, the issue "
             f"(`gh issue view {n} --repo {REPO}`), the diff (`gh pr diff {pr} --repo {REPO}`, ignore the built index.html files) and the screenshots in "
-            f"C:/work/Oren_study/shots/{n}/ (look at them). Check: correctness vs the issue, simplicity (one main action per screen), Hebrew with correct "
+            f"C:/work/Oren_study/shots/{n}/ (look at them; none expected when no oren2/ file changed). Check: correctness vs the issue, simplicity (one main action per screen), Hebrew with correct "
             "nikud, facts correct, no unrelated changes. Use the mattpocock-skills:code-review skill (Standards = CLAUDE.md + FLOW.md, Spec = the issue), then post ONE comment with `gh pr comment " + f"{pr} --repo {REPO} --body-file <file>` (write the file under "
             "oren2/tests/.tmp/; this is the only file you may write, via the Bash echo/redirect). Print the same comment as your output. "
-            "The very last line must be `VERDICT: PASS` or `VERDICT: FIX` (FIX = list the concrete points above it).")
+            + colours)
+
+def post_polish(n, lane, pr, notes):
+    """BLUE notes: one line each (with the PR link) on the ONE rolling 'Polish backlog (<lane>)' issue; created when missing. Never one issue per note."""
+    lines = polish_lines(notes, pr)
+    if not lines: return
+    title = polish_title(lane)
+    rc, out = gh("issue", "list", "--state", "open", "--search", f'"{title}" in:title', "--json", "number,title")
+    num = None
+    try: num = next((x["number"] for x in json.loads(out) if x["title"] == title), None)
+    except ValueError: pass
+    body = "\n".join(lines)
+    if num:
+        gh("issue", "comment", str(num), "--body", body)
+    else:
+        gh("issue", "create", "--title", title, "--label", lane, "--body",
+           "Rolling list of BLUE review notes (polish only). When 5-8 notes are here, ONE worker does them in one PR.\n\n" + body)
+
+def ask_owner(n, pr, question, flag):
+    """PURPLE: the question goes to the owner via the orchestrator (never to the worker); on hold the issue is parked."""
+    gh("issue", "comment", str(n), "--body", redact(f"Reviewer PURPLE question for the owner ({flag}, PR #{pr}): {question}"))
+    if flag == "hold": set_labels(n, add=["blocked", "ready-for-human"], remove=["in-progress"])
+    tell_orchestrator(f"#{n} owner question ({flag}): {question[:300]} - ask the owner in Hebrew (tools/ask), post his answer on the issue")
 
 def set_labels(n, add=(), remove=()):
     args = ["issue", "edit", str(n)]
@@ -607,6 +665,8 @@ def find_pr(n):
         return None
 
 def deploy_text(log):
+    if CFG.get("deploy_in_ci", True):                      # #192: .github/workflows/deploy.yml deploys + pregens every green push to main
+        return "deploy runs in GitHub Actions (workflow deploy, after tests)"
     tok = env_file().get("CLOUDFLARE_API_TOKEN", "")
     if not tok:
         return "not deployed: no token"
@@ -657,15 +717,17 @@ def ci_integrate(n, wt, log):
     0 merged, 2 conflict, 4 no PR, 5 push failed, 6 CI red after one rerun, 7 CI timeout / merge failed (blocked, real reason in out)."""
     pr = find_pr(n)
     if not pr: return 4, "no open PR for lane/%d" % n
-    run(["git", "fetch", "-q", REMOTE], cwd=wt, log=log)
-    rc, out = run(["git", "merge", "--no-edit", "-X", "renormalize", f"{REMOTE}/{BRANCH}"], cwd=wt, log=log)
-    if rc:
-        files = run(["git", "diff", "--name-only", "--diff-filter=U"], cwd=wt, log=log)[1].split()
-        run(["git", "merge", "--abort"], cwd=wt, log=log)
-        return 2, "CONFLICTS (fix by hand, or send back to the lane):\n" + "\n".join(files)
-    if run(["git", "rev-parse", "HEAD"], cwd=wt)[1] != run(["git", "rev-parse", f"{REMOTE}/lane/{n}"], cwd=wt)[1]:
-        if run(["git", "push", "-q", REMOTE, f"lane/{n}"], cwd=wt, log=log)[0]: return 5, "push failed"
-        time.sleep(20)                                           # let GitHub start the new run
+    mergeable = gh("pr", "view", str(pr), "--json", "mergeable", "-q", ".mergeable", log=log)[1].strip()
+    if needs_branch_update(mergeable):                           # #166: only a real conflict updates the branch
+        run(["git", "fetch", "-q", REMOTE], cwd=wt, log=log)
+        rc, out = run(["git", "merge", "--no-edit", "-X", "renormalize", f"{REMOTE}/{BRANCH}"], cwd=wt, log=log)
+        if rc:
+            files = run(["git", "diff", "--name-only", "--diff-filter=U"], cwd=wt, log=log)[1].split()
+            run(["git", "merge", "--abort"], cwd=wt, log=log)
+            return 2, "CONFLICTS (fix by hand, or send back to the lane):\n" + "\n".join(files)
+        if run(["git", "rev-parse", "HEAD"], cwd=wt)[1] != run(["git", "rev-parse", f"{REMOTE}/lane/{n}"], cwd=wt)[1]:
+            if run(["git", "push", "-q", REMOTE, f"lane/{n}"], cwd=wt, log=log)[0]: return 5, "push failed"
+            time.sleep(20)                                           # let GitHub start the new run
     def get_checks():
         try: return json.loads(gh("pr", "checks", str(pr), "--json", "name,bucket", log=log)[1] or "[]")
         except ValueError: return []
@@ -675,7 +737,8 @@ def ci_integrate(n, wt, log):
         rid = run(["gh", "run", "list", "--repo", REPO, "--branch", f"lane/{n}", "--limit", "1", "--json", "databaseId", "-q", ".[0].databaseId"], log=log)[1].strip()
         if rid.isdigit(): run(["gh", "run", "rerun", rid, "--failed", "--repo", REPO], log=log)
     def merge():
-        rc_, o_ = gh("pr", "merge", str(pr), "--squash", log=log)
+        with FileLock("integrate", wait=True, note=f"#{n} CI merge"):                   # #166: the lock covers only the merge itself
+            rc_, o_ = gh("pr", "merge", str(pr), "--squash", log=log)
         return True if rc_ == 0 else ("conflict" if merge_conflict(o_) else False)
     res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp)
     if res[0] == "merged": return 0, "merged PR #%d" % pr
@@ -701,7 +764,7 @@ def deploy_main(log):
         run(["git", "commit", "-qm", "Rebuild index.html\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"], cwd=INTEG, log=log)
         if run(["git", "push", "-q", REMOTE, f"HEAD:{BRANCH}"], cwd=INTEG, log=log)[0]: raise Blocked("push of rebuilt index.html failed")
     sha = run(["git", "rev-parse", "HEAD"], cwd=INTEG)[1].strip()
-    mark = RUNS / "deployed.sha"
+    mark = RUNS / "deployed.sha"                               # only used when deploy_in_ci = false (#192)
     if not deploy_needed(mark.read_text().strip() if mark.exists() else "", sha):
         return "already deployed with an earlier PR (batch)"
     dep = deploy_text(log)
@@ -758,7 +821,7 @@ def process_locked(issue, where="local"):
         run(["git", "fetch", "-q", REMOTE], cwd=ROOT, log=log)
         def prep_worktree():
             pushed = bool(find_pr(n)) or bool(run(["git", "ls-remote", "--heads", REMOTE, f"lane/{n}"], cwd=ROOT)[1].strip())
-            resume = any(live(w) for w in (f"issue-{n}", f"issue-{n}-fix", f"review-{n}", f"review-{n}-2"))
+            resume = any(live(w) for w in (f"issue-{n}", f"issue-{n}-fix", f"review-{n}", f"review-{n}-2", f"review-{n}-3", f"issue-{n}-fix2"))
             if resume and wt.exists():
                 pass                                             # parked earlier: re-attach to its windows and worktree, change nothing
             else:
@@ -794,22 +857,31 @@ def process_locked(issue, where="local"):
             gh("issue", "close", str(n), "--comment", "Review report posted above (runner).")
             set_labels(n, remove=["in-progress"]); close_windows(n); return "DONE report posted"
 
-        verdict = ""
-        for rnd in (1, 2):
+        verdict = ""; red = ""
+        for rnd in range(1, FIX_ROUNDS + 2):
             pr = find_pr(n)
             if not pr: raise Blocked("worker said DONE but no open PR for lane/%d" % n)
-            rv, verdict = agent(f"review-{n}" + ("" if rnd == 1 else f"-{rnd}"), review_prompt(n, pr), wt, READ_TOOLS,
+            rv, verdict = agent(f"review-{n}" + ("" if rnd == 1 else f"-{rnd}"), review_prompt(n, pr, red), wt, READ_TOOLS,
                                 d / f"review{rnd}.log", "VERDICT:", n, "reviewer", rm)
             (d / f"review{rnd}.out").write_text(redact(rv), encoding="utf-8")
-            if verdict.startswith("VERDICT: PASS"):
+            kind, text, extra = parse_verdict(verdict)
+            if kind == "pass":
                 stat(n, lane, "review_pass"); break
-            if not verdict.startswith("VERDICT: FIX"):
+            if kind == "notes":                    # BLUE: merge now, notes go to the rolling polish issue
+                stat(n, lane, "review_pass", colour="blue"); post_polish(n, lane, pr, text); break
+            if kind == "purple":                   # PURPLE: owner question; merge-safe merges, hold parks
+                stat(n, lane, "review_pass" if extra == "merge-safe" else "parked", colour="purple")
+                ask_owner(n, pr, text, extra)
+                if extra == "merge-safe": break
+                raise Parked(f"owner question: {text[:200]}")
+            if kind != "fix":
                 raise Blocked(verdict or "reviewer gave no VERDICT line")
             stat(n, lane, "review_fix")
-            if rnd == 2:
+            if rnd == FIX_ROUNDS + 1:
                 stat(n, lane, "blocked")
-                block(n, "reviewer asked for fixes twice; needs a human", log); return "BLOCKED: reviewer asked for fixes twice; needs a human"
-            out, res = agent(f"issue-{n}-fix", worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / "worker2.log", "RESULT:", n, "worker", wm)
+                block(n, f"reviewer asked for fixes {rnd} times; needs a human", log); return f"BLOCKED: reviewer asked for fixes {rnd} times; needs a human"
+            red = text or rv[-1500:]
+            out, res = agent(f"issue-{n}-fix" + ("" if rnd == 1 else str(rnd)), worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / f"worker{rnd + 1}.log", "RESULT:", n, "worker", wm)
             if not res.startswith("RESULT: DONE"):
                 raise Blocked(res or "fix worker gave no RESULT line")
             stat(n, lane, "fix_done")
@@ -817,11 +889,10 @@ def process_locked(issue, where="local"):
         kind = {"ci": False}
         def integrate():
             if CFG.get("ci_merge", True) and find_pr(n):     # #74: CI decides, no local full suite
-                with FileLock("integrate", wait=True, note=f"#{n} CI merge"):
-                    rc, out = ci_integrate(n, wt, log)
-                    kind["ci"] = rc == 6
-                    return rc, out
-            with FileLock("integrate", wait=True, note=f"#{n} local merge"):   # fallback: local merge + full suite
+                rc, out = ci_integrate(n, wt, log)           # #166: takes the lock itself, only around `gh pr merge`
+                kind["ci"] = rc == 6
+                return rc, out
+            with FileLock("integrate", wait=True, note=f"#{n} local merge"):          # fallback: local merge + full suite
                 rc, out = run([BASH, "tools/integrate.sh", f"lane/{n}", BRANCH], cwd=ROOT,
                               env={"REMOTE": REMOTE, "JOBS": "4", "RUNNER": "1"}, log=log, timeout=3600)
                 if rc:
@@ -872,7 +943,7 @@ def process_locked(issue, where="local"):
 def close_windows(n):
     """After a successful issue: close its worker/reviewer windows (kept open when BLOCKED, so the owner can look)."""
     if not USE_HERDR: return
-    for t in (f"issue-{n}", f"issue-{n}-fix", f"issue-{n}-resolve1", f"issue-{n}-resolve2", f"review-{n}", f"review-{n}-2"):
+    for t in (f"issue-{n}", f"issue-{n}-fix", f"issue-{n}-resolve1", f"issue-{n}-resolve2", f"review-{n}", f"review-{n}-2", f"review-{n}-3", f"issue-{n}-fix2"):
         hc("kill", t, timeout=30); hc("rm", t, timeout=30)
 
 # ---------- main ----------

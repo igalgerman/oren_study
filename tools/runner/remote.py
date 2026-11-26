@@ -125,6 +125,9 @@ def main(argv):
         res = start(argv[1].lstrip("#"), argv[2], cwd=CFG.get("main_checkout", "."))
     elif len(argv) == 2 and argv[0] == "status":
         res = status(argv[1].lstrip("#"))
+        if res["state"] == "question":                     # #193: the owner sees every question in ONE pinned issue
+            import owner_q
+            res["posted"] = owner_q.post(f"remote-{argv[1].lstrip('#')}", res["line"])
     elif len(argv) == 3 and argv[0] == "send":
         res = send(argv[1], argv[2])
     elif argv == ["cloud"]:

@@ -1,6 +1,7 @@
 """Watchdog: keeps the flow from getting stuck. Runs forever in the herdr window `watchdog` (started by tools/orchestrator.cmd).
 Every minute it checks, deterministically:
   1. a worker/reviewer/intake window waiting for an answer (status blocked)  -> tells the orchestrator (once per new screen; also a worker whose last line is QUESTION:)
+     and posts the question in the pinned issue 'Questions for the owner' (owner_q.py, #193; once per window+question); an owner reply there -> tells the orchestrator
   2. a worker/reviewer that stopped without its RESULT:/VERDICT: line for 10 min -> tells the orchestrator
   3. free lanes + ready issues but no runner pass running                       -> starts a runner pass
   3b. a window waiting for the owner longer than park_minutes (the runner parks it itself; this is the fallback): issue gets blocked + ready-for-human, lane freed
@@ -17,6 +18,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 import runner as R   # config, gh(), select(), hc paths
+import owner_q as OQ # #193: the pinned 'Questions for the owner' issue
 
 EVERY = int(R.CFG.get("watchdog_seconds", 60))
 LOG = R.RUNS / "watchdog.log"
@@ -74,12 +76,16 @@ def check_windows(ts):
             if status == "blocked" and "trust this folder" in screen and now - since < 120: continue   # the runner accepts this dialog itself
             if status == "blocked" and now - since < 90: continue                                        # short menus the runner/owner answers at once: no alarm
             h = hashlib.sha1((q or tail[-600:]).encode()).hexdigest()
+            url = OQ.post(name, q, tail)                        # #193: into the pinned owner-questions issue (once; retried while gh fails)
+            if url: log(f"posted owner question for {name}: {url}")
             if told.get(name) != h:
                 told[name] = h
                 pin(t, True)
                 what = f"asks: {q}" if q else "is waiting for an answer"
-                tell(f"{needs_you_line(name, q, tail)}{chr(10)}WATCHDOG: window {name} {what}. Ask the owner ONE short line in your window, then answer it "
-                     f"(hc send {name} \"..\" or the menu option he picks). Its screen ends with:{chr(10)}{tail}")
+                tell(f"{needs_you_line(name, q, tail)}{chr(10)}WATCHDOG: window {name} {what}. NEW OWNER QUESTION"
+                     + (f" (posted: {url})" if url else " (in the 'Questions for the owner' issue)")
+                     + f": send a PushNotification with the question text, then relay his answer (hc send {name} \"..\" or the menu option he picks) "
+                     f"and mark it answered (owner_q.py answered <key>). Its screen ends with:{chr(10)}{tail}")
             m = re.match(r"(?:issue|review)-(\d+)", name)       # fallback for a runner that did not park by itself
             if m and R.should_park(since, now, R.PARK_MINUTES + 3) and R.park_issue(int(m[1]), name, tail, since):
                 log(f"parked #{m[1]} ({name} waiting since {time.strftime('%H:%M', time.localtime(since))})")
@@ -317,6 +323,7 @@ def tick():
     except OSError: pass
     ts = windows()
     check_windows(ts)
+    OQ.answers_tick(tell)
     check_lanes(ts)
     check_intake(ts)
     cleanup(R.hc_json("ls", "--all", "--json").get("terminals", []) or ts)
