@@ -11,6 +11,8 @@ import remote as RM
 p = D.prompt("inbox", 777)
 for need in ("open AND closed", "## Acceptance", "ready-for-agent", "P0", "pack", "core", "Hebrew", "nikud", "PING"):
     assert need in p, need
+for need in ("tier-1", "tier-2", "tier-3", "unsure", "one-line reason"):   # #437: the inbox picks the tier and says why
+    assert need in p, need
 a = D.prompt("ask", 777)
 assert "#777" in a and "READ-ONLY" in a and "Hebrew" in a and "PING" in a, a
 assert "20 min" in a                                   # tells the owner when the status is old (PC off)
