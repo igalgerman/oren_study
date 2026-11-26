@@ -1,6 +1,9 @@
 // Shared helpers for the Oren game test suites.
 // The page under test is oren2/index.html wrapped in a doctype (tests/.tmp/t.html), built by run.sh.
 const path = require('path'), fs = require('fs');
+// #284: every suite loads this file; Playwright never runs on the owner's PC, only in CI, a cloud session, or with ALLOW_LOCAL_TESTS=1
+if (process.env.CI !== 'true' && process.env.ALLOW_LOCAL_TESTS !== '1' && process.env.CLAUDE_CODE_REMOTE !== 'true') {
+  console.error("game suites run in CI only (#284): see the PR's 'tests' check (ALLOW_LOCAL_TESTS=1 to override)"); process.exit(3); }
 require('./mute.js');                               // every test browser is silent
 const ROOT = path.resolve(__dirname, '..');          // oren2/
 const TMP = path.join(__dirname, '.tmp');

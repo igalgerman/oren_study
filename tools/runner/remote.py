@@ -27,7 +27,7 @@ RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # same as runner.
 def sh(cmd, env=None):
     p = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
                        stdin=subprocess.DEVNULL, timeout=600,
-                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))   # no console popups under pythonw
+                       creationflags=0x08000000 if os.name == "nt" else 0)   # #284: same as runner.no_window()
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 def clean_env():
