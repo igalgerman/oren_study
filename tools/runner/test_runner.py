@@ -124,6 +124,20 @@ assert [k for k, _ in W.idle_alarms(_iss, [], _now, _now - 5 * 60, 3)] == ["bl5"
 _fa = W.idle_alarms([], [], _now, None, 3, finish=(2, 5))
 assert _fa == [("finish", "runner finished on its own only 2 of 5 issues in 24 h (40%, goal 80%)")], _fa
 assert W.idle_alarms([], [], _now, None, 3, finish=(3, 6)) == [] and W.idle_alarms([], [], _now, None, 3, finish=(0, 0)) == []
+# #376: the finish alarm is keyed by kind (its text changes every pass): once per 6 h, sooner only if the rate drops 5+ points
+_f1 = [("finish", "runner finished on its own only 1 of 7 issues in 24 h (14%, goal 80%)"), ("pr70", "PR #70 quiet")]
+_n1, _s1, _st1 = W.pick_alarms(_f1, {}, {}, (1, 7), _now)
+assert _n1 == [t for _, t in _f1] and _st1 == {"ts": _now, "pct": 100 / 7}, (_n1, _st1)
+_f2 = [("finish", "runner finished on its own only 1 of 8 issues in 24 h (12%, goal 80%)"), ("pr71", "PR #71 quiet")]
+_n2, _s2, _st2 = W.pick_alarms(_f2, _s1, _st1, (1, 8), _now + 20 * 60)          # 14% -> 12.5% within 1 h: no second finish alarm
+assert _n2 == ["PR #71 quiet"] and _st2 == _st1, (_n2, _st2)
+assert W.pick_alarms(_f2, _s1, _st1, (1, 8), _now + 61 * 60)[0] == ["PR #71 quiet"]     # past the hourly dedupe, still < 6 h
+assert W.pick_alarms(_f2, _s1, _st1, (1, 8), _now + 6 * 3600)[0][0].startswith("runner finished")   # 6 h later: again
+_n3, _, _st3 = W.pick_alarms(_f2, _s1, _st1, (1, 12), _now + 30 * 60)           # 14.3% -> 8.3%: dropped 5+ points -> again
+assert _n3[0].startswith("runner finished") and abs(_st3["pct"] - 100 / 12) < 1e-9, (_n3, _st3)
+assert W.pick_alarms(_f1, {"pr70": _now}, {}, (1, 7), _now + 10 * 60)[0] == [_f1[0][1]]   # PR alarms keep their own per-PR dedupe
+from pathlib import Path as _P; _fs = _P(tempfile.mkdtemp()) / "finish_alarm.json"
+W.save_finish_state(_st1, _fs); assert W.load_finish_state(_fs) == _st1 and W.load_finish_state(_fs.with_name("none.json")) == {}
 _cl = [{"n": 7, "state": "working", "last": "2026-11-26T09:00:00Z"}, {"n": 8, "state": "working", "last": "2026-11-26T11:30:00Z"}, {"n": 9, "last": ""}]
 _cn = _c.timegm((2026, 11, 26, 12, 0, 0, 0, 0, 0))
 _ca = W.cloud_stuck_alarms(_cl, _cn, 2)
