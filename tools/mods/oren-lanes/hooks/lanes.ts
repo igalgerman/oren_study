@@ -183,21 +183,28 @@ export function statsLines(text: string, nowSec: number): string[] {
 /** #65: the model:<x> label (haiku|sonnet|opus|fable), '' when there is none (= default sonnet). */
 function modelOf(l: Set<string>): string { return ['haiku', 'sonnet', 'opus', 'fable'].reverse().find(m => l.has(`model:${m}`)) ?? '' }
 
+/** #104: max_core from tools/runner/config.toml text; 1 when missing or invalid. */
+export function parseMaxCore(toml: string): number {
+  const m = /^\s*max_core\s*=\s*(\d+)/m.exec(toml)
+  const n = m ? Number(m[1]) : 0
+  return n >= 1 ? n : 1
+}
+
 /** One line per lane (3): what runs in it, or WHY it is free. */
-export function laneReasons(open: Issue[], wins: Win[], max = 3): string[] {
+export function laneReasons(open: Issue[], wins: Win[], max = 3, maxCore = 1): string[] {
   const lab = (i: Issue) => new Set((i.labels ?? []).map(x => x.name))
   const openNums = new Set(open.map(i => i.number))
   const running = open.filter(i => lab(i).has('in-progress'))
   const rows = running.map((i, k) => { const m = modelOf(lab(i)); return `${k + 1}. #${i.number} running${m ? ` [${m}]` : ''} · ${i.title}` })
   if (rows.length >= max) return rows.slice(0, max)
-  const coreBusy = running.some(i => lab(i).has('core'))
+  const coreBusy = running.filter(i => lab(i).has('core')).length >= maxCore
   const ready = open.filter(i => { const l = lab(i); return l.has('ready-for-agent') && !l.has('in-progress') && !l.has('blocked')
     && !parseBlockers(i.body).some(b => b !== i.number && openNums.has(b)) })
   const startable = ready.filter(i => !(coreBusy && (lab(i).has('core') || !['pack', 'review'].some(x => lab(i).has(x)))))
   const why: string[] = []
   if (startable.length) why.push(`starting soon: #${startable.map(i => i.number).join(', #')}`)
   const coreWait = ready.filter(i => !startable.includes(i))
-  if (coreWait.length) why.push(`#${coreWait.map(i => i.number).join(', #')} ready but only 1 core at a time`)
+  if (coreWait.length) why.push(`#${coreWait.map(i => i.number).join(', #')} ready but only ${maxCore} core at a time`)
   const waits = open.filter(i => lab(i).has('ready-for-agent') && !lab(i).has('in-progress') && parseBlockers(i.body).some(b => b !== i.number && openNums.has(b)))
   if (waits.length) why.push(`${waits.length} wait in the chain (${[...waits].sort((a, b) => a.number - b.number).map(i => '#' + i.number).slice(0, 4).join(' ')}${waits.length > 4 ? ' …' : ''})`)
   const you = open.filter(i => lab(i).has('ready-for-human') || lab(i).has('needs-triage') || lab(i).has('needs-info'))
@@ -212,7 +219,7 @@ export type View = { lanes: string[]; you: string[]; orch: string[]; next: strin
 const short = (t: string, n = 34) => (t.length > n ? t.slice(0, n - 1) + '…' : t)
 
 /** The readable panel: 3 lanes (what runs + which step, or why free), your lane, up next, last done. */
-export function view(open: Issue[], closed: Issue[], wins: Win[], prBranches: string[], max = 3): View {
+export function view(open: Issue[], closed: Issue[], wins: Win[], prBranches: string[], max = 3, maxCore = 1): View {
   const lab = (i: Issue) => new Set((i.labels ?? []).map(x => x.name))
   const live = new Set(wins.filter(isLive).map(w => w.name))
   const has = (re: RegExp) => [...live].some(n => re.test(n))
@@ -228,7 +235,7 @@ export function view(open: Issue[], closed: Issue[], wins: Win[], prBranches: st
   const running = open.filter(i => lab(i).has('in-progress')).sort((a, b) => a.number - b.number)
   const expRun = running.filter(exp)[0]   // #72: one extra lane for owner-approved issues
   const lanes = running.filter(i => i !== expRun).slice(0, max).map(i => `● #${i.number} ${short(i.title)} — ${step(i.number)}`)
-  const why = laneReasons(open, wins, max).filter(x => x.includes(' free — ')).map(x => x.replace(/^\d+\. free — /, ''))
+  const why = laneReasons(open, wins, max, maxCore).filter(x => x.includes(' free — ')).map(x => x.replace(/^\d+\. free — /, ''))
   while (lanes.length < max) lanes.push(`○ free — ${why[0] ?? 'nothing ready'}`)
   if (expRun) lanes.push(`⚡ #${expRun.number} ${short(expRun.title)} — ${step(expRun.number)}`)
   // owner's lane: only ready-for-human and needs-triage. blocked + needs-orchestrator is the orchestrator's job (separate dim line)
