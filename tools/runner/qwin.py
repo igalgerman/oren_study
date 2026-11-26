@@ -23,6 +23,8 @@ MAX_WINDOWS = 3
 PUSH_AFTER_S = 120
 REMIND_S = 2 * 3600
 STATE = R.RUNS / "qwin.json"
+FAILS = R.RUNS / "qwin_fails.json"                    # #281: {key: failed opens}; after MAX_FAILS the orchestrator pushes instead
+MAX_FAILS = 2
 DIR = R.RUNS / "questions"
 TOOLS = ["Bash", "Read", "Write", "PushNotification", "TaskStop"]
 
@@ -112,6 +114,8 @@ def open_window(q, name):
     _hc("rm", name, timeout=30)                          # a finished terminal of that name (an earlier question)
     rc, out = _hc("run", "--bg", "--outlive-parent", "--name", name, "--cwd", R.CFG.get("main_checkout", str(R.ROOT)),
                   "--label", f"issue={issue_no(q)}", "--label", "role=question", *space_args(),
+                  # #281: through Git Bash like the worker windows (runner.agent): hc cannot start claude.CMD itself
+                  R.BASH, "-c", 'export PATH="$1:$PATH"; shift; "$@"', "_", R.CFG["extra_path"],
                   shutil.which("claude") or "claude", "--model", "haiku", "--remote-control", f"oren-{name}",
                   "--permission-mode", "auto", "--allowedTools", *TOOLS, "--", prompt(q, name, qfile), timeout=60)
     if rc: log(f"could not open {name}: {out.strip()[:200]}"); return False
@@ -134,12 +138,31 @@ def tick(ts, now=None):
     for k in remind:
         _hc("send", st[k]["name"], "WATCHDOG REMINDER: 2 hours without an answer. Send ONE PushNotification reminder now, then wait again.", timeout=30)
         st[k]["reminded"] = True; log(f"{st[k]['name']}: 2 h reminder")
+    fails = load_fails()
     for q in start:
-        name = win_name(q)
+        name, key = win_name(q), q["key"]
+        entry = {"name": name, "since": now, "source": q.get("source", ""), "issue": issue_no(q), "text": q.get("text", "")}
         if open_window(q, name):
-            st[q["key"]] = {"name": name, "since": now, "source": q.get("source", ""), "issue": issue_no(q), "text": q.get("text", "")}
-            log(f"{name}: opened for {q['key']}")
+            st[key] = entry; fails.pop(key, None)
+            log(f"{name}: opened for {key}")
+            continue
+        fails[key] = fails.get(key, 0) + 1
+        if fails[key] >= MAX_FAILS:                      # #281: no silent retry every minute: the orchestrator pushes it, once
+            st[key] = {**entry, "failed": True}; fails.pop(key, None)
+            _hc("send", "orchestrator", f"QUESTION WINDOW FAILED (#281): {name} could not open {MAX_FAILS} times, so the owner has NOT been asked. "
+                f"Send ONE PushNotification now with the question and this link, then follow the answer as usual.\n"
+                f"Question ({q.get('source') or '?'}): {q.get('text', '')[:300]}\nLink: {q.get('url', '')}", timeout=30)
+            log(f"{name}: could not open {MAX_FAILS} times, orchestrator told to push {key}")
+    save_fails(fails)
     save(st)
+
+def load_fails():
+    try: return json.loads(FAILS.read_text(encoding="utf-8"))
+    except Exception: return {}
+
+def save_fails(f):
+    R.RUNS.mkdir(parents=True, exist_ok=True)
+    FAILS.write_text(json.dumps(f), encoding="utf-8")
 
 def session_of(n):
     try: return json.loads((R.RUNS / str(n) / "remote.json").read_text(encoding="utf-8")).get("session", "")
