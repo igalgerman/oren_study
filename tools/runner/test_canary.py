@@ -41,12 +41,15 @@ assert dict(C.STEPS) == {"start": 10, "pr": 30, "review": 20, "merge": 20, "clos
 # ---------- fake GitHub ----------
 class GH:
     """Answers gh commands from a little world: one canary issue, maybe its PR; records writes."""
-    def __init__(self): self.issue, self.pr, self.verdict, self.calls, self.leftovers = None, None, "", [], []
+    def __init__(self): self.issue, self.pr, self.verdict, self.calls, self.leftovers, self.p0 = None, None, "", [], [], []
     def __call__(self, cmd, env=None):
         self.calls.append(cmd)
         line = " ".join(map(str, cmd))
         if cmd[:3] == ["gh", "label", "create"]: return 0, ""
         if cmd[:3] == ["gh", "issue", "list"] and "canary" in cmd: return 0, json.dumps([{"number": n} for n in self.leftovers])
+        if cmd[:3] == ["gh", "issue", "list"] and "P0" in cmd: return 0, json.dumps(self.p0)
+        if cmd[:3] == ["gh", "issue", "create"] and "P0" in cmd[cmd.index("--label") + 1]:
+            self.p0.append({"number": 500 + len(self.p0), "title": cmd[cmd.index("--title") + 1]}); return 0, "https://github.com/x/y/issues/500\n"
         if cmd[:3] == ["gh", "issue", "create"]:
             self.issue = {"number": 401, "state": "OPEN", "labels": []}
             return 0, "https://github.com/igalgerman/oren_study/issues/401\n"
@@ -107,6 +110,17 @@ assert gh.writes("gh", "pr", "close") and gh.writes("gh", "issue", "close")
 assert st.get("run") is None and st["fail"]["step"] == "review"
 assert "NEEDS-ATTENTION" in C.line(st) and "review" in C.line(st)
 assert len(said) == 3 and "closed" in said[2], said
+# owner 19:50 (#330): a red step also opens ONE P0 issue (searched first), so the alarm is not lost when no window is up
+p0 = [c for c in gh.writes("gh", "issue", "create") if "P0" in c[c.index("--label") + 1]]
+titles = [c[c.index("--title") + 1] for c in p0]
+assert titles == ["Canary: step 'start' of the flow is broken", "Canary: step 'review' of the flow is broken"], titles
+assert all(c[c.index("--label") + 1] == "P0,needs-orchestrator" for c in p0), p0
+assert "#401" in p0[0][p0[0].index("--body") + 1]
+# an open P0 for the same step already exists: none is created
+gh, st, said[:] = GH(), {}, []
+gh.p0 = [{"number": 499, "title": "Canary: step 'start' of the flow is broken"}]
+tick(gh, st, T0); tick(gh, st, T0 + 12 * M)
+assert len(said) == 1 and len(gh.p0) == 1, gh.p0
 
 # leftover canary issues (state lost, watchdog restart) are closed before a new canary opens
 gh, st, said[:] = GH(), {}, []

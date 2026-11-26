@@ -3,7 +3,8 @@ Every EVERY_H (and after a merge that touches tools/runner or tools/mods) the wa
 pack, ready-for-agent: append one line to tools/runner/.canary.md) and lets the normal flow run it:
   start (in-progress or a PR) -> PR -> review (a VERDICT comment) -> merge -> issue closed.
 Each step has a deadline (STEPS, minutes), counted from the time the step before it was seen done (start: from the opening).
-A missed deadline -> ONE alarm per step to the orchestrator and the inspector naming the step, and a NEEDS-ATTENTION line.
+A missed deadline -> ONE alarm per step to the orchestrator and the inspector naming the step, a NEEDS-ATTENTION line, and
+ONE P0 issue 'Canary: step <s> of the flow is broken' (searched first, so never twice while open; owner 19:50).
 Green (closed after its PR merged) -> 'flow ok HH:MM'. Still not green GIVE_UP_H after opening -> the canary closes its own
 PR and issue (no leftovers); leftover open canary issues are closed before the next one opens.
 Side paths, read-only, every hour (the popup once a day): the question popup (the real tools/ask page, started with no browser
@@ -207,6 +208,19 @@ def _open(run, st, now, why, log):
     log(f"#{n} opened ({why})")
     return True
 
+def p0_title(step): return f"Canary: step '{step}' of the flow is broken"
+
+def _p0(run, step, n, detail, log):
+    """Owner 19:50 (#330): a red step also opens ONE P0 issue, so the alarm is not lost when no window is up. Searched first:
+    an open P0 with the same title -> nothing new. A GitHub error -> nothing (the hc alarm went out)."""
+    rc, out = run(["gh", "issue", "list", "--repo", R.REPO, "--state", "open", "--label", "P0", "--limit", "100", "--json", "number,title"])
+    if rc: log(f"P0 for step {step} not checked (GitHub unreadable)"); return
+    if any(i.get("title") == p0_title(step) for i in _json(rc, out, [])): return
+    run(["gh", "issue", "create", "--repo", R.REPO, "--title", p0_title(step), "--label", "P0,needs-orchestrator",
+         "--body", f"Opened by the canary (#330): canary #{n}, step '{step}': {detail}.\n\nFind why that step of the flow is broken, "
+                   f"fix it, then close this issue. The next canary shows whether it works again."])
+    log(f"P0 opened for step {step} (canary #{n})")
+
 def _check(run, st, now, say, log):
     """Read the canary's issue/PR, advance its steps, alarm late steps, finish (green) or give up."""
     import remote
@@ -228,6 +242,7 @@ def _check(run, st, now, say, log):
     if lt and lt[0] not in r["alarmed"]:
         r["alarmed"].append(lt[0])
         say(f"CANARY ALARM (#330): canary #{n} step '{lt[0]}' missed its {lt[1]} min deadline. That step of the flow is broken: check it now.")
+        _p0(run, lt[0], n, f"missed its {lt[1]} min deadline", log)
         log(f"#{n} step {lt[0]} late")
     if now - r["opened"] >= GIVE_UP_H * 3600:
         step = next(s for s, _ in STEPS if s not in r["at"])
@@ -237,6 +252,7 @@ def _check(run, st, now, say, log):
             run(["gh", "issue", "close", str(n), "--repo", R.REPO, "--reason", "not planned", "--comment", f"Canary stuck at '{step}' for {GIVE_UP_H} h, closed (#330)."])
         st["run"], st["fail"] = None, {"n": n, "step": step, "at": now}
         say(f"CANARY ALARM (#330): canary #{n} stuck at '{step}' for {GIVE_UP_H} h: its PR and issue are closed; the next canary runs at the regular time.")
+        _p0(run, step, n, f"stuck for {GIVE_UP_H} h, canary closed", log)
         log(f"#{n} given up at {step}")
 
 def tick(run=_sh, say=_say, log=_log, now=None, st=None, changed=last_tool_change, side=side_tick):
