@@ -965,10 +965,11 @@ function parLiveOn(){if(parLive)return;parLive=setInterval(()=>{if(!parentOn||$(
 const sec=(box,t,html)=>{const d=h('section','psec',`<h3>${t}</h3>`);if(html)d.insertAdjacentHTML('beforeend',html);box.appendChild(d);return d;};
 /* --- summary --- */
 /* problems in the last 14 days: one short line, details only on tap */
-const ISS={voice:'🔊 הקול של Google לא ענה בזמן — הושמע קול גיבוי',sync:'☁️ השמירה לענן לא הצליחה (אולי לא היה אינטרנט)',err:'🐞 תקלה במשחק'};
+const ISS={voice:'🔊 הקול של Google לא ענה בזמן — הושמע קול גיבוי',sync:'☁️ השמירה לענן לא הצליחה',err:'🐞 תקלה במשחק'};
+const WHY={off:'(המכשיר לא היה מחובר לאינטרנט)',full:'(השרת לא קיבל שמירות באותו זמן — המשחק ניסה שוב אחר כך)'};/* #129: the real reason, 'no internet' only when offline */
 function issues(box){const from=lastDays(14)[0][0];const L=(O.realSave.iss||[]).filter(x=>x.d>=from).sort((a,b)=>a.d<b.d?1:-1);
   if(!L.length){box.appendChild(h('div','pissok','✅ אין תקלות בשבועיים האחרונים'));return;}
-  const d=document.createElement('details');d.className='pdet piss';d.innerHTML=`<summary>⚠️ היו ${L.length} תקלות בשבועיים האחרונים — לחצו לפרטים</summary>`+L.map(x=>`<div class="prow"><span class="pn">${x.d.slice(8)}.${x.d.slice(5,7)} · ${ISS[x.k]||x.k}${x.m?` <small dir="ltr">${String(x.m).replace(/[<>&]/g,'')}</small>`:''}</span><span class="pc">×${x.n}</span></div>`).join('');box.appendChild(d);}
+  const d=document.createElement('details');d.className='pdet piss';d.innerHTML=`<summary>⚠️ היו ${L.length} תקלות בשבועיים האחרונים — לחצו לפרטים</summary>`+L.map(x=>`<div class="prow"><span class="pn">${x.d.slice(8)}.${x.d.slice(5,7)} · ${ISS[x.k]||x.k}${WHY[x.m]?' '+WHY[x.m]:x.m?` <small dir="ltr">${String(x.m).replace(/[<>&]/g,'')}</small>`:''}${x.r?' · 📨 נשלח דיווח לבדיקה':''}</span><span class="pc">×${x.n}</span></div>`).join('');box.appendChild(d);}
 function sumTab(box){const s0=T.S(),sv=O.save;
   permStates().then(st=>{if(st&&Object.values(st).some(v=>v==='prompt'||v==='denied')){const w=h('button','pwarn','⚠️ יש הרשאות שעוד לא אושרו (למשל מיקרופון). לחצו כאן כדי לאשר מראש, כדי שאורן לא ייתקע באמצע.');w.onclick=()=>panel('perm');box.prepend(w);}});
   if(!SET().voiceOk){const w=h('button','pwarn','🔊 עוד לא בדקתם את הקול של המשחק. לחצו כאן — לוקח דקה: שומעים דוגמה ואומרים אוקי.');w.onclick=()=>panel('voice');box.appendChild(w);}

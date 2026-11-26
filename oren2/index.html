@@ -1165,7 +1165,7 @@ function parentPlay(on,fresh){if(on&&!kidSave){kidSave=save;let ps=null;if(!fres
 function skipLevel(){const p=play;if(!p||!p.lv)return false;const lv=p.lv;save.s[lv.id]=Math.max(stars(lv.id),3);persist();showWorld(lv.w);return true;}
 function cloudSave(){if(!cloud.ref)return;cloud.dirty=true;clearTimeout(cloud.timer);cloud.timer=setTimeout(cloudFlush,1500);}
 async function cloudFlush(){if(!cloud.ref||cloud.busy||!cloud.dirty)return;cloud.busy=true;cloud.dirty=false;
-  try{const body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;if(JSON.stringify(body).length>200000){save.rq=save.rq.slice(-15);body.rq=save.rq;}await cloud.ref.set(body);cloud.fail=0;}catch(e){if(FAM.on){logIssue('sync');if(e&&e.code!=='invalid_argument'&&(cloud.fail|0)<4){const d=(window.__famRetry!=null?window.__famRetry:5000)*Math.pow(3,cloud.fail|0);cloud.fail=(cloud.fail|0)+1;clearTimeout(cloud.rt);cloud.rt=setTimeout(()=>{cloud.dirty=true;FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},d);}}if(e&&e.code==='invalid_argument'){if(!cloud.retried&&save.rq.length>10){cloud.retried=1;save.rq=save.rq.slice(-10);cloud.dirty=true;}else cloud.ref=null;}}
+  try{const body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;if(JSON.stringify(body).length>200000){save.rq=save.rq.slice(-15);body.rq=save.rq;}await cloud.ref.set(body);cloud.fail=0;}catch(e){if(FAM.on){logIssue('sync',e&&e.why);if(e&&e.code!=='invalid_argument'&&(cloud.fail|0)<4){const d=(window.__famRetry!=null?window.__famRetry:5000)*Math.pow(3,cloud.fail|0);cloud.fail=(cloud.fail|0)+1;clearTimeout(cloud.rt);cloud.rt=setTimeout(()=>{cloud.dirty=true;FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},d);}else diagSend();}if(e&&e.code==='invalid_argument'){if(!cloud.retried&&save.rq.length>10){cloud.retried=1;save.rq=save.rq.slice(-10);cloud.dirty=true;}else cloud.ref=null;}}
   cloud.busy=false;if(cloud.dirty)cloudSave();updateSaveNote();}
 /* ---------- own-website mode: one private family save at /api/save (no codes or links: every device sees the same progress) ---------- */
 const FAM={id:null,on:false,last:0};
@@ -1176,7 +1176,17 @@ function famRef(id){const url='/api/save/'+id;return {
   get:async()=>{const r=await fetch(url,{cache:'no-store'});if(r.status===404)return {exists:false};if(!r.ok)throw new Error('http '+r.status);const d=await r.json();return {exists:true,data:()=>d};},
   set:async body=>{const GAP=window.__famGap!=null?window.__famGap:25000;if(Date.now()-FAM.last<GAP&&!FAM.force){cloud.dirty=true;clearTimeout(FAM.tm);FAM.tm=setTimeout(()=>{FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},GAP-(Date.now()-FAM.last));return;}
     try{const cur=await fetch(url,{cache:'no-store'});if(cur.ok){mergeIn(await cur.json());body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;}}catch(e){}
-    FAM.last=Date.now();const r=await fetch(url,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(body),keepalive:JSON.stringify(body).length<60000});if(!r.ok)throw new Error('http '+r.status);}};}
+    FAM.last=Date.now();let r;try{r=await fetch(url,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(body),keepalive:JSON.stringify(body).length<60000});}catch(e){const x=new Error(e&&e.message||'network');x.why=syncWhy(0);diagLog('PUT /api/save',0,x.message);throw x;}
+    if(!r.ok){let j=null;try{j=await r.json();}catch(e){}const x=new Error('http '+r.status+(j&&j.error?' '+j.error:''));x.why=syncWhy(r.status,j);diagLog('PUT /api/save',r.status,x.message+(j&&j.why?': '+j.why:''));throw x;}diagLog('PUT /api/save',r.status,'');}};}
+/* sync diagnostics (#129): a short rolling log of save attempts on this device (time, endpoint, status, retry, error);
+   when all retries fail it is sent once (with a snapshot of the visible screen) to /api/diag for the orchestrator */
+const DIAG={k:'oren4-diag',sent:0};
+function syncWhy(st,j){return !navigator.onLine?'off':j&&j.error==='store'?'full':st?'http '+st:'net';}
+function diagLog(ep,st,e){try{let L=[];try{L=JSON.parse(localStorage.getItem(DIAG.k))||[];}catch(x){}L.push({t:Date.now(),ep,st:st|0,rt:cloud.fail|0,e:String(e||'').slice(0,200)});localStorage.setItem(DIAG.k,JSON.stringify(L.slice(-30)));}catch(x){}}
+function diagSnap(){try{const c=document.body.cloneNode(true);c.querySelectorAll('script,style,svg,canvas,audio,video,[hidden]').forEach(n=>n.remove());return c.outerHTML.slice(0,150000);}catch(e){return '<body></body>';}}
+async function diagSend(){if(DIAG.sent||!FAM.on||kidSave)return;DIAG.sent=1;let log=[];try{log=JSON.parse(localStorage.getItem(DIAG.k))||[];}catch(e){}
+  try{const r=await fetch('/api/diag',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({fam:FAM.id,log,snap:diagSnap()})});if(!r.ok)throw 0;
+    const e=(save.iss||[]).find(x=>x.d===today()&&x.k==='sync');if(e){e.r=1;try{localStorage.setItem(KEY,JSON.stringify(save));}catch(x){}}}catch(e){DIAG.sent=0;}}
 /* the parent changed the time limit: send it now, not after the 25 s save delay (#34) */
 async function famNow(){if(!FAM.on||kidSave)return;cloud.dirty=true;FAM.force=true;try{await cloudFlush();}finally{FAM.force=false;}}
 async function famPull(){if(!FAM.on||kidSave)return;try{const snap=await cloud.ref.get();if(snap.exists){const before=JSON.stringify([save.set,save.gems,save.time]);mergeIn(snap.data());updateGems();if(before!==JSON.stringify([save.set,save.gems,save.time]))emit('synced');}}catch(e){}}
@@ -4312,10 +4322,11 @@ function parLiveOn(){if(parLive)return;parLive=setInterval(()=>{if(!parentOn||$(
 const sec=(box,t,html)=>{const d=h('section','psec',`<h3>${t}</h3>`);if(html)d.insertAdjacentHTML('beforeend',html);box.appendChild(d);return d;};
 /* --- summary --- */
 /* problems in the last 14 days: one short line, details only on tap */
-const ISS={voice:'🔊 הקול של Google לא ענה בזמן — הושמע קול גיבוי',sync:'☁️ השמירה לענן לא הצליחה (אולי לא היה אינטרנט)',err:'🐞 תקלה במשחק'};
+const ISS={voice:'🔊 הקול של Google לא ענה בזמן — הושמע קול גיבוי',sync:'☁️ השמירה לענן לא הצליחה',err:'🐞 תקלה במשחק'};
+const WHY={off:'(המכשיר לא היה מחובר לאינטרנט)',full:'(השרת לא קיבל שמירות באותו זמן — המשחק ניסה שוב אחר כך)'};/* #129: the real reason, 'no internet' only when offline */
 function issues(box){const from=lastDays(14)[0][0];const L=(O.realSave.iss||[]).filter(x=>x.d>=from).sort((a,b)=>a.d<b.d?1:-1);
   if(!L.length){box.appendChild(h('div','pissok','✅ אין תקלות בשבועיים האחרונים'));return;}
-  const d=document.createElement('details');d.className='pdet piss';d.innerHTML=`<summary>⚠️ היו ${L.length} תקלות בשבועיים האחרונים — לחצו לפרטים</summary>`+L.map(x=>`<div class="prow"><span class="pn">${x.d.slice(8)}.${x.d.slice(5,7)} · ${ISS[x.k]||x.k}${x.m?` <small dir="ltr">${String(x.m).replace(/[<>&]/g,'')}</small>`:''}</span><span class="pc">×${x.n}</span></div>`).join('');box.appendChild(d);}
+  const d=document.createElement('details');d.className='pdet piss';d.innerHTML=`<summary>⚠️ היו ${L.length} תקלות בשבועיים האחרונים — לחצו לפרטים</summary>`+L.map(x=>`<div class="prow"><span class="pn">${x.d.slice(8)}.${x.d.slice(5,7)} · ${ISS[x.k]||x.k}${WHY[x.m]?' '+WHY[x.m]:x.m?` <small dir="ltr">${String(x.m).replace(/[<>&]/g,'')}</small>`:''}${x.r?' · 📨 נשלח דיווח לבדיקה':''}</span><span class="pc">×${x.n}</span></div>`).join('');box.appendChild(d);}
 function sumTab(box){const s0=T.S(),sv=O.save;
   permStates().then(st=>{if(st&&Object.values(st).some(v=>v==='prompt'||v==='denied')){const w=h('button','pwarn','⚠️ יש הרשאות שעוד לא אושרו (למשל מיקרופון). לחצו כאן כדי לאשר מראש, כדי שאורן לא ייתקע באמצע.');w.onclick=()=>panel('perm');box.prepend(w);}});
   if(!SET().voiceOk){const w=h('button','pwarn','🔊 עוד לא בדקתם את הקול של המשחק. לחצו כאן — לוקח דקה: שומעים דוגמה ואומרים אוקי.');w.onclick=()=>panel('voice');box.appendChild(w);}

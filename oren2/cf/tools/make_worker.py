@@ -120,8 +120,29 @@ async function api(req,env,id){if(!/^[a-f0-9]{32}$/.test(id))return new Response
  if(req.method==='GET'){const v=await kvGet(env,id);return v?new Response(v,{headers:JH}):new Response('{}',{status:404,headers:JH});}
  if(req.method==='PUT'){const t=await req.text();if(t.length>300000)return new Response('{"error":"too big"}',{status:413,headers:JH});
   try{const o=JSON.parse(t);if(!o||typeof o!=='object'||o.v!==4)throw 0;}catch(e){return new Response('{"error":"bad json"}',{status:400,headers:JH});}
-  await kvPut(env,id,t);return new Response('{"ok":true}',{headers:JH});}
+  try{await kvPut(env,id,t);}catch(e){return J({error:'store',why:String(e&&e.message||e).slice(0,200)},503);}/* e.g. the daily write limit: the game shows the real reason (#129) */
+  return new Response('{"ok":true}',{headers:JH});}
  return new Response('{"error":"method"}',{status:405,headers:JH});}
+/* /api/diag (#129): when all save retries fail, the game posts {fam,log,snap} (rolling sync log + DOM snapshot) for the orchestrator.
+   D1 table diag (kept 30 days); no D1 or D1 refuses (e.g. its write limit) = KV key diag:<time>. GET = newest 20 without snapshots, ?id= = one record. */
+async function diag(req,env,u){
+ if(req.method==='POST'){const t=await req.text();if(t.length>200000)return J({error:'too big'},413);let o;
+  try{o=JSON.parse(t);if(!o||!isId(String(o.fam))||!Array.isArray(o.log)||typeof o.snap!=='string')throw 0;}catch(e){return J({error:'bad request'},400);}
+  const at=Date.now(),log=JSON.stringify(o.log.slice(-50));
+  if(env.DB)try{if(env.DB.exec)await env.DB.exec("CREATE TABLE IF NOT EXISTS diag(id INTEGER PRIMARY KEY AUTOINCREMENT,fam TEXT,at INTEGER,log TEXT,snap TEXT);");
+   const r=await env.DB.prepare('INSERT INTO diag(fam,at,log,snap) VALUES(?,?,?,?)').bind(o.fam,at,log,o.snap).run();
+   try{await env.DB.prepare('DELETE FROM diag WHERE at<?').bind(at-30*864e5).run();}catch(e){}
+   return J({ok:true,id:String(r&&r.meta&&r.meta.last_row_id||at)});}catch(e){}
+  try{const k='diag:'+at;await env.SAVES.put(k,JSON.stringify({fam:o.fam,at,log,snap:o.snap}),{expirationTtl:30*86400});return J({ok:true,id:k});}catch(e){return J({error:'store'},503);}}
+ if(req.method!=='GET')return J({error:'method'},405);
+ const id=u.searchParams.get('id');const out=x=>({id:String(x.id),fam:x.fam,at:x.at,log:JSON.parse(x.log||'[]'),snap:x.snap,snapLen:x.snapLen});
+ if(id){let x=null;if(/^diag:\\d+$/.test(id)){const v=await env.SAVES.get(id);if(v)x={id,...JSON.parse(v)};}
+  else if(env.DB&&/^\\d+$/.test(id))try{x=await env.DB.prepare('SELECT id,fam,at,log,snap FROM diag WHERE id=?').bind(+id).first();}catch(e){}
+  return x?J(out(x)):J({error:'not found'},404);}
+ let L=[];if(env.DB)try{L=((await env.DB.prepare('SELECT id,fam,at,log,length(snap) AS snapLen FROM diag ORDER BY id DESC LIMIT ?').bind(20).all()).results||[]);}catch(e){}
+ try{const ks=((await env.SAVES.list({prefix:'diag:'})).keys||[]).map(k=>k.name).sort().reverse().slice(0,20);
+  for(const k of ks){const v=JSON.parse(await env.SAVES.get(k));L.push({id:k,fam:v.fam,at:v.at,log:v.log,snapLen:(v.snap||'').length});}}catch(e){}
+ return J(L.sort((a,b)=>b.at-a.at).slice(0,20).map(out));}
 /* Google voice (game voice: Chirp3-HD Kore at 0.9), every sentence created once and kept forever in KV,
    plus a monthly character cap far below Google's free tier. */
 const TTS_CAP=250000;const GAME_VOICE='he-IL-Chirp3-HD-Kore',GAME_RATE=0.9;const VOICES=/^(he-IL-((Standard|Wavenet)-[A-D]|Chirp3-HD-[A-Za-z]+)|en-US-Chirp3-HD-[A-Za-z]+)$/;
@@ -375,6 +396,7 @@ export default{async fetch(req,env,ctx){const u=new URL(req.url);const p=u.pathn
  if(ctx&&ctx.waitUntil&&(p==='/'||p==='/index.html'||p.startsWith('/api/save/')))ctx.waitUntil(qRun(env).catch(()=>{}));
  if(p==='/sw.js')return new Response(SW,{headers:{'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache'}});
  if(p.startsWith('/api/tts'))return tts(req,env,u).catch(e=>J({ok:false,why:String(e&&e.message||e).slice(0,200)},503));/* a failing KV write (daily limit) used to be Cloudflare error 1101 */
+ if(p==='/api/diag')return diag(req,env,u).catch(e=>J({error:'diag',why:String(e&&e.message||e).slice(0,200)},503));
  const m=/^\\/api\\/save\\/([^/]+)$/.exec(p);if(m)return api(req,env,m[1]);
  if(p==='/manifest.webmanifest')return new Response(MAN,{headers:{'content-type':'application/manifest+json'}});
  if(IC[p])return new Response(b64(IC[p]),{headers:{'content-type':'image/png','cache-control':'public, max-age=86400'}});
