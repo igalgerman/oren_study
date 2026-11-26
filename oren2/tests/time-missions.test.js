@@ -5,6 +5,7 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
 (async()=>{const b=await chromium.launch();const ctx=await b.newContext({viewport:{width:1366,height:768}});await ctx.addInitScript(()=>{try{localStorage.clear()}catch(e){};window.__fast=true;setInterval(()=>{const c=document.querySelector('#ov:not([hidden]) .pchoice .ucard.par');if(c)c.click();},80);});
  const p=await ctx.newPage();const errs=[];p.on('pageerror',e=>errs.push(e.message));await p.goto(URL);await L.noCoach(p);await sleep(500);
  await p.evaluate(()=>{const O=window.OREN,T=window.TAL;O.save.story.intro=1;T.S().prof={an:'cat',col:'#3a8fc4',love:'art'};O.showMap();});await sleep(300);
+ ok('test clock is daytime (fake clock, #89)',await p.evaluate(()=>{const h=new Date().getHours();return h>=9&&h<=17;}));
  ok('no path before Oren chooses',await p.evaluate(()=>window.TAL.S().daily.t.length===0&&!!document.querySelector('#sHome .dchoice')));
  await p.evaluate(()=>window.TAL.chooseDay('math'));await sleep(200);
  // create parent
