@@ -176,3 +176,51 @@ r.remove_worktree(_wt)
 assert not _wt.exists() and (_real / "keep.txt").exists()
 import shutil; shutil.rmtree(_t, ignore_errors=True)
 print("ok remove-worktree")
+
+# CI merge decisions (#74)
+def _ck(*b): return [{"name": f"c{i}", "bucket": x} for i, x in enumerate(b)]
+assert r.ci_verdict([]) == "none" and r.ci_verdict(None) == "none"
+assert r.ci_verdict(_ck("pass", "pass")) == "green" and r.ci_verdict(_ck("pass", "skipping")) == "green"
+assert r.ci_verdict(_ck("pass", "pending")) == "pending"             # a pending check is never green
+assert r.ci_verdict(_ck("pending", "fail")) == "red" and r.ci_verdict(_ck("cancel")) == "red"
+assert r.ci_verdict(_ck("skipping")) == "none"
+def _cm(seq, merge_ok=True, **kw):
+    it, log = iter(seq), []
+    out = r.ci_merge(lambda: next(it), lambda: log.append("rerun"), lambda: log.append("merge") or merge_ok, lambda s: log.append("sleep"), **kw)
+    return out, log
+assert _cm([_ck("pass")]) == (("merged",), ["merge"])
+assert _cm([_ck("pending"), _ck("pass")]) == (("merged",), ["sleep", "merge"])
+assert _cm([_ck("fail"), _ck("pending"), _ck("pass")]) == (("merged",), ["rerun", "sleep", "sleep", "merge"])   # flaky: rerun once, then green
+assert _cm([_ck("fail"), _ck("fail")])[0] == ("red", ["c0"]) and _cm([_ck("fail"), _ck("fail")])[1].count("rerun") == 1   # still red: back to the worker
+assert _cm([_ck("pass")], merge_ok=False)[0] == ("merge-failed",)
+assert _cm([_ck("pending")] * 99, timeout_s=60, poll_s=30)[0] == ("timeout",)
+assert r.deploy_needed("a", "b") and not r.deploy_needed("b", "b") and r.deploy_needed("", "b") and not r.deploy_needed("a", "")
+assert r.conflict_files("CI RED\nc0\n") == ["c0"]
+assert r.integrate_with_resolve(iter([(6, "CI RED\nc0\n"), (0, "ok")]).__next__, lambda f: f == ["c0"], 2)[0] == "merged"
+assert "c0" in r.ci_fix_prompt(7, ["c0"]) and "RESULT: DONE" in r.ci_fix_prompt(7, [])
+assert r.CFG["ci_merge"] is True
+# rerun race: after the rerun the old failed run may still show; red is judged only once the run stamp changed
+def _race(stamps, checks):
+    it, st, log = iter(checks), iter(stamps), []
+    out = r.ci_merge(lambda: next(it), lambda: log.append("rerun"), lambda: True, lambda s: None, stamp=lambda: next(st))
+    return out, log
+assert _race(["a", "a", "a", "b"], [_ck("fail"), _ck("fail"), _ck("pending"), _ck("pass")])[0] == ("merged",)       # old red ignored
+assert _race(["a", "a", "b", "b"], [_ck("fail"), _ck("fail"), _ck("fail"), _ck("fail")])[0] == ("red", ["c0"])       # new run red: judged
+assert _race(["a", "a", "a", "a"] + ["a"] * 20, [_ck("fail")] * 30)[0] == ("red", ["c0"])                          # stamp never changes: bounded
+# deploy_main writes deployed.sha only when the text says "deployed" (not "not deployed: no token")
+import tempfile; from pathlib import Path
+_t = Path(tempfile.mkdtemp()); (_t / ".git").mkdir()
+_o = (r.run, r.INTEG, r.RUNS, r.deploy_text)
+r.run = lambda cmd, **kw: (0, "abc123" + chr(10)) if "rev-parse" in cmd else (0, "")
+r.INTEG, r.RUNS = _t, _t
+(_t / "oren2").mkdir()
+r.deploy_text = lambda log: "not deployed: no token"
+assert r.deploy_main(None) == "not deployed: no token" and not (_t / "deployed.sha").exists()
+r.deploy_text = lambda log: "deployed ok https://x"
+assert r.deploy_main(None).startswith("deployed") and (_t / "deployed.sha").read_text() == "abc123"
+r.run, r.INTEG, r.RUNS, r.deploy_text = _o
+# CI timeout / failed merge (rc 7) -> blocked with the real reason, no resolve round
+_n = {"r": 0}
+def _res(f): _n["r"] += 1; return True
+assert r.integrate_with_resolve(lambda: (7, "CI timed out"), _res, 2) == ("failed", 7, "CI timed out") and _n["r"] == 0
+print("ok ci-merge")
