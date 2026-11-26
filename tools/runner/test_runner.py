@@ -1213,5 +1213,30 @@ def _ci_nopr(merged):
 assert _ci_nopr(True)[0] == 0 and "already merged" in _ci_nopr(True)[1]
 assert _ci_nopr(False)[0] == 4
 print("ok #344 already merged PR is done")
+# #357: a pass that exits early writes ONE runner.log line (FAILED <reason>, or SKIPPED for a rate limit)
+import time
+_t0 = time.mktime((2026, 11, 26, 16, 45, 51, 0, 0, -1))
+_l = r.pass_exit_line("HTTP 502: Bad Gateway\n  token=" + "x" * 300, _t0)
+assert _l.startswith("pass: FAILED HTTP 502: Bad Gateway") and "\n" not in _l and len(_l) <= len("pass: FAILED ") + 160, _l
+_l = r.pass_exit_line("GraphQL: API rate limit already exceeded for user ID 1.", _t0, reset_ts=_t0 + 14 * 60)
+assert _l == "pass: SKIPPED rate limit (retry after 16:59)", _l
+assert r.pass_exit_line("secondary rate limit; retry-after: 120", _t0) == "pass: SKIPPED rate limit (retry after 16:47)"
+assert r.pass_exit_line("API rate limit exceeded", _t0) == "pass: SKIPPED rate limit (retry after 16:46)"   # no hint: 60 s
+_saved = {k: getattr(r, k) for k in ("gh", "rate_reset", "DRY")}
+_logf = r.RUNS / "runner.log"
+def _lines(): return [l for l in _logf.read_text(encoding="utf-8").splitlines() if " pass: " in l] if _logf.exists() else []
+try:
+    r.DRY = False; r.rate_reset = lambda: _t0 + 600
+    r.gh = lambda *a: (1, "gh: GraphQL: API rate limit already exceeded for user ID 1.")      # fake gh: rate limited
+    _n = len(_lines()); assert r.run_pass() == 1 and len(_lines()) == _n + 1 and "pass: SKIPPED rate limit (retry after " in _lines()[-1], _lines()
+    r.gh = lambda *a: (1, "HTTP 500: server error")                                           # fake gh: plain failure
+    assert r.run_pass() == 1 and len(_lines()) == _n + 2 and _lines()[-1].endswith("pass: FAILED HTTP 500: server error"), _lines()
+    def _boom(): raise ValueError("bad json")                                                  # a crash inside the pass
+    try: r.one_pass(_boom); raise AssertionError("must re-raise")
+    except ValueError: pass
+    assert len(_lines()) == _n + 3 and "pass: FAILED ValueError('bad json')" in _lines()[-1], _lines()
+finally:
+    for k, v in _saved.items(): setattr(r, k, v)
+print("ok #357 early pass exits are logged")
 assert _pregen_popens == [], _pregen_popens          # #325: no test path launched the real pregen.js
 print("ok #325 no real pregen under tests")

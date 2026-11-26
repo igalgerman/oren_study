@@ -42,3 +42,8 @@ assert "x" not in f3["repeats"]                                     # one issue 
 # #302: the new runner reasons give stable keys
 assert T.reason_key("merge step failed: no open PR for issue #12") == "merge step failed: no open PR for issue #n"
 print("ok trends")
+# #357: failed passes show in the summary; a rate-limit SKIPPED pass is not a runner failure
+fp = T.findings(log + "\n2026-11-26 08:30:00 pass: FAILED HTTP 500\n2026-11-26 08:31:00 pass: SKIPPED rate limit (retry after 09:00)", ev, iss, now)
+assert "passes failed 1" in fp["summary"] and "skipped" not in fp["summary"].lower(), fp["summary"]
+assert fp["repeats"] == f["repeats"] and fp["alarms"] == f["alarms"]
+print("ok #357 failed passes in trends, rate-limit skips not")
