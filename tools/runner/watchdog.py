@@ -127,7 +127,7 @@ def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset()):
         if t.get("state") != "live" and FINISHED_RE.match(name):            # any finished terminal: remove it (by address)
             if name not in live and name not in out: out.append(name)
             continue
-        m = re.match(r"^(issue|review|run|intake)-(\d+)(-fix|-2)?$", name)
+        m = re.match(r"^(issue|review|run|intake)-(\d+)(-fix|-2|-resolve\d+)?$", name)   # #110: resolve rounds too
         if not m: continue
         n, role, suffix = int(m.group(2)), m.group(1), m.group(3) or ""
         if t.get("state") != "live": continue
@@ -136,6 +136,9 @@ def leftovers(ts, closed, blocked, human=frozenset(), stale=frozenset()):
         if role != "run" and name in stale and n not in live_run and n not in human: out.append(name); continue
         if role in ("run", "intake") or t.get("status") not in ("done", "idle") or not t.get("marker"): continue
         # a worker/reviewer that printed its RESULT/VERDICT and was superseded by the next step's window
+        if suffix.startswith("-resolve"):                                   # #110: superseded by the next resolve round
+            if f"issue-{n}-resolve{int(suffix[8:]) + 1}" in live: out.append(name)
+            continue
         later = {"issue": [f"review-{n}", f"review-{n}-2", f"issue-{n}-fix"] if not suffix else [f"review-{n}-2"],
                  "review": [f"issue-{n}-fix"] if not suffix else []}[role]
         if any(x in live for x in later): out.append(name)

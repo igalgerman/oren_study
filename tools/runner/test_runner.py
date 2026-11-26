@@ -77,6 +77,15 @@ _st = {"review-25", "issue-26", "intake-27", "issue-28", "issue-29"}
 assert sorted(W.leftovers(_idle, set(), set(), human={28}, stale=_st)) == ["intake-27", "issue-29", "review-25"]   # 26 has live run, 28 is for the owner
 assert W.leftovers(_idle, set(), set(), human={28}, stale=set()) == []                                          # not idle long enough
 print("ok orphans")
+# #110: issue-<n>-resolve<k> windows: closed with the issue, when stale, or when the next round is live
+_rs = [{"name": "issue-38-resolve1", "state": "live", "status": "done", "marker": True},
+       {"name": "issue-38-resolve2", "state": "live", "status": "idle", "marker": True},
+       {"name": "issue-40-resolve1", "state": "live", "status": "done", "marker": True},
+       {"name": "issue-40-resolve2", "state": "live", "status": "working", "marker": False},
+       {"name": "issue-41-resolve1", "state": "live", "status": "working", "marker": False}]
+assert sorted(W.leftovers(_rs, closed={38}, blocked=set())) == ["issue-38-resolve1", "issue-38-resolve2", "issue-40-resolve1"], W.leftovers(_rs, {38}, set())
+assert W.leftovers(_rs, closed=set(), blocked={38}, stale={"issue-41-resolve1"}) == ["issue-40-resolve1", "issue-41-resolve1"]
+print("ok resolve windows")
 
 # regression: a finished run-2 next to a live run-2 must not close anything (the live one is working)
 assert W.leftovers([{"name": "run-2", "state": "finished"}, {"name": "run-2", "state": "live", "status": ""}], set(), set()) == []
