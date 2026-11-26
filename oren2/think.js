@@ -262,7 +262,7 @@ const POS={1:[[30,30]],2:[[17,30],[43,30]],3:[[30,17],[17,42],[43,42]],4:[[18,18
 function tileSVG(t){const col=C.COL[t.c]||'#888';const n=t.n||1;const r=n>1?(t.z===0?6:t.z===2?11:9):[10,16,23][t.z==null?1:t.z];
   return `<svg class="tl" viewBox="0 0 60 60" aria-hidden="true">${POS[n].map(([x,y])=>shapeSVG(t.s,x,y,r,col,t.f!==0,t.r)).join('')}</svg>`;}
 function sprHTML(o){const one=`<span class="ths${o.z===0?' s0':o.z===2?' s2':''}${o.fl?' fl':''}${o.up?' up':''}">${ALLSPR(o.v)}</span>`;return `<span class="thsg n${Math.min(o.n||1,9)}">${one.repeat(o.n||1)}</span>`;}
-function optHTML(o){if(!o)return '<b class="q">?</b>';if(o.t==='tile')return tileSVG(o.v);if(o.t==='spr')return sprHTML(o);if(o.t==='num')return `<b class="thn">${o.v}</b>`;return `<span class="tht">${o.v}</span>`;}
+function optHTML(o){if(!o)return '<b class="q">?</b>';if(o.t==='tile')return tileSVG(o.v);if(o.t==='spr')return sprHTML(o);if(o.t==='num')return `<b class="thn">${o.v}</b>`;/* a lone < or > in the RTL page is drawn mirrored; keep signs left-to-right (#208) */return `<span class="tht${/^[<>=]$/.test(o.v)?' ltr':''}">${o.v}</span>`;}
 const optCls=o=>o.t==='tile'?'thc tile':o.t==='spr'?'thc picb':o.t==='num'?'num':'tx';
 const sprTok=html=>String(html).replace(/\[([a-zA-Z]+)\]/g,(m,k)=>`<span class="ths">${ALLSPR(k)}</span>`);
 /* the visual part of a question */

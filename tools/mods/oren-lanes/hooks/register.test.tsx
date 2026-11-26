@@ -262,3 +262,13 @@ test('usage.json for the governor (#239)', () => {
   expect(governorLine('{"text":"governor: 6 lanes (5h 40% -> ~89% at 19:00)"}')).toBe('governor: 6 lanes (5h 40% -> ~89% at 19:00)')
   expect(governorLine('junk')).toBe('')
 })
+
+import { cloudCount } from './lanes'
+
+test('#236 cloud count = labelled cloud issues + live remote lanes from remote.py cloud (no double count)', () => {
+  const L = (...n: string[]) => n.map(name => ({ name }))
+  const lane = (n: number) => ({ n, title: 't', state: 'working', last: '', stale: false, pr: '', session: '' })
+  const issues = [{ number: 9, title: 'a', labels: L('in-progress', 'cloud') }, { number: 208, title: 'b', labels: L('in-progress') }]
+  expect(cloudCount(issues, [lane(9), lane(208), lane(207), lane(192)])).toBe(4)
+  expect(cloudCount(issues, [])).toBe(1)
+})

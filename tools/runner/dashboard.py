@@ -102,7 +102,7 @@ def model(issues, prs, events, now, log_text="", cloud=()):
         elif n in last and e.get("event") in STEP: last[n]["event"] = e["event"]
     running = [{**r, "step": STEP.get(last.get(r["n"], {}).get("event"), "started by hand"),
                 "for_s": now - last[r["n"]]["start"] if r["n"] in last else None} for r in by_state["running"]]
-    cloud_n = {i["number"] for i in op if "cloud" in i["labels"]}
+    cloud_n = {i["number"] for i in op if "cloud" in i["labels"]} | {c["n"] for c in cloud if c["n"] in open_nums}   # #236: + remote runs
     running = [r for r in running if r["n"] not in cloud_n]          # #136: cloud lanes have their own table
     recent = sorted(((closed_at[i["number"]], i) for i in issues if i["state"] == "CLOSED" and closed_at.get(i["number"])),
                     key=lambda x: -x[0])[:10]
