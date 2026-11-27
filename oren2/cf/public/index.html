@@ -2079,8 +2079,9 @@ function qSpeech(q){
 /* #402 the math sentence set for pregen: every question of each small math unit (its sentences run out within 150), said exactly
    as the game says it (numbers as words, #122). Bigger units are made on first use and fetched one question ahead. */
 function mathSpeechList(){const S=new Set();for(const u of ALLU){if(u.boss)continue;const s=new Set();let miss=0,t=0;
-    while(miss<300&&t<5000){t++;let x;try{x=qSpeech(u.gen(t%10));}catch(e){break;}if(s.has(x))miss++;else{s.add(x);miss=0;}}
-    if(miss>=300&&s.size<=150)s.forEach(x=>S.add(x));}
+    /* a unit is done after 3000 draws in a row with no new sentence (300 missed the last one ~1 time in 8, #414 CI); big units stop early */
+    while(miss<3000&&t<60000&&s.size<=150){t++;let x;try{x=qSpeech(u.gen(t%10));}catch(e){break;}if(s.has(x))miss++;else{s.add(x);miss=0;}}
+    if(miss>=3000&&s.size<=150)s.forEach(x=>S.add(x));}
   return [...S];}
 function bubbleOpts(q){const a=q.ans;const c=new Set([a]);const cand=[a+1,a-1,a+2,a-2,a+10,a-10];if(q.k==='bin'&&q.op==='×'&&q.miss==='res'){cand.unshift(q.l*(q.r+1),q.l*(q.r-1),(q.l+1)*q.r);}
   if(a>=10){const s=String(a);if(s.length===2&&s[0]!==s[1])cand.unshift(+(s[1]+s[0]));}
