@@ -33,9 +33,9 @@ const { chromium } = require('playwright');
     const cap = await p.evaluate(() => { const O = window.OREN; O.save.av.hat = 'cap'; const svg = O.AV(); return typeof svg === 'string' && svg.includes('<svg'); });
     ok('avatar with cap renders', cap);
     ok('no page errors (avatar)', !errs.length, errs.join(' | '));
-    // kingdom shop item pictures used to collapse to zero width
-    const shopW = await p.evaluate(() => { const O = window.OREN; O.save.story.intro = 1; O.kingdom(); const svgs = [...document.querySelectorAll('.shop .opt .si svg')]; return svgs.length ? Math.min(...svgs.map(s => s.getBoundingClientRect().width)) : 0; });
-    ok('kingdom shop items show their pictures', shopW > 20, String(shopW));
+    // kingdom block bar pictures must not collapse to zero width (was: the old shop items, #64)
+    const shopW = await p.evaluate(() => { const O = window.OREN; O.save.story.intro = 1; O.kingdom(); const svgs = [...document.querySelectorAll('#sKing .bwb .si svg')]; return svgs.length ? Math.min(...svgs.map(s => s.getBoundingClientRect().width)) : 0; });
+    ok('kingdom block bar shows its pictures', shopW > 20, String(shopW));
     // hint sentences with numbers used to break into one line per number
     const capLines = await p.evaluate(() => { const d = document.createElement('div'); d.style.width = '600px'; document.body.appendChild(d); d.innerHTML = '<div class="cap"><span>כּוֹתְבִים <span class="ltr">2</span> וּמַעֲבִירִים 1</span></div>'; const h = d.querySelector('.cap span').getBoundingClientRect().height; d.remove(); return h; });
     ok('hint sentence stays on one line', capLines < 50, String(capLines));
@@ -200,7 +200,7 @@ const { chromium } = require('playwright');
       await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.__lessons = true; window.OREN.showMap(); });
     }
     // journey screens: back goes one step up
-    const steps = [['journey', 'O.showJourney()', 'sHome'], ['kingdom', 'O.kingdom()', 'sHome'], ['arcade', 'window.TAL_arcade(O.showMap)', 'sHome'],
+    const steps = [['journey', 'O.showJourney()', 'sHome'], ['kingdom', 'O.kingdom();setTimeout(()=>{document.querySelector("#ov").hidden=true},30)', 'sHome'], ['arcade', 'window.TAL_arcade(O.showMap)', 'sHome'],
       ['world', 'O.save.story[O.WORLDS[0].id+"-in"]=1;O.showWorld(O.WORLDS[0])', 'sMap']];
     for (const [n, c, to] of steps) {
       await p.evaluate(c => { const O = window.OREN; document.querySelector('#ov').hidden = true; O.showMap(); eval(c); }, c); await L.sleep(150);

@@ -66,6 +66,7 @@ const STATIC = D => { const O = window.OREN, T = window.TAL, out = [], sp = s =>
   tryf(() => W.GAPS.speakList().forEach(add));   /* rhymes (#419) */
   tryf(() => W.EXPLORE2.kidTexts().forEach(s => add(sp(s))));
   tryf(() => W.FRIEND.speakList().forEach(s => add(sp(s))));
+  tryf(() => W.BW.speakList().forEach(s => add(sp(s))));   /* the building world (#64) */
   tryf(() => W.HELP.allTexts().forEach(s => add(sp(s))));
   tryf(() => W.LESSONS.speakList().forEach(s => add(sp(s))));
   tryf(() => W.HEALTH.remTexts().forEach(add));

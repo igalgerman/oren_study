@@ -1,0 +1,53 @@
+/* ===== the building world (#64) ===== */
+#sKing .kscene{position:relative;width:min(640px,100%)}
+@media (max-width:440px){#sKing .kscene{padding-inline:0}}
+.kmine .kpic{position:static;padding:3px;align-self:center}.kmine .kpic svg{width:40px;height:40px}
+.bw{display:flex;flex-direction:column;align-items:center;gap:8px;width:100%}
+.bwbox{position:relative;width:min(576px,100%,max(352px,calc(100dvh - 330px)))}
+.bwgrid{display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);aspect-ratio:1;width:100%;direction:ltr;position:relative;overflow:hidden;box-shadow:0 6px 0 rgba(0,0,0,.2)}
+.bwgrid.bw-meadow{background:linear-gradient(#9fd8f2,#e3f5fd)}
+.bwgrid.bw-beach{background:linear-gradient(#5cc0ea,#c8ecfa)}
+.bwgrid.bw-sky{background:radial-gradient(circle at 20% 30%,#fff 0 1.5px,transparent 2px),radial-gradient(circle at 70% 15%,#fff 0 1.5px,transparent 2px),radial-gradient(circle at 85% 55%,#fff 0 1px,transparent 1.5px),radial-gradient(circle at 40% 70%,#fff 0 1px,transparent 1.5px),linear-gradient(#2c2f6b,#7a5aa8)}
+.bwc{position:relative;z-index:1;display:grid;place-items:center;padding:0;margin:0;border:0;background:transparent;min-width:0;min-height:0;overflow:hidden;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
+.bwc svg{width:100%;height:100%;display:block;shape-rendering:crispEdges}
+.bwhero{position:absolute;z-index:0;left:0;bottom:25%;width:12.5%;height:12.5%;pointer-events:none;display:grid;place-items:end center}
+.bwhero svg{width:90%;height:auto;max-height:100%}
+.bwgrid.bw-sky .bwhero{bottom:12.5%}
+.bwarr{position:absolute;z-index:2;top:calc(50% - 32px);width:46px;height:64px;padding:0;font-size:30px;font-weight:900;color:#fff;background:rgba(29,38,49,.55);border:0;cursor:pointer}
+.bwarr.nx{left:-8px}.bwarr.pv{right:-8px}
+@media (min-width:760px){.bwarr.nx{left:-58px}.bwarr.pv{right:-58px}}
+.bwarr.pulse{animation:pulse 1s 3}
+.bwhint{animation:pulse 2s infinite}
+.bwnext{display:flex;gap:6px;align-items:center;padding:2px 10px;border:0;background:rgba(255,255,255,.75);font:inherit;font-weight:800;font-size:16px;cursor:pointer}
+.bwsil svg{width:24px;height:24px;display:block;filter:brightness(0);opacity:.45}
+.bwbar{display:flex;gap:8px;overflow-x:auto;max-width:100%;padding:10px 6px 8px}
+.bwb{flex:0 0 auto;width:64px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 2px;border:0;background:var(--paper);font:inherit;font-weight:800;font-size:14px;cursor:pointer;box-shadow:inset -3px -3px 0 rgba(0,0,0,.12),0 3px 0 rgba(0,0,0,.18)}
+.bwb .si{width:44px;height:44px;display:grid;place-items:center}.bwb .si svg{width:44px;height:44px;display:block;shape-rendering:crispEdges}
+.bwb .pr{direction:ltr;font-size:13px}
+.bwb.sel{transform:translateY(-6px);box-shadow:0 0 0 4px var(--gold),0 6px 0 rgba(0,0,0,.18)}
+/* living blocks (CSS only; a hidden screen does not animate) */
+@keyframes bwsway{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(5deg)}}
+@keyframes bwwave{0%,100%{transform:translateX(-1px)}50%{transform:translateX(1px)}}
+@keyframes bwglow{0%,100%{filter:drop-shadow(0 0 1px #ffd166)}50%{filter:drop-shadow(0 0 7px #ffd166)}}
+@keyframes bwflap{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.82)}}
+@keyframes bwshim{to{filter:hue-rotate(360deg)}}
+@keyframes bwshine{from{background-position:150% 0}to{background-position:-150% 0}}
+@keyframes bwdrop{from{transform:translateY(calc(var(--d,0) * -100%))}}
+.bwc[data-b=flower] svg{transform-origin:50% 100%;animation:bwsway 2.4s ease-in-out infinite}
+.bwc[data-b=water] svg,.bwc[data-b=fish] svg{animation:bwwave 2s ease-in-out infinite}
+.bwc[data-b=lamp] svg{animation:bwglow 2.2s ease-in-out infinite}
+.bwc[data-b=bird] svg{animation:bwflap .5s ease-in-out infinite}
+.bwc[data-b=rainbow] svg{animation:bwshim 4s linear infinite}
+.bwc[data-b=glass]::after,.bwc[data-b=gold]::after{content:'';position:absolute;inset:0;pointer-events:none;background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.85) 50%,transparent 58%);background-size:300% 100%;animation:bwshine 3s linear infinite}
+.bwc.drop svg{animation:bwdrop .3s ease-in}
+.bwc.new svg{animation:pop .4s}
+@media (prefers-reduced-motion:reduce){.bwc svg,.bwc::after{animation:none!important}}
+/* unlock card */
+@keyframes bwspin{from{transform:rotate(-360deg) scale(.2)}}
+@keyframes bwjump{50%{transform:translateY(-18px)}}
+.bwcard .bwnew svg{width:120px;height:120px;display:block;margin:6px auto;animation:bwspin .7s ease-out;shape-rendering:crispEdges}
+.bwcard .bwfr svg{width:60px;height:auto;display:block;margin:0 auto;animation:bwjump .6s ease-in-out 3}
+/* parent day tab: one picture */
+.bwpic{margin:14px auto 6px;text-align:center}
+.bwpic svg{width:min(240px,70vw);height:auto;display:block;margin:0 auto;shape-rendering:crispEdges;box-shadow:0 4px 0 rgba(0,0,0,.18)}
+.bwcap{font-weight:700;margin-top:6px}

@@ -54,9 +54,9 @@ async function finishLevel(p,maxMs=60000){const t0=Date.now();while(Date.now()-t
   // speed: leave mid-run → no result overlay later
   await sleep(1500);await p.evaluate(()=>{const O=window.__oren4;O.playSpeed(O.WORLDS[1]);});await sleep(800);await p.evaluate(()=>{window.__oren4.play.end=Date.now()+1500;});await p.click('#btnBack');await sleep(2500);
   ok('leaving speed challenge stops its timer',await p.locator('#ov').isHidden(),'overlay visible?');
-  // kingdom: not enough gems
-  await p.evaluate(()=>{const O=window.__oren4;O.save.gems=3;O.kingdom();});await sleep(900);await p.locator('.shop .opt').nth(11).click();await p.locator('.kcell').nth(0).click();await sleep(100);
-  ok('kingdom refuses item without enough gems',await p.evaluate(()=>Object.keys(window.__oren4.save.k).length===0&&window.__oren4.save.gems===3));
+  // kingdom (building world, #64): not enough gems -> nothing placed (the full rules are in tests/build.test.js)
+  await p.evaluate(()=>{const O=window.__oren4;O.save.gems=1;O.save.bw={a:{},seen:window.BW.BLOCKS.concat(window.BW.AREAS).map(x=>x.id),first:1};O.kingdom();});await sleep(900);await p.locator('#sKing .bwb[data-b="wood"]').click();await p.locator('#sKing .bwc[data-x="0"][data-y="0"]').click();await sleep(100);
+  ok('kingdom refuses a block without enough gems',await p.evaluate(()=>!window.__oren4.save.bw.a.meadow['0,0']&&window.__oren4.save.gems===1));
   ok('no errors in interaction tests',!p.errs.length,p.errs.join('; '));await p.context().close();}
  // 6. reduced motion + phone portrait sanity
  {const p=await page(b,{reducedMotion:'reduce'});await p.evaluate(()=>window.__oren4.setFast(true));await p.click('#btnStart');let g=0;while(g++<10&&!(await p.locator('#dlg').isHidden()))await p.click('#dNext');
