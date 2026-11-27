@@ -176,7 +176,7 @@ const NOUN={goal:['גּוֹל','גּוֹלִים','m'],ball:['כַּדּוּר',
   row:['שׁוּרָה','שׁוּרוֹת','f'],jump:['קְפִיצָה','קְפִיצוֹת','f'],circle:['עִגּוּל','עִגּוּלִים','m'],word:['מִלָּה','מִלִּים','f']};
 const TWO={m:{'':'שְׁנֵי','בְּ':'בִּשְׁנֵי','לְ':'לִשְׁנֵי','וְ':'וּשְׁנֵי','מִ':'מִשְּׁנֵי'},f:{'':'שְׁתֵּי','בְּ':'בִּשְׁתֵּי','לְ':'לִשְׁתֵּי','וְ':'וּשְׁתֵּי','מִ':'מִשְּׁתֵּי'}};
 /* n + noun, agreeing in gender: "גּוֹל אֶחָד", "שְׁתֵּי דַּקּוֹת", "<b>5</b> כַּדּוּרִים"; with a prefix: "לִשְׁנֵי מִגְדָּלִים", "בְּ-<b>4</b> יָמִים" */
-function count(n,key,prep){const w=NOUN[key];if(!w)throw new Error('noun '+key);prep=prep||'';
+function count(n,key,prep){const w=Array.isArray(key)?key:NOUN[key];if(!w)throw new Error('noun '+key);prep=prep||'';
   if(n===1){if(prep)throw new Error('one with prefix '+key);return `${w[0]} ${w[2]==='m'?'אֶחָד':'אַחַת'}`;}
   if(n===2)return `${TWO[w[2]][prep]} ${w[1]}`;
   return `${prep?prep+'-':''}${B(n)} ${w[1]}`;}
@@ -249,12 +249,22 @@ const WT=[
  {id:'mo-change',th:'soccer',lv:[4,5],f:'c-a*b',g:x=>{const a=ri(3,9),b=ri(2,4),c=pk([50,100]);return [`כָּל כַּדּוּר עוֹלֶה ${x.c(a,'shekel')}. ${x.N} ${x.v('קָנָה','קָנְתָה')} ${x.c(b,'ball')} ${x.v('וְשִׁלֵּם','וְשִׁלְּמָה')} בִּשְׁטָר שֶׁל ${B(c)} שְׁקָלִים. כַּמָּה עֹדֶף ${x.v('הוּא קִבֵּל','הִיא קִבְּלָה')}?`,a,b,c];}},
  {id:'mo-two',th:'swim',lv:[3,5],f:'a+b',g:x=>{const a=ri(5,45),b=ri(5,45);return [`מִשְׁקְפֵי שְׂחִיָּה עוֹלִים ${x.c(a,'shekel')}, וְכוֹבַע יָם עוֹלֶה ${x.c(b,'shekel')}. ${x.N} ${x.v('קָנָה','קָנְתָה')} אֶת שְׁנֵיהֶם. כַּמָּה ${x.v('הוּא שִׁלֵּם','הִיא שִׁלְּמָה')}?`,a,b];}},
 ];
+/* #416 story templates: they count the thing of the story scene that plays now (x.t = [one, many, gender], STORYMIX.thing()) */
+const SCN=[
+ {id:'sc-add',th:'story',lv:[1,5],f:'a+b',g:x=>{const [a,b]=split(x.lv);return [`${x.N} ${x.v('אָסַף','אָסְפָה')} ${x.c(a,x.t)} בַּבֹּקֶר, וְעוֹד ${x.c(b,x.t)} בָּעֶרֶב. כַּמָּה ${x.t[1]} ${x.v('הוּא אָסַף','הִיא אָסְפָה')} בְּסַךְ הַכֹּל?`,a,b];}},
+ {id:'sc-sub',th:'story',lv:[1,5],f:'a-b',g:x=>{const [a,b]=pair(x.lv);return [`${x.N} ${x.v('אָסַף','אָסְפָה')} ${x.c(a,x.t)}. הַמְּבַלְבֵּל חָטַף ${x.c(b,x.t)} וּבָרַח. כַּמָּה ${x.t[1]} נִשְׁאֲרוּ ${x.v('לוֹ','לָהּ')}?`,a,b];}},
+ {id:'sc-mul',th:'story',lv:[3,5],f:'a*b',g:x=>{const a=pk([2,3,4,5,10]),b=ri(3,x.lv===3?5:9);return [`בְּכָל שׁוּרָה יֵשׁ ${x.c(a,x.t)}. כַּמָּה ${x.t[1]} יֵשׁ ${x.c(b,'row','בְּ')}?`,a,b];}},
+ {id:'sc-div',th:'story',lv:[4,5],f:'a/b',g:x=>{const b=ri(2,5),a=b*ri(2,9);return [`${x.N} ${x.v('חִלֵּק','חִלְּקָה')} ${x.c(a,x.t)} שָׁוֶה בְּשָׁוֶה ${x.c(b,'kid','לְ')}. כַּמָּה ${x.t[1]} יֵשׁ לְכָל יֶלֶד?`,a,b];}},
+];
+const sceneThing=()=>{const M=typeof window!=='undefined'&&window.STORYMIX;try{return M&&M.thing?M.thing():null;}catch(e){return null;}};
 const WT_BY_LV=lv=>WT.filter(t=>t.lv[0]<=lv&&lv<=t.lv[1]);
 /* the answer from the numbers, in text order */
 const solve=(f,nums)=>{const [a,b,c,d]=nums;return Function('a','b','c','d','return '+f)(a,b,c,d);};
-function wordQ(lv,tid){const pool=tid?WT.filter(t=>t.id===tid):WT_BY_LV(lv);const t=pk(pool);const fem=rnd()<.5;
+/* tid: one template; thing: [one, many, gender] (default: the story scene's thing -> the story templates; none -> the old themes) */
+function wordQ(lv,tid,thing){thing=thing||(tid&&!/^sc-/.test(tid)?null:sceneThing());const ALL=[...WT,...SCN];
+  const pool=tid?ALL.filter(t=>t.id===tid):thing?SCN.filter(t=>t.lv[0]<=lv&&lv<=t.lv[1]):WT_BY_LV(lv);const t=pk(pool);if(!t||(t.th==='story'&&!thing))throw new Error('word template '+tid);const fem=rnd()<.5;
   const Nn=pk(fem?NAMES_F:NAMES_M);let Mn;do{Mn=pk(rnd()<.5?NAMES_F:NAMES_M);}while(Mn===Nn);const gM=NAMES_F.includes(Mn);
-  const x={lv:Math.max(t.lv[0],Math.min(t.lv[1],lv)),Nn,Mn,N:Nn,M:Mn,v:(m,f)=>mark(Nn,fem?f:m),w:(m,f)=>mark(Mn,gM?f:m),c:count};
+  const x={lv:Math.max(t.lv[0],Math.min(t.lv[1],lv)),Nn,Mn,N:Nn,M:Mn,v:(m,f)=>mark(Nn,fem?f:m),w:(m,f)=>mark(Mn,gM?f:m),c:count,t:thing};
   for(let k=0;k<40;k++){const [text,...nums]=t.g(x);const v=solve(t.f,nums);if(Number.isInteger(v)&&v>=0&&v<=200)
     return Object.assign({sk:'wp',lv,tid:t.id,th:t.th,f:t.f,nums,tx:text,text:'',v,html:`<div class="lnwp">${text}</div>`,ex:ex(t.f.replace(/[abcd]/g,ch=>nums['abcd'.indexOf(ch)]).replace(/\*/g,' × ').replace(/\//g,' : ').replace(/-/g,' − ').replace(/\+/g,' + ').replace(/\s+/g,' ')+' = '+v),key:'w'+t.id+nums.join(',')},numOpts(v,[v+1,v-1,...nums.filter(n=>n!==v)]));}
   throw new Error('word template '+t.id);}
@@ -380,7 +390,7 @@ return {core,
   seen:(bank,key,ok,helped)=>{if(HELD[bank])HELD[bank].delete(key);const r=seen(S(),bank,key,ok,helped);BIND.after&&BIND.after();return r;},
   pickItem:(bank,items,o)=>{const hd=held(bank);const r=pickItem(S(),bank,items,Object.assign({},o,{held:new Set([...hd.keys(),...((o&&o.held)||[])])}));if(r)hd.set(r.item.k,nowFn());return r;},hash,
   merge,zone,eff,acc,isDue,placeStart,placeStep,placeDone,placeResult,
-  MM,MM_IDS,DRILL_IDS,PW,WT,WT_BY_LV,wordQ,solve,CH,CH_BY_LV,chalQ,PM,PW,paperQ,gen,count,NOUN,NAMES_M,NAMES_F,lp,vav,MATH_LADDER,KID,PAR,IV,QUICK,maxLv,dayNum,
+  MM,MM_IDS,DRILL_IDS,PW,WT,SCN,WT_BY_LV,wordQ,solve,CH,CH_BY_LV,chalQ,PM,PW,paperQ,gen,count,NOUN,NAMES_M,NAMES_F,lp,vav,MATH_LADDER,KID,PAR,IV,QUICK,maxLv,dayNum,
   setMax:(sk,n)=>{MAXLV[sk]=Math.max(1,n|0);},/* #395 a mission's own top level */
   setRandom:f=>{rnd=f||Math.random;},setNow:f=>{nowFn=f||(()=>Date.now());}};})();
 

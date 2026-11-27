@@ -4,7 +4,8 @@
    card, then the story moves one scene on. Tomorrow (or after a skipped day) it goes on from the same scene. The end of the day
    gives a short hint about tomorrow. A save without mix (or a broken one) starts at chapter 1, scene 1.
      STORYMIX.pos()       {c, s} where the story is now (the scene still to play)
-     STORYMIX.scene()     {c, s, n: chapter name, open, close, topic, item}
+     STORYMIX.scene()     {c, s, n: chapter name, open, close, topic, item, thing: [one, many, gender] (#416)}
+     STORYMIX.thing()     the thing of the scene now, for the math word problems (#416)
      STORYMIX.advance()   one scene on (after 12.5 the story starts again at 1.1)
      STORYMIX.hint()      the line for tomorrow (said at the end of the day)
      STORYMIX.speakList() every line of the script (for the voice pregen) */
@@ -84,15 +85,26 @@ const SCRIPT=[
   ['הַמְּבַלְבֵּל הֵכִין חִידָה אַחֲרוֹנָה, הֲכִי מַצְחִיקָה. בּוֹא נִפְתֹּר אוֹתָהּ!','פָּתַרְתָּ! הַמְּבַלְבֵּל צָחַק וְהִתְגַּלְגֵּל עַל הַסִּפּוּן.','think','מַגְלֵשָׁה לַיָּם'],
   ['יֵשׁ שֶׁלֶט חָדָשׁ עַל הַסְּפִינָה. בּוֹא נִקְרָא מָה כָּתוּב.','כָּתוּב: הַסְּפִינָה שֶׁל כֻּלָּנוּ! הַסְּפִינָה שְׁלֵמָה.','read','שֶׁלֶט שֵׁם']]}];
 const NC=SCRIPT.length,NS=5;
+/* #416 the things of the scene, for the math word problems on the path: [one, many, gender]. A math scene has its own thing
+   (the fish of the basket, the apples of the tree); any other scene uses the thing of its chapter. */
+const THING={'1.1':['קֶרֶשׁ','קְרָשִׁים','m'],'1.2':['דָּג','דָּגִים','m'],'2.5':['עוּגִיָּה','עוּגִיּוֹת','f'],'3.5':['כַּפְתּוֹר','כַּפְתּוֹרִים','m'],
+ '4.1':['בָּנָנָה','בָּנָנוֹת','f'],'4.2':['תַּפּוּחַ','תַּפּוּחִים','m'],'4.3':['אַגָּס','אֲגָסִים','m'],'4.5':['עֵנָב','עֲנָבִים','m'],'5.4':['עִפָּרוֹן','עֶפְרוֹנוֹת','m'],
+ '6.3':['אֶבֶן','אֲבָנִים','f'],'6.4':['סֻכָּרִיָּה','סֻכָּרִיּוֹת','f'],'7.1':['עוּגִיָּה','עוּגִיּוֹת','f'],'7.4':['לַחְמָנִיָּה','לַחְמָנִיּוֹת','f'],
+ '8.2':['גַּחֲלִילִית','גַּחֲלִילִיּוֹת','f'],'8.4':['כּוֹכָב','כּוֹכָבִים','m'],'9.2':['סֵפֶר','סְפָרִים','m'],'10.2':['דָּג','דָּגִים','m'],'10.4':['צֶדֶף','צְדָפִים','m'],
+ '11.2':['קֻבִּיָּה','קֻבִּיּוֹת','f'],'11.3':['גֶּרֶב','גַּרְבַּיִם','m'],'12.1':['בָּלוֹן','בָּלוֹנִים','m'],'12.2':['צַלַּחַת','צַלָּחוֹת','f']};
+const CH_THING=[['קֶרֶשׁ','קְרָשִׁים','m'],['שָׁעוֹן','שְׁעוֹנִים','m'],['אוֹת','אוֹתִיּוֹת','f'],['תַּפּוּחַ','תַּפּוּחִים','m'],['עִפָּרוֹן','עֶפְרוֹנוֹת','m'],['אֶבֶן','אֲבָנִים','f'],
+ ['עוּגִיָּה','עוּגִיּוֹת','f'],['כּוֹכָב','כּוֹכָבִים','m'],['סֵפֶר','סְפָרִים','m'],['צֶדֶף','צְדָפִים','m'],['קֻבִּיָּה','קֻבִּיּוֹת','f'],['בָּלוֹן','בָּלוֹנִים','m']];
 /* tomorrow: a new chapter -> "tomorrow we sail to <place>"; the same chapter -> a line of its own */
 const STAY=['מָחָר נַמְשִׁיךְ לְסַדֵּר אֶת הַנָּמָל!','מָחָר נַמְשִׁיךְ לְתַקֵּן שְׁעוֹנִים בָּאִי!','מָחָר נַמְשִׁיךְ לְסַדֵּר אוֹתִיּוֹת בָּאִי!','מָחָר נַמְשִׁיךְ לְסַדֵּר פֵּרוֹת בָּאִי!',
  'מָחָר נַמְשִׁיךְ לְדַבֵּר אַנְגְּלִית בָּאִי!','מָחָר נִפְתֹּר עוֹד חִידוֹת בַּמְּעָרָה!','מָחָר נַמְשִׁיךְ לַעֲזֹר לָאוֹפָה!','מָחָר נַמְשִׁיךְ לְהָאִיר אֶת הַלַּיְלָה!',
  'מָחָר נַמְשִׁיךְ לְסַדֵּר אֶת הַסְּפָרִים!','מָחָר נַמְשִׁיךְ לָשׁוּט בָּעֲרָפֶל!','מָחָר נַמְשִׁיךְ לִתְפֹּס אֶת הַמְּבַלְבֵּל!','מָחָר נַמְשִׁיךְ אֶת הַמְּסִבָּה!'];
 const SAIL=c=>c===1?'הַסְּפִינָה שְׁלֵמָה, וּמָחָר מַתְחִילִים מַסָּע חָדָשׁ!':c===NC?'מָחָר יֵשׁ מְסִבָּה עַל הַסְּפִינָה!':'מָחָר מַפְלִיגִים אֶל '+SCRIPT[c-1].n+'!';
 const ok=p=>p&&Number.isInteger(p.c)&&Number.isInteger(p.s)&&p.c>=1&&p.c<=NC&&p.s>=1&&p.s<=NS;
-const M={SCRIPT};
+const M={SCRIPT,THING,CH_THING};
 M.pos=()=>{const sv=O.save;if(!ok(sv.mix))sv.mix={c:1,s:1};return sv.mix;};
-M.scene=(p)=>{p=p||M.pos();const ch=SCRIPT[p.c-1],x=ch.sc[p.s-1];return {c:p.c,s:p.s,n:ch.n,open:x[0],close:x[1],topic:x[2],item:x[3]};};
+M.scene=(p)=>{p=p||M.pos();const ch=SCRIPT[p.c-1],x=ch.sc[p.s-1];return {c:p.c,s:p.s,n:ch.n,open:x[0],close:x[1],topic:x[2],item:x[3],thing:THING[p.c+'.'+p.s]||CH_THING[p.c-1]};};
+/* #416 the thing of the scene that plays now (word problems count it) */
+M.thing=()=>{try{return M.scene().thing;}catch(e){return null;}};
 M.next=p=>{p=p||M.pos();return p.s<NS?{c:p.c,s:p.s+1}:{c:p.c<NC?p.c+1:1,s:1};};
 M.advance=()=>{O.save.mix=M.next();O.persist();return O.save.mix;};
 /* said at the end of the day: the story is already at the scene of tomorrow */

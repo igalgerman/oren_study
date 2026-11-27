@@ -42,12 +42,12 @@ listen-phone 60           # same file on the phone viewport (#435 included)
 day-path-desktop 60        # #424 English scene checks (~3 s) + #388 3-mission path walk + time-limit stop, #391 ship checks (finale piece, gem choice, reload) + #392 tap a piece / story door (~1 s): ~31 s together
 day-path-phone 60          # same file on the phone viewport
 worker 60                 # cf worker bundle + fake KV/D1, #570 voicecheck once-a-day/reserve rules (pure, < 1 ms): ~3 s
-learn 120                 # skill model sims + the screens on desktop and phone + #395 plays 8 adaptive mission rounds per viewport: ~54 s alone
+learn 120                 # skill model sims + the screens on desktop and phone + #395 plays 8 adaptive mission rounds per viewport + #416 story word problems over all scene things (~1 s): ~55 s alone
 unlock-desktop 60         # #403 first tap unlocks audio (Chrome policy mimicked) + blocked-audio hint: ~5 s
 unlock-tablet 60          # same on the Android tablet profile (Galaxy Tab S4, touch)
 oldsaves 60               # #432 opens the game on 20 old or damaged saves (4 browsers at once): start, home, world map: ~25 s
 simplicity-desktop 60     # #426 adds the rewards checks (no badges/hats/records, old-save hat refund) + 2 screenshots: ~10 s
 simplicity-phone 60       # same file on the phone viewport: ~10 s
-math-logic 60             # all generated math questions + #439 mistake classifier table, ten-frame logic, coin logic and price voice (< 1 s more): ~6 s alone
+math-logic 60             # all generated math questions + #439 mistake classifier table, ten-frame logic, coin logic and price voice (< 1 s more) + #416 story-scene word problems for 34 scene things (~2 s): ~8 s alone
 voice-audit-1 150          # #406 voice audit, first half: home, every world and level start, arcade + every 2nd activity (each read, 5 answers) in a fake player: ~80 s with 2 suites at once
 voice-audit-2 150          # #406 the other half of the activities: ~65 s with 2 suites at once

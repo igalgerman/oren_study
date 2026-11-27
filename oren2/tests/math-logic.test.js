@@ -85,5 +85,19 @@ const r2=await p.evaluate(()=>{const O=window.__oren4,bad=[];const K=O.mistakeKi
  const C=O.COIN;for(let n=2;n<=20;n++){const m=C.make(n);if(C.sum(m)!==n||m.some(v=>![1,2,5,10].includes(v)))bad.push('#418 make '+n);}
  const spoken=[];for(const id of ['word-c1','word-c2']){const u=O.ALLU.find(x=>x.id===id);for(let i=0;i<200;i++){const q=u.gen(i);const t=window.__fullSpell(O.qSpeech(q));spoken.push(t);if(/\d/.test(t))bad.push('#418 digits in voice: '+t);if(!/שקל/.test(t))bad.push('#418 no shekel word: '+t);}}
  return {bad:[...new Set(bad)].slice(0,30),cnt:new Set(bad).size,ex:spoken.slice(0,2)};});
+/* #416 the word problems of the path count the thing of the story scene (core units + learn.js); no story thing -> the old things;
+   the new story sentences are random (numbers), so pregen leaves them to on-demand voice like the other random math (RANDOM) */
+const RANDOM=require('../cf/tools/pregen.js').RANDOM;
+const r3=await p.evaluate(src=>{const O=window.__oren4,M=window.STORYMIX,LN=window.LEARN,RANDOM=new RegExp(src);const bad=[],was=M.thing;let used=0,n=0;
+ const strip=s=>String(s).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+ const things=[...Object.values(M.THING),...M.CH_THING];const units=O.ALLU.filter(u=>/^word-(\d|boss)/.test(u.id));
+ for(const t of things){M.thing=()=>t;
+   for(const u of units)for(let i=0;i<40;i++){const q=u.gen(i);if(q.k!=='word')continue;n++;if(q.tx.includes(t[1]))used++;if(/undefined|NaN/.test(q.tx+q.u))bad.push('text '+q.tx);}
+   for(let lv=1;lv<=5;lv++){const q=LN.wordQ(lv);if(!/^sc-/.test(q.tid)||!q.tx.includes(t[1]))bad.push('learn not the scene thing '+t[1]+' '+q.tid);
+     const said=window.__fullSpell(strip(q.tx));if(!RANDOM.test(said))bad.push('pregen would keep a random sentence: '+said);}}
+ M.thing=()=>null;let old=0;for(const u of units.filter(u=>/^word-[0-4]$/.test(u.id)))for(let i=0;i<40;i++){const q=u.gen(i);{const hit=q.k==='word'&&things.find(t=>q.tx.includes(t[1])&&!/תַּפּוּחִים|צְדָפִים|בָּלוֹנִים|עוּגִיּוֹת|סֻכָּרִיּוֹת/.test(t[1]));if(hit){old++;bad.push('fb '+hit[1]+': '+q.tx.slice(0,60));}}}
+ if(old)bad.push('fallback still uses scene things '+old);if(LN.wordQ(2).tid.startsWith('sc-'))bad.push('learn fallback');
+ M.thing=was;const fish=(()=>{const s0=O.save.mix;O.save.mix={c:1,s:2};const t=M.thing();O.save.mix=s0;return t&&t[1];})();if(fish!=='דָּגִים')bad.push('scene 1.2 thing '+fish);
+ return {bad:[...new Set(bad)].slice(0,10),share:Math.round(100*used/Math.max(1,n))};},RANDOM.source);
 await b.close();
-L.finish('math-logic',[(r2.cnt===0?'PASS':'FAIL')+' #415 mistake classifier, #417 ten-frame, #418 coins logic + prices said as words ('+r2.ex.join(' / ')+')'+(r2.cnt?' — '+r2.bad.join(' | '):''),(r.cnt===0?'PASS':'FAIL')+` all generated math questions valid (${r.n} checked across ${r.levels} levels)`+(r.cnt?' — '+r.bad.join(' | '):''),(errs.length?'FAIL':'PASS')+' no JS errors '+errs.slice(0,3).join(' | ')]);})();
+L.finish('math-logic',[(r3.bad.length===0&&r3.share>=30?'PASS':'FAIL')+` #416 word problems count the story scene's thing (${r3.share}% of core word questions), old things without one, pregen leaves them to on-demand voice`+(r3.bad.length?' — '+r3.bad.join(' | '):''),(r2.cnt===0?'PASS':'FAIL')+' #415 mistake classifier, #417 ten-frame, #418 coins logic + prices said as words ('+r2.ex.join(' / ')+')'+(r2.cnt?' — '+r2.bad.join(' | '):''),(r.cnt===0?'PASS':'FAIL')+` all generated math questions valid (${r.n} checked across ${r.levels} levels)`+(r.cnt?' — '+r.bad.join(' | '):''),(errs.length?'FAIL':'PASS')+' no JS errors '+errs.slice(0,3).join(' | ')]);})();
