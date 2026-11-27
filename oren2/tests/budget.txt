@@ -48,3 +48,5 @@ unlock-tablet 60          # same on the Android tablet profile (Galaxy Tab S4, t
 oldsaves 60               # #432 opens the game on 20 old or damaged saves (4 browsers at once): start, home, world map: ~25 s
 simplicity-desktop 60     # #426 adds the rewards checks (no badges/hats/records, old-save hat refund) + 2 screenshots: ~10 s
 simplicity-phone 60       # same file on the phone viewport: ~10 s
+feel-desktop 60           # batch #457: #393 the hero-chases-the-Mixer strip for 1..6 missions + #427 calm / big celebration (2 s waits, 4 cards) + #421 instruction words lit (fake voice, held clips): ~25 s
+feel-phone 60             # same file on the phone viewport
