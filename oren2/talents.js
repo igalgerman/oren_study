@@ -1381,14 +1381,15 @@ function wpick(arr,n){const a=arr.slice(),out=[];while(out.length<n&&a.length){l
 function choose(dm,first){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.bs|0)>0;let st=dm==='tog'?[togStep(true)]:first?[first]:[];
   if(dm!=='tog')st=st.concat(stepsOf(dm,(bonus?2:3)-st.length,new Set([...d.t,...st])));
   wpick(doms().filter(x=>x.id!==gid(dm)),bonus?(dm==='tog'?1:0):(dm==='tog'?2:1)).forEach(o=>{st=st.concat(stepsOf(o.id,1,new Set([...d.t,...st])));});
+  /* #424 at most one English a day: English the path picks by itself goes (the English scene comes instead, below); English Oren picked himself (the building, "continue") stays */
+  const isEn=x=>!!(ACT[x]&&ACT[x].b&&ACT[x].b.id==='eng'),noEn=a=>dm==='b:eng'?a:a.filter(x=>!isEn(x)||x===first);st=noEn(st);
   if(!st.length)st=['math'];
   /* a domain that rested yesterday: the path starts with it, where Oren stopped (once a day) */
-  if(!bonus&&!d.rv&&window.HEALTH){d.rv=1;const rv=window.HEALTH.review().find(x=>!d.t.includes(x)&&!st.includes(x));if(rv)st=[rv].concat(st);}
+  if(!bonus&&!d.rv&&window.HEALTH){d.rv=1;const rv=window.HEALTH.review().find(x=>!d.t.includes(x)&&!st.includes(x));if(rv&&!isEn(rv))st=[rv].concat(st);}
   /* #358 variety: a mission that would repeat the kind is swapped for the engine's next pick in this domain, then in the others */
-  st=T.vary(d.t,st,()=>{let ex=[];[dm,...wpick(doms().filter(x=>x.id!==gid(dm)),9).map(o=>o.id)].forEach(id=>{if(id!=='tog')ex=ex.concat(stepsOf(id,3,new Set([...d.t,...st,...ex])).filter(x=>!ex.includes(x)));});return ex;});
-  /* #424 one short English scene per path, at most one a day: English the path picked on its own goes; English Oren picked himself (the building, "continue") stays */
-  const isEn=x=>!!(ACT[x]&&ACT[x].b&&ACT[x].b.id==='eng'),sc=ACT['en-day'];
-  if(dm!=='b:eng')st=st.filter(x=>!isEn(x)||x===first);
+  st=T.vary(d.t,st,()=>{let ex=[];[dm,...wpick(doms().filter(x=>x.id!==gid(dm)),9).map(o=>o.id)].forEach(id=>{if(id!=='tog')ex=ex.concat(noEn(stepsOf(id,3,new Set([...d.t,...st,...ex]))).filter(x=>!ex.includes(x)));});return ex;});
+  /* #424 one short English scene per path, once a day, while English is on for him */
+  const sc=ACT['en-day'];st=noEn(st);
   if(!d.en&&!st.some(isEn)&&sc&&sc.inPath())st.push('en-day');if(st.some(isEn))d.en=1;
   if(!bonus){st=st.concat(d.cr||[]);d.cr=[];}st.forEach(x=>{d.t.push(x);d.done.push(0);});d.ch=dm;if(window.PDAY)window.PDAY.mark();
   if(dm!=='tog'){S0.dom=S0.dom||{};S0.dom[gid(dm)]=dayNum();}O.persist();sfx.ok(2);home();}
