@@ -1398,16 +1398,25 @@ function choose(dm,first,quiet){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.
 function newDay(){const d=T.dailyEnsure();d.done=d.done.map(x=>x||2);d.bs=d.t.length;d.ch=null;const dm=(wpick(doms(),1)[0]||{id:'math'}).id;choose(dm,null,1);}
 function lastStep(){const l=T.S().last;if(!l)return null;if(l.id==='math')return nextLevel()?'math':null;const d=T.S().daily;/* #634 not a mission he already played today */
   return T.dailyPool().includes(l.id)&&!(d&&d.d===O.today()&&d.t.includes(l.id))?l.id:null;}
-/* "something else": a few big tiles (math, the doors, together time); a door drills down to its buildings */
-function other(gr){O.setScreen('sTal','meadow',gr?()=>other():O.showMap);O.hud('');const say=gr?gr.n+'.':'מָה בָּא לְךָ? בְּחַר מָה שֶׁתִּרְצֶה.';const s=$('#sTal');s.innerHTML='';
-  s.appendChild(h('div','whead',`<span class="gd">${gr?gr.e:'🔍'}</span><h1>${gr?gr.n:'מָה בָּא לְךָ?'}</h1>`));const g=h('div','dall');
+/* "something else": a few big tiles (math, the doors, together time); a door drills down to its buildings.
+   #657 a pick starts at once: before today's path is chosen it builds the path from the pick (the pick first); on a path it puts ONE
+   mission of the pick in as the next step. Leaving it unfinished, it stays the first mission of the path (the big button opens it). */
+const OTHERHINT='בּוֹחֲרִים, וּמַתְחִילִים מִיָּד!';
+function pickNow(dm){const d=T.dailyEnsure();const m=x=>dm==='tog'?/^tog:/.test(x):dm==='math'?x==='math':String(dm).startsWith('b:')?!!(ACT[x]&&ACT[x].b.id===dm.slice(2)):domOf(x)===dm;
+  let id=null;if(!d.ch){const n0=d.t.length;choose(dm,null,1);id=d.t.slice(n0).find(m)||null;}
+  else{id=dm==='tog'?togStep(true):stepsOf(dm,1,new Set(d.t))[0]||null;if(id)addStep(id,true);}
+  const nx=d.done.findIndex(x=>!x);if(id&&nx>=0){const j=d.t.findIndex((x,i)=>i>=nx&&x===id&&!d.done[i]);if(j>nx){d.t.splice(j,1);d.done.splice(j,1);d.t.splice(nx,0,id);d.done.splice(nx,0,0);}O.persist();}
+  sfx.ok(2);if(nx<0||!id)home();else runStep(nx);}
+function other(gr){O.setScreen('sTal','meadow',gr?()=>other():O.showMap);O.hud('');const say=gr?gr.n+'.':'מָה בָּא לְךָ?';const s=$('#sTal');s.innerHTML='';
+  s.appendChild(h('div','whead',`<span class="gd">${gr?gr.e:'🔍'}</span><h1>${gr?gr.n:'מָה בָּא לְךָ?'}</h1><div class="sub">${OTHERHINT}</div>`));const g=h('div','dall');
   const add=(ic,n,c,fn)=>{const b=h('button','dcard',`<span class="dic">${ic}</span><b>${n}</b>`);b.style.setProperty('--dc',c);b.onclick=()=>{sfx.pop(3);fn();};g.appendChild(b);};
   const blds=x=>x.ids.map(bid=>T.BUILD.find(b=>b.id===bid)).filter(b=>b&&poolOf([b.id]).length);
-  if(gr)blds(gr).forEach(b=>add(b.icon(),b.name,b.color,()=>choose('b:'+b.id)));
-  else{if(nextLevel())add(`<span>${MATH.e}</span>`,MATH.n,MATH.c,()=>choose('math'));
-    T.GROUPS.forEach(x=>{const bs=blds(x);if(bs.length)add(`<span>${x.e}</span>`,x.n,x.c,()=>bs.length>1?other(x):choose('b:'+bs[0].id));});
-    add('<span>🤝</span>','מְשַׂחֲקִים עִם אַבָּא אוֹ אִמָּא','#e0794a',()=>choose('tog'));}
-  s.appendChild(g);if(!gr)s.appendChild(doorsEl());O.sayNow=T.spk(say)+T.choiceSay(s,'.dcard b,.door b');O.emit('other',s);}
+  const pk=dm=>T.S().set.noDaily?choose(dm):pickNow(dm);
+  if(gr)blds(gr).forEach(b=>add(b.icon(),b.name,b.color,()=>pk('b:'+b.id)));
+  else{if(nextLevel())add(`<span>${MATH.e}</span>`,MATH.n,MATH.c,()=>pk('math'));
+    T.GROUPS.forEach(x=>{const bs=blds(x);if(bs.length)add(`<span>${x.e}</span>`,x.n,x.c,()=>bs.length>1?other(x):pk('b:'+bs[0].id));});
+    add('<span>🤝</span>','מְשַׂחֲקִים עִם אַבָּא אוֹ אִמָּא','#e0794a',()=>pk('tog'));}
+  s.appendChild(g);if(!gr)s.appendChild(doorsEl());O.sayNow=T.spk(say)+'\u2063'+T.spk(OTHERHINT)+T.choiceSay(s,'.dcard b,.door b');O.emit('other',s);}
 /* ---------- path steps ---------- */
 function special(i,id){const [kind,k]=id.split(':');const isT=kind==='tog';const a=isT?TOG.find(x=>x.k===k):RW[k];
   const fin=()=>{const d=T.dailyEnsure();const j=i>=0&&d.t[i]===id?i:d.t.findIndex((x,n)=>x===id&&!d.done[n]);if(j>=0)d.done[j]=1;O.persist();};
@@ -1437,7 +1446,7 @@ T.nextStep=nextStep;
 const quest=()=>T.quest?T.quest():{e:'⛵',k:'⛵',a:'',z:''};
 /* #266 the fixed clips of home and "something else" (for pregen) */
 T.addChoices([MATH.n,'מַסָּע','עִיר','מַמְלָכָה','אַרְקֵייד','מְשַׂחֲקִים עִם אַבָּא אוֹ אִמָּא','לְהַמְשִׁיךְ מֵאֵיפֹה שֶׁעָצַרְתִּי','מַשֶּׁהוּ אַחֵר','עוֹד פַּעַם','הַמְשֵׁךְ','סוֹף הַסִּפּוּר']);
-T.addSay(['בֹּקֶר טוֹב','צָהֳרַיִם טוֹבִים','עֶרֶב טוֹב'].map(x=>x+', אוֹרֶן! בְּמָה נְשַׂחֵק?').concat(['שָׁלוֹם אוֹרֶן! מָה בָּא לְךָ הַיּוֹם?','כָּל הַכָּבוֹד! עַכְשָׁו זְמַן חוֹפְשִׁי 🎈','סִיַּמְתָּ אֶת הַשְּׁבִיל! בּוֹא נִרְאֶה אֵיךְ נִגְמַר הַסִּפּוּר.','מָה בָּא לְךָ? בְּחַר מָה שֶׁתִּרְצֶה.']));
+T.addSay(['בֹּקֶר טוֹב','צָהֳרַיִם טוֹבִים','עֶרֶב טוֹב'].map(x=>x+', אוֹרֶן! בְּמָה נְשַׂחֵק?').concat(['שָׁלוֹם אוֹרֶן! מָה בָּא לְךָ הַיּוֹם?','כָּל הַכָּבוֹד! עַכְשָׁו זְמַן חוֹפְשִׁי 🎈','סִיַּמְתָּ אֶת הַשְּׁבִיל! בּוֹא נִרְאֶה אֵיךְ נִגְמַר הַסִּפּוּר.','מָה בָּא לְךָ?','בּוֹחֲרִים, וּמַתְחִילִים מִיָּד!']));
 const stepInfo=id=>{if(id==='math')return {n:'שָׁלָב בְּחֶשְׁבּוֹן',ic:SPR.tree,c:'#d99a2b'};const [k,v]=String(id).split(':');
   if(k==='tog'){const a=TOG.find(x=>x.k===v)||{n:''};return {n:'🤝 '+a.n,ic:'<span>🤝</span>',c:'#e0794a'};}
   if(k==='rw')return {n:'מְשִׂימָה בַּבַּיִת',ic:`<span>${(RW[v]||{}).e||'🏠'}</span>`,c:'#2a9d8f'};
