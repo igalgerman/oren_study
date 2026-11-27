@@ -150,5 +150,24 @@ const INIT = () => {
     ok('missing report: all recorded -> 0', z.code === 0 && /^missing=0$/m.test(z.out) && /0 of 25 /.test(z.log), z.out.trim());
     const e = run(fs.mkdtempSync(path.join(os.tmpdir(), 'vmiss-')));
     ok('missing report: no sentence list yet -> says so, exits 0', e.code === 0 && /no sentence list/.test(e.log) && !/^missing=/m.test(e.out), e.log.trim() + ' | ' + e.out.trim()); }
-  await b.close(); L.finish('voice-stats', res);
+  await b.close();
+  // #396: no code starts the browser's own speech directly; only browserSay (the offline fallback) may, once
+  const VS = require('./voicescan');
+  const real = VS.scan(VS.gameSources());
+  ok('#396 no direct browser speech in the game code', real.hits.length === 0, real.hits.join(' | '));
+  ok('#396 the one fallback (browserSay) starts the browser voice exactly once', !!real.fallback && real.fallback.utter === 1 && real.fallback.speak === 1, JSON.stringify(real.fallback));
+  // the checker itself catches a planted direct call (in a pack file and in the core), and lets the allowed uses through
+  const src = VS.gameSources();
+  const planted = VS.scan({ ...src, 'x.js': 'cancel();\nconst u=new SpeechSynthesisUtterance("שלום");speechSynthesis.speak(u);' });
+  ok('#396 checker: a planted direct call in a .js file fails', planted.hits.length === 1 && planted.hits[0].startsWith('x.js:2'), planted.hits.join(' | '));
+  const core2 = VS.scan({ 'index.html': src['index.html'].replace('function say(', 'function sneak(){window.speechSynthesis.speak(0);}\nfunction say(') });
+  ok('#396 checker: a planted call in the core of index.html fails', core2.hits.length === 1, core2.hits.join(' | '));
+  const fine = VS.scan({ 'y.js': 'speechSynthesis.cancel();speechSynthesis.getVoices();const s=speechSynthesis.speaking;const o=ss.speak.bind(ss);TTS.ns.speak(t,{});' });
+  ok('#396 checker: cancel / getVoices / speaking / .speak.bind / the Claude voice are allowed', fine.hits.length === 0, fine.hits.join(' | '));
+  // voice-map.md names every file that speaks or stops the voice
+  const map = fs.readFileSync(require('path').join(__dirname, '..', 'docs', 'voice-map.md'), 'utf8');
+  const speakers = Object.entries(src).filter(([f, t]) => f !== 'gaps-math.js' && /speechSynthesis|new Audio\(|\/api\/tts|\bsay\(|\.say\(|sayNow/.test(f === 'index.html' ? VS.core(t) : t)).map(([f]) => f);
+  const missing = speakers.filter(f => !map.includes('`' + f + ':') && !map.includes('`' + f + '`'));
+  ok('#396 voice-map.md names every file that speaks', missing.length === 0, missing.join(' '));
+  L.finish('voice-stats', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT voice-stats 0 1'); process.exitCode = 1; });
