@@ -149,7 +149,7 @@ def tg_send(st, now):
         if e.get("answered") or e.get("tg") or e.get("tg_note") or not is_note(e): continue
         mid = TG.send(R.one_line(e.get("text", "")))
         if mid: e["tg_note"] = mid; log(f"{e['name']}: telegram note sent for {key}")
-    if not any(e.get("tg") and not e.get("answered") for e in st.values()):
+    if not any(e.get("tg") and not e.get("answered") and not is_note(e) for e in st.values()):   # an old-state note never blocks
         nxt = sorted(((e["since"], i, k) for i, (k, e) in enumerate(st.items())
                       if not e.get("answered") and not e.get("tg") and not is_note(e)), key=lambda x: x[:2])
         for _, _, key in nxt[:1]:
@@ -163,17 +163,19 @@ def tg_send(st, now):
 
 def tg_poll(st):
     """#440: read the owner's Telegram replies (getUpdates, offset in .runs) and record each one like a page answer."""
-    wait = {k: e for k, e in st.items() if e.get("tg") and not e.get("answered")}
+    wait = {k: e for k, e in st.items() if e.get("tg") and not e.get("answered") and not is_note(e)}
     if not wait or not TG.config(): return
     try: off = json.loads(TG_STATE.read_text(encoding="utf-8")).get("offset", 0)
     except Exception: off = 0
     new, msgs = TG.messages(off)
     if new != off: R.RUNS.mkdir(parents=True, exist_ok=True); TG_STATE.write_text(json.dumps({"offset": new}), encoding="utf-8")
     for m in msgs:
-        wait = {k: e for k, e in st.items() if e.get("tg") and not e.get("answered")}
+        wait = {k: e for k, e in st.items() if e.get("tg") and not e.get("answered") and not is_note(e)}
         key = next((k for k, e in st.items() if m["reply_to"] and m["reply_to"] in (e.get("tg"), e.get("tg_r"))), None)
         if key is None and not m["reply_to"]:            # #632: at most one question is out: a plain reply is its answer
-            key = next((k for k, e in wait.items() if m["date"] >= e.get("tg_at", e["since"]) - 60), None)   # never an old message
+            fresh = [k for k, e in wait.items() if m["date"] >= e.get("tg_at", e["since"]) - 60]   # never an old message
+            if len(fresh) == 1: key = fresh[0]
+            elif len(fresh) > 1: TG.send("יש כמה שאלות פתוחות: ענה ב-Reply להודעה של השאלה.", reply_to=m["id"]); continue   # old state only (before #632)
         if key not in wait: continue                      # answered already (first answer wins) or not a question
         e = wait[key]
         answer(key, tg_answer(e.get("text", ""), m["text"]), from_tg=True); e["answered"] = True

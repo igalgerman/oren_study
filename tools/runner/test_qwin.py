@@ -244,7 +244,7 @@ assert asked()[-2:] == ["t1", "t2"], asked()
 assert [(p["chat_id"], p["text"].split("\n")[0]) for p in sent()] == [("777", "איזה צבע?")], sent()   # #632: one at a time
 assert "1. ירוק" in sent()[0]["text"] and "2. כחול" in sent()[0]["text"], sent()
 assert all(c[0] == "botSECRET123:abc" for c in FakeTG.calls)
-QW.tick(h6.ts(), now=50060); assert len(sent()) == 1           # one message per question
+QW.tick(h6.ts(), now=50060); assert len(sent()) == 1           # no repeat
 t1 = QW.load()["t1"]["tg"]
 # a message from another chat is ignored; a reply '2' to t1's message = option 2, recorded like a page answer
 upd(1, "1", chat=555); upd(2, "2", reply=t1)
@@ -302,8 +302,27 @@ upd(11, "בסדר", date=80150); QW.tick(h6.ts(), now=80180)
 assert marked[-1] == ("o2", "בסדר") and not any(k == "n1" for k, _ in marked), marked   # the note never takes a reply
 assert sent()[-1]["text"].startswith("שלישית?"), sent()
 assert not any("כמה שאלות" in p["text"] for p in sent()), sent()                         # never 'several open, use Reply'
-srv.shutdown(); TG.ENV = tmp / "no-telegram.env"; QW.log = lambda m: None
 print("ok qwin telegram one question at a time")
+
+# #632 review: state from before the deploy (2 questions + a note, all with 'tg', no 'tg_at'): a plain reply is never
+# recorded silently for one of them (gets the 'use Reply' hint), the note never takes it; Reply still works
+QW.STATE = tmp / "qwin9.json"; FakeTG.calls.clear(); FakeTG.updates.clear(); marked.clear()
+old = [{"key": "p1", "window": "#53", "source": "issue-53", "text": "ישנה?", "url": "u"},
+       {"key": "p2", "window": "#392", "source": "issue-392", "text": "חדשה?", "url": "u"},
+       {"key": "pn", "window": "ai-observer", "source": "ai-observer", "text": "QUESTION: note", "url": "u"}]
+opened[:] = [dict(q) for q in old]
+QW.save({q["key"]: {"name": f"question-{i}", "since": 90000, "source": q["source"], "text": q["text"], "pid": 0, "tg": 500 + i}
+         for i, q in enumerate(old)})
+upd(20, "כן", date=90100); QW.tick(h6.ts(), now=90120)
+assert marked == [], marked                                                               # not recorded for the wrong one
+hint = [p for p in sent() if p.get("reply_to_message_id") == 920]
+assert len(hint) == 1 and "Reply" in hint[0]["text"], sent()                             # the 'use Reply' hint, as before
+upd(21, "כן", reply=501, date=90150); QW.tick(h6.ts(), now=90180)
+assert marked == [("p2", "כן")], marked                                                  # a Reply goes to its question
+upd(22, "אוקיי", date=90200); QW.tick(h6.ts(), now=90240)
+assert marked[-1] == ("p1", "אוקיי") and len(marked) == 2, marked                        # one left: a plain reply is its answer
+srv.shutdown(); TG.ENV = tmp / "no-telegram.env"; QW.log = lambda m: None
+print("ok qwin telegram old state after deploy")
 
 # #368 real process: the real _spawn starts the real ask.py (no browser), the URL is read from its log,
 # an answer POSTed to the page lands in <key>.answers.json and page_answer reads it
