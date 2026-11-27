@@ -69,7 +69,7 @@ All block pictures are new original 16×16 pixel SVGs in the same `px` style as 
 6. **First block ever:** the friend says `וַאוּ! בָּנִיתָ אֶת הַקֻּבִּיָּה הָרִאשׁוֹנָה!` once.
 
 ## 7. Kid text (Hebrew with nikud; all spoken, so all must be in pregen)
-- First visit hint (shown until the first block is placed): `👇 בְּחַר קֻבִּיָּה, וְלַחַץ עַל מָקוֹם רֵיק כְּדֵי לִבְנוֹת.`
+- First visit hint (shown until the first block is placed): `👇 בְּחַר קֻבִּיָּה, וּלְחַץ עַל מָקוֹם רֵיק כְּדֵי לִבְנוֹת.`
 - After the first block (spoken once): `לְחִיצָה עַל קֻבִּיָּה מוֹרִידָה אוֹתָהּ, וְהַיַּהֲלוֹמִים חוֹזְרִים.`
 - Not enough gems: `חֲסֵרִים יַהֲלוֹמִים. אֶפְשָׁר לְהַרְוִיחַ עוֹד בַּשְּׁלַבִּים!`
 - Next unlock: `עוֹד {n} כּוֹכָבִים לַקֻּבִּיָּה הַבָּאָה`
