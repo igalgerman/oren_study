@@ -241,6 +241,24 @@ const SH = process.env.HSHOTS; if (SH) fs.mkdirSync(SH, { recursive: true });
   }
   const cap = await p.evaluate(() => { const s = window.TAL.S(); for (let i = 0; i < 80; i++) s.health['2025-01-' + String(i).padStart(3, '0')] = { on: 1 }; window.__t += 864e5; window.HEALTH.day(); return Object.keys(s.health).length; });
   ok('history is capped at 60 days', cap <= 61, cap);
+  // ---------- #388: in the daily path, a due break comes first, then the next mission starts by itself ----------
+  {
+    const acts = await p.evaluate(() => { const T = window.TAL, O = window.OREN, H = window.HEALTH; document.querySelectorAll('.hlock').forEach(e => e.remove()); document.body.classList.remove('hlocked'); document.getElementById('ov').hidden = true;
+      H.setCfg('off', { water: 0, toilet: 0, move: 0, eyes: 0, meal: 1 }); H.setCfg('brk', 20);   /* earlier checks turned breaks off */
+      const a = T.dailyPool().filter(id => !H.resting(H.domOf(id)) && T.ACT[id].run).slice(0, 2); window.__st = [];
+      a.forEach(id => { const r = T.ACT[id].run; T.ACT[id].run = bk => { window.__bk = bk; window.__st.push(id); return r(bk); }; });
+      T.S().daily = { d: O.today(), t: a, done: [0, 0], claimed: 0, ch: 'plan', cr: [] }; const r = H.day(); r.ba = r.on; O.showMap(); return a; });
+    await p.evaluate(() => window.TAL_step(0)); await sleep(200);
+    await ticks(21); await p.evaluate(() => { const r = window.HEALTH.day(); r.dom = {}; r.act = {}; }); await sleep(300);
+    await p.evaluate(id => window.TAL.finishAct(id, 0, 5, 0, window.__bk), acts[0]); await sleep(300);
+    await p.locator('#ov .bigbtn:not(.plain)').click(); await sleep(500); l = await lock();
+    const s1 = await p.evaluate(() => window.__st.length);
+    ok('#388 path: the break comes before the next mission', l && /hbrk/.test(l.cls) && s1 === 1, JSON.stringify({ l, s1 }));
+    await clock(31000); await sleep(400); await pressBack(); await sleep(1500);
+    const s2 = await p.evaluate(() => ({ st: window.__st.slice(), home: !document.getElementById('sHome').hidden, lock: !!document.querySelector('.hlock') }));
+    ok('#388 path: after "I\'m back" the next mission starts (no home)', s2.st.length === 2 && s2.st[1] === acts[1] && !s2.home && !s2.lock, JSON.stringify(s2));
+    await home(); await sleep(200);
+  }
   // ---------- layout ----------
   await p.evaluate(() => window.HEALTH.showTopic('math')); await sleep(300);
   const fit = await p.evaluate(() => { const c = document.querySelector('.hlock .card').getBoundingClientRect(); return { w: c.width, r: c.right, l: c.left, b: c.bottom, iw: innerWidth, ih: innerHeight, sw: document.documentElement.scrollWidth }; });
