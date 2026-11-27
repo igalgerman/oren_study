@@ -18,6 +18,8 @@
            node oren2/cf/tools/voicecheck.js --again   check every sentence again
            node oren2/cf/tools/voicecheck.js --report  no network: coverage + static findings over every sentence (#405)
    Runs in CI after pregen (deploy.yml, #405), state kept in the Actions cache: every sentence gets checked over the days.
+   #570: the full check runs once a day (a second run that day only applies choices + updates the pages) and stops
+   while RESERVE (default 5) of each model's DAILY (default 20) Gemini calls are left for targeted runs (--pages).
    Env: SITE, PER_MIN (default 8), WRITES (KV writes this script may use a day, default 250), MAX_MIN (stop after n min)                    */
 const path = require('path'), fs = require('fs'), os = require('os');
 const MAIN = require.main === module;   // required by tests: only the functions, no run
@@ -29,12 +31,14 @@ if (MAIN && process.env.HTTPS_PROXY && !process.env.NODE_USE_ENV_PROXY) {   // N
 const SITE = (process.env.SITE || 'https://oren-game.pages.dev').replace(/\/$/, '');
 const MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite']; let mi = 0; const VOICE = 'he-IL-Chirp3-HD-Kore', RATE = 0.9;
 const PER_MIN = +process.env.PER_MIN || 8, WRITES = +process.env.WRITES || 250, MAX_MIN = +process.env.MAX_MIN || 0;
+const DAILY = +process.env.DAILY || 20, RESERVE = +process.env.RESERVE || 5;   // #570 Gemini calls a day per model; the sweep leaves RESERVE of them
 const DIR = path.join(os.homedir(), '.cache', 'oren-voicecheck'); fs.mkdirSync(DIR, { recursive: true });
 const STATE = path.join(DIR, 'state.json'), LOG = path.join(DIR, 'log.txt');
 const PRE = path.join(os.homedir(), '.cache', 'oren-pregen');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const arg = a => process.argv.includes(a);
 const today = () => new Date().toISOString().slice(0, 10);
+const qday = (d = new Date()) => d.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });   // #570 Gemini's quota day: resets at midnight Pacific
 const log = m => { const l = new Date().toISOString().slice(11, 19) + ' ' + m; console.log(l); fs.appendFileSync(LOG, l + '\n'); };
 let S = { items: {}, nik: {}, applied: {}, queue: [], day: '', writes: 0 };
 try { S = { ...S, ...JSON.parse(fs.readFileSync(STATE, 'utf8')) }; } catch (e) {}
@@ -95,21 +99,30 @@ async function call(p, body) {
   }
 }
 class Stop extends Error {}
+/* #570 the full sweep (CI, after every deploy) runs once a day and leaves a reserve of each model's daily calls,
+   so targeted runs (--pages, the parent's picks, regen) still work on a day with many deploys */
+const sweepDue = (st, day) => st.swept !== day;
+const usedOf = (st, day, m) => (st.used && st.used.day === day && st.used[m]) || 0;
+const mayCall = (st, day, m, sweep, daily = DAILY, reserve = RESERVE) => !sweep || usedOf(st, day, m) < daily - reserve;
+function countCall(st, day, m) { if (!st.used || st.used.day !== day) st.used = { day }; st.used[m] = (st.used[m] || 0) + 1; }
+const sweepNote = (why, n) => why === 'ran' ? 'sweep skipped: ran today' : `reserve kept: ${n} calls per model`;
+let SWEEP = false;
 async function gemini(p, body) {      // paced; another model when one is busy or at its daily limit (free tier: ~20 a day each)
-  const live = () => MODELS.filter(m => (S.gone || {})[m] !== today());
+  const live = () => MODELS.filter(m => (S.gone || {})[m] !== qday() && mayCall(S, qday(), m, SWEEP));
+  if (SWEEP && !live().length) throw new Stop(sweepNote('reserve', RESERVE));
   const next = () => { const L = live(); if (!L.length) return false; mi = (L.indexOf(MODELS[mi]) + 1) % L.length; mi = MODELS.indexOf(L[mi]); return true; };
   if (!live().includes(MODELS[mi]) && !next()) throw new Stop('every Gemini model is at its daily limit');
   for (let i = 0, busy = 0; i < 12; i++) {
     const w = lastG + 60000 / PER_MIN - Date.now(); if (w > 0) await sleep(w); lastG = Date.now();
-    const { status, j, tx } = await call(p, { ...body, m: MODELS[mi] });
+    countCall(S, qday(), MODELS[mi]); const { status, j, tx } = await call(p, { ...body, m: MODELS[mi] });
     if (j && j.res) { gStreak = 0; return j.res; }
     const why = String((j && (j.err || j.why || j.raw)) || tx);
     if (j && j.status === 429 && /per ?day|PerDay|daily|requests per day/i.test(why)) {
-      S.gone = S.gone || {}; S.gone[MODELS[mi]] = today(); save(); log(`  ${MODELS[mi]}: daily limit reached`);
+      S.gone = S.gone || {}; S.gone[MODELS[mi]] = qday(); save(); log(`  ${MODELS[mi]}: daily limit reached`);
       if (!next()) throw new Stop('every Gemini model is at its daily limit'); continue; }
     if (j && (j.status === 429 || j.status === 503 || j.status === 404)) {
       if (++gStreak > 40) throw new Stop('Gemini keeps refusing: ' + why.slice(0, 200));
-      if (j.status === 404) { S.gone = S.gone || {}; S.gone[MODELS[mi]] = today(); if (!next()) throw new Stop('no Gemini model'); continue; }
+      if (j.status === 404) { S.gone = S.gone || {}; S.gone[MODELS[mi]] = qday(); if (!next()) throw new Stop('no Gemini model'); continue; }
       if (++busy % 2 === 0 && next()) { log(`  gemini busy, trying ${MODELS[mi]}`); continue; }
       log(`  gemini ${j.status} (${MODELS[mi]}), waiting… ${why.slice(0, 80)}`); await sleep(20000 * Math.min(4, busy)); continue;
     }
@@ -292,7 +305,7 @@ function report(said, items, ng) {
   if (bad.length) { L.push(`### heard wrong (${bad.length})`); for (const x of bad) L.push(`- ${x.t.slice(0, 90)} — ${(items[id(x)] || {}).note || ''}`); L.push(''); }
   return L.join('\n');
 }
-if (!MAIN) module.exports = { voteScope, variants, diff, todo, lint, report };
+if (!MAIN) module.exports = { voteScope, variants, diff, todo, lint, report, sweepDue, mayCall, countCall, sweepNote, qday };
 else (async () => {
   try { SAID = JSON.parse(fs.readFileSync(path.join(PRE, 'said.json'), 'utf8')).map(item).filter(x => x.t); } catch (e) { log('no said.json — run pregen.js --collect first'); return; }
   const rep = () => { const r = report(SAID, S.items, readNG()); console.log(r); if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, '## Voice check\n\n' + r + '\n'); };
@@ -302,6 +315,9 @@ else (async () => {
   let { marks, votes } = await applyVotes(); await bump(); DICT = (await call('/api/tts/fix')).j || DICT;
   await pages(votes, marks);
   if (arg('--pages')) return review();
+  const note = m => { log(m); if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, m + '\n\n'); };
+  if (!sweepDue(S, qday()) && !arg('--again')) { note(sweepNote('ran')); await review(); return rep(); }   // #570 once a day
+  S.swept = qday(); save(); SWEEP = true;
   // 0. make again the sentences made before synth() learned numbers in words and dropping emoji (one write each)
   const RG = S.regen || {}, REGEN = 'num2', R = SAID.filter(x => x.v.startsWith('he-') && made[x.t] && (((/\d/.test(x.t) || /\p{Extended_Pictographic}/u.test(x.t)) && !RG[x.t]) || (/[\u2190-\u21FF]/.test(x.t) && RG[x.t] !== 'num2')));   // num2: arrows → a pause
   S.regen = S.regen || {}; let rn = 0;
@@ -330,9 +346,10 @@ else (async () => {
       save(); log(`${n}/${Q.length} ${r.st.padEnd(3)} ${it.t.slice(0, 70)}${r.note ? '  — ' + r.note : ''}`);
       if (n % 20 === 0) { const c = {}; for (const x of Object.values(S.items)) c[x.st] = (c[x.st] || 0) + 1;
         log(`progress ${n}/${Q.length} · ${Math.round((Date.now() - T0) / 60000)} min · ${JSON.stringify(c)} · writes ${S.writes}`);
-        const nv = await applyVotes(); await bump(); DICT = (await call('/api/tts/fix')).j || DICT; marks = nv.marks; votes = nv.votes; await pages(votes, marks); }   // the parent may be choosing right now
+        SWEEP = false; const nv = await applyVotes(); await bump(); DICT = (await call('/api/tts/fix')).j || DICT; marks = nv.marks; votes = nv.votes; await pages(votes, marks); SWEEP = true; }   // the parent may be choosing right now
     }
   } catch (e) { if (!(e instanceof Stop)) throw e; log('stopped: ' + e.message + ' — run again later to continue'); }
+  SWEEP = false; note(sweepNote('reserve', RESERVE));
   await bump(); await pages(votes, marks); await review();
   const c = {}; for (const x of Object.values(S.items)) c[x.st] = (c[x.st] || 0) + 1;
   log('done: ' + JSON.stringify(c) + ' · dictionary: ' + JSON.stringify(DICT));

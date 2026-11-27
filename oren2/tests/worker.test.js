@@ -307,6 +307,20 @@ const path = require('path');
     const t = require('fs').readFileSync(path.join(L.ROOT, 'talents.js'), 'utf8');
     ok('the sentence with ישן writes כיסא in full (#86)', t.includes("'הֶחָתוּל יָשֵׁן עַל הַכִּיסֵּא.'") && !t.includes("'הֶחָתוּל יָשֵׁן עַל הַכִּסֵּא.'"));
     ok('every sentence with ישן writes כיסא in full, the voice sample too (#86)', !t.includes('יָשֵׁן עַל הַכִּסֵּא') && /const SAMPLE='[^']*יָשֵׁן עַל הַכִּיסֵּא/.test(t)); }
+  // #570 the CI sweep runs once a day and stops while a reserve of Gemini calls is left, so targeted runs
+  // (--pages, the parent's picks of #86) still work on a day with many deploys
+  { const vc = require(path.join(L.ROOT, 'cf', 'tools', 'voicecheck.js')), D = '2026-11-27', M = 'gemini-3.6-flash';
+    ok('voicecheck #570: the sweep is due when it did not run today', vc.sweepDue({}, D) && vc.sweepDue({ swept: '2026-11-26' }, D));
+    ok('voicecheck #570: the sweep is skipped when it already ran today', !vc.sweepDue({ swept: D }, D));
+    const st = {}; for (let i = 0; i < 15; i++) vc.countCall(st, D, M);
+    ok('voicecheck #570: the sweep may not touch the last 5 calls of a model (20 a day)', !vc.mayCall(st, D, M, true, 20, 5) && vc.mayCall(st, D, 'gemini-3.5-flash', true, 20, 5), JSON.stringify(st));
+    ok('voicecheck #570: a targeted run may use the reserve', vc.mayCall(st, D, M, false, 20, 5));
+    const st2 = {}; for (let i = 0; i < 14; i++) vc.countCall(st2, D, M);
+    ok('voicecheck #570: the sweep may call while above the reserve', vc.mayCall(st2, D, M, true, 20, 5));
+    ok('voicecheck #570: the count starts again on a new day', vc.mayCall(st, '2026-11-28', M, true, 20, 5));
+    vc.countCall(st, '2026-11-28', M); ok('voicecheck #570: counting on a new day drops yesterday', st.used.day === '2026-11-28' && st.used[M] === 1, JSON.stringify(st));
+    ok('voicecheck #570: the quota day is the Pacific date (Gemini resets at 08:00Z): 23:00Z and 01:00Z next day are one day', vc.qday(new Date('2026-11-27T23:00:00Z')) === vc.qday(new Date('2026-11-28T01:00:00Z')) && vc.qday(new Date('2026-11-28T01:00:00Z')) === '2026-11-27' && vc.qday(new Date('2026-11-28T09:00:00Z')) === '2026-11-28');
+    ok('voicecheck #570: the summary line says why the sweep stopped', vc.sweepNote('ran') === 'sweep skipped: ran today' && vc.sweepNote('reserve', 5) === 'reserve kept: 5 calls per model'); }
   // #405 voicecheck over ALL kid sentences: every sentence of the pregen list is queued until it was checked (not only
   // risky/new ones), a static pass lists the findings for every sentence, and the CI pregen job runs it (no PC cost)
   { const vc = require(path.join(L.ROOT, 'cf', 'tools', 'voicecheck.js'));
