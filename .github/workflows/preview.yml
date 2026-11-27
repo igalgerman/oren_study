@@ -1,0 +1,37 @@
+# #618: every PR that changes the game gets a Cloudflare Pages preview at https://pr-<n>.oren-game.pages.dev (deploy.sh with
+# DEPLOY_BRANCH=pr-<n>; production stays main). The Tester (tools/runner/tester.py) plays the PR there after a review PASS.
+# Same-repo PRs only (the secret never reaches a fork). The preview uses the same D1 as production: testers use a throwaway family code.
+name: preview
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths: ['oren2/**']
+permissions:
+  contents: read
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true      # only the newest head of a PR matters
+jobs:
+  preview:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Deploy the preview
+        working-directory: oren2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DEPLOY_BRANCH: pr-${{ github.event.pull_request.number }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then echo "no token: no preview"; exit 0; fi
+          bash cf/tools/deploy.sh 2>&1 | tee "$RUNNER_TEMP/deploy.log"
+      - name: Summary
+        run: |
+          python3 tools/ci/deploy_ci.py report "$RUNNER_TEMP/deploy.log" || true
+          echo "Preview: https://pr-${{ github.event.pull_request.number }}.oren-game.pages.dev" >> "$GITHUB_STEP_SUMMARY"
