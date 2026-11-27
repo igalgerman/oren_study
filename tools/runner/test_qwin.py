@@ -159,6 +159,14 @@ assert any(s[0] == "orchestrator" and "resume" in s[1] for s in h.sent), h.sent
 (R.RUNS / "3" / "where").unlink()
 print("ok qwin runner-managed cloud answer")
 
+# #630: an orchestrator question that gates #64: the answer record is written on #64 too (so `owner_q.py gate #64` opens)
+opened.append({"key": "6"*12, "window": "orchestrator", "source": "orchestrator", "text": "עיצוב?", "url": "u6", "gates": [64]})
+gh_calls.clear()
+d = QW.answer("6"*12, "approve")
+assert d.get("gates") == {64: True}, d
+assert any(a[:3] == ("issue", "comment", "64") and OQ.record_answer(a[-1]) == ("6"*12, "approve") for a in gh_calls), gh_calls
+print("ok qwin #630 answer recorded on the gated issue")
+
 # #390: the push's result is checked on the pushing session's screen and logged once: Claude Code's 'Not sent' (or the
 # session's own PUSH-RESULT line) -> watchdog.log says so (second channel: Telegram, #440, once set up); ok -> logged too
 logged = []
