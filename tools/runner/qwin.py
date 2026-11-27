@@ -288,7 +288,7 @@ def answer(key, text, from_page=False, from_tg=False, tg=0):
     info = st.get(key) or next(({"source": q.get("source", ""), "issue": issue_no(q), "text": q.get("text", "")}
                                      for q in OQ.open_list() or [] if q["key"] == key), {})
     n, src, done = info.get("issue", 0), info.get("source", ""), {}
-    if n: done["issue"] = _gh("issue", "comment", str(n), "--body", R.redact(f"OWNER ANSWER (question window, owner-q:{key}): {text}"))[0] == 0
+    if n: done["issue"] = _gh("issue", "comment", str(n), "--body", R.redact(OQ.answer_body(key, text)))[0] == 0
     done["answered"] = OQ.mark_answered(key, text)
     resumes = src.startswith("remote-") and n and R.where_of(n) == "remote"   # #135: runner-managed: the watchdog resumes the session from the issue comment
     if src.startswith("remote-") and n and not resumes:

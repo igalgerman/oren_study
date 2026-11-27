@@ -113,21 +113,19 @@ const INIT = () => {
   //   random  pregen's own RANDOM rule: random math questions, made on first use
   //   numbers the line has a number in it, or two number words (clock, arcade sums, counting, math answers): made on first use
   //   choices a question said with its choices in one clip, choices shuffled each time: made on first use
-  //   answer  the help answer (help.js mc, #602): 'הַתְּשׁוּבָה הִיא: ' + the right choice (source text) + its explanation (a fixed sentence or one put together like `word`, e.g. a think-bank sentence with its blank filled): made on first use
   //   word    put together: at most 4 runs of the source's text + at most 3 other words ('כְּתֹב אֶת הַמִּלָּה. X', 'אֵיפֹה יֵשׁ X? גַּע בּוֹ.'): made on first use
   const choices = t => /(\?|\.\.\.)\. |^\. |\? [^?.]+,[^?.]+$/.test(t);
   const word = l => { const w = NN(l).split(' ').filter(x => /\p{L}/u.test(x)); let vars = 0, runs = 0, fixed = 0;   // cover the line with the longest runs of words found in the source:
     for (let i = 0; i < w.length;) { let j = i; while (j < w.length && SRCN.includes(w.slice(i, j + 1).join(' '))) j++;   // at most 4 runs, 3 words left over
       if (j === i) { vars++; i++; } else { runs++; fixed += w.slice(i, j).join(' ').length; i = j; } }
     return runs <= 4 && vars <= 3 && fixed >= 4; };
-  const NUMW = /(^|\s)ו?(אחת|אחד|שתיים|שתים|שנים|שניים|שני|שתי|שלוש|שלושה|ארבע|ארבעה|חמש|חמישה|שש|שישה|שבע|שבעה|שמונה|תשע|תשעה|עשר|עשרה|עשרים|שלושים|ארבעים|חמישים|שישים|שבעים|שמונים|תשעים|מאה)(?=[\s.,?!]|$)/g;
+  // the help's last step (help.js BT.ans): 'הַתְּשׁוּבָה הִיא: <answer>' + the explanation, e.g. the completed sentence (#608): the answer (1-3 words) + a 'word' line
   const ANS = NN('הַתְּשׁוּבָה הִיא') + ':';
-  const answer = c => { const l = NN(c.piece); if (!l.startsWith(ANS + ' ')) return false; const w = l.slice(ANS.length).trim().split(' ');
-    for (let i = 1; i <= Math.min(4, w.length - 1); i++) { const ch = w.slice(0, i).join(' '), x = w.slice(i).join(' ');   // the choice, then its explanation
-      if (SRCN.includes(ch) && (SRCN.includes(x) || word(x))) return true; }
-    return false; };
+  const helpAns = l => { const t = NN(l); if (!t.startsWith(ANS)) return false; const w = t.slice(ANS.length).trim().split(' ');
+    for (let k = 1; k <= 3 && k < w.length; k++) if (word(w.slice(k).join(' '))) return true; return false; };
+  const NUMW = /(^|\s)ו?(אחת|אחד|שתיים|שתים|שנים|שניים|שני|שתי|שלוש|שלושה|ארבע|ארבעה|חמש|חמישה|שש|שישה|שבע|שבעה|שמונה|תשע|תשעה|עשר|עשרה|עשרים|שלושים|ארבעים|חמישים|שישים|שבעים|שמונים|תשעים|מאה)(?=[\s.,?!]|$)/g;
   const numbers = c => /\d/.test(c.piece) || (c.t.match(NUMW) || []).length >= 2;
-  const why = c => PLAY.has(c.t) || SRCN.includes(NN(c.piece)) ? 'play' : PG.RANDOM.test(c.t) ? 'random' : numbers(c) ? 'numbers' : choices(c.t) ? 'choices' : answer(c) ? 'answer' : word(c.piece) ? 'word' : '';
+  const why = c => PLAY.has(c.t) || SRCN.includes(NN(c.piece)) ? 'play' : PG.RANDOM.test(c.t) ? 'random' : numbers(c) ? 'numbers' : choices(c.t) ? 'choices' : word(c.piece) || helpAns(c.piece) ? 'word' : '';
   const check = (c, rec) => { const k = key(c.v, c.r, c.t);
     if (c.line == null) return noLine.push(c.t);
     lines.add(c.line);
@@ -137,7 +135,7 @@ const INIT = () => {
     if (key(c.v, c.r, rec.get(k)) !== k) badHash.push(c.t); };
   for (const c of clips) check(c, REC);
   const uniq = a => [...new Set(a)];
-  const counts = ['recorded', 'play', 'random', 'numbers', 'choices', 'answer', 'word'].map(w => w + ' ' + (kind[w] ? kind[w].size : 0)).join(' · ');
+  const counts = ['recorded', 'play', 'random', 'numbers', 'choices', 'word'].map(w => w + ' ' + (kind[w] ? kind[w].size : 0)).join(' · ');
   fs.writeFileSync(path.join(L.TMP, 'voice-audit-' + HALF + '.txt'), Object.entries(kind).flatMap(([w, set]) => [...set].map(t => w + '\t' + t))
     .concat(uniq(missing).map(x => 'missing\t' + x), uniq(wrongLine).map(x => 'line\t' + x), uniq(badHash).map(x => 'hash\t' + x)).join('\n') + '\n');
   console.log('clips', clips.length, 'lines', lines.size, 'activities', nAct + '/' + nWant, 'silent', silent.join(' ') || '-', '·', counts, '·', Math.round((Date.now() - T0) / 1000) + 's');
@@ -152,11 +150,12 @@ const INIT = () => {
     const w0 = wrongLine.length;
     check({ ...c0, t: t1, line: t1, piece: t1, parts: [t1] }, REC); const R2 = new Map(REC); R2.set(k0, c0.t + ' אחר'); check(c0, R2); check({ ...c0, t: c0.t + ' אחר' }, REC);
     ok('self-check: a line without audio, audio of another text and a clip of another line all fail', missing.length === before[0] + 1 && badHash.length === before[1] + 1 && wrongLine.length === w0 + 1);
-    missing.length = before[0]; badHash.length = before[1]; wrongLine.length = w0; }
-  // #602: lines the random walk meets only sometimes are allowed by a named rule every run (help answer of a filled blank; number words שני/שתי)
-  { const a = 'הַתְּשׁוּבָה הִיא: יְשֵׁנִים בַּלַּיְלָה אֲנַחְנוּ יְשֵׁנִים בַּמִּטָּה.', n = 'רון נגן שני שירים בבקר, ועוד שני שירים בערב. כמה שירים הוא נגן היום?';
-    const wa = why({ t: NN(a), piece: a }), wn = why({ t: n, piece: n }), wx = why({ t: 'התשובה היא: זברגול פלינטוק מזרקל קופלוני', piece: 'הַתְּשׁוּבָה הִיא: זְבַרְגּוּל פְּלִינְטוֹק מְזַרְקֵל קוּפְלוֹנִי' });
-    ok('self-check (#602): a filled-blank help answer is "answer", a word problem with שני/שתי is "numbers", a made-up answer is not allowed', wa === 'answer' && wn === 'numbers' && !wx, `answer=${wa || '-'} numbers=${wn || '-'} made-up=${wx || '-'}`); }
+    missing.length = before[0]; badHash.length = before[1]; wrongLine.length = w0;
+    ok('self-check: the help answer of a sentence completion is a put-together line (#608)', helpAns('הַתְּשׁוּבָה הִיא: יְשֵׁנִים בַּלַּיְלָה אֲנַחְנוּ יְשֵׁנִים בַּמִּטָּה.') && !helpAns('הַתְּשׁוּבָה הִיא: ' + t1)); }
+  // #602: a word problem with the number words שני/שתי is 'numbers' every run (not only when the random walk meets it)
+  { const n = 'רון נגן שני שירים בבקר, ועוד שני שירים בערב. כמה שירים הוא נגן היום?', x = 'רון נגן שירים בבקר, ועוד שירים בערב. כמה שירים הוא נגן היום?';
+    const wn = why({ t: n, piece: n }), wx = numbers({ t: x, piece: x });
+    ok('self-check (#602): a word problem with שני/שתי is "numbers", the same line without number words is not', wn === 'numbers' && !wx, `numbers=${wn || '-'} without=${wx}`); }
   ok('no page errors while playing every screen', !errs.length, errs.slice(0, 3).join(' | '));
   if (process.env.GITHUB_STEP_SUMMARY) {
     const m = uniq(missing), w = uniq(wrongLine), h = uniq(badHash);
