@@ -67,6 +67,12 @@ const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + 
   await p.evaluate(() => { const n = document.querySelector('#hbtest .mbh .nxt'); if (n) n.dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await sleep(40);
   const hb2 = await p.evaluate(() => { const b = document.querySelector('#hbtest .mbh'); const r = b ? b.querySelectorAll('.one.gst').length : -1; document.querySelector('#hbtest').remove(); return r; });
   ok('#20 the hint of a carry question opens the same tappable board', hb.has && hb.ghosts === 5 && hb2 === 4, JSON.stringify(hb) + ' after tap ' + hb2);
+  // --- #267 fix: a lesson example is never a hands-on question (its single check button would always win) ---
+  const lx = await p.evaluate(() => { const O = window.OREN, out = [];
+    for (const id of ['time-h', 'time-half', 'time-q', 'time-frac']) for (let k = 0; k < 25; k++) { delete O.save.seen[id]; O.startLevel(O.ALLLV.find(l => l.id === id + '-0'));
+      if (document.querySelector('#sLearn svg.clock.set, #sLearn svg.pz')) out.push(id); }
+    return out; });
+  ok('#267 time and fraction lessons never show the hands-on clock or pizza (100 lessons)', !lx.length, lx.join(','));
   // --- #21 times lesson: tap the array to add a whole group; no "one more group" button ---
   await p.evaluate(() => { const O = window.OREN; delete O.save.seen['mul-5']; O.startLevel(O.ALLLV.find(l => l.id === 'mul-5-0')); }); await sleep(150);
   const rows = () => p.evaluate(() => ({ n: document.querySelectorAll('#sLearn .lpanel .arr .r').length, nw: document.querySelectorAll('#sLearn .lpanel .arr .r.nw').length,

@@ -1967,6 +1967,8 @@ function lesson(lv){const u=lv.u;setScreen('sLearn',u.w.bg,()=>showWorld(u.w));
   const turn=()=>{next.querySelector('span').textContent='עַכְשָׁו תּוֹרְךָ!';next.onclick=start;if(!next.isConnected)btns.appendChild(next);};
   const tell=el=>{const t=String(el.innerText||el.textContent).replace(/[‎‏]/g,'').replace(/(\d)\s*:\s*(\d)/g,'$1 חלקי $2').replace(/[+−×=]/g,c=>' '+OPW[c]+' ').replace(/[←→?]/g,' ').replace(/\s+/g,' ').trim();if(t){sayNow=t;AUTO.gen++;}};
   let ex=u.gen(5);
+  /* #267: the lesson example is a reading / static one; hands-on clock and pizza questions stay in practice (one "check" button would always win here) */
+  for(let k=0;k<30&&(ex.hand||(ex.chk&&ex.chk.t==='pzleft'));k++)ex=u.gen(5);
   if(ex.k==='col'){btns.appendChild(next);stage.innerHTML=`<div class="lcap">דֻּגְמָה:</div><div class="colwrap" id="colw"></div><div class="hintbox" id="hint" hidden></div>`;const st=colInit(ex);renderCol(ex,st);
     next.onclick=()=>{if(st.c>=st.R.length)return start();const hb=$('#hint');hb.hidden=false;
       if(ex.op==='−'&&colNeedBorrow(st,st.c)){const old=st.tops[st.c];colBorrow(st,st.c);hb.innerHTML=cap(`${L_(old)} קָטָן מ-${L_(st.B[st.c])} ← פּוֹרְטִים ${st.c===0?'עֶשֶׂרֶת':'מֵאָה'}`)+steps([`${st.tops[st.c]} − ${st.B[st.c]|0} = ${st.R[st.c]}`]);}
