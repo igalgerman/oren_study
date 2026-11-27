@@ -159,5 +159,35 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
   await L.shot(p, { path: L.SHOTDIR + '/story-hint-' + L.variant + '.png' });
   ok('#386 family save: the device further on in the story wins', await p.evaluate(() => { const M = window.STORYMIX; return JSON.stringify(M.merge({ c: 1, s: 2 }, { c: 2, s: 1 })) === '{"c":2,"s":1}' && JSON.stringify(M.merge({ c: 3, s: 1 }, { c: 2, s: 4 })) === '{"c":3,"s":1}' && JSON.stringify(M.merge(undefined, { c: 1, s: 3 })) === '{"c":1,"s":3}'; }));
   ok('#386 no page errors', !errs.length, errs.join(' | '));
+  // --- #387 every path mission: opens with the scene's line, ends with a 2 s story picture (the ship, the new piece), one tap skips ---
+  const ids = await p.evaluate(() => ['math', ...window.TAL.dailyPool()]);
+  const miss = [];
+  for (const id of ids) {
+    const r = await p.evaluate(id => { const O = window.OREN, T = window.TAL, F = window.FRIEND, M = window.STORYMIX; O.save.mix = { c: 2, s: 3 };
+      const d = T.dailyEnsure(); d.t = ['read-first', id]; d.done = [1, 0]; d.bs = 0; O.persist();
+      const sc = M.scene(); F.stepStart(1); const lead = F._lead(); d.done[1] = 1;
+      const ov = document.querySelector('#ov'); ov.innerHTML = '<div class="card"><h2>x</h2><div class="btnrow"><button class="bigbtn">ok</button></div></div>'; ov.hidden = false;
+      F.stepCheck(); const pic = ov.querySelector('.frsp'), shp = pic && pic.querySelectorAll('.shp').length, nw = pic && pic.querySelectorAll('.shp.nw').length;
+      F._lead(''); ov.hidden = true; ov.innerHTML = ''; return { open: lead.endsWith(sc.open), pic: !!pic, shp, nw, item: pic && pic.getAttribute('aria-label') === sc.item }; }, id);
+    if (!(r.open && r.pic && r.shp === 8 && r.nw === 1 && r.item)) miss.push(id + ' ' + JSON.stringify(r));
+  }
+  ok('#387 every path mission (' + ids.length + '): the scene\'s opening line + a story picture with the new ship piece', ids.length >= 5 && !miss.length, miss.join(' | '));
+  const pic = await p.evaluate(() => { const O = window.OREN, T = window.TAL, F = window.FRIEND, ov = document.querySelector('#ov');
+    O.save.mix = { c: 1, s: 1 }; const d = T.dailyEnsure(); d.t = ['math', 'read-first']; d.done = [0, 0]; O.persist(); window.__fast = false;
+    F.stepStart(0); d.done[0] = 1; ov.innerHTML = '<div class="card"><h2>x</h2><div class="btnrow"><button class="bigbtn">ok</button></div></div>'; ov.hidden = false;
+    let tapped = 0; ov.querySelector('.bigbtn').onclick = () => tapped++; F.stepCheck(); const e = ov.querySelector('.frsp');
+    return { on: !!e && e.isConnected, cover: !!e && getComputedStyle(e).position === 'absolute' }; });
+  ok('#387 the picture is on the result card', pic.on && pic.cover, JSON.stringify(pic));
+  await L.shot(p, { path: L.SHOTDIR + '/story-pic-' + L.variant + '.png' });
+  await sleep(2400);
+  ok('#387 the picture goes away by itself after 2 s (never blocks)', await p.evaluate(() => !document.querySelector('#ov .frsp')));
+  const skip = await p.evaluate(() => { const O = window.OREN, T = window.TAL, F = window.FRIEND, ov = document.querySelector('#ov');
+    O.save.mix = { c: 1, s: 2 }; const d = T.dailyEnsure(); d.t = ['math', 'read-first']; d.done = [0, 0]; O.persist();
+    F.stepStart(0); d.done[0] = 1; ov.innerHTML = '<div class="card"><h2>x</h2><div class="btnrow"><button class="bigbtn">ok</button></div></div>'; ov.hidden = false;
+    let tapped = 0; ov.querySelector('.bigbtn').onclick = () => tapped++; F.stepCheck(); const e = ov.querySelector('.frsp'); e.click();
+    const gone = !ov.querySelector('.frsp'); window.__fast = true; ov.hidden = true; ov.innerHTML = ''; return { gone, tapped }; });
+  ok('#387 one tap skips the picture (and does not press the card\'s button)', skip.gone && skip.tapped === 0, JSON.stringify(skip));
+  ok('#387 no new spoken sentences outside the voice list', await p.evaluate(() => { const all = window.FRIEND.speakList(); return window.STORYMIX.SCRIPT.every(ch => ch.sc.every(x => all.includes(x[1]))); }));
+  ok('#387 no page errors', !errs.length, errs.join(' | '));
   await b.close(); L.finish('friend', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT friend 0 1'); process.exitCode = 1; });

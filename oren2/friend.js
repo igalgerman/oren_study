@@ -80,11 +80,19 @@ FR.stepStart=i=>{const d=daily();if(!d||i==null||i<0||i>=d.t.length){cur=null;re
   const dn=d.done.slice(d.bs|0),left=dn.filter(x=>!x).length,first=!dn.some(Boolean);
   lead=SM()&&isScene(cur.id)?(first?FIRST+' ':left<=1?LAST+' ':'')+SM().scene().open:'';PATHBAR.render();};
 FR.stepCheck=()=>{if(!cur)return;const d=daily();if(!d||d.d!==cur.d||d.t[cur.i]!==cur.id||!d.done[cur.i]||cur.done)return;cur.done=1;PATHBAR.render();
-  if(!SM()||!isScene(cur.id))return;const close=SM().scene().close;SM().advance();
+  if(!SM()||!isScene(cur.id))return;const sc=SM().scene(),close=sc.close;SM().advance();
   const t=d.done.slice(d.bs|0).every(Boolean)?close+' '+ALL:close;
   const card=$('#ov:not([hidden]) .card');if(card&&!card.querySelector('.frstory')){const s=h('div','frstory',`<span class="frq">${quest().k}</span><span>${t}</span>`);
-    const row=card.querySelector('.btnrow');if(row)card.insertBefore(s,row);else card.appendChild(s);setTimeout(()=>{if(s.isConnected){last=t;O.say(T.spk(t));}},D(1200));}
+    const row=card.querySelector('.btnrow');if(row)card.insertBefore(s,row);else card.appendChild(s);setTimeout(()=>{if(s.isConnected){last=t;O.say(T.spk(t));}},D(1200));
+    storyPic(card,sc);}
   else talk(t,{ms:3500});};
+/* #387: the end of a scene, a 2 s picture of what changed in the story: the ship as the story has it, the scene's new piece
+   blinking (the ship's own drawing). It lies over the result card; one tap (anywhere on it) skips, it never waits for him. */
+const PICMS=2000;
+function storyPic(card,sc){const S=window.SHIP;if(!S||!S.el||card.querySelector('.frsp'))return;
+  const k=(sc.c-1)*5+sc.s,e=h('div','frsp',S.el('big',k));e.setAttribute('role','img');e.setAttribute('aria-label',sc.item);
+  const end=()=>{clearTimeout(e._t);if(e.isConnected)e.remove();};e.onclick=ev=>{ev.stopPropagation();ev.preventDefault();end();};
+  if(getComputedStyle(card).position==='static')card.style.position='relative';card.appendChild(e);e._t=setTimeout(end,D(PICMS));}
 /* the whole day is done (after the story's finale): one clear sentence and exactly two big choices on home */
 const DONE='סִיַּמְתָּ אֶת כָּל הַמְּשִׂימוֹת שֶׁל הַיּוֹם! 🎉',FREE='זְמַן חוֹפְשִׁי! בְּחַר מָה שֶׁבָּא לְךָ.',MORE='רוֹצֶה עוֹד מַסְלוּל? גַּע בִּי.';
 const BONUS='עוֹד מַסְלוּל קָטָן',FREEB='זְמַן חוֹפְשִׁי',BADGE='הַיּוֹם הֻשְׁלַם';
@@ -96,7 +104,7 @@ FR.doneEl=()=>{const row=h('div','btnrow frdone');const a=h('button','bigbtn hug
   const b=h('button','bigbtn huge blue','🎈 <span>'+FREEB+'</span>');b.onclick=()=>{O.sfx.pop(3);FR.free();};row.append(a,b);return row;};
 T.addChoices&&T.addChoices([BONUS,FREEB]);T.addSay&&T.addSay([DONE,FREE,FREE+' '+MORE]);
 FR.badgeEl=()=>h('div','frbadge','✓ '+BADGE);
-FR.inStep=()=>!!cur;FR.lead=t=>{lead=t;};
+FR.inStep=()=>!!cur;FR.lead=t=>{lead=t;};FR._lead=t=>{const x=lead;if(t!=null)lead=t;return x;};
 
 const PATHBAR={render(){let b=$('#frPath');const d=cur&&daily();
   document.body.classList.toggle('frpon',!!(d&&d.d===cur.d));if(!d||d.d!==cur.d){if(b)b.remove();return;}

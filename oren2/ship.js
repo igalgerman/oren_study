@@ -50,12 +50,13 @@ const PART=[
  [6,56,'<path d="M59 10L12 54M61 10L106 46" stroke="#555" stroke-width=".6"/><path d="M48 20l-3 5h5zM36 31l-3 5h5zM24 42l-3 5h5zM72 21l3 5h-5zM84 32l3 5h-5zM96 42l3 5h-5z" fill="#e04848"/>'],
  [6,40,'<path d="M104 38V22M110 38V16" stroke="#777" stroke-width=".6"/><circle cx="104" cy="18" r="4" fill="#e86aa6"/><circle cx="110" cy="12" r="4" fill="#4fae4f"/>']];
 let uid=0;
-S.el=(cls)=>{const s=S.get(),id='sh'+(++uid);let defs='',use='';
-  for(let i=0;i<s.n;i++){const [y0,y1,g]=PART[Math.floor(i/5)],j=i%5,bh=(y1-y0)/5,top=y1-(j+1)*bh;
+/* n (#387, the story picture): draw the ship as the story has it (n pieces, the last one new) instead of the save's ship */
+S.el=(cls,n)=>{const s=S.get(),id='sh'+(++uid),st=n!=null,k=st?Math.max(0,Math.min(NAMES.length,n|0)):s.n;let defs='',use='';
+  for(let i=0;i<k;i++){const [y0,y1,g]=PART[Math.floor(i/5)],j=i%5,bh=(y1-y0)/5,top=y1-(j+1)*bh;
     if(j===0)defs+='<g id="'+id+'p'+Math.floor(i/5)+'">'+g+'</g>';
     defs+='<clipPath id="'+id+'c'+i+'"><rect x="0" y="'+(top-.3).toFixed(1)+'" width="120" height="'+(bh+.6).toFixed(1)+'"/></clipPath>';
-    use+='<use class="shp" href="#'+id+'p'+Math.floor(i/5)+'" clip-path="url(#'+id+'c'+i+')"/>';}
-  const ex=s.x.map(k=>S.EXTRAS.find(e=>e.id===k)).map(e=>'<text class="shx" x="'+e.x+'" y="'+e.y+'" font-size="14" text-anchor="middle">'+e.e+'</text>').join('');
+    use+='<use class="shp'+(st&&i===k-1?' nw':'')+'" href="#'+id+'p'+Math.floor(i/5)+'" clip-path="url(#'+id+'c'+i+')"/>';}
+  const ex=(st?[]:s.x).map(k=>S.EXTRAS.find(e=>e.id===k)).map(e=>'<text class="shx" x="'+e.x+'" y="'+e.y+'" font-size="14" text-anchor="middle">'+e.e+'</text>').join('');
   return '<div class="hship'+(cls?' '+cls:'')+'" role="img" aria-label="הַסְּפִינָה"><svg viewBox="0 0 120 92"><defs>'+defs+'</defs>'+
     '<rect x="0" y="72" width="120" height="20" rx="4" fill="#5fb3e6"/><path d="M4 76q6-3 12 0t12 0M64 80q6-3 12 0t12 0M30 86q6-3 12 0t12 0" stroke="#d6f0ff" fill="none"/>'+use+ex+'</svg></div>';};
 /* the finale card: the new piece + the ship */
