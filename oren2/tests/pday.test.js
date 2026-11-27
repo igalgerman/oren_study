@@ -3,14 +3,40 @@
 // Two devices through a fake /api/save: A = Oren's device (desktop), B = the parent's phone (390x844).
 const L = require('./lib');
 const http = require('http'), fs = require('fs'), path = require('path'); const { chromium } = require('playwright'); const sleep = ms => new Promise(r => setTimeout(r, ms));
-const PUB = path.join(L.ROOT, 'cf', 'public'); const KV = new Map();
-const srv = http.createServer((q, r) => { const m = /^\/api\/save\/([a-f0-9]{32})$/.exec(q.url);
+const PUB = path.join(L.ROOT, 'cf', 'public');
+const serve = KV => http.createServer((q, r) => { const m = /^\/api\/save\/([a-f0-9]{32})$/.exec(q.url);
   if (m) { if (q.method === 'GET') { const v = KV.get(m[1]); r.writeHead(v ? 200 : 404, { 'content-type': 'application/json' }); return r.end(v || '{}'); }
     if (q.method === 'PUT') { let b = ''; q.on('data', c => b += c); q.on('end', () => { KV.set(m[1], b); r.end('{"ok":true}'); }); return; } }
   if (q.url.startsWith('/api/')) { r.writeHead(200, { 'content-type': 'application/json' }); return r.end('{}'); }
   const f = path.join(PUB, q.url === '/' ? 'index.html' : q.url.split('?')[0].split('#')[0]); if (fs.existsSync(f)) r.end(fs.readFileSync(f)); else { r.writeHead(404); r.end(); } }).listen(0);
+const KV = new Map(), srv = serve(KV);
 const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + n + (i ? ' — ' + i : ''));
 const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout: ms, polling: 100 }).then(() => true).catch(() => false);
+// #621: a fresh family (its own fake save server): the kid opens his first mission of the day, the parent's day view shows
+// "playing now" and never "עוד לא שיחק היום" with it (day view and the health part); no heartbeat and no rows: the line is back.
+async function playingNoRows(b, errs) { const KV2 = new Map(), s2 = serve(KV2); const BASE = 'http://localhost:' + s2.address().port + '/', FAM = 'a0'.repeat(16);
+  const K = await (await b.newContext({ viewport: { width: 1366, height: 768 } })).newPage(); K.on('pageerror', e => errs.push('K ' + e.message));
+  await K.addInitScript(() => { window.__fast = true; window.__moments = false; window.__famGap = 0; window.__pcGap = 300; });
+  await K.goto(BASE); await K.waitForFunction(() => window.OREN && window.OREN.family, null, { timeout: 20000 }); await L.noCoach(K);
+  await K.evaluate(() => { const O = window.OREN, T = window.TAL; O.save.story.intro = 1; T.S().prof = { an: 'cat', col: '#3a8fc4', love: 'art' }; localStorage.setItem('oren4-played', O.today()); O.persist(); O.showMap(); O.famNow(); }); await sleep(500);
+  const P = await (await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })).newPage(); P.on('pageerror', e => errs.push('P ' + e.message));
+  await P.addInitScript(() => { window.__fast = true; window.__moments = false; window.__famGap = 0; window.__parPull = 400; });
+  await P.goto(BASE); await P.waitForFunction(() => window.OREN && window.OREN.family && window.TAL, null, { timeout: 20000 }); await L.noCoach(P);
+  const txt = () => P.evaluate(() => document.querySelector('#sPar').textContent);
+  await P.evaluate(() => window.TAL.parentPanel('day')); await sleep(300);
+  { const t = await txt(); ok('#621 not played yet today, no heartbeat: "עוד לא שיחק היום"', /עוד לא שיחק היום/.test(t) && !/משחק עכשיו/.test(t), t.slice(0, 160)); }
+  const id = await K.evaluate(() => window.TAL.dailyPool().find(id => !/^arc-|^ln-/.test(id)));
+  await K.evaluate(id => { window.TAL.ACT[id].run(() => {}); document.querySelector('#hud').hidden = false; window.OREN.timeTick(); }, id);
+  const live = await until(P, () => /משחק עכשיו/.test(document.querySelector('#sPar').textContent), null, 10000);
+  { const t = await txt(); ok('#621 the kid opens a mission: within 10 s "משחק עכשיו" and no "עוד לא שיחק היום"', live && !/עוד לא שיחק היום/.test(t), t.slice(0, 200)); }
+  await P.evaluate(() => window.TAL.parentPanel('rem')); await sleep(300);
+  { const t = await txt(); ok('#621 health part while he plays: no "עוד לא שיחק היום"', !/עוד לא שיחק היום/.test(t), t.slice(0, 200)); }
+  /* he stops: no heartbeat for 10 min (stale now.t), still no finished rows -> the line is back */
+  await K.close(); const stale = await P.evaluate(() => Date.now() - 10 * 60000); const sv = JSON.parse(KV2.get(FAM)); sv.now = Object.assign(sv.now || {}, { t: stale, s: stale }); KV2.set(FAM, JSON.stringify(sv));
+  await P.evaluate(t => { const O = window.OREN; O.realSave.now = Object.assign(O.realSave.now || {}, { t, s: t }); const T = window.TAL; T.S().time && delete T.S().time[O.today()];
+    const hd = (O.realSave.health || {})[O.today()]; if (hd) hd.dom = {}; window.TAL.parentPanel('day'); }, stale); await sleep(300);
+  { const t = await txt(); ok('#621 stale heartbeat, no rows: "עוד לא שיחק היום" again', /עוד לא שיחק היום/.test(t) && !/משחק עכשיו/.test(t), t.slice(0, 200)); }
+  await P.context().close(); await K.context().close(); s2.close(); }
 (async () => { const b = await chromium.launch(); const errs = []; const BASE = 'http://localhost:' + srv.address().port + '/';
   const A = await (await b.newContext({ viewport: { width: 1366, height: 768 } })).newPage(); A.on('pageerror', e => errs.push('A ' + e.message)); A.setDefaultTimeout(8000);
   await A.addInitScript(() => { window.__fast = true; window.__moments = false; window.__famGap = 0; window.__pcGap = 300; window.__skipWait = 6000; });
@@ -158,6 +184,7 @@ const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout:
     await B.evaluate(() => document.querySelector('#sPar .pdweek').scrollIntoView()); await sleep(200); await B.screenshot({ path: path.join(L.SHOTDIR, 'pday-week-phone.png') });
     await A.evaluate(() => window.TAL.parentPanel('day')); await sleep(300); await A.screenshot({ path: path.join(L.SHOTDIR, 'pday-learn-desktop.png'), fullPage: true });
     await A.evaluate(() => document.querySelector('#sPar .pdweek').scrollIntoView()); await sleep(200); await A.screenshot({ path: path.join(L.SHOTDIR, 'pday-week-desktop.png') }); }
+  await playingNoRows(b, errs);
   ok('no page errors', !errs.length, errs.join(' | '));
   await b.close(); srv.close(); L.finish('pday', res);
 })().catch(e => { console.error(e); srv.close(); L.finish('pday', res.concat(['FAIL crashed: ' + e.message])); });

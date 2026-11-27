@@ -223,7 +223,8 @@ H.panel=(box,sec,re,part)=>{const c=cfg(),r=day();if(part!=='set')remPanel(box,s
   const br=r.breaks.length?r.breaks.map(x=>`<span class="hlg${x.ok?'':' no'}">${BI[x.k]||''} ${x.t}</span>`).join(' '):'עוד לא היו הפסקות היום';
   const me=MEALS.filter(([k])=>r.meals[k]).map(([k,,n])=>{const m=r.meals[k];return `<span class="hlg">🍽️ ${n} ${hm(m.s)}${m.e?' – '+hm(m.e)+(m.p?' (הורה)':''):''}</span>`;}).join(' ');
   const s2=sec(box,'היום: הפסקות וזמן לפי תחום',`<div class="pnote">${br}${me?'<br>'+me:''}</div>`);
-  const ds=DOMS.filter(d=>(r.dom[d.id]|0)>=30||r.act[d.id]);if(!ds.length)s2.appendChild(h('div','pnote','עוד לא שיחק היום'));
+  const ds=DOMS.filter(d=>(r.dom[d.id]|0)>=30||r.act[d.id]);const DLg=window.DAYLOG;/* #621 not while he plays, nor once today has any minutes */
+  if(!ds.length&&!(DLg&&DLg.playing&&DLg.playing())&&!Object.values(r.dom).some(v=>v>0))s2.appendChild(h('div','pnote','עוד לא שיחק היום'));
   ds.forEach(d=>{const row=h('div','prow',`<span class="pn">${d.e} ${d.p}</span><span class="pc">${Math.round((r.dom[d.id]|0)/60)} דק׳ · ${r.act[d.id]|0} פעילויות</span>`);
     if(H.resting(d.id)){row.appendChild(h('span','hrs','🌙 נח עד מחר'));const b=h('button','pchip','לאפשר שוב היום');b.onclick=()=>{H.allow(d.id);re&&re();};row.appendChild(b);}s2.appendChild(row);});
   return s1;};
