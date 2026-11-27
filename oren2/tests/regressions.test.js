@@ -37,9 +37,9 @@ const { chromium } = require('playwright');
     const cap = await p.evaluate(() => { const O = window.OREN; O.save.av.hat = 'cap'; const svg = O.AV(); return typeof svg === 'string' && svg.includes('<svg'); });
     ok('avatar with cap renders', cap);
     ok('no page errors (avatar)', !errs.length, errs.join(' | '));
-    // kingdom shop item pictures used to collapse to zero width
-    const shopW = await p.evaluate(() => { const O = window.OREN; O.save.story.intro = 1; O.kingdom(); const svgs = [...document.querySelectorAll('.shop .opt .si svg')]; return svgs.length ? Math.min(...svgs.map(s => s.getBoundingClientRect().width)) : 0; });
-    ok('kingdom shop items show their pictures', shopW > 20, String(shopW));
+    // kingdom block bar pictures must not collapse to zero width (was: the old shop items, #64)
+    const shopW = await p.evaluate(() => { const O = window.OREN; O.save.story.intro = 1; O.kingdom(); const svgs = [...document.querySelectorAll('#sKing .bwb .si svg')]; return svgs.length ? Math.min(...svgs.map(s => s.getBoundingClientRect().width)) : 0; });
+    ok('kingdom block bar shows its pictures', shopW > 20, String(shopW));
     // hint sentences with numbers used to break into one line per number
     const capLines = await p.evaluate(() => { const d = document.createElement('div'); d.style.width = '600px'; document.body.appendChild(d); d.innerHTML = '<div class="cap"><span>כּוֹתְבִים <span class="ltr">2</span> וּמַעֲבִירִים 1</span></div>'; const h = d.querySelector('.cap span').getBoundingClientRect().height; d.remove(); return h; });
     ok('hint sentence stays on one line', capLines < 50, String(capLines));

@@ -169,7 +169,7 @@ function dailyMark(id){const d=dailyEnsure();const i=d.t.indexOf(id);if(i>=0&&!d
 O.on('levelDone',(lv)=>{if(!lv||lv.type==='train')return;S().last={id:'math',d:today()};const d=dailyEnsure();const i=d.t.findIndex((x,k)=>x==='math'&&!d.done[k]);if(i>=0){d.done[i]=1;O.persist();}});
 /* ---------- map integration ---------- */
 O.on('map',m=>{const rs=m.querySelector('.reset');if(rs)rs.remove();if(window.TAL_noHome)return;m.querySelectorAll('.hello,.statline').forEach(e=>e.remove());m.querySelectorAll('.topbar .tool').forEach(t=>{if(/הַמַּמְלָכָה|הַגִּבּוֹר שֶׁלִּי/.test(t.textContent))t.remove();});});
-O.on('kingdomScene',sc=>{if(!window.TAL_noHome&&!sc.querySelector('.kmine')){const r=h('div','kmine');const a=h('button','tool',`<span class="ti">${O.AV()}</span><span>הַגִּבּוֹר שֶׁלִּי</span>`);a.onclick=()=>O.studio(false,O.kingdom);const b=h('button','tool',`<span class="ti">🏅</span><span>הַתַּגִּים שֶׁלִּי</span>`);b.onclick=()=>window.TAL.badges(O.kingdom);r.append(a,b);sc.prepend(r);}const s=S();if(s.kpic!=null&&s.art[s.kpic]){const f=h('div','kpic',artSVG(s.art[s.kpic]));sc.querySelector('.ktop').appendChild(f);}});
+O.on('kingdomScene',sc=>{if(!window.TAL_noHome&&!sc.querySelector('.kmine')){const r=h('div','kmine');const a=h('button','tool',`<span class="ti">${O.AV()}</span><span>הַגִּבּוֹר שֶׁלִּי</span>`);a.onclick=()=>O.studio(false,O.kingdom);const b=h('button','tool',`<span class="ti">🏅</span><span>הַתַּגִּים שֶׁלִּי</span>`);b.onclick=()=>window.TAL.badges(O.kingdom);r.append(a,b);sc.prepend(r);}const s=S();if(s.kpic!=null&&s.art[s.kpic]){const f=h('div','kpic',artSVG(s.art[s.kpic]));(sc.querySelector('.kmine')||sc).appendChild(f);}});
 
 /* ---------- time tracking (body breaks, meals and topic switching live in health.js) ---------- */
 let lastAct=Date.now(),session=0;
@@ -1019,7 +1019,7 @@ function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(
   const sy=$('#screens').scrollTop;O.setScreen('sPar','valley',exitParent);O.hud('<div class="chip">לוח הורים</div>');const s=$('#sPar');s.innerHTML='';
   s.appendChild(h('div','whead',`<h1>${curTab==='more'?'הגדרות ועוד':'לוח הורים'}</h1>`));
   const body=h('div','pbody');s.appendChild(body);
-  if(curTab==='day'){const v=h('div','pday');body.appendChild(v);if(window.PDAY)window.PDAY.view(v,{sec,nowTop});
+  if(curTab==='day'){const v=h('div','pday');body.appendChild(v);if(window.PDAY)window.PDAY.view(v,{sec,nowTop});{const pic=window.BW&&window.BW.parentPic();if(pic)body.appendChild(pic);}
     const mr=h('div','btnrow');const mb=h('button','bigbtn plain sm pdmore','⚙️ <span>הגדרות ועוד</span>');mb.onclick=()=>{openSec=null;panel('more');};mr.appendChild(mb);body.appendChild(mr);}
   else{const bk=h('button','pchip pdback','→ חזרה ליום');bk.onclick=()=>panel('day');body.appendChild(bk);warns(body);
     MORE.filter(([id])=>!HAS[id]||HAS[id]()).forEach(([id,n])=>{const d=document.createElement('details');d.className='pdet';const sm=document.createElement('summary');sm.textContent=n;d.appendChild(sm);const inner=h('div','pdin');d.appendChild(inner);let done=false;
@@ -1497,7 +1497,7 @@ O.on('screen',id=>{if(id==='sHome')later(()=>{if($('#sHome').hidden||!$('#ov').h
 O.on('hub',s=>later(()=>{const b=s.querySelector('.gdoor');if(b)intro('i-city',b,'זֹאת עִיר הַכִּשְׁרוֹנוֹת! כָּאן קוֹרְאִים, חוֹקְרִים, יוֹצְרִים וְנִרְגָּעִים. בְּחַר דֶּלֶת!',()=>coach(b,'בְּחַר דֶּלֶת — וּבוֹא נְשַׂחֵק!','hub',2));}));
 O.on('group',s=>later(()=>{const b=s.querySelector('.bld:not(.lockb)');if(b)coach(b,'לְחַץ עַל בִּנְיָן כְּדֵי לְהִכָּנֵס','group',2);}));
 O.on('map',m=>later(()=>{const b=m.querySelector('.worlds .wcard2:not(.locked)');if(b&&!$('#sMap').hidden)intro('i-map',b,'זֶה הַמַּסָּע! בְּכָל עוֹלָם יֵשׁ חֶשְׁבּוֹן וְחָבֵר שֶׁצָּרִיךְ עֶזְרָה. אוֹסְפִים כּוֹכָבִים וּמַצִּילִים אוֹתוֹ!',()=>coach(b,'לְחַץ עַל עוֹלָם כְּדֵי לְהַתְחִיל אֶת הַמַּסָּע','map',2));}));
-O.on('kingdomScene',sc=>later(()=>{const b=sc.querySelector('.cs');if(b&&!$('#sKing').hidden)intro('i-king',b,'זֹאת הַמַּמְלָכָה שֶׁלְּךָ! הָאַרְמוֹן גָּדֵל עִם הַכּוֹכָבִים. בַּיַּהֲלוֹמִים קוֹנִים דְּבָרִים, וְשָׂמִים אוֹתָם עַל הַדֶּשֶׁא.');}));
+O.on('kingdomScene',sc=>later(()=>{const b=sc.querySelector('.bwgrid');if(b&&!$('#sKing').hidden&&$('#ov').hidden)intro('i-king',b,'זֹאת הַמַּמְלָכָה שֶׁלְּךָ! בַּיַּהֲלוֹמִים בּוֹנִים, וְהַכּוֹכָבִים פּוֹתְחִים קֻבִּיּוֹת חֲדָשׁוֹת.');}));
 O.on('synced',()=>{if(!$('#sHome').hidden&&$('#ov').hidden&&!document.querySelector('.tour'))home();});
 /* a home button that is always in the same place */
 (()=>{const bb=$('#btnBack');if(!bb)return;const hb=h('button','ibtn','');hb.id='btnHome';hb.innerHTML=ICON.home;hb.setAttribute('aria-label','בית');hb.title='הַבַּיִת';hb.hidden=true;hb.onclick=()=>{O.hush&&O.hush();sfx.pop(1);O.showMap();};bb.after(hb);

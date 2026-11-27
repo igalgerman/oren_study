@@ -32,3 +32,4 @@ parent-desktop 60          # #61 suggestions block (sample skills data per kind)
 parent-phone 60            # same file on the phone viewport: ~18 s
 resume-desktop 60          # #44 reloads mid-level, mid-quiz and while paused + timed rounds paused 2 s: ~37 s
 resume-phone 60            # same file on the phone viewport
+build 60                  # #64 building world: two viewports + 3 small pages, place/remove/unlock/merge/parent picture: ~15 s
