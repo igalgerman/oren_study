@@ -29,6 +29,11 @@ body.fron #screens{padding-bottom:84px}
 /* one story line on the result card */
 .frstory{display:flex;align-items:center;justify-content:center;gap:8px;margin:8px auto 4px;font-size:19px;font-weight:700;background:#fff6d6;border-radius:12px;padding:6px 12px}
 .frstory .frq{font-size:24px}
+/* #387 the 2 s story picture over the result card (tap skips) */
+.frsp{position:absolute;inset:0;z-index:3;display:flex;align-items:center;justify-content:center;background:rgba(255,253,245,.96);border-radius:inherit;cursor:pointer;animation:frpop .25s ease-out}
+.frsp .hship.big svg{width:min(260px,70vw)}
+.frsp .shp.nw{animation:frnew .5s ease-in-out 4}
+@keyframes frnew{50%{opacity:.25}}
 @media (max-width:520px){
   .frc .frs{width:46px;height:46px}
   .frb{font-size:17px;padding:5px 10px}
