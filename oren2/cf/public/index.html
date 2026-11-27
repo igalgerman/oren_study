@@ -228,6 +228,10 @@ body:has(#dlg:not([hidden])) .hud{z-index:8}/* #356: back/home stay visible abov
 .prq .big{font-weight:900;font-size:72px;direction:ltr;line-height:1}
 .prq svg.clock{width:190px;height:190px}
 .prq svg.frac{width:170px;height:170px}
+/* #267 hands-on: drag the clock hands, tap pizza slices, tap the blocks, tap the array */
+.prq svg.clock.set{touch-action:none;cursor:grab}.prq svg.pz{width:200px;height:200px;cursor:pointer;touch-action:manipulation}.pz .sl{transition:opacity .25s}.pz .sl.eat{opacity:.1}
+.mbh .one,.mbh .rod{cursor:pointer}.mbh .one.gst{background:transparent;box-shadow:inset 0 0 0 2px var(--c)}.mbh .nxt{animation:pulse 1s infinite}.mbw .mbc{margin-top:8px}
+.arr.tap,.arr.tapa{cursor:pointer;touch-action:manipulation}.arr .r.nw{animation:pop .5s}.arr .ga{height:var(--s,18px);margin-left:25px;border:2px dashed #b9c4cc;animation:pulse 1.2s infinite}
 .chs{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
 .chs.ltr{direction:ltr}
 .chb{min-width:96px;height:78px;padding:0 18px;display:grid;place-items:center;font-weight:900;font-size:32px;background:var(--birch);box-shadow:inset -5px -5px 0 rgba(0,0,0,.16),inset 5px 5px 0 rgba(255,255,255,.6),0 6px 0 rgba(0,0,0,.28)}
@@ -481,7 +485,7 @@ body.act #gemc,body.act #btnMusic,body.act #btnHome,body.act .hud-mid .chip,body
   .giant svg{width:62px}.hp i{width:10px;height:14px}
   .scn{height:76px}.mb{width:32px;height:32px}.mb::after{left:6px;top:8px;width:6px;height:5px;box-shadow:11px 8px 0 #3cc8bb}.chest svg{width:44px}.plank{width:26px;height:12px}.bank{width:26px}.scn.build{padding-top:30px}
   .eqcard{font-size:40px;padding:8px 16px;gap:8px}
-  .prq .qq{font-size:22px}.prq .big{font-size:52px}.prq svg.clock{width:150px;height:150px}.prq svg.frac{width:130px;height:130px}
+  .prq .qq{font-size:22px}.prq .big{font-size:52px}.prq svg.clock{width:150px;height:150px}.prq svg.frac{width:130px;height:130px}.prq svg.pz{width:160px;height:160px}
   .chb{min-width:72px;height:60px;font-size:24px}.chb.tx{font-size:21px}.chb.sym{font-size:34px}
   .bubb{width:74px;height:74px;font-size:24px}
   .wcard{font-size:22px;padding:12px 16px}.wans{font-size:21px}.wans .ans{font-size:32px}
@@ -677,6 +681,27 @@ function castle(revealed,newFrom=revealed){const U=10;let s=`<svg class="px cast
   return s+'</svg>';}
 
 /* ---------- small drawings ---------- */
+function clockFace(){const cx=100,cy=100;let s=`<circle cx="100" cy="100" r="94" fill="#fffaf0" stroke="#23303b" stroke-width="8"/>`;
+  for(let i=0;i<60;i++){const a=i*Math.PI/30,r1=i%5?84:78;s+=`<line x1="${(cx+86*Math.sin(a)).toFixed(1)}" y1="${(cy-86*Math.cos(a)).toFixed(1)}" x2="${(cx+r1*Math.sin(a)).toFixed(1)}" y2="${(cy-r1*Math.cos(a)).toFixed(1)}" stroke="#23303b" stroke-width="${i%5?1.5:4}"/>`;}
+  for(let i=1;i<=12;i++){const a=i*Math.PI/6;s+=`<text x="${(cx+64*Math.sin(a)).toFixed(1)}" y="${(cy-64*Math.cos(a)+9).toFixed(1)}" text-anchor="middle" font-family="Noto Sans Hebrew,Arial" font-weight="900" font-size="24" fill="#23303b">${i}</text>`;}
+  return s;}
+/* #18 turnable clock. T = minutes on the dial (0..719). The minute hand snaps to 5 minutes; the hour hand follows it like a real clock
+   (minute past 12 → next hour). Dragging the hour hand sets the hour and keeps the minutes. */
+const HANDS={snap:deg=>Math.round((((deg%360)+360)%360)/30)*5%60,
+  min:(T,m)=>{let d=m-T%60;if(d>30)d-=60;if(d<-30)d+=60;return ((T+d)%720+720)%720;},
+  hour:(T,pos)=>{const m=T%60;const h=((Math.round(pos-m/60)%12)+12)%12;return h*60+m;},
+  ang:T=>({h:(T/2)%360,m:(T%60)*6})};
+function clockSetSVG(T){const a=HANDS.ang(T);return `<svg class="clock set" viewBox="0 0 200 200" data-t="${T}" aria-hidden="true">${clockFace()}`+
+  `<line class="hh" x1="100" y1="100" x2="100" y2="56" stroke="#23303b" stroke-width="11" stroke-linecap="round" transform="rotate(${a.h} 100 100)"/>`+
+  `<line class="mh" x1="100" y1="100" x2="100" y2="26" stroke="#3a8fc4" stroke-width="6" stroke-linecap="round" transform="rotate(${a.m} 100 100)"/><circle cx="100" cy="100" r="7" fill="#e4572e"/></svg>`;}
+function clockSetT(s,T){s.dataset.t=T;const a=HANDS.ang(T);s.querySelector('.hh').setAttribute('transform',`rotate(${a.h} 100 100)`);s.querySelector('.mh').setAttribute('transform',`rotate(${a.m} 100 100)`);}
+addEventListener('pointerdown',e=>{const s=e.target&&e.target.closest&&e.target.closest('svg.clock.set');if(!s||s.dataset.lock)return;e.preventDefault();
+  const pos=ev=>{const r=s.getBoundingClientRect();const x=(ev.clientX-r.left)/r.width*200-100,y=(ev.clientY-r.top)/r.height*200-100;return {x,y,deg:(Math.atan2(x,-y)*180/Math.PI+360)%360};};
+  const p0=pos(e),a=HANDS.ang(+s.dataset.t),tip=(d,r)=>Math.hypot(p0.x-r*Math.sin(d*Math.PI/180),p0.y+r*Math.cos(d*Math.PI/180));
+  const hand=tip(a.h,44)<tip(a.m,74)?'h':'m';
+  const move=ev=>{if(s.dataset.lock)return;const q=pos(ev),T0=+s.dataset.t;const T=hand==='m'?HANDS.min(T0,HANDS.snap(q.deg)):HANDS.hour(T0,q.deg/30);if(T!==T0){clockSetT(s,T);sfx.key();}};
+  const up=()=>{removeEventListener('pointermove',move);removeEventListener('pointerup',up);removeEventListener('pointercancel',up);};
+  addEventListener('pointermove',move);addEventListener('pointerup',up);addEventListener('pointercancel',up);move(e);});
 function clockSVG(hr,mn){const cx=100,cy=100;let s=`<svg class="clock" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="94" fill="#fffaf0" stroke="#23303b" stroke-width="8"/>`;
   for(let i=0;i<60;i++){const a=i*Math.PI/30,r1=i%5?84:78;s+=`<line x1="${(cx+86*Math.sin(a)).toFixed(1)}" y1="${(cy-86*Math.cos(a)).toFixed(1)}" x2="${(cx+r1*Math.sin(a)).toFixed(1)}" y2="${(cy-r1*Math.cos(a)).toFixed(1)}" stroke="#23303b" stroke-width="${i%5?1.5:4}"/>`;}
   for(let i=1;i<=12;i++){const a=i*Math.PI/6;s+=`<text x="${(cx+64*Math.sin(a)).toFixed(1)}" y="${(cy-64*Math.cos(a)+9).toFixed(1)}" text-anchor="middle" font-family="Noto Sans Hebrew,Arial" font-weight="900" font-size="24" fill="#23303b">${i}</text>`;}
@@ -688,6 +713,15 @@ function fracSVG(parts,shape){let s=`<svg class="frac" viewBox="0 0 200 200" ari
       s+=`<path d="M100 100 L${x0.toFixed(1)} ${y0.toFixed(1)} A88 88 0 0 1 ${x1.toFixed(1)} ${y1.toFixed(1)} Z" fill="${i===0?'#f28c28':'#fff3c4'}" stroke="#23303b" stroke-width="4"/>`;}}
   else{const w=180/parts;for(let i=0;i<parts;i++)s+=`<rect x="${10+i*w}" y="50" width="${w}" height="100" fill="${i===0?'#3cb371':'#e8f5e1'}" stroke="#23303b" stroke-width="4"/>`;}
   return s+'</svg>';}
+/* #19 a pizza (original art) in 2, 3 or 4 equal slices; tapping a slice eats it, tapping again puts it back */
+function pizzaSVG(parts){let s=`<svg class="pz" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="97" fill="#eef1f4" stroke="#c9d1d8" stroke-width="3"/>`;
+  const P=(r,a)=>`${(100+r*Math.cos(a)).toFixed(1)} ${(100+r*Math.sin(a)).toFixed(1)}`;
+  for(let i=0;i<parts;i++){const a0=i*2*Math.PI/parts-Math.PI/2,a1=(i+1)*2*Math.PI/parts-Math.PI/2,am=(a0+a1)/2;
+    let g=`<path d="M100 100 L${P(90,a0)} A90 90 0 0 1 ${P(90,a1)} Z" fill="#d98b3a" stroke="#8a5523" stroke-width="3"/>`+
+      `<path d="M100 100 L${P(76,a0)} A76 76 0 0 1 ${P(76,a1)} Z" fill="#ffd45c"/>`;
+    for(const [r,da] of [[52,0],[30,.32],[64,-.3]]){const x=100+r*Math.cos(am+da*(4/parts)),y=100+r*Math.sin(am+da*(4/parts));g+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="8" fill="#c8402e"/>`;}
+    s+=`<g class="sl" data-i="${i}">${g}</g>`;}
+  return `${s}</svg>`;}
 function pairsHTML(n){let s='<div class="pairs">';for(let i=0;i<Math.floor(n/2);i++)s+='<span><i></i><i></i></span>';if(n%2)s+='<span class="lone"><i></i></span>';return s+'</div>';}
 function ptab(nums){let s='<div class="ptab"><span class="hd"></span><span class="hd">מֵאוֹת</span><span class="hd">עֲשָׂרוֹת</span><span class="hd">אֲחָדוֹת</span>';
   nums.forEach(n=>{s+=`<span>${n}</span><span>${n/100|0}</span><span>${(n%100)/10|0}</span><span>${n%10}</span>`;});return s+'</div>';}
@@ -756,21 +790,33 @@ const GN={
 /* ---- clock & fractions ---- */
 const tstr=(h,m)=>`${h}:${String(m).padStart(2,'0')}`;
 const h12=h=>((h-1+120)%12)+1;
+const clockH2=(hr,mn)=>mn===0?`הַמָּחוֹג הָאָרֹךְ עַל 12 ← שָׁעָה עֲגֻלָּה. עַל אֵיזֶה מִסְפָּר הַקָּצָר?`:mn===30?`הָאָרֹךְ עַל 6 ← 30 דַּקּוֹת. הַקָּצָר אַחֲרֵי ${L_(hr)}, לִפְנֵי ${L_(h12(hr+1))}`:mn===15?`הָאָרֹךְ עַל 3 ← 15 דַּקּוֹת. הַקָּצָר קְצָת אַחֲרֵי ${L_(hr)}`:`הָאָרֹךְ עַל 9 ← 45 דַּקּוֹת. הַקָּצָר כִּמְעַט עַל ${L_(h12(hr+1))}`;
+/* #18 set the clock: Oren drags the hands to the time, then taps "check" (the one button) */
+function clockSetQ(mins,hr,mn){hr=hr||rand(1,12);mn=mn!=null?mn:pick(mins);const T=(hr%12)*60+mn;
+  return Object.assign(CH(`<div class="qq">הָזֵז אֶת הַמְּחוֹגִים לַשָּׁעָה ${L_(tstr(hr,mn))}</div>${clockSetSVG(T===0?360:0)}`,['בְּדֹק'],0,'הַמָּחוֹג הַקָּצָר ← שָׁעוֹת · הַמָּחוֹג הָאָרֹךְ ← דַּקּוֹת',clockH2(hr,mn),false,'tx'),
+    {chk:{t:'setclock',h:hr,m:mn},hand:{t:'clock',T,ans:tstr(hr,mn)}});}
+const FRN=['חֲצִי','שְׁלִישׁ','רֶבַע'];
+/* #19 pizza: "eat a quarter" (tap one of 4 slices, then check) or "eat a third: how many slices are left?" (tap, count, pick) */
+function pizzaQ(kind,parts){parts=parts||pick([2,3,4]);const nm=FRN[parts-2],h2=`${nm} = פְּרוּסָה אַחַת מִתּוֹךְ ${L_(parts)} פְּרוּסוֹת שָׁווֹת`;
+  if(kind==='left')return Object.assign(CH(`<div class="qq">אֱכֹל ${nm} מֵהַפִּיצָה. כַּמָּה פְּרוּסוֹת נִשְׁאֲרוּ?</div>${pizzaSVG(parts)}`,[1,2,3],parts-2,'הַקֵּשׁ עַל פְּרוּסָה כְּדֵי לֶאֱכֹל אוֹתָהּ, וּסְפֹר מַה שֶּׁנִּשְׁאַר',h2,true,'num'),{chk:{t:'pzleft',parts}});
+  return Object.assign(CH(`<div class="qq">אֱכֹל ${nm} מֵהַפִּיצָה</div>${pizzaSVG(parts)}`,['בְּדֹק'],0,'סוֹפְרִים: לְכַמָּה פְּרוּסוֹת שָׁווֹת חִלְּקוּ אֶת הַפִּיצָה?',h2,false,'tx'),
+    {chk:{t:'pzeat',parts},hand:{t:'pz',eat:1,ans:'פְּרוּסָה אַחַת'}});}
 function clockQ(mins){const hr=rand(1,12),mn=pick(mins);const right=tstr(hr,mn);const opts=new Set([right]);
   const cand=[tstr(h12(hr+1),mn),tstr(h12(hr-1),mn),tstr(hr,(mn+30)%60),tstr(mn===0?12:mn/5,hr*5%60)];
   if(mn===30)cand.unshift(tstr(h12(hr+1),30));if(mn===45)cand.unshift(tstr(h12(hr+1),45));
   for(const c of shuffle(cand)){if(opts.size>=4)break;opts.add(c);}
   while(opts.size<4)opts.add(tstr(rand(1,12),pick([0,15,30,45])));
   const o=shuffle([...opts]);
-  const h2=mn===0?`הַמָּחוֹג הָאָרֹךְ עַל 12 ← שָׁעָה עֲגֻלָּה. עַל אֵיזֶה מִסְפָּר הַקָּצָר?`:mn===30?`הָאָרֹךְ עַל 6 ← 30 דַּקּוֹת. הַקָּצָר אַחֲרֵי ${L_(hr)}, לִפְנֵי ${L_(h12(hr+1))}`:mn===15?`הָאָרֹךְ עַל 3 ← 15 דַּקּוֹת. הַקָּצָר קְצָת אַחֲרֵי ${L_(hr)}`:`הָאָרֹךְ עַל 9 ← 45 דַּקּוֹת. הַקָּצָר כִּמְעַט עַל ${L_(h12(hr+1))}`;
+  const h2=clockH2(hr,mn);
   return Object.assign(CH(`<div class="qq">מָה הַשָּׁעָה?</div>${clockSVG(hr,mn)}`,o,o.indexOf(right),'הַמָּחוֹג הַקָּצָר ← שָׁעוֹת · הַמָּחוֹג הָאָרֹךְ ← דַּקּוֹת',h2,true),{chk:{t:'clock',h:hr,m:mn}});}
 const GT={
-  h:()=>clockQ([0]),half:()=>clockQ(mm(.7)?[30]:[0]),q:()=>clockQ(mm(.7)?[15,45]:[0,30]),
+  h:()=>(mm(.4)?clockSetQ:clockQ)([0]),half:()=>(mm(.4)?clockSetQ:clockQ)(mm(.7)?[30]:[0]),q:()=>(mm(.4)?clockSetQ:clockQ)(mm(.7)?[15,45]:[0,30]),
+  set:clockSetQ,pz:pizzaQ,
   add:()=>{const hr=rand(1,12),k=rand(1,4),half=mm(.3)?30:0;const right=tstr(h12(hr+k),half);const opts=new Set([right]);
     for(const c of shuffle([tstr(h12(hr+k+1),half),tstr(h12(hr+k-1),half),tstr(h12(hr-k),half),tstr(hr,half)]))if(opts.size<4)opts.add(c);
     while(opts.size<4)opts.add(tstr(rand(1,12),half));const o=shuffle([...opts]);
     return Object.assign(CH(`<div class="qq">זֹאת הַשָּׁעָה עַכְשָׁו. מַה תִּהְיֶה הַשָּׁעָה בְּעוֹד ${k===1?'שָׁעָה':nb(k)+' שָׁעוֹת'}?</div>${clockSVG(hr,half)}`,o,o.indexOf(right),'קֹדֶם קוֹרְאִים אֶת הַשָּׁעָה עַכְשָׁו',`עַכְשָׁו ${L_(tstr(hr,half))}. סוֹפְרִים ${L_(k)} קָדִימָה עִם הַמָּחוֹג הַקָּצָר`,true),{chk:{t:'add',h:hr,m:half,k}});},
-  frac:()=>{const parts=pick([2,3,4]);const shape=pick(['circle','bar']);
+  frac:()=>{const r=Math.random();if(r<.35)return pizzaQ('eat');if(r<.65)return pizzaQ('left');const parts=pick([2,3,4]);const shape=pick(['circle','bar']);
     return Object.assign(CH(`<div class="qq">אֵיזֶה חֵלֶק צָבוּעַ?</div>${fracSVG(parts,shape)}`,['חֲצִי','שְׁלִישׁ','רֶבַע'],parts-2,'סוֹפְרִים: לְכַמָּה חֲלָקִים שָׁוִים חִלְּקוּ?',`${L_(2)} חֲלָקִים ← חֲצִי · ${L_(3)} ← שְׁלִישׁ · ${L_(4)} ← רֶבַע`,false,'tx'),{chk:{t:'frac',parts}});},
   half2:()=>{const n=2*rand(2,mm(.5)?10:25);return W(`חֲצִי שֶׁל ${nb(n)} הוּא:`,n/2,'',`מְחַלְּקִים לִשְׁתֵּי קְבוּצוֹת שָׁווֹת${n<=20?share(2,n/2):''}`,[`${n} : 2 = ?`],1);},
   q2:()=>{const n=4*rand(1,mm(.5)?5:10);return W(`רֶבַע שֶׁל ${nb(n)} הוּא:`,n/4,'',`מְחַלְּקִים לְאַרְבַּע קְבוּצוֹת שָׁווֹת${n<=20?share(4,n/4):''}`,[`${n} : 4 = ?`],1);}
@@ -1722,6 +1768,13 @@ function showWorld(Wd){
 /* ---------- hint visuals ---------- */
 function frames(cells){const nF=Math.max(1,Math.ceil(cells.length/10));let s='<div class="tf">';for(let f=0;f<nF;f++){s+='<div class="frame">';for(let i=0;i<10;i++)s+=`<i class="${cells[f*10+i]||''}"></i>`;s+='</div>';}return s+'</div>';}
 function arr(rows,cols,sz=18){let s=`<div class="arr" style="--s:${sz}px">`;for(let r=0;r<rows;r++)s+=`<div class="r"><small>${r+1}</small>${`<i style="--c:${COLORS[r%10]}"></i>`.repeat(cols)}</div>`;return s+'</div>';}
+/* #21 a tappable array: each tap adds one whole group (row), the new row flashes; a dashed row shows where the next one goes */
+const arrRow=(r,cols,cls='')=>`<div class="r ${cls}"><small>${r+1}</small>${`<i style="--c:${COLORS[r%10]}"></i>`.repeat(cols)}</div>`;
+function arrTap(max,cols,sz=18){return `<div class="arr tap" data-max="${max}" data-k="${cols}" style="--s:${sz}px">${arrRow(0,cols)}${max>1?'<div class="ga"></div>':''}</div>`;}
+function arrAdd(a,max){const rs=a.querySelectorAll('.r');if(rs.length>=max)return false;rs.forEach(x=>x.classList.remove('nw'));const g=a.querySelector('.ga');
+  const k=+a.dataset.k||rs[0].querySelectorAll('i').length;(g||a.lastElementChild).insertAdjacentHTML(g?'beforebegin':'afterend',arrRow(rs.length,k,'nw'));
+  if(rs.length+1>=max&&g)g.remove();sfx.pop(rs.length+1);return true;}
+addEventListener('click',e=>{const a=e.target&&e.target.closest&&e.target.closest('.arr.tap');if(a)arrAdd(a,+a.dataset.max);});
 function skipS(k,count,hideLast){let s='<div class="skip">';for(let i=1;i<=count;i++)s+=(hideLast&&i===count)?`<b class="q">?<small>${i}</small></b>`:`<b>${k*i}<small>${i}</small></b>`;return s+'</div>';}
 function share(k,n){let s='<div class="share">';for(let i=0;i<k;i++)s+=`<div class="box">${SPR.gem.repeat(n)}</div>`;return s+'</div>';}
 const steps=lines=>`<div class="steps">${lines.map(l=>`<div>${l.replace('?','<b>?</b>')}</div>`).join('')}</div>`;
@@ -1782,7 +1835,7 @@ function hintData(q){
     if(t==='x100'){const n=l===100?r:l;return {v:cap('כּוֹפְלִים בְּ-100 ← מוֹסִיפִים שְׁנֵי אֲפָסִים'),s:[`${n} × 10 = ${n*10}`,`${n*10} × 10 = ?`]};}
     if(t==='x10'){const k=l%10===0?r:l,tt=l%10===0?l:r;return {v:cap(`${L_(k+' × '+tt/10+' = '+k*tt/10)} ← וְעַכְשָׁו פִּי 10`),s:[`${k} × ${tt/10} = ${k*tt/10}`,`${k*tt/10} × 10 = ?`]};}
     if(t==='x21'){const big=l>10?l:r,k=l>10?r:l,t0=tens(big),u=big%10;return {v:cap(`מְפָרְקִים אֶת ${L_(big)} לַעֲשָׂרוֹת וַאֲחָדוֹת`)+`<div class="bt">${baseTen(big,'#e8873a')}</div>`,s:u?[`${t0} × ${k} = ${t0*k}`,`${u} × ${k} = ${u*k}`,`${t0*k} + ${u*k} = ?`]:[`${t0} × ${k} = ?`]};}
-    return {v:cap(`${L_(l)} קְבוּצוֹת שֶׁל ${L_(r)}`)+arr(l,r,sz(l,r)),s:[]};
+    return {v:cap(`${L_(l)} קְבוּצוֹת שֶׁל ${L_(r)}: הַקֵּשׁ וְהוֹסֵף קְבוּצָה`)+arrTap(l,r,sz(l,r)),s:[]};
   }
   if(miss==='r')return {v:cap(`${L_('? × '+res+' = '+l)}<br>קְפִיצוֹת שֶׁל ${L_(res)} עַד ${L_(l)}. כַּמָּה קְפִיצוֹת?`)+skipS(res,l/res,false),s:[`${l} : ${res} = ?`]};
   if(t==='d10')return {v:cap('מְחַלְּקִים בְּ-10 ← מוֹרִידִים אֶפֶס מֵהַסּוֹף'),s:[`${res} × 10 = ${l}`,`${l} : 10 = ?`]};
@@ -1790,6 +1843,7 @@ function hintData(q){
   return {v:cap(`${L_(r+' × ? = '+l)}<br>קְפִיצוֹת שֶׁל ${L_(r)} עַד ${L_(l)}. כַּמָּה קְפִיצוֹת?`)+skipS(r,res,false),s:[]};
 }
 function hintHTML(q,level){
+  if(level===1&&mbHint(q))return mbHands(q);
   if(q.h1!=null){const c1=cap(q.h1);if(level===1)return c1;if(q.st&&q.st.length)return c1+steps(q.st);return q.h2?cap(q.h2):c1;}
   const d=hintData(q);if(level===1)return d.v;if(d.s.length)return steps(d.s);
   if(q.op==='×')return cap(`קְפִיצוֹת שֶׁל ${L_(q.r)}`)+skipS(q.r,q.l,true);
@@ -1826,14 +1880,16 @@ function learnMul(lv){const u=lv.u,k=u.table;setScreen('sLearn',u.w.bg,()=>showW
   const g=h('div','lgrid');const arrP=h('div','lpanel');const factP=h('div','lpanel');const facts=h('div','facts');
   for(let i=1;i<=10;i++)facts.appendChild(h('div','',`${k} × ${i} = ${k*i}`));factP.appendChild(facts);g.append(arrP,factP);
   const capE=h('div','lcap');const skipEl=h('div','skip');const btns=h('div','btnrow');
-  const more=h('button','bigbtn',ICON.play+'<span>עוֹד קְבוּצָה</span>');const go=h('button','bigbtn plain sm',ICON.skip+'<span>לַתִּרְגּוּל</span>');
-  const start=()=>{save.seen[u.id]=1;persist();playLevel(lv);};go.onclick=start;btns.append(more,go);wrap.append(g,capE,skipEl,btns);s.appendChild(wrap);
+  const go=h('button','bigbtn plain sm',ICON.skip+'<span>לַתִּרְגּוּל</span>');
+  const start=()=>{save.seen[u.id]=1;persist();playLevel(lv);};go.onclick=start;btns.append(go);wrap.append(g,capE,skipEl,btns);s.appendChild(wrap);
   const size=k>=8?14:k>=5?18:22;
-  function step(){n++;sfx.pop(n);arrP.innerHTML=arr(n,k,size);[...facts.children].forEach((d,i)=>{d.className=i<n?(i===n-1?'on cur':'on'):'';});
+  /* #21 tapping the array adds one whole group (no "one more group" button) */
+  function step(){if(n>=10)return;n++;sfx.pop(n);arrP.innerHTML=arr(n,k,size);const a=arrP.querySelector('.arr');a.classList.add('tapa');if(n>1)a.lastElementChild.classList.add('nw');
+    if(n<10)a.insertAdjacentHTML('beforeend','<div class="ga"></div>');[...facts.children].forEach((d,i)=>{d.className=i<n?(i===n-1?'on cur':'on'):'';});
     capE.innerHTML=`<span class="ltr">${n}</span> ${n===1?'קְבוּצָה':'קְבוּצוֹת'} שֶׁל <span class="ltr">${k}</span> = <b class="ltr">${n*k}</b>`;
     skipEl.innerHTML=Array.from({length:n},(_,i)=>`<b>${k*(i+1)}</b>`).join('');
-    if(n>=10){more.querySelector('span').textContent='עַכְשָׁו תּוֹרְךָ!';more.onclick=start;go.hidden=true;}}
-  more.onclick=step;step();sayNow='לוח הכפל של '+F[k]+'. לחץ על עוד קבוצה.';}
+    if(n>=10){go.className='bigbtn';go.innerHTML=ICON.play+'<span>עַכְשָׁו תּוֹרְךָ!</span>';}}
+  arrP.onclick=step;step();sayNow='לוח הכפל של '+F[k]+'. הקש על הריבועים, ותבוא עוד קבוצה.';}
 function learnDiv(lv){const u=lv.u,k=u.div,n=rand(3,5),p=k*n;setScreen('sLearn',u.w.bg,()=>showWorld(u.w));
   $('#hudMid').innerHTML=`<div class="chip">לִמּוּד</div>`;const s=$('#sLearn');s.innerHTML='';const wrap=h('div','learn');
   wrap.innerHTML=`<h1>${u.name}</h1>`+(u.lesson?`<div class="lsent">${u.lesson}</div>`:'');
@@ -1858,22 +1914,42 @@ function manip(u){
   const add=MB_ADD.includes(u.id),sub=MB_SUB.includes(u.id);if(!add&&!sub)return null;
   let q=null;for(let k=0;k<40&&!q;k++){const x=u.gen(5);if(x.k==='bin'&&x.miss==='res'&&x.op===(add?'+':'−')&&x.l<100&&x.r<100&&x.res<100)q=x;}if(!q)return null;
   const {l,r}=q,st=hintData(q).s;
-  if(add){const carry=l%10+r%10>=10;q=Object.assign({},q,{h1:'סוֹפְרִים קֹדֶם אֶת הַמַּקְלוֹת (עֲשָׂרוֹת), וְאַחַר כָּךְ אֶת הַקֻּבִּיּוֹת (אֲחָדוֹת)',st});
-    return {q,cap:carry?'10 קֻבִּיּוֹת הוֹפְכוֹת לְמַקֵּל אֶחָד!':'כָּל מַקֵּל = 10 · כָּל קֻבִּיָּה = 1',
-      html:mbBoard([...Array(tens(l)/10).fill(MB_A),...Array(tens(r)/10).fill(MB_B)],[...Array(l%10).fill(MB_A),...Array(r%10).fill(MB_B)]),anim:carry?mbBundle:null};}
-  const borrow=l%10<r%10;q=Object.assign({},q,{h1:'סוֹפְרִים מַה שֶּׁנִּשְׁאַר: קֹדֶם מַקְלוֹת, וְאַחַר כָּךְ קֻבִּיּוֹת',st});
-  return {q,cap:borrow?'אֵין מַסְפִּיק קֻבִּיּוֹת? פּוֹרְטִים מַקֵּל לְ-10 קֻבִּיּוֹת!':`מוֹרִידִים ${L_(r)}`,
-    html:mbBoard(Array(tens(l)/10).fill(MB_A),Array(l%10).fill(MB_A)),anim:bd=>mbTake(bd,r,borrow)};}
-/* 10 cubes light up, then become one stick */
-function mbBundle(bd){const ones=[...bd.querySelectorAll('.mbo .one')].slice(0,10);
-  setTimeout(()=>{if(!bd.isConnected)return;ones.forEach(o=>o.classList.add('b10'));sfx.pop(2);},D(900));
-  setTimeout(()=>{if(!bd.isConnected)return;ones.forEach(o=>o.remove());bd.querySelector('.mbt').insertAdjacentHTML('beforeend',mbRod(MB_N,'new'));sfx.carry();},D(2200));}
-/* (when needed) one stick breaks into 10 cubes; then the part we take away fades */
-function mbTake(bd,r,borrow){const last=()=>{const rs=bd.querySelectorAll('.mbt .rod');return rs[rs.length-1];};let t=0;
-  if(borrow){t=2200;setTimeout(()=>{if(!bd.isConnected)return;const rd=last();if(rd)rd.classList.add('b10');sfx.pop(2);},D(900));
-    setTimeout(()=>{if(!bd.isConnected)return;const rd=last();if(rd)rd.remove();bd.querySelector('.mbo').insertAdjacentHTML('afterbegin',mbOne(MB_N,'new').repeat(10));sfx.carry();},D(2200));}
-  setTimeout(()=>{if(!bd.isConnected)return;const rods=[...bd.querySelectorAll('.mbt .rod')],ones=[...bd.querySelectorAll('.mbo .one')];
-    rods.slice(rods.length-tens(r)/10).forEach(x=>x.classList.add('take'));if(r%10)ones.slice(-(r%10)).forEach(x=>x.classList.add('take'));sfx.pop(1);},D(t+1000));}
+  q=Object.assign({},q,{h1:add?'סוֹפְרִים קֹדֶם אֶת הַמַּקְלוֹת (עֲשָׂרוֹת), וְאַחַר כָּךְ אֶת הַקֻּבִּיּוֹת (אֲחָדוֹת)':'סוֹפְרִים מַה שֶּׁנִּשְׁאַר: קֹדֶם מַקְלוֹת, וְאַחַר כָּךְ קֻבִּיּוֹת',st});
+  return {q,html:mbHands(q),hands:true};}
+/* #20 the hands-on board: Oren adds the cubes, bundles 10 loose cubes into a stick (carry), breaks a stick into 10 cubes and
+   takes away (borrow) himself, one tap at a time. The same board opens in the lesson and as the hint of a practice question. */
+const mbHint=q=>!!(play&&play.qs&&play.qs.includes(q)&&play.u&&q.k==='bin'&&q.miss==='res'&&q.l<100&&q.r<100&&q.res<100&&
+  (MB_ADD.includes(play.u.id)&&q.op==='+'||MB_SUB.includes(play.u.id)&&q.op==='−'));
+function mbHands(q){const {l,r}=q,add=q.op==='+';
+  const html=add?mbBoard([...Array(tens(l)/10).fill(MB_A),...Array(tens(r)/10).fill(MB_B)],Array(l%10).fill(MB_A))
+    :mbBoard(Array(tens(l)/10).fill(MB_A),Array(l%10).fill(MB_A));
+  const ghosts=add?mbOne(MB_B,'gst').repeat(r%10):'';
+  const d=document.createElement('div');d.innerHTML=`<div class="mbw"><div class="mblk mbh" data-op="${add?'+':'−'}" data-r="${r}" data-carry="${add&&l%10+r%10>=10?1:0}" data-borrow="${!add&&l%10<r%10?1:0}">${html.replace(/<\/div>$/,ghosts+'</div>')}</div><div class="lcap mbc"></div></div>`;mbState(d.querySelector('.mbh'));return d.innerHTML;}
+const MBC={add:'הַקֵּשׁ עַל הַקֻּבִּיּוֹת וְהוֹסֵף אוֹתָן',ten:`${L_(10)} קֻבִּיּוֹת! הַקֵּשׁ עֲלֵיהֶן, וְהֵן יִהְיוּ מַקֵּל`,brk:`אֵין מַסְפִּיק קֻבִּיּוֹת? הַקֵּשׁ עַל מַקֵּל: פּוֹרְטִים אוֹתוֹ לְ-${L_(10)} קֻבִּיּוֹת`,
+  take:r=>`הַקֵּשׁ וְהוֹרֵד ${L_(r)}`,done:'עַכְשָׁו סְפֹר: קֹדֶם מַקְלוֹת, וְאַחַר כָּךְ קֻבִּיּוֹת'};
+/* what the board needs next: marks it (.nxt, a soft pulse), writes the one line under it; done → 'mbdone' */
+function mbState(bd){const add=bd.dataset.op==='+',r=+bd.dataset.r;bd.querySelectorAll('.nxt').forEach(x=>x.classList.remove('nxt'));
+  const solid=[...bd.querySelectorAll('.mbo .one:not(.gst):not(.take)')],gh=bd.querySelector('.mbo .one.gst'),rods=[...bd.querySelectorAll('.mbt .rod:not(.take)')];
+  let nxt=null,c;
+  if(add){const ten=bd.querySelector('.mbo .one.b10');if(!ten&&solid.length>=10){solid.slice(0,10).forEach(o=>o.classList.add('b10'));}
+    if(bd.querySelector('.mbo .one.b10')){nxt=bd.querySelector('.mbo .one.b10');c=MBC.ten;}else if(gh){nxt=gh;c=MBC.add;}}
+  else{const needO=r%10-bd.querySelectorAll('.mbo .one.take').length,needT=tens(r)/10-bd.querySelectorAll('.mbt .rod.take').length;
+    if(needO>0&&solid.length<needO){nxt=rods[rods.length-1];c=MBC.brk;}else if(needO>0){nxt=solid[solid.length-1];c=MBC.take(r);}else if(needT>0){nxt=rods[rods.length-1];c=MBC.take(r);}}
+  if(nxt)nxt.classList.add('nxt');const cp=bd.parentNode&&bd.parentNode.querySelector('.mbc');
+  if(!nxt&&!bd.classList.contains('done')){bd.classList.add('done');c=MBC.done;bd.dispatchEvent(new CustomEvent('mbdone',{bubbles:true}));}
+  if(cp&&c)cp.innerHTML=c;}
+function mbTap(bd,el){if(bd.classList.contains('done')||el.classList.contains('take'))return;const add=bd.dataset.op==='+',r=+bd.dataset.r;
+  const no=()=>{el.classList.remove('shake');void el.offsetWidth;el.classList.add('shake');sfx.no();};
+  if(add){if(el.classList.contains('b10')){bd.querySelectorAll('.mbo .one.b10').forEach(o=>o.remove());bd.querySelector('.mbt').insertAdjacentHTML('beforeend',mbRod(MB_N,'new'));sfx.carry();}
+    else if(bd.querySelector('.mbo .one.b10'))return no();
+    else if(el.classList.contains('one')){const g=bd.querySelector('.mbo .one.gst');if(!g)return no();g.classList.remove('gst');g.classList.add('new');sfx.pop(2);}
+    else return no();}
+  else{const solid=bd.querySelectorAll('.mbo .one:not(.take)').length,needO=r%10-bd.querySelectorAll('.mbo .one.take').length,needT=tens(r)/10-bd.querySelectorAll('.mbt .rod.take').length;
+    if(el.classList.contains('rod')){if(needO>0&&solid<needO){el.remove();bd.querySelector('.mbo').insertAdjacentHTML('afterbegin',mbOne(MB_N,'new').repeat(10));sfx.carry();}
+      else if(needT>0){el.classList.add('take');sfx.pop(1);}else return no();}
+    else if(needO>0&&solid>=needO){el.classList.add('take');sfx.pop(1);}else return no();}
+  mbState(bd);}
+addEventListener('click',e=>{const el=e.target&&e.target.closest&&e.target.closest('.mbh .one, .mbh .rod');if(!el)return;mbTap(el.closest('.mbh'),el);});
 /* three big answers for the lesson example */
 function lessonOpts(q,m){
   if(q.k==='ch')return {opts:q.opts,ans:q.ans,cls:q.cls,ltr:q.ltr};
@@ -1891,6 +1967,8 @@ function lesson(lv){const u=lv.u;setScreen('sLearn',u.w.bg,()=>showWorld(u.w));
   const turn=()=>{next.querySelector('span').textContent='עַכְשָׁו תּוֹרְךָ!';next.onclick=start;if(!next.isConnected)btns.appendChild(next);};
   const tell=el=>{const t=String(el.innerText||el.textContent).replace(/[‎‏]/g,'').replace(/(\d)\s*:\s*(\d)/g,'$1 חלקי $2').replace(/[+−×=]/g,c=>' '+OPW[c]+' ').replace(/[←→?]/g,' ').replace(/\s+/g,' ').trim();if(t){sayNow=t;AUTO.gen++;}};
   let ex=u.gen(5);
+  /* #267: the lesson example is a reading / static one; hands-on clock and pizza questions stay in practice (one "check" button would always win here) */
+  for(let k=0;k<30&&(ex.hand||(ex.chk&&ex.chk.t==='pzleft'));k++)ex=u.gen(5);
   if(ex.k==='col'){btns.appendChild(next);stage.innerHTML=`<div class="lcap">דֻּגְמָה:</div><div class="colwrap" id="colw"></div><div class="hintbox" id="hint" hidden></div>`;const st=colInit(ex);renderCol(ex,st);
     next.onclick=()=>{if(st.c>=st.R.length)return start();const hb=$('#hint');hb.hidden=false;
       if(ex.op==='−'&&colNeedBorrow(st,st.c)){const old=st.tops[st.c];colBorrow(st,st.c);hb.innerHTML=cap(`${L_(old)} קָטָן מ-${L_(st.B[st.c])} ← פּוֹרְטִים ${st.c===0?'עֶשֶׂרֶת':'מֵאָה'}`)+steps([`${st.tops[st.c]} − ${st.B[st.c]|0} = ${st.R[st.c]}`]);}
@@ -1898,7 +1976,8 @@ function lesson(lv){const u=lv.u;setScreen('sLearn',u.w.bg,()=>showWorld(u.w));
       colAdvance(ex,st,st.R[st.c],false);renderCol(ex,st);sfx.pop(st.c);tell(hb);
       if(st.c>=st.R.length){turn();burst(...center($('#colw')),24);}};return;}
   const m=manip(u);if(m)ex=m.q;
-  if(m){const bd=h('div','mblk');bd.innerHTML=m.html;stage.appendChild(bd);if(m.cap)stage.appendChild(h('div','lcap',m.cap));if(m.anim)m.anim(bd);}
+  if(m&&m.hands){stage.insertAdjacentHTML('beforeend',m.html);}
+  else if(m){const bd=h('div','mblk');bd.innerHTML=m.html;stage.appendChild(bd);if(m.cap)stage.appendChild(h('div','lcap',m.cap));}
   const qv=h('div','qarea');const draw=solved=>{qv.innerHTML=questionHTML(ex,true,solved);};draw(false);stage.appendChild(qv);
   const o=lessonOpts(ex,m);const row=h('div','chs lch'+(o.ltr?' ltr':''));const hv=h('div','hintbox');hv.hidden=true;
   let wrong=0,done=false;const finish=()=>{done=true;draw(true);turn();};
@@ -1907,7 +1986,8 @@ function lesson(lv){const u=lv.u;setScreen('sLearn',u.w.bg,()=>showWorld(u.w));
       wrong++;b.classList.add('bad');b.disabled=true;sfx.no();hv.hidden=false;
       if(wrong<2&&o.opts.length>2){hv.innerHTML=hintHTML(ex,1);tell(hv);return;}
       row.children[o.ans].classList.add('show');hv.innerHTML=hintHTML(ex,2);finish();tell(hv);};row.appendChild(b);});
-  stage.append(row,hv);}
+  stage.append(row,hv);
+  if(m&&m.hands&&!stage.querySelector('.mbh.done')){row.hidden=true;stage.addEventListener('mbdone',()=>{row.hidden=false;},{once:true});}}
 
 /* ---------- question rendering ---------- */
 function preHTML(q){
@@ -1928,6 +2008,7 @@ function questionHTML(q,isStatic,solved){
 const answersOf=q=>q.k==='rem'?[q.qq,q.r]:[q.ans];
 function qSpeech(q){
   if(q.k==='word')return q.tx;
+  if(q.k==='ch'&&q.hand)return plain(q.pr.replace(/<svg[\s\S]*?<\/svg>/g,''));
   if(q.k==='ch')return plain(q.pr.replace(/<svg[\s\S]*?<\/svg>/g,''))+' '+q.opts.map(o=>({'<':'קטן','>':'גדול','=':'שווה'}[o]||o)).join(', ');
   if(q.k==='eq')return q.toks.map(t=>t==='?'?'כמה':typeof t==='number'?nw(t):OPW[t]||t).join(' ');
   if(q.k==='add3')return `${nw(q.a)} ועוד ${nw(q.b)} ועוד ${nw(q.c)}, שווה כמה?`;
@@ -1995,7 +2076,7 @@ function showQ(){
   qa.style.animation='none';void qa.offsetWidth;qa.style.animation='fadein .35s';
   $('#hint').hidden=true;$('#hint').innerHTML='';helpStart(q);helpBtn(q);
   if(q.k==='col')colPrep(q,p.col);
-  setBubble(q.k==='word'?'קְרָא וְחַשֵּׁב':q.k==='col'?'מַתְחִילִים מִיָּמִין':q.k==='rem'?'כַּמָּה, וּמָה הַשְּׁאֵרִית?':q.k==='ch'?'בְּחַר תְּשׁוּבָה':'כַּמָּה זֶה?');
+  setBubble(q.k==='word'?'קְרָא וְחַשֵּׁב':q.k==='col'?'מַתְחִילִים מִיָּמִין':q.k==='rem'?'כַּמָּה, וּמָה הַשְּׁאֵרִית?':q.k==='ch'?(q.hand?(q.hand.t==='clock'?'גְּרֹר אֶת הַמְּחוֹגִים':'הַקֵּשׁ עַל הַפְּרוּסוֹת'):'בְּחַר תְּשׁוּבָה'):'כַּמָּה זֶה?');
   sayNow=qSpeech(q);hudPlay();
   if(p.mode!=='speed'){let qj=null;try{qj=JSON.parse(JSON.stringify(p.qs));if(JSON.stringify(qj).length>60000)qj=null;}catch(e){qj=null;}
     hereProg(p.lv.type==='train'?'train':'lv:'+p.lv.id,{i:p.i,errors:p.errors,hints:p.hints,streak:p.streak,hp:p.hp,N:p.N,done:p.done,gemsEarned:p.gemsEarned,rq:[...p.requeued],qs:qj});}}
@@ -2024,8 +2105,8 @@ function helpStart(q){const p=play;p.help=false;if(!window.HELP||p.mode==='speed
     done:()=>{if(play!==p)return;p.revealed=true;requeue();questionDone(false);p.i++;p.lock=true;if(p.i>=p.qs.length)finishLevel();else showQ();}});}
 /* #54 the help button (math): one per question. tap 1 = the small clue (hint level 1), tap 2 = the answer with the steps; offered by itself after 2 wrong */
 let HB=null;
-const ansText=q=>{const p=play;if(p.choice)return String(p.choice.opts[p.choice.ans]);if(q.k==='col')return String(q.res);return answersOf(q).join(' , ');};
-function showAns(){const p=play,ch=p.choice;if(ch){const b=ch.row.children[ch.ans];if(b)b.classList.add(ch.bub?'pop':'show');return;}
+const ansText=q=>{const p=play;if(q.hand)return q.hand.ans;if(p.choice)return String(p.choice.opts[p.choice.ans]);if(q.k==='col')return String(q.res);return answersOf(q).join(' , ');};
+function showAns(){const p=play,ch=p.choice;const q=p.qs[p.i];if(q&&q.hand)return handShow(q);if(ch){const b=ch.row.children[ch.ans];if(b)b.classList.add(ch.bub?'pop':'show');return;}
   if(p.boxes)p.boxes.forEach(b=>{if(!b.done){b.el.className='ans show';b.el.textContent=b.ans;}});}
 function helpBtn(q){const p=play;HB=null;if(p.mode==='speed'||!window.HELP||!HELP.button)return;
   HB=HELP.button($('#sPlay .left'),{before:$('#hint'),
@@ -2078,7 +2159,16 @@ function revealAndNext(showFn,ms){const p=play,q=p.qs[p.i];p.lock=true;p.reveale
     setBubble('הַתְּשׁוּבָה מְסֻמֶּנֶת בְּכָחֹל. נְנַסֶּה שׁוּב בַּסּוֹף.');requeue();questionDone(false);
     if(p.hint<2&&q.k!=='col'){if(HB&&HB.el.isConnected)HB.answer();else showHintForce(2);}
     setTimeout(()=>{if(play!==p)return;p.i++;if(p.i>=p.qs.length)finishLevel();else showQ();},D(ms||3200));},D(500));}
-function choose(i,btn){const p=play;if(!p||p.lock||!p.choice||btn.disabled)return;const ch=p.choice;
+/* #18/#19 hands-on questions: the drawing holds the answer (clock time, eaten slices); "check" reads it */
+const handEl=()=>$('#qa svg.clock.set, #qa svg.pz');
+function handOk(q){const s=handEl();if(!s)return false;return q.hand.t==='clock'?+s.dataset.t===q.hand.T:s.querySelectorAll('.sl.eat').length===q.hand.eat;}
+function handShow(q){const s=handEl();if(!s)return;s.dataset.lock=1;if(q.hand.t==='clock')clockSetT(s,q.hand.T);else s.querySelectorAll('.sl').forEach((x,i)=>x.classList.toggle('eat',i<q.hand.eat));}
+addEventListener('click',e=>{const sl=e.target&&e.target.closest&&e.target.closest('svg.pz .sl');if(!sl||sl.closest('svg').dataset.lock)return;sl.classList.toggle('eat');sfx.pop(sl.classList.contains('eat')?2:1);});
+function choose(i,btn){const p=play;if(!p||p.lock||!p.choice||btn.disabled)return;const ch=p.choice;const q=p.qs[p.i];
+  if(q.hand){if(handOk(q)){btn.classList.add('ok');const s=handEl();if(s)s.dataset.lock=1;return onCorrect();}
+    onWrong(btn);if(p.mode==='speed'||(p.tries>=3&&!p.help))return revealAndNext(()=>{handShow(q);setBubble('הַתְּשׁוּבָה: '+q.hand.ans);});
+    if(!window.FRIEND)setBubble('כִּמְעַט! נַסֵּה שׁוּב');if(!p.help)helpAuto();return;}
+  const s0=handEl();if(s0&&i===ch.ans)s0.dataset.lock=1;
   if(i===ch.ans){btn.classList.add(ch.bub?'pop':'ok');
     if(p.qs[p.i].k==='ch'&&p.qs[p.i].cls==='sym'){const sl=$('#qa .slot');if(sl){sl.textContent=ch.opts[i];sl.style.borderStyle='solid';}}
     if(ch.bub){const a=$('#qa .ans');if(a){a.className='ans ok';a.textContent=ch.opts[i];}}
@@ -2243,7 +2333,7 @@ updateGems();cloudInit();
 const BUS={};function emit(e,...a){(BUS[e]||[]).forEach(f=>{try{f(...a);}catch(x){console.error(x);}});}
 window.OREN={get save(){return save;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
   set sayNow(v){sayNow=v;AUTO.gen++;},get sayNow(){return sayNow;},hud:html=>{$('#hudMid').innerHTML=html;document.body.classList.toggle('act',!document.body.classList.contains('inpar')&&/class="chip"/.test(html));},resetAll:keep=>{const snd=save.snd;save=blank();save.snd=snd;Object.assign(save,keep||{});persist();renderStart();},on:(e,f)=>{(BUS[e]=BUS[e]||[]).push(f);},emit,blank};
-window.__oren4={renderAudio,THEMES,RAW,setTheme,get mus(){return mus;},WORLDS,ALLLV,ALLU,hintHTML,hintData,uniq,colInit,colNeedBorrow,digs,qkey,bubbleOpts,storyFor,teachCheck,HEROES,get play(){return play;},get save(){return save;},startLevel,playLevel,showMap,showWorld,kingdom,studio,teacher,playSpeed,setFast:v=>{window.__fast=v;},mergeIn,migrateOld,lp};
+window.__oren4={GT,HANDS,renderAudio,THEMES,RAW,setTheme,get mus(){return mus;},WORLDS,ALLLV,ALLU,hintHTML,hintData,uniq,colInit,colNeedBorrow,digs,qkey,bubbleOpts,storyFor,teachCheck,HEROES,get play(){return play;},get save(){return save;},startLevel,playLevel,showMap,showWorld,kingdom,studio,teacher,playSpeed,setFast:v=>{window.__fast=v;},mergeIn,migrateOld,lp};
 /* #44 a finished task is not reopened */
 window.OREN.on('tlDone',()=>herePut(null));window.OREN.on('levelDone',()=>herePut(null));
 })();
@@ -10586,7 +10676,7 @@ function classify(q,ctx){if(!q||typeof q!=='object')return null;ctx=ctx||{};
     return g('generic',{topic:ctx.topic});}
   if(q.k==='ch'&&q.chk){const c=q.chk;
     if(c.t==='cmp')return g('cmp',{a:c.a,b:c.b,max:Math.max(c.a,c.b)>=100?1000:100});
-    if(c.t==='clock')return g('clock',{h:c.h,m:c.m});
+    if(c.t==='clock'||c.t==='setclock')return g('clock',{h:c.h,m:c.m});
     if(c.t==='frac')return g('frac',{parts:c.parts,shape:/<path/.test(q.pr)?'circle':'bar'});
     return null;}                                    /* other check types (pictures, shapes, graphs from the gaps pack): no step-by-step explainer yet, the game's own hint stays */
   if(q.k==='word')return g('story',{});
