@@ -40,3 +40,7 @@ body.fron #screens{padding-bottom:84px}
 }
 @media (prefers-reduced-motion:reduce){.frc .frs,.frpath i.cur{animation:none}}
 #sHome .frdone .bigbtn.huge{animation:none}
+/* #53 the friend points at the help button (after a wrong answer, or a long pause) */
+.helpbtn.frhand{animation:frhand .5s ease-in-out 3}
+@keyframes frhand{50%{transform:scale(1.12);box-shadow:0 0 0 8px rgba(255,207,77,.55),0 5px 0 #c99a1d}}
+@media (prefers-reduced-motion:reduce){.helpbtn.frhand{animation:none;outline:4px solid #ffcf4d}}
