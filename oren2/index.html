@@ -6042,9 +6042,24 @@ M.dayStart=()=>{const k=M.did(M.dayKey(-1));return k.length?'אוֹרֶן, אֶ�
 M.dayEnd=()=>{const k=M.did(O.today());return (k.length?'הַיּוֹם '+two(k)+'. '+SEP:'')+M.hint();};
 const memList=()=>{const s=[];ORD.forEach((a,i)=>{s.push([a]);ORD.slice(i+1).forEach(b=>s.push([a,b]));});
   return [...s.flatMap(k=>['אוֹרֶן, אֶתְמוֹל '+two(k)+'.','הַיּוֹם '+two(k)+'.']),...SCRIPT.map((_,i)=>TODAY(i+1))];};
+/* #423 one English word per scene: the next word of the English program (english2.js, the word themes in their order) that he
+   has not met yet. It stays the scene's word (save.mixs = {i: the scene's index, w}) until the scene ends. Teaching it puts it into the English skill model
+   (save.en2, box 0, due tomorrow); save.mixw = {word: the day the story taught it}. When such a word is due again (en2), it comes
+   back in a later scene ("remember? ...") and its next day moves by en2's own intervals (INT by box), so it is spaced. */
+const E2=()=>window.ENGLISH2;
+M.WORDS=()=>E2()?E2().LEVELS[0].units.flatMap(u=>u.items).map(k=>k.slice(2)):[];
+M.wordSay=w=>w+' זֶה '+E2().WORD[w].he+'.';
+M.backSay=w=>'זוֹכֵר? '+M.wordSay(w);
+M.word=()=>{const i=M.idx(M.pos()),E=E2(),sv=O.save;if(!E)return null;const k=sv.mixs;if(k&&k.i===i&&E.WORD[k.w])return k.w;
+  const w=M.WORDS().find(x=>!E.seen(sv,'v:'+x))||null;if(w){sv.mixs={i,w};O.persist();}return w;};
+M.lead=()=>{const sc=M.scene(),E=E2(),out=[sc.open];if(!E)return sc.open;const sv=O.save,d=E.day(),i=E.st(sv).i,mw=sv.mixw=sv.mixw||{};
+  const w=M.word();if(w){if(!i['v:'+w])i['v:'+w]=[0,d+1];if(mw[w]==null)mw[w]=d;out.push(M.wordSay(w));}
+  const back=Object.keys(mw).filter(x=>x!==w&&mw[x]<d&&i['v:'+x]&&i['v:'+x][1]<=d).sort((a,b)=>i['v:'+a][1]-i['v:'+b][1])[0];
+  if(back){const r=i['v:'+back];r[1]=d+E.INT[Math.max(1,r[0]|0)];out.push(M.backSay(back));}
+  O.persist();return out.join(' '+SEP);};
 T.quest=()=>({e:'⛵',k:'⛵',a:HOME,z:M.dayEnd()});
 T.addSay&&T.addSay(['⛵ '+HOME]);   /* the home screen's clip (#266) */
-M.speakList=()=>[...SCRIPT.flatMap(ch=>ch.sc.flatMap(x=>[x[0],x[1]])),...STAY,...SCRIPT.map((_,i)=>SAIL(i+1)),HOME,'⛵ '+HOME,...memList()];
+M.speakList=()=>[...SCRIPT.flatMap(ch=>ch.sc.flatMap(x=>[x[0],x[1]])),...STAY,...SCRIPT.map((_,i)=>SAIL(i+1)),HOME,'⛵ '+HOME,...memList(),...M.WORDS().flatMap(w=>[M.wordSay(w),M.backSay(w)])];
 window.STORYMIX=M;
 })();
 
@@ -6143,7 +6158,7 @@ FR.stepStart=i=>{const d=daily();if(!d||i==null||i<0||i>=d.t.length){cur=null;re
   const dn=d.done.slice(d.bs|0),left=dn.filter(x=>!x).length,first=!dn.some(Boolean);
   /* #412 the latest piece he collected comes along: its own clip before the scene's opening line */
   const it=window.SHIP&&SHIP.latest&&SHIP.latest(),carry=it?SHIP.carrySay(it.i)+GSEP:'';
-  lead=SM()&&isScene(cur.id)?carry+(first?FIRST+' ':left<=1?LAST+' ':'')+SM().scene().open:'';PATHBAR.render();};
+  lead=SM()&&isScene(cur.id)?carry+(first?FIRST+' ':left<=1?LAST+' ':'')+(SM().lead?SM().lead():SM().scene().open):'';PATHBAR.render();};
 FR.stepCheck=()=>{if(!cur)return;const d=daily();if(!d||d.d!==cur.d||d.t[cur.i]!==cur.id||!d.done[cur.i]||cur.done)return;cur.done=1;PATHBAR.render();
   if(!SM()||!isScene(cur.id))return;const sc=SM().scene(),close=sc.close;SM().advance();
   const t=d.done.slice(d.bs|0).every(Boolean)?close+' '+ALL:close;
