@@ -12337,12 +12337,12 @@ P.pending=()=>pend;
    A tap reads the label, then: the next question (the host's o.skip) — or, from the first question, after 2 skips in a row, or where the
    host has no per-question skip, the whole activity: the friend says SKIPSAY and the next planned mission opens (like the parent's skip).
    Never a failure: no level change, no stars; the host puts the item back in its pool, due in 1 day (#360).
-   Parent setting save.set.skip (synced with the settings): 'off' · 3 = at most 3 a day (default) · 'all' = no limit.
+   Parent setting save.set.skip (synced with the settings): 'off' · 3 = at most 3 a day · 'all' = no limit (default, #634: no play limits).
    The day's count = x.sk on today's log lines (+ the open line), so it travels with the family save; the day view shows "דילג ×N". */
 const SKIPSAY='בְּסֵדֶר, נַעֲבֹר לְמַשֶּׁהוּ אַחֵר!',SKIPLBL='דַּלֵּג',SKIPMAX=3;
 if(T.addChoices)T.addChoices([SKIPLBL]);if(T.addSay)T.addSay([SKIPSAY]);
-P.skipSet=()=>{const v=((O.realSave||O.save).set||{}).skip;return v==='off'||v==='all'?v:SKIPMAX;};
-P.skipsToday=d=>{d=d||today();const L=(((O.save.alog||{})[d]||{}).e)||[];const cu=DL.cur();
+P.skipSet=()=>{const v=((O.realSave||O.save).set||{}).skip;return v==='off'?'off':+v===SKIPMAX?SKIPMAX:'all';};   /* default 'all' (the owner: no play limits, #634) */
+P.skipsToday=d=>{d=d||today();const L=((((O.realSave||O.save).alog||{})[d]||{}).e)||[];const cu=DL.cur();
   return L.reduce((a,e)=>a+((e[7]&&e[7].sk)|0),0)+(d===today()&&cu&&!cu.end&&cu.x?cu.x.sk|0:0);};
 P.skipCan=()=>{const m=P.skipSet();if(m==='off')return false;if(m==='all'||O.isParentPlay)return true;return P.skipsToday()<SKIPMAX;};
 let skRow=0;   /* skips in a row in this activity: an answer or a new activity starts again */

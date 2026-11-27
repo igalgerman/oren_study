@@ -1,7 +1,7 @@
 // #616 Oren can skip a question or a task: one small "⏭️ דַּלֵּג" next to the help button on every question screen.
 // A skip = the next question; from the first question, or the 2nd skip in a row = the whole activity ("בְּסֵדֶר, נַעֲבֹר לְמַשֶּׁהוּ אַחֵר!"
 // and the next mission). Not a failure: no level change, no stars; the item comes back on a later day (due in 1 day, #360).
-// Parent setting "דילוג לאורן": כבוי / עד 3 ביום (default) / בלי הגבלה; the day view shows "דילג ×N".
+// Parent setting "דילוג לאורן": כבוי / עד 3 ביום / בלי הגבלה (default, #634 no play limits); the day view shows "דילג ×N".
 const { chromium } = require('playwright');
 const L = require('./lib.js');
 const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + n + (i ? ' — ' + i : ''));
@@ -77,23 +77,24 @@ const P = t => String(t || '').replace(/[֑-ׇ]/g, '');
   ok('the parent\'s day view shows it', await p.evaluate(() => /דילג ×2/.test(document.querySelector('#sPar').textContent)));
   await p.evaluate(() => { document.querySelector('#sPar').hidden = true; });
 
-  // 7. the limit: 3 a day (3 used now), then the button is hidden for the rest of the day; unlimited: still there
-  await quiz(ID[2]); s = await st();
+  // 7. the limit: 3 a day (3 used now), then the button is hidden for the rest of the day; unlimited (the default): still there
+  await setSkip(3); await quiz(ID[2]); s = await st();
   ok('limit 3 a day: after 3 skips the button is hidden', s.n === 0 && s.help === 1, JSON.stringify(s));
-  await setSkip('all'); await quiz(ID[2]); s = await st();
-  ok('"בלי הגבלה": the button is still there after 3', s.n === 1, JSON.stringify(s));
+  await setSkip(null); await quiz(ID[2]); s = await st();
+  ok('default "בלי הגבלה": the button is still there after 3', s.n === 1, JSON.stringify(s));
+  await setSkip('3'); ok('"3" (a string from an older copy) counts as the limit of 3', await p.evaluate(() => window.PDAY.skipSet() === 3));
   await setSkip(null);
   ok('the count is per day: a new day starts at 0', await p.evaluate(() => { const P = window.PDAY; return P.skipsToday() === 3 && P.skipsToday('2000-01-01') === 0; }));
 
-  // 8. the parent setting: 3 choices, default "עד 3 ביום"; a tap marks the settings for the family save; another device's value arrives
+  // 8. the parent setting: 3 choices, default "בלי הגבלה"; a tap marks the settings for the family save; another device's value arrives
   await p.evaluate(() => window.TAL.parentPanel('skip')); await L.sleep(200);
   const pn = await p.evaluate(() => { const box = document.querySelector('#sPar .skset'); return box ? { t: box.closest('.psec').textContent.includes('דילוג לאורן'),
     ch: [...box.querySelectorAll('.pchip')].map(x => x.textContent.trim()), on: (box.querySelector('.pchip.on') || {}).textContent } : null; });
-  ok('panel "דילוג לאורן": כבוי / עד 3 ביום / בלי הגבלה, default "עד 3 ביום"', pn && pn.t && pn.ch.join('|') === 'כבוי|עד 3 ביום|בלי הגבלה' && pn.on === 'עד 3 ביום', JSON.stringify(pn));
+  ok('panel "דילוג לאורן": כבוי / עד 3 ביום / בלי הגבלה, default "בלי הגבלה"', pn && pn.t && pn.ch.join('|') === 'כבוי|עד 3 ביום|בלי הגבלה' && pn.on === 'בלי הגבלה', JSON.stringify(pn));
   const t0 = await p.evaluate(() => +window.OREN.save.setT || 0);
-  await p.locator('#sPar .skset .pchip', { hasText: 'בלי הגבלה' }).click(); await L.sleep(100);
+  await p.locator('#sPar .skset .pchip', { hasText: 'עד 3 ביום' }).click(); await L.sleep(100);
   const t1 = await p.evaluate(() => ({ v: window.PDAY.skipSet(), t: +window.OREN.save.setT || 0, on: document.querySelector('#sPar .skset .pchip.on').textContent }));
-  ok('a tap sets it and marks the settings for the family save (setT)', t1.v === 'all' && t1.t > t0 && t1.on === 'בלי הגבלה', JSON.stringify({ t0, t1 }));
+  ok('a tap sets it and marks the settings for the family save (setT)', t1.v === 3 && t1.t > t0 && t1.on === 'עד 3 ביום', JSON.stringify({ t0, t1 }));
   await p.evaluate(() => { document.querySelector('#sPar').hidden = true; const O = window.OREN; O.settleSet && O.settleSet(); const set = JSON.parse(JSON.stringify(O.save.set)); set.skip = 'off'; O.mergeIn({ set, setT: Date.now() + 5000 }); });
   ok('a value from another device (newer settings) arrives', await p.evaluate(() => window.PDAY.skipSet() === 'off'));
   await quiz(ID[3]); s = await st();
