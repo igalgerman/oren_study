@@ -157,7 +157,7 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
   let r0 = 0; while (E.doneUnits(save, 1) < 1 && r0 < 40) { play(1, 1); r0++; }
   ok(E.levelOpen(save, 0) && !E.levelOpen(save, 2), `words open after the first letter group (${r0} rounds)`);
   const p0 = E.plan(save, 0, d);
-  ok(p0.teach.length === 4 && p0.teach.every(g => g.startsWith('v:')) && p0.qs.length === 8, 'first word round: 4 new words taught, 8 questions', JSON.stringify({ t: p0.teach, n: p0.qs.length }));
+  ok(p0.teach.length === 2 && p0.teach.every(g => g.startsWith('v:')) && p0.qs.length === 4, 'first word round: 2 new words taught, 4 questions (#59)', JSON.stringify({ t: p0.teach, n: p0.qs.length }));
   ok(p0.qs.every((q, i) => i === 0 || q.k !== p0.qs[i - 1].k), 'no word twice in a row');
   ok(p0.unit.id === 'v-colors', 'words start with colours');
   /* play rounds: all first-try right, a new day every 2 rounds */
