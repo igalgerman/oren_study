@@ -1409,7 +1409,7 @@ function special(i,id){const [kind,k]=id.split(':');const isT=kind==='tog';const
   const row=h('div','btnrow');const b=h('button','bigbtn huge',`<span>${isT?'סִיַּמְנוּ':'סִיַּמְתִּי'} ✓</span>`);b.onclick=()=>{fin();sfx.win();O.rain();O.showMap();};row.appendChild(b);box.appendChild(row);s.appendChild(box);
   O.sayNow=T.spk(kid);setTimeout(()=>{if(box.isConnected)O.say(T.spk(kid));},D(400));}
 function runStep(i){const d=T.dailyEnsure();const id=d.t[i];if(window.FRIEND)window.FRIEND.stepStart(i);if(/:/.test(id)){special(i,id);return;}
-  if(id==='math'){const lv=nextLevel();if(!lv){O.showJourney();return;}if(O.pathLevel)O.pathLevel(lv.id);
+  if(id==='math'){const lv=(window.FRIEND&&window.FRIEND.ezRep&&window.FRIEND.ezRep())||nextLevel();/* #411 'hard' -> that level again */if(!lv){O.showJourney();return;}if(O.pathLevel)O.pathLevel(lv.id);
     if(!O.save.story[lv.w.id+'-in'])O.showWorld(lv.w);else O.startLevel(lv);return;}
   /* #388: the result card's "continue" goes on to the next path mission; leaving before it is done goes home */
   const a=ACT[id];if(!a)return;const nDone=()=>T.dailyEnsure().done.filter(Boolean).length,n0=nDone();

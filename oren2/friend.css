@@ -47,3 +47,11 @@ body.fron #screens{padding-bottom:84px}
 #sHome .frdone .bigbtn.huge{animation:none}
 /* #389 listen first: the answers rest (softly faded, no timer) until the question was heard */
 .chs.lsn .chb{opacity:.55;transition:opacity .3s}
+/* #411 'easy or hard?' at the end of a scene: two big faces, one tap */
+.frez{margin:8px auto 4px;text-align:center}
+.frezq{font-size:20px;font-weight:800;margin-bottom:6px}
+.frezr{display:flex;gap:16px;justify-content:center}
+.frezf{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:92px;min-height:92px;border-radius:20px;border:3px solid #e0d3a8;background:#fffaf0;font-size:18px;font-weight:700;cursor:pointer;padding:6px 10px}
+.frezf .frezi{font-size:46px;line-height:1}
+.frezf.on{border-color:#4fae4f;background:#e6f6e6;transform:scale(1.06)}
+.frezf:disabled:not(.on){opacity:.45}

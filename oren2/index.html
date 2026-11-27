@@ -3207,6 +3207,14 @@ body.fron #screens{padding-bottom:84px}
 #sHome .frdone .bigbtn.huge{animation:none}
 /* #389 listen first: the answers rest (softly faded, no timer) until the question was heard */
 .chs.lsn .chb{opacity:.55;transition:opacity .3s}
+/* #411 'easy or hard?' at the end of a scene: two big faces, one tap */
+.frez{margin:8px auto 4px;text-align:center}
+.frezq{font-size:20px;font-weight:800;margin-bottom:6px}
+.frezr{display:flex;gap:16px;justify-content:center}
+.frezf{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:92px;min-height:92px;border-radius:20px;border:3px solid #e0d3a8;background:#fffaf0;font-size:18px;font-weight:700;cursor:pointer;padding:6px 10px}
+.frezf .frezi{font-size:46px;line-height:1}
+.frezf.on{border-color:#4fae4f;background:#e6f6e6;transform:scale(1.06)}
+.frezf:disabled:not(.on){opacity:.45}
 
 /* #391 the ship on home: next to Oren and his friend; #392 a tap on a built piece, the friend says what it is */
 .hrow{display:flex;align-items:flex-end;justify-content:center;gap:10px}
@@ -5188,7 +5196,7 @@ function special(i,id){const [kind,k]=id.split(':');const isT=kind==='tog';const
   const row=h('div','btnrow');const b=h('button','bigbtn huge',`<span>${isT?'סִיַּמְנוּ':'סִיַּמְתִּי'} ✓</span>`);b.onclick=()=>{fin();sfx.win();O.rain();O.showMap();};row.appendChild(b);box.appendChild(row);s.appendChild(box);
   O.sayNow=T.spk(kid);setTimeout(()=>{if(box.isConnected)O.say(T.spk(kid));},D(400));}
 function runStep(i){const d=T.dailyEnsure();const id=d.t[i];if(window.FRIEND)window.FRIEND.stepStart(i);if(/:/.test(id)){special(i,id);return;}
-  if(id==='math'){const lv=nextLevel();if(!lv){O.showJourney();return;}if(O.pathLevel)O.pathLevel(lv.id);
+  if(id==='math'){const lv=(window.FRIEND&&window.FRIEND.ezRep&&window.FRIEND.ezRep())||nextLevel();/* #411 'hard' -> that level again */if(!lv){O.showJourney();return;}if(O.pathLevel)O.pathLevel(lv.id);
     if(!O.save.story[lv.w.id+'-in'])O.showWorld(lv.w);else O.startLevel(lv);return;}
   /* #388: the result card's "continue" goes on to the next path mission; leaving before it is done goes home */
   const a=ACT[id];if(!a)return;const nDone=()=>T.dailyEnsure().done.filter(Boolean).length,n0=nDone();
@@ -6038,8 +6046,27 @@ FR.stepCheck=()=>{if(!cur)return;const d=daily();if(!d||d.d!==cur.d||d.t[cur.i]!
   const t=d.done.slice(d.bs|0).every(Boolean)?close+' '+ALL:close;
   const card=$('#ov:not([hidden]) .card');if(card&&!card.querySelector('.frstory')){const s=h('div','frstory',`<span class="frq">${quest().k}</span><span>${t}</span>`);
     const row=card.querySelector('.btnrow');if(row)card.insertBefore(s,row);else card.appendChild(s);setTimeout(()=>{if(s.isConnected){last=t;O.say(T.spk(t));}},D(1200));
-    storyPic(card,sc);}
+    storyPic(card,sc);ezAsk(card,cur.id,t);}
   else talk(t,{ms:3500});};
+/* #411 at the end of a scene, at most every third scene (save.ez.n counts the scenes since the last question): 'easy or hard?'
+   with two big faces, one tap. The answer moves that mission's level one step (hard = one easier, easy = one harder; a level the
+   parent locked stays); a math journey level said 'hard' is played again on the next path math mission (save.ez.rep).
+   The answer is a day-log line ('f', x.ez 'e'|'h') that the parent's day view shows. */
+const EZ={q:'הָיָה קַל אוֹ קָשֶׁה?',e:'קַל',h:'קָשֶׁה',EVERY:3};FR.EZ=EZ;T.addChoices&&T.addChoices([EZ.e,EZ.h]);
+let lastLv=null;O.on('levelDone',lv=>{lastLv=lv&&lv.type!=='train'?lv:null;});
+function ezAsk(card,id,t){const S=O.save;if(!S)return;const z=S.ez=S.ez||{};z.n=(z.n|0)+1;if(z.n<EZ.EVERY||card.querySelector('.frez'))return;z.n=0;O.persist();
+  const lv=id==='math'?lastLv:null,box=h('div','frez',`<div class="frezq">${EZ.q}</div>`),row=h('div','frezr');
+  [['e','😀'],['h','😣']].forEach(([a,f])=>{const b=h('button','frezf',`<span class="frezi">${f}</span><span>${EZ[a]}</span>`);b.dataset.a=a;
+    b.onclick=ev=>{ev.stopPropagation();if(box._a)return;box._a=a;row.querySelectorAll('button').forEach(x=>{x.disabled=true;});b.classList.add('on');O.sfx.pop&&O.sfx.pop(2);ezSet(id,lv,a);};row.appendChild(b);});
+  box.appendChild(row);const r=card.querySelector('.btnrow');if(r)card.insertBefore(box,r);else card.appendChild(box);
+  setTimeout(()=>{if(box.isConnected&&!box._a)O.say(T.spk(EZ.q));},D(1300));}
+function ezSet(id,lv,a){const S=O.save,LN=window.LEARN,DL=window.DAYLOG;
+  if(id==='math'){if(lv&&a==='h')S.ez.rep=lv.id;}
+  else if(LN&&LN.state)try{const st=LN.state(),sk=id==='ln-math'?(st.rc||[]).find(x=>(LN.DRILL_IDS||[]).includes(x)):'a:'+id,k=sk&&st.k[sk];
+    if(k&&!k.lk){const l=Math.max(1,Math.min(LN.maxLv(sk),(k.l|0||1)+(a==='h'?-1:1)));if(l!==k.l)LN.setLevel(sk,l);}}catch(e){}
+  if(DL&&DL.add){const d=new Date();DL.add(O.today(),[d.getHours()*60+d.getMinutes(),lv?'lv:'+lv.id:id,0,0,0,0,'f',{ez:a}]);}O.persist();}
+/* the next path math mission after a 'hard' answer: that level again, once */
+FR.ezRep=()=>{const S=O.save,z=S&&S.ez;if(!z||!z.rep)return null;const id=z.rep;z.rep=null;O.persist();return (O.ALLLV||[]).find(l=>l.id===id)||null;};
 /* #387: the end of a scene, a 2 s picture of what changed in the story: the ship as the story has it, the scene's new piece
    blinking (the ship's own drawing). It lies over the result card; one tap (anywhere on it) skips, it never waits for him. */
 const PICMS=2000;
@@ -6081,7 +6108,7 @@ O.on('levelDone',()=>setTimeout(FR.stepCheck,D(600)));
 /* #433: an error in the middle of a mission sent Oren home (core error handler): the friend says it on the home screen */
 const OOPS='אוֹי, חוֹזְרִים לַמַּסָּע';
 FR.oops=()=>{FR.mount();anim('sad');return talk(OOPS,{ms:3000});};
-FR.speakList=()=>[...(window.GOALS?window.GOALS.speakList():[]),LISTEN,RXL.hint,RXL.yday,RXL.back,OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
+FR.speakList=()=>[EZ.q,...(window.GOALS?window.GOALS.speakList():[]),LISTEN,RXL.hint,RXL.yday,RXL.back,OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
   ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([a,b])=>[a,FIRST+' '+a,LAST+' '+a,b,b+' '+ALL])):[]),...(SM()?SM().speakList():[])];
 /* ---------- #389 listen first ----------
    A new row of answer buttons (.chs .chb) rests until the spoken question has ended, 4 s at most; with no voice (offline,
@@ -11417,6 +11444,7 @@ window.GOALS=G;
 /* ===== DAY LOG: everything Oren did, for the parent (also from another house, in real time through the family save) =====
    save.alog[day].e = [[min, id, stars, ok, n, helped, o], ...]   min = minutes after midnight when it started,
      ok/n = right on the first try / questions, o: 'c' done · 'q' left in the middle · 'x' opened and closed at once (only for Oren's "again" list) · 's' a path step he did not reach · 'b' stopped for a break
+     · 'f' his answer to 'easy or hard?' at the end of a scene (#411, x.ez 'e' easy · 'h' hard)
      · 'p' skipped by the parent (#359, x.pc = the command id; hidden when that command was undone: save.pcU[id])
    x (optional object): a story's {t, g, lv, r} (#355); lg = what he learned, on a finished line (#414, goals.js); any activity: lv = his level when it started (learning engine), ra = taps on read-aloud (#359)
    save.now = {id, t, s}  the activity being played, the last moment something happened (ms; also each active play tick, the heartbeat) and when this play
@@ -11484,13 +11512,13 @@ DL.nameOf=id=>{if(id==='math')return 'מסע החשבון';
   if(/^lv:/.test(id)){const lv=O.ALLLV.find(l=>l.id===id.slice(3));return lv?`${plain(lv.u.name)} (${plain(lv.w.name)})`:'חשבון';}
   const a=T.ACT[id];return a?plain(a.name):id;};
 DL.domOf=id=>{if(id==='math'||/^lv:/.test(id))return 'חשבון';const a=T.ACT[id];if(!a||!a.b)return '';const g=(T.GROUPS||[]).find(x=>x.ids.includes(a.b.id));return g?GN()[g.id]:plain(a.b.name);};
-const ICO={c:'✓',q:'✗',s:'⏭',b:'⏸',p:'⏭'},WHY={c:'',q:'יצא באמצע',s:'לא הגיע',b:'הפסקה',p:'דילג (הורה)'};
+const ICO={c:'✓',q:'✗',s:'⏭',b:'⏸',p:'⏭',f:'💬'},WHY={c:'',q:'יצא באמצע',s:'לא הגיע',b:'הפסקה',p:'דילג (הורה)',f:''};
 /* a bank story's own quiz line (rb2-st-N) repeats its 'story-new' line: not shown */
 const undone=e=>e[6]==='p'&&e[7]&&(O.realSave.pcU||{})[e[7].pc];
 DL.rows=d=>{const L=((O.realSave.alog||{})[d]||{}).e||[];return L.filter(e=>e[6]!=='x'&&!/^rb2-st-/.test(e[1])&&!undone(e)).sort((a,b)=>a[0]-b[0]);};
 DL.rowHTML=e=>{const [m,id,st,ok,n,hp,o,x]=e;const sx=x&&typeof x==='object'?x:null;
   const story=sx&&sx.t;
-  const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`✓ ${ok} · ✗ ${n-ok}`:'',sx&&sx.lv?'רמה '+(sx.lv|0):'',hp?`עזרה ×${hp}`:'',story?(sx.r==='l'?'האזין להקראה':'קרא לבד'):'',sx&&sx.ra?`הקראה ×${sx.ra}`:'',WHY[o]].filter(Boolean).join(' · ');
+  const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`✓ ${ok} · ✗ ${n-ok}`:'',sx&&sx.lv?'רמה '+(sx.lv|0):'',hp?`עזרה ×${hp}`:'',story?(sx.r==='l'?'האזין להקראה':'קרא לבד'):'',sx&&sx.ra?`הקראה ×${sx.ra}`:'',sx&&sx.ez?(sx.ez==='h'?'אמר: היה קשה 😣':'אמר: היה קל 😀'):'',WHY[o]].filter(Boolean).join(' · ');
   const name=story?`${plain(sx.t)}${sx.g?` <span class="dlgoal">🎯 ${plain(sx.g)}</span>`:''}`:DL.nameOf(id);
   return `<div class="prow dlrow dl-${o}"><span class="pn"><b class="dli">${ICO[o]||''}</b> ${o==='s'?'':hhmm(m)+' · '}${name} <small>${DL.domOf(id)}</small></span><span class="pc">${res}</span></div>`;};
 /* the top line of the summary: playing now / last played */
