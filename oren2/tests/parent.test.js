@@ -1,4 +1,4 @@
-// Users, parent password, permissions, parts on/off, gradual unlock, skip/reset, messages, badges, plan, reset.
+// Users, parent password, permissions, parts on/off, gradual unlock, skip/reset, messages, plan, reset.
 const L = require('./lib');
 const {chromium}=require('playwright');const URL=L.URL;const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const VP=process.argv[2]==='phone'?{viewport:{width:390,height:844},isMobile:true,hasTouch:true}:{viewport:{width:1366,height:720}};
@@ -18,7 +18,7 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  ok('panel opens after creating password',await p.evaluate(()=>!document.querySelector('#sPar').hidden));
  ok('password stored as hash',await p.evaluate(()=>/^[0-9a-f]{64}$/.test(window.TAL.S().set.pw)));
  await sleep(300);await p.evaluate(()=>window.TAL.parentPanel('more'));await sleep(300);ok('settings warn about pending permission (#359: on top of "הגדרות ועוד")',await p.locator('.pwarn',{hasText:'הרשאות'}).count()===1);await shot('sum');
- for(const t of ['perm','parts','prog','msg','set']){await p.evaluate(t=>window.TAL.parentPanel(t),t);await sleep(250);await shot(t);}
+ for(const t of ['perm','parts','prog','rem','set']){await p.evaluate(t=>window.TAL.parentPanel(t),t);await sleep(250);await shot(t);}
  // permissions
  await p.evaluate(()=>window.TAL.parentPanel('perm'));await sleep(300);const rows=await p.locator('#sPar .pst').allTextContents();ok('permission rows shown',rows.length>=3,rows.join(','));
  await p.locator('#sPar .bigbtn',{hasText:'אפשרו'}).click();await sleep(400);ok('request-all called and states refreshed',await p.evaluate(()=>window.__req===1&&window.__ps.dictation==='granted'));
@@ -39,7 +39,7 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
    const prof=JSON.stringify(T.S().prof);document.querySelector('#sTal .bigbtn').click();await new Promise(r=>setTimeout(r,250));
    const head=!!document.querySelector('.hhead .hbub');const fav=!!document.querySelector('.gdoor.fav');const names=[];T.GROUPS.forEach(g=>{T.openGroup(g);document.querySelectorAll('#sTal .bld .nm').forEach(e=>names.push(e.textContent));});
    T.openBuilding(T.BUILD.find(b=>b.id==='read'));const acts=[...document.querySelectorAll('.actc .an')].map(e=>e.textContent);
-   O.showJourney();await new Promise(r=>setTimeout(r,200));const hiddenCards=[...document.querySelectorAll('.worlds > .wcard2')].filter(c=>c.hidden).length;
+   const s0=O.save.s;O.save.s={...s0};O.WORLDS.forEach(w=>{if(w.id!=='fin')O.save.s[w.levels[0].id]=1;});/* G5 (#98): 0-star worlds are hidden anyway: give each a star */O.showJourney();await new Promise(r=>setTimeout(r,200));const hiddenCards=[...document.querySelectorAll('.worlds > .wcard2')].filter((c,i)=>c.hidden&&O.WORLDS[i].id!=='fin').length;O.save.s=s0;
    const d=T.dailyEnsure();return {wiz,prof,lab:names.some(n=>n.replace(/[\u0591-\u05C7]/g,'')==='המעבדה'),head,fav,first:acts.some(a=>a.includes('אוֹת רִאשׁוֹנָה')),hiddenCards,daily:d.t.some(id=>id.startsWith('sci-')||id==='read-first')};});
  ok('profile wizard on first hub visit (no animal: the friend is the studio pet)',r1.wiz&&r1.prof.includes('love')&&!r1.prof.includes('"an"'),r1.prof);ok('favourite door marked',r1.fav);
  ok('disabled building hidden',!r1.lab);ok('disabled activity hidden',!r1.first);ok('disabled world hidden on map',r1.hiddenCards===1);ok('daily missions skip disabled parts',!r1.daily);
@@ -57,15 +57,11 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  const r3=await p.evaluate(()=>{const T=window.TAL,O=window.OREN;T.parentPanel('prog');const row=document.querySelectorAll('#sPar .psec')[0].querySelectorAll('.prow')[1];const sk=row.querySelectorAll('.practs .pchip')[0];sk.click();sk.click();
    const w=O.WORLDS[1];const done=w.levels.every(l=>O.stars(l.id)>0);const row2=document.querySelectorAll('#sPar .psec')[0].querySelectorAll('.prow')[1];const rs=row2.querySelectorAll('.practs .pchip')[1];rs.click();rs.click();const cleared=w.levels.every(l=>!O.stars(l.id));return {done,cleared};});
  ok('skip world marks levels',r3.done);ok('reset world clears stars',r3.cleared);
- // message
- await p.evaluate(()=>window.TAL.parentPanel('msg'));await p.fill('#sPar textarea','אורן, כל הכבוד! אוהבים אותך');await p.locator('#sPar .bigbtn',{hasText:'שליחה'}).click();await sleep(200);
- const g0=await p.evaluate(()=>window.OREN.save.gems|0);await p.locator('#sPar .bigbtn',{hasText:'יציאה'}).click();await sleep(1200);
- ok('kid sees the message on home',await p.evaluate(()=>!document.querySelector('#ov').hidden&&document.querySelector('.pmsg')&&document.querySelector('.pmsg').textContent.includes('כל הכבוד')));await shot('msg-kid');
- await p.locator('#ov .emo').first().click();await sleep(200);const r4=await p.evaluate(()=>({g:window.OREN.save.gems|0,m:window.TAL.S().set.msg}));ok('reply (no gift: P2 dropped the gift chips)',r4.m.seen&&r4.m.reply==='❤️'&&r4.g===g0,JSON.stringify(r4));
- await p.evaluate(()=>window.TAL.parentPanel('msg'));ok('parent sees reply',(await p.textContent('#sPar')).includes('אורן הגיב'));
- // badges
- await p.evaluate(()=>{window.TAL.S().tl['read-pw']={s:2,n:1};window.OREN.showMap();});await sleep(4600);ok('badge earned quietly',await p.evaluate(()=>!!window.TAL.S().bdg.star1));
- await p.evaluate(()=>window.TAL.badges(()=>{}));await sleep(200);ok('badge wall',await p.locator('.bdg.got').count()>=1);await shot('badges');
+ // #413: one way to message (the old 💌 tab is merged into "reminder and message")
+ const m1=await p.evaluate(()=>{window.TAL.parentPanel('more');const sm=[...document.querySelectorAll('#sPar summary')].map(x=>x.textContent);return {sm,old:sm.filter(x=>/הודעה/.test(x)),chk:typeof window.TAL.checkMsg};});
+ ok('#413 one message entry in the panel (old message tab gone)',m1.old.length===1&&/תזכורת/.test(m1.old[0])&&m1.chk==='undefined',JSON.stringify(m1));
+ await p.evaluate(()=>{window.TAL.S().set.msg={text:'old',t:Date.now(),seen:0};});await p.locator('#sPar .bigbtn',{hasText:'יציאה'}).click();await sleep(1200);
+ ok('#413 an old-style message is not shown a second way',await p.evaluate(()=>!document.querySelector('.pmsg')));
  // daily swap
  ok('kid home has no swap buttons (simple)',await p.evaluate(()=>{window.OREN.showMap();return document.querySelectorAll('#sHome .dsw,#sHome .merow').length===0;}));
  // call parents when permission is not granted
@@ -115,8 +111,6 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
    P('health');const hs=!!document.querySelector('#sPar details[open] .psec')&&/הפסקות, ארוחות/.test(document.querySelector('#sPar details[open]').textContent);P('read');const rd=/קורא לבד/.test((document.querySelector('#sPar details[open]')||{}).textContent||'');
    return {dayHealth:/הפסקות, ארוחות/.test(day),dayRead:/קורא לבד/.test(day),dayRem:/תזכורת לאורן/.test(day),sm,hs,rd};});
  ok('#359 day: break/meal settings, reading level and reminders are under settings, not on the day view',!s7.dayHealth&&!s7.dayRead&&!s7.dayRem&&/תזכורת/.test(s7.sm)&&s7.hs&&s7.rd,JSON.stringify(s7));
- const s8=await p.evaluate(()=>{window.TAL.parentPanel('msg');const d=document.querySelector('#sPar details[open] .pdin');return {chips:d.querySelectorAll('.pchip').length,gift:/מתנה|💎/.test(d.textContent)};});
- ok('P2 msg: no gift chips',s8.chips===0&&!s8.gift,JSON.stringify(s8));
  // #61: suggestions from what the system learned (1-3 plain lines, hidden when there is nothing; one button where the action is obvious)
  const s9=await p.evaluate(()=>{const P=window.PDAY,T=window.TAL,pool=T.dailyPool();const by=t=>pool.find(id=>P.topOf(id)===t&&!/^ln-/.test(id));const ids={r:by('readg'),e:by('explore'),c:by('create')};
    const row=(id,ok,n)=>[600,id,1,ok,n,0,'c'];const tops=['math','readg','explore','create'];

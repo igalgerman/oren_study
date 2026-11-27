@@ -15,7 +15,7 @@ async function finishLevel(p,maxMs=60000){const t0=Date.now();while(Date.now()-t
 (async()=>{const b=await chromium.launch();
  // 1. real speed: intro, studio, first 3 levels incl. lesson, transitions, gem fly
  {const p=await page(b);await p.click('#btnStart');await sleep(700);let g=0;while(g++<10&&!(await p.locator('#dlg').isHidden())){await p.click('#dNext');await sleep(400);}
-  await p.locator('#sStudio .bigbtn').last().click();await sleep(900);await p.locator('.wcard2').nth(1).click();await sleep(900);g=0;while(g++<10&&!(await p.locator('#dlg').isHidden())){await p.click('#dNext');await sleep(400);}
+  await p.locator('#sStudio .bigbtn').last().click();await sleep(900);await p.evaluate(()=>document.querySelectorAll('.wcard2').forEach(c=>{c.hidden=false;}));/* G5: 0-star worlds are hidden tiles (#98) */await p.locator('.wcard2').nth(1).click();await sleep(900);g=0;while(g++<10&&!(await p.locator('#dlg').isHidden())){await p.click('#dNext');await sleep(400);}
   let levels=0;for(let i=0;i<3;i++){await p.locator('.pnode').nth(i).click();await sleep(900);if(!(await p.locator('#sLearn').isHidden())){await L.doLesson(p);await sleep(900);}
     const done=await finishLevel(p);if(done)levels++;await sleep(2200);await L.shot(p,{path:L.SHOTDIR+'/real-res'+i+'.png'});await p.evaluate(()=>document.getElementById('btnBack').click());await sleep(1500);}
   const gems=await p.evaluate(()=>window.__oren4.save.gems);const gemc=await p.textContent('#gemc');
@@ -26,7 +26,7 @@ async function finishLevel(p,maxMs=60000){const t0=Date.now();while(Date.now()-t
  // 2. localStorage throwing (private mode)
  {const p=await page(b,{},()=>{Object.defineProperty(window,'localStorage',{get(){throw new Error('blocked')}});});
   await p.evaluate(()=>window.__oren4&&window.__oren4.setFast(true));const loaded=await p.evaluate(()=>!!window.__oren4);
-  if(loaded){await p.click('#btnStart');await sleep(200);let g=0;while(g++<10&&!(await p.locator('#dlg').isHidden()))await p.click('#dNext');await p.locator('#sStudio .bigbtn').last().click();await p.locator('.wcard2').nth(1).click();g=0;while(g++<10&&!(await p.locator('#dlg').isHidden()))await p.click('#dNext');
+  if(loaded){await p.click('#btnStart');await sleep(200);let g=0;while(g++<10&&!(await p.locator('#dlg').isHidden()))await p.click('#dNext');await p.locator('#sStudio .bigbtn').last().click();await p.evaluate(()=>document.querySelectorAll('.wcard2').forEach(c=>{c.hidden=false;}));/* G5: 0-star worlds are hidden tiles (#98) */await p.locator('.wcard2').nth(1).click();g=0;while(g++<10&&!(await p.locator('#dlg').isHidden()))await p.click('#dNext');
     await p.locator('.pnode').nth(0).click();await sleep(100);if(!(await p.locator('#sLearn').isHidden()))await L.doLesson(p);await finishLevel(p,20000);}
   ok('works when browser storage is blocked',loaded&&!p.errs.length,p.errs.slice(0,2).join('; '));await p.context().close();}
  // 3. migration from previous version save
@@ -43,7 +43,7 @@ async function finishLevel(p,maxMs=60000){const t0=Date.now();while(Date.now()-t
   ok('merge: older cloud copy does not overwrite gems/kingdom',r.g===100&&r.k===1);ok('merge: stars take max, table OR',r.s0===2&&r.s1===3&&r.m===1);ok('merge: newer copy wins for gems/kingdom',r.g2===7&&r.k2===2);await p.context().close();}
  // 5. double submit / spam + leaving mid-delay + speed timer stop
  {const p=await page(b,{},()=>{try{localStorage.clear()}catch(e){}});await p.evaluate(()=>{const O=window.__oren4;O.save.story.intro=1;O.save.story['add-in']=1;O.save.seen['add-0']=1;});
-  await p.click('#btnStart');await sleep(900);await p.locator('.wcard2').nth(1).click();await sleep(900);await p.locator('.pnode').nth(0).click();await sleep(900);
+  await p.click('#btnStart');await sleep(900);await p.evaluate(()=>document.querySelectorAll('.wcard2').forEach(c=>{c.hidden=false;}));/* G5: 0-star worlds are hidden tiles (#98) */await p.locator('.wcard2').nth(1).click();await sleep(900);await p.locator('.pnode').nth(0).click();await sleep(900);
   const s=await st(p);for(const c of String(s.q.ans))await p.keyboard.press(c);await p.keyboard.press('Enter');await p.keyboard.press('Enter');await p.keyboard.press('Enter');await sleep(80);
   const s2=await st(p);ok('Enter spam counts one answer',s2.i===1,'i='+s2.i);
   await sleep(1300);const s3=await st(p);for(const c of String(s3.q.ans))await p.keyboard.press(c);await p.keyboard.press('Enter');await sleep(50);await p.click('#btnBack');await sleep(1800);
@@ -60,7 +60,7 @@ async function finishLevel(p,maxMs=60000){const t0=Date.now();while(Date.now()-t
   ok('no errors in interaction tests',!p.errs.length,p.errs.join('; '));await p.context().close();}
  // 6. reduced motion + phone portrait sanity
  {const p=await page(b,{reducedMotion:'reduce'});await p.evaluate(()=>window.__oren4.setFast(true));await p.click('#btnStart');let g=0;while(g++<10&&!(await p.locator('#dlg').isHidden()))await p.click('#dNext');
-  await p.locator('#sStudio .bigbtn').last().click();await p.locator('.wcard2').nth(6).click();g=0;while(g++<10&&!(await p.locator('#dlg').isHidden()))await p.click('#dNext');await p.locator('.pnode').nth(0).click();await sleep(100);
+  await p.locator('#sStudio .bigbtn').last().click();await p.evaluate(()=>document.querySelectorAll('.wcard2').forEach(c=>{c.hidden=false;}));/* G5: 0-star worlds are hidden tiles (#98) */await p.locator('.wcard2').nth(6).click();g=0;while(g++<10&&!(await p.locator('#dlg').isHidden()))await p.click('#dNext');await p.locator('.pnode').nth(0).click();await sleep(100);
   if(!(await p.locator('#sLearn').isHidden()))await L.doLesson(p);const done=await finishLevel(p,20000);ok('reduced-motion mode playable',done&&!p.errs.length,p.errs.join('; '));await p.context().close();}
  // 7. cloud document size at full progress
  {const p=await page(b);const r=await p.evaluate(()=>{const O=window.__oren4,s=O.save;O.ALLLV.forEach(l=>s.s[l.id]=3);for(let a=1;a<=10;a++)for(let c=1;c<=10;c++)s.m[a+'x'+c]=3;

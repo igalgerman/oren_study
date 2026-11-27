@@ -1,4 +1,4 @@
-/* ===== 🕹️ THE ARCADE: short, bright mini-games, just for fun (records only, no currency) ===== */
+/* ===== 🕹️ THE ARCADE: short, bright mini-games, just for fun (stars only, no currency or records, #426) ===== */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;const {h,$,rand,pick,shuffle,SPR}=O;const sfx=O.sfx,D=O.D;
 const A=()=>{const s=T.S();s.arc=s.arc||{best:{},plays:0};s.arc.best=s.arc.best||{};delete s.arc.tickets;return s.arc;};
 let back0=null;
@@ -10,20 +10,21 @@ const GAMES=[
  {id:'mole',n:'הַכֵּה בַּחֲפַרְפֶּרֶת',e:'🔨',c:'#ffd23f',d:'מְהִירוּת וְחֶשְׁבּוֹן'},
  {id:'frog',n:'קְפִיצַת צְפַרְדֵּעַ',e:'🐸',c:'#b48cff',d:'קַו הַמִּסְפָּרִים'}];
 const G=id=>GAMES.find(g=>g.id===id);
+T.addChoices&&T.addChoices(GAMES.map(g=>g.n));T.addSay&&T.addSay(['הָאַרְקֵייד. בְּחַר מִשְׂחָק.']);   /* #266 for pregen */
 /* ---------- the hall ---------- */
 function openArcade(back){if(back)back0=back;back0=back0||O.showMap;T.setKey(null);O.setScreen('sTal','final',back0);O.musicStart&&0;
-  const a=A();T.hudT('הָאַרְקֵייד');O.sayNow='הָאַרְקֵייד. בְּחַר מִשְׂחָק.';
+  const a=A();T.hudT('הָאַרְקֵייד');
   const s=$('#sTal');s.innerHTML='';const hall=h('div','arc');
   hall.appendChild(h('div','arch',`<span class="neon">🕹️ הָאַרְקֵייד</span>`));
   const g=h('div','cabs');
-  GAMES.forEach((gm,i)=>{const best=a.best[gm.id]|0;const played=!!(T.S().tl['arc-'+gm.id]||{}).n;const tag=best?`<span class="hs">🏆 שִׂיא: ${best}</span>`:played?'':'<span class="hs new">✨ חָדָשׁ</span>';const c=h('button','cab',`<span class="scr"><span class="ce">${gm.e}</span></span><b>${gm.n}</b><small>${gm.d}</small>${tag}`);
+  GAMES.forEach((gm,i)=>{/* #8: no "✨ new" on every cabinet; #426: no record tag */const c=h('button','cab',`<span class="scr"><span class="ce">${gm.e}</span></span><b>${gm.n}</b><small>${gm.d}</small>`);
     c.style.setProperty('--nc',gm.c);c.style.animationDelay=(i*.08)+'s';c.onclick=()=>{sfx.pop(3);start(gm.id);};g.appendChild(c);});
-  hall.appendChild(g);
+  hall.appendChild(g);O.sayNow='הָאַרְקֵייד. בְּחַר מִשְׂחָק.'+T.choiceSay(g,'.cab b');
   s.appendChild(hall);later(()=>{const c=g.querySelector('.cab');if(c&&T.intro)T.intro('i-arc',c,'זֶה הָאַרְקֵייד! מִשְׂחָקִים קְצָרִים וּמְהִירִים, סְתָם בִּשְׁבִיל הַכֵּיף. בְּחַר אֶחָד!');});}
 const later=f=>setTimeout(f,D(700));
 /* ---------- shared game frame ---------- */
 let cur=null;
-function frame(id,title){const gm=G(id);O.setScreen('sTal','final',()=>{if(cur)cur.stop();openArcade();});T.hudT(gm.n);if(O.hereBegin)O.hereBegin('arc:'+id);/* #44 the place + the pause button */
+function frame(id,title){const gm=G(id);O.setScreen('sTal','final',()=>{if(cur)cur.stop();if(brk)return brkEnd();openArcade();});T.hudT(gm.n);if(O.hereBegin)O.hereBegin('arc:'+id);/* #44 the place + the pause button */
   const s=$('#sTal');s.innerHTML='';const box=h('div','arc game');box.style.setProperty('--nc',gm.c);
   const top=h('div','gtop',`<div class="rule">${title||''}</div><div class="gstat"><span class="sc">⭐ <b>0</b></span><span class="tm"></span></div>`);
   const field=h('div','field');box.append(top,field);s.appendChild(box);
@@ -31,12 +32,13 @@ function frame(id,title){const gm=G(id);O.setScreen('sTal','final',()=>{if(cur)c
     score:v=>{top.querySelector('.sc b').textContent=v;},time:t=>{top.querySelector('.tm').textContent=t;}};}
 function countdown(F,go){const c=h('div','cdown');F.field.appendChild(c);let n=3;const tick=()=>{if(!c.isConnected)return;if(n>0){c.textContent=n;c.classList.remove('pop');void c.offsetWidth;c.classList.add('pop');sfx.blip?sfx.blip():sfx.pop(1);n--;setTimeout(tick,D(650));}
   else{c.textContent='קָדִימָה!';c.classList.remove('pop');void c.offsetWidth;c.classList.add('pop');sfx.ok(2);setTimeout(()=>{c.remove();go();},D(550));}};tick();}
-function finish(id,score,stars,extra){if(cur){cur.stop();cur=null;}T.setKey(null);const a=A();const best=a.best[id]|0;const rec=score>best;if(rec)a.best[id]=score;adapt(id,stars);
+function finish(id,score,stars,extra){if(cur){cur.stop();cur=null;}T.setKey(null);const a=A();if(!brk)adapt(id,stars);/* #426: no records, the stars are the reward */
   a.plays=(a.plays|0)+1;T.record('arc-'+id,stars,{b:score});
-  T.result({title:rec&&best?'שִׂיא חָדָשׁ! 🏆':'כָּל הַכָּבוֹד!',sub:`נְקֻדּוֹת: ${score}${extra||''}`,stars,gems:0,back:()=>openArcade(),again:()=>start(id)});}
+  if(brk){T.result({title:'כָּל הַכָּבוֹד!',sub:`נְקֻדּוֹת: ${score}${extra||''}`,stars,gems:0,back:brkEnd});return;}/* #428 a break: one round, then back to the story */
+  T.result({title:'כָּל הַכָּבוֹד!',sub:`נְקֻדּוֹת: ${score}${extra||''}`,stars,gems:0,back:()=>openArcade(),again:()=>start(id)});}
 /* #351 difficulty: a level 0..CAP per game (not the record). 3 stars -> one step up, 1 star -> one step down; wider numbers (1-20) only after 3 good rounds in a row */
 const CAP=4;
-const tune=id=>{const a=A(),l=Math.max(0,Math.min(CAP,(a.lv||{})[id]|0)),w=((a.gr||{})[id]|0)>=3;
+const tune=id=>{const a=A(),l=brk?0:Math.max(0,Math.min(CAP,(a.lv||{})[id]|0)),w=!brk&&((a.gr||{})[id]|0)>=3;/* #428 a break round: the calm base level */
   return {lv:l,wide:w,max:w?20:10,line:w?50:l>=2?20:10,sp:[.035*(1+l*.08),.056*(1+l*.08)],spawn:950-l*40,stay:2400-l*150,gap:1100-l*60,meter:.055*(1+l*.1),zone:34-l*2,rivalT:60000-l*3500};};
 const adapt=(id,stars)=>{const a=A();a.lv=a.lv||{};a.gr=a.gr||{};const l=tune(id).lv;
   if(stars>=3){a.lv[id]=Math.min(CAP,l+1);a.gr[id]=(a.gr[id]|0)+1;}else{a.gr[id]=0;if(stars<=1)a.lv[id]=Math.max(0,l-1);}};
@@ -159,6 +161,11 @@ function swim(){const F=frame('swim');const cfg=tune('swim');const N=10;let you=
 /* ---------- wiring ---------- */
 const RUN={balloon,soccer,basket,swim,mole,frog};
 function start(id){T.setKey(null);RUN[id]();}
+/* #428 a short break in the day's path: ONE round of the game the friend picked, then next() (back to the story) */
+let brk=null;
+function brkEnd(){const n=brk&&brk.next;brk=null;if(n)n();}
+function breakRound(id,next){id=G(id)?id:GAMES[0].id;brk={next:next||O.showMap,id};start(id);}
+T.arcBreak=breakRound;T.arcGames=GAMES;
 window.TAL_arcade=openArcade;T.arcade=openArcade;
-window.__arc={open:openArcade,start,get cur(){return cur;},finish:sc=>cur&&cur.finish(sc),hit:()=>cur&&cur.hit(),state:()=>A(),tune,q:id=>qGen(tune(id))};
+window.__arc={open:openArcade,start,brk:breakRound,get inBreak(){return !!brk;},get brkId(){return brk?brk.id:null;},get cur(){return cur;},finish:sc=>cur&&cur.finish(sc),hit:()=>cur&&cur.hit(),state:()=>A(),tune,q:id=>qGen(tune(id))};
 })();

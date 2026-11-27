@@ -13,3 +13,12 @@
 .chb.lcgo svg{width:26px;height:26px}
 .chb.lcgo:disabled{opacity:.55}
 .lcagain{display:block;margin:14px auto 0;font-weight:800;font-size:19px;padding:10px 18px;background:#eef3f7;box-shadow:inset -3px -3px 0 rgba(0,0,0,.1),0 3px 0 rgba(0,0,0,.18)}
+/* #258 pictures of the lessons for more activities */
+.lcpic{display:inline-grid;place-items:center;font-size:72px;line-height:1}.lcpic svg{width:110px;height:110px}.lcpic.sm svg{width:64px;height:64px}
+.lcchips{display:flex;flex-wrap:wrap;justify-content:center;gap:6px}.lcchips span{background:#eaf6e1;border-radius:10px;padding:3px 9px;font-weight:800;font-size:17px}
+.lccode{gap:4px}.lccode i{width:52px;height:52px;display:grid;place-items:center;font-size:34px;background:#eef3f7;border-radius:8px;font-style:normal}
+.lcprog{gap:6px}.lcprog b{min-width:48px;height:48px;display:grid;place-items:center;font-size:28px;background:#5b8def;color:#fff;border-radius:10px}.lcprog b.on{outline:4px solid #f4b400}.lcprog sub{font-size:16px}
+.lcsud{width:min(240px,70vw)}.lcsud .sdc.lchl{background:#ffe9a8}
+.lcsym.lcpic{display:grid;place-items:stretch;width:min(220px,66vw)}
+.lcart .thana,.lcart .thmat{zoom:1.3}
+.lccode.lcpic{display:flex}

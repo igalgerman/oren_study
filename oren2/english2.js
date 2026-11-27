@@ -186,7 +186,7 @@ function sentTeach(save,keys){const T=taught(save);return uniq(keys.filter(k=>/^
   .map(w=>WORD[w].th?'v:'+w:CVCW.includes(w)?'r:'+w:null).filter(Boolean);}
 
 /* ---------- a round: teach cards for new groups, then about 5 questions (#59) ---------- */
-const ROUND=5;
+const ROUND=5,MAXS=6;
 function plan(save,lv,d){const L=LEVELS[lv];if(d==null)d=day();const E=st(save);
   const cur=curUnit(save,lv);let fresh=[],learn=[];
   if(cur){const gs=groupsOf(cur);const lg=gs.filter(g=>groupItems(cur,g).some(k=>seen(save,k))&&groupItems(cur,g).some(k=>!known(save,k)));
@@ -207,7 +207,10 @@ function plan(save,lv,d){const L=LEVELS[lv];if(d==null)d=day();const E=st(save);
   /* new and still-learning items come back once more (the other way round) while there is room */
   const again=[...freshItems,...learn].filter(k=>!/^[ncs]:|^x:/.test(k));for(let i=0;qs.length<ROUND&&i<again.length;i++)add(again[i],1);
   const rest=shuf(old.filter(k=>!qs.some(q=>q.k===k)));while(qs.length<ROUND&&rest.length)add(rest.pop(),0);
-  const ord=spread(shuf(qs));return {lv,unit:cur,teach:[...(lv===2?sentTeach(save,ord.map(q=>q.k)):[]),...fresh.filter(teaches)],qs:ord};}
+  /* #555: teach cards count in the round's progress too: cards + questions at most MAXS (2 new letters = 2 cards + 4 questions) */
+  const tch=fresh.filter(teaches),room=Math.max(1,MAXS-tch.length),rv=new Set(review);
+  const pick=qs.length>room?[...qs.filter(q=>rv.has(q.k)),...shuf(qs.filter(q=>!rv.has(q.k)))].slice(0,room):qs;   /* review first: a forgotten item still comes back */
+  const ord=spread(shuf(pick));return {lv,unit:cur,teach:[...(lv===2?sentTeach(save,ord.map(q=>q.k)):[]),...tch],qs:ord};}
 /* no item twice in a row */
 function spread(a){const left=a.slice(),out=[];while(left.length){const last=out.length?out[out.length-1].k:null;
   const cnt=k=>left.filter(x=>x.k===k).length;const ok=left.filter(x=>x.k!==last);const pool=ok.length?ok:left;const top=Math.max(...pool.map(x=>cnt(x.k)));
@@ -274,6 +277,13 @@ function teachCard(g){if(g.startsWith('L:')){const L=g.slice(2),x=LET[L];return 
   if(c==='w'){const s=SIGHT.find(x=>x[0]===v);return {g,kind:'sight',w:v,ex:s[1],exHe:s[2],say:s[1]===v?v:v+'. '+s[1],items:[g]};}
   return {g,kind:'phrase',p:v,say:v,items:[g]};}
 
+/* #424 the English scene of the daily path: SCENE cards, letters and sounds first, then words (once words are open).
+   [{lv,g}] = a teach card, [{lv,q}] = a question; a question is only about an item seen before or taught on a card of this scene */
+const SCENE=5;
+function scenePart(save,lv,d,n){if(n<=0)return [];const P=plan(save,lv,d);const tch=P.teach.slice(0,Math.max(0,n-1));const tt=new Set(tch.flatMap(g=>teachCard(g).items));
+  const qs=P.qs.filter(q=>seen(save,q.k)||tt.has(q.k)).slice(0,n-tch.length);return [...tch.map(g=>({lv,g})),...qs.map(q=>({lv,q}))];}
+function dayScene(save,d){if(d==null)d=day();const w=levelOpen(save,0)?scenePart(save,0,d,2):[];return [...scenePart(save,1,d,SCENE-w.length),...w];}
+
 /* ---------- everything the game speaks in English (to make the voice in advance) ---------- */
 function speakList(){const out=[];const add=s=>out.push(s);
   THEMES.forEach(t=>t.w.forEach(w=>add(w[0])));
@@ -299,7 +309,7 @@ function merge(save,o){if(!o||!o.en2)return;const E=st(save),F=o.en2;
 
 let UI=null,SAVE=null;      /* the game sets the live save (Part 2); tests pass one */
 const api={THEMES,WORD,EXTRA,CLASH,clash,LETTERS,LET,AZ,LGROUPS,SOUNDMATE,LOOK,CVC,CVCW,SIGHT,SENT,PHRASES,PH,PCLASH,PUNITS,SONGS,SONG,LEVELS,UNIT,ITEM_UNIT,OPEN,SKILLS,INT,
-  day,st,box,seen,known,taught,words,touch,mark,unitDone,doneUnits,levelOpen,songOpen,openSongs,curUnit,plan,gen,teachCard,groupOf,groupsOf,okey,sayIsFor,speakList,levelOf,levelText,report,merge,
+  day,st,box,seen,known,taught,words,touch,mark,unitDone,doneUnits,levelOpen,songOpen,openSongs,curUnit,plan,gen,dayScene,teachCard,groupOf,groupsOf,okey,sayIsFor,speakList,levelOf,levelText,report,merge,
   setRng:f=>{rnd=f||Math.random;},set save(s){SAVE=s;},get save(){return SAVE;},set ui(u){UI=u;},
   register:()=>{if(UI)UI.register();}};
 return api;
@@ -390,18 +400,22 @@ function clueOf(q){if(CLUE[q.type])return CLUE[q.type];
 
 /* ---------- one round of a level ---------- */
 const NAMES=['eng-voc','eng-abc','eng-read','eng-talk','eng-song'];
-const ACTN={'eng-voc':'מִלִּים','eng-abc':'אוֹתִיּוֹת וּצְלִילִים','eng-read':'קוֹרְאִים','eng-talk':'מְדַבְּרִים','eng-song':'שִׁירִים'};
+const SCENE_ID='en-day';
+const ACTN={'en-day':'רֶגַע שֶׁל אַנְגְּלִית','eng-voc':'מִלִּים','eng-abc':'אוֹתִיּוֹת וּצְלִילִים','eng-read':'קוֹרְאִים','eng-talk':'מְדַבְּרִים','eng-song':'שִׁירִים'};
 const snapshot=()=>({open:NAMES.map((_,lv)=>E2.levelOpen(O.save,lv)),units:E2.LEVELS.map(L=>L.units.filter(u=>E2.unitDone(O.save,u)).map(u=>u.id)),songs:E2.openSongs(O.save).length});
 function doneTitle(a,b){const nl=NAMES.findIndex((_,lv)=>b.open[lv]&&!a.open[lv]);if(nl>0)return `נִפְתַּח מִשְׂחָק חָדָשׁ: ${ACTN[NAMES[nl]]}! 🎉`;
   if(b.songs>a.songs)return 'נִפְתַּח שִׁיר חָדָשׁ! 🎵';
   for(let lv=0;lv<4;lv++){const nu=b.units[lv].find(id=>!a.units[lv].includes(id));if(nu)return `סִיַּמְתָּ: ${E2.UNIT[nu].he}! 🎉`;}return undefined;}
-function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save,lv,d);const id=NAMES[lv];const before=snapshot();
-  const steps=[...P.teach.map(g=>({t:'teach',c:E2.teachCard(g)})),...P.qs.map(s=>({t:'q',s}))];
-  const b0={};P.qs.forEach(s=>{if(!(s.k in b0))b0[s.k]=E2.box(save,s.k);});P.teach.forEach(g=>E2.teachCard(g).items.forEach(k=>{b0[k]=0;}));
+/* sc: the daily path's English scene (#424): its own 5 cards from E2.dayScene, recorded as SCENE_ID */
+function round(lv,back,sc){hush();const save=O.save,d=E2.day();let P,steps,id;const before=snapshot();
+  if(sc){P={unit:null,he:ACTN[SCENE_ID]};id=SCENE_ID;steps=E2.dayScene(save,d).map(x=>x.g?{t:'teach',c:E2.teachCard(x.g),lv:x.lv}:{t:'q',s:x.q,lv:x.lv});}
+  else{P=E2.plan(save,lv,d);/* #394 on the daily path: at most 4 steps (the new words' cards + at least 1 question) */P.qs=P.qs.slice(0,Math.max(1,T.pathN(P.teach.length+P.qs.length)-P.teach.length));id=NAMES[lv];
+    steps=[...P.teach.map(g=>({t:'teach',c:E2.teachCard(g)})),...P.qs.map(s=>({t:'q',s}))];}
+  const b0={};steps.forEach(x=>{if(x.t==='q'&&!(x.s.k in b0))b0[x.s.k]=E2.box(save,x.s.k);});steps.forEach(x=>{if(x.t==='teach')x.c.items.forEach(k=>{b0[k]=0;});});
   const res={};const asked=new Set();
   let i=0,err=0,gems=0,nq=0;O.setScreen('sTal','sea',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq e2');s.appendChild(wrap);
-  if(lv===1&&window.LESSONS)s.appendChild(window.LESSONS.againBtn('eng-abc',back,()=>round(1,back)));
-  const title=()=>P.unit?P.unit.he:'חֲזָרָה';
+  if(lv===1&&!sc&&window.LESSONS)s.appendChild(window.LESSONS.againBtn('eng-abc',back,()=>round(1,back)));
+  const title=()=>P.he||(P.unit?P.unit.he:'חֲזָרָה');
   let cur=null;
   function render(){const st=steps[i];hush();T.hudT(title(),T.progressBar(i,steps.length));wrap.innerHTML='';
     if(st.t==='teach')return renderTeach(st.c);renderQ(st.s);}
@@ -436,13 +450,14 @@ function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save
     const HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,before:ex,explain:v.explain?`<div class="e2ex">${v.explain}</div>`:'',
       clue:()=>{hinted=true;if(v.hint){if(v.karaoke){const tok=++TOK;karaoke(card.querySelector('.e2sent'),v.hint,tok);}else talk([['en',v.hint]]);}else playIt();return clueOf(q);},
       reveal:()=>{if(lock)return;lock=true;hush();if(!fin)err++;settle('bad');nq++;sayAfter();setTimeout(next,D(4200));}}):null;
+    const sk=NAMES[steps[i].lv!=null?steps[i].lv:lv];
     function pick(k,b){if(lock||b.disabled)return;
       if(k===q.ans){lock=true;hush();b.classList.add('ok');sfx.ok(i);const g=tries||hinted?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);
-        if(!tries&&T.skHit)T.skHit(NAMES[lv],!hinted);if(!tries&&KN)KN.hit(NAMES[lv],!hinted);settle(tries?'bad':hinted?'hint':'ok');nq++;reveal();setTimeout(next,D(v.after||v.afterK?2600:1700));return;}
-      if(!tries&&T.skHit)T.skHit(NAMES[lv],false);if(!tries&&KN)KN.hit(NAMES[lv],false);tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();
+        if(!tries&&T.skHit)T.skHit(sk,!hinted);if(!tries&&KN)KN.hit(sk,!hinted);settle(tries?'bad':hinted?'hint':'ok');nq++;reveal();setTimeout(next,D(v.after||v.afterK?2600:1700));return;}
+      if(!tries&&T.skHit)T.skHit(sk,false);if(!tries&&KN)KN.hit(sk,false);tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();
       if(tries>=2){if(HB&&HB.el.isConnected){fin=true;HB.answer();return;}lock=true;hush();settle('bad');nq++;row.children[q.ans].classList.add('show');reveal();setTimeout(next,D(3000));}}
     }
-  function next(){if(!wrap.isConnected)return;i++;if(i>=steps.length){T.setKey(null);const t=doneTitle(before,snapshot());T.finishAct(id,err,Math.max(1,nq),gems,back,()=>round(lv,back),t);}else render();}
+  function next(){if(!wrap.isConnected)return;i++;if(i>=steps.length){T.setKey(null);const t=doneTitle(before,snapshot());T.finishAct(id,err,Math.max(1,nq),gems,back,()=>round(lv,back,sc),t);}else render();}
   T.setKey(e=>{if(/^[1-9]$/.test(e.key)){const r=wrap.querySelector('.chs');const b=r&&r.children[+e.key-1];if(b)b.click();}});
   window.__quiz={get ans(){return cur&&cur.ans;},get i(){return i;},get wrap(){return wrap;}};
   window.__e2={get step(){return steps[i];},steps,P};
@@ -479,8 +494,10 @@ if(KN)KN.area('english',{name:'אנגלית',skills:NAMES.slice(0,4).map(id=>({i
   asks:[{id:'eng-voc',q:'מכיר מילים בסיסיות באנגלית',skills:['eng-voc']},{id:'eng-abc',q:'מכיר את האותיות באנגלית והצלילים שלהן',skills:['eng-abc']},{id:'eng-read',q:'קורא מילים קצרות באנגלית',skills:['eng-read']}]});
 const runLv=(lv,back)=>(lv>=2&&lv<=3&&KN&&KN.stepped(NAMES[lv]))?runLv(lv-1,back):lv===4?songs(back):lv===1&&LN?LN.first('eng-abc',back,()=>ABC(back)):round(lv,back);
 const ACTS=NAMES.map((id,lv)=>({id,name:ACTN[id],icon:ICONS[id],avail:()=>lv===4?E2.openSongs(O.save).length>0:E2.levelOpen(O.save,lv),run:back=>runLv(lv,back)}));
+/* #424 the daily path's English scene: not a building card, not a random pick (noDaily); talents' choose() adds it once a day while English is on (inPath) */
+const SCENE={id:SCENE_ID,name:ACTN[SCENE_ID],icon:ICONS['eng-abc'],noDaily:true,inPath:()=>T.dailyPool().includes('eng-abc'),run:back=>LN?LN.first('eng-abc',back,()=>round(1,back,1)):round(1,back,1)};
 function register(){const b=T.BUILD.find(x=>x.id==='eng');if(!b||b._e2)return;b._e2=1;
-  b.acts.forEach(a=>{if(T.ACT[a.id]===a)delete T.ACT[a.id];});b.acts=[ACTS[1],ACTS[0],...ACTS.slice(2)];   /* letters and sounds first (#58) */ACTS.forEach(a=>{a.b=b;T.ACT[a.id]=a;});
+  b.acts.forEach(a=>{if(T.ACT[a.id]===a)delete T.ACT[a.id];});b.acts=[ACTS[1],ACTS[0],...ACTS.slice(2)];   /* letters and sounds first (#58) */ACTS.forEach(a=>{a.b=b;T.ACT[a.id]=a;});SCENE.b=b;T.ACT[SCENE_ID]=SCENE;
   b.blurb='לוֹמְדִים אַנְגְּלִית צַעַד אַחַר צַעַד. לוֹחֲצִים עַל הָרַמְקוֹל כְּדֵי לִשְׁמֹעַ.';}
 E2.ui={register};
 E2.screens={round,songs,sing,pic,ACTS};

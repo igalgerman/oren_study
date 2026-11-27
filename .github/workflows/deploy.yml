@@ -160,6 +160,7 @@ jobs:
       - name: Voice check (#405)
         # pronunciation + nikud check over ALL kid sentences of the pregen list, resumable: each run checks the next ones
         # (Gemini via the site, no secret here) and ends with the findings list in the job summary; never fails the job
+        # #570: the sweep runs once a day and keeps a reserve of Gemini calls for --pages (summary: 'sweep skipped' / 'reserve kept')
         if: always()
         continue-on-error: true
         timeout-minutes: 50

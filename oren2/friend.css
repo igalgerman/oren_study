@@ -29,6 +29,11 @@ body.fron #screens{padding-bottom:84px}
 /* one story line on the result card */
 .frstory{display:flex;align-items:center;justify-content:center;gap:8px;margin:8px auto 4px;font-size:19px;font-weight:700;background:#fff6d6;border-radius:12px;padding:6px 12px}
 .frstory .frq{font-size:24px}
+/* #387 the 2 s story picture over the result card (tap skips) */
+.frsp{position:absolute;inset:0;z-index:3;display:flex;align-items:center;justify-content:center;background:rgba(255,253,245,.96);border-radius:inherit;cursor:pointer;animation:frpop .25s ease-out}
+.frsp .hship.big svg{width:min(260px,70vw)}
+.frsp .shp.nw{animation:frnew .5s ease-in-out 4}
+@keyframes frnew{50%{opacity:.25}}
 @media (max-width:520px){
   .frc .frs{width:46px;height:46px}
   .frb{font-size:17px;padding:5px 10px}
@@ -40,3 +45,24 @@ body.fron #screens{padding-bottom:84px}
 }
 @media (prefers-reduced-motion:reduce){.frc .frs,.frpath i.cur{animation:none}}
 #sHome .frdone .bigbtn.huge{animation:none}
+/* #389 listen first: the answers rest (softly faded, no timer) until the question was heard */
+.chs.lsn .chb{opacity:.55;transition:opacity .3s}
+/* #411 'easy or hard?' at the end of a scene: two big faces, one tap */
+.frez{margin:8px auto 4px;text-align:center}
+.frezq{font-size:20px;font-weight:800;margin-bottom:6px}
+.frezr{display:flex;gap:16px;justify-content:center}
+.frezf{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:92px;min-height:92px;border-radius:20px;border:3px solid #e0d3a8;background:#fffaf0;font-size:18px;font-weight:700;cursor:pointer;padding:6px 10px}
+.frezf .frezi{font-size:46px;line-height:1}
+.frezf.on{border-color:#4fae4f;background:#e6f6e6;transform:scale(1.06)}
+.frezf:disabled:not(.on){opacity:.45}
+/* friend moments on the result card's continue: #428 a short arcade break, #410 'teach the friend' */
+.frm{text-align:center}
+.frm .frms svg{width:72px;height:72px;display:block;margin:0 auto 4px}
+.frmt{font-size:21px;font-weight:700;line-height:1.4;margin:6px auto 8px;max-width:420px}
+.frbg{font-size:56px;line-height:1;margin:4px 0 10px}
+.frtq{font-size:30px;font-weight:800;margin:4px 0}
+.frtq .frtw{color:#e4572e}
+.frtr{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:6px}
+.frtr .frto{min-width:84px;min-height:72px;font-size:30px;font-weight:800;justify-content:center}
+.frtr .frto.ok{background:#e6f6e6;border-color:#4fae4f}
+.frtr .frto.show{background:#fff6d6;border-color:#c98a00}

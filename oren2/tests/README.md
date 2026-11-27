@@ -32,6 +32,7 @@ Needs Node and the `playwright` package with Chromium (no npm install inside the
 | parent (desktop/phone) | users + parent password, permissions, parts on/off, gradual unlock, skip/reset, messages, badges, daily plan, home, full reset |
 | time-missions | today's missions control, daily template, screen-time limit, 5-minute warning, lock screen, bedtime |
 | sandbox-voice (desktop/phone) | parent "play as parent" sandbox with its own save + skip bar, voice check |
+| unlock (desktop/tablet) | #403 the first tap unlocks audio (desktop Chrome, Android tablet profile); a small muted mark on the speaker button (no popup) when the browser blocks sound, gone once sound plays |
 | entry | start screen Oren / parent buttons, parent choice (panel, play, or time together) |
 | day-path (desktop/phone) | "what do you feel like today?" choice from enabled parts, something else, together time (parent "I have time now" and Oren-led), real-world missions, no tickets / prize / badge toasts, first-time tour, family merge of the new keys |
 | arcade (desktop/phone) | all arcade cabinets, records, real clicks (no tickets or prize shop) |
@@ -44,6 +45,7 @@ Needs Node and the `playwright` package with Chromium (no npm install inside the
 | eventlog | #348 game event log: `track()` batches to `/api/log` (one D1 row per batch), session cap, capped offline buffer, no retry loop, `/api/log/summary` (daily summary, raw events with the admin key), 30-day prune; plays two questions through the real worker |
 | shots | #462 session screenshots: the six moments linked to their events, the privacy rule (never the parent panel, PIN, typed text or parent play), size and count caps (30/session, 100/day, 14 days), skipped when busy/offline, one write per batch, the key-protected review page (desktop + phone, 401 without key) after playing 3 questions with 2 wrong in a row, the 'where Oren got stuck' digest |
 | network | #434 the real website on a slow network (throttled) and with no network: the game opens, the recorded voice plays from the device for lines heard before (service worker), a save made offline waits and is sent when the network returns; CI / cloud only like every suite |
+| voice-audit (1/2) | #406 plays every screen (home, every world and level start, every activity, arcade) in a fake audio player: every clip belongs to the line being spoken, has a recording in pregen's lists (keyed `tts:sha256(voice\|rate\|text)` like the site) or is made on first use by a named rule, and the recording matches its text hash; report in the job summary. GitHub Actions / cloud only (refuses even with ALLOW_LOCAL_TESTS=1) |
 | kidtext | #422 all kid text (every Hebrew string with nikud in the sources) + every level generator (30 seeds) + every Talents City activity screen (12 runs): no bare word in kid text, no "1" + plural, no וְ before shva, no feminine verb to the kid; false positives in `ALLOW` (with reasons), real ones in `KNOWN` (fixed in the findings issue) |
 | playthrough (FULL=1) | plays every world level by level on a viewport, extras, layout overflow |
 

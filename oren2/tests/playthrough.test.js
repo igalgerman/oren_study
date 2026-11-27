@@ -40,7 +40,7 @@ async function run(name,wi,extras){
     await p.locator('.orow').nth(2).locator('.sw').nth(1).click();await p.locator('.orow').nth(4).locator('.hatb').nth(2).click();await p.locator('#sStudio .bigbtn').last().click();await sleep(100);}
   if(await p.locator('#sMap').isHidden())log.push('map not shown');await shot('map');await overflow('map');
   const nLv=await p.evaluate(wi=>window.__oren4.WORLDS[wi].levels.length,wi);
-  await p.locator('.wcard2').nth(wi).click();await sleep(100);await dlgThrough();
+  await p.evaluate(()=>document.querySelectorAll('.wcard2').forEach(c=>{c.hidden=false;}));/* G5: 0-star worlds are hidden tiles (#98) */await p.locator('.wcard2').nth(wi).click();await sleep(100);await dlgThrough();
   if(await p.locator('#sWorld').isHidden())log.push('world path not shown');await shot('path');await overflow('path');
   for(let i=0;i<(process.env.SKIPLV?3:nLv);i++){const tag=`W${wi}L${i}`;where=tag;
     const node=p.locator('.pnode').nth(i);if(await node.isDisabled()){log.push('locked '+tag);break;}
@@ -61,7 +61,7 @@ async function run(name,wi,extras){
   if(extras){where='extras';
     await p.click('#btnBack');await sleep(100);
     // speed challenge
-    await p.locator('.wcard2').nth(wi).click();await sleep(100);await p.locator('.whead .bigbtn').click();await sleep(100);await shot('speed');await overflow('speed');
+    await p.evaluate(()=>document.querySelectorAll('.wcard2').forEach(c=>{c.hidden=false;}));/* G5: 0-star worlds are hidden tiles (#98) */await p.locator('.wcard2').nth(wi).click();await sleep(100);await p.locator('.whead .bigbtn').click();await sleep(100);await shot('speed');await overflow('speed');
     for(let k=0;k<5;k++){const s=await st();if(s&&!s.lock){await answer(s,false).catch(()=>{});}await sleep(250);}
     await p.evaluate(()=>{window.__oren4.play.end=Date.now();});await sleep(600);
     if(await p.locator('#ov').isHidden())log.push('speed no result');await shot('speed-res');await p.locator('#ov .bigbtn').last().click();await sleep(100);

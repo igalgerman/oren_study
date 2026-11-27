@@ -3,7 +3,7 @@ const L = require('./lib');
 const {chromium}=require('playwright');
 (async()=>{const b=await chromium.launch();const p=await b.newPage();const errs=[];p.on('pageerror',e=>errs.push(e.message));
 await p.goto(L.URL);
-const r=await p.evaluate(()=>{const O=window.__oren4;const bad=[];let n=0;const kinds={};
+const r=await p.evaluate(()=>{const O=window.__oren4;const bad=[];let n=0;const kinds={};const seenT={};
  const ev=expr=>{const t=expr.trim().split(/\s+/);const vals=[],ops=[];for(let i=0;i<t.length;i++){if(i%2===0)vals.push(Number(t[i]));else ops.push(t[i]);}
    if(vals.some(isNaN))return NaN;for(let i=0;i<ops.length;){if(ops[i]==='×'||ops[i]===':'){const v=ops[i]==='×'?vals[i]*vals[i+1]:vals[i]/vals[i+1];vals.splice(i,2,v);ops.splice(i,1);}else i++;}
    let v=vals[0];for(let i=0;i<ops.length;i++)v=ops[i]==='+'?v+vals[i+1]:v-vals[i+1];return v;};
@@ -42,6 +42,15 @@ const r=await p.evaluate(()=>{const O=window.__oren4;const bad=[];let n=0;const 
       if(c.t==='clock'&&right!==tstr(c.h,c.m))bad.push(tag+' clock');
       if(c.t==='add'&&right!==tstr(h12(c.h+c.k),c.m))bad.push(tag+' clockadd');
       if(c.t==='frac'&&right!==['חֲצִי','שְׁלִישׁ','רֶבַע'][c.parts-2])bad.push(tag+' frac');
+      if(c.t==='setclock'){const hm=lv.u.id==='time-h'?[0]:lv.u.id==='time-half'?[0,30]:[0,15,30,45];if(q.opts.length!==1||!(c.h>=1&&c.h<=12)||!hm.includes(c.m)||!q.hand||q.hand.t!=='clock')bad.push(tag+' setclock '+JSON.stringify(c));}
+      if(c.t==='pzeat'&&(q.opts.length!==1||![2,3,4].includes(c.parts)||!q.hand||q.hand.eat!==1))bad.push(tag+' pzeat '+JSON.stringify(c));
+      if(c.t==='pzleft'&&(+right!==c.parts-1||![2,3,4].includes(c.parts)))bad.push(tag+' pzleft '+JSON.stringify(c));
+      if(c.t==='tfill'&&(+right!==10-c.n||c.n<3||c.n>9))bad.push(tag+' tfill '+JSON.stringify(c));
+      if(c.t==='coins'){const w=c.want;if(q.opts.length!==1||!q.hand||q.hand.t!=='coins'||q.hand.want!==w||!(w>=2&&w<=20)||O.COIN.sum(O.COIN.make(w))!==w)bad.push(tag+' coins '+JSON.stringify(c));}
+      if(c.t==='change'){const w=c.paid-c.price;if(q.opts.length!==1||!q.hand||q.hand.want!==w||![5,10].includes(c.paid)||!(c.price>=2&&c.price<c.paid))bad.push(tag+' change '+JSON.stringify(c));}
+      if(c.t==='coinsum'&&+right!==O.COIN.sum(c.coins))bad.push(tag+' coinsum '+JSON.stringify(c));
+      if(c.t==='chg'&&+right!==c.paid-c.price)bad.push(tag+' chg '+JSON.stringify(c));
+      if(c.t)seenT[lv.u.id+':'+c.t]=1;
       if(c.t==='clock'||c.t==='add'){if(q.opts.some(o=>!/^([1-9]|1[0-2]):[0-5][05]$/.test(o)))bad.push(tag+' bad time opt '+q.opts);}}
     if(q.k==='col'){const st=O.colInit(q);if((q.op==='+'?q.a+q.b:q.a-q.b)!==q.res)bad.push(tag+' col math');if(q.op==='−'&&st.R.length!==st.A.length)bad.push(tag+' lead0');
       let carry=0;for(let c=0;c<st.R.length;c++){let digit;if(q.op==='+'){const s=(st.A[c]|0)+(st.B[c]|0)+carry;digit=s%10;carry=s>=10?1:0;if(c>=st.A.length&&c>=st.B.length)digit=s;}
@@ -50,6 +59,31 @@ const r=await p.evaluate(()=>{const O=window.__oren4;const bad=[];let n=0;const 
  // teacher mode
  for(const op of ['+','−','×',':'])for(const hero of O.HEROES){const t=O.storyFor(op,hero,'תַּפּוּחִים',12,3);if(/undefined/.test(t))bad.push('story '+op);}
  if(O.teachCheck(':',10,3,false)==='')bad.push('teachCheck div');if(O.teachCheck('−',3,10,false)==='')bad.push('teachCheck sub');if(O.teachCheck('+',5,4,false)!=='')bad.push('teachCheck ok');
+ /* #267: the hands-on questions are mixed into the existing levels (clock h / half / q / boss, fractions + boss) */
+ for(const k of ['time-h:setclock','time-half:setclock','time-q:setclock','time-boss:setclock','time-frac:pzeat','time-frac:pzleft','time-frac:frac','time-boss:pzeat','time-h:clock'])if(!seenT[k])bad.push('#267 never seen '+k);
+ /* #417 fill-the-ten questions in the make-ten unit; #418 coins: exact payments first (word-c1), then simple change (word-c2) */
+ for(const k of ['add-2:tfill','word-c1:coins','word-c1:coinsum','word-c2:change','word-c2:chg'])if(!seenT[k])bad.push('#417/#418 never seen '+k);
+ const wi=O.WORLDS.find(w=>w.id==='word').units.map(u=>u.id);if(!(wi.indexOf('word-c1')>=0&&wi.indexOf('word-c1')<wi.indexOf('word-c2')))bad.push('#418 coin units order '+wi);
  return {n,levels:O.ALLLV.length,kinds,bad:[...new Set(bad)].slice(0,30),cnt:new Set(bad).size};});
+/* #415 the wrong-answer classifier (a table of examples), #417 the ten-frame logic, #418 coin logic and the voice of the prices */
+const r2=await p.evaluate(()=>{const O=window.__oren4,bad=[];const K=O.mistakeKind,B=(l,op,r)=>{const res=op==='+'?l+r:l-r;return {k:'bin',l,op,r,res,miss:'res',ans:res};};
+ const T=[[7,'+',5,13,'one'],[7,'+',5,11,'one'],[34,'+',20,64,'ten'],[34,'+',20,44,'ten'],[30,'+',12,24,'swap'],[52,'−',7,54,'swap'],
+   [13,'−',5,18,'op'],[52,'−',7,59,'op'],[52,'−',7,35,'ten'],[13,'−',5,9,'one'],[7,'+',5,20,null],[7,'+',5,12,null],[30,'+',11,15,null],[20,'+',2,22,null],[40,'+',0,4,null]];
+ for(const [l,op,r,g,k] of T){const got=K(B(l,op,r),g);if(got!==k)bad.push(`#415 ${l}${op}${r} given ${g}: ${got} (want ${k})`);}
+ /* a choice (no exercise behind it): only the number is compared */
+ if(K({k:'ch'},36,63)!=='swap'||K({k:'ch'},8,7)!=='one'||K({k:'ch'},5,9)!==null)bad.push('#415 choice classify');
+ for(const k of ['one','ten','swap','op'])if(!O.MK[k]||!/[ְ-ׇ]/.test(O.MK[k]))bad.push('#415 hint text '+k);
+ const HT=new Set(window.HELP_TEXTS||[]);for(const t of [...Object.values(O.MK),...Object.values(O.TFC)])if(!HT.has(t))bad.push('not in pregen list (HELP_TEXTS): '+t);
+ const F=O.TF;const eq=(a,b,tag)=>{if(JSON.stringify(a)!==JSON.stringify(b))bad.push('#417 '+tag+' '+JSON.stringify(a)+' want '+JSON.stringify(b));};
+ eq(F.need('+',8,5),[2,3],'need 8+5');eq(F.at('+',8,5,0),{f:[8,0],step:1},'8+5 t0');eq(F.at('+',8,5,2),{f:[10,0],step:2},'8+5 t2');eq(F.at('+',8,5,5),{f:[10,3],step:3},'8+5 t5');
+ eq(F.lines('+',8,5),['8 + 2 = 10','10 + 3 = 13'],'lines 8+5');
+ eq(F.need('−',13,5),[3,2],'need 13-5');eq(F.at('−',13,5,0),{f:[10,3],step:1},'13-5 t0');eq(F.at('−',13,5,3),{f:[10,0],step:2},'13-5 t3');eq(F.at('−',13,5,5),{f:[8,0],step:3},'13-5 t5');
+ eq(F.lines('−',13,5),['13 − 3 = 10','10 − 2 = 8'],'lines 13-5');
+ for(const id of ['add-2','sub-2']){const u=O.ALLU.find(x=>x.id===id);for(let i=0;i<300;i++){const q=u.gen(i);if(q.k!=='bin')continue;if(!F.ok(q)){bad.push('#417 not across ten '+id+' '+JSON.stringify(q));continue;}
+   const add=q.op==='+',l=add?Math.max(q.l,q.r):q.l,r=add?Math.min(q.l,q.r):q.r,n=F.need(q.op,l,r),e=F.at(q.op,l,r,n[0]+n[1]);
+   if(n[0]<1||n[1]<1||e.step!==3||e.f[0]+e.f[1]!==q.ans)bad.push('#417 frame end '+id+' '+JSON.stringify([q.l,q.op,q.r,e]));}}
+ const C=O.COIN;for(let n=2;n<=20;n++){const m=C.make(n);if(C.sum(m)!==n||m.some(v=>![1,2,5,10].includes(v)))bad.push('#418 make '+n);}
+ const spoken=[];for(const id of ['word-c1','word-c2']){const u=O.ALLU.find(x=>x.id===id);for(let i=0;i<200;i++){const q=u.gen(i);const t=window.__fullSpell(O.qSpeech(q));spoken.push(t);if(/\d/.test(t))bad.push('#418 digits in voice: '+t);if(!/שקל/.test(t))bad.push('#418 no shekel word: '+t);}}
+ return {bad:[...new Set(bad)].slice(0,30),cnt:new Set(bad).size,ex:spoken.slice(0,2)};});
 await b.close();
-L.finish('math-logic',[(r.cnt===0?'PASS':'FAIL')+` all generated math questions valid (${r.n} checked across ${r.levels} levels)`+(r.cnt?' — '+r.bad.join(' | '):''),(errs.length?'FAIL':'PASS')+' no JS errors '+errs.slice(0,3).join(' | ')]);})();
+L.finish('math-logic',[(r2.cnt===0?'PASS':'FAIL')+' #415 mistake classifier, #417 ten-frame, #418 coins logic + prices said as words ('+r2.ex.join(' / ')+')'+(r2.cnt?' — '+r2.bad.join(' | '):''),(r.cnt===0?'PASS':'FAIL')+` all generated math questions valid (${r.n} checked across ${r.levels} levels)`+(r.cnt?' — '+r.bad.join(' | '):''),(errs.length?'FAIL':'PASS')+' no JS errors '+errs.slice(0,3).join(' | ')]);})();

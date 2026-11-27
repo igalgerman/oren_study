@@ -3,7 +3,9 @@ Every EVERY_S (2 min), from the watchdog tick: CPU %, free RAM %, and how many c
 processes run (psutil when installed, else ONE powershell call with Get-CimInstance Win32_Process; no console window).
 Alarm causes: CPU > 85% for 4 min, free RAM < 15%, chrome-headless-shell > 5, claude > live control sessions + 2.
 An alarm names the top 3 processes by RAM and their owner (parent pids walked up to a herdr terminal or the Claude session that started
-them), goes to the orchestrator AND the inspector (hc send), once per 30 min per cause, plus a watchdog.log line.
+them), goes to the orchestrator AND the inspector (hc send), once per 60 min per cause and sooner only when worse (#567: RAM down
+5+ points, claude count up; the sent times live in .runs/pc_alarm.json so a watchdog reload does not forget them), plus a watchdog.log line.
+The claude count is sessions: a claude process started (directly or not) by another claude process is that session's helper (#567).
 .runs/pc.json {text 'PC: CPU x% · RAM y% free', alarm, causes, at} feeds the panel and the dashboard (red when alarmed).
 While alarmed the runner starts no new LOCAL work and a cloud start that failed with no output sets no cloud pause (pc_not_cloud).
 It never kills anything (owner rule): it only reports."""
@@ -13,7 +15,8 @@ from pathlib import Path
 HERE = Path(__file__).parent
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # same as runner.RUNS (no runner import: the runner imports this file)
 EVERY_S, CPU_MAX, CPU_FOR_S, RAM_MIN, CHROME_MAX, CLAUDE_EXTRA = 120, 85, 240, 15, 5, 2
-ALARM_EVERY_S = 1800      # once per 30 min per cause
+ALARM_EVERY_S = 3600      # #567: once per 60 min per cause (sooner only when worse)
+WORSE = {"ram": -5, "claude": 1}   # #567: RAM free down 5+ points / claude count up -> sent again before the 60 min
 FRESH_S = 600             # pc.json older than this (watchdog not running) counts as not alarmed
 WATCH = ("chrome-headless-shell", "node", "claude", "python", "gh", "conhost")
 CONTROL = ("orchestrator", "inbox", "inspector")   # recover.CONTROL: the Claude sessions that always run on the PC
@@ -24,10 +27,22 @@ def kind(name):
     if n.startswith("python"): return "python"
     return n if n in WATCH else None
 
+def _helper(p, by):
+    """#567: a claude process with a claude ancestor is a helper/child of that session, not a session of its own."""
+    pid, seen = p.get("ppid"), {p.get("pid")}
+    while pid and pid not in seen:
+        seen.add(pid)
+        q = by.get(pid)
+        if not q: return False
+        if kind(q.get("name")) == "claude": return True
+        pid = q.get("ppid")
+    return False
+
 def counts(procs):
-    c = dict.fromkeys(WATCH, 0)
+    c, by = dict.fromkeys(WATCH, 0), {p.get("pid"): p for p in procs}
     for p in procs:
         k = kind(p.get("name"))
+        if k == "claude" and _helper(p, by): continue
         if k: c[k] += 1
     return c
 
@@ -71,11 +86,17 @@ def causes(sample, st, now, control):
     if c["claude"] > control + CLAUDE_EXTRA: out.append(("claude", f"{c['claude']} claude processes ({control} control sessions + {CLAUDE_EXTRA} allowed)"))
     return out
 
-def due(keys, sent, now):
-    """Once per ALARM_EVERY_S per cause. -> (keys to send now, new sent)."""
+def due(vals, sent, now):
+    """#567: vals {cause: value}. Once per ALARM_EVERY_S per cause; sooner only when worse than the value last sent (WORSE).
+    sent {cause: {at, v}} (an old plain time also works). -> (keys to send now, new sent)."""
     sent, out = dict(sent), []
-    for k in keys:
-        if now - sent.get(k, -ALARM_EVERY_S) >= ALARM_EVERY_S: sent[k] = now; out.append(k)
+    for k, v in vals.items():
+        last = sent.get(k)
+        if not isinstance(last, dict): last = {"at": last, "v": None} if last is not None else None
+        worse = last is not None and k in WORSE and v is not None and last.get("v") is not None and \
+            ((v - last["v"] <= WORSE[k]) if WORSE[k] < 0 else (v - last["v"] >= WORSE[k]))
+        if last is None or now - float(last.get("at") or 0) >= ALARM_EVERY_S or worse:
+            sent[k] = {"at": now, "v": v}; out.append(k)
     return out, sent
 
 def line(sample):
@@ -83,6 +104,10 @@ def line(sample):
 
 def load(runs=None):
     try: return json.loads((Path(runs or RUNS) / "pc.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError): return {}
+
+def _sent_load(runs):
+    try: return json.loads((Path(runs) / "pc_alarm.json").read_text(encoding="utf-8"))
     except (OSError, ValueError): return {}
 
 def alarmed(runs=None, now=None):
@@ -137,7 +162,12 @@ def tick(ts, send, log, now=None, sample=None, runs=None, collect=collect, st=No
     runs.mkdir(parents=True, exist_ok=True)
     (runs / "pc.json").write_text(json.dumps({"text": line(s), "alarm": bool(found), "causes": [k for k, _ in found], "at": now,
                                               "counts": counts(s.get("procs") or [])}), encoding="utf-8")
-    keys, st["sent"] = due([k for k, _ in found], st.get("sent", {}), now)
+    c = counts(s.get("procs") or [])
+    vals = {k: {"ram": s.get("ram_free"), "claude": c["claude"], "chrome": c["chrome-headless-shell"]}.get(k) for k, _ in found}
+    keys, sent = due(vals, {**_sent_load(runs), **st.get("sent", {})}, now)   # #567: on disk, so a module reload keeps it
+    st["sent"] = sent
+    try: (runs / "pc_alarm.json").write_text(json.dumps(sent), encoding="utf-8")
+    except OSError: pass
     if not keys: return []
     msg = (f"PC LOAD ALARM (watchdog #293): {' · '.join(t for k, t in found if k in keys)}. {line(s)}. "
            f"Top RAM: {'; '.join(top3(s.get('procs') or [], term_pids(ts)))}. "

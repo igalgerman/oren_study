@@ -38,7 +38,7 @@ const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + 
   await p.click('#btnPause'); await sleep(300);
   const pz = await p.evaluate(() => { const o = document.querySelector('.pzov'); const r = o && o.getBoundingClientRect(); return o ? { full: r.width >= innerWidth - 1 && r.height >= innerHeight - 1 && getComputedStyle(o).position === 'fixed', btn: o.querySelectorAll('button').length, txt: o.textContent, paused: document.body.classList.contains('paused') } : null; });
   ok('pause: one full-screen overlay with ONE button (continue)', pz && pz.full && pz.btn === 1 && pz.paused, JSON.stringify(pz));
-  ok('pause: kid text with nikud', pz && /עָצַרְנוּ/.test(pz.txt) && /מַמְשִׁיכִים/.test(pz.txt), pz && pz.txt);
+  ok('pause: kid text with nikud', pz && /עָצַרְנוּ/.test(pz.txt) && /הַמְשֵׁךְ/.test(pz.txt), pz && pz.txt);
   await L.shot(p, { path: path.join(L.SHOTDIR, 'pause-' + L.variant + '.png') });
   ok('pause: saving the place does not touch the family save (no cloud write)', await p.evaluate(t => window.OREN.save.t === t && !('here' in JSON.parse(localStorage.getItem('oren4-v1'))), tFam));
   const tm = await p.evaluate(() => { const O = window.OREN, d = O.today(); const a = (O.save.time || {})[d] | 0; document.querySelector('#hud').hidden = false; O.timeTick(); return [a, (O.save.time || {})[d] | 0]; });

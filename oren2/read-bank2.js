@@ -61,7 +61,7 @@ const W_RAW={
 כַּד|כד|home|🏺|jug
 אָח|אח|family|-|brother
 הַר|הר|nature|mount|mountain
-תָּו|תו|music|note|note
+תָּו|תו|music|-|note
 נַ-עַל|נעל|clothes|shoe|shoe
 שַׁ-עַר|שער|sport|🥅|goal
 אַ-בָּא|אבא|family|👨|dad
@@ -879,8 +879,8 @@ function speakList(){const out=new Set();const add=s=>{if(s)out.add(String(s).re
   order.forEach(o=>add(o.t));paper.forEach(p=>{add(p.t);p.chk.forEach(add);});Object.values(UI).forEach(add);
   return [...out];}
 /* fixed kid-facing lines of the activities */
-const UI={first:'בְּאֵיזוֹ אוֹת מַתְחִילָה הַמִּלָּה?',pw:'אֵיזוֹ מִלָּה מַתְאִימָה לַתְּמוּנָה?',wp:'אֵיזוֹ תְּמוּנָה מַתְאִימָה לַמִּלָּה?',build:'לוֹחֲצִים עַל הַהֲבָרוֹת לְפִי הַסֵּדֶר, מִיָּמִין לִשְׂמֹאל',
- copy:'כְּתֹב אֶת הַמִּלָּה: לוֹחֲצִים עַל הָאוֹתִיּוֹת לְפִי הַסֵּדֶר',dict:'שׁוֹמְעִים אֶת הַמִּלָּה וְכוֹתְבִים אוֹתָהּ',miss:'אֵיזוֹ אוֹת חֲסֵרָה?',order:'סַדֵּר אֶת הַמִּלִּים לְמִשְׁפָּט',
+const UI={first:'בְּאֵיזוֹ אוֹת מַתְחִילָה הַמִּלָּה?',pw:'אֵיזוֹ מִלָּה מַתְאִימָה לַתְּמוּנָה?',wp:'אֵיזוֹ תְּמוּנָה מַתְאִימָה לַמִּלָּה?',build:'סַדֵּר אֶת הַהֲבָרוֹת',
+ copy:'כְּתֹב אֶת הַמִּלָּה',dict:'שׁוֹמְעִים וְכוֹתְבִים',miss:'אֵיזוֹ אוֹת חֲסֵרָה?',order:'סַדֵּר אֶת הַמִּלִּים לְמִשְׁפָּט',
  paperGo:'סִיַּמְתִּי לִכְתֹּב',paperChk:'בּוֹא נִבְדֹּק:',paperOk:'בָּדַקְתִּי',paperPar:'הַרְאֵה לְאַבָּא אוֹ לְאִמָּא',paperParOk:'אַבָּא אוֹ אִמָּא רָאוּ',paperEx:'דֻּגְמָאוֹת:',
  paperTake:'קַח דַּף וְעִפָּרוֹן',storyRead:'הַקְרֵא לִי',storyQ:'לַשְּׁאֵלוֹת',finHint:'בְּסוֹף מִלָּה כּוֹתְבִים אוֹת סוֹפִית',again:'נַסֵּה שׁוּב',heard:'אֵיזוֹ מִלָּה שָׁמַעְתָּ?',
  /* #54 the help button on the tile screens */
@@ -960,11 +960,12 @@ function wp(back){const L=level('word');T.quiz({id:'rb2-wp-'+L,title:'אֵיזו
   return {pr:`<div class="bigw">${w.w}</div><div class="qq">${UI.wp}</div>`,opts:opts.map(x=>pic(x.pic)),ans:opts.indexOf(w),cls:'picb',reveal:()=>say(w.w),key:w.w,bank:'rb-word'};})});}
 /* tap tiles in order (syllables, letters or words); calls done(errors, gems). o.unit = 'syl'|'let'|'word', o.whole = the word/sentence.
    #54 one help button: tap 1 = the next tile glows, tap 2 = the whole answer with a short explanation (counts as a mistake, no gems). */
-function tiles(s,o,done){let k=0,err=0,miss=0,HB=null;s.innerHTML='';const card=h('div','prq tqc',`${o.head||''}<div class="slots">${o.need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
+/* G4: o.tip = one short instruction line at the top of the card, spoken with the word (no 🔊 of its own); G3: letter tiles in balanced rows (4 = 2x2, 7 = 4+3) */
+function tiles(s,o,done){let k=0,err=0,miss=0,HB=null;s.innerHTML='';if(o.tip)O.sayNow=T.spk(o.tip)+'. '+(O.sayNow||'');const card=h('div','prq tqc',`${o.tip?`<div class="qq tqi">${o.tip}</div>`:''}${o.head||''}<div class="slots">${o.need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
   if(o.play){const pb=h('button','hintbtn',ICON.say+'<span>הַשְׁמַע</span>');pb.onclick=o.play;card.appendChild(pb);}s.appendChild(card);
-  const row=h('div','chs');const fb=h('div','lcap','');const unit=o.unit||'let';
+  const row=h('div','chs');const fb=h('div','lcap','');const unit=o.unit||'let';const nt=o.tiles.length;if(unit!=='word'){row.classList.add('rbt');row.style.setProperty('--c',nt<=3?nt:Math.ceil(nt/2));if(nt>=7)row.classList.add('c4');}
   shuffle(o.tiles.map((x,i)=>[x,i])).forEach(([x])=>{const b=h('button','chb tx'+(o.big?' big2':''),x);b.dataset.t=x;b.onclick=()=>tap(b);row.appendChild(b);});
-  s.appendChild(row);s.appendChild(fb);if(o.tip)s.appendChild(h('div','lsent',o.tip));
+  s.appendChild(row);s.appendChild(fb);
   const nextT=()=>k<o.need.length?[...row.children].find(y=>!y.disabled&&y.dataset.t===o.need[k]):null;
   const fill=(j,x)=>{const sl=card.querySelectorAll('.slot2')[j];sl.textContent=x;sl.classList.add('on');};
   const complete=g=>{sfx.ok(1);card.querySelector('.slots').classList.add('flash');if(g){O.addGems(g,card);O.floatText(card,'+'+g);}if(o.end)o.end(card);setTimeout(()=>{if(card.isConnected)done(err,g);},D(g?1400:4200));};
@@ -982,7 +983,7 @@ function tiles(s,o,done){let k=0,err=0,miss=0,HB=null;s.innerHTML='';const card=
       return `<div>${HELP.BT.ans}: <b class="hq-a">${o.whole||o.need.join(unit==='word'?' ':'')}</b></div><div class="hq-x">${UI['hBy'+unit]} ${o.need.join(' · ')}${fin}</div>`;}});
     HB.wrong=()=>wrong(null);}
   window.__rb2={get need(){return o.need;},get k(){return k;},row};}
-function build(back){const L=level('word');const pool=[];for(let t=0;pool.length<6&&t<200;t++){const w=lvPick(W,L,x=>x.syl.length>1,'rb-word',wk);if(!pool.includes(w))pool.push(w);}
+function build(back){const L=level('word');const pool=[],nW=T.pathN(6);for(let t=0;pool.length<nW&&t<200;t++){const w=lvPick(W,L,x=>x.syl.length>1,'rb-word',wk);if(!pool.includes(w))pool.push(w);}
   let i=0,err=0,gems=0;O.setScreen('sTal','city',back);const s=$('#sTal');
   const run=()=>{const w=pool[i];T.hudT('בּוֹנִים מִלָּה',T.progressBar(i,pool.length));O.sayNow=T.spk(w.w);
     tiles(s,{need:w.syl,tiles:w.syl,unit:'syl',whole:w.w,head:w.pic?pic(w.pic,1):'',play:()=>say(w.w),tip:UI.build,end:()=>say(w.w)},(e,g)=>{err+=e;gems+=g|0;if(window.LEARN)try{LEARN.seen('rb-word',w.w,!e,false);}catch(x){}i++;if(i<pool.length)run();else T.finishAct('rb2-build-'+L,err,pool.length,gems,back,()=>build(back));});
@@ -1009,7 +1010,7 @@ function mixPlan(L){const ws=R.writing;const P=[];const add=(kind,arr)=>{const i
 const DIST='בגדזלמנרתפסקשצ'.split('');
 function extraLetters(need,n){const out=[];const last=need[need.length-1];if(R.FINAL[last]&&!need.includes(R.FINAL[last]))out.push(R.FINAL[last]);
   for(const c of shuffle(DIST)){if(out.length>=n)break;if(!need.some(x=>R.sameSound(x,c))&&!out.some(x=>R.sameSound(x,c)))out.push(c);}return out;}
-function mix(back){const L=level('mix');const plan=mixPlan(L);let i=0,err=0,gems=0;O.setScreen('sTal','meadow',back);const s=$('#sTal');
+function mix(back){const L=level('mix');const plan=mixPlan(L);plan.length=Math.min(plan.length,T.pathN(plan.length));/* #394 short on the daily path */let i=0,err=0,gems=0;O.setScreen('sTal','meadow',back);const s=$('#sTal');
   const next=(e,g)=>{gems+=g|0;const [kind,it]=plan[i];if(kind!=='order'&&window.LEARN)try{LEARN.seen('rb-write',mixKey(kind,it),!e,false);}catch(x){}err+=e;i++;if(i<plan.length)run();else{T.setKey(null);T.finishAct('rb2-mix-'+L,err,plan.length*2,gems,back,()=>mix(back));}};
   const run=()=>{const [kind,it]=plan[i];T.hudT('כּוֹתְבִים',T.progressBar(i,plan.length));
     if(kind==='copy'){O.sayNow=T.spk(it.w);tiles(s,{need:it.letters,whole:it.w,tiles:[...it.letters,...extraLetters(it.letters,L<3?1:2)],head:`${pic(it.pic)}<div class="bigw">${it.w}</div>`,tip:UI.copy,big:1,fin:1,end:()=>say(it.w)},next);}

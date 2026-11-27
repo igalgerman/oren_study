@@ -148,6 +148,18 @@ ok(withPerson.every(id => both.has(id + 'm') && both.has(id + 'f')), 'templates 
 ok(C.count(1, 'goal') === 'גּוֹל אֶחָד' && C.count(1, 'kick') === 'בְּעִיטָה אַחַת' && C.count(2, 'window') === 'שְׁנֵי חַלּוֹנוֹת' && C.count(2, 'rock') === 'שְׁתֵּי אֲבָנִים' && C.count(2, 'tower', 'לְ') === 'לִשְׁנֵי מִגְדָּלִים' && C.count(2, 'ship', 'לְ') === 'לִשְׁתֵּי חֲלָלִיּוֹת' && C.count(7, 'minute') === '<b>7</b> דַּקּוֹת',
   'count(): irregular genders (חַלּוֹנוֹת m, אֲבָנִים f) and prefixes');
 ok(C.lp('דָּנִי') === 'לְדָנִי' && C.vav('מָאיָה') === 'וּמָאיָה' && C.vav('תָּמָר') === 'וְתָמָר', 'prefixes before names: לְדָנִי, וּמָאיָה, וְתָמָר');
+// #216 (G4) one short instruction line per question card; the strategy goes into the help clue (q.tip), not the card
+{ const he = s => strip(s).replace(/[֑-ׇ]/g, ''); const badL = new Set();
+  const chk = (q, key) => { const t = he(q.text || ''); if (t && (t.split(/[.?!]/).filter(x => x.trim()).length > 1 || t.length > 34)) badL.add(key + ': ' + t); };
+  for (const sk of C.MM_IDS) for (let lv = 1; lv <= 5; lv++) for (let i = 0; i < 40; i++) chk(C.gen(sk, lv), sk + lv);
+  for (let lv = 1; lv <= 5; lv++) for (const kind of C.CH_BY_LV[lv]) for (let i = 0; i < 40; i++) chk(C.chalQ(lv, kind), 'ch-' + kind);
+  ok(!badL.size, 'ln-math: the instruction line in the card is one short sentence (G4)', [...badL].slice(0, 4).join(' | '));
+  const tipOf = q => he(q.tip || ''); const sq = C.gen('mm-skip', 2), gq = C.chalQ(3, 'grow'), bq = C.chalQ(2, 'balance');
+  ok(/קופצים/.test(tipOf(sq)) && /חקיות/.test(tipOf(gq)) && /פרי/.test(tipOf(bq)), 'ln-math: the strategy sentences moved into the 💡 help clue (q.tip)', [tipOf(sq), tipOf(gq), tipOf(bq)].join(' | ')); }
+// #216 (G2) every next/continue button of learn.js is exactly "▶ הַמְשֵׁךְ"
+{ const src = fs.readFileSync(path.join(ROOT, 'learn.js'), 'utf8'); const btns = src.match(/h\('button','bigbtn[^']*',[^;]*?\)/g) || [];
+  const nextB = btns.filter(b => /ICON\.play|הַבָּא|לַשְּׁאֵלוֹת|מַתְחִילִים|לְחִידוֹן|הָלְאָה/.test(b));
+  ok(nextB.length >= 2 && nextB.every(b => /O\.ICON\.play\+'<span>הַמְשֵׁךְ<\/span>'/.test(b)), 'ln-math: next buttons say only "▶ הַמְשֵׁךְ" (G2)', nextB.filter(b => !/הַמְשֵׁךְ/.test(b)).join(' | ')); }
 
 /* ---------- 3. the engine with simulated learners ---------- */
 let day = 20000; C.setNow(() => day * 864e5 + 12 * 3600e3);
@@ -278,6 +290,13 @@ let rr = seeded(7); C.setRandom(seeded(11));
   C.seen('p', 'x', true); ok(s5.wr.p[C.hash('x')][0] === d0 + 3 && s5.wr.p[C.hash('x')][1] === 1, 'pool: one answer on a due item moves it one step only', JSON.stringify(s5.wr.p[C.hash('x')]));
   day = d0; C.bind({ state: null }); void r5;
 }
+{ // #395 a mission's own top level (its number of answer choices today): the skill model never goes above it, never below 1
+  const s = fresh(); C.setMax('a:t395', 2); ok(C.maxLv('a:t395') === 2, 'setMax: a mission skill has its own top level', C.maxLv('a:t395'));
+  for (let r = 0; r < 4; r++) { K.start(s, 'a:t395', 1); for (let j = 0; j < 5; j++) K.record(s, 'a:t395', true, true, 2000); K.done(s, 'a:t395'); }
+  ok(s.k['a:t395'].l === 2, 'perfect rounds: level stops at the mission top (2)', s.k['a:t395'].l);
+  for (let r = 0; r < 4; r++) { K.start(s, 'a:t395', 1); for (let j = 0; j < 5; j++) K.record(s, 'a:t395', false, true, 2000); K.done(s, 'a:t395'); }
+  ok(s.k['a:t395'].l === 1, 'wrong rounds: level stops at 1 (never below the easiest)', s.k['a:t395'].l);
+}
 C.setNow(null); C.setRandom(null);
 
 /* ---------- 4. the screens (built page + learn.js injected) ---------- */
@@ -370,6 +389,62 @@ async function ui(variant) {
   await p.evaluate(() => { document.getElementById('ov').hidden = true; window.TAL.ACT['world-flag'].run(window.OREN.showMap); }); await sleep(300); await answerQuiz(0); await sleep(200);
   const fl = await bankOf('tq-world-flag'); ok(fl.sn.length === 5 && Object.keys(fl.wr).length === 1 && Object.values(fl.wr)[0][0] === fl.t + 1, V + 'flags quiz: 5 answers recorded (#59), the wrong one back in 1 day', JSON.stringify(fl));
   await p.evaluate(() => { document.getElementById('ov').hidden = true; });
+  // #395 quiet adaptive difficulty: 5 path missions use the skill model; 2 wrong in a row → the next question has one choice less, silently
+  const AD = await p.evaluate(() => Object.assign({}, window.TAL.ADAPT));
+  ok(JSON.stringify(Object.keys(AD).sort()) === JSON.stringify(['sci-animals', 'sci-body', 'world-ani', 'world-flag', 'world-il']), V + '#395: the 5 chosen missions are adaptive', JSON.stringify(AD));
+  // play one round: pattern 'w' = wrong first try (then the right one if still open), 'r' = right; returns choices per question + sounds/messages per question
+  const play = async (id, pat) => { await p.evaluate(id => { document.getElementById('ov').hidden = true; const O = window.OREN; window.__snd = []; window.__sfx0 = window.__sfx0 || Object.assign({}, O.sfx);
+      Object.keys(window.__sfx0).forEach(k => { O.sfx[k] = (...a) => { window.__snd.push(k); }; }); window.TAL.ACT[id].run(O.showMap); }, id); await sleep(300);
+    const res = [];
+    for (let n = 0; n < 12 && await p.evaluate(() => document.getElementById('ov').hidden && !!window.__quiz && !!window.__quiz.wrap.isConnected); n++) {
+      const qi = await p.evaluate(() => window.__quiz.i);
+      const info = await p.evaluate(() => { const w = window.__quiz.wrap; window.__snd.length = 0; return { c: w.querySelectorAll('.chs .chb').length, title: (document.querySelector('#hudMid .chip') || {}).textContent || '', extra: document.querySelectorAll('.toast:not([hidden]), .floatmsg').length }; });
+      if (pat[qi] === 'w') for (let t = 0; t < 10 && !await p.evaluate(() => { const q = window.__quiz; const bs = q.wrap.querySelectorAll('.chs .chb'); bs[(q.ans + 1) % bs.length].click(); return !!q.wrap.querySelector('.chs .chb.bad'); }); t++) await sleep(80); // retry: a tap right after the question appears is ignored (tapTooSoon)
+      await p.evaluate(() => { const q = window.__quiz; const b = q.wrap.querySelectorAll('.chs .chb')[q.ans]; if (b && !b.disabled && !b.classList.contains('show')) b.click(); }); await sleep(60);
+      info.snd = await p.evaluate(() => window.__snd.slice().sort().join(','));
+      res[qi] = info; await p.evaluate(qi => new Promise(r => { const t0 = Date.now(); const f = () => (!window.__quiz || window.__quiz.i !== qi || !document.getElementById('ov').hidden || Date.now() - t0 > 6000) ? r() : setTimeout(f, 50); f(); }), qi); }
+    await p.evaluate(() => { const O = window.OREN; Object.assign(O.sfx, window.__sfx0); document.getElementById('ov').hidden = true; }); return res; };
+  const lvOf = id => p.evaluate(id => { const k = window.OREN.save.lrn.k['a:' + id]; return k ? { l: k.l, n: k.n, h: k.h } : null; }, id);
+  await p.evaluate(() => { delete window.OREN.save.lrn.k['a:world-flag']; });
+  const r1 = await play('world-flag', ['w', 'w', 'w', 'w', 'r']);
+  ok(r1.length === 5 && r1[0].c === 3 && r1[1].c === 3, V + '#395 flags: a new player starts at today\'s difficulty (3 choices)', JSON.stringify(r1.map(x => x.c)));
+  ok(r1[2].c === 2, V + '#395 flags: 2 wrong in a row → the next question is one step easier (2 choices)', JSON.stringify(r1.map(x => x.c)));
+  ok(r1[3].c === 2 && r1[4].c === 2, V + '#395 flags: never below the easiest level (still 2 choices after more mistakes)', JSON.stringify(r1.map(x => x.c)));
+  ok(r1[1].snd === r1[0].snd && r1[2].extra === 0 && r1[2].title === r1[1].title, V + '#395 flags: the step down plays no extra sound and shows no message', JSON.stringify(r1.map(x => [x.snd, x.extra, x.title])));
+  const k1 = await lvOf('world-flag');
+  ok(k1 && k1.n === 5 && k1.h.slice(-5) === '00001' && k1.l === 1, V + '#395 flags: every first answer goes into the skill model; a weak round → level 1 for next time', JSON.stringify(k1));
+  const r2 = await play('world-flag', ['r', 'r', 'r', 'r', 'r']);
+  ok(r2[0].c === 2, V + '#395 flags: the next round starts at the model\'s level (2 choices)', JSON.stringify(r2.map(x => x.c)));
+  const k2 = await lvOf('world-flag'); ok(k2.l === 2, V + '#395 flags: a perfect round → back to today\'s level, never above it', JSON.stringify(k2));
+  ok(await p.evaluate(() => { const T = window.TAL; return T.dailyPool().includes('world-flag'); }), V + '#395 flags is still a path mission');
+  // review of #577: an old star level from before (noteAct, l:1, no q) must not make the first adaptive round easier
+  await p.evaluate(() => { window.OREN.save.lrn.k['a:world-il'] = { l: 1, h: '0', n: 1, d: 0, i: 0, u: 0, f: 0 }; });
+  const r3 = await play('world-il', ['r', 'r', 'r', 'r', 'r']);
+  ok(r3[0] && r3[0].c === 3 && r3.every(x => x.c === 3), V + '#395 Israel: a saved old star level (l:1) → the first adaptive round still starts at today\'s difficulty (3 choices)', JSON.stringify(r3.map(x => x && x.c)));
+  for (const id of Object.keys(AD)) { await p.evaluate(id => { window.OREN.save.lrn.k['a:' + id] = { l: 5, h: '', n: 3, d: 0, i: 0, u: 0, f: 0 }; }, id);
+    const rr = await play(id, ['w', 'w', 'r', 'r', 'r']); const want = AD[id] + 1;
+    ok(rr[0] && rr[0].c === want && rr[1].c === want && rr[2].c === want - 1, V + `#395 ${id}: starts at its own top (${want} choices, even if the saved level is higher), 2 wrong → ${want - 1}`, JSON.stringify(rr.map(x => x && x.c))); }
+  await p.evaluate(() => { document.getElementById('ov').hidden = true; });
+  // #216 the ln-math question card: one instruction line, strategy only behind the help button, 2×2 / one-row options, "הַמְשֵׁךְ"
+  await p.evaluate(() => { const C = window.LEARN; C._g0 = C.gen; C._n = 0; C.gen = () => { const q = C._g0('mm-comp', 2); q.key += Math.random();
+      if (C._n++ >= 1) { const keep = q.opts.filter((o, k) => k === q.ans || k === (q.ans + 1) % 4 || k === (q.ans + 2) % 4); q.ans = keep.indexOf(q.opts[q.ans]); q.opts = keep; } return q; };
+    window.LEARN.run('ln-math', window.OREN.showMap); }); await sleep(300);
+  const rows = () => p.evaluate(() => { const t = {}; window.__learn.wrap.querySelectorAll('.chs .chb').forEach(b => { const y = Math.round(b.getBoundingClientRect().top); t[y] = (t[y] || 0) + 1; }); return Object.keys(t).sort((a, b) => a - b).map(k => t[k]).join('+'); });
+  const c1 = await p.evaluate(() => { const L = window.__learn, d = document.createElement('div'); d.innerHTML = L.q.tip; const tip = d.textContent.trim();
+    const vis = e => !!e && !e.closest('[hidden]') && e.getClientRects().length > 0;
+    return { qq: L.wrap.querySelectorAll('.qq').length, boxes: [...L.wrap.querySelectorAll('.hintbox,.helpbox,.lnintro')].filter(vis).length, tipShown: L.wrap.innerText.includes(tip), bulb: /💡/.test(L.wrap.innerText), say: L.wrap.querySelectorAll('.sl,.rdb,.saybtn').length, tip }; });
+  ok(c1.qq <= 1 && c1.boxes === 0 && !c1.tipShown && !c1.bulb && c1.say === 0, V + 'ln-math card: one instruction line, no second box, the strategy is not shown by default (G4)', JSON.stringify(c1));
+  ok(await rows() === '2+2', V + 'ln-math: 4 options in 2×2 (G3)', await rows()); await shot(p, '14-ln-card');
+  await p.locator('#sTal .helpbtn').click(); await sleep(150);
+  ok(await p.evaluate(t => { const F = window.FRIEND; return !!F && String(F.hinted || '').replace(/<[^>]+>/g, '').includes(t); }, c1.tip), V + 'ln-math: tapping help shows the strategy line (#409 in the friend\'s bubble)', c1.tip);
+  await p.evaluate(() => { const L = window.__learn; const bs = L.wrap.querySelectorAll('.chs .chb'); bs[(L.ans + 1) % 4].click(); }); await sleep(150);
+  await p.evaluate(() => { const L = window.__learn; L.wrap.querySelectorAll('.chs .chb')[L.ans].click(); }); await sleep(200);
+  const ex1 = await p.evaluate(() => { const L = window.__learn, b = L.wrap.querySelector('.hintbox:not([hidden])'), d = document.createElement('div'); d.innerHTML = L.q.tip; const nb = b && b.querySelector('.bigbtn');
+    return { bulb: !!b && /💡/.test(b.innerText) , tip: !!b && b.querySelector('.cap') ? b.querySelector('.cap').innerText.includes(d.textContent.trim()) : false, nb: nb ? nb.innerText.trim() : '', icon: !!(nb && nb.querySelector('svg')) }; });
+  ok(!ex1.bulb && !ex1.tip && ex1.nb === 'הַמְשֵׁךְ' && ex1.icon, V + 'ln-math: the explanation after a mistake has no strategy line; one "▶ הַמְשֵׁךְ" (G2)', JSON.stringify(ex1));
+  await p.locator('#sTal .hintbox .bigbtn').click(); await sleep(250);
+  ok(await rows() === '3', V + 'ln-math: 3 options in one row, never 2+1 (G3)', await rows()); await shot(p, '15-ln-three');
+  await p.evaluate(() => { const C = window.LEARN; C.gen = C._g0; delete C._g0; window.OREN.showMap(); });
   ok(errs.length === 0, V + 'no page errors', errs.slice(0, 3).join(' | '));
   await b.close();
 }

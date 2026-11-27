@@ -107,3 +107,47 @@ _proc = _src.split("def process_locked", 1)[1].split("def close_windows", 1)[0]
 assert "== 8" in _proc and "rereview_prompt(" in _proc and "remote_review(" in _proc.split("== 8", 1)[1]
 assert "only the commits after" in r.rereview_prompt(344, 338, A, B) and A in r.rereview_prompt(344, 338, A, B)
 print("ok re-review on code change")
+
+# #594: every merge of main into a game PR rebuilds index.html. Fakes: a bare 'origin', a fake build_talents.py.
+# main changes talents.js (its built files not rebuilt); the runner's merge-main step must push BOTH rebuilt files.
+base = Path(tempfile.mkdtemp(prefix="rebuild-594-"))
+def G(cwd, *a):
+    p = subprocess.run(["git", *a], cwd=cwd, capture_output=True, text=True)
+    assert p.returncode == 0, (a, p.stdout, p.stderr)
+    return p.stdout.strip()
+G(base, "init", "-q", "--bare", "-b", "main", "origin.git")
+dev = base / "dev"; G(base, "clone", "-q", str(base / "origin.git"), "dev")
+for c in ("user.email t@t", "user.name t"): G(dev, "config", *c.split())
+(dev / "oren2" / "cf" / "public").mkdir(parents=True)
+(dev / "oren2" / "build_talents.py").write_text(
+    "import pathlib\nd=pathlib.Path(__file__).parent\ns='<html>'+(d/'talents.js').read_text()+(d/'arcade.js').read_text()\n"
+    "(d/'index.html').write_text(s)\n(d/'cf'/'public'/'index.html').write_text('site '+s)\n", encoding="utf-8")
+(dev / "oren2" / "talents.js").write_text("t1\n"); (dev / "oren2" / "arcade.js").write_text("a1\n")
+subprocess.run([sys.executable, "build_talents.py"], cwd=dev / "oren2", check=True)
+G(dev, "add", "-A"); G(dev, "commit", "-qm", "m0"); G(dev, "push", "-q", "origin", "main")
+G(dev, "checkout", "-qb", "lane/77"); (dev / "oren2" / "arcade.js").write_text("a2 lane\n")
+subprocess.run([sys.executable, "build_talents.py"], cwd=dev / "oren2", check=True)
+G(dev, "add", "-A"); G(dev, "commit", "-qm", "lane"); G(dev, "push", "-q", "origin", "lane/77")
+G(dev, "checkout", "-q", "main"); (dev / "oren2" / "talents.js").write_text("t2 main\n")
+G(dev, "commit", "-qam", "main moves talents.js"); G(dev, "push", "-q", "origin", "main")
+G(dev, "checkout", "-q", "lane/77")
+saved_run = r.run
+r.run = lambda cmd, cwd=None, **k: (lambda p: (p.returncode, p.stdout + p.stderr))(subprocess.run(cmd, cwd=cwd, capture_output=True, text=True))
+try: rc, msg, sha = r.update_lane(str(dev), "lane/77", None)
+finally: r.run = saved_run
+assert rc == 0, msg
+assert sha == G(dev, "rev-parse", "origin/lane/77"), "the merge + rebuild were pushed"
+pushed = G(dev, "show", "origin/lane/77:oren2/index.html")
+assert pushed == "<html>t2 main\na2 lane", pushed                       # rebuilt: main's talents.js + the lane's arcade.js
+assert G(dev, "show", "origin/lane/77:oren2/cf/public/index.html") == "site " + pushed
+assert G(dev, "status", "--porcelain") == "", "nothing left uncommitted"
+print("ok #594 merge of main pushes the rebuilt built files")
+
+# #594: every prompt that merges main or fixes a PR says: rebuild right after the merge, commit BOTH built files in the same push
+for p in (r.resolve_prompt(5, ["a"]), r.remote_resolve_prompt(5, ["a"]), r.remote_resolve_prompt(5, ["t"], ci=True),
+          r.ci_fix_prompt(5, ["t"]), r.remote_fix_prompt(5, "VERDICT: FIX x"), r.remote_worker_prompt(5, "pack"),
+          r.worker_prompt(5, "pack"), r.worker_prompt(5, "pack", review_text="VERDICT: FIX x")):
+    assert r.REBUILD in p, p
+assert "build_talents.py" in r.REBUILD and "oren2/index.html" in r.REBUILD and "oren2/cf/public/index.html" in r.REBUILD
+assert "merg" in r.REBUILD and "same push" in r.REBUILD
+print("ok #594 prompts say rebuild after merging main")

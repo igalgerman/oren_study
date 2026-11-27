@@ -84,6 +84,43 @@ const noNikud = s => String(s).replace(/<[^>]+>/g, ' ').split(/[\s\-–.,:;!?()"
   const snap = async name => { if (!SHOTS) return; await sleep(150); await p.screenshot({ path: path.join(SHOTS, `${L.variant}-${String(++shotN).padStart(2, '0')}-${name}.png`) }); };
   const LV = { 1: null, 2: { s: 2, n: 1 }, 3: { s: 3, n: 2 } };
   const screenBad = new Set();
+  // #216 simplicity (docs/simplicity-spec.md G2/G3/G4/G7), checked on every screen of every activity
+  const simp = { card: new Set(), btn: new Set(), font: new Set(), tap: new Set(), opts: new Set() }; let nCards = 0;
+  const probe = id => p.evaluate(([id, phone]) => {
+    const S = document.querySelector('#sTal'), out = { card: [], btn: [], font: [], tap: [], opts: [], cards: 0 };
+    const vis = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; };
+    const he = /[א-ת]/, plain = t => t.replace(/[֑-ׇ]/g, '').trim();
+    // G4: an info card shows one short line; the whole text is spoken. G2: its only button is "▶ הַמְשֵׁךְ"
+    const card = S.querySelector('.e2card');
+    if (card) { out.cards = 1; const se = card.querySelector('.sent'), t = plain(se ? se.textContent : '');
+      const lh = se ? parseFloat(getComputedStyle(se).lineHeight) || parseFloat(getComputedStyle(se).fontSize) * 1.3 : 0;
+      if (!se || t.length > 40 || se.getBoundingClientRect().height > lh * 1.5) out.card.push(`${id}: "${t}" (${t.length} chars, ${se ? Math.round(se.getBoundingClientRect().height) : 0}px)`);
+      const said = plain(window.OREN.sayNow || '');
+      if (t && !said.replace(/[.,!?:–\s]/g, '').includes(t.replace(/[.,!?:–\s]/g, '').slice(0, 10))) out.card.push(`${id}: line not spoken`);
+      const bs = [...S.querySelectorAll('button')].filter(vis);
+      if (bs.length !== 1 || bs[0].textContent.trim() !== 'הַמְשֵׁךְ' || !bs[0].querySelector('svg')) out.btn.push(`${id}: ${bs.map(b => b.textContent.trim()).join('/')}`); }
+    for (const b of S.querySelectorAll('button')) if (vis(b) && /הַבָּא|לַשְּׁאֵלוֹת|מַתְחִילִים|לְחִידוֹן|הָלְאָה/.test(b.textContent)) out.btn.push(`${id}: "${b.textContent.trim()}"`);
+    if (phone) {
+      // G7: kid text >= 16px (SVG labels: font size × picture scale)
+      for (const t of S.querySelectorAll('svg text')) { if (!he.test(t.textContent) || !vis(t)) continue; const m = t.getScreenCTM(); const px = parseFloat(getComputedStyle(t).fontSize) * (m ? Math.hypot(m.a, m.b) : 1);
+        if (px < 15.5) out.font.push(`${id}: svg "${plain(t.textContent)}" ${px.toFixed(1)}px`); }
+      for (const e of S.querySelectorAll('*')) { if (e.closest('svg') || !vis(e)) continue; const own = [...e.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('');
+        if (he.test(own) && parseFloat(getComputedStyle(e).fontSize) < 15.5) out.font.push(`${id}: "${plain(own).slice(0, 20)}" ${getComputedStyle(e).fontSize}`); }
+      // G7: tap targets >= 44px (a map place = all its tappable shapes together; the core 🔊 .rdb has a 44px hit ring)
+      const tg = new Map();
+      for (const e of S.querySelectorAll('button:not(.rdb), .e2hit')) { if (!vis(e) || e.disabled) continue; const r = e.getBoundingClientRect(), k = e.dataset.k ? 'k:' + e.dataset.k : e;
+        const u = tg.get(k) || { l: 1e9, t: 1e9, r: -1e9, b: -1e9, n: e.tagName.toLowerCase() + '.' + String(e.getAttribute('class')).split(' ').join('.') + (e.dataset.k ? '[' + e.dataset.k + ']' : '') };
+        u.l = Math.min(u.l, r.left); u.t = Math.min(u.t, r.top); u.r = Math.max(u.r, r.right); u.b = Math.max(u.b, r.bottom); tg.set(k, u); }
+      for (const u of tg.values()) if (Math.min(u.r - u.l, u.b - u.t) < 43.5) out.tap.push(`${id}: ${u.n} ${Math.round(u.r - u.l)}x${Math.round(u.b - u.t)}`);
+    }
+    // G3: 2-4 answer options, balanced (all rows the same, or one column) - never a lone orphan row
+    for (const box of S.querySelectorAll('.chs, .e2items')) { const os = [...box.children].filter(e => e.tagName === 'BUTTON' && e.offsetWidth > 0); if (os.length < 2) continue;
+      const rows = {}; os.forEach(o => { const k = Math.round(o.getBoundingClientRect().top / 8); rows[k] = (rows[k] || 0) + 1; }); const n = Object.values(rows);
+      const orphan = n.length > 1 && n.some(x => x === 1) && n.some(x => x > 1), uneven = n.length > 1 && Math.max(...n) - Math.min(...n) > 1;
+      if ((box.classList.contains('chs') && os.length > 4) || orphan || uneven) out.opts.push(`${id}: ${os.length} options in rows ${n.join('+')}`); }
+    return out;
+  }, [id, L.variant === 'phone']);
+  const addProbe = r => { nCards += r.cards; for (const k in simp) r[k].forEach(x => simp[k].add(x)); };
   for (const id of d.ids) for (const lv of [1, 2, 3]) {
     const e0 = errs.length;
     await p.evaluate(([id, t]) => { document.querySelector('#ov').hidden = true; const s = window.TAL.S(); if (t) s.tl[id] = t; else delete s.tl[id]; window.TAL.ACT[id].run(() => window.TAL.openHub()); }, [id, LV[lv]]);
@@ -93,6 +130,7 @@ const noNikud = s => String(s).replace(/<[^>]+>/g, ' ').split(/[\s\-–.,:;!?()"
     let steps = 0, shot2 = false;
     for (; steps < 260 && !(await ovOpen()); steps++) {
       if (steps % 4 === 0) (await screenNoNikud()).forEach(w => screenBad.add(w + ' @' + id));
+      if (lv === 1 || steps % 3 === 0) addProbe(await probe(id));
       if (SHOTS && !shot2 && steps === 3) { shot2 = true; await snap(`${id}-L${lv}-b`); }
       if (id === 'blk-free' && steps > 12) break;
       await p.evaluate(() => window.EXPLORE2.step()); await sleep(id === 'blk-free' ? 20 : 45);
@@ -103,6 +141,14 @@ const noNikud = s => String(s).replace(/<[^>]+>/g, ' ').split(/[\s\-–.,:;!?()"
     ok(got === lv && st > 0 && errs.length === e0, `${id} L${lv}: level ${got}, stars ${st}, steps ${steps}, errors ${errs.length - e0}`);
   }
   ok(!screenBad.size, 'nikud on every word shown on screen ' + [...screenBad].slice(0, 10).join(' | '));
+  const sl = k => [...simp[k]].slice(0, +(process.env.E2N || 8)).join(' | ');
+  ok(nCards > 20 && !simp.card.size, `G4 info cards: one short line shown, the rest spoken (${nCards} cards) ` + sl('card'));
+  ok(!simp.btn.size, 'G2 info card: one button "▶ הַמְשֵׁךְ"; no הַבָּא/לַשְּׁאֵלוֹת/מַתְחִילִים buttons ' + sl('btn'));
+  if (L.variant === 'phone') {
+    ok(!simp.font.size, 'G7 phone: kid text and planet/map labels >= 16px ' + sl('font'));
+    ok(!simp.tap.size, 'G7 phone: tap targets >= 44px ' + sl('tap'));
+  }
+  ok(!simp.opts.size, 'G3 answer options: 2-4, balanced rows, no orphan ' + sl('opts'));
   // free build is saved and comes back
   const fb = await p.evaluate(() => { const v = (window.TAL.S().e2 || {}).fb || ''; window.TAL.ACT['blk-free'].run(() => {}); return [v.length, v.split(',').length, document.querySelectorAll('#sTal .e2cell').length]; });
   ok(fb[1] === 30 && fb[0] > 29 && fb[0] < 200 && fb[2] > 30, 'free build saved small and redrawn ' + JSON.stringify(fb));
