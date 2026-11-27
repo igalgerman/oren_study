@@ -45,4 +45,16 @@ function gameSources() {
   const sw = path.join(DIR, 'cf', 'public', 'sw.js'); if (fs.existsSync(sw)) out['cf/public/sw.js'] = fs.readFileSync(sw, 'utf8');
   return out;
 }
-module.exports = { scan, gameSources, core, fnRange };
+// #397 the speech queue: the voices are started only by the queue (sayOne), never by a screen. Returns 'file:line text' for every
+// call of googleSay / browserSay / TTS.ns.speak outside the queue's own functions (sayOne, googleSay, browserSay).
+function bypass(sources) {
+  const hits = []; const CALL = /\b(googleSay|browserSay)\s*\(|TTS\.ns\.speak\s*\(/;
+  for (const [file, text0] of Object.entries(sources)) {
+    let text = file === 'index.html' ? core(text0) : text0;
+    if (file === 'index.html') for (const fn of ['sayOne', 'googleSay', 'browserSay']) {
+      const r = fnRange(text, fn); if (r) text = text.slice(0, r[0]) + text.slice(r[0], r[1]).replace(/[^\n]/g, ' ') + text.slice(r[1]); }
+    text.split('\n').forEach((ln, n) => { if (CALL.test(ln) && !/function (googleSay|browserSay)\(/.test(ln)) hits.push(file + ':' + (n + 1) + ' ' + ln.trim().slice(0, 100)); });
+  }
+  return hits;
+}
+module.exports = { scan, gameSources, core, fnRange, bypass };

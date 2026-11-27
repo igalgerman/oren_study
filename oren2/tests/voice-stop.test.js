@@ -38,7 +38,7 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  const lt=await p.evaluate(async()=>{const urls=[],live=[];window.Audio=function(u){urls.push(u);const a={play(){live.push(a);setTimeout(()=>{a.onplaying&&a.onplaying();setTimeout(()=>a.onended&&a.onended(),20);},5);return Promise.resolve();},pause(){},addEventListener(){}};return a;};
    window.__gv.ok=true;window.__fast=false;window.__noAuto=true;const S='אוֹרֶן הוֹלֵךְ לַגַּן עִם הַכֶּלֶב שֶׁלּוֹ וְרוֹאֶה פְּרָחִים יָפִים. ';let long='';for(let i=1;long.length<1200;i++)long+=S.replace('.',' '+i+'.');long=long.trim();
    const get=u=>new URLSearchParams(u.split('?')[1]).get('t');
-   window.OREN.say(long);const first=urls.length;await new Promise(r=>setTimeout(r,1500));const parts=urls.map(get);
+   window.OREN.hush();window.OREN.say(long);/* #397: the fake browser voice above never ends, so the queue is emptied first */const first=urls.length;await new Promise(r=>setTimeout(r,1500));const parts=urls.map(get);
    urls.length=0;window.OREN.say('שָׁלוֹם אוֹרֶן.');await new Promise(r=>setTimeout(r,100));const short=urls.map(get);
    const pre=window.__ttsParts?window.__ttsParts(window.__fullSpell(long)):[];
    window.__fast=true;window.__noAuto=false;window.__gv.ok=false;return {len:long.length,first,parts,full:window.__fullSpell(long),short,shortWant:window.__fullSpell('שָׁלוֹם אוֹרֶן.'),pre};});

@@ -45,6 +45,8 @@ const ACT = 'sci-animals';                                   /* a quiz with 4 op
   ok('fast second wrong tap is not judged (no penalty)', s.judged === 1, JSON.stringify(s));
   ok('fast second wrong tap: the options rest', s.locked);
   const line = await p.evaluate(() => window.FRIEND.listen.line);
+  // #397 one speech queue: the line waits until the friend's line before it has ended (never cut), so wait for it
+  await p.waitForFunction(() => speechSynthesis.log.length > 0, null, { timeout: 3000 }).catch(() => {}); s = await st();
   ok('the friend says "let\'s listen again" (nikud)', s.said.length >= 1 && window_has(s.said[0], line) && NIK.test(line), JSON.stringify(s.said));
   ok('the friend line is in the voice pregen list', await p.evaluate(l => window.FRIEND.speakList().includes(l), line));
   const q = await p.evaluate(() => window.OREN.sayNow);

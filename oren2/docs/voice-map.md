@@ -7,7 +7,12 @@ browser's own speech outside `browserSay`, and when a file that speaks is missin
 
 ## 1. One entry point: `say(text, lang, slow)`
 
-Every spoken sentence goes through `say()`. It picks ONE voice, in this order:
+Every spoken sentence goes through `say()`. Since #397 (audit 2/11) `say()` only puts the sentence in ONE speech queue
+(`SQ`, `sayNext`, `sayOne` next to `say` in `index.html`): one sentence at a time, the next starts when the one before ends
+(never two voices together, never cut in the middle). `hush()` empties the queue and stops the voice. The same sentence twice
+in a row is said once; at most 3 wait. A voice that never reports its end is let go after about twice its length (`sayGuard`).
+Only the queue (`sayOne`) starts a voice; `voice-stats` (#397 lines, `voicescan.js` `bypass`) fails on any other call.
+For each sentence the queue picks ONE voice, in this order:
 
 | order | voice | when | where |
 |---|---|---|---|
@@ -15,7 +20,7 @@ Every spoken sentence goes through `say()`. It picks ONE voice, in this order:
 | 2 | Claude artifact voice (`window.claude.use('tts')`) | inside the Claude artifact | `index.html:1557` (in `say`), setup `index.html:1451-1456` (`TTS`, `useClaude`) |
 | 3 | browser voice (`speechSynthesis`) | the one fallback (owner, answer 3: only when the whole session is offline) | `index.html:1518` `browserSay` |
 
-- `index.html:1553` `say()` — waits for the status check (`GV.pending`), rechecks the status in the background, then picks the voice.
+- `sayNext()` — waits for the status check (`GV.pending`); `sayOne()` rechecks the status in the background, then picks the voice.
 - `index.html:2343` — `say`, `hush` and `sayNow` are given to every pack file as `O.say` / `O.hush` / `O.sayNow`.
 
 ### Google voice details (`googleSay`, `index.html:1543`)
@@ -64,7 +69,7 @@ Every spoken sentence goes through `say()`. It picks ONE voice, in this order:
 
 ## 3. Stopping the voice
 
-- `hush()` `index.html:1571`: `speechSynthesis.cancel()`, pause the Google `Audio`, `TTS.ns.stop()`.
+- `hush()`: empties the speech queue, `speechSynthesis.cancel()`, pause the Google `Audio`, `TTS.ns.stop()`.
 - Called on every screen change (`setScreen` `index.html:1645`), back (`index.html:1654`, `1661`), pause (`index.html:1242`),
   overlay buttons (`index.html:1663`), next story panel (`index.html:1681`), level/lesson start (`index.html:2031, 2034, 2041`).
 
