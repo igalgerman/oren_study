@@ -119,9 +119,13 @@ const INIT = () => {
     for (let i = 0; i < w.length;) { let j = i; while (j < w.length && SRCN.includes(w.slice(i, j + 1).join(' '))) j++;   // at most 4 runs, 3 words left over
       if (j === i) { vars++; i++; } else { runs++; fixed += w.slice(i, j).join(' ').length; i = j; } }
     return runs <= 4 && vars <= 3 && fixed >= 4; };
+  // the help's last step (help.js BT.ans): 'הַתְּשׁוּבָה הִיא: <answer>' + the explanation, e.g. the completed sentence (#608): the answer (1-3 words) + a 'word' line
+  const ANS = NN('הַתְּשׁוּבָה הִיא') + ':';
+  const helpAns = l => { const t = NN(l); if (!t.startsWith(ANS)) return false; const w = t.slice(ANS.length).trim().split(' ');
+    for (let k = 1; k <= 3 && k < w.length; k++) if (word(w.slice(k).join(' '))) return true; return false; };
   const NUMW = /(^|\s)ו?(אחת|אחד|שתיים|שתים|שנים|שניים|שלוש|שלושה|ארבע|ארבעה|חמש|חמישה|שש|שישה|שבע|שבעה|שמונה|תשע|תשעה|עשר|עשרה|עשרים|שלושים|ארבעים|חמישים|שישים|שבעים|שמונים|תשעים|מאה)(?=[\s.,?!]|$)/g;
   const numbers = c => /\d/.test(c.piece) || (c.t.match(NUMW) || []).length >= 2;
-  const why = c => PLAY.has(c.t) || SRCN.includes(NN(c.piece)) ? 'play' : PG.RANDOM.test(c.t) ? 'random' : numbers(c) ? 'numbers' : choices(c.t) ? 'choices' : word(c.piece) ? 'word' : '';
+  const why = c => PLAY.has(c.t) || SRCN.includes(NN(c.piece)) ? 'play' : PG.RANDOM.test(c.t) ? 'random' : numbers(c) ? 'numbers' : choices(c.t) ? 'choices' : word(c.piece) || helpAns(c.piece) ? 'word' : '';
   const check = (c, rec) => { const k = key(c.v, c.r, c.t);
     if (c.line == null) return noLine.push(c.t);
     lines.add(c.line);
@@ -146,7 +150,8 @@ const INIT = () => {
     const w0 = wrongLine.length;
     check({ ...c0, t: t1, line: t1, piece: t1, parts: [t1] }, REC); const R2 = new Map(REC); R2.set(k0, c0.t + ' אחר'); check(c0, R2); check({ ...c0, t: c0.t + ' אחר' }, REC);
     ok('self-check: a line without audio, audio of another text and a clip of another line all fail', missing.length === before[0] + 1 && badHash.length === before[1] + 1 && wrongLine.length === w0 + 1);
-    missing.length = before[0]; badHash.length = before[1]; wrongLine.length = w0; }
+    missing.length = before[0]; badHash.length = before[1]; wrongLine.length = w0;
+    ok('self-check: the help answer of a sentence completion is a put-together line (#608)', helpAns('הַתְּשׁוּבָה הִיא: יְשֵׁנִים בַּלַּיְלָה אֲנַחְנוּ יְשֵׁנִים בַּמִּטָּה.') && !helpAns('הַתְּשׁוּבָה הִיא: ' + t1)); }
   ok('no page errors while playing every screen', !errs.length, errs.slice(0, 3).join(' | '));
   if (process.env.GITHUB_STEP_SUMMARY) {
     const m = uniq(missing), w = uniq(wrongLine), h = uniq(badHash);
