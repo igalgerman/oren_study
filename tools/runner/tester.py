@@ -49,7 +49,8 @@ def prompt(n, pr, level, url, repo=remote.REPO):
             f"`gh pr list --repo {repo}` and look for one on the same screen). Fit issues are FAIL only for wrong behaviour; "
             "polish goes as a note to the rolling 'Polish backlog' issue of the lane. "
             f"Post ONE comment on the PR (`gh pr comment {pr} --repo {repo} --body-file <file>`, file in your scratch dir) with the "
-            "screenshots (attach or link them) and, on its own last line, `TEST: PASS` or `TEST: FAIL <exact repro steps>` (no backticks).")
+            "screenshots (attach or link them) and, on its own last line, `TEST: PASS` or `TEST: FAIL <exact repro steps>` (no backticks). "
+            + remote.NO_MERGE)
 
 def parse_result(line):
     m = re.match(r"\s*TEST:\s*(PASS|FAIL)\b\s*(.*)$", line or "", re.S)

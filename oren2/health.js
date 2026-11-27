@@ -145,7 +145,8 @@ const remOk=m=>m&&(REM[m.k]||msgOf(m));
 /* #413: 6 ready one-tap messages (audio made in advance: in the pregen list); Oren answers with one face (f) */
 const READY=['אַבָּא גֵּאֶה בְּךָ!','אִמָּא גֵּאָה בְּךָ!','אוֹהֲבִים אוֹתְךָ!','כָּל הַכָּבוֹד, אוֹרֶן!','עוֹד מְעַט אוֹכֶל!','בּוֹא רֶגַע אֵלֵינוּ.'],FACES=['❤️','😊','👍','😂'];
 H.readyMsgs=()=>READY.slice();T.addSay&&T.addSay(READY);
-function remCheck(t){const m=(T.S().set||{}).rem;if(!m||m.ok||!remOk(m)||t<m.at||t-m.at>REM_OLD){remSince=null;return false;}
+/* #617: only on Oren's play device (never on the parent's phone that sent it) */
+function remCheck(t){const m=(T.S().set||{}).rem;if(!m||m.ok||!remOk(m)||t<m.at||t-m.at>REM_OLD||(O.kidDev&&!O.kidDev(m))){remSince=null;return false;}
   if(!remSince||remSince.t!==m.t)remSince={t:m.t,at:t};
   if(inAct()&&!(pend&&pend.ready)&&t-remSince.at<REM_WAIT)return false;
   showRem(m);return true;}
@@ -153,20 +154,23 @@ function showMsg(m){const x=msgOf(m);
   const el=lock('hrem hmsg',`<div class="hfr"><span class="hav bob">${friend()}</span></div><h2></h2>`);el.querySelector('h2').textContent=x;
   const ag=h('button','hagain','🔊');ag.setAttribute('aria-label','שׁוּב');ag.onclick=()=>O.say(T.spk(x));el.firstChild.appendChild(ag);
   const row=h('div','hfaces');FACES.forEach(f=>{const b=h('button','hface',f);b.onclick=()=>{m.ok=1;m.f=f;O.persist();O.famNow&&O.famNow();sfx.win&&sfx.win();close();after();};row.appendChild(b);});el.firstChild.appendChild(row);
-  m.s=1;O.persist();sfx.star&&sfx.star(0);say(x);return el;}
+  m.s=1;O.persist();O.famNow&&O.famNow();sfx.star&&sfx.star(0);say(x);return el;}
 function showRem(m){if(m.k==='msg')return showMsg(m);const x=REM[m.k];
   const el=lock('hrem',`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">${x.e}</span></div><div class="sub">${REM_BY}</div><h2>${x.t}</h2>`);
   const btn=h('button','bigbtn huge hback','<span>בְּסֵדֶר!</span>');el.firstChild.appendChild(btn);
-  btn.onclick=()=>{m.ok=1;O.persist();sfx.win&&sfx.win();close();after();};
-  sfx.star&&sfx.star(0);say(REM_BY+' '+x.t);return el;}
+  btn.onclick=()=>{m.ok=1;O.persist();O.famNow&&O.famNow();sfx.win&&sfx.win();close();after();};
+  m.s=1;O.persist();sfx.star&&sfx.star(0);say(REM_BY+' '+x.t);return el;}
 let remWhen=0;
+/* #617: the delivery status the parent sees: "נשלח…" until Oren's device showed it, then "אורן שמע ✓" (and his face answer) */
+const remStat=m=>`${m.k==='msg'?'💬 '+msgOf(m):REM[m.k].p} · ${m.s||m.ok?'אורן שמע ✓'+(m.f?' · אורן ענה: '+m.f:''):'נשלח…'+(now()<m.at?' · תופיע ב-'+hm(m.at):'')}`;
+H.remRefresh=()=>{const el=document.querySelector('#sPar .hremst'),m=(T.S().set||{}).rem;if(el&&remOk(m))el.textContent=remStat(m);};
 function remPanel(box,sec,re){const m=(T.S().set||{}).rem;
   const s=sec(box,'🔔 תזכורת לאורן','<div class="pnote">אורן יראה תמונה גדולה וישמע אותה בקול — בסוף מה שהוא עושה עכשיו (עד דקה המתנה).</div>');
-  if(remOk(m)&&now()-m.at<REM_OLD){const st=h('div','pstat');st.textContent=`${m.k==='msg'?'💬 '+msgOf(m):REM[m.k].p} · ${m.k==='msg'&&(m.s||m.ok)?'נאמרה ✓'+(m.f?' · אורן ענה: '+m.f:''):m.ok?'אורן ראה ✓':now()<m.at?'תופיע ב-'+hm(m.at):'ממתינה לסוף הפעילות'}`;s.appendChild(st);}
+  if(remOk(m)&&now()-m.at<REM_OLD){const st=h('div','pstat hremst');st.textContent=remStat(m);s.appendChild(st);}
   const w=h('div','popt','<span>מתי:</span>');[[0,'עכשיו'],[5,'5 דק׳'],[10,'10 דק׳'],[15,'15 דק׳'],[30,'30 דק׳']].forEach(([v,n])=>{const b=h('button','pchip'+(remWhen===v?' on':''),n);b.onclick=()=>{remWhen=v;re&&re();};w.appendChild(b);});s.appendChild(w);
-  const g=h('div','pbig');Object.entries(REM).forEach(([k,x])=>{const b=h('button','bigbtn sm','<span>'+x.p+'</span>');b.onclick=()=>{const t=now();T.S().set.rem={k,at:t+remWhen*60000,t};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);re&&re();};g.appendChild(b);});s.appendChild(g);
+  const g=h('div','pbig');Object.entries(REM).forEach(([k,x])=>{const b=h('button','bigbtn sm','<span>'+x.p+'</span>');b.onclick=()=>{const t=now();T.S().set.rem={k,at:t+remWhen*60000,t,to:'kid',by:O.dev};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);re&&re();};g.appendChild(b);});s.appendChild(g);
   /* #353: a typed message the friend says aloud (same "when", same delivery) */
-  const send=x=>{const t=now();T.S().set.rem={k:'msg',x,at:t+remWhen*60000,t};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);re&&re();};
+  const send=x=>{const t=now();T.S().set.rem={k:'msg',x,at:t+remWhen*60000,t,to:'kid',by:O.dev};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);re&&re();};
   const f=h('div','popt hmsgrow','<span>הודעה מהחבר:</span>');READY.forEach(x=>{const b=h('button','hready',x);b.onclick=()=>send(x);f.appendChild(b);});const i=document.createElement('input');i.type='text';i.className='pgin hmsgin';i.maxLength=MSG_MAX;i.dir='rtl';i.placeholder='מה החבר יגיד לאורן?';i.setAttribute('aria-label','הודעה מהחבר');
   const sb=h('button','pchip hmsgsend','📣 שלח');const upd=()=>{sb.disabled=!i.value.trim();};upd();
   i.oninput=upd;i.onkeydown=e=>{e.stopPropagation();if(e.key==='Enter')sb.click();};

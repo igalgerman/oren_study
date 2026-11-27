@@ -41,7 +41,7 @@ const STUB = () => {
   /* the question is also read once by itself when the screen settles: let that reading finish before pressing 🔊, or the two overlap */
   await p.waitForFunction(() => window.__spoken.length >= 1 && !window.__busy(), null, { timeout: 8000 }).catch(() => {}); await L.sleep(150);
   await p.waitForFunction(() => !window.__busy(), null, { timeout: 3000 }).catch(() => {});
-  await p.evaluate(() => { window.TAL.S().set.rdMode = 3; window.__hl = []; window.__spoken = []; document.querySelector('.tqc .qq .rdb').click(); });   /* level 3: no auto-read can cut in on the button's reading */
+  await p.evaluate(() => { window.TAL.S().rd.lvl = 3; window.__hl = []; window.__spoken = []; document.querySelector('.tqc .qq .rdb').click(); });   /* level 3: no auto-read can cut in on the button's reading */
   await p.waitForFunction(() => window.__spoken.length >= 1);
   const sent = await p.evaluate(() => window.__spoken[0]);
   const words = await p.evaluate(() => [...document.querySelectorAll('.tqc .qq .rw')].map(w => w.textContent).join(' '));
@@ -52,7 +52,7 @@ const STUB = () => {
   ok('words light up in order', hl.length > 1 && hl.every((v, k) => v === k), JSON.stringify(hl));
   ok('highlight cleared at the end', await p.evaluate(() => document.querySelectorAll('.rw.on').length === 0));
   // 3. level 1 reads by itself after the pause
-  await p.evaluate(() => { window.TAL.S().set.rdMode = 'auto'; });
+  await p.evaluate(() => { window.TAL.S().rd.lvl = 1; });
   await p.evaluate(() => { window.__spoken = []; window.TAL.ACT['read-sent'].run(() => {}); });
   /* the instruction may be said at once; the sentence to read is said only after the wait */
   const sentSaid = () => p.evaluate(() => { const e = document.querySelector('#sTal .tqc .sent'); if (!e) return -1;
@@ -62,13 +62,13 @@ const STUB = () => {
     return window.__spoken.filter(t => N(t).startsWith(w)).length; });
   await L.sleep(1500); const early = await sentSaid();
   let late = await sentSaid(); for (let k = 0; k < 40 && late < 1; k++) { await L.sleep(250); late = await sentSaid(); }   /* wait for the condition (max 10 s), not a fixed sleep */
-  ok('level 1: waits, then reads by itself', early === 0 && late >= 1, `${early} → ${late}` + (late < 1 ? ' ' + JSON.stringify(await p.evaluate(() => ({ s: window.__spoken, mode: window.TAL.S().set.rdMode, rd: window.TAL.S().rd, sent: (document.querySelector('#sTal .tqc .sent') || {}).textContent }))) : ''));
+  ok('level 1: waits, then reads by itself', early === 0 && late >= 1, `${early} → ${late}` + (late < 1 ? ' ' + JSON.stringify(await p.evaluate(() => ({ s: window.__spoken, rd: window.TAL.S().rd, sent: (document.querySelector('#sTal .tqc .sent') || {}).textContent }))) : ''));
   // 4. level 3 never reads by itself
-  await p.evaluate(() => { window.TAL.S().set.rdMode = 3; window.__spoken = []; window.TAL.ACT['read-sent'].run(() => {}); });
+  await p.evaluate(() => { window.TAL.S().rd.lvl = 3; window.__spoken = []; window.TAL.ACT['read-sent'].run(() => {}); });
   await L.sleep(4000);
   ok('level 3: no auto-read, no cue', await sentSaid() === 0 && await p.evaluate(() => !document.querySelector('.rdcue')));
   // 5. answering correctly without hearing counts as "solo" and moves him up a level
-  await p.evaluate(() => { const T = window.TAL; T.S().set.rdMode = 'auto'; T.S().rd = { lvl: 1, solo: 24 }; T.ACT['read-sent'].run(() => {}); });
+  await p.evaluate(() => { const T = window.TAL; T.S().rd = { lvl: 1, solo: 24 }; T.ACT['read-sent'].run(() => {}); });
   await p.waitForSelector('.tqc .qq .rdb');
   await p.waitForFunction(() => !(window.OREN.tapTooSoon && window.OREN.tapTooSoon()), null, { polling: 50 }); await p.evaluate(() => { const q = window.__quiz; q.wrap.querySelector('.chs').children[q.ans].click(); });   /* #436: taps in the first 400 ms of a new question are ignored */
   const rd = await p.evaluate(() => window.TAL.S().rd);
@@ -89,12 +89,7 @@ const STUB = () => {
   // 7. home bubble has 🔊
   await p.evaluate(() => window.OREN.showMap()); await L.sleep(400);
   ok('🔊 on the home bubble', await p.locator('#sHome .hbub2 .rdb').count() === 1);
-  // 8. parent setting: one place, sets the level
-  await p.evaluate(() => window.TAL.parentPanel('read')); await L.sleep(300);
-  await p.locator('#sPar .pchip', { hasText: 'קורא לבד' }).click(); await L.sleep(200);
-  ok('parent sets level 3', await p.evaluate(() => window.TAL.S().set.rdMode === 3 && window.__rd.level() === 3));
-  await p.locator('#sPar .pchip', { hasText: 'אוטומטי' }).click(); await L.sleep(200);
-  ok('parent back to automatic', await p.evaluate(() => window.__rd.mode() === 'auto'));
+  // 8. the parent's reading setting is "עזרה בקריאה" (#613, tests/readhelp.test.js); the sentence level still moves by itself
   ok('no JS errors', !errs.length, errs.slice(0, 3).join(' | '));
   await stories(b);
   L.finish('reading', res); await b.close();

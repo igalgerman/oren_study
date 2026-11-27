@@ -159,7 +159,10 @@ const INIT = () => {
     return runs <= 4 && vars <= 3 && fixed >= 4; };
   // the help's last step (help.js BT.ans): 'הַתְּשׁוּבָה הִיא: <answer>' + the explanation, e.g. the completed sentence (#608): the answer (1-3 words) + a 'word' line
   const ANS = NN('הַתְּשׁוּבָה הִיא') + ':';
-  const helpAns = l => { const t = NN(l); if (!t.startsWith(ANS)) return false; const w = t.slice(ANS.length).trim().split(' ');
+  // #622 a picture answer: 'הִנֵּה הַתְּשׁוּבָה: ' + the explanation only (the picture is never spoken)
+  const HERE = NN('הִנֵּה הַתְּשׁוּבָה') + ':';
+  const helpAns = l => { const t = NN(l); if (t.startsWith(HERE)) { const x = t.slice(HERE.length).trim(); return !!x && (SRCN.includes(x) || word(x)); }
+    if (!t.startsWith(ANS)) return false; const w = t.slice(ANS.length).trim().split(' ');
     for (let k = 1; k <= 3 && k < w.length; k++) if (word(w.slice(k).join(' '))) return true; return false; };
   const NUMW = /(^|\s)ו?(אחת|אחד|שתיים|שתים|שנים|שניים|שני|שתי|שלוש|שלושה|ארבע|ארבעה|חמש|חמישה|שש|שישה|שבע|שבעה|שמונה|תשע|תשעה|עשר|עשרה|עשרים|שלושים|ארבעים|חמישים|שישים|שבעים|שמונים|תשעים|מאה)(?=[\s.,?!]|$)/g;
   const numbers = c => /\d/.test(c.piece) || (c.t.match(NUMW) || []).length >= 2;

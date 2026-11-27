@@ -233,16 +233,18 @@ async function diag(req,env,u){
 /* /api/log (#348): the game's event log. POST {fam,sid,tz,ev:[{i,t,k,...}]} = one batch = ONE D1 row (table evlog); D1 only, never KV
    (1k writes a day): no D1 = 503 and the game keeps the batch. Events keep only numbers and short strings (no objects).
    GET /api/log/summary?days=7 = a daily summary (play minutes, missions with right/wrong, help, popups, errors, voice Google/browser share);
-   &raw=N adds the newest N raw events (needs the x-admin-key header, like /api/diag). Raw batches older than 30 days are pruned
-   (on a summary read, and on a batch at most once an hour). */
-const EVMAX=400;let evPruneAt=0;
+   &raw=N adds the newest N raw events (needs the x-admin-key header, like /api/diag). Raw batches older than 365 days are pruned
+   (#641; on a summary read, and on a batch at most once an hour).
+   #641 GET /api/log/raw (admin key): every raw event, paged. from/to (ms, event time), sid, k (kind), n (per page, max 5000).
+   With from: oldest first, the next page is &after=<next>; without: newest first, the next page is &before=<next>. next = null on the last page. */
+const EVMAX=400,EVKEEP=365;let evPruneAt=0;
 function evClean(e){if(!e||typeof e!=='object'||Array.isArray(e)||typeof e.k!=='string'||!/^[a-z]{1,12}$/.test(e.k))return null;const o={};let n=0;
  for(const [k,v] of Object.entries(e)){if(n>=20||!/^[a-z]{1,8}$/i.test(k))continue;
   if(typeof v==='number'&&isFinite(v))o[k]=v;else if(typeof v==='boolean')o[k]=v?1:0;else if(typeof v==='string')o[k]=v.slice(0,160);else continue;n++;}return o;}
 let evCols=false;/* #462: screenshot columns sh, si, ns (added once per worker start to an older table) */
 async function evInit(env){if(env.DB.exec)await env.DB.exec("CREATE TABLE IF NOT EXISTS evlog(id INTEGER PRIMARY KEY AUTOINCREMENT,fam TEXT,sid TEXT,at INTEGER,tz INTEGER,n INTEGER,ev TEXT,sh TEXT,si TEXT,ns INTEGER DEFAULT 0);CREATE INDEX IF NOT EXISTS evlog_at ON evlog(at);");
  if(!evCols){evCols=true;for(const c of ['sh TEXT','si TEXT','ns INTEGER DEFAULT 0'])try{await env.DB.prepare('ALTER TABLE evlog ADD COLUMN '+c).run();}catch(e){}}}
-async function evPrune(env,now){evPruneAt=now;try{await env.DB.prepare('DELETE FROM evlog WHERE at<?').bind(now-30*864e5).run();}catch(e){}try{await shotPrune(env,now);}catch(e){}}
+async function evPrune(env,now){evPruneAt=now;try{await env.DB.prepare('DELETE FROM evlog WHERE at<?').bind(now-EVKEEP*864e5).run();}catch(e){}try{await shotPrune(env,now);}catch(e){}}
 const evDay=(t,tz)=>new Date(t-tz*6e4).toISOString().slice(0,10);
 function evSummary(rows,days,now){const tz0=rows.length?+rows[rows.length-1].tz||0:0,from=evDay(now-(days-1)*864e5,tz0),D={},S={};
  const day=k=>D[k]||(D[k]={day:k,sessions:0,min:0,events:0,taps:0,screens:0,questions:0,right:0,wrong:0,missions:{},help:{},popups:{},errors:0,warnings:0,syncFail:0,retries:0,audioFail:0,longFrames:0,dropped:0,voice:{google:0,browser:0,claude:0,share:null},_s:{}});
@@ -261,6 +263,24 @@ function evSummary(rows,days,now){const tz0=rows.length?+rows[rows.length-1].tz|
  return Object.values(D).sort((a,b)=>a.day<b.day?1:-1).map(d=>{d.sessions=Object.keys(d._s).length;delete d._s;d.min=Math.round(d.min*10)/10;
   const v=d.voice,n=v.google+v.browser+v.claude;v.share=n?Math.round(v.google/n*100)/100:null;
   for(const x of Object.values(d.missions)){x.ms=x._n?Math.round(x._ms/x._n):0;delete x._ms;delete x._n;}return d;});}
+async function evRaw(req,env,u){const key=req.headers.get('x-admin-key')||'';if(!env.DIAG_KEY||(await sha(key))!==(await sha(env.DIAG_KEY)))return J({error:'unauthorized'},401);
+ if(!env.DB)return J({error:'no db'},503);await evInit(env);
+ const q=u.searchParams,num=k=>{const v=q.get(k);return v!=null&&v!==''&&isFinite(+v)?+v:null;};
+ const from=num('from'),to=num('to'),sid=q.get('sid')||'',kk=q.get('k')||'',n=Math.max(1,Math.min(5000,Math.round(num('n')||5000))),asc=from!=null;
+ const m=/^(\\d+)\\.(\\d+)$/.exec(String(q.get(asc?'after':'before')||'')),cr=m?+m[1]:null,cj=m?+m[2]:null;
+ /* rows by arrival (id); an event's own time t decides from/to (a batch arrives after its events, at most ~2 days late when offline) */
+ const W=[],B=[];if(from!=null){W.push('at>=?');B.push(from-36e5);}if(to!=null){W.push('at<?');B.push(to+2*864e5);}
+ const R=[];let next=null,last=cr,incl=cr!=null,scanned=0,full=false;
+ while(!full&&scanned<3000){const W2=W.slice(),B2=B.slice();if(last!=null){W2.push('id'+(asc?'>':'<')+(incl?'=':'')+'?');B2.push(last);}incl=false;
+  const rows=((await env.DB.prepare('SELECT id,sid,at,ev FROM evlog'+(W2.length?' WHERE '+W2.join(' AND '):'')+' ORDER BY id '+(asc?'ASC':'DESC')+' LIMIT 100').bind(...B2).all()).results)||[];
+  if(!rows.length)break;
+  for(const r of rows){scanned++;last=r.id;let L=[];try{L=JSON.parse(r.ev)||[];}catch(e){}
+   for(let x=0;x<L.length;x++){const j=asc?x:L.length-1-x;if(r.id===cr&&(asc?j<=cj:j>=cj))continue;const e=L[j]||{},t=+e.t||r.at,s=e.osid||r.sid;
+    if((from!=null&&t<from)||(to!=null&&t>=to)||(sid&&s!==sid)||(kk&&e.k!==kk))continue;
+    if(R.length>=n){full=true;break;}R.push(Object.assign({sid:s},e));next=r.id+'.'+j;}
+   if(full)break;}}
+ if(!full&&scanned<3000)next=null;else if(!full)next=last+'.'+(asc?999999:0);/* scan cap: go on after the last row read */
+ return J({ev:R,next});}
 async function evlog(req,env,u){const now=Date.now();
  if(u.pathname==='/api/log'){if(req.method!=='POST')return J({error:'method'},405);const t=await req.text();if(t.length>600000)return J({error:'too big'},413);let o;
   try{o=JSON.parse(t);if(!o||!isId(String(o.fam))||!/^[a-z0-9]{4,16}$/.test(String(o.sid))||!Array.isArray(o.ev)||!o.ev.length||o.ev.length>EVMAX)throw 0;}catch(e){return J({error:'bad request'},400);}
@@ -280,6 +300,7 @@ async function evlog(req,env,u){const now=Date.now();
   const out={days:evSummary(rows,days,now)};
   if(raw){const R=[];for(let i=rows.length-1;i>=0&&R.length<raw;i--){let L=[];try{L=JSON.parse(rows[i].ev)||[];}catch(e){}for(let j=L.length-1;j>=0&&R.length<raw;j--)R.push(Object.assign({sid:L[j].osid||rows[i].sid},L[j]));}out.raw=R;}
   return J(out);}
+ if(u.pathname==='/api/log/raw'){if(req.method!=='GET')return J({error:'method'},405);return evRaw(req,env,u);}
  if(u.pathname==='/api/log/review'){if(req.method!=='GET')return J({error:'method'},405);return evReview(req,env,u);}
  if(u.pathname==='/api/log/digest'){if(req.method!=='GET')return J({error:'method'},405);return evDigestReq(req,env,u);}
  return J({error:'not found'},404);}

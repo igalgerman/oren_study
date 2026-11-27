@@ -22,6 +22,7 @@ const INIT = () => {
     cancel() { const u = this.cur; if (!u) return; this.cur = null; window.__aev.push(['cut', u.text]); u.onerror && u.onerror({ error: 'interrupted' }); } };
   Object.defineProperty(window, 'speechSynthesis', { value: fake, configurable: true });
   window.__played = [];
+  window.__N = s => String(s).replace(/[\u0591-\u05C7]/g, '').replace(/\s+/g, ' ').trim();
   window.Audio = function (url) {
     const a = this; a.src = url; a.paused = true; a.ended = false; a.error = null;
     const t = decodeURIComponent((/[?&]t=([^&]*)/.exec(url) || [])[1] || '');
@@ -47,6 +48,14 @@ const INIT = () => {
       return Promise.resolve();
     };
   };
+  // #635 the one retry is a fetch of the same URL: __fx = every such fetch by its text; MISSING (not fixed) = the server's JSON
+  //      502 'google 429', NET = network error, anything else = audio
+  const of = window.fetch.bind(window); window.__fx = [];
+  window.fetch = (u, o) => { const s = String(u && u.url || u); if (!/\/api\/tts\?/.test(s)) return of(u, o);
+    const N = window.__N, t = N(decodeURIComponent((/[?&]t=([^&]*)/.exec(s) || [])[1] || '')); window.__fx.push(t);
+    if (/NET/.test(t)) return Promise.reject(new TypeError('Failed to fetch'));
+    if (/MISSING/.test(t) && !(window.__fixed || []).some(x => t.includes(N(x)))) return Promise.resolve(new Response('{"ok":false,"why":"google 429"}', { status: 502, headers: { 'content-type': 'application/json' } }));
+    return Promise.resolve(new Response('ID3', { status: 200, headers: { 'content-type': 'audio/mpeg' } })); };
 };
 (async () => {
   const b = await chromium.launch();
@@ -152,30 +161,35 @@ const INIT = () => {
     // a line on the screen, then the voice says it
     const show = (t, tag) => p.evaluate(([t, tag]) => { document.querySelectorAll('.t404').forEach(e => e.remove());
       const s = [...document.querySelectorAll('section.screen')].find(x => !x.hidden); const e = document.createElement(tag || 'div'); e.className = 't404'; e.textContent = t; s.prepend(e); }, [t, tag]);
-    const st = t => p.evaluate(t => { const e = document.querySelector('.t404'); const N = window.__N; return { req: window.__req.filter(x => x === N(t)).length, played: window.__played.some(x => N(x) === N(t)),
+    const st = t => p.evaluate(t => { const e = document.querySelector('.t404'); const N = window.__N; return { req: window.__req.filter(x => x === N(t)).length, fx: window.__fx.filter(x => x === N(t)).length, played: window.__played.some(x => N(x) === N(t)),
       lit: !!e && e.classList.contains('vmiss'), btn: !!(e && e.querySelector('.vmissb')), hud: document.querySelector('#btnSay').classList.contains('vmiss'), browser: speechSynthesis.log.length }; }, t);
     // case 1: the retry works -> the recording plays, nothing lights up
     await show('FLAKY שׁוּב'); await speak(p, 'FLAKY שׁוּב'); await sleep(500);
     let r = await st('FLAKY שׁוּב');
-    ok('#404 case 1: the first try fails, the one retry plays the recording (no browser voice, nothing lit)', r.req === 2 && r.played && !r.lit && !r.btn && !r.browser, JSON.stringify(r));
+    ok('#404 case 1: the first try fails, the one retry plays the recording (no browser voice, nothing lit)', r.req === 2 && r.fx === 1 && r.played && !r.lit && !r.btn && !r.browser, JSON.stringify(r));
     // case 2: still missing after the one retry (online) -> the text lights up with a 🔊, no browser voice
     await show('MISSING חָסֵר'); await speak(p, 'MISSING חָסֵר'); await sleep(600);
     r = await st('MISSING חָסֵר');
-    ok('#404 case 2 (offline false): exactly one retry, then the text lights up with a 🔊, no browser voice', r.req === 2 && !r.played && r.lit && r.btn && !r.browser, JSON.stringify(r));
+    ok('#404 case 2 (offline false): exactly one retry, then the text lights up with a 🔊, no browser voice', r.req === 1 && r.fx === 1 && !r.played && r.lit && r.btn && !r.browser, JSON.stringify(r));
+    // #641 every audio failure carries the sentence id; the final miss also logs the HTTP status of that sentence's URL
+    await sleep(300);
+    { const au = await p.evaluate(() => window.OREN.evBuf().filter(e => e.k === 'au' && e.src === 'google'));
+      const fl = au.filter(e => e.ev === 'fail'), miss = au.find(e => e.ev === 'missing'), hs = au.find(e => e.ev === 'http');
+      ok('#641 audio failure: sentence id on every fail, the HTTP status (502 from the fake server) after the miss', fl.length >= 1 && fl.every(e => !!e.sn) && !!miss && miss.sn === fl[fl.length - 1].sn && !!hs && hs.st === 502 && hs.sn === miss.sn, JSON.stringify(au)); }
     // the 🔊 tries again: now the server has it -> it plays and the light goes off
     await p.evaluate(() => { window.__fixed = ['MISSING חָסֵר']; });
     await p.click('.t404 .vmissb'); await sleep(400);
     r = await st('MISSING חָסֵר');
-    ok('#404 the 🔊 on the lit text tries again: it plays, the light is off', r.req === 3 && r.played && !r.lit && !r.btn && !r.browser, JSON.stringify(r));
+    ok('#404 the 🔊 on the lit text tries again: it plays, the light is off', r.req === 2 && r.played && !r.lit && !r.btn && !r.browser, JSON.stringify(r));
     // a line that is not on the screen as one text (or on a button): the 🔊 in the top bar lights up and retries it
     await p.evaluate(() => { window.__fixed = []; });
     await show('עוֹד', 'button'); await speak(p, 'MISSING לֹא עַל הַמָּסָךְ'); await sleep(600);
     r = await st('MISSING לֹא עַל הַמָּסָךְ');
-    ok('#404 text not on the screen: the top-bar 🔊 lights up', r.req === 2 && r.hud && !r.browser, JSON.stringify(r));
+    ok('#404 text not on the screen: the top-bar 🔊 lights up', r.req === 1 && r.fx === 1 && r.hud && !r.browser, JSON.stringify(r));
     await p.evaluate(() => { window.__fixed = ['MISSING לֹא עַל הַמָּסָךְ']; });
     await p.click('#btnSay'); await sleep(400);
     r = await st('MISSING לֹא עַל הַמָּסָךְ');
-    ok('#404 the top-bar 🔊 retries that line, then its light is off', r.req === 3 && r.played && !r.hud, JSON.stringify(r));
+    ok('#404 the top-bar 🔊 retries that line, then its light is off', r.req === 2 && r.played && !r.hud, JSON.stringify(r));
     // a text that has its own 🔊 (like the home bubble): it lights up, no second 🔊; its own 🔊 plays it and the light goes off
     await p.evaluate(() => { window.__fixed = []; document.querySelectorAll('.t404').forEach(e => e.remove()); const s = [...document.querySelectorAll('section.screen')].find(x => !x.hidden);
       const e = document.createElement('div'); e.className = 't404'; e.innerHTML = '<button type="button" aria-label="הקראה">🔊</button>MISSING יֵשׁ לִי'; e.firstChild.onclick = () => window.OREN.say('MISSING יֵשׁ לִי'); s.prepend(e); });
@@ -189,6 +203,28 @@ const INIT = () => {
     await show('MISSING כָּבֶה'); await speak(p, 'MISSING כָּבֶה'); await p.waitForFunction(() => document.querySelector('.t404.vmiss'), null, { timeout: 3000 }).catch(() => {});
     const lit = (await st('MISSING כָּבֶה')).lit; await p.evaluate(() => window.OREN.hush());
     ok('#404 hush (screen change) turns the light off', lit && !(await st('MISSING כָּבֶה')).lit, String(lit));
+    // #635 the log says why the server had no audio (status + its reason); a missing line counts one failed try and one retry;
+    //      the same line said again by itself within a minute makes no request (it lights up at once); a 🔊 tap tries again;
+    //      a timeout is not retried
+    // a timer that changes the screen meanwhile drops the line (#399): then the case is played again once
+    let evs = [], r1 = {}, r2 = {};
+    for (let k = 0; k < 2; k++) { const scr = await p.evaluate(() => window.__sq.scr);
+      await p.evaluate(() => { window.__fixed = []; window.__miss.clear(); window.__ev0 = window.OREN.evBuf().length; window.__req = []; window.__fx = []; });
+      await show('MISSING נֶעְלָם'); await speak(p, 'MISSING נֶעְלָם'); await sleep(600);
+      evs = await p.evaluate(() => window.OREN.evBuf().slice(window.__ev0).filter(e => e.k === 'au' || e.k === 'retry').map(e => ({ k: e.k, ev: e.ev, why: e.why, st: e.st, sv: e.sv })));
+      for (let j = 0; j < 3; j++) { await speak(p, 'MISSING נֶעְלָם'); await sleep(150); }
+      r1 = await st('MISSING נֶעְלָם');
+      if (r1.btn) { await p.evaluate(() => { window.__fixed = ['MISSING נֶעְלָם']; }); await p.click('.t404 .vmissb'); await sleep(400); }
+      r2 = await st('MISSING נֶעְלָם');
+      if (await p.evaluate(() => window.__sq.scr) === scr) break; }
+    const mi = evs.find(e => e.ev === 'missing') || {};
+    ok('#635 a missing line is logged with the server status and reason', mi.why === 'no-audio' && mi.st === 502 && mi.sv === 'google 429', JSON.stringify(evs));
+    ok('#635 a missing line: one failed try, one retry (was two failed tries)', evs.filter(e => e.ev === 'fail').length === 1 && evs.filter(e => e.k === 'retry').length === 1, JSON.stringify(evs));
+    ok('#635 said again 3 times by itself: no new request, the text lights up at once', r1.req === 1 && r1.fx === 1 && r1.lit && r1.btn && !r1.browser, JSON.stringify(r1));
+    ok('#635 then a 🔊 tap tries again: it plays', r2.req === 2 && r2.played && !r2.lit, JSON.stringify(r2));
+    await show('SLOW חָסֵר'); await speak(p, 'SLOW חָסֵר'); await sleep(900);
+    r = await st('SLOW חָסֵר');
+    ok('#635 a timeout is not retried: one try, then the 🔊 (no second long wait)', r.req === 1 && r.fx === 0 && r.lit && !r.browser, JSON.stringify(r));
     // case 3: the whole session offline -> the browser voice, nothing lights up
     await ctx.setOffline(true);
     // a timer that changes the screen meanwhile (slow under load) drops the line (#399): then the case is played again once

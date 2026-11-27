@@ -3,10 +3,12 @@ Every question from any window (worker, reviewer, intake, remote QUESTION commen
 issue link, the question, options if any, and a hidden key `<!-- owner-q:KEY -->` (no duplicates per window+question).
 A question is answered when its comment has a reaction, or a comment `ANSWERED owner-q:KEY ...` exists.
 Usage:
-  python tools/runner/owner_q.py ask <window|#n> "<question>"   # the orchestrator's own question (prints the comment url)
+  python tools/runner/owner_q.py ask <window|#n> "<question>" [--gates 64,65]   # the orchestrator's own question (prints the url);
+                                                                # #630: --gates = the issues whose owner gate this answer opens
   python tools/runner/owner_q.py open                           # open questions: key, window, text, url
   python tools/runner/owner_q.py answered <KEY> "<answer>"       # mark answered (after relaying the answer)
   python tools/runner/owner_q.py gate <#n>                      # #608: the owner's answers for issue n (exit 0 = gate open, 1 = closed)
+A PR whose issue is owner-gated (an owner question about it exists) never merges while that gate is CLOSED (#636, merge_gate).
 """
 import hashlib, json, re, sys
 from pathlib import Path
@@ -24,6 +26,7 @@ KEY_RE = re.compile(r"<!-- owner-q:([0-9a-f]{12}) -->")
 MARK = "<!-- owner_q -->"  # #211: every post of this tool (same GitHub account as the owner) -> never counted as his answer
 QUICK_S = 10        # #469: an owner question never waits longer than this on GitHub (a limit -> other identity, else queued)
 ANSWER_RE = re.compile(r"<!-- owner-answer:([0-9a-f]{12}) -->")   # #608: the record qwin.answer writes on the asking issue
+GATES_RE = re.compile(r"<!-- gates: ([#\d ,]+) -->")   # #630: the issues this question gates (any window)
 OPT_RE = re.compile(r"^\s*[❯>›]?\s*(\d+[.)]\s+\S.*)$")
 
 def key_of(window, question):
@@ -38,13 +41,19 @@ def issue_ref(window):
     m = re.match(r"(?:issue|review|intake|remote)-(\d+)", window or "") or re.match(r"#(\d+)$", window or "")
     return f"#{m[1]}" if m else ""
 
-def body(key, window, question, tail=""):
+def gates_of(b):
+    """#630: issue numbers a question comment gates (its hidden `<!-- gates: #64 -->` marker), else []."""
+    m = GATES_RE.search(b or "")
+    return [int(x) for x in re.findall(r"\d+", m[1])] if m else []
+
+def body(key, window, question, tail="", gates=()):
     """The comment text (parent-facing: Hebrew without nikud)."""
     ref = issue_ref(window)
     head = f"**{ref}**" + (f" (חלון `{window}`)" if window and window != ref else "") if ref else f"חלון `{window}`"
     q = re.sub(r"^QUESTION:\s*", "", question).strip() or ("(מחכה לתשובה) " + (tail.strip().splitlines() or [""])[-1].strip())
     opts = options_of(question, tail)
-    return (f"{MARK}<!-- owner-q:{key} -->\n{head}\n\n**שאלה:** {q}\n"
+    g = f"<!-- gates: {' '.join(f'#{n}' for n in gates)} -->" if gates else ""
+    return (f"{MARK}<!-- owner-q:{key} -->{g}\n{head}\n\n**שאלה:** {q}\n"
             + ("".join(f"\n- {o}" for o in opts) + "\n" if opts else "")
             + "\nענה כאן בתגובה (או לאורקסטרטור). אחרי שהתשובה הועברה: `ANSWERED owner-q:" + key + "`")
 
@@ -70,17 +79,36 @@ def record_answer(body):
 
 def gate(n, issue_comments, question_comments):
     """Pure (#608): the owner's answers to the owner questions about issue n, oldest first; [] = the owner gate is closed.
+    A #n question = asked from #n's window, or one that gates #n (#630, any window).
     Counts only an answer record on issue n with the key of a #n question in the questions issue, or a reaction on that question."""
     keys, out = {}, []
     for c in question_comments:
         b = c.get("body") or ""; m = KEY_RE.search(b)
-        if m and re.search(rf"\*\*#{n}\*\*", b): keys[m[1]] = c
+        if m and (re.search(rf"\*\*#{n}\*\*", b) or n in gates_of(b)): keys[m[1]] = c   # #630: or it gates #n
     for c in issue_comments:
         r = record_answer(c.get("body"))
         if r and r[0] in keys: out.append(r[1])
     for c in keys.values():
         out += [f"reaction {g.get('content', '')}" for g in c.get("reactionGroups") or [] if g.get("users", {}).get("totalCount", 1)]
     return out
+
+def merge_state(n, issue_comments, question_comments):
+    """Pure (#636): the owner gate as the merge sees it -> 'none' (no owner question about #n: not owner-gated), 'open', 'closed',
+    or 'error' (unreadable: the caller refuses). Its own reviewer's PURPLE question (window review-<n>) is no merge gate:
+    'hold' parks the issue anyway, 'merge-safe' merges by design."""
+    if issue_comments is None or question_comments is None: return "error"
+    qs = [c for c in question_comments if KEY_RE.search(c.get("body") or "") and (re.search(rf"\*\*#{n}\*\*", c.get("body") or "")
+          or n in gates_of(c.get("body")))   # #630: a question that gates #n gates its merge too
+          and f"`review-{n}`" not in (c.get("body") or "")]
+    if not qs: return "none"
+    return "open" if gate(n, issue_comments, qs) else "closed"
+
+def merge_gate(n):
+    """#636: merge_state of issue n read from GitHub (the questions issue + issue n)."""
+    with ghcache.quick(QUICK_S):
+        q = find_issue(); qcs = comments(q) if q else None
+        ics = comments(n) if qcs is not None else None
+    return merge_state(n, ics, qcs)
 
 def open_questions(comments):
     """Pure: unanswered question comments, oldest first -> [{key, window, text, url}]."""
@@ -93,7 +121,7 @@ def open_questions(comments):
         src = re.search(r"חלון `([^`]+)`", b)                       # #220: the asking window (remote-<n> gets its answer sent)
         window = (w[1] or w[2]) if w else ""
         out.append({"key": m[1], "window": window, "source": src[1] if src else window,
-                    "text": q[1].strip() if q else "", "url": c.get("url", ""), "at": c.get("createdAt", "")})
+                    "text": q[1].strip() if q else "", "gates": gates_of(b), "url": c.get("url", ""), "at": c.get("createdAt", "")})
     return out
 
 # ---------- GitHub side ----------
@@ -131,21 +159,21 @@ def comments(n, gh=None):
     try: return json.loads(out).get("comments", [])
     except ValueError: return None
 
-def post(window, question, tail="", gh=None):
+def post(window, question, tail="", gh=None, gates=()):
     """Post the question once per window+question. -> comment url when posted now, '' when already there, None when gh failed:
     then it is queued (state 'pending') and answers_tick posts it later (#469: never lost, never more than QUICK_S s on GitHub)."""
     with ghcache.quick(QUICK_S):
-        r = _post(window, question, tail, gh)
+        r = _post(window, question, tail, gh, gates)
     s = _state(); pend = [p for p in s.get("pending", []) if (p["window"], p["question"]) != (window, question)]
-    if r is None: pend.append({"window": window, "question": question, "tail": tail[-1500:]})
+    if r is None: pend.append({"window": window, "question": question, "tail": tail[-1500:], "gates": list(gates)})
     if pend != s.get("pending", []): s["pending"] = pend[-50:]; _save(s)
     return r
 
 def flush_pending(gh=None):
     """#469: post the questions that could not be posted earlier (GitHub limited); each stays queued until it is posted."""
-    for p in list(_state().get("pending", [])): post(p["window"], p["question"], p.get("tail", ""), gh)
+    for p in list(_state().get("pending", [])): post(p["window"], p["question"], p.get("tail", ""), gh, p.get("gates", ()))
 
-def _post(window, question, tail="", gh=None):
+def _post(window, question, tail="", gh=None, gates=()):
     gh = gh or GH
     key = key_of(window, question or tail[-600:])
     s = _state()
@@ -156,7 +184,7 @@ def _post(window, question, tail="", gh=None):
     if cs is None: return None
     if any(KEY_RE.search(c.get("body") or "") and key in c["body"] for c in cs):
         s = _state(); s.setdefault("posted", []).append(key); _save(s); return ""
-    rc, out = gh("issue", "comment", str(n), "--body", R.redact(body(key, window, question, tail)))
+    rc, out = gh("issue", "comment", str(n), "--body", R.redact(body(key, window, question, tail, gates)))
     if rc: return None
     s = _state(); s["posted"] = (s.get("posted", []) + [key])[-500:]; _save(s)
     return (out or "").strip().splitlines()[-1] if (out or "").strip() else f"https://github.com/{R.REPO}/issues/{n}"
@@ -198,8 +226,11 @@ def answers_tick(tell, gh=None):
 
 def main(argv):
     sys.stdout.reconfigure(encoding="utf-8")
+    gates = []
+    if argv[:1] == ["ask"] and "--gates" in argv[:-1]:     # #630: ask ... --gates 64,65
+        i = argv.index("--gates"); gates = [int(x) for x in re.findall(r"\d+", argv[i + 1])]; argv = argv[:i] + argv[i + 2:]
     if len(argv) == 3 and argv[0] == "ask":
-        url = post(argv[1], "QUESTION: " + re.sub(r"^QUESTION:\s*", "", argv[2]))
+        url = post(argv[1], "QUESTION: " + re.sub(r"^QUESTION:\s*", "", argv[2]), gates=gates)
         print(url or ("already posted" if url == "" else "GitHub is busy: queued, the watchdog posts it within a minute or two")); return 0
     if argv == ["open"]:
         qs = open_list()

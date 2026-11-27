@@ -1291,16 +1291,17 @@ addEventListener('keydown',e=>{if(!paused())return;e.stopImmediatePropagation();
    page hides. A failed send puts the batch back (the newest EV.max are kept on the device, oldest dropped) until the next send: no retry loop.
    At most EV.cap events per page session (the rest are counted). Parent play (sandbox) is not logged. Every event has an id (i): #462 links
    its screenshots (shots.js) to it; they ride in the same batch. */
-const EV={k:'oren4-ev',sid:(Math.random().toString(36).slice(2)+'0000000000').slice(0,10),n:0,cap:2000,max:600,buf:[],last:0,busy:0,drop:0,t0:Date.now(),s:'',sT:Date.now(),m:'',q:'',lv:'',qT:0,lf:0};
+const EV={k:'oren4-ev',tap:null,sid:(Math.random().toString(36).slice(2)+'0000000000').slice(0,10),n:0,cap:2000,max:600,buf:[],last:0,busy:0,drop:0,t0:Date.now(),s:'',sT:Date.now(),m:'',q:'',lv:'',qT:0,lf:0};
 try{const o=JSON.parse(localStorage.getItem(EV.k)||'null');if(o&&Array.isArray(o.ev))EV.buf=o.ev.slice(-EV.max).map(e=>(e.osid||(e.osid=o.sid),e));}catch(e){}
 function evSan(d){const o={};if(d&&typeof d==='object')for(const k in d){const v=d[k];if(typeof v==='number'&&isFinite(v))o[k]=Math.round(v*100)/100;else if(typeof v==='boolean')o[k]=v?1:0;else if(typeof v==='string'&&v)o[k]=v.slice(0,120);}return o;}
 function track(k,d,force){try{if(kidSave)return;if(EV.n>=EV.cap&&!force){EV.drop++;return;}EV.n++;
-  const e=Object.assign({s:EV.s,m:EV.m},evSan(d),{i:EV.n,t:Date.now(),k});if(!e.s)delete e.s;if(!e.m)delete e.m;EV.buf.push(e);if(EV.buf.length>EV.max)EV.buf.splice(0,EV.buf.length-EV.max);if(window.SHOTS)SHOTS.on(e);}catch(x){}}
+  const e=Object.assign({s:EV.s,m:EV.m},evSan(d),{i:EV.n,t:Date.now(),k});if(!e.s)delete e.s;if(!e.m)delete e.m;if(k==='tap')EV.tap={s:e.s,tg:e.tg,t:e.t};EV.buf.push(e);if(EV.buf.length>EV.max)EV.buf.splice(0,EV.buf.length-EV.max);if(window.SHOTS)SHOTS.on(e);}catch(x){}}
 /* the state an error is attached to: screen, mission, question id, level, stars */
 function evSnap(){let st=0;try{st=EV.lv&&save.s[EV.lv]!=null?save.s[EV.lv]|0:((save.tl||{})[EV.m]||{}).s|0;}catch(e){}return {s:EV.s,m:EV.m,q:EV.q,lv:EV.lv||EV.m,st};}
 const evHash=s=>{let h=5381;s=String(s);for(let i=0;i<s.length;i++)h=(h*33+s.charCodeAt(i))>>>0;return h.toString(36);};
 function evScreen(id){const now=Date.now();if(id===EV.s)return;track('scr',{s:id,from:EV.s,ms:EV.s?now-EV.sT:0});EV.s=id;EV.sT=now;}
-function evMission(m,lv){EV.m=String(m||'');EV.lv=lv?String(lv):'';EV.q='';track('mis',{m:EV.m,lv:EV.lv});}
+/* #641 why a mission started: the tap (target + screen) in the 3 s before it, else auto (picked by the game) */
+function evMission(m,lv){EV.m=String(m||'');EV.lv=lv?String(lv):'';EV.q='';const tp=EV.tap&&Date.now()-EV.tap.t<3000?EV.tap:null;track('mis',Object.assign({m:EV.m,lv:EV.lv},tp?{via:tp.s||'',tg:tp.tg}:{auto:1}));}
 function evQ(key,d){EV.q=evHash(key);EV.qT=Date.now();track('q',Object.assign({q:EV.q},d));}
 /* #436: a tap in the first 400 ms of a new question is ignored, so a double tap from the last question cannot answer this one */
 function tapTooSoon(){return !!EV.qT&&Date.now()-EV.qT<D(400);}
@@ -1318,7 +1319,7 @@ function evDevice(){const n=navigator,ua=n.userAgent||'',w=Math.min(screen.width
   const br=(/Edg\/(\d+)/.exec(ua)&&'Edge '+RegExp.$1)||(/(?:Chrome|CriOS)\/(\d+)/.exec(ua)&&'Chrome '+RegExp.$1)||(/Firefox\/(\d+)/.exec(ua)&&'Firefox '+RegExp.$1)||(/Version\/(\d+).*Safari/.exec(ua)&&'Safari '+RegExp.$1)||'other';
   const os=/Android/.test(ua)?'Android':/iPhone|iPad|iPod/.test(ua)||(/Mac/.test(ua)&&touch)?'iOS':/Windows/.test(ua)?'Windows':/Mac/.test(ua)?'Mac':/CrOS/.test(ua)?'ChromeOS':/Linux/.test(ua)?'Linux':'other';
   return {dev:!touch?'desktop':w&&w<600?'phone':'tablet',host:location.hostname||location.protocol.replace(':',''),art:window.claude?1:0,ver:document.documentElement.innerHTML.length,
-    vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio||1,br,os,lang:n.language||'',net:(n.connection&&n.connection.effectiveType)||''};}
+    vw:innerWidth,vh:innerHeight,scw:screen.width||0,sch:screen.height||0,dpr:devicePixelRatio||1,br,os,lang:n.language||'',net:(n.connection&&n.connection.effectiveType)||''};}
 (()=>{const start=()=>track('ss',evDevice());if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
   addEventListener('load',()=>setTimeout(()=>{try{const nv=performance.getEntriesByType('navigation')[0];if(nv)track('perf',{load:Math.round(nv.loadEventStart||nv.duration),dcl:Math.round(nv.domContentLoadedEventEnd),ttfb:Math.round(nv.responseStart)});}catch(e){}},0));
   try{new PerformanceObserver(l=>{for(const x of l.getEntries())if(x.duration>200&&EV.lf<50){EV.lf++;track('lf',{ms:Math.round(x.duration)});}}).observe({type:'longtask',buffered:true});}catch(e){}
@@ -1348,6 +1349,16 @@ async function cloudFlush(){if(!cloud.ref||cloud.busy||!cloud.dirty)return;if(Da
 const FAM={id:null,on:false,last:0,sf:0,upT:0,hide:false};
 /* Oren's own device today (pday.js sets the flag when he plays here; the parent's phone never has it) */
 const kidHere=()=>{try{return localStorage.getItem('oren4-played')===today();}catch(e){return false;}};
+/* #617: the parent's commands to Oren (message, reminder, skip, time) are taken only on Oren's play device = the one with the latest play
+   heartbeat (save.now.dv; no dv yet: where he played today), also when the parent sent them from that device (they wait while its panel is
+   open). Another device that just used the panel gives no heartbeat for PAR_MIN minutes, so the parent's phone never becomes his device by
+   the parent's taps. c.by = the sending device (kept for the record). Without the family save there is one device, so it is always his. */
+const DEV=(()=>{try{let d=localStorage.getItem('oren4-dev');if(!d){d=Date.now().toString(36)+Math.random().toString(36).slice(2,8);localStorage.setItem('oren4-dev',d);}return d;}catch(e){return 'x';}})();
+const PAR_MIN=5;
+function parMark(){try{localStorage.setItem('oren4-par',String(Date.now()));}catch(e){}}
+const parRecent=()=>{const sp=document.getElementById('sPar');if(sp&&!sp.hidden)return true;let t=0;try{t=+localStorage.getItem('oren4-par')||0;}catch(e){}return Date.now()-t<(window.__parMin!=null?window.__parMin:PAR_MIN)*60000;};
+const myBeat=()=>{const dv=(save.now||{}).dv;return dv?dv===DEV:kidHere();};
+function kidDev(c){if(kidSave)return false;if(!FAM.on)return true;const sp=document.getElementById('sPar');return myBeat()&&!(sp&&!sp.hidden);}
 /* #612: a save request never hangs (a stuck request kept cloud.busy and stopped every later save) */
 function famFetch(url,o){const c=typeof AbortController==='function'?new AbortController():null;const tm=c?setTimeout(()=>c.abort(),window.__famTimeout||20000):0;
   return fetch(url,Object.assign({},o,c?{signal:c.signal}:{})).finally(()=>clearTimeout(tm));}
@@ -1609,16 +1620,31 @@ const ttsUrl=(x,en,slow,voice)=>'/api/tts?t='+encodeURIComponent(x)+'&v='+(en?GE
 const PF=new Set();
 function ttsPrefetch(t,lang){if(!t||window.__fast)return;lang=lang||'he';if(GV.pending){GV.wait.then(()=>ttsPrefetch(t,lang));return;}if(!useGoogle(lang))return;const en=lang==='en';
   for(const x of ttsParts(en?plain(t):fullSpell(t))){const u=ttsUrl(x,en,false);if(PF.has(u))continue;if(PF.size>200)PF.clear();PF.add(u);try{fetch(u).catch(()=>{});}catch(e){}}}
-function googleSay(t,lang,again,part,slow,done){done=done||(()=>{});const en=lang==='en';part=part|0;if(!part){try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}try{speechSynthesis.cancel();}catch(e){}}
+/* #635 audio URLs still missing after their one retry (url -> when); a tap on a 🔊 (any speaker button) forgets them, so it always tries */
+const MISS=new Map();MISS.ms=60000;window.__miss=MISS;
+addEventListener('pointerdown',e=>{const b=e.target&&e.target.closest&&e.target.closest('button');
+  if(b&&(b.id==='btnSay'||b.getAttribute('aria-label')==='הקראה'||b.querySelector('path[d^="M4 9v6h4l5 4V5"]')))MISS.clear();},true);
+function googleSay(t,lang,again,part,slow,done){if(MISS.size>300)MISS.clear();done=done||(()=>{});const en=lang==='en';part=part|0;if(!part){try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}try{speechSynthesis.cancel();}catch(e){}}
   const parts=ttsParts(en?plain(t):fullSpell(t)),last=part>=parts.length-1,raw=ttsParts(t),rp=raw.length===parts.length?raw[part]:t;
   const url=ttsUrl(parts[part],en,slow,done.it&&done.it.voice);/* #53 a friend line carries the friend's own voice (friend.js), else the game voice */
-  const a=new Audio(url);GV.audio=a;let go=false;const t0=Date.now();
-  const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;if(sqOld(done))return drop();track('au',{ev:'fail',src:'google',why,ms:Date.now()-t0});try{a.pause();}catch(e){}GV.audio=null;
-    if(!again&&why!=='blocked'){logIssue('voice',why+' (retry)');track('retry',{what:'voice',why});googleSay(t,lang,1,part,slow,done);return;}
-    /* #404 one rule: the browser voice only when the whole session is offline; online the text lights up with a 🔊 that tries again */
+  const sn=evHash(rp);/* #641 sentence id = hash of its text */
+  const miss=(why,o)=>{/* #404 one rule: the browser voice only when the whole session is offline; online the text lights up with a 🔊 that tries again */
     if(navigator.onLine===false){browserSay(t,en?'en':'he',why,slow,done);if(why!=='blocked')logIssue('voice',why);return;}
-    if(why!=='blocked')logIssue('voice',why+' (missing)');track('au',{ev:'missing',src:'google',why});vmMark(rp,lang,slow);
+    if(why!=='blocked'){logIssue('voice',why+' (missing)');MISS.set(url,Date.now());}track('au',Object.assign({ev:'missing',src:'google',why,sn},o));vmMark(rp,lang,slow);
     if(!last){googleSay(t,lang,0,part+1,slow,done);return;}done();};
+  /* #635 a line still missing a minute ago is not asked for again by itself (it was 2 failed requests on every re-say): it lights up at once; a 🔊 tap tries again */
+  if(!again&&MISS.has(url)&&Date.now()-MISS.get(url)<MISS.ms){track('au',{ev:'missing',src:'google',why:'known',sn});vmMark(rp,lang,slow);if(!last){googleSay(t,lang,0,part+1,slow,done);return;}done();return;}
+  const a=new Audio(url);GV.audio=a;let go=false;const t0=Date.now();if(!en&&readHelp().slow){try{a.defaultPlaybackRate=a.playbackRate=.8;}catch(e){}}/* #613 slow: the same recording, played at 0.8 */
+  const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;if(sqOld(done))return drop();track('au',{ev:'fail',src:'google',why,sn,ms:Date.now()-t0});try{a.pause();}catch(e){}GV.audio=null;
+    /* #635 the one retry is a fetch that also reads why the server had no audio (status + its reason: 404 not made, 429 budget, 502 Google),
+       so the log tells a missing line from a slow one (#641 'http' event = its status). A timeout is not retried: a second 8 s wait was
+       16 s of silence. Then the 🔊. */
+    if(again||why==='blocked'||why==='timeout')return miss(why,{});
+    logIssue('voice',why+' (retry)');track('retry',{what:'voice',why});const tok={pause(){}};GV.audio=tok;const t1=Date.now();
+    const back=(st,sv)=>{if(st!==200)track('au',{ev:'http',src:'google',st:typeof st==='number'?st:200,sn});if(GV.audio!==tok)return;GV.audio=null;if(sqOld(done))return done();
+      if(st===200){googleSay(t,lang,1,part,slow,done);return;}miss(why,{st,sv:String(sv||'').slice(0,40),ms:Date.now()-t1});};
+    fetch(url).then(r=>{const ty=r.headers.get('content-type')||'';if(r.ok&&/audio/.test(ty))return back(200);
+      return r.text().then(x=>{let sv=x;try{const j=JSON.parse(x);sv=j.why||j.error||'';}catch(e){}back(r.ok?'type':r.status,r.ok?ty:sv);},()=>back(r.status,''));},()=>back(0,'network'));};
   const tm=setTimeout(()=>{if(!go)fall('timeout');},GV.ms);/* the browser voice only after a retry and a long wait (#36) */
   /* #399 a slow fetch that arrives after the screen changed (or after hush) is not played: the line belongs to an old screen */
   const stale=()=>GV.audio!==a||sqOld(done);const drop=()=>{clearTimeout(tm);try{a.pause();}catch(e){}if(GV.audio===a)GV.audio=null;done();};
@@ -1653,7 +1679,7 @@ function sayNext(){while(SQ.list.length&&SQ.list[0].scr!==SQ.scr)SQ.list.shift()
   const done=()=>{if(over)return;over=true;clearTimeout(it.wd);if(SQ.cur===it){SQ.cur=null;sayNext();}};it.done=done;done.it=it;
   if(GV.pending){GV.wait.then(()=>{if(SQ.cur!==it)return;if(sqOld(done))return done();sayOne(it,done);});return;}sayOne(it,done);}
 /* a voice that never reports its end (a browser bug) must not hold the line for ever: move on after about twice its length */
-function sayGuard(t,done){const it=SQ.cur;if(!it||it.done!==done)return;clearTimeout(it.wd);it.wd=setTimeout(done,3000+150*String(t).length);}
+function sayGuard(t,done){const it=SQ.cur;if(!it||it.done!==done)return;clearTimeout(it.wd);it.wd=setTimeout(done,(3000+150*String(t).length)/(readHelp().slow?.8:1));}
 function sayOne(it,done){const {t,lang,slow}=it;
   if(!GV.ok&&GV.site&&Date.now()-GV.at>=GV.again)GV.wait=GV.check(1);/* the status failed earlier: check again in the background, the next sentences get Google back */
   if(useGoogle(lang)||(GV.site&&navigator.onLine!==false&&(lang==='he'||lang==='en'))){googleSay(t,lang,0,0,slow,done);return;}/* #404 online the recording is tried even when the status check failed (the browser voice is only for offline) */
@@ -1666,6 +1692,12 @@ if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pick
 /* auto-read: when a screen, story panel, lesson step or question sets its instruction (sayNow), it is read once by
    itself after the screen settles (300 ms). Skipped when something was already said meanwhile, on parent screens, when the
    parents turned it off, and while reading practice wants Oren to read first (window.__noAuto, set by reading.js). 🔊 replays. */
+/* #613 the parent's one "reading help" setting (save.set.rh, synced with the whole set, so it is read fresh every time):
+   m = 'read' read to him · 'try' tries first (default, the story levels of #355) · 'alone' reads alone (read-aloud only after a wrong answer);
+   w = seconds before help when he tries first (10/25/45); slow = the same recording at 0.8; ans = read the answers one by one (#435);
+   hi = light each word as it is read (#421); auto = say the screen's line by itself (set.autoRead, 0 = only on 🔊). */
+const RH_M=['read','try','alone'],RH_W=[10,25,45];
+function readHelp(){const st=save.set||{},r=st.rh&&typeof st.rh==='object'?st.rh:{};return {m:RH_M.includes(r.m)?r.m:'try',w:RH_W.includes(+r.w)?+r.w:25,slow:r.slow===1,ans:r.ans!==0,hi:r.hi!==0,auto:st.autoRead!==0};}
 const AUTO={cur:'',gen:0,seen:-1,at:0,scr:0,wait:false};
 setInterval(()=>{if(sayNow!==AUTO.cur||AUTO.gen!==AUTO.seen){AUTO.cur=sayNow;AUTO.seen=AUTO.gen;AUTO.at=Date.now();if(AUTO.at-AUTO.scr<200)AUTO.at=AUTO.scr;/* #398: a line the new screen said itself right after the switch counts, it is not cut */AUTO.wait=!!sayNow;return;}
   if(!AUTO.wait||Date.now()-AUTO.at<300)return;AUTO.wait=false;
@@ -2483,7 +2515,7 @@ function showFinal(){setScreen('sFinal','final',showMap);$('#hudMid').innerHTML=
 
 updateGems();cloudInit();
 const BUS={};function emit(e,...a){(BUS[e]||[]).forEach(f=>{try{f(...a);}catch(x){console.error(x);}});}
-window.OREN={mathSpeechList,hatsBack,get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,famStale:()=>FAM.sf&&FAM.sf>FAM.upT?FAM.upT||((save.now||{}).t|0)||FAM.sf:0,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,celebrate,bigCelebration,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
+window.OREN={readHelp,mathSpeechList,hatsBack,get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evBuf:()=>EV.buf.slice(),evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,famStale:()=>FAM.sf&&FAM.sf>FAM.upT?FAM.upT||((save.now||{}).t|0)||FAM.sf:0,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,celebrate,bigCelebration,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,dev:DEV,kidDev,parMark,parBusy:()=>FAM.on&&parRecent()&&(save.now||{}).dv!==DEV,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
   set sayNow(v){sayNow=v;AUTO.gen++;},get sayNow(){return sayNow;},hud:html=>{$('#hudMid').innerHTML=html;document.body.classList.toggle('act',!document.body.classList.contains('inpar')&&/class="chip"/.test(html));},resetAll:keep=>{const snd=save.snd;save=blank();save.snd=snd;Object.assign(save,keep||{});persist();renderStart();},on:(e,f)=>{(BUS[e]=BUS[e]||[]).push(f);},emit,blank};
 window.__oren4={MK,mistakeKind,TF,TFC,tfFillQ,COIN,GC,qSpeech,GT,HANDS,renderAudio,THEMES,RAW,setTheme,get mus(){return mus;},WORLDS,ALLLV,ALLU,hintHTML,hintData,uniq,colInit,colNeedBorrow,digs,qkey,bubbleOpts,storyFor,teachCheck,HEROES,get play(){return play;},get save(){return save;},startLevel,finishLevel,playLevel,showMap,showWorld,kingdom,studio,teacher,playSpeed,setFast:v=>{window.__fast=v;},mergeIn,migrateOld,lp};
 /* #44 a finished task is not reopened */
@@ -3199,6 +3231,8 @@ body:has(#dlg:not([hidden])) .toast{top:74px;bottom:auto}
 /* 🔊 buttons stay small but get a finger-size touch area */
 .rdb{position:relative}.rdb::after{content:"";position:absolute;inset:-7px;border-radius:50%}
 .sl .rdb::after{inset:-5px}
+/* #613 "reads alone": the text's 🔊 waits for a wrong answer */
+.rdhide>.rdb{display:none}
 
 /* ===== healthy screen time (health.js) ===== */
 .hlock{position:fixed;inset:0;z-index:90;display:grid;place-items:center;background:rgba(20,40,60,.74);backdrop-filter:blur(3px);padding:16px;overflow:auto}
@@ -3986,7 +4020,7 @@ const choiceSay=(root,sel)=>root?orList([...root.querySelectorAll(sel)].filter(x
    (a picture): then nothing is read or lit. The light follows the voice (the core's 'vpart' at each clip) and goes out when it ends or is hushed. */
 const READ_ACT=/^(read-|story-|rb2-|nik-|snd-|eng-)/;
 const raN=s=>spk(s).replace(/[\u0591-\u05C7]/g,'').replace(/^או\s+/,'').replace(/[^\p{L}\p{N}]+/gu,'');
-const ansSay=(row,a)=>{a=(a||[]).map(lab);if(!row||a.length<2||!a.every(x=>/[א-ת0-9]/.test(x)))return '';row.dataset.ra=1;return orList(a);};
+const ansSay=(row,a)=>{a=(a||[]).map(lab);if(O.readHelp&&!O.readHelp().ans)return '';/* #613 the parent may turn it off */if(!row||a.length<2||!a.every(x=>/[א-ת0-9]/.test(x)))return '';row.dataset.ra=1;return orList(a);};
 const unlit=()=>document.querySelectorAll('.chb.rdlit').forEach(b=>b.classList.remove('rdlit'));
 O.on('vpart',t=>{const k=raN(t);if(!k)return unlit();document.querySelectorAll('.chs[data-ra] .chb').forEach(b=>b.classList.toggle('rdlit',raN(b.textContent)===k));});
 O.on('voice',on=>{if(!on)unlit();});
@@ -4087,7 +4121,7 @@ function quiz(o){if(o.lesson&&window.LESSONS&&!o._ls){o._ls=1;return window.LESS
   const bk=O.hereTake&&O.hereTake('tq:'+o.id);if(bk){i=Math.min(Math.max(0,bk.i|0),qs.length-1);err=bk.err|0;gems=bk.gems|0;}/* #44: reopened mid-quiz = the same place */
   const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq');s.appendChild(wrap);if(o.lesson&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(o.lesson,o.back,()=>quiz(o)));
   const render=()=>{const q=qs[i];q._t=Date.now();dayQAdd(o.id,q.key||(q.pr+'|'+q.ans));tries=0;lock=false;if(O.hereProg)O.hereProg('tq:'+o.id,{i,err,gems});if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));const row=h('div','chs'+(q.ltr?' ltr':''));const ra=RA?ansSay(row,q.opts):'';
-    O.sayNow=(q.say||spoken(q.pr))+(ra||(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):''));
+    O.sayNow=(q.say||spoken(q.pr))+(ra||(!q.say&&tOps.length===q.opts.length&&!(O.readHelp&&!O.readHelp().ans)?'. '+tOps.join(', '):''));
     wrap.innerHTML='';const card=h('div','prq tqc',q.pr);if(q.play){const pb=h('button','hintbtn',ICON.say+`<span>${q.playLbl||'הַשְׁמַע'}</span>`);pb.onclick=q.play;card.appendChild(pb);}
     wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card,{id:o.id,i});if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>{if(!(O.tapTooSoon&&O.tapTooSoon()))pickA(k,b);};row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');
@@ -4281,6 +4315,13 @@ const STORIES=[
    Every question has one "📖 to the story" button; the story opens over the question (its state is kept) with one button back. */
 const READ_HELP=[{band:'low',to:2,line:0,all:10,wrong:['line','all']},{band:'mid',to:4,line:25,all:25,wrong:['line','all']},{band:'top',to:5,line:null,all:null,wrong:['line']}];
 const helpOf=lv=>READ_HELP.find(b=>lv<=b.to)||READ_HELP[READ_HELP.length-1];
+/* #613 the parent's one "reading help" setting (O.readHelp) picks the rule: read to him = the line taps and "read to me" at once;
+   tries first = the level table above, its wait from the setting (the lowest level keeps about half: 10 s of 25); reads alone = both only after a wrong answer */
+const storyHelp=lv=>{const r=O.readHelp?O.readHelp():{m:'try',w:25};
+  if(r.m==='read')return {band:'read',line:0,all:0,wrong:['line','all']};
+  if(r.m==='alone')return {band:'alone',line:null,all:null,wrong:['line','all']};
+  const b=helpOf(lv);return b.all==null?b:Object.assign({},b,{line:b.line&&r.w,all:b.band==='low'?Math.round(r.w*.4):r.w});};
+const STORY_SAY='קְרָא אֶת הַסִּפּוּר, וְאַחַר כָּךְ עוֹנִים עַל שְׁאֵלוֹת.';
 const storyLv=()=>{try{const R=window.READBANK2;return R&&R.level?R.level('story')|0||1:1;}catch(e){return 1;}};
 let SS=null;   /* the story being played: {id, t0, lv, help, wrong, heard, log} */
 /* a story he listened to (whole or a line) is marked: only stories read alone move the story level up (read-bank2.js) */
@@ -4293,7 +4334,7 @@ const stoks=line=>String(line||'').replace(/<[^>]+>/g,' ').split(/\s+/).map(swd)
 T.storyWordList=()=>{const out=new Set([HW_T]);const R=window.READBANK2;[...STORIES,...((R&&R.stories)||[])].forEach(st=>{st.s.forEach(l=>stoks(l).forEach(w=>out.add(w)));(st.hw||[]).forEach(x=>out.add(x[0]));});return [...out];};
 T.HW_T=HW_T;
 function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), title (html), name (quiz title), tp (plain title), goal, spr:[html,html], lines:[html], vl:[vocalized lines, when lines may lack nikud], hw:[[word, picture]] (#420), q:[{pr, say, a, ds}], back, qback, end(err, heard): after the last question (#360)} */
-  const lv=storyLv(),help=helpOf(lv);const ss=SS={id:o.id,t0:Date.now(),lv,help,wrong:false,heard:false,log:{t:o.tp,g:o.goal||'',lv,r:'a'}};
+  const lv=storyLv(),help=storyHelp(lv);const ss=SS={id:o.id,t0:Date.now(),lv,help,wrong:false,heard:false,log:{t:o.tp,g:o.goal||'',lv,r:'a'}};
   if(window.DAYLOG&&DAYLOG.note)DAYLOG.note(o.act,ss.log);
   const shows=k=>(ss.wrong&&help.wrong.includes(k))||(help[k]!=null&&Date.now()-ss.t0>=D(help[k]*1000));
   const heard=()=>{ss.heard=true;ss.log.r='l';};
@@ -4323,8 +4364,8 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
   if(o.hw&&o.hw.length){const c=h('div','sthw',`<div class="sthwt">${HW_T}</div>`);const r=h('div','sthwr');
     o.hw.forEach(([w,pic])=>{const b=h('button','hwt',`<span class="hwp">${pic}</span><span class="hww">${w}</span>`);b.type='button';b.onclick=()=>{O.sfx.pop(1);O.say(w);};r.appendChild(b);});c.appendChild(r);s.appendChild(c);}
   const go=h('button','bigbtn stgo',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=questions;page(s,go);
-  if(window.FRIEND&&FRIEND.readFirst){O.sayNow=T.spk(FRIEND.READFIRST);FRIEND.readFirst();}else O.sayNow='קְרָא אֶת הַסִּפּוּר, וְאַחַר כָּךְ עוֹנִים עַל שְׁאֵלוֹת.';}
-T.storyScreen=storyScreen;T.READ_HELP=READ_HELP;T.helpOf=helpOf;window.__story={get ss(){return SS;}};
+  if(help.band!=='read'&&window.FRIEND&&FRIEND.readFirst){O.sayNow=T.spk(FRIEND.READFIRST);FRIEND.readFirst();}else O.sayNow=STORY_SAY;}   /* read to him: no "try alone first" */
+T.addSay([STORY_SAY]);T.storyScreen=storyScreen;T.READ_HELP=READ_HELP;T.helpOf=helpOf;T.storyHelp=storyHelp;window.__story={get ss(){return SS;}};
 function readStory(k,back){const st=STORIES[k];storyScreen({act:'story-'+k,id:'story-'+k,title:st.t,name:st.t,tp:T.plainHe(st.t),goal:st.goal,spr:st.spr.map(x=>ALLSPR(x)),lines:st.s,hw:st.hw,
   q:st.q.map(([pr,a,ds])=>({pr,a,ds})),back,qback:()=>openStories(back)});}
 function openStories(back){O.setScreen('sTal','final',back);T.hudT('סִפּוּרֵי עֶרֶב');const s=$('#sTal');s.innerHTML='';s.appendChild(h('div','whead',`<span class="gd">${X.moon}</span><h1>סִפּוּרֵי עֶרֶב</h1>`));
@@ -4873,7 +4914,7 @@ function forgot(then){const ov=$('#ov');ov.innerHTML=`<div class="card plog"><h2
 window.TAL_parentGate=()=>login(()=>parentChoice());
 /* the password check alone (e.g. to end a meal pause early); the panel stays closed */
 T.login=then=>login(()=>{parentOn=false;then&&then();});
-O.on('screen',id=>{if(id!=='sPar'&&!O.isParentPlay&&$('#ov').hidden)parentOn=false;});
+O.on('screen',id=>{if(parentOn&&O.parMark)O.parMark();/* #617 */if(id!=='sPar'&&!O.isParentPlay&&$('#ov').hidden)parentOn=false;});
 /* ---------- permissions ---------- */
 let permP=null;
 function getPerm(){if(!permP)permP=(async()=>{for(let i=0;i<30&&!(window.claude&&window.claude.use);i++)await new Promise(r=>setTimeout(r,100));try{return window.claude&&window.claude.use?await window.claude.use('permissions'):null;}catch(e){return null;}})();return permP;}
@@ -4969,7 +5010,7 @@ const BAR=(v,max,col)=>`<span class="pbar"><i style="width:${max?Math.min(100,v/
 const fmtMin=sec=>{const m=Math.round(sec/60);return m<60?m+' דק׳':(m/60).toFixed(1)+' שע׳';};
 function lastDays(n){const out=[];const d=new Date();for(let i=n-1;i>=0;i--){const x=new Date(d);x.setDate(d.getDate()-i);const k=x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');out.push([k,x]);}return out;}
 /* #359: the main view is one day (what he did, live · the plan ahead · strong / weak); everything else is behind one "הגדרות ועוד" entry, in closed sections */
-const MORE=[['time','⏱️ זמן משחק והגבלה'],['rem','⏰ תזכורת והודעה לאורן'],['tmpl','🗓️ התבנית לכל יום'],['know','🧭 מה אורן כבר יודע'],['learn','🛤️ המסלול של אורן — הבא בתור'],['full','📈 פירוט מלא'],['iss','⚠️ תקלות'],['voice','🔊 קול — בדיקה ובחירה'],['try','🎮 לשחק כהורה (ניסיון)'],['parts','🧩 להפעיל / לכבות חלקים'],['health','🥤 הפסקות וארוחות'],['read','📖 קריאה'],['prog','⏭️ דילוג, איפוס ויהלומים'],['perm','🎤 הרשאות'],['set','🔑 סיסמה וגיבוי'],['map','🗺️ מפת התוכן']];
+const MORE=[['time','⏱️ זמן משחק והגבלה'],['rem','⏰ תזכורת והודעה לאורן'],['tmpl','🗓️ התבנית לכל יום'],['know','🧭 מה אורן כבר יודע'],['learn','🛤️ המסלול של אורן — הבא בתור'],['full','📈 פירוט מלא'],['iss','⚠️ תקלות'],['voice','🔊 קול — בדיקה ובחירה'],['try','🎮 לשחק כהורה (ניסיון)'],['parts','🧩 להפעיל / לכבות חלקים'],['health','🥤 הפסקות וארוחות'],['read','📖 עזרה בקריאה'],['prog','⏭️ דילוג, איפוס ויהלומים'],['perm','🎤 הרשאות'],['set','🔑 סיסמה וגיבוי'],['map','🗺️ מפת התוכן']];
 const FN={map:box=>{if(T.contentMap)T.contentMap(box,sec,BAR);},full:fullTab,try:tryTab,tmpl:tmplTab,time:timeTab,iss:issues,
   rem:box=>{if(window.HEALTH)window.HEALTH.panel(box,sec,()=>panel('rem'),'today');},know:box=>{if(window.KNOW)window.KNOW.panel(box,sec,()=>panel('know'));},learn:box=>{if(window.LEARN)window.LEARN.parentPanel(box,sec,()=>panel('learn'));},
   health:box=>{if(window.HEALTH)window.HEALTH.panel(box,sec,()=>panel('health'),'set');},read:box=>{if(T.rdSettings)T.rdSettings(box,sec,()=>panel('read'));},voice:voiceTab,perm:permTab,parts:partsTab,prog:progTab,set:setTab};
@@ -5009,7 +5050,7 @@ function nowTop(el){const DL=window.DAYLOG,PD=window.PDAY;el.innerHTML=DL?DL.now
 /* while the parent panel is open: pull the family save every 30 s so the day view follows Oren live, also from another house;
    #612: and at once when the phone screen is opened again (a locked phone runs no timers) */
 let parLive=0;
-const parPull=()=>Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(window.PDAY&&curTab==='day'&&parentOn&&!$('#sPar').hidden)window.PDAY.refresh();});
+const parPull=()=>{O.parMark&&O.parMark();return Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(!parentOn||$('#sPar').hidden)return;if(window.PDAY&&curTab==='day')window.PDAY.refresh();if(window.HEALTH&&window.HEALTH.remRefresh)window.HEALTH.remRefresh();});};
 function parLiveOn(){if(parLive)return;parLive=setInterval(()=>{if(!parentOn||$('#sPar').hidden){clearInterval(parLive);parLive=0;return;}parPull();},window.__parPull||30000);}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&parentOn&&!$('#sPar').hidden){parPull();parLiveOn();}});
 const sec=(box,t,html)=>{const d=h('section','psec',`<h3>${t}</h3>`);if(html)d.insertAdjacentHTML('beforeend',html);box.appendChild(d);return d;};
@@ -5085,7 +5126,7 @@ function limNow(){const t=todayL(),l=LIM();if(t){if(t.none)return null;if(t.min!
    The giving device notes nothing (its count is u); it remembers its own grants on this device only. */
 const GAVE='oren4-gave',gave=()=>{try{return JSON.parse(localStorage.getItem(GAVE))||[];}catch(e){return [];}};
 function effMin(t){if(t.add==null||!t.at)return t.min|0;const s=T.S(),g=s.tg=s.tg||{},sp=$('#sPar');
-  if(g[t.at]==null&&!parentOn&&!O.isParentPlay&&(!sp||sp.hidden)&&!gave().includes(t.at)){g[t.at]=usedMin();const ks=Object.keys(g).sort();ks.slice(0,Math.max(0,ks.length-10)).forEach(k=>delete g[k]);O.persist();}
+  if(g[t.at]==null&&!parentOn&&!O.isParentPlay&&(!sp||sp.hidden)&&!gave().includes(t.at)&&(!O.kidDev||O.kidDev())){g[t.at]=usedMin();const ks=Object.keys(g).sort();ks.slice(0,Math.max(0,ks.length-10)).forEach(k=>delete g[k]);O.persist();}
   return (t.min|0)+Math.max(0,(g[t.at]!=null?g[t.at]|0:t.u|0)-(t.u|0));}
 /* a grant of v minutes counted from u played minutes */
 function giveT(u,v){const at=Date.now();try{localStorage.setItem(GAVE,JSON.stringify(gave().concat(at).slice(-10)));}catch(e){}return {d:O.today(),min:u+v,add:v,u,at};}
@@ -5176,7 +5217,7 @@ function voiceTab(box){const st=SET();const g=(window.__gv||{}).ok;
   const vc=sec(box,'בדיקת קול — דקה אחת',`<div class="vnow">${g?'קול: <b>Kore</b> — אותו קול בכל המכשירים':'קול: <b>הקול של המכשיר</b> (באתר המשחק: Kore — אותו קול בכל המכשירים)'}${st.voiceOk?' · <span class="pst ok">אושר ✓</span>':''}</div><div class="vsample">${SAMPLE}</div>`);
   const r=h('div','btnrow');const pl=h('button','bigbtn','▶ <span>השמיעו דוגמה</span>');pl.onclick=()=>O.say(SAMPLE);
   const okb=h('button','bigbtn sm','👍 <span>אוקי, הקול טוב</span>');okb.onclick=()=>{st.voiceOk={t:Date.now()};O.persist();sfx.win();panel('voice');};
-  r.append(pl,okb);vc.appendChild(r);const ar=h('button','pchip'+(st.autoRead===0?'':' on'),(st.autoRead===0?'':'✓ ')+'הקראה אוטומטית');ar.onclick=()=>{st.autoRead=st.autoRead===0?1:0;O.persist();panel('voice');};vc.appendChild(ar);const sw=navigator.serviceWorker;if(g&&sw&&sw.controller){const dl=h('button','bigbtn plain sm','⬇️ <span>הורדת כל הקולות למכשיר הזה (כ-15MB)</span>');dl.onclick=()=>{dl.disabled=true;sw.onmessage=e=>{const d=e.data||{};if(d.type==='prefetch')dl.lastChild.textContent=d.left?'מוריד… נשארו '+d.left:'✓ '+d.ok+' קולות שמורים במכשיר';};sw.controller.postMessage({type:'prefetch',k:(window.__gv&&window.__gv.ver)|0});};vc.appendChild(dl);}
+  r.append(pl,okb);vc.appendChild(r);/* auto-read moved to "📖 עזרה בקריאה" (#613) */const sw=navigator.serviceWorker;if(g&&sw&&sw.controller){const dl=h('button','bigbtn plain sm','⬇️ <span>הורדת כל הקולות למכשיר הזה (כ-15MB)</span>');dl.onclick=()=>{dl.disabled=true;sw.onmessage=e=>{const d=e.data||{};if(d.type==='prefetch')dl.lastChild.textContent=d.left?'מוריד… נשארו '+d.left:'✓ '+d.ok+' קולות שמורים במכשיר';};sw.controller.postMessage({type:'prefetch',k:(window.__gv&&window.__gv.ver)|0});};vc.appendChild(dl);}
   /* the explanations wait behind "עזרה" (G8) */
   const help=document.createElement('details');help.className='pdet';help.innerHTML='<summary>❓ עזרה</summary>';const hin=h('div','pdin');help.appendChild(hin);vc.appendChild(help);
   hin.appendChild(h('div','pnote','לחצו ▶ ושמעו דוגמה. אם הקול נשמע טוב — "אוקי, הקול טוב" וסיימתם.'));if(g)return;
@@ -5671,8 +5712,9 @@ window.__arc={open:openArcade,start,brk:breakRound,get inBreak(){return !!brk;},
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;const {h,$}=O;const D=O.D;
 const HEB=/[א-ת]/;
 const RD=()=>{const s=T.S();s.rd=s.rd||{lvl:1,solo:0};return s.rd;};
-const mode=()=>{const m=(T.S().set||{}).rdMode;return m===1||m===2||m===3?m:'auto';};
-const level=()=>{const m=mode();return m==='auto'?((RD().lvl|0)||1):m;};
+/* #613 the parent's one "reading help" setting (O.readHelp, the core): it decides here, in the stories (talents.js) and in the voice */
+const RH=()=>O.readHelp?O.readHelp():{m:'try',w:25,slow:false,ans:true,hi:true,auto:true};
+const level=()=>(RD().lvl|0)||1;
 const UP={1:25,2:85};                         /* solo answers needed to move up from level 1 / level 2 */
 const TARGETS='#sTal .tqc .qq:not(.tqi),#sTal .tqc .sent,#sTal .lsent:not(.blab),#sHome .hbub2';
 
@@ -5689,8 +5731,8 @@ function words(el){if(el._rw&&el._rw.length&&el._rw.every(w=>w.isConnected))retu
 /* ---- speaking with lit-up words ---- */
 let cur=null;
 function stop(){if(!cur)return;const r=cur;cur=null;r.timers.forEach(clearTimeout);r.words.forEach(w=>w.classList.remove('on'));r.el.classList.remove('reading');r.resolve();}
-const light=(r,k)=>r.words.forEach((w,j)=>w.classList.toggle('on',j===k));
-const rate=()=>.9;                             /* the game voice speaks at 0.9 */
+const light=(r,k)=>{const hi=RH().hi;r.words.forEach((w,j)=>w.classList.toggle('on',hi&&j===k));};   /* #613 the parent may turn the word light off */
+const rate=()=>RH().slow?.72:.9;               /* the game voice speaks at 0.9 (slow: the same recording at 0.8 of that) */
 const wms=w=>(170+70*(String(w).match(/[א-תA-Za-z0-9]/g)||[]).length)/rate();   /* how long a word takes to say */
 /* light r.words one after the other from word `from`: each word wms(word) * scale after the one before, starting at t0; then end() */
 function plan(r,from,live,end,t0,scale){r.timers.forEach(clearTimeout);r.timers=[];let t=t0||0;scale=scale||1;
@@ -5723,7 +5765,7 @@ const at=(a,b)=>{if(!b.length||b.length>a.length)return -1;for(let i=0;i+b.lengt
 let fol=null;
 function folStop(){if(!fol)return;const r=fol;fol=null;r.timers.forEach(clearTimeout);r.words.forEach(w=>w.classList.remove('on'));}
 const shown=e=>!!e.offsetParent&&!e.closest('[hidden]');
-function follow(t,a){folStop();if(cur||!t)return;const cw=nw(t);if(!cw.length)return;
+function follow(t,a){folStop();if(cur||!t||!RH().hi)return;const cw=nw(t);if(!cw.length)return;
   for(const el of document.querySelectorAll('#screens '+FOLLOW.split(',').join(',#screens '))){if(!shown(el))continue;
     const ew=nw(el.textContent);if(!ew.length)continue;let i=at(cw,ew),from=0,to=ew.length;
     if(i<0){const j=at(ew,cw);if(j<0)continue;i=0;from=j;to=j+cw.length;}           /* the clip is a part of the line */
@@ -5747,30 +5789,43 @@ let raf=0;const mo=new MutationObserver(()=>{if(raf)return;raf=requestAnimationF
 let Q=null;
 function heard(el){if(Q&&Q.card&&Q.card.contains(el))Q.heard=true;}
 function clearQ(){if(Q){Q.timers.forEach(clearTimeout);Q.timers=[];}}
-/* only in reading activities, and only the text to read waits (a sentence / a word); the instruction (.qq) is said right away */
+/* only in reading activities, and only the text to read waits (a sentence / a word); the instruction (.qq) is said right away.
+   #613 by the parent's setting: read to him = the text is read with the question at once (no wait, no cue); tries first = the levels below;
+   reads alone = the text's 🔊 shows only after a wrong answer, never read by itself */
 T.rdQ=(q,card,o)=>{clearQ();decorateAll();const target=o&&o.read&&!q.play?card.querySelector('.sent')||card.querySelector('.bigw'):null;
-  Q={q,card,heard:false,answered:false,timers:[],target};if(!Q.target)return;
+  Q={q,card,heard:false,answered:false,timers:[],target};if(!Q.target)return;const m=RH().m;
+  if(m==='read'){const t=T.spk(target.textContent.replace(/🔊/g,' '));if(t&&!T.plainHe(O.sayNow||'').includes(T.plainHe(t)))O.sayNow=t+' '+(O.sayNow||'');return;}
   const tt=T.plainHe(target.textContent.replace(/🔊/g,'')).replace(/\s+/g,' ').trim();if(tt&&O.sayNow){const ns=T.plainHe(O.sayNow).replace(/\s+/g,' ').split(tt).join(' ').trim();O.sayNow=/[א-ת]/.test(ns)?ns:'';}
+  if(m==='alone'){Q.target.classList.add('rdhide');return;}
   const lv=level(),btn=Q.target.querySelector('.rdb');if(lv===3)return;
   if(lv===2&&btn)btn.classList.add('pulse');
   Q.target.after(h('div','rdcue','נַסֵּה לִקְרֹא 👀'));
   const me=Q,wrap=card.parentNode;if(wrap&&!wrap._rdL){wrap._rdL=1;wrap.addEventListener('click',e=>{if(Q&&e.target.closest('.chb'))Q.answered=true;},true);}
   me.timers.push(setTimeout(()=>{if(Q===me&&!me.answered&&!me.heard&&me.target.isConnected)T.readEl(me.target).then(()=>{/* then the answers that are words */
-    if(Q!==me||me.answered||!wrap)return;const os=[...wrap.querySelectorAll('.chs .chb')].filter(b=>!b.disabled).map(b=>b.textContent.trim()).filter(t=>HEB.test(t));if(os.length)O.say(os.join(', '));});},D(lv===1?3000:8000)));};
-T.rdA=(q,tries,b)=>{if(!Q||Q.q!==q||!Q.target)return;clearQ();if(tries||Q.heard)return;
+    if(Q!==me||me.answered||!wrap)return;const os=[...wrap.querySelectorAll('.chs .chb')].filter(b=>!b.disabled).map(b=>b.textContent.trim()).filter(t=>HEB.test(t));if(os.length&&RH().ans)O.say(os.join(', '));/* #613 the parent may turn the answers off */});},D(lv===1?3000:8000)));};
+T.rdA=(q,tries,b)=>{if(!Q||Q.q!==q||!Q.target)return;clearQ();if(tries||Q.heard||RH().m==='read')return;/* read to him: never "read alone" */
   const r=RD();r.solo=(r.solo|0)+1;
-  if(mode()==='auto'&&UP[r.lvl]&&r.solo>=UP[r.lvl]){r.lvl++;O.floatText(Q.card,'🎉 עָלִיתָ שָׁלָב בִּקְרִיאָה!');}
+  if(UP[r.lvl]&&r.solo>=UP[r.lvl]){r.lvl++;O.floatText(Q.card,'🎉 עָלִיתָ שָׁלָב בִּקְרִיאָה!');}
   else if(r.solo%4===1)O.floatText(Q.card,'קָרָאתָ לְבַד! ⭐');
   O.persist();};
 O.on('screen',()=>{clearQ();Q=null;seqTok++;stop();folStop();});
+O.on('tq',(id,right)=>{if(!right&&Q&&Q.target)Q.target.classList.remove('rdhide');});   /* reads alone: a wrong answer brings the 🔊 */
 
-/* ---- parent: one setting ---- */
-T.rdSettings=(body,sec,refresh)=>{const r=RD(),m=mode();
-  const box=sec(body,'📖 קריאה',`<div class="pnote">כשאורן רואה שאלה, הוא מנסה לקרוא לבד. אם לא הצליח, המשחק מקריא לו ומדגיש כל מילה בזמן שהיא נאמרת. ליד כל טקסט יש 🔊 לשמיעה.</div><div class="pnote">שלב נוכחי: <b>${level()}</b> · ענה נכון בלי הקראה: <b>${r.solo|0}</b> פעמים${m==='auto'&&UP[r.lvl]?` · לשלב הבא: ${UP[r.lvl]}`:''}</div>`);
-  const row=h('div','popt','<span>שלב:</span>');
-  [['auto','אוטומטי (מומלץ)'],[1,'1 · מקריאים אחרי 3 שניות'],[2,'2 · מקריאים אחרי 8 שניות'],[3,'3 · קורא לבד']].forEach(([v,n])=>{const c=h('button','pchip'+(m===v?' on':''),n);c.onclick=()=>{T.S().set.rdMode=v;O.persist();refresh();};row.appendChild(c);});
-  box.appendChild(row);};
-window.__rd={level,mode,RD,decorateAll,get cur(){return cur;}};
+/* ---- parent: one setting "עזרה בקריאה" (#613): the main choice in one row, the rest folded under "עוד"; defaults = the game as it was ---- */
+let moreOpen=false;
+T.rdSettings=(body,sec,refresh)=>{const st=T.S().set,r=RD(),cur=RH();
+  const box=sec(body,'📖 עזרה בקריאה','<div class="pnote">כמה עזרה בהקראה אורן מקבל בסיפורים ובמשפטים לקריאה. הוראות ושאלות שאינן בודקות קריאה תמיד מוקראות.</div>');
+  const put=(k,v)=>{const rh=st.rh&&typeof st.rh==='object'?st.rh:(st.rh={});rh[k]=v;O.persist();refresh();};
+  const row=(par,lbl,opts,val,set)=>{const w=h('div','popt'+(lbl?'':' rhmain'),lbl?`<span>${lbl}</span>`:'');opts.forEach(([v,n])=>{const c=h('button','pchip'+(val===v?' on':''),n);c.onclick=()=>set(v);w.appendChild(c);});par.appendChild(w);return w;};
+  row(box,'',[['read','מקריאים לו'],['try','קודם מנסה לבד'],['alone','קורא לבד']],cur.m,v=>put('m',v)).classList.add('rhm');
+  const d=document.createElement('details');d.className='pdet rhmore';d.open=moreOpen;d.ontoggle=()=>{moreOpen=d.open;};d.innerHTML='<summary>עוד</summary>';const din=h('div','pdin');d.appendChild(din);box.appendChild(d);
+  row(din,'כמה לחכות לפני עזרה',[[10,'10 שניות'],[25,'25 שניות'],[45,'45 שניות']],cur.w,v=>put('w',v)).dataset.k='w';
+  row(din,'מהירות הקראה',[[0,'רגילה'],[1,'איטית']],cur.slow?1:0,v=>put('slow',v)).dataset.k='slow';
+  row(din,'להקריא אוטומטית',[[1,'כן'],[0,'רק בלחיצה על 🔊']],cur.auto?1:0,v=>{st.autoRead=v;O.persist();refresh();}).dataset.k='auto';
+  row(din,'להקריא גם את התשובות',[[1,'כן'],[0,'לא']],cur.ans?1:0,v=>put('ans',v)).dataset.k='ans';
+  row(din,'להדגיש מילה בזמן ההקראה',[[1,'כן'],[0,'לא']],cur.hi?1:0,v=>put('hi',v)).dataset.k='hi';
+  din.appendChild(h('div','pnote',`"כמה לחכות" חל על "קודם מנסה לבד" (בשלב הסיפורים הנמוך: כמחצית). שלב קריאה במשפטים: <b>${level()}</b> · ענה נכון בלי הקראה: <b>${r.solo|0}</b> פעמים${UP[r.lvl]?` · לשלב הבא: ${UP[r.lvl]}`:''}`));};
+window.__rd={level,RH,RD,decorateAll,get cur(){return cur;}};
 })();
 
 /* ===== healthy screen time: body breaks, meals, topic switching (injected into index.html by build_talents.py) =====
@@ -5920,7 +5975,8 @@ const remOk=m=>m&&(REM[m.k]||msgOf(m));
 /* #413: 6 ready one-tap messages (audio made in advance: in the pregen list); Oren answers with one face (f) */
 const READY=['אַבָּא גֵּאֶה בְּךָ!','אִמָּא גֵּאָה בְּךָ!','אוֹהֲבִים אוֹתְךָ!','כָּל הַכָּבוֹד, אוֹרֶן!','עוֹד מְעַט אוֹכֶל!','בּוֹא רֶגַע אֵלֵינוּ.'],FACES=['❤️','😊','👍','😂'];
 H.readyMsgs=()=>READY.slice();T.addSay&&T.addSay(READY);
-function remCheck(t){const m=(T.S().set||{}).rem;if(!m||m.ok||!remOk(m)||t<m.at||t-m.at>REM_OLD){remSince=null;return false;}
+/* #617: only on Oren's play device (never on the parent's phone that sent it) */
+function remCheck(t){const m=(T.S().set||{}).rem;if(!m||m.ok||!remOk(m)||t<m.at||t-m.at>REM_OLD||(O.kidDev&&!O.kidDev(m))){remSince=null;return false;}
   if(!remSince||remSince.t!==m.t)remSince={t:m.t,at:t};
   if(inAct()&&!(pend&&pend.ready)&&t-remSince.at<REM_WAIT)return false;
   showRem(m);return true;}
@@ -5928,20 +5984,23 @@ function showMsg(m){const x=msgOf(m);
   const el=lock('hrem hmsg',`<div class="hfr"><span class="hav bob">${friend()}</span></div><h2></h2>`);el.querySelector('h2').textContent=x;
   const ag=h('button','hagain','🔊');ag.setAttribute('aria-label','שׁוּב');ag.onclick=()=>O.say(T.spk(x));el.firstChild.appendChild(ag);
   const row=h('div','hfaces');FACES.forEach(f=>{const b=h('button','hface',f);b.onclick=()=>{m.ok=1;m.f=f;O.persist();O.famNow&&O.famNow();sfx.win&&sfx.win();close();after();};row.appendChild(b);});el.firstChild.appendChild(row);
-  m.s=1;O.persist();sfx.star&&sfx.star(0);say(x);return el;}
+  m.s=1;O.persist();O.famNow&&O.famNow();sfx.star&&sfx.star(0);say(x);return el;}
 function showRem(m){if(m.k==='msg')return showMsg(m);const x=REM[m.k];
   const el=lock('hrem',`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">${x.e}</span></div><div class="sub">${REM_BY}</div><h2>${x.t}</h2>`);
   const btn=h('button','bigbtn huge hback','<span>בְּסֵדֶר!</span>');el.firstChild.appendChild(btn);
-  btn.onclick=()=>{m.ok=1;O.persist();sfx.win&&sfx.win();close();after();};
-  sfx.star&&sfx.star(0);say(REM_BY+' '+x.t);return el;}
+  btn.onclick=()=>{m.ok=1;O.persist();O.famNow&&O.famNow();sfx.win&&sfx.win();close();after();};
+  m.s=1;O.persist();sfx.star&&sfx.star(0);say(REM_BY+' '+x.t);return el;}
 let remWhen=0;
+/* #617: the delivery status the parent sees: "נשלח…" until Oren's device showed it, then "אורן שמע ✓" (and his face answer) */
+const remStat=m=>`${m.k==='msg'?'💬 '+msgOf(m):REM[m.k].p} · ${m.s||m.ok?'אורן שמע ✓'+(m.f?' · אורן ענה: '+m.f:''):'נשלח…'+(now()<m.at?' · תופיע ב-'+hm(m.at):'')}`;
+H.remRefresh=()=>{const el=document.querySelector('#sPar .hremst'),m=(T.S().set||{}).rem;if(el&&remOk(m))el.textContent=remStat(m);};
 function remPanel(box,sec,re){const m=(T.S().set||{}).rem;
   const s=sec(box,'🔔 תזכורת לאורן','<div class="pnote">אורן יראה תמונה גדולה וישמע אותה בקול — בסוף מה שהוא עושה עכשיו (עד דקה המתנה).</div>');
-  if(remOk(m)&&now()-m.at<REM_OLD){const st=h('div','pstat');st.textContent=`${m.k==='msg'?'💬 '+msgOf(m):REM[m.k].p} · ${m.k==='msg'&&(m.s||m.ok)?'נאמרה ✓'+(m.f?' · אורן ענה: '+m.f:''):m.ok?'אורן ראה ✓':now()<m.at?'תופיע ב-'+hm(m.at):'ממתינה לסוף הפעילות'}`;s.appendChild(st);}
+  if(remOk(m)&&now()-m.at<REM_OLD){const st=h('div','pstat hremst');st.textContent=remStat(m);s.appendChild(st);}
   const w=h('div','popt','<span>מתי:</span>');[[0,'עכשיו'],[5,'5 דק׳'],[10,'10 דק׳'],[15,'15 דק׳'],[30,'30 דק׳']].forEach(([v,n])=>{const b=h('button','pchip'+(remWhen===v?' on':''),n);b.onclick=()=>{remWhen=v;re&&re();};w.appendChild(b);});s.appendChild(w);
-  const g=h('div','pbig');Object.entries(REM).forEach(([k,x])=>{const b=h('button','bigbtn sm','<span>'+x.p+'</span>');b.onclick=()=>{const t=now();T.S().set.rem={k,at:t+remWhen*60000,t};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);re&&re();};g.appendChild(b);});s.appendChild(g);
+  const g=h('div','pbig');Object.entries(REM).forEach(([k,x])=>{const b=h('button','bigbtn sm','<span>'+x.p+'</span>');b.onclick=()=>{const t=now();T.S().set.rem={k,at:t+remWhen*60000,t,to:'kid',by:O.dev};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);re&&re();};g.appendChild(b);});s.appendChild(g);
   /* #353: a typed message the friend says aloud (same "when", same delivery) */
-  const send=x=>{const t=now();T.S().set.rem={k:'msg',x,at:t+remWhen*60000,t};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);re&&re();};
+  const send=x=>{const t=now();T.S().set.rem={k:'msg',x,at:t+remWhen*60000,t,to:'kid',by:O.dev};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);re&&re();};
   const f=h('div','popt hmsgrow','<span>הודעה מהחבר:</span>');READY.forEach(x=>{const b=h('button','hready',x);b.onclick=()=>send(x);f.appendChild(b);});const i=document.createElement('input');i.type='text';i.className='pgin hmsgin';i.maxLength=MSG_MAX;i.dir='rtl';i.placeholder='מה החבר יגיד לאורן?';i.setAttribute('aria-label','הודעה מהחבר');
   const sb=h('button','pchip hmsgsend','📣 שלח');const upd=()=>{sb.disabled=!i.value.trim();};upd();
   i.oninput=upd;i.onkeydown=e=>{e.stopPropagation();if(e.key==='Enter')sb.click();};
@@ -12061,7 +12120,7 @@ window.GOALS=G;
      · 'f' his answer to 'easy or hard?' at the end of a scene (#411, x.ez 'e' easy · 'h' hard)
      · 'p' skipped by the parent (#359, x.pc = the command id; hidden when that command was undone: save.pcU[id])
    x (optional object): a story's {t, g, lv, r} (#355); lg = what he learned, on a finished line (#414, goals.js); any activity: lv = his level when it started (learning engine), ra = taps on read-aloud (#359; shown "9 הקראות", #612)
-   save.now = {id, t, s}  the activity being played, the last moment something happened (ms; also each active play tick, the heartbeat) and when this play
+   save.now = {id, t, s, dv}  the activity being played, the last moment something happened (ms; also each active play tick, the heartbeat) and when this play
      session started (s; a new session after 3+ min without a heartbeat) — "playing now · N min (from HH:MM)" for the parent (#352).
    Detailed entries are kept for 14 days (think.js keeps the day counts for 35). Parent text has no nikud. */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;
@@ -12081,7 +12140,8 @@ DL.add=add;
 /* ---------- the activity being played ---------- */
 let cur=null;
 const GAP=3*60000;
-const mark=id=>{if(O.isParentPlay)return;const t=Date.now(),p=S().now;S().now={id,t,s:p&&p.s&&t-(+p.t||0)<GAP?p.s:t};};
+/* dv: this device (#617: the latest heartbeat's device takes the parent's commands); another device that just used the parent panel gives no heartbeat (his own device keeps it) */
+const mark=id=>{if(O.isParentPlay||(O.parBusy&&O.parBusy()))return;const t=Date.now(),p=S().now;S().now={id,t,s:p&&p.s&&t-(+p.t||0)<GAP?p.s:t,dv:O.dev};};
 const now=()=>mark(cur?cur.id:null);
 /* the heartbeat: every active play tick (talents.js timeTick, which saves anyway) — never from the parent panel */
 DL.beat=()=>{const par=document.querySelector('#sPar');if(par&&!par.hidden)return;mark(cur&&!cur.end?cur.id:null);};
@@ -12185,7 +12245,8 @@ const isUndone=i=>!!(O.realSave.pcU||{})[i];
 const called=i=>cmds().some(x=>x.k==='undo'&&x.a===i);   /* the parent pressed בטל on it */
 const waiting=c=>!isDone(c)&&!called(c.i);
 P.cmds=cmds;
-P.send=(k,a)=>{const st=SETS();const c={i:Date.now().toString(36)+Math.random().toString(36).slice(2,6),k,d:today(),t:Date.now()};if(a!=null)c.a=a;
+/* #617: a command is for Oren's play device (to) and never taken on the device that sent it (by) */
+P.send=(k,a)=>{const st=SETS();const c={i:Date.now().toString(36)+Math.random().toString(36).slice(2,6),k,d:today(),t:Date.now(),to:'kid',by:O.dev};if(a!=null)c.a=a;
   st.pc=[...(st.pc||[]).filter(x=>x&&x.d===today()),c].slice(-40);O.persist(1);if(O.famNow)O.famNow();apply();return c;};
 /* undo: an 'undo' follows the command; Oren's device then never runs it (if it did not yet), or takes it back (if it did meanwhile) */
 P.undo=i=>P.send('undo',i);
@@ -12209,10 +12270,11 @@ P.planOp=planOp;
 const FLAG='oren4-played';
 const playedHere=()=>{try{return localStorage.getItem(FLAG)===today();}catch(e){return false;}};
 /* this device is Oren's today once he chose his path or started a mission here (the parent's own phone never is) */
-P.mark=()=>{if(O.isParentPlay)return;try{localStorage.setItem(FLAG,today());}catch(e){}};
+P.mark=()=>{if(O.isParentPlay||(O.parBusy&&O.parBusy()))return;try{localStorage.setItem(FLAG,today());}catch(e){}};
 O.on('dlBegin',()=>{P.mark();if(O.isParentPlay)return;lastBegin=Date.now();setTimeout(apply,0);});
 let lastBegin=0;
-const here=()=>!O.isParentPlay&&playedHere();   /* the parent may use Oren's own device too: then a change applies at once */
+/* #617: Oren's play device (O.kidDev: not the parent panel's device, the latest heartbeat); without the family save, the one device */
+const here=c=>O.kidDev?O.kidDev(c):!O.isParentPlay&&playedHere();
 const minNow=()=>{const x=new Date();return x.getHours()*60+x.getMinutes();};
 const famNow=()=>{O.persist();if(O.famNow)O.famNow();};   /* #614: the parent sees at once that his device took it */
 const logP=(c,id,x)=>DL.add(today(),[minNow(),id,0,0,0,0,'p',Object.assign({pc:c.i,ts:Date.now()},x)]);
@@ -12232,7 +12294,7 @@ function run(c){const s=O.save;
   const d=T.dailyEnsure();
   if(c.k==='reset'){/* the skipped missions come back, so their skip lines go */s.pcU=s.pcU||{};cmds().forEach(x=>{if((x.k==='drop'||x.k==='off')&&isDone(x))s.pcU[x.i]=Date.now();});}
   planOp(d,c,(id,x)=>logP(c,id,x));}
-function apply(){if(!here())return;const s=O.save;s.pcA=s.pcA||{};const L=cmds().filter(c=>!s.pcA[c.i]);if(!L.length)return;
+function apply(){if(!here())return;const s=O.save;s.pcA=s.pcA||{};const L=cmds().filter(c=>!s.pcA[c.i]&&here(c));if(!L.length)return;
   L.forEach(c=>{s.pcA[c.i]=Date.now();if(c.k!=='undo'&&called(c.i))return;try{run(c);}catch(e){}});
   const ks=Object.keys(s.pcA);if(ks.length>80)ks.sort((a,b)=>s.pcA[a]-s.pcA[b]).slice(0,ks.length-80).forEach(k=>delete s.pcA[k]);
   famNow();const hm=document.querySelector('#sHome');if(hm&&!hm.hidden&&!pend)O.showMap();}
@@ -12276,13 +12338,14 @@ function planView(){const d0=T.S().daily;if(!d0||d0.d!==today())return null;cons
 const stepTop=id=>/:/.test(id)?null:topOf(id);
 const stepLv=id=>{if(id==='math'){const lv=T.nextLevel&&T.nextLevel();return lv?plain(lv.u.name):'';}const l=lvOf(id);return l?'רמה '+l:'';};
 function pendRowHTML(c){const id=c.k==='off'?null:c.a;const nm=c.k==='now'?'מה שהוא משחק עכשיו':c.k==='off'?TOP[c.a]||c.a:T.stepName(id);
-  return `<span class="pn"><b class="dli">⏭</b> ${nm}</span><span class="pc">דילג (הורה)${KIND[c.k]?' · '+KIND[c.k]:''} · ממתין למכשיר של אורן</span>`;}
+  return `<span class="pn"><b class="dli">⏭</b> ${nm}</span><span class="pc">דילג (הורה)${KIND[c.k]?' · '+KIND[c.k]:''} · נשלח…</span>`;}
 /* what he did on day d: his log lines, a "בטל" on a skip until the next mission starts, and the skips still on their way */
 function didSec(box,d,sec){const rows=DL.rows(d);const pend=d===today()?cmds().filter(c=>waiting(c)&&['now','drop','off','know'].includes(c.k)):[];
   if(!rows.length&&!pend.length){if(d===today()&&DL.playing())return;/* #621 playing: the "playing now" line says it */box.appendChild(h('div','pnote pdnone',d===today()?'עוד לא שיחק היום':'לא שיחק ביום הזה'));return;}
   const s=sec(box,'מה הוא עשה','');const L=h('div','dllog');L.dataset.d=d;s.appendChild(L);
   const lastReal=Math.max(-1,...rows.filter(e=>e[6]!=='p').map(e=>e[0]));
   rows.forEach(e=>{const w=h('div','',DL.rowHTML(e));const r=w.firstChild;L.appendChild(r);const x=e[7]||{};
+    if(d===today()&&e[6]==='p'&&x.pc&&x.k==='now')r.querySelector('.pc').insertAdjacentHTML('beforeend',' · <b class="pdheard">אורן שמע ✓</b>');   /* #617 */
     if(d===today()&&e[6]==='p'&&x.pc&&x.k!=='now'&&e[0]>=lastReal&&!cmds().some(c=>c.k==='undo'&&c.a===x.pc)){const b=h('button','pchip','בטל');b.onclick=()=>{P.undo(x.pc);P.refresh();};r.appendChild(b);}});
   pend.forEach(c=>{const r=h('div','prow dlrow dl-p pdpend',pendRowHTML(c));const b=h('button','pchip','בטל');b.onclick=()=>{P.undo(c.i);P.refresh();};r.appendChild(b);L.appendChild(r);});}
 /* the plan ahead: the missions still open today, in order; per row one ✕, a tap on the row shows the rest */

@@ -31,7 +31,7 @@ const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + 
   const rw = await p.evaluate(() => { const c = document.querySelector('#sTal .tqc'); const P = t => window.TAL.plainHe(t).replace(/🔊/g, '').trim();
     return { w: P(c.querySelector('.bigw').textContent), q: P(c.querySelector('.qq').textContent) }; });
   ok('reading practice: the instruction is read at once', s.some(x => x.includes(rw.q.split(' ')[0])), JSON.stringify({ s, rw }));
-  ok('reading practice: the word to read is not read at once', !s.some(x => x.includes(rw.w)), JSON.stringify({ s, rw }));
+  ok('reading practice: the word to read is not read at once', !s.some(x => x.split(/[^א-ת]+/).includes(rw.w)), JSON.stringify({ s, rw }));
   // the same instruction outside a reading activity (no reading target) is read whole
   s = await said(() => p.evaluate(() => { window.TAL.ACT['think-pat'].run(() => {}); }), 1200);
   ok('non-reading question: read at once', s.length >= 1, JSON.stringify(s));
@@ -41,8 +41,8 @@ const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + 
   await p.evaluate(() => { window.OREN.save.set.autoRead = 0; });
   s = await said(() => p.evaluate(() => window.OREN.kingdom()), 800, true);
   ok('parent setting off: nothing read', s.length === 0, JSON.stringify(s));
-  await p.evaluate(() => { delete window.OREN.save.set.autoRead; window.TAL.parentPanel('voice'); }); await sleep(300);
-  ok('parent voice section has the auto-read switch (on)', await p.evaluate(() => [...document.querySelectorAll('#sPar .pchip')].some(x => /הקראה אוטומטית/.test(x.textContent) && x.classList.contains('on'))));
+  await p.evaluate(() => { delete window.OREN.save.set.autoRead; window.TAL.parentPanel('read'); }); await sleep(300);
+  ok('#613 the auto-read switch is in "reading help" (on = כן)', await p.evaluate(() => { const r = document.querySelector('#sPar .rhmore .popt[data-k="auto"]'); return !!r && /להקריא אוטומטית/.test(r.textContent) && /^כן$/.test(r.querySelector('.pchip.on').textContent.trim()); }));
   s = await said(() => p.evaluate(() => { window.OREN.sayNow = 'בדיקה בלוח הורים'; }), 800, true);
   ok('parent screen: nothing read', s.length === 0, JSON.stringify(s));
   ok('no page errors', !errs.length, errs.join(' | '));
