@@ -229,7 +229,7 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
   ok(i0.acts.join() === 'eng-abc,eng-voc,eng-read,eng-talk,eng-song' && i0.act.slice().sort().join() === i0.acts.slice().sort().join(), 'register(): the eng building has the 5 new acts (old ones gone from ACT)', JSON.stringify(i0));
   ok(i0.vis.join() === 'eng-abc', 'a new player sees only "letters and sounds" (first path, #58)', JSON.stringify(i0.vis));
   await p.evaluate(() => window.TAL.openBuilding(window.TAL.BUILD.find(x => x.id === 'eng'))); await L.sleep(200);
-  ok((await p.$$eval('#sTal .acts .actc', a => a.length)) === 1, 'building screen: one act card'); await shot('01-building-new');
+  ok((await p.$$eval('#sTal .acts .actc', a => a.length)) === 0 && await p.evaluate(() => !document.querySelector('#sTal').hidden && document.querySelector('#sTal').children.length > 0), 'building with one act: no menu, "letters and sounds" opens straight away (#8)'); await shot('01-building-new');
   /* play a real round with clicks (letters open words; then a word round) */
   await p.evaluate(() => { const E = window.ENGLISH2, s = window.OREN.save, d = E.day(); E.LEVELS[1].units[0].items.forEach(k => { E.st(s).i[k] = [2, d + 3]; }); });
   ok((await info()).vis.join() === 'eng-abc,eng-voc', 'after the first letter group: words appear');
