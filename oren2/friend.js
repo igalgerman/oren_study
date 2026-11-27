@@ -72,7 +72,10 @@ function leadOnScreen(){if(!lead)return;if(window.__noAuto){O.say(takeLead());re
 /* #414 the mission's learning goal (goals.js): its own clip, after the path's story line and before the screen's instruction.
    A quiz takes it with its first question; any other screen gets it once the mission's screen is drawn. */
 const GSEP='\u2063';
-FR.goal=t=>{if(!t)return;lead=(lead?lead+' '+GSEP:'')+t+GSEP;setTimeout(()=>{if(lead.includes(t))leadOnScreen();},0);};
+let goalT='';
+/* a question read again (listen first, #389) is the question alone: the goal was said once */
+FR.noGoal=x=>goalT?String(x||'').split(goalT+GSEP).join('').trim():String(x||'');
+FR.goal=t=>{if(!t)return;goalT=t;lead=(lead?lead+' '+GSEP:'')+t+GSEP;setTimeout(()=>{if(lead.includes(t))leadOnScreen();},0);};
 
 /* ---------- the day's path ---------- */
 let cur=null;                                  /* {i, d: the day, done: announced} while inside a path step */
@@ -172,7 +175,7 @@ const P4=()=>(window.__oren4||{}).play;
 const speedy=r=>{const p=P4();return !!(p&&p.mode==='speed'&&r.closest('#sPlay'));};
 const done=r=>!!r.querySelector('.ok,.show,.pop');
 const rest=(r,ms)=>{r.classList.add('lsn');r._ls.until=Date.now()+ms;};
-const reread=s=>{if(!s.re)return;s.re=0;if(O.sayNow)O.say(O.sayNow);};
+const reread=s=>{if(!s.re)return;s.re=0;if(O.sayNow)O.say(FR.noGoal(O.sayNow));};
 function free(r){r.classList.remove('lsn');const s=r._ls;s.until=0;s.wait=0;reread(s);}
 function gate(r){if(r._ls)return r._ls;const s=r._ls={t0:Date.now(),w:0,until:0,wait:0,re:0};
   if(!lsOff()&&!noVoice()&&!speedy(r)){s.wait=1;rest(r,LS.MAX);}return s;}
