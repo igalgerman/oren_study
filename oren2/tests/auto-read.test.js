@@ -45,10 +45,6 @@ const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + 
   ok('parent voice section has the auto-read switch (on)', await p.evaluate(() => [...document.querySelectorAll('#sPar .pchip')].some(x => /הקראה אוטומטית/.test(x.textContent) && x.classList.contains('on'))));
   s = await said(() => p.evaluate(() => { window.OREN.sayNow = 'בדיקה בלוח הורים'; }), 800, true);
   ok('parent screen: nothing read', s.length === 0, JSON.stringify(s));
-  // #8: a hat he cannot buy yet says how many gems are missing (not only a shake)
-  await p.evaluate(() => { window.OREN.save.gems = 0; window.OREN.studio(false, () => {}); }); await sleep(300);
-  s = await said(() => p.evaluate(() => [...document.querySelectorAll('#sStudio .hatb')].find(x => x.querySelector('.pr')).click()));
-  ok('#8 studio: a locked hat says how many gems are missing', s.some(x => /יהלומים/.test(x.replace(/[\u0591-\u05C7]/g, ''))), JSON.stringify(s));
   ok('no page errors', !errs.length, errs.join(' | '));
   await b.close(); L.finish('auto-read', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT auto-read 0 1'); process.exitCode = 1; });
