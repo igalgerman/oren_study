@@ -91,4 +91,31 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  const m=await p.evaluate(()=>{const O=window.OREN,s=O.save;s.dom={math:5,explore:9};s.rw={add:1};s.coach=Object.assign({},s.coach,{tour:0});
    O.mergeIn({v:4,t:1,dom:{math:7,calm:3},rw:{lab:1},coach:{tour:1}});return {dom:s.dom,rw:s.rw,tour:s.coach.tour};});
  ok('family merge: domains (newest day), missions (union), tour seen (union)',m.dom.math===7&&m.dom.explore===9&&m.dom.calm===3&&m.rw.add===1&&m.rw.lab===1&&m.tour===1,JSON.stringify(m));
+ // --- #388: inside the path, "continue" on the result card starts the next mission (no home in between) ---
+ const W=await p.evaluate(()=>{const T=window.TAL,O=window.OREN;const st=T.S().set;delete st.plan;st.noDaily=0;O.WORLDS.forEach(w=>{O.save.story[w.id+'-in']=1;});const rw=T.S().rw=T.S().rw||{};O.WORLDS.concat(T.BUILD).forEach(x=>{rw[x.id]=1;});/* no real-world mission joins the path here */
+   const acts=T.dailyPool().filter(id=>!/^(write-trace)$/.test(id)).slice(0,2);window.__started=[];
+   acts.forEach(id=>{const r=T.ACT[id].run;T.ACT[id].run=bk=>{window.__back=bk;window.__started.push(id);return r(bk);};});
+   T.S().daily={d:O.today(),t:[acts[0],'math',acts[1]],done:[0,0,0],claimed:0,ch:'plan',cr:[]};
+   window.__scr=[];O.on('screen',id=>window.__scr.push(id));O.showMap();window.__scr=[];return acts;});
+ await p.locator('#sHome .bigbtn.huge').click({force:true});await sleep(300);
+ const fin=async id=>{await p.evaluate(id=>window.TAL.finishAct(id,0,5,0,window.__back),id);await sleep(200);await p.locator('#ov .bigbtn:not(.plain)').click();await sleep(500);};
+ await fin(W[0]);
+ if(!(await p.locator('#sLearn').isHidden()))await L.doLesson(p);
+ const m1=await p.evaluate(()=>({play:!!window.__oren4.play,d:window.TAL.S().daily.done.slice()}));
+ ok('#388 continue after mission 1 starts the math level (step 2) directly',m1.play&&m1.d[0]===1,JSON.stringify(m1));
+ await p.evaluate(()=>window.__oren4.finishLevel());await sleep(700);await p.locator('#ov .bigbtn').last().click();await sleep(500);
+ const m2=await p.evaluate(()=>({st:window.__started.slice(),d:window.TAL.S().daily.done.slice(),tal:!document.querySelector('#sTal').hidden}));
+ ok('#388 continue after the math level starts mission 3 directly',m2.st.length===2&&m2.st[1]===W[1]&&m2.d[1]===1&&m2.tal,JSON.stringify(m2));
+ await fin(W[1]);
+ const m3=await p.evaluate(()=>({scr:window.__scr.slice(),home:!document.querySelector('#sHome').hidden,end:!!document.querySelector('#sHome .bigbtn.huge')&&document.querySelector('#sHome .bigbtn.huge').textContent}));
+ ok('#388 a 3-mission path is walked without seeing home; home comes at the end with the story ending',m3.home&&m3.scr.indexOf('sHome')===m3.scr.length-1&&/סוֹף הַסִּפּוּר/.test(m3.end||''),JSON.stringify(m3));
+ await p.evaluate(()=>{const T=window.TAL,O=window.OREN;T.S().daily={d:O.today(),t:[window.__started[0],window.__started[1]],done:[0,0],claimed:0,ch:'plan',cr:[]};O.showMap();});
+ await p.locator('#sHome .bigbtn.huge').click({force:true});await sleep(300);await p.click('#btnBack');await sleep(300);
+ ok('#388 the back button in a mission still goes home (step not done)',await p.evaluate(()=>!document.querySelector('#sHome').hidden&&window.TAL.S().daily.done[0]===0));
+ // the daily time limit still stops him: time is up -> continue does not start the next mission, the time-up screen comes
+ await p.evaluate(()=>{const T=window.TAL,O=window.OREN,s=T.S();s.time=s.time||{};s.time[O.today()]=40*60;s.set.lim={daily:30,bed:0,today:null};});
+ await p.locator('#sHome .bigbtn.huge').click({force:true});await sleep(300);const n0=await p.evaluate(()=>window.__started.length);
+ await fin(await p.evaluate(()=>window.__started[window.__started.length-1]));await sleep(2600);
+ const tl=await p.evaluate(n0=>({started:window.__started.length-n0,lock:!!document.querySelector('.tlock:not(.tyay)')}),n0);
+ ok('#388 time limit: continue does not start the next mission, the time-up screen shows',tl.started===0&&tl.lock,JSON.stringify(tl));
  ok('no errors',!errs.length,errs.join('|'));await b.close();L.finish('day-path-'+L.variant,res);})();
