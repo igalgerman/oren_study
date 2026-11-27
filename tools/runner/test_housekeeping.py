@@ -98,3 +98,19 @@ assert len(lines) == 1 and "1" in lines[0], lines
 assert W.sweep_tick([T5("run-10", "live", "a7")], now=NOW, seen=seen2, hc=lambda *a, **k: (rm.append(a), (0, ""))[1], say=lines.append) == 0
 assert len(lines) == 1, "no log line when nothing was removed"
 print("ok sweep (#492)")
+
+# ---- #492 reopen: first-seen times survive a reload of watchdog.py (kept in .runs/sweep_seen.json) ----
+import importlib
+W.SWEEP_SEEN.unlink(missing_ok=True)
+rm, lines = [], []
+fake = lambda *a, **k: (rm.append(a), (0, ""))[1]
+assert W.sweep_tick([T5("run-5", "finished", "b1")], now=NOW, hc=fake, say=lines.append) == 0 and not rm
+W = importlib.reload(W)   # the live watchdog reloads itself often: the module dict is gone
+assert W.sweep_tick([T5("run-5", "finished", "b1")], now=NOW + 301, hc=fake, say=lines.append) == 1, "reload must not reset the clock"
+assert rm == [("rm", "b1")] and len(lines) == 1, (rm, lines)
+assert "b1" not in json.loads(W.SWEEP_SEEN.read_text(encoding="utf-8")), "removed terminal forgotten on disk too"
+# herdr's own finish time (finished_ms) wins when present
+rm.clear()
+assert W.sweep_tick([{**T5("run-6", "finished", "b2"), "finished_ms": (NOW - 400) * 1000}], now=NOW, hc=fake, say=lines.append) == 1
+assert rm == [("rm", "b2")], rm
+print("ok sweep survives reload (#492)")
