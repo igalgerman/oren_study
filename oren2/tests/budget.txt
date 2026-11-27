@@ -12,7 +12,7 @@ helpbtn-phone 90          # same file on the phone viewport
 regressions 85            # #356 walks all ~114 activities, taps back on each + #59 counts each round's questions (#555: again with lessons off for the ~12 behind a lesson card, and plays rhythm + letters rounds to the end): ~60 s under load
 playthrough-desktop 300   # FULL=1 only: plays every world level by level
 playthrough-phone 300     # FULL=1 only: same on the phone viewport
-voice-stop 60             # #401 adds a 1200-char text spoken in parts: ~10 s
+voice-stop 60             # #401 adds a 1200-char text spoken in parts: ~10 s; #398 queue cleared on screen change + next question + new line not cut: ~2 s
 health-desktop 90         # breaks, meals, reminders + #353 parent message with simulated time: ~41 s alone
 health-phone 90           # same file on the phone viewport: ~40 s alone
 eventlog 60               # #348 event log: worker + fake D1, then the real page through the worker: ~15 s
