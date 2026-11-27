@@ -289,7 +289,7 @@ const ORDER=['shp','ana','ser','rel','mat','sen'];
 function openTracks(){const s=S();if((s.set||{}).all)return ORDER.slice();const plays=ORDER.reduce((a,k)=>a+((s.tl[SK[k].id]||{}).n|0),0);return ORDER.slice(0,Math.min(ORDER.length,2+Math.floor(plays/3)));}
 
 /* the shared quiz screen: card, options, a gentle explanation after a mistake */
-function round(o){/* o: {id, sk, title, bg, back, n, next(i) → q, again} */
+function round(o){/* o: {id, sk, title, bg, back, n, next(i) → q, again} */o=Object.assign({},o,{n:T.pathN(o.n)});/* #394 short on the daily path */
   let i=0,err=0,gems=0;const qs=[];O.setScreen('sTal',o.bg||'mount',o.back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq thq');s.appendChild(wrap);if(o.lesson&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(o.lesson,o.back,o.again));
   const render=()=>{let q;for(let t=0;t<30;t++){C.clearLB();q=o.next(i);if(!qs.some(x=>x.key===q.key))break;}qs.push(q);let tries=0,lock=false,first=true;
     T.hudT(o.title,T.progressBar(i,o.n));O.sayNow=T.plainHe((q.say||'')+' '+(q.text||''));wrap.innerHTML='';

@@ -398,7 +398,7 @@ const snapshot=()=>({open:NAMES.map((_,lv)=>E2.levelOpen(O.save,lv)),units:E2.LE
 function doneTitle(a,b){const nl=NAMES.findIndex((_,lv)=>b.open[lv]&&!a.open[lv]);if(nl>0)return `נִפְתַּח מִשְׂחָק חָדָשׁ: ${ACTN[NAMES[nl]]}! 🎉`;
   if(b.songs>a.songs)return 'נִפְתַּח שִׁיר חָדָשׁ! 🎵';
   for(let lv=0;lv<4;lv++){const nu=b.units[lv].find(id=>!a.units[lv].includes(id));if(nu)return `סִיַּמְתָּ: ${E2.UNIT[nu].he}! 🎉`;}return undefined;}
-function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save,lv,d);const id=NAMES[lv];const before=snapshot();
+function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save,lv,d);/* #394 on the daily path: at most 4 steps (the new words' cards + at least 1 question) */P.qs=P.qs.slice(0,Math.max(1,T.pathN(P.teach.length+P.qs.length)-P.teach.length));const id=NAMES[lv];const before=snapshot();
   const steps=[...P.teach.map(g=>({t:'teach',c:E2.teachCard(g)})),...P.qs.map(s=>({t:'q',s}))];
   const b0={};P.qs.forEach(s=>{if(!(s.k in b0))b0[s.k]=E2.box(save,s.k);});P.teach.forEach(g=>E2.teachCard(g).items.forEach(k=>{b0[k]=0;}));
   const res={};const asked=new Set();
