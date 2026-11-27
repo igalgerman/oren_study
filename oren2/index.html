@@ -45,6 +45,9 @@ svg.px{shape-rendering:crispEdges;display:block}
 .hud-mid{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;min-width:0}
 .ibtn{width:48px;height:48px;display:grid;place-items:center;background:var(--birch);box-shadow:inset -4px -4px 0 rgba(0,0,0,.18),inset 4px 4px 0 rgba(255,255,255,.6),0 4px 0 rgba(0,0,0,.25)}
 .ibtn svg{width:26px;height:26px}
+/* #404 a recording still missing (online): the text lights up with a 🔊 that tries again */
+.vmiss{outline:4px solid #ffd600!important;outline-offset:3px;background-color:#fff3b0!important}
+.vmissb{display:inline-grid;vertical-align:middle;margin-inline-start:8px;width:44px;height:44px}
 /* #44 pause: one big continue button over the game */
 #btnPause{margin-inline-start:8px}#btnPause[hidden]{display:none}
 @media (max-width:440px){body.pzon .hud-mid .chip{display:none}}/* a phone has no room for the title next to the pause button (activities hide it anyway) */
@@ -1560,17 +1563,34 @@ const PF=new Set();
 function ttsPrefetch(t,lang){if(!t||window.__fast)return;lang=lang||'he';if(GV.pending){GV.wait.then(()=>ttsPrefetch(t,lang));return;}if(!useGoogle(lang))return;const en=lang==='en';
   for(const x of ttsParts(en?plain(t):fullSpell(t))){const u=ttsUrl(x,en,false);if(PF.has(u))continue;if(PF.size>200)PF.clear();PF.add(u);try{fetch(u).catch(()=>{});}catch(e){}}}
 function googleSay(t,lang,again,part,slow,done){done=done||(()=>{});const en=lang==='en';part=part|0;if(!part){try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}try{speechSynthesis.cancel();}catch(e){}}
-  const parts=ttsParts(en?plain(t):fullSpell(t)),last=part>=parts.length-1;
+  const parts=ttsParts(en?plain(t):fullSpell(t)),last=part>=parts.length-1,raw=ttsParts(t),rp=raw.length===parts.length?raw[part]:t;
   const url=ttsUrl(parts[part],en,slow);
   const a=new Audio(url);GV.audio=a;let go=false;const t0=Date.now();
   const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;if(sqOld(done))return drop();track('au',{ev:'fail',src:'google',why,ms:Date.now()-t0});try{a.pause();}catch(e){}GV.audio=null;
-    if(!again&&why!=='no-audio'&&why!=='blocked'){logIssue('voice',why+' (retry)');track('retry',{what:'voice',why});googleSay(t,lang,1,part,slow,done);return;}browserSay(t,en?'en':'he',why,slow,done);if(why!=='blocked')logIssue('voice',why);};
+    if(!again&&why!=='blocked'){logIssue('voice',why+' (retry)');track('retry',{what:'voice',why});googleSay(t,lang,1,part,slow,done);return;}
+    /* #404 one rule: the browser voice only when the whole session is offline; online the text lights up with a 🔊 that tries again */
+    if(navigator.onLine===false){browserSay(t,en?'en':'he',why,slow,done);if(why!=='blocked')logIssue('voice',why);return;}
+    if(why!=='blocked')logIssue('voice',why+' (missing)');track('au',{ev:'missing',src:'google',why});vmMark(rp,lang,slow);
+    if(!last){googleSay(t,lang,0,part+1,slow,done);return;}done();};
   const tm=setTimeout(()=>{if(!go)fall('timeout');},GV.ms);/* the browser voice only after a retry and a long wait (#36) */
   /* #399 a slow fetch that arrives after the screen changed (or after hush) is not played: the line belongs to an old screen */
   const stale=()=>GV.audio!==a||sqOld(done);const drop=()=>{clearTimeout(tm);try{a.pause();}catch(e){}if(GV.audio===a)GV.audio=null;done();};
-  a.onplaying=()=>{if(stale())return drop();auHint(false);if(!go){if(!part)voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});sayGuard(parts[part],done);}go=true;clearTimeout(tm);};a.onplay=()=>{if(stale())return drop();duck(true);vo(1,a);};a.onended=()=>{if(GV.audio===a&&!last){googleSay(t,lang,0,part+1,slow,done);return;}duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a){GV.audio=null;vo(0,a);}done();};/* the next part; stopped (hush) or replaced: the rest is not spoken */
+  a.onplaying=()=>{if(stale())return drop();auHint(false);if(!go){vmOff(rp);if(!part)voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});sayGuard(parts[part],done);}go=true;clearTimeout(tm);};a.onplay=()=>{if(stale())return drop();duck(true);vo(1,a);};a.onended=()=>{if(GV.audio===a&&!last){googleSay(t,lang,0,part+1,slow,done);return;}duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a){GV.audio=null;vo(0,a);}done();};/* the next part; stopped (hush) or replaced: the rest is not spoken */
   a.onerror=()=>fall(a.error&&a.error.code===4?'no-audio':'audio-error');/* 4: not audio, e.g. the server answered 429/502 (not made yet) */
   a.play().catch(e=>{if(e&&e.name==='NotAllowedError')auHint(true);fall(e&&e.name==='NotAllowedError'?'blocked':e&&e.name==='NotSupportedError'?'no-audio':'audio-error');});}
+/* #404 a recording still missing after its one retry (online): the text on the screen lights up with a 🔊 that tries again.
+   The text is found as one element on the screen (one that has its own 🔊 keeps it, no second one); on a button, or not found, the
+   top-bar 🔊 lights up and retries it. The light goes off when that line plays, and on hush(). */
+const VM={list:[],say:null};window.__vm=VM;
+const vmN=s=>String(s).replace(/[\u0591-\u05C7]/g,'').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+function vmClear(){VM.list.forEach(x=>{x.el.classList.remove('vmiss');if(x.b)x.b.remove();});VM.list=[];VM.say=null;VM.k=null;$('#btnSay').classList.remove('vmiss');}
+function vmOff(t){const k=vmN(t);if(VM.list.some(x=>x.k===k)||VM.k===k)vmClear();}
+function vmMark(t,lang,slow){const k=vmN(t);let el=null;const again=()=>{vmClear();hush();say(t,lang,slow);};
+  if(k)for(const e of $('#screens').querySelectorAll('*')){if(/^(script|style|svg|canvas)$/i.test(e.tagName)||e.closest('svg')||!e.getClientRects().length)continue;const x=vmN(e.textContent);if(x.includes(k)&&x.length<=k.length*2+20)el=e;}
+  if(el&&!el.closest('button')&&el.querySelector('button[aria-label="הקראה"]')){el.classList.add('vmiss');VM.list.push({el,k});return;}
+  if(el&&!el.closest('button')){const b=document.createElement('button');b.className='ibtn vmissb';b.setAttribute('aria-label','הקראה');b.innerHTML=ICON.say;b.onclick=e=>{e.stopPropagation();again();};el.classList.add('vmiss');el.append(b);VM.list.push({el,b,k});return;}
+  if(el){const bt=el.closest('button');bt.classList.add('vmiss');VM.list.push({el:bt,k});}
+  $('#btnSay').classList.add('vmiss');VM.say=again;VM.k=k;}
 /* #397 one speech queue for the whole game: say() puts the sentence in line; one sentence at a time, the next starts when the one
    before has ended (never two voices together, never cut in the middle). hush() empties the line and stops the voice (screen change,
    back, pause, a new question). The same sentence twice in a row is said once; at most 3 wait (older waiting ones are dropped). */
@@ -1587,7 +1607,7 @@ function sayNext(){while(SQ.list.length&&SQ.list[0].scr!==SQ.scr)SQ.list.shift()
 function sayGuard(t,done){const it=SQ.cur;if(!it||it.done!==done)return;clearTimeout(it.wd);it.wd=setTimeout(done,3000+150*String(t).length);}
 function sayOne(it,done){const {t,lang,slow}=it;
   if(!GV.ok&&GV.site&&Date.now()-GV.at>=GV.again)GV.wait=GV.check(1);/* the status failed earlier: check again in the background, the next sentences get Google back */
-  if(useGoogle(lang)){googleSay(t,lang,0,0,slow,done);return;}
+  if(useGoogle(lang)||(GV.site&&navigator.onLine!==false&&(lang==='he'||lang==='en'))){googleSay(t,lang,0,0,slow,done);return;}/* #404 online the recording is tried even when the status check failed (the browser voice is only for offline) */
   if(useClaude(lang)){try{speechSynthesis.cancel();}catch(e){}const t1=String(t).replace(/\u2063/g,' '),txt=(lang==='he'?withNikud(t1):plain(t1)).slice(0,1900);
     const k={};vo(1,k);sayGuard(txt,done);TTS.ns.speak(txt,{language:lang,rate:lang==='en'?(slow?.7:.9):.95}).then(()=>{vo(0,k);voiceLog('claude','',t,lang);done();}).catch(e=>{vo(0,k);const c=e&&(e.code||e.reason);if(c==='not_granted'||c==='unavailable'){TTS.blocked=true;done();return;}if(c==='stopped'){done();return;}browserSay(t,lang,'',slow,done);});return;}
   browserSay(t,lang,'',slow,done);}
@@ -1602,7 +1622,7 @@ setInterval(()=>{if(sayNow!==AUTO.cur||AUTO.gen!==AUTO.seen){AUTO.cur=sayNow;AUT
   if(!AUTO.wait||Date.now()-AUTO.at<300)return;AUTO.wait=false;
   if(window.__fast||window.__noAuto||(window.__autoSaid||0)>=AUTO.at||(save.set&&save.set.autoRead===0)||!$('#sPar').hidden||$('#hud').hidden)return;
   hush();say(sayNow);},100);
-const hush=()=>{const it=SQ.cur;SQ.list=[];SQ.cur=null;if(it)clearTimeout(it.wd);try{speechSynthesis.cancel();}catch(e){}try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}if(TTS.ns&&!TTS.blocked)TTS.ns.stop().catch(()=>{});};
+const hush=()=>{vmClear();const it=SQ.cur;SQ.list=[];SQ.cur=null;if(it)clearTimeout(it.wd);try{speechSynthesis.cancel();}catch(e){}try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}if(TTS.ns&&!TTS.blocked)TTS.ns.stop().catch(()=>{});};
 
 /* ---------- animated pixel background: cached static layer + live elements ---------- */
 const bg=$('#bg');let bx=bg.getContext('2d');let BW=192,BH=108,bgW='meadow',bgTimer=0,bgCache={key:'',cv:null};
@@ -1684,7 +1704,7 @@ if(!save.avOren){save.av=Object.assign({},save.av,OREN_LOOK);save.avOren=1;try{l
 if(save.snd==null)save.snd=save.music===false?1:2;
 const syncMusic=()=>{const b=$('#btnMusic');b.innerHTML=save.snd===2?ICON.music:save.snd===1?ICON.musicOff:ICON.mute;b.classList.toggle('off',save.snd===0);b.title=['שֶׁקֶט','רַק צְלִילִים','מוּזִיקָה וּצְלִילִים'][save.snd];b.setAttribute('aria-label',b.title);};syncMusic();
 $('#btnMusic').onclick=()=>{save.snd=((save.snd|0)+2)%3;persist();syncMusic();if(save.snd===2)musicStart();else musicStop();sfx.pop(2);};
-$('#btnSay').onclick=()=>say(sayNow);
+$('#btnSay').onclick=()=>VM.say?VM.say():say(sayNow);/* #404 lit: retry the missing line */
 $('#btnBack').onclick=()=>{hush();herePut(null);backTo&&backTo();};
 $('#btnPause').innerHTML=ICON.pause;$('#btnPause').onclick=()=>{sfx.pop(1);pauseOn();};
 /* the phone's back gesture / the browser's back button do what ‹ does (one guard entry, re-armed each time; at home nothing happens, so the game is never left by accident) */

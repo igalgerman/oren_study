@@ -17,7 +17,7 @@ health-desktop 90         # breaks, meals, reminders + #353 parent message + #41
 health-phone 90           # same file on the phone viewport: ~40 s alone
 eventlog 60               # #348 event log: worker + fake D1, then the real page through the worker: ~15 s
 kidtext 60                # #422 every kid string + 8.5k level questions + 1.2k activity screens through 4 text rules: ~8 s
-voice-stats 90            # #399 screen id (1 more page, ~3 s) + #397 speech queue (2 more pages, ~3 s) + #400 missing-voice report (node, < 1 s) + #396 static scan for direct browser speech (< 1 s): ~27 s alone, 57 s in a loaded cloud box
+voice-stats 100           # #404 missing recording: one more page (~4 s); #399 screen id (1 more page, ~3 s) + #397 speech queue (2 more pages, ~3 s) + #400 missing-voice report (node, < 1 s) + #396 static scan for direct browser speech (< 1 s): ~27 s alone, 57 s in a loaded cloud box
 friend-desktop 80         # #433 error-in-a-mission check + #386 story engine (2 reopened pages from a save, a step, the day-end hint) + #387 story picture for every path mission (~2 s) + #411 easy/hard question (7 scenes, 3 taps, parent view, ~2 s) + #407 memory lines (2 homes + a finale, ~4 s): ~50 s in all
 friend-phone 80           # same file on the phone viewport
 shots 90                  # #462 screenshots: worker + fake D1, then the real page (six moments, busy/offline, a played level, review page desktop + phone): ~40 s alone

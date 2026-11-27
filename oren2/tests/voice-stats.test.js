@@ -25,6 +25,11 @@ const INIT = () => {
   window.Audio = function (url) {
     const a = this; a.src = url; a.paused = true; a.ended = false; a.error = null;
     const t = decodeURIComponent((/[?&]t=([^&]*)/.exec(url) || [])[1] || '');
+    // #404 __req: every audio request by its text; FLAKY fails the first try only; __fixed: MISSING texts the server now has
+    //      (texts compared without nikud: the audio URL carries the respelled text)
+    const N = s => String(s).replace(/[\u0591-\u05C7]/g, '').replace(/\s+/g, ' ').trim(); window.__N = N;
+    (window.__req = window.__req || []).push(N(t)); const tries = window.__req.filter(x => x === N(t)).length;
+    const fixed = (window.__fixed || []).some(x => N(t).includes(N(x)));
     a.pause = () => { if (!a.paused && !a.ended) window.__aev.push(['cut', t]); a.paused = true; a.stop = true; };
     a.play = () => {
       if (/BLOCK/.test(t)) return Promise.reject(Object.assign(new Error('no gesture'), { name: 'NotAllowedError' }));
@@ -33,7 +38,7 @@ const INIT = () => {
           if (a.paused) return; window.__played.push(t); window.__aev.push(['start', t]);
           setTimeout(() => { if (a.paused) return; a.paused = true; a.ended = true; window.__aev.push(['end', t]); a.onended && a.onended(); }, 40); }, 400);
         if (a.stop) return;
-        if (/MISSING/.test(t)) { a.error = { code: 4 }; a.onerror && a.onerror(); return; }
+        if ((/MISSING/.test(t) && !fixed) || (/FLAKY/.test(t) && tries === 1)) { a.error = { code: 4 }; a.onerror && a.onerror(); return; }
         if (/NET/.test(t)) { a.error = { code: 2 }; a.onerror && a.onerror(); return; }
         if (/SLOW/.test(t)) return;
         a.paused = false; window.__played.push(t); window.__aev.push(['start', t]); a.onplay && a.onplay(); a.onplaying && a.onplaying();
@@ -85,7 +90,9 @@ const INIT = () => {
     await p.evaluate(() => window.__voiceFlush()); await sleep(200);
     ok('nothing new = nothing sent', posts.length === 1, posts.length + ' posts');
     // 2. every reason is recorded: no audio on the server, audio network error, timeout, autoplay blocked, a direct browser call
+    //    (#404: the browser voice is used only offline, so these sentences are said with the whole session offline)
     await p.evaluate(() => { window.__gv.ms = 400; });
+    await ctx.setOffline(true);
     for (const t of ['MISSING אַחַת', 'NET שְׁתַּיִם', 'SLOW שָׁלוֹשׁ', 'BLOCK אַרְבַּע']) { await speak(p, t); await sleep(1100); }
     await p.evaluate(() => { const u = new SpeechSynthesisUtterance('ישיר'); u.lang = 'he-IL'; speechSynthesis.speak(u); });
     const r2 = await vs(p); const R = r2.ev.map(e => e.r);
@@ -93,6 +100,7 @@ const INIT = () => {
       const e = r2.ev.find(x => x.r === why);
       ok('reason recorded: ' + why, !!e && e.k.includes(txt) && e.ms === 400 && e.h === 'oren.test', JSON.stringify(r2.ev)); }
     ok('one event per browser use', R.length === 5 && r2.n[d].browser === 5, JSON.stringify(R));
+    await ctx.setOffline(false);
     await p.evaluate(() => window.__voiceFlush()); await sleep(300);
     const b2 = posts[1] && JSON.parse(posts[1].body);
     ok('second batch carries the events with reason, text key, GV.ms and host', posts.length === 2 && b2.ev.length === 5 && b2.ev.every(e => e.r && e.k && e.ms === 400 && e.h === 'oren.test' && e.d === d), JSON.stringify(b2));
@@ -106,14 +114,19 @@ const INIT = () => {
     const r = await vs(p); ok('status fails once then works: Google, no browser voice', r.browser.length === 0 && r.ev.length === 0, JSON.stringify(r));
     await ctx.close(); }
 
-  // 4. status fails for the whole first check: browser voice with reason status-failed, then the status is checked again later
-  //    in the visit and Google comes back (GV.ok is not stuck false for the whole visit)
+  // 4. status fails for the whole first check: offline -> browser voice with reason status-failed; online (#404) -> the
+  //    recording is still tried, no browser voice; the status is checked again later in the visit and Google comes back
   { const { ctx, p, st } = await open('https://oren.test', 3);
     await p.waitForFunction(() => window.__gv && !window.__gv.pending, null, { timeout: 10000 });
+    await speak(p, 'שָׁרָת לֹא עוֹנֶה'); await sleep(400);
+    const r0 = await vs(p);
+    ok('#404 status failed, online: the recording is tried, no browser voice', !r0.browser.length && !r0.ev.length && await p.evaluate(() => window.__req.includes(window.__N('שָׁרָת לֹא עוֹנֶה'))), JSON.stringify(r0));
+    await ctx.setOffline(true);
     await p.evaluate(() => { window.__gv.again = 0; });
     await speak(p, 'בְּלִי שָׁרָת'); await sleep(400);
+    await ctx.setOffline(false);
     const r = await vs(p); const e = r.ev.find(x => x.k === 'בְּלִי שָׁרָת');
-    ok('status failed: reason status-failed recorded', !!e && e.r === 'status-failed' && e.h === 'oren.test', JSON.stringify(r.ev));
+    ok('status failed, offline: reason status-failed recorded', !!e && e.r === 'status-failed' && e.h === 'oren.test', JSON.stringify(r.ev));
     await p.waitForFunction(() => window.__gv.ok, null, { timeout: 5000 }).catch(() => {});
     await speak(p, 'הַשָּׁרָת חָזַר'); await sleep(400);
     const r2 = await vs(p);
@@ -129,6 +142,64 @@ const INIT = () => {
     ok('artifact host: reason artifact-host', !!e && e.r === 'artifact-host' && e.h === 'abc.claudeusercontent.com' && r.ev.every(x => x.r === 'artifact-host'), JSON.stringify(r.ev));
     await p.evaluate(() => window.__voiceFlush()); await sleep(300);
     ok('artifact host: the batch goes to the family site', posts.length === 1 && posts[0].origin === 'https://oren-game.pages.dev', JSON.stringify(posts.map(x => x.origin)));
+    await ctx.close(); }
+
+  // #404 one clear rule when a recording is missing: one retry, then the text lights up with a 🔊 that tries again;
+  //      the browser voice only when the whole session is offline (offline true / false)
+  { const { ctx, p, errs } = await open('https://oren.test');
+    await p.waitForFunction(() => window.__gv && window.__gv.ok, null, { timeout: 8000 });
+    await p.evaluate(() => { window.__gv.ms = 400; window.__noAuto = true; });
+    // a line on the screen, then the voice says it
+    const show = (t, tag) => p.evaluate(([t, tag]) => { document.querySelectorAll('.t404').forEach(e => e.remove());
+      const s = [...document.querySelectorAll('section.screen')].find(x => !x.hidden); const e = document.createElement(tag || 'div'); e.className = 't404'; e.textContent = t; s.prepend(e); }, [t, tag]);
+    const st = t => p.evaluate(t => { const e = document.querySelector('.t404'); const N = window.__N; return { req: window.__req.filter(x => x === N(t)).length, played: window.__played.some(x => N(x) === N(t)),
+      lit: !!e && e.classList.contains('vmiss'), btn: !!(e && e.querySelector('.vmissb')), hud: document.querySelector('#btnSay').classList.contains('vmiss'), browser: speechSynthesis.log.length }; }, t);
+    // case 1: the retry works -> the recording plays, nothing lights up
+    await show('FLAKY שׁוּב'); await speak(p, 'FLAKY שׁוּב'); await sleep(500);
+    let r = await st('FLAKY שׁוּב');
+    ok('#404 case 1: the first try fails, the one retry plays the recording (no browser voice, nothing lit)', r.req === 2 && r.played && !r.lit && !r.btn && !r.browser, JSON.stringify(r));
+    // case 2: still missing after the one retry (online) -> the text lights up with a 🔊, no browser voice
+    await show('MISSING חָסֵר'); await speak(p, 'MISSING חָסֵר'); await sleep(600);
+    r = await st('MISSING חָסֵר');
+    ok('#404 case 2 (offline false): exactly one retry, then the text lights up with a 🔊, no browser voice', r.req === 2 && !r.played && r.lit && r.btn && !r.browser, JSON.stringify(r));
+    // the 🔊 tries again: now the server has it -> it plays and the light goes off
+    await p.evaluate(() => { window.__fixed = ['MISSING חָסֵר']; });
+    await p.click('.t404 .vmissb'); await sleep(400);
+    r = await st('MISSING חָסֵר');
+    ok('#404 the 🔊 on the lit text tries again: it plays, the light is off', r.req === 3 && r.played && !r.lit && !r.btn && !r.browser, JSON.stringify(r));
+    // a line that is not on the screen as one text (or on a button): the 🔊 in the top bar lights up and retries it
+    await p.evaluate(() => { window.__fixed = []; });
+    await show('עוֹד', 'button'); await speak(p, 'MISSING לֹא עַל הַמָּסָךְ'); await sleep(600);
+    r = await st('MISSING לֹא עַל הַמָּסָךְ');
+    ok('#404 text not on the screen: the top-bar 🔊 lights up', r.req === 2 && r.hud && !r.browser, JSON.stringify(r));
+    await p.evaluate(() => { window.__fixed = ['MISSING לֹא עַל הַמָּסָךְ']; });
+    await p.click('#btnSay'); await sleep(400);
+    r = await st('MISSING לֹא עַל הַמָּסָךְ');
+    ok('#404 the top-bar 🔊 retries that line, then its light is off', r.req === 3 && r.played && !r.hud, JSON.stringify(r));
+    // a text that has its own 🔊 (like the home bubble): it lights up, no second 🔊; its own 🔊 plays it and the light goes off
+    await p.evaluate(() => { window.__fixed = []; document.querySelectorAll('.t404').forEach(e => e.remove()); const s = [...document.querySelectorAll('section.screen')].find(x => !x.hidden);
+      const e = document.createElement('div'); e.className = 't404'; e.innerHTML = '<button type="button" aria-label="הקראה">🔊</button>MISSING יֵשׁ לִי'; e.firstChild.onclick = () => window.OREN.say('MISSING יֵשׁ לִי'); s.prepend(e); });
+    await speak(p, 'MISSING יֵשׁ לִי'); await sleep(600);
+    r = await st('MISSING יֵשׁ לִי'); const own = await p.evaluate(() => document.querySelectorAll('.t404 button').length);
+    ok('#404 a text with its own 🔊 lights up, no second 🔊 is added', r.lit && own === 1 && !r.hud, JSON.stringify({ r, own }));
+    await p.evaluate(() => { window.__fixed = ['MISSING יֵשׁ לִי']; }); await p.click('.t404 button'); await sleep(400);
+    r = await st('MISSING יֵשׁ לִי');
+    ok('#404 its own 🔊 plays it and the light goes off', r.played && !r.lit, JSON.stringify(r));
+    // a screen change (hush) turns every light off
+    await show('MISSING כָּבֶה'); await speak(p, 'MISSING כָּבֶה'); await p.waitForFunction(() => document.querySelector('.t404.vmiss'), null, { timeout: 3000 }).catch(() => {});
+    const lit = (await st('MISSING כָּבֶה')).lit; await p.evaluate(() => window.OREN.hush());
+    ok('#404 hush (screen change) turns the light off', lit && !(await st('MISSING כָּבֶה')).lit, String(lit));
+    // case 3: the whole session offline -> the browser voice, nothing lights up
+    await ctx.setOffline(true);
+    // a timer that changes the screen meanwhile (slow under load) drops the line (#399): then the case is played again once
+    for (let k = 0; k < 2; k++) { const scr = await p.evaluate(() => window.__sq.scr);
+      await show('MISSING בְּלִי רֶשֶׁת'); await speak(p, 'MISSING בְּלִי רֶשֶׁת');
+      await p.waitForFunction(() => speechSynthesis.log.length || document.querySelector('.t404.vmiss'), null, { timeout: 4000 }).catch(() => {}); await sleep(200);
+      r = await st('MISSING בְּלִי רֶשֶׁת'); if (await p.evaluate(() => window.__sq.scr) === scr) break;
+      await p.evaluate(() => { window.__req = []; speechSynthesis.log.length = 0; }); }
+    await ctx.setOffline(false);
+    ok('#404 case 3 (offline true): the browser voice says it, nothing lights up', r.browser === 1 && !r.lit && !r.btn && !r.hud, JSON.stringify(r));
+    ok('#404 no page errors', !errs.length, errs.join('|'));
     await ctx.close(); }
 
   // #397 one speech queue: two say() calls in a row play one after the other (no overlap, the first is not cut), on the
