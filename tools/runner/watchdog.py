@@ -33,7 +33,7 @@ Every minute it checks, deterministically:
      orchestrator on the NET_ALARM-th in a row; nightly.prune_if_due removes .runs/<n> of issues closed > 24 h once a day
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
   4b. orchestrator / inbox / inspector terminal finished (#140)                -> removed by address and started again (recover.py commands)
-  4c. #492 a finished run-/run-pass-/issue-/review-/resolve-/question- terminal 5+ min old -> removed by address (sweep_tick, no gh needed)
+  4c. #492 a finished run-/run-pass-/issue-/review-/resolve-/question- terminal 5+ min old -> removed by address (sweep_tick, no gh needed; first-seen times in .runs/sweep_seen.json survive a reload)
 It never answers questions or presses keys in other windows; it only tells the orchestrator and starts the runner.
 Usage: python watchdog.py [--once | --lock | --alarms-once]
 """
@@ -282,7 +282,15 @@ def cleanup(ts):
 # ---------- #492: finished lane terminals go 5 min after they finished, even when GitHub can't be read ----------
 SWEEP_RE = re.compile(r"^(run|issue|review|resolve|question)-")   # run-pass-* too; never control windows
 SWEEP_MIN = 5
-_finished_seen = {}   # address -> first time seen finished (herdr gives no finish time)
+SWEEP_SEEN = R.RUNS / "sweep_seen.json"   # address -> first time seen finished; on disk, so a reload of this file keeps it
+
+def _load_seen():
+    try: return json.loads(SWEEP_SEEN.read_text(encoding="utf-8"))
+    except (OSError, ValueError): return {}
+
+def _save_seen(seen):
+    try: R.RUNS.mkdir(parents=True, exist_ok=True); SWEEP_SEEN.write_text(json.dumps(seen), encoding="utf-8")
+    except OSError: pass
 
 def finished_old(ts, seen, now, min_age=SWEEP_MIN):
     """Pure: [(name, address)] of finished/exited lane terminals first seen finished min_age+ min ago. Updates seen."""
@@ -292,16 +300,19 @@ def finished_old(ts, seen, now, min_age=SWEEP_MIN):
         a, name = t.get("address"), t.get("name") or ""
         if not a or t.get("state") not in recover.FINISHED or not SWEEP_RE.match(name): continue
         fin.add(a)
-        if now - seen.setdefault(a, now) >= min_age * 60: out.append((name, a))
+        t0 = t["finished_ms"] / 1000 if t.get("finished_ms") else seen.setdefault(a, now)   # herdr's own finish time when given
+        if now - t0 >= min_age * 60: out.append((name, a))
     for a in [a for a in seen if a not in fin]: seen.pop(a)
     return out
 
 def sweep_tick(ts, now=None, seen=None, hc=None, say=None):
     """#492: rm (by address) the finished lane terminals; one log line with the count, none when 0. -> count."""
-    seen = _finished_seen if seen is None else seen
+    disk = seen is None
+    seen = _load_seen() if disk else seen
     hc, say = hc or R.hc, say or log
     gone = [(n, a) for n, a in finished_old(ts, seen, now or time.time()) if hc("rm", a, timeout=30)[0] == 0]
     for _, a in gone: seen.pop(a, None)
+    if disk: _save_seen(seen)
     if gone: say(f"sweep: removed {len(gone)} finished terminal(s) older than {SWEEP_MIN} min: " + " ".join(n for n, _ in gone[:20]))
     return len(gone)
 
