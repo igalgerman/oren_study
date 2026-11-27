@@ -18,7 +18,7 @@ health-phone 90           # same file on the phone viewport: ~40 s alone
 eventlog 60               # #348 event log: worker + fake D1, then the real page through the worker: ~15 s
 kidtext 60                # #422 every kid string + 8.5k level questions + 1.2k activity screens through 4 text rules: ~8 s
 voice-stats 60            # #400 adds the missing-voice report on a fake sentence list (node, < 1 s): ~27 s alone
-friend-desktop 60         # #433 adds the error-in-a-mission check (one thrown error, ~2 s): ~25 s in all
+friend-desktop 60         # #433 error-in-a-mission check + #386 story engine (2 reopened pages from a save, a step, the day-end hint): ~36 s in all
 friend-phone 60           # same file on the phone viewport
 shots 90                  # #462 screenshots: worker + fake D1, then the real page (six moments, busy/offline, a played level, review page desktop + phone): ~40 s alone
 pday 90                   # #359 two devices through a fake save server: plan changes, skips, undo, offline queue, skip-now waiting for an answer: ~45 s alone

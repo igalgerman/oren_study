@@ -1417,20 +1417,11 @@ function nextStep(){const d=T.dailyEnsure(),left=T.limLeft?T.limLeft():null;
   const H=T.health;if(!H||!H.check){go();return;}H.check();if(!H.blocking()){go();return;}
   const s0=scrN;let calm=0;const iv=setInterval(()=>{if(scrN!==s0){clearInterval(iv);return;}if(H.blocking()){calm=0;return;}if(++calm>=3){clearInterval(iv);go();}},250);}
 T.nextStep=nextStep;
-/* a small story for every day: each mission brings back one piece */
-const QUESTS=[
- {e:'🦸',t:'הַגִּבּוֹר שֶׁל הָעִיר',k:'💎',a:'אוֹי! גְּבִישֵׁי הַכֹּחַ נֶעֶלְמוּ מֵהָעִיר. כָּל מְשִׂימָה מַחְזִירָה גָּבִישׁ אֶחָד!',z:'כָּל הַגְּבִישִׁים חָזְרוּ, וְהָעִיר שׁוּב מְאִירָה. אַתָּה גִּבּוֹר אֲמִתִּי!'},
- {e:'🧱',t:'הַגֶּשֶׁר לָאִי',k:'🧱',a:'הַגֶּשֶׁר לָאִי נִשְׁבַּר. כָּל מְשִׂימָה מוֹסִיפָה לַגֶּשֶׁר עוֹד חֵלֶק!',z:'הַגֶּשֶׁר מוּכָן! עַכְשָׁו כֻּלָּם יְכוֹלִים לַעֲבֹר לָאִי.'},
- {e:'⚽',t:'מִשְׂחַק הַגְּמָר',k:'⚽',a:'הַיּוֹם מִשְׂחַק הַגְּמָר! כָּל מְשִׂימָה הִיא גּוֹל לַקְּבוּצָה שֶׁלְּךָ.',z:'נִצַּחְתָּ בַּגְּמָר! הַגָּבִיעַ שֶׁלְּךָ!'},
- {e:'🌊',t:'הַדָּג הָאָבוּד',k:'🫧',a:'דָּג קָטָן הָלַךְ לְאִבּוּד בַּיָּם. כָּל מְשִׂימָה מְקָרֶבֶת אוֹתְךָ אֵלָיו!',z:'מָצָאתָ אֶת הַדָּג! הוּא שׂוֹחֶה הַבַּיְתָה שָׂמֵחַ.'},
- {e:'🎵',t:'הַהוֹפָעָה הַגְּדוֹלָה',k:'🎵',a:'הָעֶרֶב יֵשׁ הוֹפָעָה, אֲבָל הַתָּוִים בָּרְחוּ! כָּל מְשִׂימָה מַחְזִירָה תָּו.',z:'הַשִּׁיר שָׁלֵם, וְכָל הַקָּהָל מוֹחֵא כַּפַּיִם!'},
- {e:'🏀',t:'הַסַּל הַמְּנַצֵּחַ',k:'🏀',a:'מִשְׂחַק כַּדּוּרְסַל גָּדוֹל! כָּל מְשִׂימָה הִיא סַל.',z:'קָלַעְתָּ אֶת הַסַּל הַמְּנַצֵּחַ! הַקְּבוּצָה חוֹגֶגֶת!'},
- {e:'🗝️',t:'הַמְּעָרָה הַסּוֹדִית',k:'🔑',a:'חָבֵר נִתְקַע בַּמְּעָרָה. כָּל מְשִׂימָה פּוֹתַחַת מַנְעוּל אֶחָד!',z:'פָּתַחְתָּ אֶת כָּל הַמַּנְעוּלִים, וְהֶחָבֵר יָצָא!'},
- {e:'🚀',t:'הַחֲלָלִית',k:'⭐',a:'הַחֲלָלִית צְרִיכָה כּוֹכָבִים כְּדֵי לָטוּס. כָּל מְשִׂימָה נוֹתֶנֶת כּוֹכָב!',z:'הַחֲלָלִית מְלֵאָה כּוֹכָבִים — וְהִיא טָסָה לַיָּרֵחַ!'}];
-const quest=()=>QUESTS[dayNum()%QUESTS.length];
+/* the day's story is the Mixer chase of story.js (#386): the save keeps chapter + scene, not the date */
+const quest=()=>T.quest?T.quest():{e:'⛵',k:'⛵',a:'',z:''};
 /* #266 the fixed clips of home and "something else" (for pregen) */
 T.addChoices([MATH.n,'מַסָּע','עִיר','מַמְלָכָה','אַרְקֵייד','מְשַׂחֲקִים עִם אַבָּא אוֹ אִמָּא','לְהַמְשִׁיךְ מֵאֵיפֹה שֶׁעָצַרְתִּי','מַשֶּׁהוּ אַחֵר','עוֹד פַּעַם','הַמְשֵׁךְ','סוֹף הַסִּפּוּר']);
-T.addSay(['בֹּקֶר טוֹב','צָהֳרַיִם טוֹבִים','עֶרֶב טוֹב'].map(x=>x+', אוֹרֶן! בְּמָה נְשַׂחֵק?').concat(QUESTS.map(q=>q.e+' '+q.a),['שָׁלוֹם אוֹרֶן! מָה בָּא לְךָ הַיּוֹם?','כָּל הַכָּבוֹד! עַכְשָׁו זְמַן חוֹפְשִׁי 🎈','סִיַּמְתָּ אֶת הַשְּׁבִיל! בּוֹא נִרְאֶה אֵיךְ נִגְמַר הַסִּפּוּר.','מָה בָּא לְךָ? בְּחַר מָה שֶׁתִּרְצֶה.']));
+T.addSay(['בֹּקֶר טוֹב','צָהֳרַיִם טוֹבִים','עֶרֶב טוֹב'].map(x=>x+', אוֹרֶן! בְּמָה נְשַׂחֵק?').concat(['שָׁלוֹם אוֹרֶן! מָה בָּא לְךָ הַיּוֹם?','כָּל הַכָּבוֹד! עַכְשָׁו זְמַן חוֹפְשִׁי 🎈','סִיַּמְתָּ אֶת הַשְּׁבִיל! בּוֹא נִרְאֶה אֵיךְ נִגְמַר הַסִּפּוּר.','מָה בָּא לְךָ? בְּחַר מָה שֶׁתִּרְצֶה.']));
 const stepInfo=id=>{if(id==='math')return {n:'שָׁלָב בְּחֶשְׁבּוֹן',ic:SPR.tree,c:'#d99a2b'};const [k,v]=String(id).split(':');
   if(k==='tog'){const a=TOG.find(x=>x.k===v)||{n:''};return {n:'🤝 '+a.n,ic:'<span>🤝</span>',c:'#e0794a'};}
   if(k==='rw')return {n:'מְשִׂימָה בַּבַּיִת',ic:`<span>${(RW[v]||{}).e||'🏠'}</span>`,c:'#2a9d8f'};
@@ -1439,8 +1430,8 @@ const stepInfo=id=>{if(id==='math')return {n:'שָׁלָב בְּחֶשְׁבּ�
 T.stepName=id=>{const P=T.plainHe;if(id==='math')return '🧮 שלב בחשבון';const [k,v]=String(id).split(':');
   if(k==='tog')return '🤝 יחד: '+P((TOG.find(x=>x.k===v)||{n:''}).n);if(k==='rw')return '🏠 משימה בבית: '+P((RW[v]||{t:''}).t);
   return ACT[id]?P(ACT[id].b.name)+' — '+P(ACT[id].name):id;};
-/* end of the path: the day's story ends (no prize), then sometimes the friend suggests time together */
-function finale(d,q){d.claimed=1;const SH=window.SHIP,pc=SH?SH.award():null;/* #391 the day's ship piece */O.persist();const ov=$('#ov');ov.hidden=false;ov.innerHTML=`<div class="card qwin"><div class="qbig">${q.e}</div><h2>${q.t}</h2><div class="sub">${q.z}</div>${SH?SH.cardHTML(pc):''}</div>`;
+/* end of the path: the day's story ends with a hint for tomorrow (no prize), then sometimes the friend suggests time together */
+function finale(d,q){d.claimed=1;const SH=window.SHIP,pc=SH?SH.award():null;/* #391 the day's ship piece */O.persist();q=quest();/* #386: the day ends with a short hint about tomorrow */const ov=$('#ov');ov.hidden=false;ov.innerHTML=`<div class="card qwin"><div class="qbig">${q.e}</div><h2>${q.z}</h2>${SH?SH.cardHTML(pc):''}</div>`;
   const after=()=>{if(!d.sg&&!d.t.some(x=>/^tog:/.test(x))){d.sg=1;O.persist();suggestTog();}else home();};
   const r=h('div','btnrow');const ok=h('button','bigbtn',ICON.play+'<span>יֶשׁ!</span>');ok.onclick=()=>{ov.hidden=true;if(SH)SH.offer(after);else after();};
   r.appendChild(ok);ov.firstChild.appendChild(r);sfx.win();O.rain();O.say(T.spk(q.z)+(pc?'\u2063'+T.spk(SH.newSay(pc)):''));}

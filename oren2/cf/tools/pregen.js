@@ -46,7 +46,7 @@ async function collect() {
   const { chromium } = require('playwright');
   const page = path.join(os.tmpdir(), 'oren-pregen-page.html');
   fs.writeFileSync(page, '<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>' + fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8') + '</body></html>');
-  const DATA = { SENT: literal('talents.js', 'SENT'), STORIES: literal('talents.js', 'STORIES'), QUESTS: literal('talents.js', 'QUESTS'), INTRO: literal('index.html', 'INTRO') };
+  const DATA = { SENT: literal('talents.js', 'SENT'), STORIES: literal('talents.js', 'STORIES'), INTRO: literal('index.html', 'INTRO') };
   const SAID = new Map(); const b = await chromium.launch();
   for (const vp of [{ viewport: { width: 1366, height: 768 } }, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }]) {
     const ctx = await b.newContext(vp);
@@ -102,7 +102,6 @@ async function collect() {
       const add = s => { if (s && /[א-ת]/.test(s)) out.push(...window.__ttsParts(window.__fullSpell(s))); };   // #401: the same parts the game asks for
       (D.INTRO || []).forEach(x => add(x[1])); add('אוֹרֶן, אַתָּה אַלּוּף הַחֶשְׁבּוֹן שֶׁל אֶרֶץ הַבְּלוֹקִים!');
       O.WORLDS.forEach(w => { (w.intro || []).forEach(add); (w.outro || []).forEach(add); add(w.say); });
-      (D.QUESTS || []).forEach(q => { add(q.e + ' ' + q.a); add(sp(q.z)); add(q.t); });
       (T.TOG || []).forEach(a => add(sp(typeof a.kid === 'function' ? a.kid('') : a.kid))); Object.values(T.RW || {}).forEach(r => add(sp(r.t)));
       (T.WORDS || []).forEach(w => add(sp(w.w)));
       /* English words and letters (eng-word, eng-listen, eng-letter) in the English game voice */
