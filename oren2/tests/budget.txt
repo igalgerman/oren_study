@@ -39,5 +39,5 @@ qa-fix-desktop 60          # #267 adds the hands-on checks (clock drag, pizza ta
 qa-fix-phone 60            # same file on the phone viewport: ~14 s
 listen-desktop 60         # #389 listen first: real voice timing (question end, 2 s rest, the 4 s cap): ~15 s alone
 listen-phone 60           # same file on the phone viewport
-day-path-desktop 60        # #388 adds a 3-mission path walk (activity, math level, activity) + time-limit stop: ~27 s
-day-path-phone 60          # same file on the phone viewport: ~26 s
+day-path-desktop 60        # #388 3-mission path walk + time-limit stop, #391 ship checks (finale piece, gem choice, reload): ~29 s together
+day-path-phone 60          # same file on the phone viewport

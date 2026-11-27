@@ -1,0 +1,10 @@
+/* #391 the ship on home: next to Oren and his friend, a picture only (not a button) */
+.hrow{display:flex;align-items:flex-end;justify-content:center;gap:10px}
+.hship svg{display:block;width:120px;height:auto}
+.hship.big svg{width:220px;margin:6px auto}
+.shnew{font-size:22px;font-weight:700;margin-top:8px}
+.shpick .bigbtn{flex-direction:column;gap:2px;min-width:96px}
+.shpick .shem{font-size:40px;line-height:1}
+.shpick small{font-size:16px;display:flex;align-items:center;gap:2px}.shpick small svg{width:18px;height:auto}
+@media (min-width:761px){.hship svg{width:170px}.hship.big svg{width:260px}}
+@media (min-width:761px) and (max-height:700px){.hship svg{width:130px}}

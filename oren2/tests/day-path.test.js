@@ -54,7 +54,7 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  // --- Oren-initiated: after the path the friend suggests time together ---
  await p.evaluate(()=>{const d=window.TAL.S().daily;d.t=d.t.filter(x=>!/^tog:/.test(x));d.done=d.t.map(()=>1);d.claimed=0;d.sg=0;window.OREN.showMap();});await sleep(200);
  ok('end of path: the story ending, no prize',await p.locator('#sHome .bigbtn.huge',{hasText:'סוֹף הַסִּפּוּר'}).count()===1&&!/פְּרָס/.test(await p.textContent('#sHome')));
- const g0=await p.evaluate(()=>window.OREN.save.gems|0);
+ const g0=await p.evaluate(()=>{window.OREN.save.gems=0;return 0;});/* #391: no gems, so no ship choice before the friend's suggestion */
  await p.locator('#sHome .bigbtn.huge').click({force:true});await sleep(300);
  ok('story finale, no gems',await p.locator('#ov .qwin').count()===1&&await p.locator('#ov .gain').count()===0&&await p.evaluate(g=>(window.OREN.save.gems|0)===g,g0));
  await p.locator('#ov .bigbtn').click();await sleep(300);
@@ -91,6 +91,47 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  const m=await p.evaluate(()=>{const O=window.OREN,s=O.save;s.dom={math:5,explore:9};s.rw={add:1};s.coach=Object.assign({},s.coach,{tour:0});
    O.mergeIn({v:4,t:1,dom:{math:7,calm:3},rw:{lab:1},coach:{tour:1}});return {dom:s.dom,rw:s.rw,tour:s.coach.tour};});
  ok('family merge: domains (newest day), missions (union), tour seen (union)',m.dom.math===7&&m.dom.explore===9&&m.dom.calm===3&&m.rw.add===1&&m.rw.lab===1&&m.tour===1,JSON.stringify(m));
+ // --- #391 the ship: one place on home that grows by one piece per daily path; the day's gems buy one addition ---
+ {const fs=require('fs'),path=require('path');
+  const doc=fs.readFileSync(path.join(__dirname,'..','docs','story-mixer.md'),'utf8');
+  const script=[...doc.matchAll(/^\| \d+\.\d+ \|.*\| ([^|(]+?) \([^|]*\) \|$/gm)].map(x=>x[1].trim());
+  const sp=await p.evaluate(()=>({n:window.SHIP.PIECES.length,names:window.SHIP.PIECES.map(x=>x.n)}));
+  ok('ship: 60 pieces in the order of the story script',script.length===60&&sp.n===60&&script.every((x,i)=>x===sp.names[i]),JSON.stringify(sp.names.slice(0,3))+' vs '+JSON.stringify(script.slice(0,3)));
+  // old saves: no ship key, or a broken one -> an empty place, no crash
+  const old=await p.evaluate(()=>{const O=window.OREN,r=[];for(const v of [undefined,'x',{n:'a',x:5},null]){if(v===undefined)delete O.save.ship;else O.save.ship=v;O.showMap();
+    const el=document.querySelector('#sHome .hship');r.push(!!el&&el.querySelectorAll('.shp').length===0&&el.querySelectorAll('.shx').length===0);}return r;});
+  ok('ship: an old or broken save shows an empty place on home',old.every(Boolean),JSON.stringify(old));
+  // the end of a daily path adds the next piece (once a day), shown on the finale card
+  const fin=async(gems)=>{await p.evaluate(g=>{const T=window.TAL,O=window.OREN;delete T.S().daily;T.chooseDay('math');const d=T.S().daily;d.done=d.t.map(()=>1);d.sg=1;O.save.gems=g;document.querySelector('#ov').hidden=true;O.showMap();},gems);await sleep(150);
+    await p.locator('#sHome .bigbtn.huge',{hasText:'סוֹף הַסִּפּוּר'}).click({force:true});await sleep(250);};
+  await p.evaluate(()=>{delete window.OREN.save.ship;});await fin(0);
+  const f1=await p.evaluate(()=>({n:window.SHIP.get().n,card:document.querySelector('#ov .qwin').textContent,pic:!!document.querySelector('#ov .qwin .hship'),gems:window.OREN.save.gems|0}));
+  ok('ship: the end of the path adds the first piece, named on the finale card',f1.n===1&&f1.card.includes('קֶרֶשׁ תַּחְתּוֹן')&&f1.pic&&f1.gems===0,JSON.stringify(f1));
+  await p.locator('#ov .bigbtn').click();await sleep(250);
+  ok('ship: no gems -> no choice, straight home with the piece on the ship',await p.evaluate(()=>document.querySelector('#ov').hidden&&!document.querySelector('#sHome').hidden&&document.querySelectorAll('#sHome .hship .shp').length===1));
+  await fin(0);ok('ship: one piece per day only',await p.evaluate(()=>window.SHIP.get().n===1));await p.evaluate(()=>{document.querySelector('#ov').hidden=true;});
+  // the next day: the next piece of the script, and the day's gems are spent with ONE tap on 1 of 2-3 additions
+  await p.evaluate(()=>{window.OREN.save.ship.d='2000-01-01';});await fin(25);
+  const f2=await p.evaluate(()=>({n:window.SHIP.get().n,card:document.querySelector('#ov .qwin').textContent}));
+  ok('ship: the next day adds the next piece of the script',f2.n===2&&f2.card.includes('קֶרֶשׁ צַד'),JSON.stringify(f2));
+  await p.locator('#ov .bigbtn').click();await sleep(250);
+  const pk=await p.evaluate(()=>({btn:document.querySelectorAll('#ov .shpick .bigbtn').length,other:document.querySelectorAll('#ov .bigbtn:not(.shpick .bigbtn),#ov input,#ov select,#ov textarea').length,title:(document.querySelector('#ov h2')||{}).textContent}));
+  ok('ship: gems -> one choice of 2-3 additions, nothing else on the card (no typing, no menu)',pk.btn>=2&&pk.btn<=3&&pk.other===0&&/[ְ-ּ]/.test(pk.title||''),JSON.stringify(pk));
+  const pick=await p.evaluate(()=>document.querySelector('#ov .shpick .bigbtn').dataset.id);
+  await p.locator('#ov .shpick .bigbtn').first().click();await sleep(250);
+  const f3=await p.evaluate(()=>({x:window.SHIP.get().x,gems:window.OREN.save.gems|0,cost:window.SHIP.COST,home:!document.querySelector('#sHome').hidden&&document.querySelector('#ov').hidden,shown:document.querySelectorAll('#sHome .hship .shx').length}));
+  ok('ship: one tap buys the addition with gems and it shows on the ship at home',f3.x.length===1&&f3.x[0]===pick&&f3.gems===25-f3.cost&&f3.cost>0&&f3.home&&f3.shown===1,JSON.stringify(f3));
+  // kid text: nikud, every new sentence in the pregen list
+  const kt=await p.evaluate(()=>{const S=window.SHIP,L=new Set(window.TAL.choiceList()),sp=window.TAL.spk;const all=S.says();return {n:all.length,miss:all.filter(x=>!L.has(sp(x))),nonik:all.filter(x=>!/[ְ-ּ]/.test(x))};});
+  ok('ship: kid text has nikud and every sentence is in the pregen list',kt.n>=60&&!kt.miss.length&&!kt.nonik.length,JSON.stringify(kt).slice(0,300));
+  // saved and restored: a fresh page with this save shows the same ship; family merge keeps the newest
+  const saved=await p.evaluate(()=>{window.OREN.persist();return localStorage.getItem('oren4-v1');});
+  const ctx2=await b.newContext(L.VIEWPORT);await ctx2.addInitScript(s=>{try{if(!sessionStorage.getItem('k')){localStorage.clear();localStorage.setItem('oren4-v1',s);sessionStorage.setItem('k','1');}}catch(e){};window.__fast=true;window.__noFamily=true;},saved);
+  const p2=await ctx2.newPage();p2.on('pageerror',e=>errs.push(e.message));await p2.goto(L.URL);await p2.waitForFunction(()=>window.TAL&&window.TAL.S&&window.SHIP);await sleep(300);
+  const rs=await p2.evaluate(()=>{window.OREN.showMap();return {s:window.SHIP.get(),shp:document.querySelectorAll('#sHome .hship .shp').length,shx:document.querySelectorAll('#sHome .hship .shx').length};});
+  ok('ship: saved and restored on reload',rs.s.n===2&&rs.s.x.length===1&&rs.shp===2&&rs.shx===1,JSON.stringify(rs));await ctx2.close();
+  const mg=await p.evaluate(()=>{const O=window.OREN;O.mergeIn({v:4,t:(+O.save.t||0)+1e6,ship:{n:5,x:['fish'],d:'2000-01-02'}});return window.SHIP.get().n;});
+  ok('ship: family merge takes the newest save',mg===5,String(mg));}
  // --- #388: inside the path, "continue" on the result card starts the next mission (no home in between) ---
  const W=await p.evaluate(()=>{const T=window.TAL,O=window.OREN;const st=T.S().set;delete st.plan;st.noDaily=0;O.WORLDS.forEach(w=>{O.save.story[w.id+'-in']=1;});const rw=T.S().rw=T.S().rw||{};O.WORLDS.concat(T.BUILD).forEach(x=>{rw[x.id]=1;});/* no real-world mission joins the path here */
    const acts=T.dailyPool().filter(id=>!/^(write-trace)$/.test(id)).slice(0,2);window.__started=[];
