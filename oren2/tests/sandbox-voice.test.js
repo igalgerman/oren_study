@@ -30,14 +30,15 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
    window.Audio=function(x){urls.push(x);return {play:()=>Promise.resolve(),pause(){}};};speechSynthesis.speak=()=>{fb++;};window.__fast=false;
    G.ok=false;G.wait=new Promise(r=>{go=r;});G.pending=true;window.OREN.hush();window.OREN.say('שָׁלוֹם');const early={urls:urls.length,fb};/* status check still running */
    G.ok=true;G.pending=false;go();await new Promise(r=>setTimeout(r,50));const late={urls:urls.length,fb};
-   /* the audio errors once: try again before any browser voice */
+   /* the audio errors once: try again before any browser voice (#635: the one retry is a fetch, then the audio plays) */
    urls=[];let n=0;window.Audio=function(x){urls.push(x);const first=n++===0;return {play:()=>first?Promise.reject(new Error('x')):Promise.resolve(),pause(){}};};
-   window.OREN.hush();window.OREN.say('שָׁלוֹם');await new Promise(r=>setTimeout(r,50));const retry={urls:urls.length,fb};
+   const F0=window.fetch;window.fetch=u=>{urls.push(String(u));return Promise.resolve(new Response('ID3',{headers:{'content-type':'audio/mpeg'}}));};
+   window.OREN.hush();window.OREN.say('שָׁלוֹם');await new Promise(r=>setTimeout(r,50));window.fetch=F0;const retry={urls:urls.length,fb};
    /* slow audio (no 'playing' yet) is waited for, not replaced by the browser voice after 3 s */
    urls=[];window.Audio=function(x){urls.push(x);return {play:()=>new Promise(()=>{}),pause(){}};};fb=0;window.OREN.hush();window.OREN.say('שָׁלוֹם');await new Promise(r=>setTimeout(r,3400));const slow={urls:urls.length,fb};
    G.audio=null;window.__fast=true;G.ok=ok0;window.Audio=A0;speechSynthesis.speak=sp0;return {early,late,retry,slow};});
  ok('#36 waits for the voice status before speaking (no browser voice)',fw.early.urls===0&&fw.early.fb===0&&fw.late.urls===1&&fw.late.fb===0,JSON.stringify(fw));
- ok('#36 audio error: one retry, no browser voice',fw.retry.urls===2&&fw.retry.fb===0,JSON.stringify(fw));
+ ok('#36 audio error: one retry, no browser voice',fw.retry.urls===3&&fw.retry.fb===0,JSON.stringify(fw));
  ok('#36 slow audio is waited for, not replaced',fw.slow.urls===1&&fw.slow.fb===0,JSON.stringify(fw));
  await p.locator('#sPar .bigbtn',{hasText:'אוקי'}).click();await sleep(200);ok('voice approved saved',await p.evaluate(()=>!!window.TAL.S().set.voiceOk));
  await p.evaluate(()=>window.TAL.parentPanel('try'));await sleep(200);await L.shot(p,{path:L.SHOTDIR+'/try.png',fullPage:true});
