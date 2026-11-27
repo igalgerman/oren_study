@@ -60,6 +60,11 @@ const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout:
   const hm = await B.evaluate(t => { const d = new Date(t); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }, upT);
   ok('upload failing: "אין עדכון מהמשחק מאז HH:MM" (the last upload)', await until(B, hm => (document.querySelector('#sPar .pday .pnow') || {}).textContent.includes('אין עדכון מהמשחק מאז ' + hm), hm, 12000), JSON.stringify(await view(B)) + ' SF ' + SF);
   ok('the line is one line, at the top', await B.evaluate(() => document.querySelectorAll('#sPar .pdstale').length === 1));
+  /* the parent's own phone saves during the outage (opening the panel saves on page load): the line keeps Oren's last upload time */
+  await B.evaluate(() => window.OREN.famNow()); await sleep(300);
+  ok('a parent save during the outage keeps the kid\'s upload time (upT)', JSON.parse(KV.get('a0'.repeat(16))).upT === upT, String(JSON.parse(KV.get('a0'.repeat(16))).upT) + ' vs ' + upT);
+  await C.reload(); await C.waitForFunction(() => window.OREN && window.OREN.family && window.TAL, null, { timeout: 20000 }); await L.noCoach(C); await C.evaluate(() => window.TAL.parentPanel('day'));
+  ok('a phone opened during the outage still says "מאז" the kid\'s last upload', await until(C, hm => (document.querySelector('#sPar .pday .pnow') || {}).textContent.includes('אין עדכון מהמשחק מאז ' + hm), hm, 12000), JSON.stringify(await view(C)));
   if (process.env.SHOTS) { fs.mkdirSync(L.SHOTDIR, { recursive: true }); await B.screenshot({ path: path.join(L.SHOTDIR, 'livepanel-stale-phone.png') }); }
   FAIL = 0; await A.evaluate(() => { window.OREN.timeTick(); });
   ok('a save works again: the line is gone and the 4th row is there', await until(B, () => { const v = document.querySelector('#sPar .pday'); return !!v && !v.querySelector('.pdstale') && v.querySelectorAll('.dllog .dlrow').length === 4; }, null, 12000), JSON.stringify(await view(B)));
