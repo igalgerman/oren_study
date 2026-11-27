@@ -30,6 +30,21 @@ ok('SVG: heads on C4 / C5 / G4', heads[0][1] === 100 && heads[1][1] === 58 && he
 ok('SVG: C4 stem up on the right, C5 stem down on the left, whole note no stem', stems.length === 2 && stems[0][0] > heads[0][0] && stems[0][2] < stems[0][1] && stems[1][0] < heads[1][0] && stems[1][2] > stems[1][1], JSON.stringify(stems));
 ok('SVG: half and whole notes are hollow', (svg.match(/class="hole"/g) || []).length === 2);
 ok('melodies: every bar has 4 beats', E.parseMel && ['2q 1q 0h | 2q 1q 0h', '0q 0q 4q 4q | 5q 5q 4h | 3q 3q 2q 2q | 1q 1q 0h'].every(s => E.barBeats(E.parseMel(s)).every(b => b === 4)));
+// ---- #615 play-first games: pure right/wrong logic ----
+const seq = a => { let k = 0; return () => a[k++ % a.length]; };
+ok('#615 high/low pair: two different sounds, "high" exactly when the 2nd is higher, the gap shrinks by level', E.hlPair && [1, 2, 3].every(lv => [0, .3, .5, .7, .99].every(r => { const q = E.hlPair(lv, seq([r, r, 1 - r])); const g = Math.abs(q.b - q.a); const [lo, hi] = E.HLGAP[lv - 1]; return q.a !== q.b && q.hi === (q.b > q.a) && g >= lo && g <= hi; })) && E.HLGAP[0][0] > E.HLGAP[2][1]);
+ok('#615 high/low pair: both sounds stay in a comfortable range', E.hlPair && [...Array(200)].every(() => { const q = E.hlPair(1 + Math.floor(Math.random() * 3)); return [q.a, q.b].every(m => m >= 48 && m <= 84); }));
+ok('#615 copy the rhythm: 2-4 claps, growing slowly by level', E.COPY && E.COPY.length >= 3 && E.COPY[0].every(p => p.length >= 2 && p.length <= 3) && E.COPY[E.COPY.length - 1].some(p => p.length === 4) && E.COPY.flat().every(p => p.length >= 2 && p.length <= 4 && p[0] === 0));
+{ const on = [0, 600, 900, 1500], tol = 280; const sh = (a, d) => a.map(t => t + d);
+  ok('#615 rhythm copy: the same taps (any start time) are right', E.copyJudge && E.copyJudge(on, sh(on, 5000), tol));
+  ok('#615 rhythm copy: within the tolerance is right', E.copyJudge && E.copyJudge(on, [5000, 5700, 5850, 6620], tol));
+  ok('#615 rhythm copy: a tap too late is wrong', E.copyJudge && !E.copyJudge(on, [5000, 5600, 5900, 6900], tol));
+  ok('#615 rhythm copy: too few or too many taps are wrong', E.copyJudge && !E.copyJudge(on, [5000, 5600, 5900], tol) && !E.copyJudge(on, [5000, 5600, 5900, 6500, 6800], tol));
+  ok('#615 rhythm copy: even taps for an uneven rhythm are wrong', E.copyJudge && !E.copyJudge([0, 300, 1200], [0, 600, 1200], tol)); }
+ok('#615 color memory: right so far = more, all = ok, a wrong key = bad', E.memCheck && E.memCheck([0, 2, 1], [0]) === 'more' && E.memCheck([0, 2, 1], [0, 2]) === 'more' && E.memCheck([0, 2, 1], [0, 2, 1]) === 'ok' && E.memCheck([0, 2, 1], [0, 1]) === 'bad' && E.memCheck([0, 2, 1], [1]) === 'bad');
+ok('#615 color memory: the melody grows by one each time', E.memSeqs && (() => { const s = E.memSeqs(1, seq([.1, .6, .3, .9, .2, .5, .8])); return s.length >= 3 && s.length <= 5 && s.every((x, k) => k === 0 || (x.length === s[k - 1].length + 1 && x.slice(0, -1).join() === s[k - 1].join())) && s.flat().every(k => k >= 0 && k < E.MEMKEYS.length); })());
+ok('#615 every note keeps its own color (the same in every octave), 7 different colors', E.colOf && E.colOf(0) === E.colOf(7) && E.colOf(2) === E.colOf(-5) && new Set([0, 1, 2, 3, 4, 5, 6].map(E.colOf)).size === 7);
+ok('#615 my song: played back in order, starting at once, pauses kept but never too long or too short', E.songPlan && (() => { const pl = E.songPlan([{ m: 60, t: 1000 }, { m: 64, t: 1400 }, { m: 67, t: 5000 }, { m: 62, t: 5010 }]); return pl.map(x => x.m).join() === '60,64,67,62' && pl[0].at === 0 && Math.abs(pl[1].at - .4) < 1e-9 && pl[2].at - pl[1].at <= .9 + 1e-9 && pl[3].at - pl[2].at >= .25 - 1e-9; })());
 
 (async () => {
   const b = await chromium.launch(); const ctx = await b.newContext(L.VIEWPORT);
@@ -53,8 +68,83 @@ ok('melodies: every bar has 4 beats', E.parseMel && ['2q 1q 0h | 2q 1q 0h', '0q 
   }
   const solveAny = () => { const M = window.MUSIC2; if (M.cur && M.cur.solve) M.cur.solve(); };
 
-  // hall shows the new activities
+  // ---- #615 play first: a fresh save sees only the no-theory games ----
+  const PLAY = ['mus3-hl', 'mus3-copy', 'mus3-mem', 'mus3-song'], THEORY = ['mus2-read', 'mus2-ear', 'mus2-rhythm', 'mus2-melody', 'mus-rhythm'];
   await p.evaluate(() => window.TAL.openBuilding(window.TAL.BUILD.find(b => b.id === 'music'))); await L.sleep(200);
+  const fresh = await p.evaluate(([PLAY, THEORY]) => { const T = window.TAL, m = T.BUILD.find(b => b.id === 'music'); const ids = [...document.querySelectorAll('#sTal .actc')].map(c => c.dataset.id || '');
+    const txt = document.querySelector('#sTal').textContent; return { first: m.acts.slice(0, 4).map(a => a.id), open: m.acts.filter(a => !a.avail || a.avail()).map(a => a.id),
+      names: PLAY.map(id => T.ACT[id] && T.ACT[id].name), shown: PLAY.every(id => txt.includes(T.ACT[id].name)), pool: T.dailyPool().filter(id => T.ACT[id].b === m), theoryShown: THEORY.some(id => T.ACT[id] && txt.includes(T.ACT[id].name)) }; }, [PLAY, THEORY]);
+  ok('#615 the music hall opens with the 4 play games first', JSON.stringify(fresh.first) === JSON.stringify(PLAY) && fresh.shown, JSON.stringify(fresh));
+  ok('#615 play game names: Hebrew with nikud', fresh.names.every(n => /[\u0591-\u05C7]/.test(n || '')), JSON.stringify(fresh.names));
+  ok('#615 fresh save: no theory activity is open in the hall', !THEORY.some(id => fresh.open.includes(id)) && !fresh.theoryShown, JSON.stringify(fresh.open));
+  ok('#615 fresh save: the daily path picks only play games for music', fresh.pool.length > 0 && fresh.pool.every(id => !THEORY.includes(id)) && PLAY.filter(id => id !== 'mus3-song').every(id => fresh.pool.includes(id)), JSON.stringify(fresh.pool));
+  await shot('hall-play');
+  // high or low: two sounds, bird or bear, the answer matches the pitches played
+  await p.evaluate(() => { window.__freqs = []; window.TAL.ACT['mus3-hl'].run(() => {}); }); await L.sleep(250);
+  const hl1 = await p.evaluate(() => { const q = window.__quiz, c = q.wrap.querySelector('.chs'); const cur = window.MUSIC2.cur; return { n: c.children.length, t: c.textContent, ans: q.ans, a: cur.q.a, b: cur.q.b, said: window.OREN.sayNow, freqs: window.__freqs.length, prog: document.querySelectorAll('#hud .progress > *').length, big: Math.min(...[...c.children].map(x => x.getBoundingClientRect().height)) }; });
+  ok('#615 high/low: two big targets, bird (high) and bear (low)', hl1.n === 2 && hl1.t.includes('🐦') && hl1.t.includes('🐻') && hl1.big >= 90, JSON.stringify(hl1));
+  ok('#615 high/low: the bird is right exactly when the 2nd sound is higher', (hl1.b > hl1.a) === (hl1.ans === 0), JSON.stringify(hl1));
+  ok('#615 high/low: plays the two sounds by itself, one spoken instruction', hl1.freqs >= 2 && (hl1.said || '').includes('הצליל השני גבוה כמו ציפור, או נמוך כמו דוב?'), JSON.stringify(hl1));
+  ok('#615 high/low: a short round (3-5 tasks)', hl1.prog >= 3 && hl1.prog <= 5, String(hl1.prog));
+  await shot('play-hl');
+  const playRight = () => { const q = window.__quiz; if (!q || !q.wrap.isConnected) return; const M = window.MUSIC2; if (M.cur && M.cur.solve && !M.cur.q) { M.cur.solve(); return; } const c = q.wrap.querySelector('.chs'); if (c && q.ans != null && c.children[q.ans]) c.children[q.ans].click(); };
+  ok('#615 high/low round plays through', await playThrough('hl', 'mus3-hl', playRight));
+  const g1 = await p.evaluate(() => ({ good: window.MUSIC2.ST().good, s: (window.TAL.S().tl['mus3-hl'] || {}).s | 0, open: window.TAL.ACT['mus2-read'].avail() }));
+  ok('#615 a good play round counts; theory still locked after one', g1.good === 1 && g1.s >= 2 && !g1.open, JSON.stringify(g1));
+  // a weak round (all wrong) does not count
+  await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.TAL.ACT['mus3-hl'].run(() => {}); }); await L.sleep(200);
+  await playThrough('hl', 'mus3-hl', () => { const q = window.__quiz; if (!q || !q.wrap.isConnected) return; const c = q.wrap.querySelector('.chs'); const b = c && [...c.children].find((x, k) => k !== q.ans && !x.disabled); if (b) b.click(); });
+  ok('#615 a weak round (1 star) does not count toward the unlock', await p.evaluate(() => window.MUSIC2.ST().good === 1));
+
+  // copy the rhythm: the friend claps, Oren taps the big drum back
+  await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.TAL.ACT['mus3-copy'].run(() => {}); }); await L.sleep(150);
+  const cp = await p.evaluate(() => { const d = document.querySelector('#sTal .m2drum'); const r = d.getBoundingClientRect(); return { drum: !!d, w: r.width, said: window.OREN.sayNow, n: window.MUSIC2.cur.on.length }; });
+  ok('#615 copy the rhythm: a big drum, 2-3 claps at level 1, one instruction', cp.drum && cp.w >= 110 && cp.n >= 2 && cp.n <= 3 && !!cp.said, JSON.stringify(cp));
+  await shot('play-copy');
+  const waitTap = () => p.waitForFunction(() => window.MUSIC2.cur && window.MUSIC2.cur.phase === 'tap', null, { timeout: 5000 });
+  await waitTap();
+  // tapped right (relative timing, any start) -> excellent; taps sent with their own times through the drum's hook
+  const cpOk = await p.evaluate(() => { const c = window.MUSIC2.cur; c.on.forEach(o => c.hit(10000 + o * c.beat)); return document.querySelector('#sTal .m2msg').textContent; });
+  ok('#615 copy the rhythm: the same rhythm tapped back is "excellent"', cpOk.includes('מְעֻלֶּה'), cpOk);
+  await L.sleep(250); await waitTap();
+  const cpBad = await p.evaluate(() => { const c = window.MUSIC2.cur; c.on.forEach((o, k) => c.hit(10000 + o * c.beat + (k === c.on.length - 1 ? 3 * c.beat : 0))); return document.querySelector('#sTal .m2msg').textContent; });
+  ok('#615 copy the rhythm: a clap far off the rhythm is "almost, again"', cpBad.includes('כִּמְעַט'), cpBad);
+  ok('#615 copy the rhythm round plays through', await playThrough('cp', 'mus3-copy', () => { const c = window.MUSIC2.cur; if (c && c.solve) c.solve(); }));
+  ok('#615 a 2nd good round', await p.evaluate(() => window.MUSIC2.ST().good === 2));
+
+  // color memory: colored keys light up a growing melody, he repeats it
+  await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.TAL.ACT['mus3-mem'].run(() => {}); }); await L.sleep(150);
+  const mm = await p.evaluate(() => { const pads = [...document.querySelectorAll('#sTal .m2pad')]; return { n: pads.length, cols: pads.map(x => getComputedStyle(x).backgroundColor), h: Math.min(...pads.map(x => x.getBoundingClientRect().height)), seq: window.MUSIC2.cur.seq.slice() }; });
+  ok('#615 color memory: 4 big colored keys, each its own color', mm.n === 4 && new Set(mm.cols).size === 4 && mm.h >= 80, JSON.stringify(mm));
+  await shot('play-mem');
+  await p.waitForFunction(() => window.MUSIC2.cur && window.MUSIC2.cur.phase === 'tap', null, { timeout: 5000 });
+  const mbad = await p.evaluate(() => { const c = window.MUSIC2.cur, pads = document.querySelectorAll('#sTal .m2pad'); const wrong = (c.seq[0] + 1) % pads.length; pads[wrong].click(); return { err: c.err, phase: c.phase }; });
+  ok('#615 color memory: a wrong key -> shown again', mbad.err === 1 && mbad.phase === 'show', JSON.stringify(mbad));
+  ok('#615 color memory round plays through (the melody grows)', await playThrough('mem', 'mus3-mem', () => { const c = window.MUSIC2.cur; if (!c || c.phase !== 'tap') return; document.querySelectorAll('#sTal .m2pad')[c.ans()].click(); }));
+  const g3 = await p.evaluate(() => ({ good: window.MUSIC2.ST().good, sub: (document.querySelector('#ov .sub') || {}).textContent || '' }));
+  ok('#615 3 good play rounds -> the result says new games are open', g3.good === 3 && /חֲדָשִׁים/.test(g3.sub), JSON.stringify(g3));
+
+  // my song: free play on big colored keys, then hear it played back
+  await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.TAL.ACT['mus3-song'].run(() => {}); }); await L.sleep(150);
+  const sg0 = await p.evaluate(() => ({ keys: document.querySelectorAll('#sTal .m2pad').length, btn: !!document.querySelector('#sTal .m2listen:not([hidden])') }));
+  ok('#615 my song: big colored keys, the listen button waits for a few notes', sg0.keys >= 5 && !sg0.btn, JSON.stringify(sg0));
+  await p.evaluate(() => { const ks = document.querySelectorAll('#sTal .m2pad'); [0, 2, 4, 2, 1].forEach(k => ks[k].click()); });
+  await shot('play-song');
+  const sg1 = await p.evaluate(async () => { window.__freqs = []; document.querySelector('#sTal .m2listen').click(); await new Promise(r => setTimeout(r, 400)); return { n: window.__freqs.length }; });
+  ok('#615 my song: "listen" plays his song back', sg1.n >= 5, JSON.stringify(sg1));
+  for (let k = 0; k < 40 && !(await ovOpen()); k++) await L.sleep(60);
+  ok('#615 my song ends on the result card', await ovOpen());
+
+  // ---- theory is open now: later levels, with the same colors ----
+  await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.TAL.openBuilding(window.TAL.BUILD.find(b => b.id === 'music')); }); await L.sleep(200);
+  const un = await p.evaluate(([PLAY, THEORY]) => { const T = window.TAL, m = T.BUILD.find(b => b.id === 'music'); const open = m.acts.filter(a => !a.avail || a.avail()).map(a => a.id);
+    return { open, first: open.slice(0, 4), pool: T.dailyPool().filter(id => T.ACT[id].b === m) }; }, [PLAY, THEORY]);
+  ok('#615 after 3 good rounds: theory opens, after the play games', ['mus2-read', 'mus2-ear', 'mus2-rhythm'].every(id => un.open.includes(id)) && JSON.stringify(un.first) === JSON.stringify(PLAY) && un.open.indexOf('mus2-read') > 3, JSON.stringify(un));
+  ok('#615 after the unlock the daily path may pick theory too', un.pool.includes('mus2-read'), JSON.stringify(un.pool));
+  await shot('hall-open');
+
+  // hall shows the new activities (the parent's "all open": the hall itself opens new ones a few at a time)
+  await p.evaluate(() => { window.TAL.S().set.all = 1; window.TAL.openBuilding(window.TAL.BUILD.find(b => b.id === 'music')); }); await L.sleep(200);
   ok('music hall shows reading, ear and rhythm; melody waits for reading', await p.evaluate(() => { const t = document.querySelector('#sTal').textContent; return t.includes('קְרִיאַת תָּוִים') && t.includes('שְׁמִיעָה') && t.includes('קוֹרְאִים קֶצֶב') && !t.includes('מְנַגְּנִים מֵהַתָּוִים'); }));
   ok('older note-name / length / ear quizzes leave the hall (still in ACT)', await p.evaluate(() => { const m = window.TAL.BUILD.find(b => b.id === 'music'); return ['mus-notes', 'mus-dur', 'mus-ear'].every(id => !m.acts.some(a => a.id === id) && window.TAL.ACT[id]) && m.acts.some(a => a.id === 'mus-piano') && m.acts.some(a => a.id === 'mus-rhythm'); }));
   await shot('hall');
@@ -62,6 +152,7 @@ ok('melodies: every bar has 4 beats', E.parseMel && ['2q 1q 0h | 2q 1q 0h', '0q 
   // ---- reading: name the note, then play it on the piano ----
   await p.evaluate(() => window.TAL.ACT['mus2-read'].run(() => {})); await L.sleep(200);
   ok('reading L1: staff + 3 solfège options', await p.evaluate(() => !!document.querySelector('#sTal .m2staff') && document.querySelectorAll('#sTal .chs .chb').length === 3));
+  ok('#615 reading: the note on the staff has its own color', await p.evaluate(() => { const e = document.querySelector('#sTal .prq .m2staff .m2n ellipse'); return !!e && e.getAttribute('fill').toLowerCase() !== '#23303b'; }));
   await shot('read-name');
   // answer the name question correctly -> the note sounds at its exact pitch
   const q0 = await p.evaluate(() => { window.__freqs = []; const q = window.__quiz; q.wrap.querySelector('.chs').children[q.ans].click(); return document.querySelector('#sTal .chb.ok').textContent; });
@@ -71,6 +162,7 @@ ok('melodies: every bar has 4 beats', E.parseMel && ['2q 1q 0h | 2q 1q 0h', '0q 
   ok('the named note sounds at its exact frequency', f0 && Math.abs(f0 - expectF) < 1e-3, `${q0} ${f0}`);
   await L.sleep(250);
   ok('then: see the note -> play it on the piano (8 white + 5 black keys)', await p.evaluate(() => document.querySelectorAll('#sTal .mkb .mw').length === 8 && document.querySelectorAll('#sTal .mkb .mbk').length === 5));
+  ok('#615 the piano keys keep the colors of the play games (do = the same color)', await p.evaluate(() => { const E = window.MUSIC2.ENG, k = document.querySelector('#sTal .mkb .mw[data-m="60"]'); return !!k && k.style.getPropertyValue('--nc').trim().toLowerCase() === E.colOf(0).toLowerCase() && E.MEMKEYS[0] === 0; }));
   await shot('read-piano');
   // a wrong key first: marked, counted
   await p.evaluate(() => { const q = window.__quiz; const kb = q.wrap.querySelector('.mkb'); const k = [...kb.children].findIndex((x, j) => j !== q.ans && x.classList.contains('mw')); kb.children[k].click(); });
