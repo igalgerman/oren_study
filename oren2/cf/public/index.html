@@ -2055,7 +2055,7 @@ function playLevel(lv,preset){
   hush();const u=lv.u;const train=lv.type==='train';
   setScreen('sPlay',lv.w.bg,train?showMap:()=>showWorld(lv.w));evMission(u&&u.id||lv.id,lv.id);
   const hk=train?'train':'lv:'+lv.id;hereBegin(hk);const back4=hereTake(hk);/* #44: reopened mid-level = the same questions, the same place */
-  const qs=(back4&&Array.isArray(back4.qs)&&back4.qs.length?back4.qs:null)||preset||uniq(lv.gen,pathLv===lv.id?Math.min(lv.n,5):lv.n);/* #394 a level started from the daily path is a short scene: at most 5 questions */const mode=lv.type==='game'?lv.mode:lv.type==='boss'?'boss':'classic';
+  const qs=(back4&&Array.isArray(back4.qs)&&back4.qs.length?back4.qs:null)||preset||uniq(lv.gen,lv.n);const mode=lv.type==='game'?lv.mode:lv.type==='boss'?'boss':'classic';
   if(lv.type==='boss')setTheme('boss');
   play={lv,u,qs,i:0,errors:0,hints:0,streak:0,tries:0,hint:0,lock:false,requeued:new Set(),hp:qs.length,boxes:[],bi:0,col:null,mode,N:qs.length,done:0,gemsEarned:0};
   if(back4&&back4.qs===qs){for(const k of ['i','errors','hints','streak','hp','N','done','gemsEarned'])if(typeof back4[k]==='number')play[k]=back4[k];play.requeued=new Set(back4.rq||[]);play.i=Math.min(play.i,qs.length-1);}
@@ -3162,7 +3162,7 @@ body.fron #screens{padding-bottom:84px}
 /* #389 listen first: the answers rest (softly faded, no timer) until the question was heard */
 .chs.lsn .chb{opacity:.55;transition:opacity .3s}
 
-/* #391 the ship on home: next to Oren and his friend, a picture only (not a button) */
+/* #391 the ship on home: next to Oren and his friend; #392 a tap on a built piece, the friend says what it is */
 .hrow{display:flex;align-items:flex-end;justify-content:center;gap:10px}
 .hship svg{display:block;width:120px;height:auto}
 .hship.big svg{width:220px;margin:6px auto}
@@ -3172,6 +3172,11 @@ body.fron #screens{padding-bottom:84px}
 .shpick small{font-size:16px;display:flex;align-items:center;gap:2px}.shpick small svg{width:18px;height:auto}
 @media (min-width:761px){.hship svg{width:170px}.hship.big svg{width:260px}}
 @media (min-width:761px) and (max-height:700px){.hship svg{width:130px}}
+.hship .shp,.hship .shx{cursor:pointer}
+/* #392 the story door at the end of the path, with the piece that opens it */
+.tgoal.sdoor{position:relative;cursor:pointer;opacity:1}
+.tgoal.sdoor small{position:absolute;top:100%;margin-top:4px;font-size:14px;font-weight:700;white-space:nowrap;color:#5b3a1a;background:#fff3c4;border-radius:8px;padding:1px 6px}
+.tpath.hasdoor{margin-bottom:26px}
 
 /* ===== LESSON CARDS (#56) ===== */
 .lccard{width:min(640px,100%)}
@@ -3825,25 +3830,38 @@ function finishAct(id,errors,n,gems,back,again,title){const st=errors<=Math.max(
    o.pool: the generator draws from a finite list — the quiz keeps its own bank 'tq-<id>' and lets the learning engine choose (wrong ones back on schedule).
    o.end(err): called once after the last question, before the result.
    o.lesson: lesson card id(s) (lessoncard.js, #258) shown before the first questions, once; a "show me again" button on the screen. */
+/* #395 quiet adaptive difficulty: these path missions use the skill model (learn.js, skill 'a:<id>'). The level is the number of
+   answer choices minus 1; its top is today's difficulty. Two wrong first answers in a row → the next questions have one choice less
+   (never below 2), with no message or sound. Each first answer is recorded; the end of the round sets the level for next time. */
+const ADAPT={'world-flag':2,'world-ani':2,'world-il':2,'sci-body':2,'sci-animals':3};
 function quiz(o){if(o.lesson&&window.LESSONS&&!o._ls){o._ls=1;return window.LESSONS.first(o.lesson,o.back,()=>quiz(o));}const qs=[],seen=new Set();let t=0;const LN=window.LEARN,pb=o.pool&&LN&&LN.pickItem?'tq-'+o.id:null;
+  const ask=ADAPT[o.id]&&LN&&LN.state?'a:'+o.id:null;let lv=0,wr=0;
+  /* the first adaptive round starts at the top: an older star level in the same skill (noteAct, 1..5) is ignored (q = adaptive since) */
+  if(ask)try{const mx=ADAPT[o.id],k0=LN.state().k[ask],first=!k0||!k0.q;LN.setMax(ask,mx);lv=LN.start(ask,first?mx:1);const k=LN.state().k[ask];
+    if(first&&!k.lk)lv=mx;lv=Math.max(1,Math.min(mx,lv|0));k.l=lv;k.q=1;}catch(e){lv=0;}
+  /* fewer choices: keep the right one and the first lv distractors of a fixed random order (so each step down removes one more) */
+  const fit=q=>{if(!lv)return q;if(!q._all){const ds=q.opts.map((_,k)=>k).filter(k=>k!==q.ans);q._all={opts:q.opts.slice(),ans:q.ans,ds:shuffle(ds)};}
+    const A=q._all,keep=new Set([A.ans,...A.ds.slice(0,lv)]);q.opts=A.opts.filter((_,k)=>keep.has(k));q.ans=q.opts.indexOf(A.opts[A.ans]);return q;};
+  const note=(q,ok)=>{if(!ask||q._n)return;q._n=1;try{LN.record(ask,ok,true,Date.now()-(q._t||Date.now()));}catch(e){}
+    if(ok){wr=0;return;}if(++wr>=2&&lv>1){lv--;wr=0;for(let j=i+1;j<qs.length;j++)fit(qs[j]);}};
   const gen=()=>{const q=o.gen(qs.length);if(!pb||q.bank||q.key==null)return q;const c=[q];for(let j=0;j<24;j++){const x=o.gen(qs.length);if(x.key!=null&&!c.some(y=>y.key===x.key))c.push(x);}
     try{const r=LN.pickItem(pb,c.filter(x=>!seen.has(x.key)).map(x=>({k:x.key})));const x=r&&c.find(y=>y.key===r.item.k);if(x)return Object.assign(x,{bank:pb});}catch(e){}return q;};
-  const nQ=pathN(o.n);while(qs.length<nQ&&t++<400){const q=gen();const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k))continue;seen.add(k);qs.push(q);}
+  const nQ=pathN(o.n);while(qs.length<nQ&&t++<400){const q=gen();const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k))continue;seen.add(k);qs.push(fit(q));}
   let i=0,err=0,gems=0,lock=false,tries=0,HB=null;O.setScreen('sTal',o.bg||'valley',o.back);
   const bk=O.hereTake&&O.hereTake('tq:'+o.id);if(bk){i=Math.min(Math.max(0,bk.i|0),qs.length-1);err=bk.err|0;gems=bk.gems|0;}/* #44: reopened mid-quiz = the same place */
   const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq');s.appendChild(wrap);if(o.lesson&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(o.lesson,o.back,()=>quiz(o)));
-  const render=()=>{const q=qs[i];tries=0;lock=false;if(O.hereProg)O.hereProg('tq:'+o.id,{i,err,gems});if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||spoken(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
+  const render=()=>{const q=qs[i];q._t=Date.now();tries=0;lock=false;if(O.hereProg)O.hereProg('tq:'+o.id,{i,err,gems});if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||spoken(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
     wrap.innerHTML='';const card=h('div','prq tqc',q.pr);if(q.play){const pb=h('button','hintbtn',ICON.say+`<span>${q.playLbl||'הַשְׁמַע'}</span>`);pb.onclick=q.play;card.appendChild(pb);}
     wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});const row=h('div','chs'+(q.ltr?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>{if(!(O.tapTooSoon&&O.tapTooSoon()))pickA(k,b);};row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');
     /* #54 one help button: clue, then the answer with its explanation (the question ends like after two mistakes) */
-    HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,clue:q.clue,explain:q.explain,before:ex,reveal:()=>{if(lock)return;lock=true;err++;if(window.FRIEND)window.FRIEND.onWrong({final:true});if(q.reveal)q.reveal(wrap.querySelector('.tqc'));setTimeout(next,D(4200));}}):null;if(o.side){const sb=h('button','bigbtn plain sm qside',o.side.lbl);sb.onclick=()=>o.side.open(wrap);wrap.appendChild(sb);}if(q.auto&&q.play)setTimeout(()=>{if(qs[i]===q)q.play();},D(350));};
+    HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,clue:q.clue,explain:q.explain,before:ex,reveal:()=>{if(lock)return;lock=true;err++;note(qs[i],false);if(window.FRIEND)window.FRIEND.onWrong({final:true});if(q.reveal)q.reveal(wrap.querySelector('.tqc'));setTimeout(next,D(4200));}}):null;if(o.side){const sb=h('button','bigbtn plain sm qside',o.side.lbl);sb.onclick=()=>o.side.open(wrap);wrap.appendChild(sb);}if(q.auto&&q.play)setTimeout(()=>{if(qs[i]===q)q.play();},D(350));};
   const resolve=(q)=>{const ex=wrap.querySelector('.hintbox');if(q.explain){ex.hidden=false;ex.innerHTML=`<div class="cap">${q.explain}</div>`;}if(q.reveal)q.reveal(wrap.querySelector('.tqc'));};
-  function pickA(k,b){if(lock||b.disabled)return;const q=qs[i];if(O.evAns)O.evAns(k===q.ans,{m:o.id,tr:tries,x:k});if(!tries){O.emit('tq',o.id,k===q.ans);if(q.bank&&window.LEARN)try{window.LEARN.seen(q.bank,q.bkey!=null?q.bkey:q.key,k===q.ans,false);}catch(e){}}
+  function pickA(k,b){if(lock||b.disabled)return;const q=qs[i];if(O.evAns)O.evAns(k===q.ans,{m:o.id,tr:tries,x:k});if(!tries){note(q,k===q.ans);O.emit('tq',o.id,k===q.ans);if(q.bank&&window.LEARN)try{window.LEARN.seen(q.bank,q.bkey!=null?q.bkey:q.key,k===q.ans,false);}catch(e){}}
     if(k===q.ans){if(window.TAL.rdA)window.TAL.rdA(q,tries,b);lock=true;if(window.FRIEND)window.FRIEND.onCorrect({tries});b.classList.add('ok');sfx.ok(i);const g=tries||(HB&&HB.step)?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);resolve(q);setTimeout(next,D(q.explain||q.reveal?2300:1000));return;}
     tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();if(o.onWrong)o.onWrong();const fin=tries>=2||q.opts.length<=2;if(window.FRIEND)window.FRIEND.onWrong({final:fin});
     if(fin){lock=true;const c=wrap.querySelector('.chs').children[q.ans];c.classList.add('show');if(HB&&HB.el.isConnected){HB.answer();if(q.reveal)q.reveal(wrap.querySelector('.tqc'));}else resolve(q);setTimeout(next,D(HB?4200:2600));}}
-  function next(){if(!wrap.isConnected)return;i++;if(i>=qs.length){KEY=null;if(o.end)try{o.end(err);}catch(e){}finishAct(o.id,err,qs.length,gems,o.back,()=>quiz(o),o.doneTitle);}else render();}
+  function next(){if(!wrap.isConnected)return;i++;if(i>=qs.length){KEY=null;if(ask)try{LN.done(ask);}catch(e){}if(o.end)try{o.end(err);}catch(e){}finishAct(o.id,err,qs.length,gems,o.back,()=>quiz(o),o.doneTitle);}else render();}
   KEY=e=>{if(wrap.hidden)return;if(/^[1-9]$/.test(e.key)){const b=wrap.querySelector('.chs')&&wrap.querySelector('.chs').children[+e.key-1];if(b)b.click();}};
   window.__quiz={get ans(){return qs[i]&&qs[i].ans;},get i(){return i;},get wrap(){return wrap;}};
   render();}
@@ -3926,7 +3944,7 @@ O.timeTick=timeTick;setInterval(timeTick,15000);
 const breakTime=()=>window.HEALTH&&window.HEALTH.breakNow();
 
 /* exports for other chunks */
-window.TAL={pathN,pathOn:()=>{PATH=1;},get onPath(){return !!PATH;},fits,vary,spk,orList,choiceSay,choiceList,addChoices,addSay,openGroup,GROUPS,bState,dailyPool,S,X,ALLSPR,FACES,quiz,result,record,finishAct,building,ACT,BUILD,openHub,openBuilding,hudT,progressBar,starsHTML,plainHe,L_,nb,dailyEnsure,setKey:f=>{KEY=f;},get key(){return KEY;},breakTime,artSVG:(...a)=>artSVG(...a)};
+window.TAL={ADAPT,pathN,pathOn:()=>{PATH=1;},get onPath(){return !!PATH;},fits,vary,spk,orList,choiceSay,choiceList,addChoices,addSay,openGroup,GROUPS,bState,dailyPool,S,X,ALLSPR,FACES,quiz,result,record,finishAct,building,ACT,BUILD,openHub,openBuilding,hudT,progressBar,starsHTML,plainHe,L_,nb,dailyEnsure,setKey:f=>{KEY=f;},get key(){return KEY;},breakTime,artSVG:(...a)=>artSVG(...a)};
 function artSVG(str){return window.TAL_artSVG?window.TAL_artSVG(str):'';}
 
 })();
@@ -5198,7 +5216,11 @@ function home(){const S0=T.S();
   else if(d&&d.t.length){const card=h('div','today');const path=h('div','tpath');path.style.setProperty('--n',d.t.length-(d.bs|0)+1);
     d.t.forEach((id,i)=>{if(i<(d.bs|0))return;const inf=stepInfo(id);if(i>(d.bs|0))path.appendChild(h('i','tlink'+(d.done[i-1]?' on':'')));
       const b=h('div','tstep2'+(d.done[i]?' done':i===nx?' cur':'')+(/^tog:/.test(id)?' tog':''),`<span class="ti2">${d.done[i]?`<span class="qk">${q.k}</span>`:inf.ic}</span>`);b.style.setProperty('--sc',inf.c);b.title=T.plainHe(inf.n);b.setAttribute('role','img');b.setAttribute('aria-label',T.plainHe(inf.n));path.appendChild(b);});
-    path.appendChild(h('i','tlink'+(nx<0?' on':'')));path.appendChild(h('span','tgoal'+(nx<0?' won':''),`<span>${nx<0?'🏆':q.e}</span>`));
+    path.appendChild(h('i','tlink'+(nx<0?' on':'')));
+    /* #392 the story door: the end of the path shows the ship piece that opens it; a tap, the friend says so */
+    const dk=!d.claimed&&window.SHIP&&window.SHIP.door?window.SHIP.door():null;
+    const gl=path.appendChild(h('span','tgoal'+(nx<0?' won':'')+(dk?' sdoor':''),dk?`<span>🚪</span><small>${dk.n}</small>`:`<span>${nx<0?'🏆':q.e}</span>`));
+    if(dk){path.classList.add('hasdoor');gl.setAttribute('role','button');gl.onclick=()=>{sfx.pop(2);window.SHIP.talk(dk.say);};}
     card.appendChild(path);const row=h('div','btnrow');
     if(nx>=0){const go=h('button','bigbtn huge',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=()=>{sfx.pop(3);runStep(nx);};row.appendChild(go);}
     else if(!d.claimed){const c=h('button','bigbtn gold huge',`${q.e} <span>סוֹף הַסִּפּוּר</span>`);c.onclick=()=>finale(d,q);row.appendChild(c);}
@@ -6035,7 +6057,9 @@ window.FRIEND=FR;window.PATHBAR=PATHBAR;
    SHIP.el(cls)   the ship picture (the empty sea when n=0)
    SHIP.award()   the next piece for today, or null (already today / ship complete)
    SHIP.offer(next) the additions choice when there are gems, then next()
-   SHIP.says()    every kid sentence (for pregen, registered with T.addSay) */
+   SHIP.says()    every kid sentence (for pregen, registered with T.addSay)
+   #392: a tap on a built piece (or an addition) on home: the friend's bubble says what it is and how he earned it (SHIP.talk);
+   SHIP.door()    the story door at the end of today's path: the ship piece that opens it (null when today's piece is earned) */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;const {h,$}=O;
 const S=window.SHIP={};
 /* the 60 pieces, in the order of the script (one chapter = one part of the ship = 5 pieces) */
@@ -6059,10 +6083,22 @@ S.EXTRAS=[{id:'fish',e:'🐟',n:'דָּג',x:14,y:86},{id:'dolph',e:'🐬',n:'ד
  {id:'rainbow',e:'🌈',n:'קֶשֶׁת',x:14,y:12},{id:'octo',e:'🐙',n:'תְּמָנוּן',x:80,y:88},{id:'whale',e:'🐳',n:'לִוְיָתָן',x:112,y:80}];
 S.COST=10;
 const TITLE='מָה נוֹסִיף לַסְּפִינָה?',NEW=n=>'חֵלֶק חָדָשׁ לַסְּפִינָה: '+n+'!';
-S.says=()=>[TITLE,...NAMES.map(NEW)];
+/* #392 how each piece was earned: the scene's topic, in the chapter's place (story script #385) */
+const HOW={add:'כְּשֶׁחִבַּרְנוּ מִסְפָּרִים',sub:'כְּשֶׁחִסַּרְנוּ מִסְפָּרִים',mul:'כְּשֶׁכָּפַלְנוּ מִסְפָּרִים',div:'כְּשֶׁחִלַּקְנוּ שָׁוֶה',
+  time:'כְּשֶׁבָּדַקְנוּ בַּשָּׁעוֹן',read:'כְּשֶׁקָּרָאנוּ מִלִּים',eng:'כְּשֶׁדִּבַּרְנוּ אַנְגְּלִית',think:'כְּשֶׁפָּתַרְנוּ חִידָה'};
+const IN=n=>n[0]==='ה'?(n[1]==='\u05B8'?'בָּ':'בַּ')+n.slice(2):(n[1]==='\u05B0'?'בִּ':'בְּ')+n;
+S.pieceSay=i=>{const M=window.STORYMIX,sc=M&&M.scene({c:Math.floor(i/5)+1,s:i%5+1});return NAMES[i]+'! קִבַּלְנוּ אֶת זֶה'+(sc?' '+(HOW[sc.topic]||'')+' '+IN(sc.n):'')+'.';};
+S.extraSay=id=>{const e=S.EXTRAS.find(x=>x.id===id);return e?e.n+'! קָנִינוּ אֶת זֶה בַּיַּהֲלוֹמִים שֶׁאָסַפְנוּ.':'';};
+S.doorSay=i=>'הַדֶּלֶת שֶׁל הַסִּפּוּר נִפְתַּחַת עִם '+NAMES[i]+'!';
+S.says=()=>[TITLE,...NAMES.map(NEW),...NAMES.map((_,i)=>S.pieceSay(i)),...S.EXTRAS.map(e=>S.extraSay(e.id)),...NAMES.map((_,i)=>S.doorSay(i))];
 T.addSay&&T.addSay(S.says());T.addChoices&&T.addChoices(S.EXTRAS.map(x=>x.n));
 S.get=()=>{let s=O.save.ship;if(!s||typeof s!=='object'||Array.isArray(s))s=O.save.ship={n:0,x:[]};
   s.n=Math.max(0,Math.min(NAMES.length,s.n|0));if(!Array.isArray(s.x))s.x=[];s.x=s.x.filter((id,i,a)=>S.EXTRAS.some(e=>e.id===id)&&a.indexOf(id)===i);return s;};
+S.door=()=>{const s=S.get();return s.d===O.today()||s.n>=NAMES.length?null:{n:NAMES[s.n],say:S.doorSay(s.n)};};
+/* the friend says it in the home bubble, with the voice */
+S.talk=t=>{if(!t)return;let b=$('#sHome .hbub2');const st=$('#sHome .hstage');if(!b&&st){b=h('div','hbub2');st.prepend(b);}if(b)b.textContent=t;O.say(T.spk(t));};
+document.addEventListener('click',e=>{const sh=e.target.closest&&e.target.closest('#sHome .hship');if(!sh)return;const k=e.target.closest('[data-i],[data-x]'),s=S.get();
+  const t=k?(k.dataset.i!=null?S.pieceSay(+k.dataset.i):S.extraSay(k.dataset.x)):s.n?S.pieceSay(s.n-1):'';if(t){O.sfx&&O.sfx.pop&&O.sfx.pop(2);S.talk(t);}});
 S.award=()=>{const s=S.get(),d=O.today();if(s.d===d||s.n>=NAMES.length)return null;s.n++;s.d=d;O.persist();return S.PIECES[s.n-1];};
 /* the drawing: 12 parts (viewBox 120x92, bow on the left); a part shows from the bottom up, one fifth per piece */
 const PART=[
@@ -6084,8 +6120,8 @@ S.el=(cls,n)=>{const s=S.get(),id='sh'+(++uid),st=n!=null,k=st?Math.max(0,Math.m
   for(let i=0;i<k;i++){const [y0,y1,g]=PART[Math.floor(i/5)],j=i%5,bh=(y1-y0)/5,top=y1-(j+1)*bh;
     if(j===0)defs+='<g id="'+id+'p'+Math.floor(i/5)+'">'+g+'</g>';
     defs+='<clipPath id="'+id+'c'+i+'"><rect x="0" y="'+(top-.3).toFixed(1)+'" width="120" height="'+(bh+.6).toFixed(1)+'"/></clipPath>';
-    use+='<use class="shp'+(st&&i===k-1?' nw':'')+'" href="#'+id+'p'+Math.floor(i/5)+'" clip-path="url(#'+id+'c'+i+')"/>';}
-  const ex=(st?[]:s.x).map(k=>S.EXTRAS.find(e=>e.id===k)).map(e=>'<text class="shx" x="'+e.x+'" y="'+e.y+'" font-size="14" text-anchor="middle">'+e.e+'</text>').join('');
+    use+='<use class="shp'+(st&&i===k-1?' nw':'')+'"'+(st?'':' data-i="'+i+'"')+' href="#'+id+'p'+Math.floor(i/5)+'" clip-path="url(#'+id+'c'+i+')"/>';}
+  const ex=(st?[]:s.x).map(k=>S.EXTRAS.find(e=>e.id===k)).map(e=>'<text class="shx" data-x="'+e.id+'" x="'+e.x+'" y="'+e.y+'" font-size="14" text-anchor="middle">'+e.e+'</text>').join('');
   return '<div class="hship'+(cls?' '+cls:'')+'" role="img" aria-label="הַסְּפִינָה"><svg viewBox="0 0 120 92"><defs>'+defs+'</defs>'+
     '<rect x="0" y="72" width="120" height="20" rx="4" fill="#5fb3e6"/><path d="M4 76q6-3 12 0t12 0M64 80q6-3 12 0t12 0M30 86q6-3 12 0t12 0" stroke="#d6f0ff" fill="none"/>'+use+ex+'</svg></div>';};
 /* the finale card: the new piece + the ship */
@@ -10399,6 +10435,7 @@ return {core,
   pickItem:(bank,items,o)=>{const hd=held(bank);const r=pickItem(S(),bank,items,Object.assign({},o,{held:new Set([...hd.keys(),...((o&&o.held)||[])])}));if(r)hd.set(r.item.k,nowFn());return r;},hash,
   merge,zone,eff,acc,isDue,placeStart,placeStep,placeDone,placeResult,
   MM,MM_IDS,DRILL_IDS,PW,WT,WT_BY_LV,wordQ,solve,CH,CH_BY_LV,chalQ,PM,PW,paperQ,gen,count,NOUN,NAMES_M,NAMES_F,lp,vav,MATH_LADDER,KID,PAR,IV,QUICK,maxLv,dayNum,
+  setMax:(sk,n)=>{MAXLV[sk]=Math.max(1,n|0);},/* #395 a mission's own top level */
   setRandom:f=>{rnd=f||Math.random;},setNow:f=>{nowFn=f||(()=>Date.now());}};})();
 
 /* ======================= part 2: the game ======================= */
