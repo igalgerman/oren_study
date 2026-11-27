@@ -470,8 +470,8 @@ const hundred=(chart,show)=>{let s='<div class="lnhc" dir="ltr">';for(let i=1;i<
 /* one question card: one instruction line, multiple choice; the strategy (q.tip) only behind the help button (#216); a short explanation after a mistake */
 function askQ(wrap,q,i,n,title,onAns){T.hudT(title,T.progressBar(i,n));wrap.innerHTML='';const t0=Date.now();
   const card=h('div','prq tqc lnq',`${q.html||''}${q.chart?hundred(q.chart,false):''}${q.text?`<div class="qq">${q.text}</div>`:''}`);wrap.appendChild(card);if(T.rdQ&&q.text)T.rdQ(q,card);
-  O.sayNow=plain((q.text?'':(q.html||'')).replace(/<span class="lnbox"><\/span>/g,' מה ')+' '+(q.text||''));
-  const row=h('div','chs ltr');let tries=0,lock=false;
+  const row=h('div','chs ltr');/* #435 math is not a reading test: the answers are read one by one, each lit */
+  O.sayNow=plain((q.text?'':(q.html||'')).replace(/<span class="lnbox"><\/span>/g,' מה ')+' '+(q.text||''))+(T.ansSay?T.ansSay(row,q.opts.map(String)):'');let tries=0,lock=false;
   q.opts.forEach((v,k)=>{const b=h('button','chb num',String(v));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
   const exb=h('div','hintbox');exb.hidden=true;wrap.appendChild(exb);card.classList.add('flashin');
   /* only: the help box already shows the answer with the explanation, so the explanation box holds just 'continue' */

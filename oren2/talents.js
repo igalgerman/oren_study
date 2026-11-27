@@ -26,6 +26,17 @@ const orList=a=>{a=[...new Set(a.map(lab).filter(Boolean))];if(a.length>1)a[a.le
 const choiceList=()=>{addChoices(BUILD.map(b=>b.name).concat(Object.values(ACT).map(a=>a.name),GROUPS.map(g=>g.n)));
   addSay(GROUPS.map(g=>g.n+'.').concat(BUILD.map(b=>b.name+(b.blurb?'. '+b.blurb:''))));return [...CHOICES];};
 const choiceSay=(root,sel)=>root?orList([...root.querySelectorAll(sel)].filter(x=>!x.closest('[hidden]')).map(x=>x.textContent)):'';
+/* #435 a question that does not test reading (a flag per activity: T.quiz o.readAns, default: not a reading id): after the question the
+   voice reads the answers one by one ("א, ב, אוֹ ג", each its own clip, as on the choice screens), the answer being said is lit (.rdlit).
+   ansSay(row,labels) marks the row (data-ra) and returns the clips to put after the question; '' when an answer has no word or number
+   (a picture): then nothing is read or lit. The light follows the voice (the core's 'vpart' at each clip) and goes out when it ends or is hushed. */
+const READ_ACT=/^(read-|story-|rb2-|nik-|snd-|eng-)/;
+const raN=s=>spk(s).replace(/[\u0591-\u05C7]/g,'').replace(/^או\s+/,'').replace(/[^\p{L}\p{N}]+/gu,'');
+const ansSay=(row,a)=>{a=(a||[]).map(lab);if(!row||a.length<2||!a.every(x=>/[א-ת0-9]/.test(x)))return '';row.dataset.ra=1;return orList(a);};
+const unlit=()=>document.querySelectorAll('.chb.rdlit').forEach(b=>b.classList.remove('rdlit'));
+O.on('vpart',t=>{const k=raN(t);if(!k)return unlit();document.querySelectorAll('.chs[data-ra] .chb').forEach(b=>b.classList.toggle('rdlit',raN(b.textContent)===k));});
+O.on('voice',on=>{if(!on)unlit();});
+addChoices([...Array(101).keys()].map(String));   /* number answers (word math, number series): every clip in pregen */
 
 /* ---------- extra pixel sprites ---------- */
 const P=(rows,pal)=>sprite(rows,pal);
@@ -114,12 +125,13 @@ function quiz(o){if(o.lesson&&window.LESSONS&&!o._ls){o._ls=1;return window.LESS
   const gen=()=>{const q=o.gen(qs.length);if(!pb||q.bank||q.key==null)return q;const c=[q];for(let j=0;j<24;j++){const x=o.gen(qs.length);if(x.key!=null&&!c.some(y=>y.key===x.key))c.push(x);}
     try{const r=LN.pickItem(pb,c.filter(x=>!seen.has(x.key)).map(x=>({k:x.key})));const x=r&&c.find(y=>y.key===r.item.k);if(x)return Object.assign(x,{bank:pb});}catch(e){}return q;};
   const nQ=pathN(o.n);while(qs.length<nQ&&t++<400){const q=gen();const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k))continue;seen.add(k);qs.push(fit(q));}
-  let i=0,err=0,gems=0,lock=false,tries=0,HB=null;O.setScreen('sTal',o.bg||'valley',o.back);
+  let i=0,err=0,gems=0,lock=false,tries=0,HB=null;const RA=o.readAns!=null?!!o.readAns:!READ_ACT.test(o.id);O.setScreen('sTal',o.bg||'valley',o.back);
   const bk=O.hereTake&&O.hereTake('tq:'+o.id);if(bk){i=Math.min(Math.max(0,bk.i|0),qs.length-1);err=bk.err|0;gems=bk.gems|0;}/* #44: reopened mid-quiz = the same place */
   const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq');s.appendChild(wrap);if(o.lesson&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(o.lesson,o.back,()=>quiz(o)));
-  const render=()=>{const q=qs[i];q._t=Date.now();tries=0;lock=false;if(O.hereProg)O.hereProg('tq:'+o.id,{i,err,gems});if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||spoken(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
+  const render=()=>{const q=qs[i];q._t=Date.now();tries=0;lock=false;if(O.hereProg)O.hereProg('tq:'+o.id,{i,err,gems});if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));const row=h('div','chs'+(q.ltr?' ltr':''));const ra=RA?ansSay(row,q.opts):'';
+    O.sayNow=ra?(q.say||spoken(q.pr))+ra:(q.say||spoken(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
     wrap.innerHTML='';const card=h('div','prq tqc',q.pr);if(q.play){const pb=h('button','hintbtn',ICON.say+`<span>${q.playLbl||'הַשְׁמַע'}</span>`);pb.onclick=q.play;card.appendChild(pb);}
-    wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});const row=h('div','chs'+(q.ltr?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>{if(!(O.tapTooSoon&&O.tapTooSoon()))pickA(k,b);};row.appendChild(b);});wrap.appendChild(row);
+    wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>{if(!(O.tapTooSoon&&O.tapTooSoon()))pickA(k,b);};row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');
     /* #54 one help button: clue, then the answer with its explanation (the question ends like after two mistakes) */
     HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,clue:q.clue,explain:q.explain,before:ex,reveal:()=>{if(lock)return;lock=true;err++;note(qs[i],false);if(window.FRIEND)window.FRIEND.onWrong({final:true,m:o.id});if(q.reveal)q.reveal(wrap.querySelector('.tqc'));setTimeout(next,D(4200));}}):null;if(o.side){const sb=h('button','bigbtn plain sm qside',o.side.lbl);sb.onclick=()=>o.side.open(wrap);wrap.appendChild(sb);}if(q.auto&&q.play)setTimeout(()=>{if(qs[i]===q)q.play();},D(350));};
@@ -211,7 +223,7 @@ O.timeTick=timeTick;setInterval(timeTick,15000);
 const breakTime=()=>window.HEALTH&&window.HEALTH.breakNow();
 
 /* exports for other chunks */
-window.TAL={ADAPT,pathN,pathOn:()=>{PATH=1;},get onPath(){return !!PATH;},fits,vary,spk,orList,choiceSay,choiceList,addChoices,addSay,openGroup,GROUPS,bState,dailyPool,S,X,ALLSPR,FACES,quiz,result,record,finishAct,building,ACT,BUILD,openHub,openBuilding,hudT,progressBar,starsHTML,plainHe,L_,nb,dailyEnsure,setKey:f=>{KEY=f;},get key(){return KEY;},breakTime,artSVG:(...a)=>artSVG(...a)};
+window.TAL={ADAPT,ansSay,READ_ACT,pathN,pathOn:()=>{PATH=1;},get onPath(){return !!PATH;},fits,vary,spk,orList,choiceSay,choiceList,addChoices,addSay,openGroup,GROUPS,bState,dailyPool,S,X,ALLSPR,FACES,quiz,result,record,finishAct,building,ACT,BUILD,openHub,openBuilding,hudT,progressBar,starsHTML,plainHe,L_,nb,dailyEnsure,setKey:f=>{KEY=f;},get key(){return KEY;},breakTime,artSVG:(...a)=>artSVG(...a)};
 function artSVG(str){return window.TAL_artSVG?window.TAL_artSVG(str):'';}
 
 })();
