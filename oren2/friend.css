@@ -70,3 +70,7 @@ body.fron #screens{padding-bottom:84px}
 .frtr .frto{min-width:84px;min-height:72px;font-size:30px;font-weight:800;justify-content:center}
 .frtr .frto.ok{background:#e6f6e6;border-color:#4fae4f}
 .frtr .frto.show{background:#fff6d6;border-color:#c98a00}
+/* #53 the friend points at the help button (after a wrong answer) */
+.helpbtn.frhand{animation:frhand .5s ease-in-out 3}
+@keyframes frhand{50%{transform:scale(1.12);box-shadow:0 0 0 8px rgba(255,207,77,.55),0 5px 0 #c99a1d}}
+@media (prefers-reduced-motion:reduce){.helpbtn.frhand{animation:none;outline:4px solid #ffcf4d}}

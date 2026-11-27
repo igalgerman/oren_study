@@ -160,7 +160,7 @@ const EMIT=await p.evaluate(()=>/tlDone/.test(String(window.TAL.record)));   /* 
  const pg=fs.readFileSync(path.join(L.ROOT,'cf','tools','pregen.js'),'utf8');ok('rhymes: every sentence is in the voice pregen',/GAPS\.speakList\(\)/.test(pg));
  await p.evaluate(()=>{window.__fast=false;window.__rsaid=[];const O=window.OREN,o=O.say;O.say=t=>window.__rsaid.push(t);window.__rsayOld=o;window.TAL.ACT['read-rhyme'].run(()=>window.OREN.showMap());});await sleep(400);
  await p.evaluate(()=>{const q=window.__quiz;q.wrap.querySelector('.hintbtn').click();});await sleep(5200);await shot('rhyme');
- const rv=await p.evaluate(()=>{const said=window.__rsaid,o=[...document.querySelectorAll('#sTal .chs .chb')].map(b=>b.textContent);return {said,o,pic:!!document.querySelector('#sTal .gp-rhy svg')};});
+ const rv=await p.evaluate(()=>{const fl=window.FRIEND?window.FRIEND.voiceList():[],said=window.__rsaid.filter(x=>!fl.includes(x)),o=[...document.querySelectorAll('#sTal .chs .chb')].map(b=>b.textContent);return {said,o,pic:!!document.querySelector('#sTal .gp-rhy svg')};});
  ok('rhymes: the voice reads the word and then each choice; the picture shows',rv.pic&&/^מָה מִתְחָרֵז עִם /.test(rv.said[0]||'')&&rv.o.every(x=>rv.said.includes(x)),JSON.stringify(rv));
  await p.evaluate(()=>{window.OREN.say=window.__rsayOld;window.__fast=true;});
  let qmax=0;done=await quizLoop(80,async()=>{const v=await p.evaluate(()=>window.__quiz?window.__quiz.i:-1);qmax=Math.max(qmax,v);});const rr=await tl('read-rhyme');ok('rhymes: a round of 5 finishes and records read-rhyme',done&&qmax===4&&rr&&rr.s===3,JSON.stringify([qmax,rr]));await closeOv();
