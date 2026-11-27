@@ -43,3 +43,5 @@ day-path-desktop 60        # #388 3-mission path walk + time-limit stop, #391 sh
 day-path-phone 60          # same file on the phone viewport
 worker 60                 # cf worker bundle + fake KV/D1, #570 voicecheck once-a-day/reserve rules (pure, < 1 ms): ~3 s
 learn 120                 # skill model sims + the screens on desktop and phone + #395 plays 8 adaptive mission rounds per viewport: ~54 s alone
+unlock-desktop 60         # #403 first tap unlocks audio (Chrome policy mimicked) + blocked-audio hint: ~5 s
+unlock-tablet 60          # same on the Android tablet profile (Galaxy Tab S4, touch)

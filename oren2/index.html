@@ -52,6 +52,8 @@ svg.px{shape-rendering:crispEdges;display:block}
 .pzov .card{display:flex;flex-direction:column;align-items:center;gap:14px;background:var(--paper);padding:24px 32px;max-width:420px;width:100%;box-sizing:border-box;text-align:center;box-shadow:0 0 0 6px var(--ink),0 14px 0 6px rgba(0,0,0,.3);animation:pop .35s ease-out both}
 .pzov .pzi svg{width:90px;height:90px}.pzov h2{margin:0;font-size:32px;line-height:1.35}.pzov .bigbtn svg{width:30px;height:30px}
 .ibtn.off{opacity:.5}
+/* #403 audio blocked: a small muted-speaker mark on the speaker button (no popup) */
+.ibtn.blk{position:relative}.ibtn.blk::after{content:'';position:absolute;top:-7px;inset-inline-end:-7px;width:22px;height:22px;border-radius:50%;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c0392b' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 9v6h4l5 4V5L8 9H4z' fill='%23c0392b'/%3E%3Cpath d='M16 9l5 6M21 9l-5 6'/%3E%3C/svg%3E") center/15px no-repeat;box-shadow:0 0 0 2px #c0392b;pointer-events:none}
 .chip{font-weight:800;font-size:19px;background:rgba(255,255,255,.9);padding:6px 12px;box-shadow:0 4px 0 rgba(0,0,0,.18);white-space:nowrap}
 .gemc{display:flex;align-items:center;gap:6px;font-weight:900;font-size:21px;background:rgba(255,255,255,.92);padding:4px 12px;box-shadow:0 4px 0 rgba(0,0,0,.18);direction:ltr}
 .gemc svg{width:24px}
@@ -1515,12 +1517,20 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 /* #389 voice events for 'listen first' (friend.js): emit('voice',true) when a sentence starts, false when it ends or fails.
    A sentence that was replaced by a newer one never reports its end (only the newest one counts). */
 const VO={k:null};function vo(on,k){if(on)VO.k=k;else if(VO.k!==k)return;else VO.k=null;try{emit('voice',!!on);}catch(e){}}
-function browserSay(t,lang,why,slow,done){done=done||(()=>{});if(!('speechSynthesis' in window)){vo(1,'none');vo(0,'none');done();return;}voiceLog('browser',why||voiceWhy(),t,lang);speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(lang==='en'?plain(t):fullSpell(t));u.lang=lang==='en'?'en-US':'he-IL';const v=lang==='en'?enVoice:heVoice;if(v)u.voice=v;u.rate=lang==='en'?(slow?.65:.85):.92;u.pitch=1.05;u.onstart=()=>{duck(true);track('au',{ev:'play',src:'browser'});};u.onend=()=>{duck(false);track('au',{ev:'end',src:'browser'});vo(0,u);done();};u.onerror=e=>{duck(false);track('au',{ev:'fail',src:'browser',why:String(e&&e.error||'')});vo(0,u);done();};VS.own=u;vo(1,u);sayGuard(t,done);speechSynthesis.speak(u);
+function browserSay(t,lang,why,slow,done){done=done||(()=>{});if(!('speechSynthesis' in window)){vo(1,'none');vo(0,'none');done();return;}voiceLog('browser',why||voiceWhy(),t,lang);speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(lang==='en'?plain(t):fullSpell(t));u.lang=lang==='en'?'en-US':'he-IL';const v=lang==='en'?enVoice:heVoice;if(v)u.voice=v;u.rate=lang==='en'?(slow?.65:.85):.92;u.pitch=1.05;u.onstart=()=>{duck(true);auHint(false);track('au',{ev:'play',src:'browser'});};u.onend=()=>{duck(false);track('au',{ev:'end',src:'browser'});vo(0,u);done();};u.onerror=e=>{duck(false);if(e&&e.error==='not-allowed')auHint(true);track('au',{ev:'fail',src:'browser',why:String(e&&e.error||'')});vo(0,u);done();};VS.own=u;vo(1,u);sayGuard(t,done);speechSynthesis.speak(u);
   /* #397 some browsers never fire onend: the sentence is over once the browser voice is no longer speaking */
   const t0=Date.now(),pl=setInterval(()=>{let sp=true;try{sp=speechSynthesis.speaking||speechSynthesis.pending;}catch(e){}if(!sp&&Date.now()-t0>150){clearInterval(pl);done();}},100);
   const d0=done;done=()=>{clearInterval(pl);d0();};}
 /* Google voice on the family website: one fixed voice on every device (chosen by the parents in blind tests),
    each sentence made in advance by cf/tools/pregen.js and cached by the server */
+/* #403 the first tap unlocks audio (desktop Chrome, Android tablet): every tap or key wakes the sound engine if it sleeps.
+   When the browser blocks sound (voice refused, or the engine stays off after a tap) the speaker button gets a small
+   muted mark (no popup); it goes away when sound plays again or a tap gets the engine running. */
+const AU={on:false,blocked:false};window.__au=AU;
+function auHint(b){AU.blocked=!!b;const e=document.getElementById('btnSay');if(e)e.classList.toggle('blk',AU.blocked);}
+function auTap(){const a=audio();if(!a)return;const c=a.ctx,run=()=>{if(c.state==='running'){AU.on=true;auHint(false);}else auHint(true);};
+  if(c.state==='running')return run();Promise.resolve(c.resume&&c.resume()).then(()=>setTimeout(run,0),()=>auHint(true));}
+addEventListener('pointerdown',auTap,true);addEventListener('keydown',auTap,true);
 const GVOICE='he-IL-Chirp3-HD-Kore',GRATE=0.9;
 const GV={ok:false,audio:null,ver:0,pending:false,wait:null,ms:8000,at:0,again:20000,site:/^https?:$/.test(location.protocol)&&!ARTIFACT&&!window.__noFamily};/* ver: the voice-fix version from the server; part of every audio URL so fixed sentences are fetched again. pending/wait: the status check is still running (#36) */
 GV.check=async n=>{GV.pending=true;
@@ -1552,9 +1562,9 @@ function googleSay(t,lang,again,part,slow,done){done=done||(()=>{});const en=lan
   const tm=setTimeout(()=>{if(!go)fall('timeout');},GV.ms);/* the browser voice only after a retry and a long wait (#36) */
   /* #399 a slow fetch that arrives after the screen changed (or after hush) is not played: the line belongs to an old screen */
   const stale=()=>GV.audio!==a||sqOld(done);const drop=()=>{clearTimeout(tm);try{a.pause();}catch(e){}if(GV.audio===a)GV.audio=null;done();};
-  a.onplaying=()=>{if(stale())return drop();if(!go){if(!part)voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});sayGuard(parts[part],done);}go=true;clearTimeout(tm);};a.onplay=()=>{if(stale())return drop();duck(true);vo(1,a);};a.onended=()=>{if(GV.audio===a&&!last){googleSay(t,lang,0,part+1,slow,done);return;}duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a){GV.audio=null;vo(0,a);}done();};/* the next part; stopped (hush) or replaced: the rest is not spoken */
+  a.onplaying=()=>{if(stale())return drop();auHint(false);if(!go){if(!part)voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});sayGuard(parts[part],done);}go=true;clearTimeout(tm);};a.onplay=()=>{if(stale())return drop();duck(true);vo(1,a);};a.onended=()=>{if(GV.audio===a&&!last){googleSay(t,lang,0,part+1,slow,done);return;}duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a){GV.audio=null;vo(0,a);}done();};/* the next part; stopped (hush) or replaced: the rest is not spoken */
   a.onerror=()=>fall(a.error&&a.error.code===4?'no-audio':'audio-error');/* 4: not audio, e.g. the server answered 429/502 (not made yet) */
-  a.play().catch(e=>fall(e&&e.name==='NotAllowedError'?'blocked':e&&e.name==='NotSupportedError'?'no-audio':'audio-error'));}
+  a.play().catch(e=>{if(e&&e.name==='NotAllowedError')auHint(true);fall(e&&e.name==='NotAllowedError'?'blocked':e&&e.name==='NotSupportedError'?'no-audio':'audio-error');});}
 /* #397 one speech queue for the whole game: say() puts the sentence in line; one sentence at a time, the next starts when the one
    before has ended (never two voices together, never cut in the middle). hush() empties the line and stops the voice (screen change,
    back, pause, a new question). The same sentence twice in a row is said once; at most 3 wait (older waiting ones are dropped). */

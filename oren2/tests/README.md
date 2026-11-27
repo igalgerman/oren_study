@@ -32,6 +32,7 @@ Needs Node and the `playwright` package with Chromium (no npm install inside the
 | parent (desktop/phone) | users + parent password, permissions, parts on/off, gradual unlock, skip/reset, messages, badges, daily plan, home, full reset |
 | time-missions | today's missions control, daily template, screen-time limit, 5-minute warning, lock screen, bedtime |
 | sandbox-voice (desktop/phone) | parent "play as parent" sandbox with its own save + skip bar, voice check |
+| unlock (desktop/tablet) | #403 the first tap unlocks audio (desktop Chrome, Android tablet profile); a small muted mark on the speaker button (no popup) when the browser blocks sound, gone once sound plays |
 | entry | start screen Oren / parent buttons, parent choice (panel, play, or time together) |
 | day-path (desktop/phone) | "what do you feel like today?" choice from enabled parts, something else, together time (parent "I have time now" and Oren-led), real-world missions, no tickets / prize / badge toasts, first-time tour, family merge of the new keys |
 | arcade (desktop/phone) | all arcade cabinets, records, real clicks (no tickets or prize shop) |
