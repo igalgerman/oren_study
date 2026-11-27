@@ -1291,16 +1291,17 @@ addEventListener('keydown',e=>{if(!paused())return;e.stopImmediatePropagation();
    page hides. A failed send puts the batch back (the newest EV.max are kept on the device, oldest dropped) until the next send: no retry loop.
    At most EV.cap events per page session (the rest are counted). Parent play (sandbox) is not logged. Every event has an id (i): #462 links
    its screenshots (shots.js) to it; they ride in the same batch. */
-const EV={k:'oren4-ev',sid:(Math.random().toString(36).slice(2)+'0000000000').slice(0,10),n:0,cap:2000,max:600,buf:[],last:0,busy:0,drop:0,t0:Date.now(),s:'',sT:Date.now(),m:'',q:'',lv:'',qT:0,lf:0};
+const EV={k:'oren4-ev',tap:null,sid:(Math.random().toString(36).slice(2)+'0000000000').slice(0,10),n:0,cap:2000,max:600,buf:[],last:0,busy:0,drop:0,t0:Date.now(),s:'',sT:Date.now(),m:'',q:'',lv:'',qT:0,lf:0};
 try{const o=JSON.parse(localStorage.getItem(EV.k)||'null');if(o&&Array.isArray(o.ev))EV.buf=o.ev.slice(-EV.max).map(e=>(e.osid||(e.osid=o.sid),e));}catch(e){}
 function evSan(d){const o={};if(d&&typeof d==='object')for(const k in d){const v=d[k];if(typeof v==='number'&&isFinite(v))o[k]=Math.round(v*100)/100;else if(typeof v==='boolean')o[k]=v?1:0;else if(typeof v==='string'&&v)o[k]=v.slice(0,120);}return o;}
 function track(k,d,force){try{if(kidSave)return;if(EV.n>=EV.cap&&!force){EV.drop++;return;}EV.n++;
-  const e=Object.assign({s:EV.s,m:EV.m},evSan(d),{i:EV.n,t:Date.now(),k});if(!e.s)delete e.s;if(!e.m)delete e.m;EV.buf.push(e);if(EV.buf.length>EV.max)EV.buf.splice(0,EV.buf.length-EV.max);if(window.SHOTS)SHOTS.on(e);}catch(x){}}
+  const e=Object.assign({s:EV.s,m:EV.m},evSan(d),{i:EV.n,t:Date.now(),k});if(!e.s)delete e.s;if(!e.m)delete e.m;if(k==='tap')EV.tap={s:e.s,tg:e.tg,t:e.t};EV.buf.push(e);if(EV.buf.length>EV.max)EV.buf.splice(0,EV.buf.length-EV.max);if(window.SHOTS)SHOTS.on(e);}catch(x){}}
 /* the state an error is attached to: screen, mission, question id, level, stars */
 function evSnap(){let st=0;try{st=EV.lv&&save.s[EV.lv]!=null?save.s[EV.lv]|0:((save.tl||{})[EV.m]||{}).s|0;}catch(e){}return {s:EV.s,m:EV.m,q:EV.q,lv:EV.lv||EV.m,st};}
 const evHash=s=>{let h=5381;s=String(s);for(let i=0;i<s.length;i++)h=(h*33+s.charCodeAt(i))>>>0;return h.toString(36);};
 function evScreen(id){const now=Date.now();if(id===EV.s)return;track('scr',{s:id,from:EV.s,ms:EV.s?now-EV.sT:0});EV.s=id;EV.sT=now;}
-function evMission(m,lv){EV.m=String(m||'');EV.lv=lv?String(lv):'';EV.q='';track('mis',{m:EV.m,lv:EV.lv});}
+/* #641 why a mission started: the tap (target + screen) in the 3 s before it, else auto (picked by the game) */
+function evMission(m,lv){EV.m=String(m||'');EV.lv=lv?String(lv):'';EV.q='';const tp=EV.tap&&Date.now()-EV.tap.t<3000?EV.tap:null;track('mis',Object.assign({m:EV.m,lv:EV.lv},tp?{via:tp.s||'',tg:tp.tg}:{auto:1}));}
 function evQ(key,d){EV.q=evHash(key);EV.qT=Date.now();track('q',Object.assign({q:EV.q},d));}
 /* #436: a tap in the first 400 ms of a new question is ignored, so a double tap from the last question cannot answer this one */
 function tapTooSoon(){return !!EV.qT&&Date.now()-EV.qT<D(400);}
@@ -1318,7 +1319,7 @@ function evDevice(){const n=navigator,ua=n.userAgent||'',w=Math.min(screen.width
   const br=(/Edg\/(\d+)/.exec(ua)&&'Edge '+RegExp.$1)||(/(?:Chrome|CriOS)\/(\d+)/.exec(ua)&&'Chrome '+RegExp.$1)||(/Firefox\/(\d+)/.exec(ua)&&'Firefox '+RegExp.$1)||(/Version\/(\d+).*Safari/.exec(ua)&&'Safari '+RegExp.$1)||'other';
   const os=/Android/.test(ua)?'Android':/iPhone|iPad|iPod/.test(ua)||(/Mac/.test(ua)&&touch)?'iOS':/Windows/.test(ua)?'Windows':/Mac/.test(ua)?'Mac':/CrOS/.test(ua)?'ChromeOS':/Linux/.test(ua)?'Linux':'other';
   return {dev:!touch?'desktop':w&&w<600?'phone':'tablet',host:location.hostname||location.protocol.replace(':',''),art:window.claude?1:0,ver:document.documentElement.innerHTML.length,
-    vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio||1,br,os,lang:n.language||'',net:(n.connection&&n.connection.effectiveType)||''};}
+    vw:innerWidth,vh:innerHeight,scw:screen.width||0,sch:screen.height||0,dpr:devicePixelRatio||1,br,os,lang:n.language||'',net:(n.connection&&n.connection.effectiveType)||''};}
 (()=>{const start=()=>track('ss',evDevice());if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
   addEventListener('load',()=>setTimeout(()=>{try{const nv=performance.getEntriesByType('navigation')[0];if(nv)track('perf',{load:Math.round(nv.loadEventStart||nv.duration),dcl:Math.round(nv.domContentLoadedEventEnd),ttfb:Math.round(nv.responseStart)});}catch(e){}},0));
   try{new PerformanceObserver(l=>{for(const x of l.getEntries())if(x.duration>200&&EV.lf<50){EV.lf++;track('lf',{ms:Math.round(x.duration)});}}).observe({type:'longtask',buffered:true});}catch(e){}
@@ -1612,12 +1613,12 @@ function ttsPrefetch(t,lang){if(!t||window.__fast)return;lang=lang||'he';if(GV.p
 function googleSay(t,lang,again,part,slow,done){done=done||(()=>{});const en=lang==='en';part=part|0;if(!part){try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}try{speechSynthesis.cancel();}catch(e){}}
   const parts=ttsParts(en?plain(t):fullSpell(t)),last=part>=parts.length-1,raw=ttsParts(t),rp=raw.length===parts.length?raw[part]:t;
   const url=ttsUrl(parts[part],en,slow,done.it&&done.it.voice);/* #53 a friend line carries the friend's own voice (friend.js), else the game voice */
-  const a=new Audio(url);GV.audio=a;let go=false;const t0=Date.now();
-  const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;if(sqOld(done))return drop();track('au',{ev:'fail',src:'google',why,ms:Date.now()-t0});try{a.pause();}catch(e){}GV.audio=null;
+  const a=new Audio(url);GV.audio=a;let go=false;const t0=Date.now(),sn=evHash(rp);/* #641 sentence id = hash of its text */
+  const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;if(sqOld(done))return drop();track('au',{ev:'fail',src:'google',why,sn,ms:Date.now()-t0});try{a.pause();}catch(e){}GV.audio=null;
     if(!again&&why!=='blocked'){logIssue('voice',why+' (retry)');track('retry',{what:'voice',why});googleSay(t,lang,1,part,slow,done);return;}
     /* #404 one rule: the browser voice only when the whole session is offline; online the text lights up with a 🔊 that tries again */
     if(navigator.onLine===false){browserSay(t,en?'en':'he',why,slow,done);if(why!=='blocked')logIssue('voice',why);return;}
-    if(why!=='blocked')logIssue('voice',why+' (missing)');track('au',{ev:'missing',src:'google',why});vmMark(rp,lang,slow);
+    if(why!=='blocked')logIssue('voice',why+' (missing)');track('au',{ev:'missing',src:'google',why,sn});if(why!=='timeout'&&why!=='blocked')try{fetch(url).then(r=>track('au',{ev:'http',src:'google',st:r.status,sn}),()=>track('au',{ev:'http',src:'google',st:0,sn}));}catch(e){}/* #641 the HTTP status of the missing sentence */vmMark(rp,lang,slow);
     if(!last){googleSay(t,lang,0,part+1,slow,done);return;}done();};
   const tm=setTimeout(()=>{if(!go)fall('timeout');},GV.ms);/* the browser voice only after a retry and a long wait (#36) */
   /* #399 a slow fetch that arrives after the screen changed (or after hush) is not played: the line belongs to an old screen */
@@ -2483,7 +2484,7 @@ function showFinal(){setScreen('sFinal','final',showMap);$('#hudMid').innerHTML=
 
 updateGems();cloudInit();
 const BUS={};function emit(e,...a){(BUS[e]||[]).forEach(f=>{try{f(...a);}catch(x){console.error(x);}});}
-window.OREN={mathSpeechList,hatsBack,get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,famStale:()=>FAM.sf&&FAM.sf>FAM.upT?FAM.upT||((save.now||{}).t|0)||FAM.sf:0,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,celebrate,bigCelebration,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
+window.OREN={mathSpeechList,hatsBack,get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evBuf:()=>EV.buf.slice(),evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,famStale:()=>FAM.sf&&FAM.sf>FAM.upT?FAM.upT||((save.now||{}).t|0)||FAM.sf:0,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,celebrate,bigCelebration,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
   set sayNow(v){sayNow=v;AUTO.gen++;},get sayNow(){return sayNow;},hud:html=>{$('#hudMid').innerHTML=html;document.body.classList.toggle('act',!document.body.classList.contains('inpar')&&/class="chip"/.test(html));},resetAll:keep=>{const snd=save.snd;save=blank();save.snd=snd;Object.assign(save,keep||{});persist();renderStart();},on:(e,f)=>{(BUS[e]=BUS[e]||[]).push(f);},emit,blank};
 window.__oren4={MK,mistakeKind,TF,TFC,tfFillQ,COIN,GC,qSpeech,GT,HANDS,renderAudio,THEMES,RAW,setTheme,get mus(){return mus;},WORLDS,ALLLV,ALLU,hintHTML,hintData,uniq,colInit,colNeedBorrow,digs,qkey,bubbleOpts,storyFor,teachCheck,HEROES,get play(){return play;},get save(){return save;},startLevel,finishLevel,playLevel,showMap,showWorld,kingdom,studio,teacher,playSpeed,setFast:v=>{window.__fast=v;},mergeIn,migrateOld,lp};
 /* #44 a finished task is not reopened */
