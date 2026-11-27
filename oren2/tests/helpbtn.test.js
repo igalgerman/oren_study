@@ -19,8 +19,7 @@ const NOFEED = ['think-test'];
   await p.goto(L.URL); await L.noCoach(p);
   /* #409 the first clue is said by the friend in his bubble (or the math friend's own bubble), the help box stays closed */
   await p.evaluate(() => { window.__clue = () => { const F = window.FRIEND, box = [...document.querySelectorAll('.helpbox')].find(x => !x.hidden && x.offsetParent);
-    const bub = [...document.querySelectorAll('.frc:not([hidden]) .frb:not([hidden]), #sPlay:not([hidden]) #bText')].map(x => x.textContent).join(' ');
-    const t = F && F.hinted ? F.hinted.replace(/<[^>]+>/g, '').trim() : ''; return t && !box && bub.includes(t.slice(0, 8)) ? t : ''; }; });
+    const t = F && F.hinted ? F.hinted.replace(/<[^>]+>/g, '').trim() : ''; return t && !box && F.log[F.log.length - 1] === F.hinted ? t : ''; }; });   /* the friend's last line = the hint (in __fast the bubble closes quickly) */
 
   /* 1. the fixed texts: Hebrew with nikud, and pregen collects them */
   const tx = await p.evaluate(() => window.HELP && window.HELP.allTexts ? window.HELP.allTexts() : []);
@@ -65,7 +64,7 @@ const NOFEED = ['think-test'];
     for (let k = 0; k < 2; k++) await p.evaluate(() => { const w = document.querySelector('.helpq'), h = w && w._help; if (h && h.wrong) { h.wrong(); return; }
       const a = h ? h.ans : -1; const bs = [...document.querySelectorAll('#sTal .chs .chb')]; const x = bs.find((b, i) => i !== a && !b.disabled && b.offsetParent); if (x) x.click(); });
     await L.sleep(60);
-    const auto = await p.evaluate(() => window.__clue());
+    const auto = await p.evaluate(() => { const x = document.querySelector('.helpbox'); return window.__clue() || (x && !x.hidden ? x.textContent : ''); });   /* a question that ends there shows the answer (step 2) */
     if (!heNik(auto)) bad.push(`${id}: no help after 2 wrong answers`);
   }
   const miss = MUST.filter(x => !withQ.includes(x));

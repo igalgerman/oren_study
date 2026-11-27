@@ -13,7 +13,7 @@ const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + 
 const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout: ms, polling: 100 }).then(() => true).catch(() => false);
 (async () => { const b = await chromium.launch(); const errs = []; const BASE = 'http://localhost:' + srv.address().port + '/';
   const A = await (await b.newContext({ viewport: { width: 1366, height: 768 } })).newPage(); A.on('pageerror', e => errs.push('A ' + e.message)); A.setDefaultTimeout(8000);
-  await A.addInitScript(() => { window.__fast = true; window.__famGap = 0; window.__pcGap = 300; window.__skipWait = 6000; });
+  await A.addInitScript(() => { window.__fast = true; window.__moments = false; window.__famGap = 0; window.__pcGap = 300; window.__skipWait = 6000; });
   await A.goto(BASE); await A.waitForFunction(() => window.OREN && window.OREN.family, null, { timeout: 20000 }); await L.noCoach(A);
   // Oren's path for today: math + three missions from three different topics; he played on this device today
   const ids = await A.evaluate(() => { const O = window.OREN, T = window.TAL, P = window.PDAY; O.save.story.intro = 1; T.S().prof = { an: 'cat', col: '#3a8fc4', love: 'art' };
@@ -26,7 +26,7 @@ const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout:
   await A.evaluate(() => window.OREN.famNow()); await sleep(800);
 
   const B = await (await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })).newPage(); B.on('pageerror', e => errs.push('B ' + e.message)); B.setDefaultTimeout(8000);
-  await B.addInitScript(() => { window.__fast = true; window.__famGap = 0; window.__parPull = 400; });
+  await B.addInitScript(() => { window.__fast = true; window.__moments = false; window.__famGap = 0; window.__parPull = 400; });
   await B.goto(BASE); await B.waitForFunction(() => window.OREN && window.OREN.family && window.TAL && window.TAL.S().daily, null, { timeout: 20000 }).catch(() => { });
   await B.evaluate(() => window.TAL.parentPanel('day')); await sleep(300);
   const view = () => B.evaluate(() => { const v = document.querySelector('#sPar .pday'); return { day: (v.querySelector('.pdday') || {}).textContent, did: [...v.querySelectorAll('.dllog .dlrow')].map(r => r.textContent),

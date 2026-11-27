@@ -3,7 +3,7 @@
 const L = require('./lib');
 const {chromium}=require('playwright');const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''));
-(async()=>{const b=await chromium.launch();const ctx=await b.newContext(L.VIEWPORT);await ctx.addInitScript(()=>{try{localStorage.clear()}catch(e){};window.__fast=true;window.__noFamily=true;});
+(async()=>{const b=await chromium.launch();const ctx=await b.newContext(L.VIEWPORT);await ctx.addInitScript(()=>{try{localStorage.clear()}catch(e){};window.__fast=true;window.__noFamily=true;window.__moments=false;/* the friend moments (#572) have their own tests */});
  const p=await ctx.newPage();const errs=[];p.on('pageerror',e=>errs.push(e.message));await p.goto(L.URL);await p.waitForFunction(()=>window.TAL&&window.TAL.S);await sleep(300);
  const home=()=>p.evaluate(()=>window.OREN.showMap());
  // --- first-time tour ---
@@ -151,7 +151,7 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
   ok('ship: kid text has nikud and every sentence is in the pregen list',kt.n>=60&&!kt.miss.length&&!kt.nonik.length,JSON.stringify(kt).slice(0,300));
   // saved and restored: a fresh page with this save shows the same ship; family merge keeps the newest
   const saved=await p.evaluate(()=>{window.OREN.persist();return localStorage.getItem('oren4-v1');});
-  const ctx2=await b.newContext(L.VIEWPORT);await ctx2.addInitScript(s=>{try{if(!sessionStorage.getItem('k')){localStorage.clear();localStorage.setItem('oren4-v1',s);sessionStorage.setItem('k','1');}}catch(e){};window.__fast=true;window.__noFamily=true;},saved);
+  const ctx2=await b.newContext(L.VIEWPORT);await ctx2.addInitScript(s=>{try{if(!sessionStorage.getItem('k')){localStorage.clear();localStorage.setItem('oren4-v1',s);sessionStorage.setItem('k','1');}}catch(e){};window.__fast=true;window.__noFamily=true;window.__moments=false;/* the friend moments (#572) have their own tests */},saved);
   const p2=await ctx2.newPage();p2.on('pageerror',e=>errs.push(e.message));await p2.goto(L.URL);await p2.waitForFunction(()=>window.TAL&&window.TAL.S&&window.SHIP);await sleep(300);
   const rs=await p2.evaluate(()=>{window.OREN.showMap();return {s:window.SHIP.get(),shp:document.querySelectorAll('#sHome .hship .shp').length,shx:document.querySelectorAll('#sHome .hship .shx').length};});
   ok('ship: saved and restored on reload',rs.s.n===2&&rs.s.x.length===1&&rs.shp===2&&rs.shx===1,JSON.stringify(rs));await ctx2.close();

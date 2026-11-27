@@ -45,7 +45,8 @@ function anim(c){if(!el)return;el.classList.remove('joy','sad');void el.offsetWi
 function bubble(t,ms){if(petOnScreen()){const b=$('#bText');if(b)b.innerHTML=t;return;}if(!FR.shown())return;
   bub.innerHTML=t;bub.hidden=false;bub.classList.remove('pop');void bub.offsetWidth;bub.classList.add('pop');clearTimeout(bubT);bubT=setTimeout(()=>{if(bub)bub.hidden=true;},D(ms||2200));}
 const onAct=()=>['sTal','sPlay'].some(id=>{const e=$('#'+id);return e&&!e.hidden;});
-function talk(t,o){o=o||{};last=t;FR.log.push(t);if(FR.log.length>50)FR.log.shift();if(!FR.shown()&&onAct())FR.mount();if(!o.nobub)bubble(t,o.ms);if(!o.quiet)O.say(T.spk(t));return t;}
+let hintAt=0;   /* #409 a hint just said keeps the bubble and the voice: a reaction line right after it is skipped */
+function talk(t,o){o=o||{};if(!o.hint&&Date.now()-hintAt<1500)return t;last=t;FR.log.push(t);if(FR.log.length>50)FR.log.shift();if(!FR.shown()&&onAct())FR.mount();if(!o.nobub)bubble(t,o.ms);if(!o.quiet)O.say(T.spk(t));return t;}
 
 /* ---------- reactions ---------- */
 /* ctx: {tries} = wrong tries on this question before the right answer; {quiet} = bubble only (something else is about to speak);
@@ -60,7 +61,7 @@ FR.reset=()=>{streak=0;missed=false;};
    false = no friend on this screen (the caller shows its own box). */
 const friendHere=()=>petOnScreen()||FR.shown();
 FR.hint=html=>{if(!friendHere()&&ACTS.some(id=>{const e=$('#'+id);return e&&!e.hidden;}))FR.mount();if(!friendHere())return false;
-  FR.hinted=html;talk(html,{quiet:1,ms:7000});return true;};
+  FR.hinted=html;talk(html,{quiet:1,ms:7000,hint:1});hintAt=Date.now();return true;};
 /* a story opens: try to read alone first (#355). Bubble only: the screen's own instruction (sayNow) says it */
 const READFIRST='קוֹדֶם נְנַסֶּה לִקְרֹא לְבַד!';FR.READFIRST=READFIRST;FR.readFirst=()=>talk(READFIRST,{quiet:1,ms:4000});
 
@@ -134,7 +135,7 @@ function teachQ(){const K=window.KNOW,LN=window.LEARN;if(!K||!K.st||!LN||!LN.gen
     return {skill:id,html:q.html,right:r,wrong:ws[0],opts:O.shuffle([r,ws[0],ws[1]])};}
   return null;}
 FR.teachQ=teachQ;
-function momentFor(){const S=O.save;if(!S)return null;
+function momentFor(){const S=O.save;if(!S||window.__moments===false)return null;   /* __moments=false: off (tests of the path flow) */
   if((S.frb|0)>=BRK.EVERY&&games().length)return 'brk';
   if(S.frtch!==pathKey()&&teachQ())return 'tch';return null;}
 function moments(card){const S=O.save;if(!S)return;S.frb=(S.frb|0)+1;O.persist();
