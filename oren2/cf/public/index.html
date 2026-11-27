@@ -1174,7 +1174,10 @@ function migrateOld(o){if(!o||!o.s)return;const mapB={'add-16':'add-boss','sub-1
   for(const [k,v] of Object.entries(o.m||{}))save.m[k]=(save.m[k]|0)|(v|0);
   save.days=[...new Set([...save.days,...(o.days||[])])];save.ans=Math.max(save.ans,o.ans|0);save.ok=Math.max(save.ok,o.ok|0);save.gems=Math.max(save.gems,(o.ok|0));
   if(Object.keys(o.s).length)save.story.intro=1;}
-try{const v=JSON.parse(localStorage.getItem(KEY)||'null');if(v&&v.v===4)save=Object.assign(blank(),v);else{migrateOld(JSON.parse(localStorage.getItem('oren3-v1')||'null'));const o2=JSON.parse(localStorage.getItem('oren2-v1')||'null');if(o2&&o2.m)for(const [k,v2] of Object.entries(o2.m))save.m[k]=(save.m[k]|0)|(v2|0);}}catch(e){}
+/* #432 an old or damaged save: a missing field or one of the wrong type (null, a string for a list...) gets its blank value */
+const kindOf=x=>Array.isArray(x)?'a':x===null?'n':typeof x;
+function fixSave(v){const b=blank();if(kindOf(v.snd)!=='number')v.snd=v.music===false?1:2;for(const k in b)if(kindOf(v[k])!==kindOf(b[k]))v[k]=b[k];return v;}
+try{const v=JSON.parse(localStorage.getItem(KEY)||'null');if(v&&typeof v==='object'&&v.v===4)save=fixSave(v);else{migrateOld(JSON.parse(localStorage.getItem('oren3-v1')||'null'));const o2=JSON.parse(localStorage.getItem('oren2-v1')||'null');if(o2&&o2.m)for(const [k,v2] of Object.entries(o2.m))save.m[k]=(save.m[k]|0)|(v2|0);}}catch(e){}
 let cloud={ref:null,busy:false,dirty:false,timer:0};
 function mergeIn(o){if(!o||typeof o!=='object')return;
   for(const [k,v] of Object.entries(o.s||{}))if((v|0)>(save.s[k]|0))save.s[k]=v|0;
@@ -1293,7 +1296,7 @@ function evDevice(){const n=navigator,ua=n.userAgent||'',w=Math.min(screen.width
   addEventListener('pagehide',()=>{track('se',{dur:Math.round((Date.now()-EV.t0)/1000),n:EV.n,drop:EV.drop},true);evFlush('hide');});})();
 const COACH_DONE={tour:1,home:99,hub:99,group:99,map:99,'i-city':1,'i-map':1,'i-king':1,'i-arc':1};
 function parentSandbox(){const b=blank();b.coach=Object.assign({},kidSave&&kidSave.coach,COACH_DONE);b.story={intro:1};b.gems=500;b.set={all:1,brk:0,hide:{},lim:{daily:0,bed:0}};b.prof=kidSave&&kidSave.prof;b.daily=null;return b;}
-function parentPlay(on,fresh){if(on&&!kidSave){kidSave=save;let ps=null;if(!fresh)try{ps=JSON.parse(localStorage.getItem(KEY+'-parent'));}catch(e){}save=ps&&ps.v?ps:parentSandbox();if(!save.prof&&kidSave.prof)save.prof=kidSave.prof;save.coach=Object.assign({},kidSave.coach,save.coach,COACH_DONE);window.__parentPlay=true;document.body.classList.add('pplay');}
+function parentPlay(on,fresh){if(on&&!kidSave){kidSave=save;let ps=null;if(!fresh)try{ps=JSON.parse(localStorage.getItem(KEY+'-parent'));}catch(e){}save=ps&&typeof ps==='object'&&ps.v?fixSave(ps):parentSandbox();if(!save.prof&&kidSave.prof)save.prof=kidSave.prof;save.coach=Object.assign({},kidSave.coach,save.coach,COACH_DONE);window.__parentPlay=true;document.body.classList.add('pplay');}
   else if(!on&&kidSave){save=kidSave;kidSave=null;window.__parentPlay=false;document.body.classList.remove('pplay');}
   else if(on&&fresh){save=parentSandbox();}
   updateGems();emit('mode',!!kidSave);}
@@ -3777,7 +3780,9 @@ svg.tl{width:60px;height:60px;display:block}
 const O=window.OREN;if(!O)return;
 const {h,$,pick,shuffle,ICON,SPR,sprite}=O;
 const sfx=O.sfx;const D=O.D;
-const S=()=>{const s=O.save;s.tl=s.tl||{};s.mood=s.mood||[];s.jar=s.jar||[];s.art=s.art||[];s.set=s.set||{hide:{}};s.set.hide=s.set.hide||{};s.time=s.time||{};s.typ=s.typ||{best:{},wpm:0};return s;};
+/* #432 a missing field or one of the wrong type (an old or damaged save) gets its blank value */
+const isObj=x=>!!x&&typeof x==='object'&&!Array.isArray(x);
+const S=()=>{const s=O.save;for(const k of ['tl','time'])if(!isObj(s[k]))s[k]={};for(const k of ['mood','jar','art'])if(!Array.isArray(s[k]))s[k]=[];if(!isObj(s.set))s.set={hide:{}};if(!isObj(s.set.hide))s.set.hide={};if(!isObj(s.typ))s.typ={best:{},wpm:0};return s;};
 const today=O.today;
 /* #394 the daily path: a mission started from the path is a short scene (at most PATH_Q questions, ~60-90 s);
    the same activity opened from its building keeps its full length. PATH is on from the path step until home or the city hub. */

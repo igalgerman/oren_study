@@ -45,5 +45,6 @@ worker 60                 # cf worker bundle + fake KV/D1, #570 voicecheck once-
 learn 120                 # skill model sims + the screens on desktop and phone + #395 plays 8 adaptive mission rounds per viewport: ~54 s alone
 unlock-desktop 60         # #403 first tap unlocks audio (Chrome policy mimicked) + blocked-audio hint: ~5 s
 unlock-tablet 60          # same on the Android tablet profile (Galaxy Tab S4, touch)
+oldsaves 60               # #432 opens the game on 20 old or damaged saves (4 browsers at once): start, home, world map: ~25 s
 simplicity-desktop 60     # #426 adds the rewards checks (no badges/hats/records, old-save hat refund) + 2 screenshots: ~10 s
 simplicity-phone 60       # same file on the phone viewport: ~10 s
