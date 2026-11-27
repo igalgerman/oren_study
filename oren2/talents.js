@@ -3,7 +3,9 @@
 const O=window.OREN;if(!O)return;
 const {h,$,pick,shuffle,ICON,SPR,sprite}=O;
 const sfx=O.sfx;const D=O.D;
-const S=()=>{const s=O.save;s.tl=s.tl||{};s.mood=s.mood||[];s.jar=s.jar||[];s.art=s.art||[];s.set=s.set||{hide:{}};s.set.hide=s.set.hide||{};s.time=s.time||{};s.typ=s.typ||{best:{},wpm:0};return s;};
+/* #432 a missing field or one of the wrong type (an old or damaged save) gets its blank value */
+const isObj=x=>!!x&&typeof x==='object'&&!Array.isArray(x);
+const S=()=>{const s=O.save;for(const k of ['tl','time'])if(!isObj(s[k]))s[k]={};for(const k of ['mood','jar','art'])if(!Array.isArray(s[k]))s[k]=[];if(!isObj(s.set))s.set={hide:{}};if(!isObj(s.set.hide))s.set.hide={};if(!isObj(s.typ))s.typ={best:{},wpm:0};return s;};
 const today=O.today;
 /* #394 the daily path: a mission started from the path is a short scene (at most PATH_Q questions, ~60-90 s);
    the same activity opened from its building keeps its full length. PATH is on from the path step until home or the city hub. */
