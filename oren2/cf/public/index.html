@@ -2055,7 +2055,7 @@ function playLevel(lv,preset){
   hush();const u=lv.u;const train=lv.type==='train';
   setScreen('sPlay',lv.w.bg,train?showMap:()=>showWorld(lv.w));evMission(u&&u.id||lv.id,lv.id);
   const hk=train?'train':'lv:'+lv.id;hereBegin(hk);const back4=hereTake(hk);/* #44: reopened mid-level = the same questions, the same place */
-  const qs=(back4&&Array.isArray(back4.qs)&&back4.qs.length?back4.qs:null)||preset||uniq(lv.gen,lv.n);const mode=lv.type==='game'?lv.mode:lv.type==='boss'?'boss':'classic';
+  const qs=(back4&&Array.isArray(back4.qs)&&back4.qs.length?back4.qs:null)||preset||uniq(lv.gen,pathLv===lv.id?Math.min(lv.n,5):lv.n);/* #394 a level started from the daily path is a short scene: at most 5 questions */const mode=lv.type==='game'?lv.mode:lv.type==='boss'?'boss':'classic';
   if(lv.type==='boss')setTheme('boss');
   play={lv,u,qs,i:0,errors:0,hints:0,streak:0,tries:0,hint:0,lock:false,requeued:new Set(),hp:qs.length,boxes:[],bi:0,col:null,mode,N:qs.length,done:0,gemsEarned:0};
   if(back4&&back4.qs===qs){for(const k of ['i','errors','hints','streak','hp','N','done','gemsEarned'])if(typeof back4[k]==='number')play[k]=back4[k];play.requeued=new Set(back4.rq||[]);play.i=Math.min(play.i,qs.length-1);}
