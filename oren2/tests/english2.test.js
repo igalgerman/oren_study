@@ -344,6 +344,12 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
   await p.evaluate(() => { document.querySelector('#ov').hidden = true; });
   /* the activities-suite helper (window.__quiz) can play every act */
   ok(await p.evaluate(() => typeof window.__quiz.ans === 'number'), 'window.__quiz is there for the activities suite');
+  /* #592: answer the last card, go home within 1 s, wait 5 s -> still home, no result card from the old round */
+  await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.ENGLISH2.screens.ACTS[0].run(() => { }); }); await L.sleep(150);
+  for (let k = 0; k < 60 && await p.evaluate(() => window.__quiz.i < window.__e2.steps.length - 1); k++) { await answer(false); await L.sleep(60); }
+  await answer(false); await p.evaluate(() => window.OREN.showMap()); await L.sleep(5000);
+  const lv = await p.evaluate(() => ({ home: !document.querySelector('#sHome').hidden, tal: !document.querySelector('#sTal').hidden, ov: !document.querySelector('#ov').hidden }));
+  ok(lv.home && !lv.tal && !lv.ov, '#592 leaving an English round: its pending timers do nothing (still home after 5 s, no result card)', JSON.stringify(lv));
   ok(!errs.length, 'no JS errors', errs.slice(0, 5).join(' | '));
   await b.close(); L.finish('english2-' + v, out);
 })().catch(e => { ok(false, 'crash ' + e.stack); L.finish('english2', out); });
