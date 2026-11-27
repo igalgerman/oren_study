@@ -34,5 +34,6 @@ parent-desktop 60          # #61 suggestions block (sample skills data per kind)
 parent-phone 60            # same file on the phone viewport: ~18 s
 resume-desktop 60          # #44 reloads mid-level, mid-quiz and while paused + timed rounds paused 2 s: ~37 s
 resume-phone 60            # same file on the phone viewport
+instructions-desktop 90   # every activity's instruction (~50 s) + #266 the 16 choice screens (each clip in the pregen list) name their choices: ~69 s
 qa-fix-desktop 60          # #267 adds the hands-on checks (clock drag, pizza taps, carry/borrow board, times array): ~15 s
 qa-fix-phone 60            # same file on the phone viewport: ~14 s
