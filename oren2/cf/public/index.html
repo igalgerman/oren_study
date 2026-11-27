@@ -2292,7 +2292,9 @@ const ansText=q=>{const p=play;if(q.hand)return q.hand.ans;if(p.choice)return St
 function showAns(){const p=play,ch=p.choice;const q=p.qs[p.i];if(q&&q.hand)return handShow(q);if(ch){const b=ch.row.children[ch.ans];if(b)b.classList.add(ch.bub?'pop':'show');return;}
   if(p.boxes)p.boxes.forEach(b=>{if(!b.done){b.el.className='ans show';b.el.textContent=b.ans;}});}
 function helpBtn(q){const p=play;HB=null;if(p.mode==='speed'||!window.HELP||!HELP.button)return;
-  HB=HELP.button($('#sPlay .left'),{before:$('#hint'),
+  HB=HELP.button($('#sPlay .left'),{before:$('#hint'),first:()=>p.i===0,
+    /* #616 Oren skipped it: no error, no stars, no requeue today; the help layer has it due again tomorrow (else the review list) */
+    skip:()=>{if(p.lock||play!==p||p.qs[p.i]!==q)return false;p.lock=true;if(!(window.HELP&&HELP.later&&HELP.later()))addRq(q);p.help=false;persist();p.i++;if(p.i>=p.qs.length)finishLevel();else showQ();},
     clue:()=>{if(p.hint<1)p.hint=1;p.hints++;return q.k==='col'?colHint(q,p.col):hintHTML(q,1);},
     answer:()=>{const a=`<div>הַתְּשׁוּבָה הִיא: <b class="hq-a ltr">${ansText(q)}</b></div>`,ex=q.k==='col'?'':`<div class="hq-x">${hintHTML(q,2)}</div>`;
       if(!p.lock&&play===p&&p.qs[p.i]===q){p.hint=2;if(p.help&&window.HELP)HELP.stop();p.help=false;
@@ -3922,6 +3924,10 @@ svg.tl{width:60px;height:60px;display:block}
 .helpbtn:disabled{opacity:.5;cursor:default}
 .helpbtn .hq-i{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:#fff;color:#8e6fd1;font-size:28px;font-weight:900}
 .helpq.offer .helpbtn{animation:hlpPulseB 1s ease-in-out 3}
+/* #616 Oren's skip: small and quiet under help (secondary, never competing with the answers) */
+.skipbtn{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:4px 16px;border:2px solid #c9d3dc;border-radius:999px;background:rgba(255,255,255,.85);color:#5a6a78;font:inherit;font-weight:800;font-size:17px;cursor:pointer}
+.skipbtn:active{transform:translateY(2px)}
+.skipbtn:disabled{opacity:.5;cursor:default}
 @keyframes hlpPulseB{50%{transform:scale(1.08);box-shadow:0 5px 0 #c99a1d,0 0 0 8px rgba(255,207,77,.45)}}
 .helpbox{width:100%;font-weight:800;font-size:22px;line-height:1.5;text-align:center;background:#fff8dc;padding:10px 14px;box-shadow:0 4px 0 rgba(0,0,0,.12),inset 0 0 0 3px #ffcf4d}
 .helpbox.in{animation:hlpIn .35s ease-out}
@@ -4126,7 +4132,9 @@ function quiz(o){if(o.lesson&&window.LESSONS&&!o._ls){o._ls=1;return window.LESS
     wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card,{id:o.id,i});if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>{if(!(O.tapTooSoon&&O.tapTooSoon()))pickA(k,b);};row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');
     /* #54 one help button: clue, then the answer with its explanation (the question ends like after two mistakes) */
-    HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,clue:q.clue,explain:q.explain,before:ex,reveal:()=>{if(lock)return;lock=true;err++;note(qs[i],false);if(window.FRIEND)window.FRIEND.onWrong({final:true,m:o.id});if(q.reveal)q.reveal(wrap.querySelector('.tqc'));setTimeout(next,D(4200));}}):null;if(o.side){const sb=h('button','bigbtn plain sm qside',o.side.lbl);sb.onclick=()=>o.side.open(wrap);wrap.appendChild(sb);}if(q.auto&&q.play)setTimeout(()=>{if(qs[i]===q)q.play();},D(350));};
+    HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,clue:q.clue,explain:q.explain,before:ex,skip:()=>skipQ(q),first:()=>i===0,reveal:()=>{if(lock)return;lock=true;err++;note(qs[i],false);if(window.FRIEND)window.FRIEND.onWrong({final:true,m:o.id});if(q.reveal)q.reveal(wrap.querySelector('.tqc'));setTimeout(next,D(4200));}}):null;if(o.side){const sb=h('button','bigbtn plain sm qside',o.side.lbl);sb.onclick=()=>o.side.open(wrap);wrap.appendChild(sb);}if(q.auto&&q.play)setTimeout(()=>{if(qs[i]===q)q.play();},D(350));};
+  /* #616 Oren skipped this question: not a failure (no wrong count, no level note, no gems); a bank item is due again in 1 day (#360), and it was asked today (dayQ) */
+  const skipQ=q=>{if(lock||qs[i]!==q||!wrap.isConnected)return false;lock=true;if(q.bank&&window.LEARN)try{window.LEARN.seen(q.bank,q.bkey!=null?q.bkey:q.key,false,false);}catch(e){}if(window.HELP&&HELP.stop)HELP.stop();next();};
   const resolve=(q)=>{const ex=wrap.querySelector('.hintbox');if(q.explain){ex.hidden=false;ex.innerHTML=`<div class="cap">${q.explain}</div>`;}if(q.reveal)q.reveal(wrap.querySelector('.tqc'));};
   function pickA(k,b){if(lock||b.disabled)return;const q=qs[i];if(O.evAns)O.evAns(k===q.ans,{m:o.id,tr:tries,x:k});if(!tries){note(q,k===q.ans);O.emit('tq',o.id,k===q.ans);if(q.bank&&window.LEARN)try{window.LEARN.seen(q.bank,q.bkey!=null?q.bkey:q.key,k===q.ans,false);}catch(e){}}
     if(k===q.ans){if(window.TAL.rdA)window.TAL.rdA(q,tries,b);lock=true;if(window.FRIEND)window.FRIEND.onCorrect({tries,m:o.id});b.classList.add('ok');sfx.ok(i);const g=tries||(HB&&HB.step)?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);resolve(q);setTimeout(next,D(q.explain||q.reveal?2300:1000));return;}
@@ -5010,10 +5018,10 @@ const BAR=(v,max,col)=>`<span class="pbar"><i style="width:${max?Math.min(100,v/
 const fmtMin=sec=>{const m=Math.round(sec/60);return m<60?m+' דק׳':(m/60).toFixed(1)+' שע׳';};
 function lastDays(n){const out=[];const d=new Date();for(let i=n-1;i>=0;i--){const x=new Date(d);x.setDate(d.getDate()-i);const k=x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');out.push([k,x]);}return out;}
 /* #359: the main view is one day (what he did, live · the plan ahead · strong / weak); everything else is behind one "הגדרות ועוד" entry, in closed sections */
-const MORE=[['time','⏱️ זמן משחק והגבלה'],['rem','⏰ תזכורת והודעה לאורן'],['tmpl','🗓️ התבנית לכל יום'],['know','🧭 מה אורן כבר יודע'],['learn','🛤️ המסלול של אורן — הבא בתור'],['full','📈 פירוט מלא'],['iss','⚠️ תקלות'],['voice','🔊 קול — בדיקה ובחירה'],['try','🎮 לשחק כהורה (ניסיון)'],['parts','🧩 להפעיל / לכבות חלקים'],['health','🥤 הפסקות וארוחות'],['read','📖 עזרה בקריאה'],['prog','⏭️ דילוג, איפוס ויהלומים'],['perm','🎤 הרשאות'],['set','🔑 סיסמה וגיבוי'],['map','🗺️ מפת התוכן']];
+const MORE=[['time','⏱️ זמן משחק והגבלה'],['rem','⏰ תזכורת והודעה לאורן'],['tmpl','🗓️ התבנית לכל יום'],['know','🧭 מה אורן כבר יודע'],['learn','🛤️ המסלול של אורן — הבא בתור'],['full','📈 פירוט מלא'],['iss','⚠️ תקלות'],['voice','🔊 קול — בדיקה ובחירה'],['try','🎮 לשחק כהורה (ניסיון)'],['parts','🧩 להפעיל / לכבות חלקים'],['health','🥤 הפסקות וארוחות'],['read','📖 עזרה בקריאה'],['skip','⏭️ דילוג לאורן'],['prog','⏭️ דילוג, איפוס ויהלומים'],['perm','🎤 הרשאות'],['set','🔑 סיסמה וגיבוי'],['map','🗺️ מפת התוכן']];
 const FN={map:box=>{if(T.contentMap)T.contentMap(box,sec,BAR);},full:fullTab,try:tryTab,tmpl:tmplTab,time:timeTab,iss:issues,
   rem:box=>{if(window.HEALTH)window.HEALTH.panel(box,sec,()=>panel('rem'),'today');},know:box=>{if(window.KNOW)window.KNOW.panel(box,sec,()=>panel('know'));},learn:box=>{if(window.LEARN)window.LEARN.parentPanel(box,sec,()=>panel('learn'));},
-  health:box=>{if(window.HEALTH)window.HEALTH.panel(box,sec,()=>panel('health'),'set');},read:box=>{if(T.rdSettings)T.rdSettings(box,sec,()=>panel('read'));},voice:voiceTab,perm:permTab,parts:partsTab,prog:progTab,set:setTab};
+  health:box=>{if(window.HEALTH)window.HEALTH.panel(box,sec,()=>panel('health'),'set');},read:box=>{if(T.rdSettings)T.rdSettings(box,sec,()=>panel('read'));},skip:box=>{if(window.PDAY&&PDAY.skipSettings)PDAY.skipSettings(box,sec,()=>panel('skip'));},voice:voiceTab,perm:permTab,parts:partsTab,prog:progTab,set:setTab};
 /* a section that would be empty is not listed (G8) */
 const HAS={iss:()=>issList().length>0,perm:()=>!permNone(),rem:()=>!!window.HEALTH,know:()=>!!window.KNOW,learn:()=>!!window.LEARN};
 const ALIAS={sum:'day',plan:'day','plan-t':'tmpl'};
@@ -11926,16 +11934,19 @@ function right(){if(!S)return {solo:true,star:true};const st=S;const solo=st.lev
   const helped=st.level>0||st.phase==='solo';
   if(helped&&st.ex.teach&&String(db.tday||'')<today()&&Math.random()<cfg.teachP&&st.ctx.teach!==false)setTimeout(()=>{if(!ovOpen())teach(st);},D(650));
   S=null;return {solo,star:solo};}
+/* #616 the question was skipped: it comes back tomorrow like a hard item (HELP.due), then the help stops */
+function later(){if(!S||!S.d||!S.ex)return false;try{recordStuck(S);}catch(e){return false;}stop();return true;}
 function stop(keepPend){if(S){clearTimeout(S.idleT);clearTimeout(S.exT);hidePanel();if(ovOwn&&!ov().querySelector('.hlp-tb'))closeOv();}S=null;if(!keepPend)pend=null;}
 
 /* ---------- #54 the help button: ONE big button on every question.
    tap 1 = a small clue, tap 2 = the answer with a short explanation. After 2 wrong answers the host calls offer() (clue by itself)
-   or answer() (when its question ends there). button(host,o): o = {clue()→html|'' , answer()→html, before}; mc(host,o) for choice rows:
+   or answer() (when its question ends there). button(host,o): o = {clue()→html|'' , answer()→html, before, skip() (#616: to the next question; none = the skip ends the activity), first() (the activity's first question)}; mc(host,o) for choice rows:
    o = {row, ans, clue (text), explain (html), reveal()} — clue without text: wrong options go away until two are left. ---------- */
 const BT={lbl:'עֶזְרָה',clue:'רֶמֶז',offer:'צָרִיךְ עֶזְרָה? הִנֵּה רֶמֶז',elim:'הוֹרַדְתִּי תְּשׁוּבוֹת שֶׁלֹּא מַתְאִימוֹת.',again:'הַקְשֵׁב שׁוּב לַשְּׁאֵלָה וְחַשֵּׁב.',ans:'הַתְּשׁוּבָה הִיא',here:'הִנֵּה הַתְּשׁוּבָה'};
 function button(host,o){if(!host)return null;o=o||{};(host.isConnected?document:host).querySelectorAll('.helpq').forEach(x=>x.remove());/* a late timer of a closed screen never takes the live button away */
   const w=el('helpq'),box=el('helpbox');const b=btn('helpbtn','<span class="hq-i" aria-hidden="true">?</span><span>'+BT.lbl+'</span>',()=>tap(false));
-  box.hidden=true;w.append(b,box);if(o.before&&o.before.parentNode===host)host.insertBefore(w,o.before);else host.appendChild(w);
+  box.hidden=true;w.append(b,box);/* #616 Oren's small skip, under help (pday.js decides if it shows: the parent's setting and the day's limit) */
+  const PD=window.PDAY,sk=PD&&PD.skipBtn?PD.skipBtn({skip:o.skip,first:o.first}):null;if(sk)w.insertBefore(sk,box);if(o.before&&o.before.parentNode===host)host.insertBefore(w,o.before);else host.appendChild(w);
   let n=0;const show=(html,voice)=>{box.hidden=false;box.innerHTML=html;box.classList.remove('in');void box.offsetWidth;box.classList.add('in');say(voice||html);};
   function tap(auto){if(n>=2||!w.isConnected)return;n++;track({h:'btn',n,auto:auto?1:0});
     if(n===1){let c='';try{c=o.clue?o.clue():'';}catch(e){}const head=auto?BT.offer:BT.clue,t=`<b>${head}:</b> ${c||BT.again}`;
@@ -11947,7 +11958,7 @@ function button(host,o){if(!host)return null;o=o||{};(host.isConnected?document:
 function elim(row,ans){const bs=[...row.children].filter((x,k)=>k!==ans&&!x.disabled);if(row.children.length<=2||bs.length<1)return false;
   shuffle(bs).slice(0,Math.max(0,bs.length-1)).forEach(x=>{x.disabled=true;x.classList.add('gone');});return bs.length>1;}
 function mc(host,o){o=o||{};const rowOf=()=>typeof o.row==='function'?o.row():o.row,ansOf=()=>typeof o.ans==='function'?o.ans():o.ans;
-  return button(host,{before:o.before,get ans(){return ansOf();},
+  return button(host,{before:o.before,skip:o.skip,first:o.first,get ans(){return ansOf();},
     clue:()=>{const t=typeof o.clue==='function'?o.clue():o.clue;if(t)return t;const row=rowOf();if(row&&elim(row,ansOf()))return BT.elim;return '';},
     answer:()=>{const row=rowOf(),a=row&&row.children[ansOf()];if(a)a.classList.add('show');const lbl=a?a.innerHTML:'';try{o.reveal&&o.reveal();}catch(e){}
       const x=typeof o.explain==='function'?o.explain():o.explain;const pic=!/[\p{L}\d]/u.test(strip(lbl).replace(EMO,''));/* #622 a picture answer: 'here is the answer' + the lit picture */
@@ -11955,7 +11966,7 @@ function mc(host,o){o=o||{};const rowOf=()=>typeof o.row==='function'?o.row():o.
 /* packs (loaded before this file) put their fixed help texts in window.HELP_TEXTS, so pregen has them */
 const allTexts=()=>Object.values(BT).concat([BT.clue+': '+BT.elim,BT.clue+': '+BT.again,BT.offer+': '+BT.elim,BT.offer+': '+BT.again],[...new Set(window.HELP_TEXTS||[])]);
 
-const HELP=window.HELP={register,classify,start,wrong,right,stop,due,stuckList,parentHTML,cfg,button,mc,allTexts,BT,
+const HELP=window.HELP={register,classify,start,wrong,right,stop,later,due,stuckList,parentHTML,cfg,button,mc,allTexts,BT,
   explain:(q,ctx)=>{const d=q&&q.type&&REG[q.type]?q:classify(q,ctx);if(!d)return null;const ex=REG[d.type];return {d,ex,topic:ex.topic(d,ctx),tip:ex.tip&&ex.tip(d),hint:ex.hint(d,ctx),visual:ex.visual&&ex.visual(d,ctx),
     example:ex.example&&(ex.reading?null:ex.example(d)),similar:ex.similar&&ex.similar(d),teach:ex.teach&&ex.teach(d),show:ex.show&&ex.show(d),whole:ex.whole&&ex.whole(d)};},
   teachLog:()=>DB().tb.slice(),get state(){return S?{type:S.d.type,level:S.level,phase:S.phase,wrong:S.wrong}:null;},
@@ -12119,6 +12130,7 @@ window.GOALS=G;
      ok/n = right on the first try / questions, o: 'c' done · 'q' left in the middle · 'x' opened and closed at once (only for Oren's "again" list) · 's' a path step he did not reach · 'b' stopped for a break
      · 'f' his answer to 'easy or hard?' at the end of a scene (#411, x.ez 'e' easy · 'h' hard)
      · 'p' skipped by the parent (#359, x.pc = the command id; hidden when that command was undone: save.pcU[id])
+     · 'k' Oren skipped the activity himself (#616); x.sk = his skips in it (any line: questions skipped, shown "דילג ×N"; the day's count for the parent's limit)
    x (optional object): a story's {t, g, lv, r} (#355); lg = what he learned, on a finished line (#414, goals.js); any activity: lv = his level when it started (learning engine), ra = taps on read-aloud (#359; shown "9 הקראות", #612)
    save.now = {id, t, s, dv}  the activity being played, the last moment something happened (ms; also each active play tick, the heartbeat) and when this play
      session started (s; a new session after 3+ min without a heartbeat) — "playing now · N min (from HH:MM)" for the parent (#352).
@@ -12147,14 +12159,14 @@ const now=()=>mark(cur?cur.id:null);
 DL.beat=()=>{const par=document.querySelector('#sPar');if(par&&!par.hidden)return;mark(cur&&!cur.end?cur.id:null);};
 const lvOf=id=>{const k=((O.save.lrn||{}).k||{})['a:'+id];return k&&k.n?k.l|0:0;};
 function begin(id){if(O.isParentPlay)return;if(O.hereBegin)O.hereBegin(id);/* #44 the place Oren is in */if(cur&&!cur.end)end(cur.brk?'b':'q');cur={id,t:Date.now(),d:day(),ok:0,n:0,help:0,ra:0,lv:lvOf(id)};now();O.emit('dlBegin',id);}
-function end(o,st){const c=cur;if(!c||c.end)return;c.end=1;if(o!=='c'&&o!=='p'&&!c.n&&Date.now()-c.t<15000)o='x';   /* opened and closed at once: 'x' — kept for Oren's "again" list, not shown to the parent */
+function end(o,st){const c=cur;if(!c||c.end)return;c.end=1;if(o!=='c'&&o!=='p'&&o!=='k'&&!c.n&&Date.now()-c.t<15000)o='x';   /* opened and closed at once: 'x' — kept for Oren's "again" list, not shown to the parent */
   const x=Object.assign({},c.x||{});if(c.lv&&x.lv==null)x.lv=c.lv;if(c.ra)x.ra=c.ra;if(o==='c'){const g=lgOf(c.id,x);if(g)x.lg=g;}
   add(c.d,[minOf(c.t),c.id,st|0,c.ok,c.n,c.help,o].concat(Object.keys(x).length?[x]:[]));now();cur=null;O.persist();}
 /* #414 a finished mission keeps what he learned (parent text): a story's own goal, else the mission's goal (goals.js) */
 function lgOf(id,x){const G=window.GOALS;return (x&&x.g)||(G?G.plain(id):'');}
 DL.begin=begin;DL.end=end;DL.cur=()=>cur;
 /* a story adds its details to its line (#355): x = {t: title, g: goal, lv: story level, r: 'a' read alone · 'l' listened}; the object is filled in while he plays */
-DL.note=(id,x)=>{if(O.isParentPlay)return;if(!cur||cur.end||cur.id!==id||cur.x)begin(id);cur.x=x;};
+DL.note=(id,x)=>{if(O.isParentPlay)return;if(!cur||cur.end||cur.id!==id||cur.x)begin(id);if(cur.x&&cur.x.sk&&x)x.sk=cur.x.sk;cur.x=x;};
 /* a round that ends again and again ("again"): each finish is its own line */
 function done(id,st){if(O.isParentPlay)return;if(cur&&cur.id===id&&!cur.end){end('c',st);return;}if(cur&&!cur.end)end('q');
   const t=Date.now(),g=lgOf(id);add(day(),[minOf(t),id,st|0,0,0,0,'c'].concat(g?[{lg:g}]:[]));mark(null);O.persist();}
@@ -12186,13 +12198,13 @@ DL.nameOf=id=>{if(id==='math')return 'מסע החשבון';
   if(/^lv:/.test(id)){const lv=O.ALLLV.find(l=>l.id===id.slice(3));return lv?`${plain(lv.u.name)} (${plain(lv.w.name)})`:'חשבון';}
   const a=T.ACT[id];return a?plain(a.name):id;};
 DL.domOf=id=>{if(id==='math'||/^lv:/.test(id))return 'חשבון';const a=T.ACT[id];if(!a||!a.b)return '';const g=(T.GROUPS||[]).find(x=>x.ids.includes(a.b.id));return g?GN()[g.id]:plain(a.b.name);};
-const ICO={c:'✓',q:'✗',s:'⏭',b:'⏸',p:'⏭',f:'💬'},WHY={c:'',q:'יצא באמצע',s:'לא הגיע',b:'הפסקה',p:'דילג (הורה)',f:''};
+const ICO={c:'✓',q:'✗',s:'⏭',b:'⏸',p:'⏭',k:'⏭',f:'💬'},WHY={c:'',q:'יצא באמצע',s:'לא הגיע',b:'הפסקה',p:'דילג (הורה)',k:'',f:''};
 /* a bank story's own quiz line (rb2-st-N) repeats its 'story-new' line: not shown */
 const undone=e=>e[6]==='p'&&e[7]&&(O.realSave.pcU||{})[e[7].pc];
 DL.rows=d=>{const L=((O.realSave.alog||{})[d]||{}).e||[];return L.filter(e=>e[6]!=='x'&&!/^rb2-st-/.test(e[1])&&!undone(e)).sort((a,b)=>a[0]-b[0]);};
 DL.rowHTML=e=>{const [m,id,st,ok,n,hp,o,x]=e;const sx=x&&typeof x==='object'?x:null;
   const story=sx&&sx.t;
-  const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`✓ ${ok} · ✗ ${n-ok}`:'',sx&&sx.lv?'רמה '+(sx.lv|0):'',hp?`עזרה ×${hp}`:'',story?(sx.r==='l'?'האזין להקראה':'קרא לבד'):'',sx&&sx.ra?(sx.ra===1?'הקראה אחת':`${sx.ra} הקראות`):'',sx&&sx.ez?(sx.ez==='h'?'אמר: היה קשה 😣':'אמר: היה קל 😀'):'',WHY[o]].filter(Boolean).join(' · ');
+  const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`✓ ${ok} · ✗ ${n-ok}`:'',sx&&sx.lv?'רמה '+(sx.lv|0):'',hp?`עזרה ×${hp}`:'',sx&&sx.sk?`דילג ×${sx.sk|0}`:'',story?(sx.r==='l'?'האזין להקראה':'קרא לבד'):'',sx&&sx.ra?(sx.ra===1?'הקראה אחת':`${sx.ra} הקראות`):'',sx&&sx.ez?(sx.ez==='h'?'אמר: היה קשה 😣':'אמר: היה קל 😀'):'',WHY[o]].filter(Boolean).join(' · ');
   const name=story?`${plain(sx.t)}${sx.g?` <span class="dlgoal">🎯 ${plain(sx.g)}</span>`:''}`:DL.nameOf(id);
   return `<div class="prow dlrow dl-${o}"><span class="pn"><b class="dli">${ICO[o]||''}</b> ${o==='s'?'':hhmm(m)+' · '}${name} <small>${DL.domOf(id)}</small></span><span class="pc">${res}</span></div>`;};
 /* the top line of the summary: playing now / last played */
@@ -12320,6 +12332,41 @@ function fire(){const c=pend;if(!c)return;pend=null;const cu=DL.cur();if(!cu||cu
   if(O.hush)O.hush();const el=h('div','pdskip',`<div class="card"><div class="callp bob">${T.friend?T.friend():''}</div><h2>${SAYNEXT}</h2></div>`);document.body.appendChild(el);O.say(T.spk(SAYNEXT));
   setTimeout(()=>{el.remove();const nx=d.done.findIndex(x=>!x);if(nx>=0&&window.TAL_step)window.TAL_step(nx);else O.showMap();},D(1800));}
 P.pending=()=>pend;
+
+/* ---------- #616 Oren's own skip: one small "⏭️ דַּלֵּג" next to the help button on every question screen (help.js asks P.skipBtn) ----------
+   A tap reads the label, then: the next question (the host's o.skip) — or, from the first question, after 2 skips in a row, or where the
+   host has no per-question skip, the whole activity: the friend says SKIPSAY and the next planned mission opens (like the parent's skip).
+   Never a failure: no level change, no stars; the host puts the item back in its pool, due in 1 day (#360).
+   Parent setting save.set.skip (synced with the settings): 'off' · 3 = at most 3 a day (default) · 'all' = no limit.
+   The day's count = x.sk on today's log lines (+ the open line), so it travels with the family save; the day view shows "דילג ×N". */
+const SKIPSAY='בְּסֵדֶר, נַעֲבֹר לְמַשֶּׁהוּ אַחֵר!',SKIPLBL='דַּלֵּג',SKIPMAX=3;
+if(T.addChoices)T.addChoices([SKIPLBL]);if(T.addSay)T.addSay([SKIPSAY]);
+P.skipSet=()=>{const v=((O.realSave||O.save).set||{}).skip;return v==='off'||v==='all'?v:SKIPMAX;};
+P.skipsToday=d=>{d=d||today();const L=(((O.save.alog||{})[d]||{}).e)||[];const cu=DL.cur();
+  return L.reduce((a,e)=>a+((e[7]&&e[7].sk)|0),0)+(d===today()&&cu&&!cu.end&&cu.x?cu.x.sk|0:0);};
+P.skipCan=()=>{const m=P.skipSet();if(m==='off')return false;if(m==='all'||O.isParentPlay)return true;return P.skipsToday()<SKIPMAX;};
+let skRow=0;   /* skips in a row in this activity: an answer or a new activity starts again */
+O.on('tq',()=>{skRow=0;});O.on('ans',()=>{skRow=0;});O.on('dlBegin',()=>{skRow=0;});
+const skCount=(n=1)=>{const cu=DL.cur();if(cu&&!cu.end){cu.x=cu.x||{};cu.x.sk=Math.max(0,(cu.x.sk|0)+n);}O.persist();};
+/* o (the help button's host options): skip() = go to the next question; first() = this is the activity's first question */
+P.skipBtn=o=>{if(!P.skipCan())return null;o=o||{};const b=h('button','skipbtn','<span aria-hidden="true">⏭️</span> <span>'+SKIPLBL+'</span>');b.type='button';b.setAttribute('aria-label',SKIPLBL);
+  b.onclick=()=>{if(b.disabled||(O.tapTooSoon&&O.tapTooSoon()))return;b.disabled=true;if(O.sfx&&O.sfx.pop)O.sfx.pop(1);O.say(T.spk(SKIPLBL));skRow++;
+    let first=false;try{first=!!(o.first&&o.first());}catch(e){}
+    if(!o.skip||first||skRow>=2){skCount();skipAct();return;}
+    setTimeout(()=>{skCount();let r=false;try{r=o.skip()!==false;}catch(e){}if(!r){skCount(-1);skRow--;b.disabled=false;}},D(500));};   /* counted first (the next screen sees it); false: the question already ended, no skip used */
+  return b;};
+function skipAct(){skRow=0;if(window.HELP&&HELP.stop)try{HELP.stop();}catch(e){}const cu=DL.cur(),id=cu&&!cu.end?cu.id:null;const d=T.dailyEnsure();
+  if(id){const j=d.t.findIndex((x,n)=>!d.done[n]&&(x===id||(x==='math'&&/^lv:/.test(id))));if(j>=0)d.done[j]=2;DL.end('k');}
+  O.persist();if(T.setKey)T.setKey(null);
+  const el=h('div','pdskip',`<div class="card"><div class="callp bob">${T.friend?T.friend():''}</div><h2>${SKIPSAY}</h2></div>`);document.body.appendChild(el);
+  setTimeout(()=>{if(O.hush)O.hush();O.say(T.spk(SKIPSAY));},D(400));
+  setTimeout(()=>{el.remove();const nx=d.done.findIndex(x=>!x);if(nx>=0&&window.TAL_step)window.TAL_step(nx);else O.showMap();},D(2600));}
+P.skipAct=skipAct;
+/* the parent's setting (#616): one row of 3; today's count under it */
+P.skipSettings=(box,sec,refresh)=>{const st=SETS(),v=P.skipSet();
+  const s=sec(box,'⏭️ דילוג לאורן','<div class="pnote">כפתור קטן "דלג" ליד כפתור העזרה: אורן יכול לדלג על שאלה, או על כל הפעילות. דילוג אינו כישלון: בלי ירידת רמה ובלי כוכבים, והשאלה חוזרת ביום אחר.</div>');
+  const row=h('div','popt skset');[['off','כבוי'],[SKIPMAX,'עד 3 ביום'],['all','בלי הגבלה']].forEach(([k,n])=>{const c=h('button','pchip'+(v===k?' on':''),n);c.onclick=()=>{st.skip=k;O.persist();refresh();};row.appendChild(c);});
+  s.appendChild(row);s.appendChild(h('div','pnote','היום דילג: '+P.skipsToday()));};
 /* #614 the parent's "skip now" status: 'sent' (נשלח…) · 'late' (his device did not take it in 30 s) · 'done' (he left the activity: דולג ✓, for a minute) */
 P.nowState=()=>{const c=cmds().filter(x=>x.k==='now'&&!called(x.i)).pop();if(!c)return null;
   const row=DL.rows(today()).find(e=>e[6]==='p'&&e[7]&&e[7].pc===c.i);if(row)return Date.now()-(+row[7].ts||0)<60000?{c,s:'done'}:null;

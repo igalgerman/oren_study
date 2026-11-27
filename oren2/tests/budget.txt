@@ -29,6 +29,7 @@ english2-desktop 60       # #425 second-tap slow replay (~3 s), #592 leave-round
 english2-phone 60         # same file on the phone viewport: ~43 s
 reading 60                # 42 checks: reading mode + #355 stories + #420 story words (card, tap, next-day practice, pregen): ~27 s under load
 readhelp 60               # #613 the reading-help setting: 29 checks, 3 modes x story + sentence, the 5 options, sync: ~15 s alone
+kidskip 60                # #616 Oren's skip button: 24 checks, quiz + math skips, the limit, the setting, the day view: ~10 s alone
 gaps-desktop 90           # #419 adds the rhymes checks (400 generated questions, voice timing ~5 s, a round of 5): ~38 s alone
 gaps-phone 90             # same file on the phone viewport
 lessoncard-desktop 60       # #258 adds 10 more lessons (each: first time, tap through, again, show me again): ~27 s alone
