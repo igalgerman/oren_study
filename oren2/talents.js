@@ -1008,11 +1008,6 @@ O.on('map',m=>{const st=SET();
   /* hide math worlds the parent switched off */
   const cards=m.querySelectorAll('.worlds > .wcard2');O.WORLDS.forEach((w,i)=>{if(st.offW[w.id]&&cards[i])cards[i].hidden=true;});
 });
-T.checkMsg=()=>{const msg=SET().msg;if(msg&&msg.text&&!msg.seen)setTimeout(()=>{if(!$('#ov').hidden||$('#sHome').hidden)return;showMsg(msg);},D(700));};
-function showMsg(msg){const ov=$('#ov');ov.hidden=false;ov.innerHTML=`<div class="card"><div class="callp">💌</div><h2>הוֹדָעָה מֵהַהוֹרִים</h2><div class="pmsg">${esc(msg.text)}</div>${msg.gems?`<div class="gain">+${msg.gems} ${SPR.gem}</div>`:''}<div class="sub">שְׁלַח תְּשׁוּבָה:</div></div>`;
-  const row=h('div','btnrow');['❤️','😊','👍','🤗','😂'].forEach(em=>{const b=h('button','bigbtn plain sm emo',em);b.onclick=()=>{msg.seen=Date.now();msg.reply=em;if(msg.gems)O.addGems(msg.gems);O.persist();ov.hidden=true;sfx.win();O.rain();};row.appendChild(b);});
-  ov.firstChild.appendChild(row);O.say('הודעה מההורים. '+msg.text);sfx.star(0);}
-const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])).replace(/\n/g,'<br>');
 /* ---------- start screen: choose user ---------- */
 (()=>{const sb=$('#btnStart');if(!sb)return;const u=h('div','users');
   sb.className='ucard kid';sb.innerHTML=`<span class="ua bob">${O.AV()}</span><b>אוֹרֶן</b><small>יוֹצְאִים לַדֶּרֶךְ!</small>`;
@@ -1038,10 +1033,10 @@ const BAR=(v,max,col)=>`<span class="pbar"><i style="width:${max?Math.min(100,v/
 const fmtMin=sec=>{const m=Math.round(sec/60);return m<60?m+' דק׳':(m/60).toFixed(1)+' שע׳';};
 function lastDays(n){const out=[];const d=new Date();for(let i=n-1;i>=0;i--){const x=new Date(d);x.setDate(d.getDate()-i);const k=x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');out.push([k,x]);}return out;}
 /* #359: the main view is one day (what he did, live · the plan ahead · strong / weak); everything else is behind one "הגדרות ועוד" entry, in closed sections */
-const MORE=[['time','⏱️ זמן משחק והגבלה'],['rem','⏰ תזכורת והודעה לאורן'],['tmpl','🗓️ התבנית לכל יום'],['know','🧭 מה אורן כבר יודע'],['learn','🛤️ המסלול של אורן — הבא בתור'],['full','📈 פירוט מלא'],['iss','⚠️ תקלות'],['voice','🔊 קול — בדיקה ובחירה'],['try','🎮 לשחק כהורה (ניסיון)'],['msg','💌 הודעה לאורן'],['parts','🧩 להפעיל / לכבות חלקים'],['health','🥤 הפסקות וארוחות'],['read','📖 קריאה'],['prog','⏭️ דילוג, איפוס ויהלומים'],['perm','🎤 הרשאות'],['set','🔑 סיסמה וגיבוי'],['map','🗺️ מפת התוכן']];
+const MORE=[['time','⏱️ זמן משחק והגבלה'],['rem','⏰ תזכורת והודעה לאורן'],['tmpl','🗓️ התבנית לכל יום'],['know','🧭 מה אורן כבר יודע'],['learn','🛤️ המסלול של אורן — הבא בתור'],['full','📈 פירוט מלא'],['iss','⚠️ תקלות'],['voice','🔊 קול — בדיקה ובחירה'],['try','🎮 לשחק כהורה (ניסיון)'],['parts','🧩 להפעיל / לכבות חלקים'],['health','🥤 הפסקות וארוחות'],['read','📖 קריאה'],['prog','⏭️ דילוג, איפוס ויהלומים'],['perm','🎤 הרשאות'],['set','🔑 סיסמה וגיבוי'],['map','🗺️ מפת התוכן']];
 const FN={map:box=>{if(T.contentMap)T.contentMap(box,sec,BAR);},full:fullTab,try:tryTab,tmpl:tmplTab,time:timeTab,iss:issues,
   rem:box=>{if(window.HEALTH)window.HEALTH.panel(box,sec,()=>panel('rem'),'today');},know:box=>{if(window.KNOW)window.KNOW.panel(box,sec,()=>panel('know'));},learn:box=>{if(window.LEARN)window.LEARN.parentPanel(box,sec,()=>panel('learn'));},
-  health:box=>{if(window.HEALTH)window.HEALTH.panel(box,sec,()=>panel('health'),'set');},read:box=>{if(T.rdSettings)T.rdSettings(box,sec,()=>panel('read'));},voice:voiceTab,perm:permTab,parts:partsTab,prog:progTab,msg:msgTab,set:setTab};
+  health:box=>{if(window.HEALTH)window.HEALTH.panel(box,sec,()=>panel('health'),'set');},read:box=>{if(T.rdSettings)T.rdSettings(box,sec,()=>panel('read'));},voice:voiceTab,perm:permTab,parts:partsTab,prog:progTab,set:setTab};
 /* a section that would be empty is not listed (G8) */
 const HAS={iss:()=>issList().length>0,perm:()=>!permNone(),rem:()=>!!window.HEALTH,know:()=>!!window.KNOW,learn:()=>!!window.LEARN};
 const ALIAS={sum:'day',plan:'day','plan-t':'tmpl'};
@@ -1297,12 +1292,6 @@ function progTab(box){const sv=O.save,s0=T.S();
   if(window.LEARN)window.LEARN.skillsPanel(pdet(box,'skills','📶 רמות לפי מיומנות'),sec,()=>panel('prog'));
   const rs=sec(box,'איפוס מלא','<div class="pnote">מוחק את כל ההתקדמות של אורן. הסיסמה, ההגדרות והכרטיס האישי נשמרים.</div>');
   const rr=h('div','popt');rr.appendChild(armBtn('🗑️ איפוס כל ההתקדמות','bad',()=>{const keep={set:SET(),prof:prof()};O.resetAll(keep);}));rs.appendChild(rr);}
-/* --- message to Oren --- */
-function msgTab(box){const st=SET();const m=st.msg;
-  const ms=sec(box,'הודעה לאורן','<div class="pnote">אורן ישמע אותה בפעם הבאה שייכנס, ויוכל להגיב באימוג׳י.</div>');
-  if(m&&m.text)ms.appendChild(h('div','pmsgold',`<div>${esc(m.text)}</div><small>${m.seen?`נקראה ✓ ${m.reply?'· אורן הגיב: <span class="emo">'+m.reply+'</span>':''}`:'עוד לא נקראה'}</small>`));
-  const ta=h('textarea','pta big');ta.rows=3;ta.placeholder='למשל: אורן, כל הכבוד על השבוע! אוהבים אותך 💛';ta.setAttribute('aria-label','הודעה');ta.onkeydown=e=>e.stopPropagation();ms.appendChild(ta);
-  const row=h('div','btnrow');const sd=h('button','bigbtn sm','💌 <span>שליחה</span>');sd.onclick=()=>{const t=ta.value.trim();if(!t){O.floatText(sd,'כתבו משהו');return;}st.msg={text:t.slice(0,300),t:Date.now(),seen:0};O.persist();sfx.win();panel('msg');};row.appendChild(sd);ms.appendChild(row);}
 /* --- settings --- */
 function setTab(box){const st=SET();
   const ps=sec(box,'סיסמת הורה','<div class="pnote">החלפת הסיסמה. (אם תשכחו: במסך הכניסה יש "שכחתי סיסמה".)</div>');const p1=h('input','pgin sm');p1.type='password';p1.placeholder='סיסמה חדשה';const p2=h('input','pgin sm');p2.type='password';p2.placeholder='שוב';
@@ -1500,7 +1489,7 @@ function home(){const S0=T.S();
   if(window.AGAIN)window.AGAIN.button(s);
   O.sayNow=say?T.spk(say)+T.choiceSay(s,'.dcard b,.dmore span,.door b,.bigbtn span,.againbtn b'):'';
   const pb=h('button','parbtn','🔒');pb.title='כניסת הורים';pb.setAttribute('aria-label','כניסת הורים');pb.onclick=()=>window.TAL_parentGate();s.appendChild(pb);
-  T.checkMsg&&T.checkMsg();}
+}
 function doorsEl(){const doors=h('div','doors2');
   const DOORS=[['journey','מַסָּע',SPR.mount||SPR.tree,'#d99a2b',()=>O.showJourney()],['city','עִיר',X.portal,'#6c4fc1',()=>T.openHub()],['king','מַמְלָכָה',SPR.tower,'#3a8fc4',()=>O.kingdom()]];
   if(window.TAL_arcade)DOORS.push(['arcade','אַרְקֵייד','<span style="font-size:46px;line-height:1">🕹️</span>','#ff3fa4',()=>window.TAL_arcade(O.showMap)]);

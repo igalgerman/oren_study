@@ -13,7 +13,7 @@ regressions 115           # #356 walks all ~114 activities, taps back on each + 
 playthrough-desktop 300   # FULL=1 only: plays every world level by level
 playthrough-phone 300     # FULL=1 only: same on the phone viewport
 voice-stop 60             # #401 adds a 1200-char text spoken in parts: ~10 s; #398 queue cleared on screen change + next question + new line not cut: ~2 s; #402 next-question prefetch + math sentence set: ~2 s (12 s alone)
-health-desktop 90         # breaks, meals, reminders + #353 parent message with simulated time: ~41 s alone
+health-desktop 90         # breaks, meals, reminders + #353 parent message + #413 ready messages and face answer, simulated time: ~45 s alone
 health-phone 90           # same file on the phone viewport: ~40 s alone
 eventlog 60               # #348 event log: worker + fake D1, then the real page through the worker: ~15 s
 kidtext 60                # #422 every kid string + 8.5k level questions + 1.2k activity screens through 4 text rules: ~8 s
