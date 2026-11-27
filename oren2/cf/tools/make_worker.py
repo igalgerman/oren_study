@@ -189,9 +189,14 @@ async function kvGet(env,k,type){
  if(o!=null){try{await dbPut(env,k,o);}catch(e){}return type==='json'?JSON.parse(o):o;}
  return null;}
 async function kvPut(env,k,v,o){if(!env.DB)return env.SAVES.put(k,v,o);return dbPut(env,k,v);}
+/* #612: the newest save failure Oren's device reported in its event log (meta sf:<family>, written only when a save fails);
+   GET /api/save sends it as x-sync-fail, so the parent's panel can say "no update from the game since HH:MM" (save.upT is older) */
+async function sfGet(env,id){if(!env.DB)return 0;try{await dbInit(env);const r=await env.DB.prepare('SELECT v FROM meta WHERE k=?').bind('sf:'+id).first();return r?+r.v||0:0;}catch(e){return 0;}}
+async function sfPut(env,id,ev){const t=Math.max(0,...ev.filter(e=>e.k==='sync'&&e.kid===1).map(e=>+e.t||0));if(!t)return;
+ try{const old=await sfGet(env,id);if(t>old)await dbPut(env,'sf:'+id,t);}catch(e){}}
 const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 async function api(req,env,id){if(!/^[a-f0-9]{32}$/.test(id))return new Response('{"error":"bad id"}',{status:400,headers:JH});
- if(req.method==='GET'){const v=await kvGet(env,id);return v?new Response(v,{headers:JH}):new Response('{}',{status:404,headers:JH});}
+ if(req.method==='GET'){const v=await kvGet(env,id);const sf=await sfGet(env,id);const hd=sf?Object.assign({'x-sync-fail':String(sf)},JH):JH;return v?new Response(v,{headers:hd}):new Response('{}',{status:404,headers:hd});}
  if(req.method==='PUT'){const t=await req.text();if(t.length>300000)return new Response('{"error":"too big"}',{status:413,headers:JH});
   try{const o=JSON.parse(t);if(!o||typeof o!=='object'||o.v!==4)throw 0;}catch(e){return new Response('{"error":"bad json"}',{status:400,headers:JH});}
   try{await kvPut(env,id,t);}catch(e){return J({error:'store',why:String(e&&e.message||e).slice(0,200)},503);}/* e.g. the daily write limit: the game shows the real reason (#129) */
@@ -264,6 +269,7 @@ async function evlog(req,env,u){const now=Date.now();
   if(!env.DB)return J({error:'no db'},503);await evInit(env);
   const fam=(await sha(String(o.fam))).slice(0,6),tz=Math.max(-900,Math.min(900,Math.round(+o.tz||0)));/* only a short hash of the family id, as in /api/diag */
   await env.DB.prepare('INSERT INTO evlog(fam,sid,at,tz,n,ev,sh,si,ns) VALUES(?,?,?,?,?,?,?,?,?)').bind(fam,String(o.sid),now,tz,ev.length,JSON.stringify(ev),sh.length?JSON.stringify(sh):null,sh.length?sh.map(x=>x.i).join(','):null,sh.length).run();
+  await sfPut(env,String(o.fam),ev);
   if(now-evPruneAt>36e5)await evPrune(env,now);
   return J({ok:true,n:ev.length,sh:sh.length});}
  if(u.pathname==='/api/log/summary'){if(req.method!=='GET')return J({error:'method'},405);

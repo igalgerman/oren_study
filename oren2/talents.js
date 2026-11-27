@@ -1038,15 +1038,20 @@ function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(
   if(openSec&&curTab==='more')setTimeout(()=>{const o=s.querySelector('details[open]');if(o&&tab===openSec)o.scrollIntoView({block:'start'});else $('#screens').scrollTop=sy;},0);}
 T.parentPanel=t=>{parentOn=true;panel(t);};
 /* #352: the top line of the day: "playing now · N min (from HH:MM)" + stop, and (#359) "skip now", or "last played" */
-function nowTop(el){const DL=window.DAYLOG,PD=window.PDAY;el.innerHTML=DL?DL.nowLine():'';const left=T.limLeft();if(!DL||!DL.playing()||(left&&left.min<=0))return;
-  const row=el.firstChild||el;const pc=PD&&PD.cmds().find(c=>c.k==='now'&&!(O.realSave.pcA||{})[c.i]);
+function nowTop(el){const DL=window.DAYLOG,PD=window.PDAY;el.innerHTML=DL?DL.nowLine():'';
+  /* #612: Oren's device cannot upload (the server got its save failures): say so, instead of looking up to date */
+  const st=O.famStale&&O.famStale();if(st){const d=new Date(st);el.appendChild(h('div','dlnow pdstale',`אין עדכון מהמשחק מאז ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`));}
+  const left=T.limLeft();if(!DL||!DL.playing()||(left&&left.min<=0))return;
+  const row=el.querySelector('.dlnow:not(.pdstale)')||el;const pc=PD&&PD.cmds().find(c=>c.k==='now'&&!(O.realSave.pcA||{})[c.i]);
   if(PD&&(O.realSave.now||{}).id){if(pc){const b=h('button','pchip','⏭ ממתין… בטל');b.onclick=()=>{PD.undo(pc.i);nowTop(el);};row.appendChild(b);}
     else{const b=h('button','pchip pdskipnow','⏭ דלג עכשיו');b.onclick=()=>{PD.send('now');sfx.ok&&sfx.ok(1);nowTop(el);};row.appendChild(b);}}
   const b=h('button','pchip bad','⏹ לעצור עכשיו');b.onclick=()=>{stopNow();sfx.ok&&sfx.ok(1);nowTop(el);};row.appendChild(b);}
-/* while the parent panel is open: pull the family save every 30 s so the day view follows Oren live, also from another house */
+/* while the parent panel is open: pull the family save every 30 s so the day view follows Oren live, also from another house;
+   #612: and at once when the phone screen is opened again (a locked phone runs no timers) */
 let parLive=0;
-function parLiveOn(){if(parLive)return;parLive=setInterval(()=>{if(!parentOn||$('#sPar').hidden){clearInterval(parLive);parLive=0;return;}
-  Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(window.PDAY&&curTab==='day')window.PDAY.refresh();});},window.__parPull||30000);}
+const parPull=()=>Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(window.PDAY&&curTab==='day'&&parentOn&&!$('#sPar').hidden)window.PDAY.refresh();});
+function parLiveOn(){if(parLive)return;parLive=setInterval(()=>{if(!parentOn||$('#sPar').hidden){clearInterval(parLive);parLive=0;return;}parPull();},window.__parPull||30000);}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&parentOn&&!$('#sPar').hidden){parPull();parLiveOn();}});
 const sec=(box,t,html)=>{const d=h('section','psec',`<h3>${t}</h3>`);if(html)d.insertAdjacentHTML('beforeend',html);box.appendChild(d);return d;};
 /* --- summary --- */
 /* problems in the last 14 days: one short line, details only on tap */

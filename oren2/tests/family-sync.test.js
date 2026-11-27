@@ -72,9 +72,10 @@ const FIX='a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0',OLD='0123456789abcdef0123456789abcd
   ok('diag has the visible screen text, whole body under 18000',typeof d.snap==='string'&&d.snap.length>20&&!/<script|<body/i.test(d.snap)&&JSON.stringify(d).length<=18000,String((d.snap||'').length));
   const is=await A.evaluate(()=>(window.OREN.save.iss||[]).find(x=>x.k==='sync'&&x.d===window.OREN.today()));
   ok('parent log shows the server reason, not "no internet", and that a report was sent',is&&is.m==='full'&&is.r===1,JSON.stringify(is));
-  // #349: still down after the fast retries: Oren keeps playing, but no save attempt per move (the next try waits for the slow backoff)
-  const p1=puts;await A.evaluate(()=>{const O=window.OREN;O.save.gems=53;O.persist();});await sleep(2000);
-  ok('server still down: new saves wait for the backoff, no write per move',puts===p1,String(puts-p1));
+  // #349: still down after the fast retries: Oren keeps playing, but no save attempt per move (the next try waits for the backoff;
+  // #612: the wait is capped at 12 x the first one = 1 min, here 600 ms, so 10 moves in 2 s give at most ~4 tries, not 10)
+  const p1=puts;await A.evaluate(async()=>{const O=window.OREN;for(let i=0;i<10;i++){O.save.gems=53+i;O.persist();await new Promise(r=>setTimeout(r,200));}});
+  ok('server still down: new saves wait for the backoff, no write per move',puts-p1<=4,String(puts-p1));
   const is2=await A.evaluate(()=>(window.OREN.save.iss||[]).find(x=>x.k==='sync'&&x.d===window.OREN.today()));
   ok('one long outage stays one problem',is2&&is2.n===is.n,JSON.stringify([is.n,is2&&is2.n]));}
  FAILN=0;FAILST=500;FAILB='{}';await A.evaluate(()=>{window.__fast=true;dispatchEvent(new Event('online'));});

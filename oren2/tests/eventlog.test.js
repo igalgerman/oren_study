@@ -57,6 +57,20 @@ function fakeD1() {
     const s30 = await (await f('/api/log/summary?days=30')).json();
     ok('prune: raw events older than 30 days are deleted, newer ones kept', !rows().some(x => x.fam === 'old') && rows().some(x => x.fam === 'mid') && s30.days.length === 2, JSON.stringify(rows().map(x => x.fam)));
     D1.db.exec('DELETE FROM evlog'); }
+  // #612: a save failure on Oren's device (sync, kid 1) comes back with the save (x-sync-fail), so the parent's panel can say "no update since"
+  { await f('/api/save/' + fam, { method: 'PUT', body: JSON.stringify({ v: 4, upT: t0 }) });
+    const h0 = (await f('/api/save/' + fam)).headers.get('x-sync-fail');
+    await post({ fam, sid: 'par00001', tz: -120, ev: [{ i: 1, t: t0 + 50000, k: 'sync', why: 'net', n: 0, kid: 0 }] });
+    const h1 = (await f('/api/save/' + fam)).headers.get('x-sync-fail');
+    const w = D1.log.length; await post({ fam, sid: 'kid00001', tz: -120, ev: [{ i: 1, t: t0 + 60000, k: 'sync', why: 'net', n: 0, kid: 1 }, { i: 2, t: t0 + 61000, k: 'tap' }] });
+    const writes = D1.log.slice(w).filter(s => /^\s*(INSERT|UPDATE)/i.test(s)).length;
+    const r2 = await f('/api/save/' + fam); const h2 = r2.headers.get('x-sync-fail');
+    await post({ fam, sid: 'kid00001', tz: -120, ev: [{ i: 3, t: t0 + 30000, k: 'sync', why: 'net', n: 1, kid: 1 }] });
+    const h3 = (await f('/api/save/' + fam)).headers.get('x-sync-fail');
+    ok('#612 save failure: none -> no header; the parent phone\'s own failure is not counted', h0 === null && h1 === null, String([h0, h1]));
+    ok('#612 save failure on Oren\'s device: GET /api/save has x-sync-fail = its time (one extra write), the save itself unchanged', h2 === String(t0 + 60000) && writes === 2 && (await r2.json()).upT === t0, String([h2, writes]));
+    ok('#612 an older failure arriving later does not move it back', h3 === String(t0 + 60000), String(h3));
+    D1.db.exec('DELETE FROM evlog'); }
   // ---------- part 2: the real page through the worker ----------
   let FAIL = false, posts = 0;
   const srv = http.createServer(async (q, r) => { let b = []; q.on('data', c => b.push(c)); q.on('end', async () => {
