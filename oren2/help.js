@@ -509,7 +509,9 @@ function button(host,o){if(!host)return null;o=o||{};(host.isConnected?document:
   box.hidden=true;w.append(b,box);if(o.before&&o.before.parentNode===host)host.insertBefore(w,o.before);else host.appendChild(w);
   let n=0;const show=(html,voice)=>{box.hidden=false;box.innerHTML=html;box.classList.remove('in');void box.offsetWidth;box.classList.add('in');say(voice||html);};
   function tap(auto){if(n>=2||!w.isConnected)return;n++;track({h:'btn',n,auto:auto?1:0});
-    if(n===1){let c='';try{c=o.clue?o.clue():'';}catch(e){}const head=auto?BT.offer:BT.clue;show(`<b>${head}:</b> ${c||BT.again}`);}
+    if(n===1){let c='';try{c=o.clue?o.clue():'';}catch(e){}const head=auto?BT.offer:BT.clue,t=`<b>${head}:</b> ${c||BT.again}`;
+      /* #409 the first hint: in the friend's bubble with the voice, no box; later steps as before */
+      const F=window.FRIEND;if(F&&F.hint&&F.hint(t)){box.hidden=true;say(t);}else show(t);}
     else{let e='';try{e=o.answer?o.answer():'';}catch(x){}b.disabled=true;w.classList.remove('offer');w.classList.add('done');show(e||BT.ans);}}
   const api={el:w,box,btn:b,o,tap:()=>tap(false),offer(){if(n===0&&w.isConnected){w.classList.add('offer');tap(true);}},answer(){if(n<2&&w.isConnected){n=1;tap(true);}},get step(){return n;},get ans(){return o.ans;}};
   w._help=api;return api;}

@@ -17,6 +17,10 @@ const NOFEED = ['think-test'];
   await ctx.addInitScript(() => { window.__noFamily = true; window.__fast = true; try { localStorage.clear(); } catch (e) {} });
   const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
   await p.goto(L.URL); await L.noCoach(p);
+  /* #409 the first clue is said by the friend in his bubble (or the math friend's own bubble), the help box stays closed */
+  await p.evaluate(() => { window.__clue = () => { const F = window.FRIEND, box = [...document.querySelectorAll('.helpbox')].find(x => !x.hidden && x.offsetParent);
+    const bub = [...document.querySelectorAll('.frc:not([hidden]) .frb:not([hidden]), #sPlay:not([hidden]) #bText')].map(x => x.textContent).join(' ');
+    const t = F && F.hinted ? F.hinted.replace(/<[^>]+>/g, '').trim() : ''; return t && !box && bub.includes(t.slice(0, 8)) ? t : ''; }; });
 
   /* 1. the fixed texts: Hebrew with nikud, and pregen collects them */
   const tx = await p.evaluate(() => window.HELP && window.HELP.allTexts ? window.HELP.allTexts() : []);
@@ -45,7 +49,7 @@ const NOFEED = ['think-test'];
     if (!st.q) { bad.push(id + ': no question screen'); continue; }
     withQ.push(id);
     if (st.help !== 1) { bad.push(`${id}: ${st.help} help buttons`); continue; }
-    const t1 = await p.evaluate(() => { const b = document.querySelector('.helpbtn'); if (!b) return 'NO BUTTON'; b.click(); const x = document.querySelector('.helpbox'); return x && !x.hidden ? x.textContent : ''; });
+    const t1 = await p.evaluate(() => { const b = document.querySelector('.helpbtn'); if (!b) return 'NO BUTTON'; window.FRIEND.hinted = ''; b.click(); return window.__clue(); });
     await L.sleep(30);
     const t2 = await p.evaluate(() => { const b = document.querySelector('.helpbtn'); if (!b) return { t: 'NO BUTTON ' + document.querySelector('#sTal').textContent.slice(0, 80) }; b.click(); const x = document.querySelector('.helpbox'); return { t: x && !x.hidden ? x.textContent : '', dis: b.disabled,
       shown: !!document.querySelector('#sTal .show, #sTal .good, #sTal .ok, #sTal .hint'), n: document.querySelectorAll('.helpbtn').length }; });
@@ -57,15 +61,16 @@ const NOFEED = ['think-test'];
     if (NOFEED.includes(id)) continue;
     const st2 = await open(id);
     if (!st2.q) { bad.push(id + ': no question on the second run'); continue; }
+    await p.evaluate(() => { window.FRIEND.hinted = ''; });
     for (let k = 0; k < 2; k++) await p.evaluate(() => { const w = document.querySelector('.helpq'), h = w && w._help; if (h && h.wrong) { h.wrong(); return; }
       const a = h ? h.ans : -1; const bs = [...document.querySelectorAll('#sTal .chs .chb')]; const x = bs.find((b, i) => i !== a && !b.disabled && b.offsetParent); if (x) x.click(); });
     await L.sleep(60);
-    const auto = await p.evaluate(() => { const x = document.querySelector('.helpbox'); return x && !x.hidden ? x.textContent : ''; });
+    const auto = await p.evaluate(() => window.__clue());
     if (!heNik(auto)) bad.push(`${id}: no help after 2 wrong answers`);
   }
   const miss = MUST.filter(x => !withQ.includes(x));
   ok(withQ.length >= 30 && !miss.length, `question screens found in ${withQ.length} activities` + (miss.length ? ' — missing ' + miss.join(',') : ''));
-  ok(!bad.length, 'every question has one help button: clue, then answer + explanation, offered after 2 wrong (' + bad.length + ') ' + bad.slice(0, +(process.env.HB_ALL || 12)).join(' | '));
+  ok(!bad.length, 'every question has one help button: clue (#409 in the friend\'s bubble, no box), then answer + explanation, offered after 2 wrong (' + bad.length + ') ' + bad.slice(0, +(process.env.HB_ALL || 12)).join(' | '));
 
   /* 3. the math levels (#sPlay) */
   await p.evaluate(() => { document.querySelector('#ov').hidden = true; document.querySelector('#sTal').innerHTML = ''; });   // #424: the last activity's round (its timers) ends here, before the math levels
@@ -74,7 +79,7 @@ const NOFEED = ['think-test'];
       try { G.playLevel(lv); } catch (e) { out.push(lv.id + ' ERR ' + e.message); continue; } await new Promise(r => setTimeout(r, 40));
       const s = document.querySelector('#sPlay'), hb = [...s.querySelectorAll('.helpbtn')].filter(e => e.offsetParent);
       if (hb.length !== 1) { out.push(`${lv.id} (${k}): ${hb.length} help buttons`); continue; }
-      hb[0].click(); const x = s.querySelector('.helpbox'); const t1 = x && !x.hidden ? x.textContent : '';
+      window.FRIEND.hinted = ''; hb[0].click(); const x = s.querySelector('.helpbox'); const t1 = window.__clue();
       hb[0].click(); const t2 = x && !x.hidden ? x.textContent : '';
       const shown = !!s.querySelector('.ans.show, .chb.show, .bubb.pop, .helpbox .hq-a');
       if (!t1 || !t2 || t1 === t2 || !shown) out.push(`${lv.id} (${k}): clue "${t1.slice(0, 30)}" answer "${t2.slice(0, 30)}" shown=${shown}`); }
@@ -83,8 +88,9 @@ const NOFEED = ['think-test'];
   const ans = await p.evaluate(async () => { const O = window.OREN, G = window.__oren4; const lv = O.ALLLV.find(l => l.type !== 'learn' && l.type !== 'boss' && l.gen(0).k === 'bin');
     G.playLevel(lv); await new Promise(r => setTimeout(r, 40)); const pl = G.play; window.HELP.stop(); pl.help = false;   // the ladder off: the button itself must offer the help
     const q = pl.qs[pl.i]; return q.ans != null ? q.ans : q.res; });
+  await p.evaluate(() => { window.FRIEND.hinted = ''; });
   for (let k = 0; k < 2; k++) { await p.keyboard.type(String(ans + 1)); await p.keyboard.press('Enter'); await L.sleep(700); }
-  const mathAuto = await p.evaluate(() => { const x = document.querySelector('#sPlay .helpbox'); return x && !x.hidden ? x.textContent : ''; });
+  const mathAuto = await p.evaluate(() => window.__clue());
   ok(heNik(mathAuto), 'math: after 2 wrong answers the help comes by itself: ' + mathAuto.slice(0, 50));
   ok(!errs.length, 'no page errors ' + errs.slice(0, 3).join(' | '));
   await b.close(); L.finish('helpbtn', res);
