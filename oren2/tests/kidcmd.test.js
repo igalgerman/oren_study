@@ -75,7 +75,9 @@ const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout:
   ok('"דלג עכשיו" on the parent\'s phone while he plays', await until(B, () => !!document.querySelector('#sPar .pnow .pdskipnow'), null, 6000));
   await B.locator('#sPar .pnow .pdskipnow').click(); await sleep(300);
   { const c = await B.evaluate(() => { const c = window.PDAY.cmds().filter(x => x.k === 'now').pop(); return { c, done: !!(window.OREN.save.pcA || {})[c.i], me: window.OREN.dev }; });
-    ok('the skip carries the target and the sender, and the parent\'s phone does not take it', c.c.to === 'kid' && c.c.by === c.me && !c.done, JSON.stringify(c)); }
+    // pcA is max-merged: "done" here is fine only when it came from Oren's laptop (it may sync first), never from the phone itself
+    const aT = await A.evaluate(id => (window.OREN.save.pcA || {})[id] || 0, c.c.i);
+    ok('the skip carries the target and the sender, and the parent\'s phone does not take it', c.c.to === 'kid' && c.c.by === c.me && (!c.done || aT > 0), JSON.stringify({ ...c, aT })); }
   ok('the parent sees "נשלח…" on the skip', /נשלח…/.test(await B.locator('#sPar .pnow').textContent()));
   await sleep(1200); await A.evaluate(() => window.OREN.famPull()); await sleep(400);
   ok('Oren\'s laptop takes the skip (waits for his answer)', await until(A, () => !!window.PDAY.pending(), null, 4000));
