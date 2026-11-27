@@ -1577,10 +1577,10 @@ if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pick
 /* auto-read: when a screen, story panel, lesson step or question sets its instruction (sayNow), it is read once by
    itself after the screen settles (300 ms). Skipped when something was already said meanwhile, on parent screens, when the
    parents turned it off, and while reading practice wants Oren to read first (window.__noAuto, set by reading.js). 🔊 replays. */
-const AUTO={cur:'',gen:0,seen:-1,at:0,wait:false};
-setInterval(()=>{if(sayNow!==AUTO.cur||AUTO.gen!==AUTO.seen){AUTO.cur=sayNow;AUTO.seen=AUTO.gen;AUTO.at=Date.now();AUTO.wait=!!sayNow;return;}
+const AUTO={cur:'',gen:0,seen:-1,at:0,scr:0,wait:false};
+setInterval(()=>{if(sayNow!==AUTO.cur||AUTO.gen!==AUTO.seen){AUTO.cur=sayNow;AUTO.seen=AUTO.gen;AUTO.at=Date.now();if(AUTO.at-AUTO.scr<200)AUTO.at=AUTO.scr;/* #398: a line the new screen said itself right after the switch counts, it is not cut */AUTO.wait=!!sayNow;return;}
   if(!AUTO.wait||Date.now()-AUTO.at<300)return;AUTO.wait=false;
-  if(window.__fast||window.__noAuto||(window.__autoSaid|0)>=AUTO.at||(save.set&&save.set.autoRead===0)||!$('#sPar').hidden||$('#hud').hidden)return;
+  if(window.__fast||window.__noAuto||(window.__autoSaid||0)>=AUTO.at||(save.set&&save.set.autoRead===0)||!$('#sPar').hidden||$('#hud').hidden)return;
   hush();say(sayNow);},100);
 const hush=()=>{const it=SQ.cur;SQ.list=[];SQ.cur=null;if(it)clearTimeout(it.wd);try{speechSynthesis.cancel();}catch(e){}try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}if(TTS.ns&&!TTS.blocked)TTS.ns.stop().catch(()=>{});};
 
@@ -1656,7 +1656,7 @@ function addGems(n,fromEl){save.gems=(save.gems|0)+n;
 const app=$('#app');let backTo=null,curWorld=null;
 const wipeEl=$('#wipe');wipeEl.innerHTML='<i></i>'.repeat(70);
 function wipe(){if(window.__fast||RM())return;sfx.whoosh();wipeEl.hidden=false;[...wipeEl.children].forEach((c,i)=>{const r=i/10|0,col=i%10;c.style.animation='none';void c.offsetWidth;c.style.animation='';c.style.animationDelay=((r+col)*22)+'ms';});clearTimeout(wipe.t);wipe.t=setTimeout(()=>wipeEl.hidden=true,720);}
-function setScreen(id,w,back){hush();if(window.HELP)HELP.stop();document.body.classList.toggle('inpar',id==='sPar');document.body.classList.remove('act');window.__noAuto=0;/* leaving a screen stops any reading aloud; the new screen may speak right after */['sStart','sHome','sMap','sWorld','sLearn','sPlay','sKing','sStudio','sTeach','sTable','sFinal','sTal','sPar'].forEach(s=>$('#'+s).hidden=s!==id);$('#hud').hidden=id==='sStart';$('#hudMid').innerHTML='';/* #8: no stale label from the last screen */$('#ov').hidden=true;{const dl=$('#dlg');if(!dl.hidden){dl.hidden=true;dl.innerHTML='';}}/* #356: a story dialog belongs to the screen it was opened on */
+function setScreen(id,w,back){hush();AUTO.scr=Date.now();if(window.HELP)HELP.stop();document.body.classList.toggle('inpar',id==='sPar');document.body.classList.remove('act');window.__noAuto=0;/* leaving a screen stops any reading aloud; the new screen may speak right after */['sStart','sHome','sMap','sWorld','sLearn','sPlay','sKing','sStudio','sTeach','sTable','sFinal','sTal','sPar'].forEach(s=>$('#'+s).hidden=s!==id);$('#hud').hidden=id==='sStart';$('#hudMid').innerHTML='';/* #8: no stale label from the last screen */$('#ov').hidden=true;{const dl=$('#dlg');if(!dl.hidden){dl.hidden=true;dl.innerHTML='';}}/* #356: a story dialog belongs to the screen it was opened on */
   if(app.dataset.w!==(w||'meadow')){app.dataset.w=w||'meadow';bgW=app.dataset.w;paintBG(performance.now());}setTheme(THEME_OF[app.dataset.w]||'map');
   pauseOff();if(!ACTIVE_S.includes(id)&&id!=='sStart'&&id!=='sPar')herePut(null);backTo=back||null;$('#btnBack').style.visibility=back?'visible':'hidden';$('#btnBack').innerHTML=back===showMap||(back&&back.home)?ICON.home:ICON.back;$('#screens').scrollTop=0;play=null;stopSpeed();updateGems();wipe();evScreen(id);emit('screen',id,back);pzSync();}
 $('#btnSay').innerHTML=ICON.say;$('#btnMusic').innerHTML=ICON.music;$('#icoStart').innerHTML=ICON.play;
@@ -2082,7 +2082,7 @@ function playLevel(lv,preset){
 function hudPlay(){const p=play;if(!p)return;const nm=p.lv.type==='train'?'אִמּוּן יוֹמִי':p.lv.type==='boss'?p.u.name:p.u.name;
   $('#hudMid').innerHTML=`<div class="chip">${nm}</div><div class="progress">${p.qs.map((_,k)=>`<i class="pb${k<p.i?' on':k===p.i?' cur':''}"></i>`).join('')}</div>${p.streak>=2?`<div class="streak">${SPR.flame}${p.streak}</div>`:''}`;}
 function setBubble(t){const b=$('#bText');if(b)b.innerHTML=t;}
-function showQ(){
+function showQ(){hush();/* #398: the next question: nothing of the last one (praise, its reading) goes on */
   const p=play;const q=p.qs[p.i];evQ(qkey(q),{ty:q.k});p.tries=0;p.hint=0;p.lock=false;p.col=null;p.choice=null;p.revealed=false;
   const qa=$('#qa');const pad=$('#pad');
   if(q.k==='col'){qa.innerHTML=`<div class="colwrap" id="colw"></div>`;p.col=colInit(q);pad.hidden=false;}
