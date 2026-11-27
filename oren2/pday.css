@@ -13,3 +13,11 @@
 .pdback{margin:0 0 10px}
 .pdskip{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35)}
 .pdskip .card{max-width:420px;text-align:center}
+.pdsugi .pchip{flex:none;margin:0 6px 0 0}
+/* #429 learned today · #431 the week picture · #430 the question */
+.pdlearn ul{margin:4px 0 0;padding-inline-start:20px}.pdlearn li{margin:2px 0;font-size:15px}
+.pdbars{height:90px;padding-top:4px}
+.pdsplit{display:flex;height:12px;border-radius:6px;overflow:hidden;margin:10px 0 6px;direction:rtl;background:#eee}
+.pdsplit i{display:block;height:100%}
+.pdshs{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px}
+.pdask{font-size:16px;font-weight:700}

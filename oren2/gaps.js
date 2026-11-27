@@ -81,7 +81,7 @@ function nikQ(r,i,n){const learned=learnedAt(r);const kind=i<n*.4?'hs':i<n*.75?'
   const like=pool.filter(x=>x!==w&&(x.f===w.f||x.plain.length===w.plain.length));const ds=shuffle(like.length>=2?like:pool.filter(x=>x!==w)).slice(0,2);
   const os=shuffle([w,...ds]);return {pr:`<div class="gp-ear">👂</div><div class="qq">אֵיזוֹ מִלָּה שָׁמַעְתָּ?</div>`,opts:os.map(x=>x.w),ans:os.indexOf(w),cls:'tx',
     play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'איזו מילה שמעת',explain:`${pic(w)}<span class="bigw">${w.w}</span>`,bank:'gp-nik',bkey:w.w,key:'rw'+w.w,chk:{t:'word',w:w.w}};}
-function nikRound(r,back){const n=8;T.quiz({id:'nik-'+(r+1),title:RUNG[r].n,bg:'city',back,n,gen:i=>nikQ(r,i,n),doneTitle:'עָלִיתָ בַּסֻּלָּם!'});}
+function nikRound(r,back){const n=5;T.quiz({id:'nik-'+(r+1),title:RUNG[r].n,bg:'city',back,n,gen:i=>nikQ(r,i,n),doneTitle:'עָלִיתָ בַּסֻּלָּם!'});}
 function nikIntro(r,back){O.setScreen('sTal','city',back);T.hudT('סֻלַּם הַנִּקּוּד');const R=RUNG[r];const s=$('#sTal');s.innerHTML='';
   const ex=shuffle(focusAt(r).filter(w=>w.s1)).slice(0,3);O.sayNow=R.n+'. כמו במילים: '+ex.map(w=>plainHe(w.w)).join(', ');
   const card=h('div','prq tqc gp-intro',`<div class="gp-new">חָדָשׁ!</div><div class="gp-sign">${R.ex}</div><div class="qq">${R.say}</div>`);
@@ -101,7 +101,7 @@ function sndQ(L){const pool=WD.filter(w=>w.s1&&(L<3||w.s1.v!=='s'));const w=lwor
       play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו אות מתחילה המילה ששמעת',explain:`${pic(w)}<span class="bigw">${hi(w)}</span>`,bank:'gp-snd',bkey:w.w,key:w.w,chk:{t:'letter',w:w.w}};}
   const os=sylOpts(w,['a','i','o','u','e']);return {pr:`<div class="gp-ear">👂</div><div class="qq">בְּאֵיזוֹ הֲבָרָה מַתְחִילָה הַמִּלָּה שֶׁשָּׁמַעְתָּ?</div>`,opts:os.map(o=>o.s),ans:os.findIndex(o=>o.s===w.s1.s),cls:'tx big2',
     play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו הברה מתחילה המילה ששמעת',explain:`${pic(w)}<span class="bigw">${hi(w)}</span>`,bank:'gp-snd',bkey:w.w,key:w.w,chk:{t:'syl',w:w.w}};}
-function sndRound(back,L0){const L=L0||level('snd',3);T.quiz({id:'snd-'+L,title:'מָה שׁוֹמְעִים בַּהַתְחָלָה?',bg:'city',back,n:8,gen:()=>sndQ(L)});}
+function sndRound(back,L0){const L=L0||level('snd',3);T.quiz({id:'snd-'+L,title:'מָה שׁוֹמְעִים בַּהַתְחָלָה?',bg:'city',back,n:5,gen:()=>sndQ(L)});}
 
 /* ===================== 7. SPELLING: hear a word, build it from letters ===================== */
 const FINAL={'ך':'כ','ם':'מ','ן':'נ','ף':'פ','ץ':'צ'};
@@ -109,10 +109,10 @@ const FINAL={'ך':'כ','ם':'מ','ן':'נ','ף':'פ','ץ':'צ'};
 const SPH={next:'הָאוֹת הַבָּאָה',by:'אוֹת אַחֲרֵי אוֹת, מִיָּמִין לִשְׂמֹאל:',fin:'בְּסוֹף מִלָּה כּוֹתְבִים אוֹת סוֹפִית'};
 window.HELP_TEXTS=(window.HELP_TEXTS||[]).concat(Object.values(SPH));
 const spLen=(w,L)=>{const n=w.plain.length;return L===1?n<=3:L===2?n===4:n>=5;};
-function spell(back,L0){const L=L0||level('spell',3);const pool=shuffle(WD.filter(w=>spLen(w,L))).slice(0,6);let i=0,err=0,gems=0,lets=0;
+function spell(back,L0){const L=L0||level('spell',3);const pool=shuffle(WD.filter(w=>spLen(w,L))).slice(0,T.pathN(6));let i=0,err=0,gems=0,lets=0;
   O.setScreen('sTal','meadow',back);const s=$('#sTal');
-  const run=()=>{const w=pool[i];const need=[...w.plain];let k=0,miss=0,HB=null;T.hudT('כּוֹתְבִים מִלִּים',T.progressBar(i,pool.length));O.sayNow=T.spk(w.w);s.innerHTML='';lets+=need.length;
-    const card=h('div','prq tqc gp-sp',`<div class="qq">שׁוֹמְעִים וְכוֹתְבִים</div>${pic(w)}<div class="slots">${need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
+  const run=()=>{const w=pool[i];const need=[...w.plain];let k=0,miss=0,HB=null;T.hudT('כּוֹתְבִים מִלִּים',T.progressBar(i,pool.length));O.sayNow='שׁוֹמְעִים וְכוֹתְבִים. '+T.spk(w.w);s.innerHTML='';lets+=need.length;
+    const card=h('div','prq tqc gp-sp',`<div class="qq tqi">שׁוֹמְעִים וְכוֹתְבִים</div>${pic(w)}<div class="slots">${need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
     const pb=h('button','hintbtn',ICON.say+'<span>הַשְׁמַע</span>');pb.onclick=()=>sayW(w);card.appendChild(pb);s.appendChild(card);
     const extra=[];const last=need[need.length-1];if(L>1&&FINAL[last]&&!need.includes(FINAL[last]))extra.push(FINAL[last]);
     for(const c of shuffle(LETTERS)){if(extra.length>=L)break;if(!need.some(x=>sameSound(x,c))&&!extra.some(x=>sameSound(x,c)))extra.push(c);}
@@ -146,14 +146,13 @@ let dict=null,dictTried=false;
 async function getDict(){if(dictTried)return dict;dictTried=true;try{for(let i=0;i<20&&!(window.claude&&window.claude.use);i++)await new Promise(r=>setTimeout(r,100));
   if(window.claude&&window.claude.use)dict=await window.claude.use('dictation');}catch(e){dict=null;}return dict;}
 const SECS=45;
-function race(back){O.setScreen('sTal','city',back);T.hudT('מֵרוֹץ מִלִּים');O.sayNow='כמה מילים תקרא בארבעים וחמש שניות?';const s=$('#sTal');s.innerHTML='';const best=TL('read-flu').b|0;
+function race(back){O.setScreen('sTal','city',back);T.hudT('מֵרוֹץ מִלִּים');O.sayNow='כמה מילים תקרא בארבעים וחמש שניות?';const s=$('#sTal');s.innerHTML='';
   s.appendChild(h('div','whead',`<span class="gd gp-gd">⏱️</span><h1>כַּמָּה מִלִּים בְּ-45 שְׁנִיּוֹת?</h1>`));
   const tip=h('div','lsent','קוֹרְאִים בְּקוֹל כָּל מִלָּה, וְלוֹחֲצִים "קָרָאתִי".');s.appendChild(tip);
-  if(best)s.appendChild(h('div','gp-best',`הַשִּׂיא שֶׁלְּךָ: <b>${best}</b> מִלִּים`));
   const br=h('div','btnrow');const go=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');br.appendChild(go);s.appendChild(br);
   let mic=false;getDict().then(d=>{if(d&&tip.isConnected){mic=true;tip.textContent='קוֹרְאִים בְּקוֹל כָּל מִלָּה. הַמִּיקְרוֹפוֹן מַקְשִׁיב.';}});
-  go.onclick=()=>{if(mic&&T.needPerm)T.needPerm('dictation','כְּדֵי לִקְרֹא בְּקוֹל צָרִיךְ אִשּׁוּר שֶׁל הוֹרֶה לַמִּיקְרוֹפוֹן.');raceRun(back,mic?dict:null,best);};}
-function raceRun(back,d,best){O.setScreen('sTal','city',back);const s=$('#sTal');s.innerHTML='';O.hush();
+  go.onclick=()=>{if(mic&&T.needPerm)T.needPerm('dictation','כְּדֵי לִקְרֹא בְּקוֹל צָרִיךְ אִשּׁוּר שֶׁל הוֹרֶה לַמִּיקְרוֹפוֹן.');raceRun(back,mic?dict:null);};}
+function raceRun(back,d){/* #426: no record line, the stars are the reward (the best count stays in tl['read-flu'].b for the parent) */O.setScreen('sTal','city',back);const s=$('#sTal');s.innerHTML='';O.hush();
   const R=Math.max(1,level('nik',RUNG.length)-1);let pool=[];const nextW=()=>{if(!pool.length)pool=shuffle(WD.filter(w=>w.r<=R));return pool.pop();};
   let w=nextW(),count=0,shown=Date.now(),live=true;const t0=Date.now();
   const bar=h('div','gp-time','<i></i>');const card=h('div','prq tqc gp-race',`<div class="bigw" id="gpW">${w.w}</div><div class="gp-cnt">✓ <b id="gpN">0</b></div>${d?'<div class="heard" id="gpH">מַקְשִׁיב...</div>':''}`);
@@ -173,7 +172,7 @@ function raceRun(back,d,best){O.setScreen('sTal','city',back);const s=$('#sTal')
   const tick=setInterval(()=>{if(!card.isConnected){stop();return;}const left=SECS-(Date.now()-t0)/1000;bar.firstChild.style.width=Math.max(0,left/SECS*100)+'%';hud();if(left<=0)end();},200);
   function stop(){if(!live)return;live=false;clearInterval(tick);T.setKey(null);if(d)try{d.stop();}catch(e){}}
   function end(){stop();const st=count>=18?3:count>=10?2:1;const g=3+st*2;O.addGems(g);T.record('read-flu',st,{b:count});
-    T.result({title:count>best?'שִׂיא חָדָשׁ!':'כָּל הַכָּבוֹד!',sub:`קָרָאתָ ${count} מִלִּים בְּ-45 שְׁנִיּוֹת`+(best&&count<=best?` · הַשִּׂיא: ${best}`:''),stars:st,gems:g,back,again:()=>raceRun(back,d,Math.max(best,count))});}
+    T.result({title:'כָּל הַכָּבוֹד!',sub:`קָרָאתָ ${count} מִלִּים בְּ-45 שְׁנִיּוֹת`,stars:st,gems:g,back,again:()=>raceRun(back,d)});}
   window.__race={get w(){return w;},get count(){return count;},end,ok};}
 
 /* ===================== 1. FINAL LETTERS (for the writing house) ===================== */

@@ -87,7 +87,7 @@ const { chromium } = require('playwright');
   ok('P1.9 water break / meal: no clock digits', !r.w.clock && !r.m.clock && r.w.counters === 0 && r.m.counters === 0, JSON.stringify([r.w, r.m]));
   ok('P1.9 break and meal buttons fill as progress', [r.j, r.w, r.m].every(x => x.fill !== ''), JSON.stringify(r));
   /* ---------- P2 kid (docs/simplicity-spec.md) ---------- */
-  const btns = () => p.evaluate(() => [...document.querySelectorAll('#sTal button')].filter(b => b.offsetParent !== null).map(b => b.textContent.replace(/\s+/g, ' ').trim()).filter(t => t !== '🔊'));
+  const btns = () => p.evaluate(() => [...document.querySelectorAll('#sTal button')].filter(b => b.offsetParent !== null).map(b => b.textContent.replace(/\s+/g, ' ').trim()).filter(t => t !== '🔊' && !/הַרְאֵה לִי שׁוּב/.test(t)));   // the small lesson 'show me again' (#258) is not a main action
   // P2.1 code robot: one big "שָׁלָב N ▶" (the next unfinished level), no level grid
   r = await p.evaluate(() => { const T = window.TAL; T.S().code = { 0: 3, 1: 2 }; T.ACT['code-maze'].run(() => window.OREN.showMap()); return { grid: document.querySelectorAll('#sTal .lvb').length, go: [...document.querySelectorAll('#sTal .lvgo')].map(b => b.textContent.trim()) }; });
   ok('P2.1 code menu: no level tiles, one big "שָׁלָב 3" button', r.grid === 0 && r.go.length === 1 && /שָׁלָב 3\b/.test(r.go[0]), JSON.stringify(r));
@@ -126,12 +126,130 @@ const { chromium } = require('playwright');
   // P2.5 gratitude jar: 6 options
   r = await p.evaluate(() => { window.TAL.ACT['mind-jar'].run(() => window.OREN.showMap()); return document.querySelectorAll('#sTal .thb').length; });
   ok('P2.5 jar: 6 options', r === 6, String(r));
-  // P2.6 badges: earned ones + one "next badge"; no "x/N" in the top bar
-  r = await p.evaluate(() => { const T = window.TAL; const S = T.S(); S.tl = {}; S.bdg = { star1: 1 }; S.art = ['.', '.']; S.jar = []; S.typ = { best: {} }; S.code = {}; S.wr = {}; T.badges(() => window.OREN.showMap());
-    const c = [...document.querySelectorAll('#sTal .bdg')]; return { n: c.length, got: c.filter(x => x.classList.contains('got')).length, next: c.filter(x => x.classList.contains('next')).map(x => x.textContent), hud: document.querySelector('#hud').textContent }; });
-  ok('P2.6 badges: only the earned ones + one next', r.n === 2 && r.got === 1 && r.next.length === 1, JSON.stringify(r));
-  ok('P2.6 badges: the next one is the closest (2 of 3 pictures → צַיָּר)', r.next.length === 1 && r.next[0].includes('צַיָּר'), JSON.stringify(r.next));
-  ok('P2.6 badges: no "x/N" count in the top bar', !/\d+\s*\/\s*\d+/.test(r.hud), r.hud);
+  /* ---------- batch #216: G2 one "▶ הַמְשֵׁךְ", G3 balanced options, G4 one instruction line + one 🔊 ---------- */
+  // G2: every kid "next step" button says הַמְשֵׁךְ (no הַבָּא / לַשְּׁאֵלוֹת / לַחִידוֹן / מַמְשִׁיכִים / הַלְאָה ... on a ▶ button)
+  { const src = require('fs').readFileSync(require('path').join(L.ROOT, 'index.html'), 'utf8');
+    const bad = (src.match(/ICON\.play\s*\+\s*[`'][^`']*<span>(הַבָּא|לַשְּׁאֵלוֹת|לַשְּׁאֵלָה|לַחִידוֹן|לַחִידוֹת|מַמְשִׁיכִים|הַלְאָה|לַמַּסְלוּל|מַתְחִילִים|יוֹצְאִים)[^`']*[`']/g) || []);
+    ok('G2 next buttons: always "▶ הַמְשֵׁךְ"', !bad.length, bad.join(' | ')); }
+  // balanced rows: never 3+1 (rows differ by at most one, the last row has 2+ when there are several rows)
+  const rowsOf = sel => p.evaluate(sel => { const bs = [...document.querySelectorAll(sel)].filter(b => b.offsetParent !== null); const m = {}; bs.forEach(b => { const t = Math.round(b.getBoundingClientRect().top / 8); m[t] = (m[t] || 0) + 1; });
+    return Object.keys(m).sort((a, b) => a - b).map(k => m[k]); }, sel);
+  const balanced = r => r.length === 1 || (Math.max(...r) - Math.min(...r) <= 1 && r[r.length - 1] >= 2);
+  const card = () => p.evaluate(() => { const c = document.querySelector('#sTal .tqc'); const t = c && c.querySelector('.tqi'); const lh = t ? parseFloat(getComputedStyle(t).lineHeight) || parseFloat(getComputedStyle(t).fontSize) * 1.3 : 0;
+    return { tqi: t ? t.textContent.trim() : null, top: !!t && c.firstElementChild === t, oneLine: !!t && t.getBoundingClientRect().height <= lh * 1.5, rdb: c ? c.querySelectorAll('.rdb').length : -1,
+      say: c ? c.querySelectorAll('.hintbtn').length : -1, lsent: document.querySelectorAll('#sTal .lsent').length }; });
+  for (const id of ['read-build', 'write-mix', 'write-spell']) {
+    await p.evaluate(id => { window.__said = []; window.TAL.ACT[id].run(() => window.OREN.showMap()); }, id); await L.sleep(300);
+    r = await card();
+    ok(`G4 ${id}: one instruction line at the top of the card`, r.tqi && r.top && r.oneLine && !r.lsent, JSON.stringify(r));
+    ok(`G4 ${id}: one 🔊 in the card`, r.rdb + r.say <= 1, JSON.stringify(r));
+    const said = await p.evaluate(() => window.TAL.plainHe(window.OREN.sayNow || ''));
+    ok(`G4 ${id}: the instruction is spoken`, said.includes(await p.evaluate(t => window.TAL.plainHe(t), r.tqi || '#')), said);
+    const rows = await rowsOf('#sTal .chs .chb');
+    ok(`G3 ${id}: letter tiles in balanced rows`, balanced(rows), JSON.stringify(rows));
+  }
+  // G3: a 4-option question is 4 in a row or 2x2, never 3+1
+  await p.evaluate(() => window.TAL.quiz({ id: 'g3test', title: 'בְּדִיקָה', bg: 'city', back: () => window.OREN.showMap(), n: 1, gen: () => ({ pr: '<div class="qq">מָה?</div>', opts: ['אַרְיֵה גָּדוֹל', 'פִּיל אָפֹר', 'גִּ׳ירָפָה', 'זֶבְּרָה'], ans: 0, cls: 'tx' }) })); await L.sleep(200);
+  r = await rowsOf('#sTal .chs .chb');
+  ok('G3 four options: balanced rows', balanced(r), JSON.stringify(r));
+  // G4 story: no per-line 🔊; one 🔊 (read to me) + one "▶ הַמְשֵׁךְ"
+  await p.evaluate(() => window.TAL.readStory(0, () => window.OREN.showMap())); await L.sleep(200);
+  r = await p.evaluate(() => ({ line: document.querySelectorAll('#sTal .sl .rdb').length, row: [...document.querySelectorAll('#sTal .strow button')].map(b => b.textContent.trim() || b.getAttribute('aria-label')) }));
+  ok('G4 story: no per-line 🔊', r.line === 0, JSON.stringify(r));
+  ok('G2 story: one 🔊 + "הַמְשֵׁךְ"', r.row.length === 2 && r.row[1] === 'הַמְשֵׁךְ', JSON.stringify(r));
+  // G5 journey menu: no locked or 0-star worlds, the next world is one big "▶ הַמְשֵׁךְ"; <= 6 tiles
+  const jr = () => p.evaluate(() => { const O = window.OREN; O.showJourney(); const cs = [...document.querySelectorAll('#sMap .worlds > .wcard2')].filter(c => !c.hidden);
+    const go = [...document.querySelectorAll('#sMap .jnext')]; return { n: cs.length, names: cs.map(c => c.querySelector('.nm').textContent), locked: cs.filter(c => c.classList.contains('locked')).length,
+      go: go.map(b => b.textContent.trim()), w0: O.WORLDS.filter(w => cs.some(c => c.querySelector('.nm').textContent === w.name) && !w.levels.some(l => O.stars(l.id))).length }; });
+  await p.evaluate(() => { const O = window.OREN; O.save.s = {}; O.save.set = { brk: 0, hide: {} }; });
+  r = await jr();
+  ok('G5 journey (fresh): no locked or 0-star world tiles', r.locked === 0 && r.w0 === 0 && r.n <= 6, JSON.stringify(r));
+  ok('G5 journey: the next world is one big "הַמְשֵׁךְ"', r.go.length === 1 && r.go[0] === 'הַמְשֵׁךְ', JSON.stringify(r));
+  await p.evaluate(() => document.querySelector('#sMap .jnext').click()); await L.sleep(150);
+  ok('G5 journey: "הַמְשֵׁךְ" opens the next world', await p.evaluate(() => !document.querySelector('#sWorld').hidden || !document.querySelector('#dlg').hidden));
+  await p.evaluate(() => { const O = window.OREN; [O.WORLDS[0], O.WORLDS[2]].forEach(w => { O.save.s[w.levels[0].id] = 2; }); });
+  r = await jr();
+  ok('G5 journey: worlds with stars show as tiles', r.n === 2 && r.locked === 0 && r.w0 === 0, JSON.stringify(r));
+  await p.evaluate(() => { const O = window.OREN; O.save.set.all = 1; }); r = await jr(); await p.evaluate(() => { delete window.OREN.save.set.all; });
+  ok('G5 journey: parent "all open" shows every world', r.n === (await p.evaluate(() => window.OREN.WORLDS.length)), JSON.stringify(r));
+  // G6: the world screen has no "x / N" star count
+  await p.evaluate(() => { const O = window.OREN; O.save.story[O.WORLDS[0].id + '-in'] = 1; O.showWorld(O.WORLDS[0]); });
+  r = await p.evaluate(() => document.querySelector('#hud').textContent);
+  ok('G6 world screen: no "x / N" count', !/\d+\s*\/\s*\d+/.test(r), r);
+  // G7 (phone): kid text >= 16px and tap targets >= 44px on the menus (the 🔊 .rdb has a 44px hit area of its own; the parent button is not for the kid)
+  if (L.variant === 'phone') {
+    const g7 = () => p.evaluate(() => { const out = []; const vis = e => e.offsetParent !== null && getComputedStyle(e).visibility !== 'hidden';
+      document.querySelectorAll('#sTal button,#sMap button,#sWorld button').forEach(e => { if (!vis(e) || e.closest('.rdb,.parbtn')) return; const r = e.getBoundingClientRect(); if (r.width < 43.5 || r.height < 43.5) out.push(e.className + ' ' + Math.round(r.width) + 'x' + Math.round(r.height)); });
+      document.querySelectorAll('#sTal *,#sMap *,#sWorld *').forEach(e => { if (!vis(e) || e.closest('.parbtn,.statline,.reset')) return; if (![...e.childNodes].some(c => c.nodeType === 3 && /[א-ת]/.test(c.textContent))) return; const fs = parseFloat(getComputedStyle(e).fontSize); if (fs < 16) out.push((e.parentElement.className || '') + '>' + e.tagName + ' ' + fs + 'px'); });
+      return [...new Set(out)]; });
+    for (const [nm, fn] of [['hub', () => window.TAL.openHub()], ['journey', () => { const O = window.OREN; O.save.s[O.WORLDS[1].levels[0].id] = 1; O.showJourney(); }], ['world', () => { const O = window.OREN; O.showWorld(O.WORLDS[0]); }],
+      ['something else', () => { const T = window.TAL; delete T.S().daily; T.otherDay(); }], ['pixel editor', () => window.TAL.ACT['art-draw'].run(() => window.OREN.showMap())]]) {
+      await p.evaluate(fn); await L.sleep(150); r = await g7();
+      ok(`G7 phone ${nm}: text >= 16px, taps >= 44px`, !r.length, JSON.stringify(r));
+    }
+  }
+  /* ---------- #8 P3 leftovers (docs/simplicity-spec.md + docs/qa-deep-report.md) ---------- */
+  await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.__arc.open(() => {}); }); await L.sleep(150);
+  ok('#8 arcade: no "✨ new" tag on the cabinets', await p.evaluate(() => document.querySelectorAll('#sTal .cab').length === 6 && !document.querySelector('#sTal .hs.new') && !/חָדָשׁ/.test(document.querySelector('#sTal .cabs').textContent)));
+  await p.evaluate(() => window.__arc.start('frog')); await L.sleep(300);
+  r = await p.evaluate(() => { const bg = e => getComputedStyle(e).backgroundColor; const f = document.querySelector('.jb:not(.back)'), m = document.querySelector('.jb.back'); return { f: bg(f), m: bg(m) }; });
+  ok('#8 frog: "−1" is quieter than the forward jumps (not yellow)', r.m !== 'rgb(255, 210, 63)' && r.m !== r.f, JSON.stringify(r));
+  await p.evaluate(() => { if (window.__arc.cur) window.__arc.cur.stop(); document.querySelector('#ov').hidden = true; });
+  // studio: four rows; the first visit has skin and no hats, later visits hats and no skin; pants gone
+  const studioRows = first => p.evaluate(f => { window.OREN.save.gems = 0; window.OREN.studio(f, () => {}); return [...document.querySelectorAll('#sStudio .orow h4')].map(e => e.textContent); }, first);
+  const s1 = await studioRows(true), s2 = await studioRows(false);
+  ok('#8 studio: 4 rows, first visit hair/skin/shirt/friend', s1.length === 4 && s1.includes('צֶבַע עוֹר') && !s1.includes('כּוֹבַע') && !s1.includes('מִכְנָסַיִם'), s1.join());
+  ok('#8/#426 studio: 3 rows later (no skin, no hats)', s2.length === 3 && !s2.includes('כּוֹבַע') && !s2.includes('צֶבַע עוֹר') && !s2.includes('מִכְנָסַיִם'), s2.join());
+  r = await p.evaluate(() => ({ sw: Math.min(...[...document.querySelectorAll('#sStudio .sw')].map(e => e.getBoundingClientRect().width)) }));
+  if (L.variant === 'phone') ok('#8 studio: colour swatches >= 44px on the phone', r.sw >= 43.5, String(r.sw));
+  // reading: the music note "תָּו" is never a picture to guess
+  ok('#8 read-first: "תָּו" has no picture (the note looked like other things)', await p.evaluate(() => !window.READBANK2.words.some(w => w.pic === 'note')));
+  // a home mission that asks "how many" ends with "tell dad or mom", so "done" fits
+  r = await p.evaluate(() => { window.TAL.dailyEnsure().t[0] = 'rw:num'; window.TAL_step(0); return document.querySelector('#sTal .tspec .lsent').textContent; });
+  ok('#8 home mission: "how many?" -> "tell dad or mom", then "done"', /סַפֵּר לְאַבָּא אוֹ לְאִמָּא/.test(r), r);
+  // play screen: the keypad is under the answer on every screen size (the speed challenge always shows the keypad)
+  await p.evaluate(() => window.__oren4.playSpeed(window.OREN.WORLDS[0])); await L.sleep(300);
+  r = await p.evaluate(() => { const qa = document.querySelector('#qa').getBoundingClientRect(), pd = document.querySelector('#pad').getBoundingClientRect(); return { qaB: Math.round(qa.bottom), padT: Math.round(pd.top), qaH: Math.round(qa.height) }; });
+  ok('#8 play: keypad under the answer slot', r.qaH > 0 && r.padT >= r.qaB, JSON.stringify(r));
+  ok('#8 speed challenge: one counter (the time bar), no score box', await p.evaluate(() => !!document.querySelector('#tbar') && !document.querySelector('#sPlay #score')));
+  // a stale top-bar label never stays on the next screen
+  r = await p.evaluate(() => { const O = window.OREN; document.querySelector('#hudMid').innerHTML = '<div class="chip">old</div>'; O.setScreen('sTal', 'city', () => {}); return document.querySelector('#hudMid').textContent; });
+  ok('#8 HUD: the last screen\'s label is cleared on a new screen', !r.includes('old'), r);
+  // a building with one activity opens it straight away
+  r = await p.evaluate(() => { const T = window.TAL, O = window.OREN; O.save.set.all = 0; O.save.en2 = {}; const b = T.BUILD.find(x => x.id === 'eng'); const n = b.acts.filter(a => (!a.avail || a.avail())).length; T.openBuilding(b); return { n, menu: !!document.querySelector('#sTal .acts') }; });
+  ok('#8 one-activity building: no menu, the activity opens', r.n === 1 && !r.menu, JSON.stringify(r));
+  // "one more" on a resting door is a real button with an icon
+  r = await p.evaluate(() => { window.HEALTH.showRest('read', document.body); const o = document.querySelector('.hlock .hone'); const out = o ? { t: o.textContent, h: o.getBoundingClientRect().height, u: getComputedStyle(o).textDecorationLine } : null; document.querySelectorAll('.hlock').forEach(e => e.remove()); return out; });
+  ok('#8 rest: "one more" is an icon button, not an underlined link', r && /⏭️/.test(r.t) && r.h >= 43.5 && r.u !== 'underline', JSON.stringify(r));
+  /* ---------- #426 rewards: only stars + gems (gems build the kingdom); badges, hats and records are gone ---------- */
+  await p.evaluate(() => { document.querySelector('#ov').hidden = true; const O = window.OREN; O.save.story.intro = 1; O.kingdom(); }); await L.sleep(200);
+  r = await p.evaluate(() => ({ btn: [...document.querySelectorAll('.kmine .tool')].map(x => x.textContent), wall: typeof window.TAL.badges }));
+  ok('#426 kingdom: no badges button, no badge wall', !r.btn.some(t => /תַּגִּים/.test(t)) && r.btn.some(t => /הַגִּבּוֹר/.test(t)) && r.wall === 'undefined', JSON.stringify(r));
+  await L.shot(p, { path: require('path').join(L.SHOTDIR, `426-kingdom-${L.variant}.png`) });
+  await p.evaluate(() => window.OREN.studio(false, () => {})); await L.sleep(200);
+  r = await p.evaluate(() => ({ rows: [...document.querySelectorAll('#sStudio .orow h4')].map(x => x.textContent), price: document.querySelectorAll('#sStudio .pr').length }));
+  ok('#426 studio: no hat row, nothing to buy', !r.rows.some(t => /כּוֹבַע/.test(t)) && r.price === 0 && r.rows.length >= 2, JSON.stringify(r));
+  await L.shot(p, { path: require('path').join(L.SHOTDIR, `426-studio-${L.variant}.png`) });
+  r = await p.evaluate(() => { const T = window.TAL; T.parentPanel('full'); return /תגים/.test(document.querySelector('#sPar').textContent); });
+  ok('#426 parent panel: no badge count', !r);
+  await p.locator('#sPar .bigbtn', { hasText: 'יציאה' }).click(); await L.sleep(300);
+  await p.evaluate(() => { window.__arc.state().best.frog = 5; document.querySelector('#ov').hidden = true; window.__arc.open(() => {}); }); await L.sleep(150);
+  ok('#426 arcade cabinets: no record tag', await p.evaluate(() => !/שִׂיא/.test(document.querySelector('#sTal .cabs').textContent) && !document.querySelector('#sTal .hs')));
+  const ovRec = () => p.evaluate(() => { const o = document.querySelector('#ov'); const t = o.hidden ? '' : o.textContent; o.hidden = true; return t; });
+  await p.evaluate(() => window.__arc.start('frog')); await L.sleep(200); await p.evaluate(() => window.__arc.finish(99)); await L.sleep(300);
+  r = await ovRec(); ok('#426 arcade: a new best shows no "record" title', r && !/שִׂיא/.test(r), r);
+  await p.evaluate(() => { window.OREN.save.sp = {}; window.__oren4.playSpeed(window.OREN.WORLDS[0]); }); await L.sleep(200);
+  await p.evaluate(() => { const q = window.__oren4.play; q.score = 12; q.end = 0; }); await L.sleep(500);
+  r = await ovRec(); ok('#426 speed challenge: the end card has no record line', /12/.test(r) && !/שִׂיא/.test(r), r);
+  await p.evaluate(() => { window.TAL.S().tl['read-flu'] = { s: 2, n: 1, b: 9 }; window.GAPS.dict = null; window.GAPS.race(() => {}); }); await L.sleep(200);
+  r = await p.evaluate(() => document.querySelector('#sTal').textContent);
+  ok('#426 word race: the start screen has no record line', !/שִׂיא/.test(r), r);
+  await p.evaluate(() => window.GAPS.raceRun(() => {}, null, 9)); await L.sleep(150); await p.evaluate(() => window.__race.end()); await L.sleep(300);
+  r = await ovRec(); ok('#426 word race: the end card has no record line', r && !/שִׂיא/.test(r), r);
+  // an old save with badges, a bought hat and records still loads; the hat's gems come back once
+  r = await p.evaluate(() => { const O = window.OREN; O.mergeIn({ t: Date.now() + 1e6, gems: 5, av: { hair: 'black', skin: 'light', shirt: 'green', hat: 'crown', pet: 'cat' }, owned: { none: 1, cap: 1, crown: 1, helmet: 1 }, bdg: { star1: 1 }, sp: { add: 9 }, arc: { best: { frog: 7 }, plays: 3 } });
+    O.hatsBack(); const a = O.save.gems; O.hatsBack(); const svg = O.AV(); return { a, b: O.save.gems, hat: O.save.av.hat, svg: /<svg/.test(svg) }; });
+  ok('#426 old save: a bought hat is refunded once (crown 60 + helmet 20), the hero still draws', r.a === 85 && r.b === 85 && !r.hat && r.svg, JSON.stringify(r));
   await p.evaluate(() => window.OREN.showMap());
   ok('no page errors', !errs.length, errs.join(' | '));
   await b.close();

@@ -185,7 +185,7 @@ const SH = process.env.HSHOTS; if (SH) fs.mkdirSync(SH, { recursive: true });
   await p.evaluate(() => { const t = window.HEALTH.clock() - 3 * 3600e3; window.TAL.S().set.rem = { k: 'water', at: t, t }; window.HEALTH.check(); }); await sleep(300);
   ok('a reminder from hours ago is skipped', !(await rem()));
   // ---------- #353: a typed message from the parent, the friend says it aloud ----------
-  const msg = () => p.evaluate(() => { const e = document.querySelector('.hlock.hmsg'); if (!e) return null; return { h2: (e.querySelector('h2') || {}).textContent, again: !!e.querySelector('.hagain'), close: !!e.querySelector('.hback'), fr: !!e.querySelector('.hav') }; });
+  const msg = () => p.evaluate(() => { const e = document.querySelector('.hlock.hmsg'); if (!e) return null; return { h2: (e.querySelector('h2') || {}).textContent, again: !!e.querySelector('.hagain'), close: !!e.querySelector('.hback'), faces: [...e.querySelectorAll('.hface')].map(b => b.textContent), fr: !!e.querySelector('.hav') }; });
   const TXT = 'אורן, יש לך 2 דקות ואז לאכול <b>';
   if (BUILT) {
     await p.evaluate(() => window.TAL.parentPanel('rem')); await sleep(400);
@@ -211,18 +211,42 @@ const SH = process.env.HSHOTS; if (SH) fs.mkdirSync(SH, { recursive: true });
   ok('#353 the message does not interrupt an activity', !(await msg()));
   await p.evaluate(id => window.TAL.finishAct(id, 0, 5, 0, () => window.OREN.showMap()), rid); await sleep(600);
   await p.locator('#ov .bigbtn:not(.plain)').click(); await sleep(700); l = await msg();
-  ok('#353 at the end of the activity: the friend big, the text big, hear-again and close', l && l.fr && l.h2 === TXT && l.again && l.close, JSON.stringify(l));
+  ok('#353 at the end of the activity: the friend big, the text big, hear-again; #413 Oren answers with one face (no other close)', l && l.fr && l.h2 === TXT && l.again && !l.close && l.faces.length >= 3 && l.faces.length <= 5, JSON.stringify(l));
   ok('#353 the friend says the text in the game voice', await p.evaluate(x => window.__says.some(s => s.includes('אורן, יש לך 2 דקות ואז לאכול')), TXT), JSON.stringify(await p.evaluate(() => window.__says)));
   ok('#353 digits are spoken as Hebrew words (#122 path)', await p.evaluate(() => !/\d/.test(window.__fullSpell('יש לך 2 דקות')) && /שתי/.test(window.__fullSpell('יש לך 2 דקות'))));
   await shot('message-kid');
   await p.evaluate(() => { window.__says = []; }); await p.locator('.hlock .hagain').click(); await sleep(300);
   ok('#353 "hear again" says it again', await p.evaluate(() => window.__says.some(s => s.includes('2 דקות'))) && !!(await msg()));
   ok('#353 shown = said', await p.evaluate(() => !!window.TAL.S().set.rem.s));
-  await pressBack(); await sleep(300);
-  ok('#353 close dismisses it and it does not come back', !(await msg()) && await p.evaluate(() => { window.HEALTH.check(); return window.TAL.S().set.rem.ok === 1 && !document.querySelector('.hlock.hmsg'); }));
+  const face = await p.locator('.hlock .hface').nth(1).textContent(); await p.locator('.hlock .hface').nth(1).click(); await sleep(300);
+  ok('#353 a face closes it and it does not come back', !(await msg()) && await p.evaluate(() => { window.HEALTH.check(); return window.TAL.S().set.rem.ok === 1 && !document.querySelector('.hlock.hmsg'); }));
+  ok('#413 the face Oren tapped is stored as his answer', await p.evaluate(f => window.TAL.S().set.rem.f === f, face), face);
   if (BUILT) { await p.evaluate(() => window.TAL.parentPanel('rem')); await sleep(300);
-    ok('#353 the parent sees "said"', /נאמרה/.test(await p.locator('#sPar .psec', { hasText: 'תזכורת לאורן' }).textContent()));
+    const pt = await p.locator('#sPar .psec', { hasText: 'תזכורת לאורן' }).textContent();
+    ok('#353 the parent sees "said"; #413 and Oren\'s face answer', /נאמרה/.test(pt) && pt.includes('אורן ענה') && pt.includes(face), pt.slice(0, 200));
     await p.evaluate(() => window.OREN.showMap()); await sleep(300); }
+  // ---------- #413: 6 ready one-tap messages, pre-generated audio ----------
+  const rd = await p.evaluate(() => { const R = window.HEALTH.readyMsgs(), L = new Set(window.TAL.choiceList()), sp = window.TAL.spk; return { R, nik: R.every(x => /[ְ-ּ]/.test(x)), pre: R.filter(x => !L.has(sp(x))) }; });
+  ok('#413 six ready messages, Hebrew with nikud', rd.R.length === 6 && rd.nik && rd.R.includes('אַבָּא גֵּאֶה בְּךָ!') && rd.R.includes('עוֹד מְעַט אוֹכֶל!'), JSON.stringify(rd.R));
+  ok('#413 every ready message is in the pregen list (audio made in advance)', !rd.pre.length, JSON.stringify(rd.pre));
+  if (BUILT) {
+    await p.evaluate(() => { window.TAL.S().set.rem = null; window.TAL.parentPanel('rem'); }); await sleep(300);
+    const ms = () => p.locator('#sPar .psec', { hasText: 'תזכורת לאורן' });
+    const rb = await ms().evaluate(s => [...s.querySelectorAll('.hready')].map(b => b.textContent.trim()));
+    ok('#413 the parent sees the 6 ready messages as one-tap buttons', rb.length === 6 && rb.includes('אַבָּא גֵּאֶה בְּךָ!'), JSON.stringify(rb));
+    await ms().locator('.pchip', { hasText: /^עכשיו$/ }).click(); await sleep(200);
+    await p.evaluate(() => { const s = [...document.querySelectorAll('#sPar .psec')].find(x => /תזכורת לאורן/.test(x.textContent)); s.scrollIntoView(); }); await shot('parent-ready');
+    await ms().locator('.hready', { hasText: 'אַבָּא גֵּאֶה בְּךָ!' }).click(); await sleep(300);
+    const r1 = await p.evaluate(() => ({ r: window.TAL.S().set.rem, now: window.HEALTH.clock() }));
+    ok('#413 one tap sends it "now" (no typing)', r1.r && r1.r.k === 'msg' && r1.r.x === 'אַבָּא גֵּאֶה בְּךָ!' && r1.r.at === r1.now && !r1.r.ok, JSON.stringify(r1));
+    await p.evaluate(() => { window.__says = []; window.OREN.showMap(); window.HEALTH.check(); }); await sleep(600);
+    const k1 = await msg();
+    ok('#413 the friend says the ready message at once (on home)', k1 && k1.h2 === 'אַבָּא גֵּאֶה בְּךָ!' && await p.evaluate(() => window.__says.some(s => s.includes(window.TAL.spk('אַבָּא גֵּאֶה בְּךָ!')))), JSON.stringify(k1));
+    await shot('ready-kid');
+    await p.locator('.hlock .hface').first().click(); await sleep(300);
+    ok('#413 Oren answers with one face', !(await msg()) && await p.evaluate(() => !!window.TAL.S().set.rem.f));
+    await p.evaluate(() => window.OREN.showMap()); await sleep(200);
+  }
   await p.evaluate(() => { const t = window.HEALTH.clock(); window.TAL.S().set.rem = { k: 'msg', x: '   ', at: t, t }; window.HEALTH.check(); }); await sleep(300);
   ok('#353 an empty message is never shown', !(await msg()));
   await p.evaluate(() => { window.TAL.S().set.rem = null; });
@@ -241,6 +265,24 @@ const SH = process.env.HSHOTS; if (SH) fs.mkdirSync(SH, { recursive: true });
   }
   const cap = await p.evaluate(() => { const s = window.TAL.S(); for (let i = 0; i < 80; i++) s.health['2025-01-' + String(i).padStart(3, '0')] = { on: 1 }; window.__t += 864e5; window.HEALTH.day(); return Object.keys(s.health).length; });
   ok('history is capped at 60 days', cap <= 61, cap);
+  // ---------- #388: in the daily path, a due break comes first, then the next mission starts by itself ----------
+  {
+    const acts = await p.evaluate(() => { const T = window.TAL, O = window.OREN, H = window.HEALTH; document.querySelectorAll('.hlock').forEach(e => e.remove()); document.body.classList.remove('hlocked'); document.getElementById('ov').hidden = true;
+      H.setCfg('off', { water: 0, toilet: 0, move: 0, eyes: 0, meal: 1 }); H.setCfg('brk', 20);   /* earlier checks turned breaks off */
+      const a = T.dailyPool().filter(id => !H.resting(H.domOf(id)) && T.ACT[id].run).slice(0, 2); window.__st = [];
+      a.forEach(id => { const r = T.ACT[id].run; T.ACT[id].run = bk => { window.__bk = bk; window.__st.push(id); return r(bk); }; });
+      T.S().daily = { d: O.today(), t: a, done: [0, 0], claimed: 0, ch: 'plan', cr: [] }; const r = H.day(); r.ba = r.on; O.showMap(); return a; });
+    await p.evaluate(() => window.TAL_step(0)); await sleep(200);
+    await ticks(21); await p.evaluate(() => { const r = window.HEALTH.day(); r.dom = {}; r.act = {}; }); await sleep(300);
+    await p.evaluate(id => window.TAL.finishAct(id, 0, 5, 0, window.__bk), acts[0]); await sleep(300);
+    await p.locator('#ov .bigbtn:not(.plain)').click(); await sleep(500); l = await lock();
+    const s1 = await p.evaluate(() => window.__st.length);
+    ok('#388 path: the break comes before the next mission', l && /hbrk/.test(l.cls) && s1 === 1, JSON.stringify({ l, s1 }));
+    await clock(31000); await sleep(400); await pressBack(); await sleep(1500);
+    const s2 = await p.evaluate(() => ({ st: window.__st.slice(), home: !document.getElementById('sHome').hidden, lock: !!document.querySelector('.hlock') }));
+    ok('#388 path: after "I\'m back" the next mission starts (no home)', s2.st.length === 2 && s2.st[1] === acts[1] && !s2.home && !s2.lock, JSON.stringify(s2));
+    await home(); await sleep(200);
+  }
   // ---------- layout ----------
   await p.evaluate(() => window.HEALTH.showTopic('math')); await sleep(300);
   const fit = await p.evaluate(() => { const c = document.querySelector('.hlock .card').getBoundingClientRect(); return { w: c.width, r: c.right, l: c.left, b: c.bottom, iw: innerWidth, ih: innerHeight, sw: document.documentElement.scrollWidth }; });

@@ -40,7 +40,7 @@ async function run(name,wi,extras){
     await p.locator('.orow').nth(2).locator('.sw').nth(1).click();await p.locator('.orow').nth(4).locator('.hatb').nth(2).click();await p.locator('#sStudio .bigbtn').last().click();await sleep(100);}
   if(await p.locator('#sMap').isHidden())log.push('map not shown');await shot('map');await overflow('map');
   const nLv=await p.evaluate(wi=>window.__oren4.WORLDS[wi].levels.length,wi);
-  await p.locator('.wcard2').nth(wi).click();await sleep(100);await dlgThrough();
+  await p.evaluate(()=>document.querySelectorAll('.wcard2').forEach(c=>{c.hidden=false;}));/* G5: 0-star worlds are hidden tiles (#98) */await p.locator('.wcard2').nth(wi).click();await sleep(100);await dlgThrough();
   if(await p.locator('#sWorld').isHidden())log.push('world path not shown');await shot('path');await overflow('path');
   for(let i=0;i<(process.env.SKIPLV?3:nLv);i++){const tag=`W${wi}L${i}`;where=tag;
     const node=p.locator('.pnode').nth(i);if(await node.isDisabled()){log.push('locked '+tag);break;}
@@ -61,19 +61,21 @@ async function run(name,wi,extras){
   if(extras){where='extras';
     await p.click('#btnBack');await sleep(100);
     // speed challenge
-    await p.locator('.wcard2').nth(wi).click();await sleep(100);await p.locator('.whead .bigbtn').click();await sleep(100);await shot('speed');await overflow('speed');
+    await p.evaluate(()=>document.querySelectorAll('.wcard2').forEach(c=>{c.hidden=false;}));/* G5: 0-star worlds are hidden tiles (#98) */await p.locator('.wcard2').nth(wi).click();await sleep(100);await p.locator('.whead .bigbtn').click();await sleep(100);await shot('speed');await overflow('speed');
     for(let k=0;k<5;k++){const s=await st();if(s&&!s.lock){await answer(s,false).catch(()=>{});}await sleep(250);}
     await p.evaluate(()=>{window.__oren4.play.end=Date.now();});await sleep(600);
     if(await p.locator('#ov').isHidden())log.push('speed no result');await shot('speed-res');await p.locator('#ov .bigbtn').last().click();await sleep(100);
     await p.click('#btnBack');await sleep(100);
     // kingdom
     await p.locator('.tool:not(.hubtool)').nth(0).click();await sleep(100);const g0=await p.evaluate(()=>window.__oren4.save.gems);
-    await p.locator('.shop .opt').nth(1).click();await p.locator('.kcell').nth(13).click();await p.locator('.kcell').nth(20).click();await sleep(100);
-    const g1=await p.evaluate(()=>window.__oren4.save.gems);if(g1!==g0-20)log.push('kingdom gems '+g0+'→'+g1);
-    const placed=await p.evaluate(()=>Object.keys(window.__oren4.save.k).length);if(placed!==2)log.push('kingdom placed '+placed);
+    await p.evaluate(()=>{const o=document.querySelector('#ov .bwcard');if(o)document.getElementById('ov').hidden=true;});
+    const placedN=()=>p.evaluate(()=>Object.keys(window.__oren4.save.bw.a.meadow).length);const n0=await placedN();
+    await p.locator('#sKing .bwb[data-b="wood"]').click();await p.locator('#sKing .bwc[data-x="1"][data-y="1"]').click();await p.locator('#sKing .bwc[data-x="2"][data-y="1"]').click();await sleep(100);
+    const g1=await p.evaluate(()=>window.__oren4.save.gems);if(g1!==g0-4)log.push('kingdom gems '+g0+'→'+g1);
+    if(await placedN()!==n0+2)log.push('kingdom placed '+(await placedN()-n0));
     await shot('kingdom');await overflow('kingdom');
-    await p.locator('.shop .opt').last().click();await p.locator('.kcell').nth(20).click();await sleep(50);
-    if(await p.evaluate(()=>Object.keys(window.__oren4.save.k).length)!==1)log.push('erase failed');
+    await p.locator('#sKing .bwc[data-x="2"][data-y="1"]').click();await sleep(50);
+    if(await placedN()!==n0+1)log.push('remove failed');
     await p.click('#btnBack');await sleep(100);
     // teacher: build a story puzzle 12 : 3, solve wrong then right, then family solves
     await p.locator('.tool:not(.hubtool)').nth(2).click();await sleep(100);

@@ -151,13 +151,13 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
       P.qs.forEach(q => { n++; const r1 = wrongEvery && n % wrongEvery === 0 ? 'bad' : 'ok'; res[q.k] = res[q.k] === 'bad' || r1 === 'bad' ? 'bad' : 'ok'; E.mark(save, q.k, res[q.k], b0[q.k], d); });
       if (r % 2) d++; } };
   const pl = E.plan(save, 1, d);
-  ok(pl.teach.length === 2 && pl.teach.every(g => /^L:[SATPIN]$/.test(g)) && pl.qs.length >= 6 && pl.qs.every(q => /^[ncs]:[SATPIN]$/.test(q.k)), 'first letter round: 2 letters of s a t p i n, their name/case/sound', JSON.stringify(pl));
+  ok(pl.teach.length === 2 && pl.teach.every(g => /^L:[SATPIN]$/.test(g)) && pl.qs.length >= 4 && pl.teach.length + pl.qs.length <= 6 && pl.qs.every(q => /^[ncs]:[SATPIN]$/.test(q.k)), 'first letter round: 2 letters of s a t p i n, their name/case/sound; 2 cards + 4 questions, at most 6 (#555)', JSON.stringify(pl));
   const lcB = E.teachCard('L:B');
   ok(lcB.w === 'ball' && lcB.say === 'B is for ball.' && lcB.he === 'בּ' && lcB.mean === 'כַּדּוּר', 'letter card: the voice reads the word, its Hebrew meaning is shown', JSON.stringify(lcB));
   let r0 = 0; while (E.doneUnits(save, 1) < 1 && r0 < 40) { play(1, 1); r0++; }
   ok(E.levelOpen(save, 0) && !E.levelOpen(save, 2), `words open after the first letter group (${r0} rounds)`);
   const p0 = E.plan(save, 0, d);
-  ok(p0.teach.length === 4 && p0.teach.every(g => g.startsWith('v:')) && p0.qs.length === 8, 'first word round: 4 new words taught, 8 questions', JSON.stringify({ t: p0.teach, n: p0.qs.length }));
+  ok(p0.teach.length === 2 && p0.teach.every(g => g.startsWith('v:')) && p0.qs.length === 4, 'first word round: 2 new words taught, 4 questions (#59)', JSON.stringify({ t: p0.teach, n: p0.qs.length }));
   ok(p0.qs.every((q, i) => i === 0 || q.k !== p0.qs[i - 1].k), 'no word twice in a row');
   ok(p0.unit.id === 'v-colors', 'words start with colours');
   /* play rounds: all first-try right, a new day every 2 rounds */
@@ -208,6 +208,20 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
   ok(hasMom && ps.teach.includes('v:mom') && ps.teach.includes('v:dad') && E.teachCard('v:mom').kind === 'word', 'a sentence word not taught yet (mom, dad) gets its word card first', JSON.stringify(ps.teach));
 }
 
+/* #424 the English scene of the daily path: 5 cards, letters and sounds first, then words */
+{
+  const isL = x => x.g ? x.g.startsWith('L:') : /^[ncs]:/.test(x.q.k);
+  const okOrder = sc => { const f = sc.findIndex(x => !isL(x)); return f < 0 || sc.slice(f).every(x => !isL(x)); };
+  const s0 = freshSave(), d0 = E.day(); const sc0 = E.dayScene(s0, d0);
+  ok(sc0.length === 5 && sc0.every(isL) && sc0[0].g && sc0[0].lv === 1, '#424 a new player\'s English scene: 5 cards, all letters and sounds, a letter card first', JSON.stringify(sc0));
+  const s1 = freshSave(); E.LEVELS[1].units[0].items.forEach(k => { E.st(s1).i[k] = [2, d0 + 3]; });
+  let allOk = true, words = 0, bad = '';
+  for (let r = 0; r < 12; r++) { const sc = E.dayScene(s1, d0); const taughtNow = new Set(sc.filter(x => x.g).flatMap(x => E.teachCard(x.g).items));
+    if (sc.length !== 5 || !okOrder(sc) || !sc.some(isL) || sc.some(x => x.q && !E.seen(s1, x.q.k) && !taughtNow.has(x.q.k))) { allOk = false; bad = JSON.stringify(sc); }
+    words += sc.filter(x => !isL(x)).length; }
+  ok(allOk && words > 0, '#424 words open: still 5 cards, letters and sounds before words, no question on an untaught item', bad);
+}
+
 /* ======================= Part 2: the screens (Playwright) ======================= */
 (async () => {
   let chromium; try { ({ chromium } = require('playwright')); } catch (e) { ok(false, 'playwright missing'); return L.finish('english2', out); }
@@ -229,7 +243,7 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
   ok(i0.acts.join() === 'eng-abc,eng-voc,eng-read,eng-talk,eng-song' && i0.act.slice().sort().join() === i0.acts.slice().sort().join(), 'register(): the eng building has the 5 new acts (old ones gone from ACT)', JSON.stringify(i0));
   ok(i0.vis.join() === 'eng-abc', 'a new player sees only "letters and sounds" (first path, #58)', JSON.stringify(i0.vis));
   await p.evaluate(() => window.TAL.openBuilding(window.TAL.BUILD.find(x => x.id === 'eng'))); await L.sleep(200);
-  ok((await p.$$eval('#sTal .acts .actc', a => a.length)) === 1, 'building screen: one act card'); await shot('01-building-new');
+  ok((await p.$$eval('#sTal .acts .actc', a => a.length)) === 0 && await p.evaluate(() => !document.querySelector('#sTal').hidden && document.querySelector('#sTal').children.length > 0), 'building with one act: no menu, "letters and sounds" opens straight away (#8)'); await shot('01-building-new');
   /* play a real round with clicks (letters open words; then a word round) */
   await p.evaluate(() => { const E = window.ENGLISH2, s = window.OREN.save, d = E.day(); E.LEVELS[1].units[0].items.forEach(k => { E.st(s).i[k] = [2, d + 3]; }); });
   ok((await info()).vis.join() === 'eng-abc,eng-voc', 'after the first letter group: words appear');
@@ -330,6 +344,12 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
   await p.evaluate(() => { document.querySelector('#ov').hidden = true; });
   /* the activities-suite helper (window.__quiz) can play every act */
   ok(await p.evaluate(() => typeof window.__quiz.ans === 'number'), 'window.__quiz is there for the activities suite');
+  /* #592: answer the last card, go home within 1 s, wait 5 s -> still home, no result card from the old round */
+  await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.ENGLISH2.screens.ACTS[0].run(() => { }); }); await L.sleep(150);
+  for (let k = 0; k < 60 && await p.evaluate(() => window.__quiz.i < window.__e2.steps.length - 1); k++) { await answer(false); await L.sleep(60); }
+  await answer(false); await p.evaluate(() => window.OREN.showMap()); await L.sleep(5000);
+  const lv = await p.evaluate(() => ({ home: !document.querySelector('#sHome').hidden, tal: !document.querySelector('#sTal').hidden, ov: !document.querySelector('#ov').hidden }));
+  ok(lv.home && !lv.tal && !lv.ov, '#592 leaving an English round: its pending timers do nothing (still home after 5 s, no result card)', JSON.stringify(lv));
   ok(!errs.length, 'no JS errors', errs.slice(0, 5).join(' | '));
   await b.close(); L.finish('english2-' + v, out);
 })().catch(e => { ok(false, 'crash ' + e.stack); L.finish('english2', out); });

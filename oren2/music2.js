@@ -59,8 +59,9 @@ const READ=[
   {pool:[2,3,4,5,6,7],opts:3,names:0},           /* עַד דּוֹ הַגָּבוֹהַּ */
   {pool:[0,1,2,3,4,5,6,7],opts:4,names:0},       /* כָּל הָאוֹקְטָבָה */
   {pool:[-7,-6,-5,-4,-3,-2,-1,0],opts:4,names:1,clef:'bass'}];
+const QN=5;   /* #59: a round is about 5 questions (rhythm too: nq note questions + drum taps = QN, #555) */
 const EAR=['hl-big','same','hl-small','which2','which3'];
-const RHY=[{vals:['w','h','q'],nq:6,pats:[['q','q','q','q'],['h','h'],['q','q','h']]},
+const RHY=[{vals:['w','h','q'],nq:4,pats:[['q','q','q','q'],['h','h'],['q','q','h']]},
   {vals:['w','h','q'],nq:3,pats:[['q','q','h'],['h','q','q'],['q','h','q'],['w'],['h','h'],['q','q','q','q']]},
   {vals:['h','q','e'],nq:3,pats:[['q','e','e','q','q'],['e','e','q','h'],['q','q','e','e','q'],['e','e','e','e','h']]},
   {vals:['w','h','q','e'],nq:2,pats:[['e','e','q','e','e','q'],['h','e','e','q'],['q','e','e','h'],['e','e','e','e','q','q'],['q','q','e','e','q'],['e','e','q','q','q']]}];
@@ -87,9 +88,10 @@ const flash=(k,c)=>{k.classList.remove('ok','bad');void k.offsetWidth;k.classLis
 
 /* ---------- one runner for all four activities ---------- */
 let CUR=null;
-function lesson(key,qs,back){const [id,title,max]=ACTS[key];const lvl=ST()[key];let i=0,err=0,gems=0,items=0;qs.forEach(q=>{items+=q.items||1;});
+function lesson(key,qs,back){qs=qs.slice(0,T.pathN(qs.length));/* #394 short on the daily path */const [id,title,max]=ACTS[key];const lvl=ST()[key];let i=0,err=0,gems=0,items=0;qs.forEach(q=>{items+=q.items||1;});
   O.setScreen('sTal','final',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq m2');s.appendChild(wrap);
   if(key==='rhy'&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(rhyLessons(),back,()=>rhyRun(back)));
+  if(key==='read'&&window.LESSONS)s.appendChild(window.LESSONS.againBtn('mus-staff',back,()=>readRun(back)));
   const sk=skAt(key,lvl);if(KN)KN.begin('music',()=>wrap.isConnected&&!s.hidden);
   const show=()=>{const q=qs[i];T.hudT(title,T.progressBar(i,qs.length));wrap.innerHTML='';T.setKey(null);CUR=KIND[q.k](q,wrap,(e,first,el)=>{if(KN&&(q.rv||sk))KN.hit(q.rv||sk.id,!!first);done(e,first,el);});};
   function done(e,first,el){err+=e;const g=first?2:e>=2&&!el?0:1;if(g){gems+=g;O.addGems(g,el||wrap);O.floatText(el||wrap,'+'+g);}
@@ -184,13 +186,13 @@ const countUp=i=>{const st=i>=0?1:-1,out=[];for(let k=0;k!==i+st;k+=st)out.push(
 /* ---------- question sets per level ---------- */
 const noteBtn=(i,clef)=>`<span class="m2opt">${staffSVG([{i,d:'q'}],{clef,minW:120,cls:'mini'})}<b>${nameOf(i)}</b></span>`;
 function readQs(){const L0=READ[ST().read-1];const qs=[];let last=null;
-  for(let n=0;n<8;n++){const rv=rev('read'),L=rv?READ[rv.lv[1]-1]:L0;let i;do i=pick(L.pool);while(i===last&&L.pool.length>1);last=i;
+  for(let n=0;n<QN;n++){const rv=rev('read'),L=rv?READ[rv.lv[1]-1]:L0;let i;do i=pick(L.pool);while(i===last&&L.pool.length>1);last=i;
     if(n%2===0){const right=nameOf(i);const names=[...new Set(L.pool.map(nameOf))].filter(x=>x!==right);const opts=shuffle([right,...shuffle(names).slice(0,L.opts-1)]);
       qs.push({k:'choice',pr:`${staffSVG([{i,d:'q'}],{clef:L.clef,minW:200})}<div class="qq">אֵיזֶה תָּו זֶה?</div>`,opts,ans:opts.indexOf(right),explain:countUp(i),after:()=>play(midiOf(i)),key:'r'+n,rv:rv&&rv.id});}
     else qs.push({k:'piano',i,clef:L.clef,names:L.names,rv:rv&&rv.id});}
   return qs;}
 function earQs(){const kind=EAR[ST().ear-1];const qs=[];
-  for(let n=0;n<8;n++){
+  for(let n=0;n<QN;n++){
     if(kind==='hl-big'||kind==='hl-small'){const a=rand(60,67);const b=a+(Math.random()<.5?-1:1)*(kind==='hl-big'?rand(7,12):rand(2,4));const opts=['גָּבוֹהַּ יוֹתֵר ⬆️','נָמוּךְ יוֹתֵר ⬇️'];
       qs.push({k:'choice',pr:`<div class="m2ear">🎵 🎵</div><div class="qq">הַקְשֵׁב לִשְׁנֵי צְלִילִים. הַשֵּׁנִי גָּבוֹהַּ יוֹתֵר אוֹ נָמוּךְ יוֹתֵר?</div>`,opts,ans:b>a?0:1,explain:b>a?HM.hi:HM.lo,clue:()=>{play(a,.6);play(b,.6,1,1.4);return HM.hlClue;},play:()=>{play(a,.6);play(b,.6,1,.8);},auto:1,playLbl:'שׁוּב',say:'הקשב לשני צלילים. השני גבוה יותר או נמוך יותר?',a,b});}
     else if(kind==='same'){const a=rand(60,69);const same=n%2===0?Math.random()<.5:Math.random()<.5;const b=same?a:a+(Math.random()<.5?-1:1)*rand(2,5);const opts=['אוֹתוֹ צְלִיל','צְלִיל אַחֵר'];
@@ -201,7 +203,7 @@ function earQs(){const kind=EAR[ST().ear-1];const qs=[];
 function rhyQs(){const L0=RHY[ST().rhy-1];const qs=[];
   for(let n=0;n<L0.nq;n++){const rv=rev('rhy'),L=rv?RHY[rv.lv[1]-1]:L0;const v=L.vals[n%L.vals.length];const byBeats=n>=L.vals.length;const opts=shuffle(L.vals.map(x=>byBeats?VALB[x]:VALN[x]));const right=byBeats?VALB[v]:VALN[v];
     qs.push({k:'choice',pr:`${staffSVG([{i:0,d:v}],{one:true,minW:160})}<div class="qq">${byBeats?'כַּמָּה פְּעָמוֹת נִמְשָׁךְ הַתָּו הַזֶּה?':'אֵיזֶה תָּו זֶה?'}</div>`,opts,ans:opts.indexOf(right),explain:HM[v],cls:byBeats?'m2num':'',key:'v'+n,rv:rv&&rv.id});}
-  shuffle(L0.pats.slice()).slice(0,8-L0.nq).forEach(p=>qs.push({k:'tap',pat:p}));
+  shuffle(L0.pats.slice()).slice(0,Math.max(0,QN-L0.nq)).forEach(p=>qs.push({k:'tap',pat:p}));
   return qs;}
 function melQs(){const L=MEL[ST().mel-1];return L.songs.map(song=>({k:'melody',song,names:L.names,items:parseMel(song).length}));}
 /* lesson cards before the first rhythm questions (#56): note lengths; eighths get their own lesson when they first appear */
@@ -217,7 +219,12 @@ if(LN){LN.add('mus-len',{title:'כַּמָּה זְמַן נִמְשָׁךְ ת�
     lenCard('q','זֶה תָּו רֶבַע: עִגּוּל מָלֵא עִם מַקֵּל. הוּא קָצָר: נִמְשָׁךְ פְּעָמָה אַחַת.')]});
   LN.add('mus-len8',{title:'תָּו חָדָשׁ: שְׁמִינִית',bg:'final',cards:[
     {art:()=>staffSVG([{i:0,d:'e'}],{one:true,minW:160}),t:'זוֹ שְׁמִינִית: עִגּוּל מָלֵא, מַקֵּל וְדֶגֶל. הִיא מְהִירָה: נִמְשֶׁכֶת חֲצִי פְּעָמָה.'},
-    {art:()=>`<div class="lcrow">${staffSVG([{i:0,d:'e',beam:'s'},{i:0,d:'e',beam:'e'}],{one:true,minW:160})}<span class="lcarr">=</span>${staffSVG([{i:0,d:'q'}],{one:true,minW:160})}</div>`,t:'שְׁתֵּי שְׁמִינִיּוֹת יַחַד נִמְשָׁכוֹת כְּמוֹ רֶבַע אֶחָד.'}]});}
+    {art:()=>`<div class="lcrow">${staffSVG([{i:0,d:'e',beam:'s'},{i:0,d:'e',beam:'e'}],{one:true,minW:160})}<span class="lcarr">=</span>${staffSVG([{i:0,d:'q'}],{one:true,minW:160})}</div>`,t:'שְׁתֵּי שְׁמִינִיּוֹת יַחַד נִמְשָׁכוֹת כְּמוֹ רֶבַע אֶחָד.'}]});
+  /* the staff before the first note-reading questions (#258): where do, re, mi sit */
+  LN.add('mus-staff',{title:'אֵיפֹה יוֹשְׁבִים הַתָּוִים?',bg:'final',cards:[
+    {art:()=>staffSVG([],{minW:240}),t:'אֵלֶּה חֲמִשָּׁה קַוִּים, וְקוֹרְאִים לָהֶם הַחֲמֻשָּׁה. כָּל תָּו יוֹשֵׁב עַל קַו אוֹ בֵּין שְׁנֵי קַוִּים.'},
+    {art:()=>staffSVG([{i:0}],{minW:240}),t:'זֶה דּוֹ. הוּא יוֹשֵׁב מִתַּחַת לַחֲמֻשָּׁה, עַל קַו קָטָן מִשֶּׁלּוֹ.'},
+    {art:()=>staffSVG([{i:0},{i:1},{i:2}],{minW:240}),t:'כָּל צַעַד לְמַעְלָה הוּא הַתָּו הַבָּא: דּוֹ, רֶה, מִי. מִי יוֹשֵׁב עַל הַקַּו הַתַּחְתּוֹן.'}]});}
 /* what Oren knows (#57): reading notes and rhythm, each a ladder of skills over the activity's levels (lv = [from, to]) */
 const KN=window.KNOW;
 const skAt=(key,lvl)=>KN?KN.track('music',key).find(x=>lvl>=x.lv[0]&&lvl<=x.lv[1])||null:null;
@@ -234,7 +241,8 @@ if(KN)KN.area('music',{name:'מוזיקה',skills:[
     else if(x.e==='place')m2[key]=x.yes?Math.max(m2[key],nx?nx.lv[0]:s.lv[1]):Math.min(m2[key],s.lv[0]);});O.persist();}});
 const rhyLessons=()=>['mus-len',...(RHY[ST().rhy-1].vals.includes('e')?['mus-len8']:[])];
 const rhyRun=back=>lesson('rhy',rhyQs(),back);
-const START={read:back=>lesson('read',readQs(),back),ear:back=>lesson('ear',earQs(),back),rhy:back=>LN?LN.first(rhyLessons(),back,()=>rhyRun(back)):rhyRun(back),mel:back=>lesson('mel',melQs(),back)};
+const readRun=back=>lesson('read',readQs(),back);
+const START={read:back=>LN?LN.first('mus-staff',back,()=>readRun(back)):readRun(back),ear:back=>lesson('ear',earQs(),back),rhy:back=>LN?LN.first(rhyLessons(),back,()=>rhyRun(back)):rhyRun(back),mel:back=>lesson('mel',melQs(),back)};
 
 /* ---------- registration + parent info ---------- */
 const ICONS={read:()=>staffSVG([{i:4,d:'q'}],{minW:96,cls:'mini'}),ear:()=>'<span style="font-size:34px">👂</span>',rhy:()=>staffSVG([{i:0,d:'e',beam:'s'},{i:0,d:'e',beam:'e'},{i:0,d:'q'}],{one:true,cls:'mini'}),mel:()=>staffSVG([{i:0,d:'q'},{i:2,d:'q'},{i:4,d:'q'}],{cls:'mini'})};

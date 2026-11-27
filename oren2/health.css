@@ -9,7 +9,9 @@ body.hlocked #ov{position:fixed;z-index:100}
 /* #353: the parent's typed message, said by the friend */
 .hlock.hmsg .hav svg{width:170px;height:170px}.hlock.hmsg h2{font-family:var(--read);font-size:34px;overflow-wrap:anywhere}
 .hlock .hagain{font-size:40px;width:76px;height:76px;border-radius:50%;border:4px solid var(--ink);background:#fff;cursor:pointer}
-.hmsgrow{flex-wrap:wrap}.hmsgrow .hmsgin{direction:rtl;text-align:right;width:min(320px,100%);font-size:20px;padding:6px}.hmsgsend[disabled]{opacity:.45}
+.hmsgrow{flex-wrap:wrap}.hready{font-family:var(--read);font-size:18px;padding:6px 12px;border-radius:14px;border:2px solid var(--ink);background:#fff8e1;cursor:pointer}.hmsgtype{display:flex;gap:6px;flex-wrap:wrap;width:100%}
+.hlock .hfaces{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}.hlock .hface{font-size:46px;width:88px;height:88px;border-radius:50%;border:4px solid var(--ink);background:#fff;cursor:pointer}
+@media (max-width:500px){.hlock .hfaces{gap:8px}.hlock .hface{font-size:36px;width:70px;height:70px}}.hmsgrow .hmsgin{direction:rtl;text-align:right;width:min(320px,100%);font-size:20px;padding:6px}.hmsgsend[disabled]{opacity:.45}
 .hcnt{font-size:56px;font-weight:900;line-height:1;color:#3a8fc4}
 .hlock .hback[disabled]{cursor:default;background:linear-gradient(to left,var(--ok) var(--p,0%),#b9c2c9 var(--p,0%));box-shadow:inset -6px -6px 0 rgba(0,0,0,.15),0 7px 0 rgba(0,0,0,.3)}
 .hlock .hback.ready{animation:pop .35s ease-out both}
@@ -19,7 +21,7 @@ body.hlocked #ov{position:fixed;z-index:100}
 @keyframes hstretch{0%,100%{transform:scaleY(1)}50%{transform:scaleY(1.22) scaleX(.92)}}
 .hcards{display:flex;gap:16px;justify-content:center;width:100%}
 .hcards .dcard{width:200px;min-height:160px}
-.hone{background:none;font-size:18px;font-weight:800;text-decoration:underline;color:var(--ink-soft);padding:6px 10px}
+.hone{display:inline-flex;align-items:center;gap:6px;min-height:44px;background:#fff;font-size:18px;font-weight:800;color:var(--ink);padding:6px 14px;box-shadow:inset -3px -3px 0 rgba(0,0,0,.12),0 3px 0 rgba(0,0,0,.2)}
 .hpar{background:none;font-size:13px;color:var(--ink-soft);opacity:.75;padding:4px 8px}
 .hrest{position:relative}.hrest>*:not(.hmoon){filter:saturate(.3);opacity:.75}
 .hmoon{position:absolute;top:6px;left:6px;background:#2d3a5a;color:#fff1a8;font-size:13px;font-weight:800;padding:2px 8px;border-radius:12px;white-space:nowrap;pointer-events:none}

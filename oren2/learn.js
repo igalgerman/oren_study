@@ -151,7 +151,7 @@ const MM={
   if(d>0)st=off+d*ri(0,lv<=2?3:5);else st=-d*ri(len,len+6)+(lv>=4?ri(0,1)*(-d===10?5:0):0);
   const seq=Array.from({length:len},(_,j)=>st+d*j);if(seq.some(x=>x<0||x>300))return MM['mm-skip'](lv);
   const qi=lv<=2?len-1:ri(1,len-1);const v=seq[qi];
-  return Q('mm-skip',lv,{v,html:`<div class="lnx lnseq">${L(seq.map((x,j)=>j===qi?'?':x).join(', '))}</div>`,text:'בְּכַמָּה קוֹפְצִים? מָה הַמִּסְפָּר הֶחָסֵר?',ds:[v+1,v-1,v+(d>0?d:-d)],
+  return Q('mm-skip',lv,{v,html:`<div class="lnx lnseq">${L(seq.map((x,j)=>j===qi?'?':x).join(', '))}</div>`,text:'מָה הַמִּסְפָּר הֶחָסֵר?',tip:'בְּכַמָּה קוֹפְצִים כָּל פַּעַם?',ds:[v+1,v-1,v+(d>0?d:-d)],
     ex:`<div>קוֹפְצִים כָּל פַּעַם ${L((d>0?'+':'−')+Math.abs(d))}</div>`,seq,qi,step:d,key:'s'+seq.join(',')+qi});},
  'mm-pv':lv=>{
   const moves=lv===1?[pk([10,-10])]:lv===2?shuf([pk([10,-10]),pk([1,-1])]):lv===3?[pk([20,30,-20]),pk([1,2,3,-1,-2])]:lv===4?[pk([11,9,-11,-9])]:[pk([10,20,-10]),pk([1,-1,2]),pk([11,9,-11,-9])];
@@ -176,7 +176,7 @@ const NOUN={goal:['גּוֹל','גּוֹלִים','m'],ball:['כַּדּוּר',
   row:['שׁוּרָה','שׁוּרוֹת','f'],jump:['קְפִיצָה','קְפִיצוֹת','f'],circle:['עִגּוּל','עִגּוּלִים','m'],word:['מִלָּה','מִלִּים','f']};
 const TWO={m:{'':'שְׁנֵי','בְּ':'בִּשְׁנֵי','לְ':'לִשְׁנֵי','וְ':'וּשְׁנֵי','מִ':'מִשְּׁנֵי'},f:{'':'שְׁתֵּי','בְּ':'בִּשְׁתֵּי','לְ':'לִשְׁתֵּי','וְ':'וּשְׁתֵּי','מִ':'מִשְּׁתֵּי'}};
 /* n + noun, agreeing in gender: "גּוֹל אֶחָד", "שְׁתֵּי דַּקּוֹת", "<b>5</b> כַּדּוּרִים"; with a prefix: "לִשְׁנֵי מִגְדָּלִים", "בְּ-<b>4</b> יָמִים" */
-function count(n,key,prep){const w=NOUN[key];if(!w)throw new Error('noun '+key);prep=prep||'';
+function count(n,key,prep){const w=Array.isArray(key)?key:NOUN[key];if(!w)throw new Error('noun '+key);prep=prep||'';
   if(n===1){if(prep)throw new Error('one with prefix '+key);return `${w[0]} ${w[2]==='m'?'אֶחָד':'אַחַת'}`;}
   if(n===2)return `${TWO[w[2]][prep]} ${w[1]}`;
   return `${prep?prep+'-':''}${B(n)} ${w[1]}`;}
@@ -249,12 +249,23 @@ const WT=[
  {id:'mo-change',th:'soccer',lv:[4,5],f:'c-a*b',g:x=>{const a=ri(3,9),b=ri(2,4),c=pk([50,100]);return [`כָּל כַּדּוּר עוֹלֶה ${x.c(a,'shekel')}. ${x.N} ${x.v('קָנָה','קָנְתָה')} ${x.c(b,'ball')} ${x.v('וְשִׁלֵּם','וְשִׁלְּמָה')} בִּשְׁטָר שֶׁל ${B(c)} שְׁקָלִים. כַּמָּה עֹדֶף ${x.v('הוּא קִבֵּל','הִיא קִבְּלָה')}?`,a,b,c];}},
  {id:'mo-two',th:'swim',lv:[3,5],f:'a+b',g:x=>{const a=ri(5,45),b=ri(5,45);return [`מִשְׁקְפֵי שְׂחִיָּה עוֹלִים ${x.c(a,'shekel')}, וְכוֹבַע יָם עוֹלֶה ${x.c(b,'shekel')}. ${x.N} ${x.v('קָנָה','קָנְתָה')} אֶת שְׁנֵיהֶם. כַּמָּה ${x.v('הוּא שִׁלֵּם','הִיא שִׁלְּמָה')}?`,a,b];}},
 ];
+/* #416 story templates: they count the thing of the story scene that plays now (x.t = [one, many, gender], STORYMIX.thing()) */
+const SCN=[
+ {id:'sc-add',th:'story',lv:[1,5],f:'a+b',g:x=>{const [a,b]=split(x.lv);return [`${x.N} ${x.v('אָסַף','אָסְפָה')} ${x.c(a,x.t)} בַּבֹּקֶר, וְעוֹד ${x.c(b,x.t)} בָּעֶרֶב. כַּמָּה ${x.t[1]} ${x.v('הוּא אָסַף','הִיא אָסְפָה')} בְּסַךְ הַכֹּל?`,a,b];}},
+ {id:'sc-sub',th:'story',lv:[1,5],f:'a-b',g:x=>{const [a,b]=pair(x.lv);return [`${x.N} ${x.v('אָסַף','אָסְפָה')} ${x.c(a,x.t)}. הַמְּבַלְבֵּל חָטַף ${x.c(b,x.t)} וּבָרַח. כַּמָּה ${x.t[1]} נִשְׁאֲרוּ ${x.v('לוֹ','לָהּ')}?`,a,b];}},
+ {id:'sc-mul',th:'story',lv:[3,5],f:'a*b',g:x=>{const a=pk([2,3,4,5,10]),b=ri(3,x.lv===3?5:9);return [`בְּכָל שׁוּרָה יֵשׁ ${x.c(a,x.t)}. כַּמָּה ${x.t[1]} יֵשׁ ${x.c(b,'row','בְּ')}?`,a,b];}},
+ {id:'sc-div',th:'story',lv:[4,5],f:'a/b',g:x=>{const b=ri(2,5),a=b*ri(2,9);return [`${x.N} ${x.v('חִלֵּק','חִלְּקָה')} ${x.c(a,x.t)} שָׁוֶה בְּשָׁוֶה ${x.c(b,'kid','לְ')}. כַּמָּה ${x.t[1]} יֵשׁ לְכָל יֶלֶד?`,a,b];}},
+];
+const sceneThing=()=>{const M=typeof window!=='undefined'&&window.STORYMIX;try{return M&&M.thing?M.thing():null;}catch(e){return null;}};
 const WT_BY_LV=lv=>WT.filter(t=>t.lv[0]<=lv&&lv<=t.lv[1]);
 /* the answer from the numbers, in text order */
 const solve=(f,nums)=>{const [a,b,c,d]=nums;return Function('a','b','c','d','return '+f)(a,b,c,d);};
-function wordQ(lv,tid){const pool=tid?WT.filter(t=>t.id===tid):WT_BY_LV(lv);const t=pk(pool);const fem=rnd()<.5;
+/* tid: one template; thing: [one, many, gender] (default: the story scene's thing -> story templates mixed in; none -> only the old themes) */
+function wordQ(lv,tid,thing){thing=thing||(tid&&!/^sc-/.test(tid)?null:sceneThing());const ALL=[...WT,...SCN];
+  /* the story templates are mixed in (about 1 in 3), the old themes and multi-step problems stay */
+  const pool=tid?ALL.filter(t=>t.id===tid):thing&&rnd()<1/3?SCN.filter(t=>t.lv[0]<=lv&&lv<=t.lv[1]):WT_BY_LV(lv);const t=pk(pool);if(!t||(t.th==='story'&&!thing))throw new Error('word template '+tid);const fem=rnd()<.5;
   const Nn=pk(fem?NAMES_F:NAMES_M);let Mn;do{Mn=pk(rnd()<.5?NAMES_F:NAMES_M);}while(Mn===Nn);const gM=NAMES_F.includes(Mn);
-  const x={lv:Math.max(t.lv[0],Math.min(t.lv[1],lv)),Nn,Mn,N:Nn,M:Mn,v:(m,f)=>mark(Nn,fem?f:m),w:(m,f)=>mark(Mn,gM?f:m),c:count};
+  const x={lv:Math.max(t.lv[0],Math.min(t.lv[1],lv)),Nn,Mn,N:Nn,M:Mn,v:(m,f)=>mark(Nn,fem?f:m),w:(m,f)=>mark(Mn,gM?f:m),c:count,t:thing};
   for(let k=0;k<40;k++){const [text,...nums]=t.g(x);const v=solve(t.f,nums);if(Number.isInteger(v)&&v>=0&&v<=200)
     return Object.assign({sk:'wp',lv,tid:t.id,th:t.th,f:t.f,nums,tx:text,text:'',v,html:`<div class="lnwp">${text}</div>`,ex:ex(t.f.replace(/[abcd]/g,ch=>nums['abcd'.indexOf(ch)]).replace(/\*/g,' × ').replace(/\//g,' : ').replace(/-/g,' − ').replace(/\+/g,' + ').replace(/\s+/g,' ')+' = '+v),key:'w'+t.id+nums.join(',')},numOpts(v,[v+1,v-1,...nums.filter(n=>n!==v)]));}
   throw new Error('word template '+t.id);}
@@ -273,13 +284,13 @@ const CH={
  balance:lv=>{const [f1,f2,f3]=shuf(FRUIT);const A=ri(2,lv>=3?12:6),Bv=ri(1,lv>=3?15:8);
    const rows=[[`${f1} + ${f1}`,2*A],[`${f1} + ${f2}`,A+Bv]];let v=Bv,ask=f2,p={eqs:[[[0,0],2*A],[[0,1],A+Bv]],ask:1};
    if(lv>=4){const Cv=ri(1,12);rows.push([`${f2} + ${f3}`,Bv+Cv]);v=Cv;ask=f3;p={eqs:[[[0,0],2*A],[[0,1],A+Bv],[[1,2],Bv+Cv]],ask:2};}
-   return {kind:'balance',p,v,html:`<div class="lnbal">${rows.map(r=>`<div>${L(`${r[0]} = ${r[1]}`)}</div>`).join('')}<div class="lnask">${L(`${ask} = ?`)}</div></div>`,text:'כָּל פְּרִי שָׁוֶה מִסְפָּר. כַּמָּה שָׁוֶה הַפְּרִי הָאַחֲרוֹן?',ds:[rows[rows.length-1][1],A,v+1],key:'b'+rows.map(r=>r[1]).join(',')};},
+   return {kind:'balance',p,v,html:`<div class="lnbal">${rows.map(r=>`<div>${L(`${r[0]} = ${r[1]}`)}</div>`).join('')}<div class="lnask">${L(`${ask} = ?`)}</div></div>`,text:'כַּמָּה שָׁוֶה הַפְּרִי הָאַחֲרוֹן?',tip:'כָּל פְּרִי שָׁוֶה מִסְפָּר. מַתְחִילִים מֵהַשּׁוּרָה הָרִאשׁוֹנָה.',ds:[rows[rows.length-1][1],A,v+1],key:'b'+rows.map(r=>r[1]).join(',')};},
  digits:lv=>{if(lv<=3){const t=ri(1,8),d=ri(1,9-t);return {kind:'digits',p:{t,d},v:t*10+t+d,text:`אֲנִי מִסְפָּר דּוּ-סִפְרָתִי. סִפְרַת הָעֲשָׂרוֹת שֶׁלִּי הִיא ${B(t)}, וְסִפְרַת הָאֲחָדוֹת גְּדוֹלָה מִמֶּנָּה בְּ-${B(d)}. מִי אֲנִי?`,ds:[(t+d)*10+t,t*10+d,t*10+t],key:'g'+t+d};}
    let t,u;do{u=ri(0,8);t=ri(u+1,9);}while(t+u>18);const s=t+u,d=t-u;return {kind:'digits2',p:{s,d},v:t*10+u,text:`אֲנִי מִסְפָּר דּוּ-סִפְרָתִי. סְכוּם הַסְּפָרוֹת שֶׁלִּי הוּא ${B(s)}, וְסִפְרַת הָעֲשָׂרוֹת גְּדוֹלָה בְּ-${B(d)} מִסִּפְרַת הָאֲחָדוֹת. מִי אֲנִי?`,ds:[u*10+t,t*10+u+1,s*10+d].filter(x=>x<100),key:'h'+s+d};},
  grow:lv=>{let seq,rule;if(lv<=3){const a=ri(1,10),d0=ri(1,2);seq=[a];for(let j=0;j<5;j++)seq.push(seq[j]+d0+j);rule='הַקְּפִיצָה גְּדֵלָה בְּ-1 כָּל פַּעַם';}
    else if(lv===4){const a=ri(10,30),x=ri(3,6),y=ri(1,x-1);seq=[a];for(let j=0;j<5;j++)seq.push(seq[j]+(j%2?-y:x));rule=`קָדִימָה ${x}, אָחוֹרָה ${y}, וְשׁוּב`;}
    else{const a=ri(1,5),k=2;seq=[a];for(let j=0;j<4;j++)seq.push(seq[j]*k);rule='כָּל מִסְפָּר גָּדוֹל פִּי 2 מֵהַקּוֹדֵם';}
-   const v=seq.pop();return {kind:'grow',p:{seq},v,html:`<div class="lnx lnseq">${L(seq.join(', ')+', ?')}</div>`,text:'מָה הַמִּסְפָּר הַבָּא? חַפֵּשׂ אֶת הַחֻקִּיּוּת.',rule,ds:[v+1,v-1,2*seq[seq.length-1]-seq[seq.length-2]],key:'q'+seq.join(',')};},
+   const v=seq.pop();return {kind:'grow',p:{seq},v,html:`<div class="lnx lnseq">${L(seq.join(', ')+', ?')}</div>`,text:'מָה הַמִּסְפָּר הַבָּא?',tip:'חַפֵּשׂ אֶת הַחֻקִּיּוּת.',rule,ds:[v+1,v-1,2*seq[seq.length-1]-seq[seq.length-2]],key:'q'+seq.join(',')};},
  legs:lv=>{const a=ri(2,lv===5?6:4),b=ri(2,lv===5?6:4);return {kind:'legs',p:{a,b},v:4*a+2*b,text:`בֶּחָצֵר יֵשׁ ${count(a,'dog')} וְעוֹד ${count(b,'hen')}. לְכָל כֶּלֶב יֵשׁ ${B(4)} רַגְלַיִם, וּלְכָל תַּרְנְגֹלֶת יֵשׁ שְׁתֵּי רַגְלַיִם. כַּמָּה רַגְלַיִם יֵשׁ לְכֻלָּם בְּיַחַד?`,ds:[2*(a+b),4*(a+b),4*a+2*b+2],key:'l'+a+b};},
 };
 const CH_BY_LV=[null,['miss','riddle'],['miss','riddle','balance'],['miss','riddle','balance','digits','grow'],['miss','riddle','balance','digits','grow'],['miss','riddle','balance','digits','grow','legs']];
@@ -380,7 +391,8 @@ return {core,
   seen:(bank,key,ok,helped)=>{if(HELD[bank])HELD[bank].delete(key);const r=seen(S(),bank,key,ok,helped);BIND.after&&BIND.after();return r;},
   pickItem:(bank,items,o)=>{const hd=held(bank);const r=pickItem(S(),bank,items,Object.assign({},o,{held:new Set([...hd.keys(),...((o&&o.held)||[])])}));if(r)hd.set(r.item.k,nowFn());return r;},hash,
   merge,zone,eff,acc,isDue,placeStart,placeStep,placeDone,placeResult,
-  MM,MM_IDS,DRILL_IDS,PW,WT,WT_BY_LV,wordQ,solve,CH,CH_BY_LV,chalQ,PM,PW,paperQ,gen,count,NOUN,NAMES_M,NAMES_F,lp,vav,MATH_LADDER,KID,PAR,IV,QUICK,maxLv,dayNum,
+  MM,MM_IDS,DRILL_IDS,PW,WT,SCN,WT_BY_LV,wordQ,solve,CH,CH_BY_LV,chalQ,PM,PW,paperQ,gen,count,NOUN,NAMES_M,NAMES_F,lp,vav,MATH_LADDER,KID,PAR,IV,QUICK,maxLv,dayNum,
+  setMax:(sk,n)=>{MAXLV[sk]=Math.max(1,n|0);},/* #395 a mission's own top level */
   setRandom:f=>{rnd=f||Math.random;},setNow:f=>{nowFn=f||(()=>Date.now());}};})();
 
 /* ======================= part 2: the game ======================= */
@@ -466,15 +478,15 @@ C.runwayOf=actId=>{const rs=C.runwayAll().filter(r=>r.acts.includes(actId));if(!
 
 /* ---------- the screen pieces ---------- */
 const hundred=(chart,show)=>{let s='<div class="lnhc" dir="ltr">';for(let i=1;i<=100;i++){const cls=i===chart.start?' st':show&&chart.path.includes(i)?(i===chart.path[chart.path.length-1]?' en':' pt'):'';s+=`<span class="${cls.trim()}">${i}</span>`;}return s+'</div>';};
-/* one question card: multiple choice; a short explanation after a mistake */
+/* one question card: one instruction line, multiple choice; the strategy (q.tip) only behind the help button (#216); a short explanation after a mistake */
 function askQ(wrap,q,i,n,title,onAns){T.hudT(title,T.progressBar(i,n));wrap.innerHTML='';const t0=Date.now();
   const card=h('div','prq tqc lnq',`${q.html||''}${q.chart?hundred(q.chart,false):''}${q.text?`<div class="qq">${q.text}</div>`:''}`);wrap.appendChild(card);if(T.rdQ&&q.text)T.rdQ(q,card);
-  O.sayNow=plain((q.text?'':(q.html||'')).replace(/<span class="lnbox"><\/span>/g,' מה ')+' '+(q.text||''));
-  const row=h('div','chs ltr');let tries=0,lock=false;
+  const row=h('div','chs ltr');/* #435 math is not a reading test: the answers are read one by one, each lit */
+  O.sayNow=plain((q.text?'':(q.html||'')).replace(/<span class="lnbox"><\/span>/g,' מה ')+' '+(q.text||''))+(T.ansSay?T.ansSay(row,q.opts.map(String)):'');let tries=0,lock=false;
   q.opts.forEach((v,k)=>{const b=h('button','chb num',String(v));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
   const exb=h('div','hintbox');exb.hidden=true;wrap.appendChild(exb);card.classList.add('flashin');
   /* only: the help box already shows the answer with the explanation, so the explanation box holds just 'continue' */
-  const showEx=(only)=>{if(q.chart){const c=card.querySelector('.lnhc');if(c)c.outerHTML=hundred(q.chart,true);}exb.hidden=false;exb.innerHTML=only?'':`<div class="cap">${q.tip?`<div>💡 ${q.tip}</div>`:''}${q.ex||''}</div>`;
+  const showEx=(only)=>{if(q.chart){const c=card.querySelector('.lnhc');if(c)c.outerHTML=hundred(q.chart,true);}exb.hidden=false;exb.innerHTML=only||!q.ex?'':`<div class="cap">${q.ex}</div>`;
     const nb=h('button','bigbtn',O.ICON.play+'<span>הַמְשֵׁךְ</span>');nb.onclick=()=>{sfx.pop(1);onAns(null);};exb.appendChild(nb);setTimeout(()=>nb.focus(),50);T.setKey(e=>{if(e.key==='Enter'||e.key===' ')nb.click();});};
   /* #54 one help button: the strategy tip as the clue, then the answer with its explanation (the question ends like after two mistakes) */
   const HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,clue:q.tip,explain:q.ex||(q.tip?'💡 '+q.tip:''),before:exb,
@@ -504,15 +516,33 @@ function mathRound(back){const st=ST();
   if(due.length>=2){parts=due.slice(0,3).map(c=>({sk:c.skill,lv:(st.k[c.skill]||{}).l||1}));title=KID.mix;}
   else{const a=K.pick(st,dc,{t});const b=K.pick(st,dc,{t,exclude:new Set([a.skill]),review:due.length?true:undefined});parts=[{sk:a.skill,lv:a.lv}];if(b)parts.push({sk:b.skill,lv:b.lv});title=KID[a.skill];}
   parts.forEach(p=>{p.lv=K.start(st,p.sk,p.lv);});
-  const N=6;const order=parts.length===1?Array(N).fill(0):parts.length===2?[0,0,1,0,1,0]:[0,1,2,0,1,2];
+  const N=T.pathN(6);/* #394 short on the daily path */const order=parts.length===1?Array(N).fill(0):parts.length===2?[0,0,1,0,1,0]:[0,1,2,0,1,2];
   /* about 1 question in 10: a quick review one level easier (a level he already passed) */
   const qs=[],seen=new Set();for(let i=0;i<N;i++){const p=parts[order[i]];const lv=p.lv>1&&KN&&Math.random()<KN.core.REVIEW?p.lv-1:p.lv;let q;for(let k=0;k<30;k++){q=C.gen(p.sk,lv);if(!seen.has(q.key))break;}seen.add(q.key);q.klv=lv;qs.push(q);}
-  let i=0,err=0;O.setScreen('sTal','mount',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq lnr');s.appendChild(wrap);if(KN)KN.begin('math',()=>wrap.isConnected&&!s.hidden);
+  /* the lesson of each strategy in the round, the first time (#258) */
+  const LS=window.LESSONS,lids=[...new Set(parts.map(p=>MLS[p.sk]).filter(Boolean))];
+  let i=0,err=0,s,wrap;
+  const start=()=>{i=0;err=0;O.setScreen('sTal','mount',back);s=$('#sTal');s.innerHTML='';wrap=h('div','tq lnr');s.appendChild(wrap);if(LS&&lids.length)s.appendChild(LS.againBtn(lids,back,start));if(KN)KN.begin('math',()=>wrap.isConnected&&!s.hidden);go();};
   const ttl=()=>`${parts.length>2?title:KID[qs[i].sk]} · שָׁלָב ${qs[i].lv}`;
   const go=()=>askQ(wrap,qs[i],i,N,ttl(),(r)=>{if(r){C.record(qs[i].sk,r.ok,r.first,r.ms);if(KN)KN.hit(kid(qs[i].sk,qs[i].klv),r.ok);if(!r.ok)err++;O.persist();return;}i++;if(i<N)go();else end();});
   function end(){T.setKey(null);let msg='';parts.forEach(p=>{const r=C.done(p.sk);if(r&&r.up>=2)msg='🚀 קָפַצְתָּ שְׁנֵי שְׁלַבִּים!';else if(r&&r.up===1&&!msg)msg='🎉 עָלִיתָ שָׁלָב!';});if(KN)KN.end('math');
     T.finishAct('ln-math',err,N,0,back,()=>mathRound(back),msg||undefined);}
-  go();}
+  if(LS&&lids.length)return LS.first(lids,back,start);start();}
+/* lesson cards (lessoncard.js, #258): each mental-math strategy is taught once, with an example, before its first question */
+const MLS={'mm-ten':'math-ten','mm-dbl':'math-dbl','mm-comp':'math-comp','mm-skip':'math-skip','mm-pv':'math-pv'};
+if(window.LESSONS){const LS=window.LESSONS,LT=t=>`<span class="ltr">${t}</span>`,EX=(...ls)=>`<div class="lcpic lnx">${ls.map(LT).join('<br>')}</div>`;
+  LS.add('math-ten',{title:KID['mm-ten'],bg:'mount',cards:[
+    {art:()=>EX('8 + 5 = ?'),t:'כְּדֵי לְחַבֵּר 8 וְעוֹד 5, קֹדֶם מַשְׁלִימִים לְ-10: 8 וְעוֹד 2 זֶה 10.'},
+    {art:()=>EX('8 + 2 = 10','10 + 3 = 13'),t:'מִתּוֹךְ הַ-5 נִשְׁאַר עוֹד 3. 10 וְעוֹד 3 זֶה 13.'}]});
+  LS.add('math-dbl',{title:KID['mm-dbl'],bg:'mount',cards:[
+    {art:()=>EX('6 + 6 = 12'),t:'כָּפוּל זֶה מִסְפָּר וְעוֹד אוֹתוֹ מִסְפָּר: 6 וְעוֹד 6 זֶה 12.'},
+    {art:()=>EX('6 + 7 = ?','6 + 6 + 1 = 13'),t:'6 וְעוֹד 7 זֶה כִּמְעַט כָּפוּל: כְּמוֹ 6 וְעוֹד 6, וְעוֹד 1. זֶה 13.'}]});
+  LS.add('math-comp',{title:KID['mm-comp'],bg:'mount',cards:[
+    {art:()=>EX('24 + 9 = ?','24 + 10 = 34','34 − 1 = 33'),t:'9 קָרוֹב מְאוֹד לְ-10. כְּדֵי לְחַבֵּר 24 וְעוֹד 9, מְחַבְּרִים 10 וּמוֹרִידִים 1: 34 פָּחוֹת 1 זֶה 33.'}]});
+  LS.add('math-skip',{title:KID['mm-skip'],bg:'mount',cards:[
+    {art:()=>EX('2, 4, 6, 8, ?'),t:'בִּסְפִירָה בְּדִלּוּגִים קוֹפְצִים כָּל פַּעַם אוֹתוֹ מִסְפָּר. כָּאן קוֹפְצִים בְּ-2, אָז אַחֲרֵי 8 בָּא 10.'}]});
+  LS.add('math-pv',{title:KID['mm-pv'],bg:'mount',cards:[
+    {art:()=>`<div class="lcpic lcpv">${hundred({start:23,path:[23,33,34]},true)}</div>`,t:'בְּלוּחַ הַמֵּאָה: עוֹד 10 זֶה שׁוּרָה אַחַת לְמַטָּה, וְעוֹד 1 זֶה מִשְׁבֶּצֶת אַחַת קָדִימָה.'}]});}
 
 /* ---------- paper & pencil ---------- */
 function paper(back){const st=ST();const last=st.pp&&st.pp.k;const kind=last==='math'?'write':'math';const sk=kind==='math'?'pp-math':'pp-write';

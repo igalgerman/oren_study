@@ -35,17 +35,24 @@ function pathLeft(){try{const d=T.dailyEnsure();if(!d||!d.t||!d.t.length)return 
 TP.open=()=>{sfx.pop(2);const c=card(`<div class="tpf bob">${friend()}</div>`);const row=h('div','tpch');
   const a=h('button','bigbtn','<span>מָה אֶפְשָׁר לַעֲשׂוֹת פֹּה?</span>');a.onclick=()=>{close();if(T.tour)T.tour();else if(window.TAL_tour)window.TAL_tour();};
   const b=h('button','bigbtn blue','<span>אֲנִי רוֹצֶה לְתַרְגֵּל…</span>');b.onclick=()=>{sfx.pop(2);nudge();};
-  row.append(a,b);c.appendChild(row);c.appendChild(closeBtn());};
+  row.append(a,b);c.appendChild(row);c.appendChild(closeBtn());say(T.choiceSay(row,'span').slice(1));};
 const closeBtn=()=>{const x=h('button','tpx','✕');x.setAttribute('aria-label','סגור');x.onclick=()=>{sfx.pop(1);close();};return x;};
+/* how many steps are left, in words (no digits in speech, #122) */
+const NUMW=['','אֶחָד','שְׁנֵי','שְׁלוֹשָׁה','אַרְבָּעָה','חֲמִשָּׁה','שִׁשָּׁה','שִׁבְעָה','שְׁמוֹנָה','תִּשְׁעָה','עֲשָׂרָה'];
+const nudgeT=left=>left===1?'אוּלַי נְסַיֵּם קֹדֶם אֶת הַמַּסְלוּל? נִשְׁאַר רַק עוֹד צַעַד!':left<NUMW.length?`אוּלַי נְסַיֵּם קֹדֶם אֶת הַמַּסְלוּל? נִשְׁאֲרוּ עוֹד ${NUMW[left]} צְעָדִים!`:'אוּלַי נְסַיֵּם קֹדֶם אֶת הַמַּסְלוּל? נִשְׁאֲרוּ עוֹד הַרְבֵּה צְעָדִים!';
+const GRIDH='מָה בָּא לְךָ לְתַרְגֵּל?';
+/* #266 the fixed clips of these screens, for pregen */
+T.addChoices&&T.addChoices(TOPICS.map(t=>t.n).concat(['מָה אֶפְשָׁר לַעֲשׂוֹת פֹּה?','אֲנִי רוֹצֶה לְתַרְגֵּל…','בּוֹא נַמְשִׁיךְ','בְּכָל זֹאת לְתַרְגֵּל']));
+T.addSay&&T.addSay([GRIDH,...NUMW.map((x,i)=>nudgeT(i+1)),nudgeT(99)]);
 function nudge(){const left=pathLeft();if(!left)return grid();
-  const t=left===1?'אוּלַי נְסַיֵּם קֹדֶם אֶת הַמַּסְלוּל? נִשְׁאַר רַק עוֹד צַעַד!':`אוּלַי נְסַיֵּם קֹדֶם אֶת הַמַּסְלוּל? נִשְׁאֲרוּ עוֹד ${left} צְעָדִים!`;
-  const c=card(`<div class="tpf bob">${friend()}</div><h2>${t}</h2>`);say(t);
+  const t=nudgeT(left);
+  const c=card(`<div class="tpf bob">${friend()}</div><h2>${t}</h2>`);
   const go=h('button','bigbtn huge','<span>בּוֹא נַמְשִׁיךְ</span>');go.onclick=()=>{close();if(T.nextStep)T.nextStep();else O.showMap();};
   const anyway=h('button','tpany','בְּכָל זֹאת לְתַרְגֵּל');anyway.onclick=()=>{sfx.pop(1);grid();};
-  const r=h('div','btnrow');r.appendChild(go);c.appendChild(r);c.appendChild(anyway);c.appendChild(closeBtn());}
-function grid(){const ts=TP.available();const head='מָה בָּא לְךָ לְתַרְגֵּל?';const c=card(`<h2>${head}</h2>`);say(head);
+  const r=h('div','btnrow');r.appendChild(go);c.appendChild(r);c.appendChild(anyway);c.appendChild(closeBtn());say(t+T.choiceSay(c,'.bigbtn span,.tpany'));}
+function grid(){const ts=TP.available();const head=GRIDH;const c=card(`<h2>${head}</h2>`);
   const g=h('div','tpg');ts.forEach(t=>{const b=h('button','tpt',`<span class="tpe">${t.e}</span><b>${t.n}</b>`);b.dataset.id=t.id;
     b.onclick=()=>{sfx.pop(3);say(t.n);close();TP.practice(t.id);};g.appendChild(b);});
-  c.appendChild(g);c.appendChild(closeBtn());}
+  c.appendChild(g);c.appendChild(closeBtn());say(head+T.choiceSay(g,'b'));}
 TP.grid=grid;TP.nudge=nudge;
 })();

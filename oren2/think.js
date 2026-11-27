@@ -289,12 +289,14 @@ const ORDER=['shp','ana','ser','rel','mat','sen'];
 function openTracks(){const s=S();if((s.set||{}).all)return ORDER.slice();const plays=ORDER.reduce((a,k)=>a+((s.tl[SK[k].id]||{}).n|0),0);return ORDER.slice(0,Math.min(ORDER.length,2+Math.floor(plays/3)));}
 
 /* the shared quiz screen: card, options, a gentle explanation after a mistake */
-function round(o){/* o: {id, sk, title, bg, back, n, next(i) → q, again} */
-  let i=0,err=0,gems=0;const qs=[];O.setScreen('sTal',o.bg||'mount',o.back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq thq');s.appendChild(wrap);
+function round(o){/* o: {id, sk, title, bg, back, n, next(i) → q, again} */o=Object.assign({},o,{n:T.pathN(o.n)});/* #394 short on the daily path */
+  let i=0,err=0,gems=0;const qs=[];O.setScreen('sTal',o.bg||'mount',o.back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq thq');s.appendChild(wrap);if(o.lesson&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(o.lesson,o.back,o.again));
   const render=()=>{let q;for(let t=0;t<30;t++){C.clearLB();q=o.next(i);if(!qs.some(x=>x.key===q.key))break;}qs.push(q);let tries=0,lock=false,first=true;
-    T.hudT(o.title,T.progressBar(i,o.n));O.sayNow=T.plainHe((q.say||'')+' '+(q.text||''));wrap.innerHTML='';
+    T.hudT(o.title,T.progressBar(i,o.n));const row=h('div','chs n'+q.opts.length+(q.opts[0].t==='num'?' ltr':''));/* #435 the answers are read one by one (not in reading comprehension) */
+    const ra=T.ansSay&&!T.READ_ACT.test(o.id)?T.ansSay(row,q.opts.map(op=>op.t==='num'||op.t==='tx'?String(op.v):'')):'';
+    O.sayNow=T.plainHe((q.say||'')+' '+(q.text||''))+ra;wrap.innerHTML='';
     const card=h('div','prq tqc',`${promptHTML(q)}${q.text?`<div class="qq">${q.text}</div>`:''}`);wrap.appendChild(card);if(T.rdQ&&q.text)T.rdQ(q,card);
-    const row=h('div','chs n'+q.opts.length+(q.opts[0].t==='num'?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+optCls(op),optHTML(op));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
+    q.opts.forEach((op,k)=>{const b=h('button','chb '+optCls(op),optHTML(op));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');
     const done=(ok)=>{if(!first)return;first=false;if(q.bank&&window.LEARN)try{window.LEARN.seen(q.bank,q.bkey,ok,false);}catch(e){}const ch=C.answer(TH(),o.sk,ok);hit(o.sk,ok);O.persist();if(ch===1)O.floatText(card,'🎉 עָלִיתָ שָׁלָב!');};
     const ruleHTML=()=>`<div>${sprTok(q.rule)}</div>${q.ruleItems?`<div class="thser sm">${q.ruleItems.map(x=>`<span class="thi">${optHTML(x)}</span>`).join('')}</div>`:''}`;
@@ -312,7 +314,20 @@ function round(o){/* o: {id, sk, title, bg, back, n, next(i) → q, again} */
     window.__think={q,get ans(){return q.ans;},wrap,i};};
   function next(){if(!wrap.isConnected)return;i++;if(i>=o.n){T.setKey(null);T.finishAct(o.id,err,o.n,gems,o.back,o.again);}else render();}
   render();}
-function track(sk,back){round({id:SK[sk].id,sk,title:SK[sk].n,bg:'mount',back,n:6,next:()=>C.GEN[sk](C.level(TH(),sk)),again:()=>track(sk,back)});}
+/* lesson cards before the first analogy / matrix questions (#258) */
+const TLS={ana:'think-ana',mat:'think-mat'};
+function track(sk,back){const LS=window.LESSONS,l=LS&&TLS[sk];const go=()=>round({id:SK[sk].id,sk,title:SK[sk].n,bg:'mount',back,n:6,lesson:l,next:()=>C.GEN[sk](C.level(TH(),sk)),again:()=>track(sk,back)});
+  return l?LS.first(l,back,go):go();}
+if(window.LESSONS){const LS=window.LESSONS,SPI=(v,n)=>`<span class="thi">${sprHTML({v,n})}</span>`,AR='<span class="arr">←</span>',Q='<span class="thi miss"><b class="q">?</b></span>';
+  const ana=done=>`<div class="thana"><div class="thpair">${SPI('apple',1)}${AR}${SPI('apple',2)}</div><div class="thpair">${SPI('ball',1)}${AR}${done?SPI('ball',2):Q}</div></div>`;
+  LS.add('think-ana',{title:'זוּגוֹת מַתְאִימִים',bg:'mount',cards:[
+    {art:()=>ana(false),t:'זוּגוֹת מַתְאִימִים: בַּזּוּג הָרִאשׁוֹן, תַּפּוּחַ אֶחָד נִהְיָה שְׁנֵי תַּפּוּחִים. מָה יִהְיֶה הַכַּדּוּר?'},
+    {art:()=>ana(true),t:'בַּזּוּג הַשֵּׁנִי עוֹשִׂים אוֹתוֹ שִׁנּוּי: כַּדּוּר אֶחָד נִהְיָה שְׁנֵי כַּדּוּרִים.'}]});
+  const T1=tileSVG(C.tile({s:'circle',c:0})),T2=tileSVG(C.tile({s:'square',c:1}));
+  const mat=done=>`<div class="thmat n2"><span class="thi">${T1}</span><span class="thi">${T1}</span><span class="thi">${T2}</span>${done?`<span class="thi">${T2}</span>`:'<span class="thi miss"><b class="q">?</b></span>'}</div>`;
+  LS.add('think-mat',{title:'הַמִּשְׁבֶּצֶת הַחֲסֵרָה',bg:'mount',cards:[
+    {art:()=>mat(false),t:'בְּכָל שׁוּרָה יֵשׁ חֹק. לְמַעְלָה יֵשׁ שְׁנֵי עִגּוּלִים אֲדֻמִּים. לְמַטָּה יֵשׁ רִבּוּעַ כָּחֹל, וּמָה חָסֵר?'},
+    {art:()=>mat(true),t:'הַחֹק: בְּכָל שׁוּרָה שְׁתֵּי צוּרוֹת זֵהוֹת. אָז חָסֵר עוֹד רִבּוּעַ כָּחֹל. מִסְתַּכְּלִים עַל הַשּׁוּרוֹת וְגַם עַל הַטּוּרִים.'}]});}
 
 /* ---------- reading comprehension ---------- */
 function readRC(back){const th=TH();th.rcR=th.rcR||[];let lv=C.level(th,'rc');let pi=0,err=0,gems=0;const NP=lv<=2?3:2;O.setScreen('sTal','city',back);const s=$('#sTal');

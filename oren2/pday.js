@@ -159,6 +159,43 @@ function strongSec(box,d,sec){const [y,m,dd]=d.split('-').map(Number);const days
     const r=t&&t.n?t.ok/t.n:null;const how=r==null?'אין תשובות השבוע':t.n<5?`מעט תשובות (${t.ok}/${t.n})`:r>=.8?`מצליח · ${Math.round(r*100)}%`:r<.6?`קשה לו · ${Math.round(r*100)}%`:`בתרגול · ${Math.round(r*100)}%`;
     const hard=t?Object.entries(t.it).filter(([,x])=>x.n>=3&&x.ok/x.n<.8).sort((a,b)=>a[1].ok/a[1].n-b[1].ok/b[1].n).slice(0,3).map(([id,x])=>`${DL.nameOf(id)} (${Math.round(x.ok/x.n*100)}%)`):[];
     s.appendChild(h('div','prow pdtop'+(r!=null&&t.n>=5?r>=.8?' ok':r<.6?' hard':'':''),`<span class="pn"><b>${TOP[tp]}</b>${L?` <small>רמה ${L}</small>`:''}${hard.length?`<br><small>הכי קשה: ${hard.join(' · ')}</small>`:''}</span><span class="pc">${how}</span>`));});}
+/* #61 suggestions from the last 7 days: a topic too hard / too easy / not played — 1-3 plain lines, one button where the action is obvious.
+   days = [day rows], tops = the topics that have missions. Pure (the tests call it with sample rows). */
+const EASY=.9,HARD=.6;
+P.suggest=(days,tops)=>{const by={};let any=0;
+  (days||[]).forEach(rs=>(rs||[]).forEach(e=>{if(!e||'pxs'.includes(e[6]))return;const tp=topOf(e[1]);if(!tp)return;any=1;const t=by[tp]=by[tp]||{ok:0,n:0};t.ok+=e[3]|0;t.n+=e[4]|0;}));
+  if(!any)return [];const r=tp=>by[tp].ok/by[tp].n;const has=tops.filter(tp=>by[tp]&&by[tp].n);
+  const hard=has.filter(tp=>by[tp].n>=5&&r(tp)<HARD).sort((a,b)=>r(a)-r(b)).map(tp=>({k:'hard',tp,r:r(tp)}));
+  const easy=has.filter(tp=>by[tp].n>=10&&r(tp)>=EASY).sort((a,b)=>r(b)-r(a)).map(tp=>({k:'easy',tp,r:r(tp)}));
+  return hard.concat(easy,tops.filter(tp=>!by[tp]).map(tp=>({k:'miss',tp}))).slice(0,3);};
+const SUG={hard:'קשה לו השבוע',easy:'קל לו מדי',miss:'לא שיחק השבוע'};
+function sugSec(box,sec){const days=[...Array(7)].map((_,i)=>DL.rows(dayAt(i)));const pool=T.dailyPool();
+  const tops=Object.keys(TOP).filter(tp=>tp==='math'?!!(T.nextLevel&&T.nextLevel()):pool.some(id=>topOf(id)===tp));
+  const L=P.suggest(days,tops);if(!L.length)return;const d=planView();const s=sec(box,'הצעות','');s.classList.add('pdsug');
+  const openOf=tp=>d?d.t.find((id,n)=>!d.done[n]&&stepTop(id)===tp):null;
+  L.forEach(x=>{const r=h('div','prow pdsugi',`<span class="pn"><b>${TOP[x.tp]}</b> — ${SUG[x.k]}${x.r!=null?` · ${Math.round(x.r*100)}% נכון`:''}</span>`);
+    const bt=(l,f)=>{const b=h('button','pchip',l);b.onclick=()=>{f();P.refresh();};r.appendChild(b);};
+    if(x.k==='easy'){const id=openOf(x.tp);if(id&&(id==='math'||T.ACT[id])&&!cmds().some(c=>c.k==='know'&&c.a===id))bt('הוא כבר יודע',()=>P.send('know',id));}
+    if(x.k==='miss'&&d&&!openOf(x.tp)){const id=pickOf(x.tp,d);if(id)bt('+ להוסיף להיום',()=>P.send('add',id));}
+    s.appendChild(r);});}
+/* #429 what he learned on day d: up to 3 lines from the goal table (goals.js, x.lg on his finished lines); none -> hidden */
+function learnSec(box,d,sec){const G=window.GOALS;const L=G&&G.learned?G.learned(d).slice(0,3):[];if(!L.length)return;
+  const s=sec(box,'מה למד היום',`<ul>${L.map(x=>`<li>${x}</li>`).join('')}</ul>`);s.classList.add('pdlearn');}
+/* #431 the week up to day d: 7 bars of play minutes (oldest left, d right) + the shares of math / reading / English from the day log.
+   Pure data (the tests call it): {m: [7 minutes], sh: {math, readg, eng} in % or null}; an empty week -> null. */
+const W3={math:'🧮 חשבון',readg:'📖 קריאה',eng:'🔤 אנגלית'};
+const top3=id=>{id=String(id||'');if(/^(en|eng)-/.test(id))return 'eng';const t=topOf(id);return t==='math'||t==='readg'?t:null;};
+P.week=d=>{const [y,m,dd]=d.split('-').map(Number);const ks=[...Array(7)].map((_,i)=>dayKey(new Date(y,m-1,dd-6+i)));
+  const tm=T.S().time||{};const mins=ks.map(k=>Math.round((tm[k]|0)/60));const c={math:0,readg:0,eng:0};let n=0;
+  ks.forEach(k=>DL.rows(k).forEach(e=>{if('pxsf'.includes(e[6]))return;const t=top3(e[1]);if(t){c[t]++;n++;}}));
+  if(!n&&!mins.some(x=>x))return null;const sh=n?{math:c.math/n*100,readg:c.readg/n*100,eng:c.eng/n*100}:null;return {k:ks,m:mins,sh};};
+const WCOL={math:'#3a8fc4',readg:'#c0392b',eng:'#8e44ad'};
+function weekSec(box,d,sec){const w=P.week(d);if(!w)return;const mx=Math.max(1,...w.m);
+  const bars=w.k.map((k,i)=>{const [y,m,dd]=k.split('-').map(Number);return `<div class="pcol pdwk"><i style="height:${w.m[i]/mx*100}%"></i><small>${'אבגדהוש'[new Date(y,m-1,dd).getDay()]}</small></div>`;}).join('');
+  const sh=w.sh?`<div class="pdsplit">${Object.keys(W3).map(t=>`<i style="width:${w.sh[t]}%;background:${WCOL[t]}"></i>`).join('')}</div><div class="pdshs">${Object.keys(W3).map(t=>`<span class="pdsh"><b style="color:${WCOL[t]}">●</b> ${W3[t]} ${Math.round(w.sh[t])}%</span>`).join('')}</div>`:'';
+  const s=sec(box,'השבוע',`<div class="pchart pdbars">${bars}</div>${sh}`);s.classList.add('pdweek');}
+/* #430 one question to ask him about what he learned that day (goals.js), at the end of the day view; none -> hidden */
+function askSec(box,d){const G=window.GOALS;const q=G&&G.ask?G.ask(d):'';if(q)box.appendChild(h('section','psec pdask',`תשאל אותו: ${q}`));}
 /* the whole day view; opts = {sec, nowTop(el), more()} */
 P.view=(box,opts)=>{const d=P.vd&&P.vd<=today()&&P.vd>=dayAt(13)?P.vd:today();P.vd=d;last={box,opts};box.innerHTML='';const sec=opts.sec;
   const nav=h('div','pdnav');const prev=h('button','pchip pdprev','›');prev.setAttribute('aria-label','יום קודם');prev.disabled=d<=dayAt(13);
@@ -167,6 +204,6 @@ P.view=(box,opts)=>{const d=P.vd&&P.vd<=today()&&P.vd>=dayAt(13)?P.vd:today();P.
   nav.append(prev,h('b','pdday',dayName(d)),next);box.appendChild(nav);
   if(d===today()){const nb=h('div','pnow');box.appendChild(nb);opts.nowTop&&opts.nowTop(nb);}
   const sec0=((T.S().time||{})[d]|0);box.appendChild(h('div','pdtot',`⏱️ ${d===today()?'היום':'ביום הזה'}: <b>${Math.floor(sec0/60)} דק׳</b> משחק`));
-  didSec(box,d,sec);if(d===today())planSec(box,sec);strongSec(box,d,sec);};
+  learnSec(box,d,sec);didSec(box,d,sec);if(d===today()){planSec(box,sec);sugSec(box,sec);}strongSec(box,d,sec);weekSec(box,d,sec);askSec(box,d);};
 P.refresh=()=>{if(last&&last.box.isConnected)P.view(last.box,last.opts);};
 })();

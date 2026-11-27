@@ -100,7 +100,7 @@ const stars=id=>((T.S().tl[id]||{}).s|0);
 
 /* ---------- a short lesson = a few tasks; each task calls done(errors) once ---------- */
 let CUR=null;
-function lesson(id,title,tasks,back,opts={}){let i=0,err=0,gems=0;O.setScreen('sTal','valley',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq cz');s.appendChild(wrap);
+function lesson(id,title,tasks,back,opts={}){tasks=tasks.slice(0,T.pathN(tasks.length));/* #394 short on the daily path */let i=0,err=0,gems=0;O.setScreen('sTal','valley',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq cz');s.appendChild(wrap);
   const show=()=>{T.hudT(title,T.progressBar(i,tasks.length));wrap.innerHTML='';CUR=tasks[i](wrap,done);};
   function done(e,el){err+=e;const g=e?(e>=2?0:1):2;if(g){gems+=g;O.addGems(g,el||wrap);O.floatText(el||wrap,'+'+g);}
     setTimeout(()=>{if(!wrap.isConnected)return;i++;if(i<tasks.length)show();else finish();},D(e>=2?2200:1400));}
@@ -150,8 +150,8 @@ function findTask(pc){return (wrap,done)=>{const u=pc.toUpperCase(),c=side(pc),[
   const hb=boardHelp(wrap,{clue:()=>`${c==='w'?'הַכֵּלִים הַלְּבָנִים לְמַטָּה.':'הַכֵּלִים הַשְּׁחֹרִים לְמַעְלָה.'} ${LOOKS[u]}`,
     answer:()=>{end();return `הִנֵּה ${def} ${COL[c][1][fem]}, בַּמִּשְׁבֶּצֶת הַיְּרֻקָּה. ${LOOKS[u]}`;},wrong:()=>{if(!lock)miss(b.findIndex(x=>x!==pc));}});
   return {solve:()=>el.querySelector(`[data-s="${b.indexOf(pc)}"]`).click()};};}
-function runBoard(back){const kinds=shuffle(ORDER.slice()).slice(0,4);const finds=shuffle(['K','Q','R','B','N','P','k','q','r','n']).slice(0,4);
-  const tasks=[];for(let k=0;k<4;k++){tasks.push(nameTask(kinds[k]));tasks.push(findTask(finds[k]));}
+function runBoard(back){const kinds=shuffle(ORDER.slice()).slice(0,3);const finds=shuffle(['K','Q','R','B','N','P','k','q','r','n']).slice(0,3);   /* #59: 6 short tasks */
+  const tasks=[];for(let k=0;k<3;k++){tasks.push(nameTask(kinds[k]));tasks.push(findTask(finds[k]));}
   lesson('chess-board','הַלּוּחַ וְהַכֵּלִים',tasks,back,{done:'מַכִּיר אֶת הַכֵּלִים!',again:()=>runBoard(back)});}
 
 /* ---------- 2. how each piece moves: tap every square it can reach ---------- */
@@ -237,7 +237,7 @@ function escapeTask(withHelp){return (wrap,done)=>{let su=null;for(let t=0;t<50&
   const hb=boardHelp(wrap,{clue:()=>{hs=best.f;mv.draw();return best.pc==='K'?'הַמֶּלֶךְ צָרִיךְ לָזוּז לְמִשְׁבֶּצֶת שֶׁאַף כְּלִי שָׁחֹר לֹא תּוֹקֵף.':`סִמַּנְתִּי אֶת ${bdef}. ${bfem?'הִיא יְכוֹלָה':'הוּא יָכוֹל'} לֶאֱכֹל אֶת הַכְּלִי שֶׁתּוֹקֵף!`;},
     answer:()=>{end();return `${bdef} ${bfem?'זָזָה':'זָז'} לַמִּשְׁבֶּצֶת הַיְּרֻקָּה, וְהַמֶּלֶךְ בָּטוּחַ.`;},wrong:()=>{if(!lock)miss(true);}});
   return {get pos(){return p;},K:su.K,solve:()=>{const m=legal(p)[0];if(withHelp||mv.sel!==m.f)el.querySelector(`[data-s="${m.f}"]`).click();el.querySelector(`[data-s="${m.t}"]`).click();}};};}
-function runCheck(back){lesson('chess-check','שַׁח!',[isCheckTask(),isCheckTask(),isCheckTask(),escapeTask(0),escapeTask(0),escapeTask(0),escapeTask(1),escapeTask(1)],back,{done:'שׁוֹמֵר הַמֶּלֶךְ!',again:()=>runCheck(back)});}
+function runCheck(back){lesson('chess-check','שַׁח!',[isCheckTask(),isCheckTask(),escapeTask(0),escapeTask(0),escapeTask(1)],back,{done:'שׁוֹמֵר הַמֶּלֶךְ!',again:()=>runCheck(back)});}
 
 /* ---------- 5. mate in one (hand-made puzzles) ---------- */
 function mateTask(fen){return (wrap,done)=>{let p=fromFEN(fen);const sol=mates(p);prompt(wrap,'תֵּן מָט בְּמַהֲלָךְ אֶחָד!');const msg=note(wrap);let errs=0,lock=false,hs=null;
@@ -277,7 +277,7 @@ const ACTS=[
   {id:'chess-capture',name:'מָה אֶפְשָׁר לֶאֱכֹל?',icon:()=>piece('p'),run:runCapture,avail:()=>ST().mv>=2},
   {id:'chess-check',name:'שַׁח!',icon:()=>piece('k'),run:runCheck,avail:()=>ST().mv>=5&&stars('chess-capture')>0},
   {id:'chess-mate',name:'מָט בְּמַהֲלָךְ אֶחָד',icon:()=>piece('Q'),run:runMate,avail:()=>stars('chess-check')>0},
-  {id:'chess-play',name:'מְשַׂחֲקִים!',icon:()=>piece('N'),run:runGame,avail:()=>stars('chess-mate')>0}];
+  {id:'chess-play',name:'מְשַׂחֲקִים!',icon:()=>piece('N'),long:1,run:runGame,avail:()=>stars('chess-mate')>0}];
 const SKILLS={'שחמט':ACTS.map(a=>a.id)};
 let reg=false;
 function register(building){if(reg)return;reg=true;(building||T.building)({id:'chess',name:'מוֹעֲדוֹן הַשַּׁחְמָט',color:'#6b4f3a',bg:'valley',icon:()=>piece('N'),blurb:'לוֹמְדִים לְשַׂחֵק שַׁחְמָט, צַעַד אַחַר צַעַד.',acts:ACTS});
