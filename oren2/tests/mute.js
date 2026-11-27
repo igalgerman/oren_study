@@ -17,8 +17,12 @@ if(!c.__muted){c.__muted=1;const orig=c.launch.bind(c);
   // in every suite (window.__lessons = false). lessoncard.test.js and know.test.js set window.__lessons = true in their own init script. TEST_LESSONS=1 turns this off.
   const NOLESSON=()=>{window.__lessons=false;};
   const noLesson=async x=>{if(process.env.TEST_LESSONS!=='1')await x.addInitScript(NOLESSON);};
+  // #389 'listen first' (friend.js) holds answer buttons until the question was heard and holds a fast tap after a wrong one; suites tap at once,
+  // so it is off in every suite (window.__listen = false). listen.test.js sets window.__listen = true in its own init script. TEST_LISTEN=1 turns this off.
+  const NOLISTEN=()=>{window.__listen=false;};
+  const noListen=async x=>{if(process.env.TEST_LISTEN!=='1')await x.addInitScript(NOLISTEN);};
   const fakeClock=async x=>{if(!REAL)await x.addInitScript(CLOCK,HOUR);};
   c.launch=async(o={})=>{const b=await orig({...o,args:[...(o.args||[]),'--mute-audio']});
     const nc=b.newContext.bind(b),np=b.newPage.bind(b);
-    b.newContext=async(...a)=>{const x=await nc(...a);await x.addInitScript(SILENT);await fakeClock(x);await noTeach(x);await noLesson(x);return x;};
-    b.newPage=async(...a)=>{const p=await np(...a);await p.addInitScript(SILENT);await fakeClock(p);await noTeach(p);await noLesson(p);return p;};return b;};}}catch(e){}
+    b.newContext=async(...a)=>{const x=await nc(...a);await x.addInitScript(SILENT);await fakeClock(x);await noTeach(x);await noLesson(x);await noListen(x);return x;};
+    b.newPage=async(...a)=>{const p=await np(...a);await p.addInitScript(SILENT);await fakeClock(p);await noTeach(p);await noLesson(p);await noListen(p);return p;};return b;};}}catch(e){}

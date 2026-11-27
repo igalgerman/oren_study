@@ -36,3 +36,5 @@ resume-desktop 60          # #44 reloads mid-level, mid-quiz and while paused + 
 resume-phone 60            # same file on the phone viewport
 qa-fix-desktop 60          # #267 adds the hands-on checks (clock drag, pizza taps, carry/borrow board, times array): ~15 s
 qa-fix-phone 60            # same file on the phone viewport: ~14 s
+listen-desktop 60         # #389 listen first: real voice timing (question end, 2 s rest, the 4 s cap): ~15 s alone
+listen-phone 60           # same file on the phone viewport

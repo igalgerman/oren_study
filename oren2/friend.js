@@ -120,8 +120,43 @@ O.on('levelDone',()=>setTimeout(FR.stepCheck,D(600)));
 /* #433: an error in the middle of a mission sent Oren home (core error handler): the friend says it on the home screen */
 const OOPS='אוֹי, חוֹזְרִים לַמַּסָּע';
 FR.oops=()=>{FR.mount();anim('sad');return talk(OOPS,{ms:3000});};
-FR.speakList=()=>[OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
+FR.speakList=()=>[LISTEN,OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
   ...[...Object.values(STORY),STORY0].flatMap(([a,b])=>[a,FIRST+' '+a,LAST+' '+a,b,b+' '+ALL])];
+/* ---------- #389 listen first ----------
+   A new row of answer buttons (.chs .chb) rests until the spoken question has ended, 4 s at most; with no voice (offline,
+   auto-read off, reading practice where he reads first) it is open at once. A tap that comes fast after a wrong tap (Oren is
+   guessing) is not judged: the options rest 2 s, the friend says 'let's listen again' and the question is read again.
+   No penalty, no timer on screen. Not in the speed game (it has its own clock). window.__listen=false turns it off (tests). */
+const LISTEN='בּוֹא נַקְשִׁיב שׁוּב';
+const LS={MAX:4000,REST:2000,FAST:1500,log:[]};FR.listen=LS;LS.line=LISTEN;
+let vS=0;
+const lsOff=()=>window.__listen===false;
+const noVoice=()=>!!(window.__fast||window.__noAuto||navigator.onLine===false||(O.save&&O.save.set&&O.save.set.autoRead===0));
+const P4=()=>(window.__oren4||{}).play;
+const speedy=r=>{const p=P4();return !!(p&&p.mode==='speed'&&r.closest('#sPlay'));};
+const done=r=>!!r.querySelector('.ok,.show,.pop');
+const rest=(r,ms)=>{r.classList.add('lsn');r._ls.until=Date.now()+ms;};
+const reread=s=>{if(!s.re)return;s.re=0;if(O.sayNow)O.say(O.sayNow);};
+function free(r){r.classList.remove('lsn');const s=r._ls;s.until=0;s.wait=0;reread(s);}
+function gate(r){if(r._ls)return r._ls;const s=r._ls={t0:Date.now(),w:0,until:0,wait:0,re:0};
+  if(!lsOff()&&!noVoice()&&!speedy(r)){s.wait=1;rest(r,LS.MAX);}return s;}
+FR.held=b=>{const r=b&&b.closest&&b.closest('.chs');return !!(r&&r.classList.contains('lsn'));};
+/* the right button when the screen tells it (quiz, math training, math play): a right tap is never held */
+function right(r){try{const q=window.__quiz,l=window.__learn,p=P4();let a=null;
+  if(p&&p.choice&&p.choice.row===r)a=p.choice.ans;else if(q&&q.wrap&&q.wrap.contains(r))a=q.ans;else if(l&&l.wrap&&l.wrap.contains(r))a=l.ans;
+  return a==null?null:r.children[a];}catch(e){return null;}}
+document.addEventListener('click',e=>{const b=e.target&&e.target.closest&&e.target.closest('.chs .chb');if(!b||lsOff())return;const r=b.closest('.chs'),s=gate(r);
+  if(r.classList.contains('lsn')){e.stopImmediatePropagation();e.preventDefault();return;}
+  if(s.w&&Date.now()-s.w<LS.FAST&&!b.disabled&&!done(r)&&!speedy(r)&&right(r)!==b){e.stopImmediatePropagation();e.preventDefault();
+    s.w=0;rest(r,LS.REST);s.re=Date.now();LS.log.push('rest');talk(LISTEN,{ms:LS.REST});return;}
+  setTimeout(()=>{if(b.classList.contains('bad'))s.w=Date.now();},0);},true);
+O.on('voice',on=>{const t=Date.now();if(on){vS=t;return;}
+  document.querySelectorAll('.chs').forEach(r=>{const s=r._ls;if(!s)return;
+    if(s.re&&vS>=s.re){reread(s);return;}                       /* the friend's line ended: read the question again */
+    if(s.wait&&vS>=s.t0)free(r);});});                           /* the question was heard: open */
+setInterval(()=>{const t=Date.now();document.querySelectorAll('.chs.lsn').forEach(r=>{if(r._ls&&r._ls.until<=t)free(r);});},100);
+new MutationObserver(ms=>{if(lsOff())return;for(const m of ms)for(const n of m.addedNodes){if(n.nodeType!==1)continue;
+  const rs=n.matches('.chs')?[n]:n.querySelectorAll('.chs');rs.forEach(r=>{if(r.querySelector('.chb'))gate(r);});}}).observe(document.body,{childList:true,subtree:true});
 FR._cur=()=>cur;FR._lines={ok:OK,streak:[...Object.values(STREAK),STREAK_MORE],effort:EFFORT,wrong:WRONG,shown:SHOWN};
 window.FRIEND=FR;window.PATHBAR=PATHBAR;
 })();

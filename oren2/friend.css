@@ -40,3 +40,5 @@ body.fron #screens{padding-bottom:84px}
 }
 @media (prefers-reduced-motion:reduce){.frc .frs,.frpath i.cur{animation:none}}
 #sHome .frdone .bigbtn.huge{animation:none}
+/* #389 listen first: the answers rest (softly faded, no timer) until the question was heard */
+.chs.lsn .chb{opacity:.55;transition:opacity .3s}

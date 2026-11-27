@@ -1512,7 +1512,10 @@ function voiceFlush(){clearTimeout(VS.tm);VS.tm=0;const days=VS.n,ev=VS.ev;if(!O
   try{if(navigator.sendBeacon&&navigator.sendBeacon(url,body))return;}catch(e){}try{fetch(url,{method:'POST',body,mode:'no-cors',keepalive:true}).catch(()=>{});}catch(e){}}
 window.__vs=VS;window.__voiceFlush=voiceFlush;
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')voiceFlush();});addEventListener('pagehide',voiceFlush);
-function browserSay(t,lang,why,slow){if(!('speechSynthesis' in window))return;voiceLog('browser',why||voiceWhy(),t,lang);speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(lang==='en'?plain(t):fullSpell(t));u.lang=lang==='en'?'en-US':'he-IL';const v=lang==='en'?enVoice:heVoice;if(v)u.voice=v;u.rate=lang==='en'?(slow?.65:.85):.92;u.pitch=1.05;u.onstart=()=>{duck(true);track('au',{ev:'play',src:'browser'});};u.onend=()=>{duck(false);track('au',{ev:'end',src:'browser'});};u.onerror=e=>{duck(false);track('au',{ev:'fail',src:'browser',why:String(e&&e.error||'')});};VS.own=u;speechSynthesis.speak(u);}
+/* #389 voice events for 'listen first' (friend.js): emit('voice',true) when a sentence starts, false when it ends or fails.
+   A sentence that was replaced by a newer one never reports its end (only the newest one counts). */
+const VO={k:null};function vo(on,k){if(on)VO.k=k;else if(VO.k!==k)return;else VO.k=null;try{emit('voice',!!on);}catch(e){}}
+function browserSay(t,lang,why,slow){if(!('speechSynthesis' in window)){vo(1,'none');vo(0,'none');return;}voiceLog('browser',why||voiceWhy(),t,lang);speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(lang==='en'?plain(t):fullSpell(t));u.lang=lang==='en'?'en-US':'he-IL';const v=lang==='en'?enVoice:heVoice;if(v)u.voice=v;u.rate=lang==='en'?(slow?.65:.85):.92;u.pitch=1.05;u.onstart=()=>{duck(true);track('au',{ev:'play',src:'browser'});};u.onend=()=>{duck(false);track('au',{ev:'end',src:'browser'});vo(0,u);};u.onerror=e=>{duck(false);track('au',{ev:'fail',src:'browser',why:String(e&&e.error||'')});vo(0,u);};VS.own=u;vo(1,u);speechSynthesis.speak(u);}
 /* Google voice on the family website: one fixed voice on every device (chosen by the parents in blind tests),
    each sentence made in advance by cf/tools/pregen.js and cached by the server */
 const GVOICE='he-IL-Chirp3-HD-Kore',GRATE=0.9;
@@ -1542,7 +1545,7 @@ function googleSay(t,lang,again,part,slow){const en=lang==='en';part=part|0;if(!
   const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;track('au',{ev:'fail',src:'google',why,ms:Date.now()-t0});try{a.pause();}catch(e){}GV.audio=null;
     if(!again&&why!=='no-audio'&&why!=='blocked'){logIssue('voice',why+' (retry)');track('retry',{what:'voice',why});googleSay(t,lang,1,part,slow);return;}browserSay(t,en?'en':'he',why,slow);if(why!=='blocked')logIssue('voice',why);};
   const tm=setTimeout(()=>{if(!go)fall('timeout');},GV.ms);/* the browser voice only after a retry and a long wait (#36) */
-  a.onplaying=()=>{if(!go){if(!part)voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});}go=true;clearTimeout(tm);};a.onplay=()=>duck(true);a.onended=()=>{if(GV.audio===a&&!last){googleSay(t,lang,0,part+1,slow);return;}duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a)GV.audio=null;};/* the next part; stopped (hush) or replaced: the rest is not spoken */
+  a.onplaying=()=>{if(!go){if(!part)voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});}go=true;clearTimeout(tm);};a.onplay=()=>{duck(true);vo(1,a);};a.onended=()=>{if(GV.audio===a&&!last){googleSay(t,lang,0,part+1,slow);return;}duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a){GV.audio=null;vo(0,a);}};/* the next part; stopped (hush) or replaced: the rest is not spoken */
   a.onerror=()=>fall(a.error&&a.error.code===4?'no-audio':'audio-error');/* 4: not audio, e.g. the server answered 429/502 (not made yet) */
   a.play().catch(e=>fall(e&&e.name==='NotAllowedError'?'blocked':e&&e.name==='NotSupportedError'?'no-audio':'audio-error'));}
 function say(t,lang,slow){if(!t||window.__fast)return;const stamp=window.__autoSaid=Date.now();lang=lang||'he';
@@ -1550,7 +1553,7 @@ function say(t,lang,slow){if(!t||window.__fast)return;const stamp=window.__autoS
   if(!GV.ok&&GV.site&&Date.now()-GV.at>=GV.again)GV.wait=GV.check(1);/* the status failed earlier: check again in the background, the next sentences get Google back */
   if(useGoogle(lang)){googleSay(t,lang,0,0,slow);return;}
   if(useClaude(lang)){try{speechSynthesis.cancel();}catch(e){}const txt=(lang==='he'?withNikud(t):plain(t)).slice(0,1900);
-    TTS.ns.speak(txt,{language:lang,rate:lang==='en'?(slow?.7:.9):.95}).then(()=>voiceLog('claude','',t,lang)).catch(e=>{const c=e&&(e.code||e.reason);if(c==='not_granted'||c==='unavailable'){TTS.blocked=true;return;}if(c==='stopped')return;browserSay(t,lang,'',slow);});return;}
+    const k={};vo(1,k);TTS.ns.speak(txt,{language:lang,rate:lang==='en'?(slow?.7:.9):.95}).then(()=>{vo(0,k);voiceLog('claude','',t,lang);}).catch(e=>{vo(0,k);const c=e&&(e.code||e.reason);if(c==='not_granted'||c==='unavailable'){TTS.blocked=true;return;}if(c==='stopped')return;browserSay(t,lang,'',slow);});return;}
   browserSay(t,lang,'',slow);}
 window.__tts=TTS;
 if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pickVoice;setTimeout(pickVoice,1500);
@@ -2165,7 +2168,7 @@ const handEl=()=>$('#qa svg.clock.set, #qa svg.pz');
 function handOk(q){const s=handEl();if(!s)return false;return q.hand.t==='clock'?+s.dataset.t===q.hand.T:s.querySelectorAll('.sl.eat').length===q.hand.eat;}
 function handShow(q){const s=handEl();if(!s)return;s.dataset.lock=1;if(q.hand.t==='clock')clockSetT(s,q.hand.T);else s.querySelectorAll('.sl').forEach((x,i)=>x.classList.toggle('eat',i<q.hand.eat));}
 addEventListener('click',e=>{const sl=e.target&&e.target.closest&&e.target.closest('svg.pz .sl');if(!sl||sl.closest('svg').dataset.lock)return;sl.classList.toggle('eat');sfx.pop(sl.classList.contains('eat')?2:1);});
-function choose(i,btn){const p=play;if(!p||p.lock||!p.choice||btn.disabled)return;const ch=p.choice;const q=p.qs[p.i];
+function choose(i,btn){const p=play;if(!p||p.lock||!p.choice||btn.disabled||(window.FRIEND&&FRIEND.held&&FRIEND.held(btn)))return;const ch=p.choice;const q=p.qs[p.i];
   if(q.hand){if(handOk(q)){btn.classList.add('ok');const s=handEl();if(s)s.dataset.lock=1;return onCorrect();}
     onWrong(btn);if(p.mode==='speed'||(p.tries>=3&&!p.help))return revealAndNext(()=>{handShow(q);setBubble('הַתְּשׁוּבָה: '+q.hand.ans);});
     if(!window.FRIEND)setBubble('כִּמְעַט! נַסֵּה שׁוּב');if(!p.help)helpAuto();return;}
@@ -3132,6 +3135,8 @@ body.fron #screens{padding-bottom:84px}
 }
 @media (prefers-reduced-motion:reduce){.frc .frs,.frpath i.cur{animation:none}}
 #sHome .frdone .bigbtn.huge{animation:none}
+/* #389 listen first: the answers rest (softly faded, no timer) until the question was heard */
+.chs.lsn .chb{opacity:.55;transition:opacity .3s}
 
 /* ===== LESSON CARDS (#56) ===== */
 .lccard{width:min(640px,100%)}
@@ -5802,8 +5807,43 @@ O.on('levelDone',()=>setTimeout(FR.stepCheck,D(600)));
 /* #433: an error in the middle of a mission sent Oren home (core error handler): the friend says it on the home screen */
 const OOPS='אוֹי, חוֹזְרִים לַמַּסָּע';
 FR.oops=()=>{FR.mount();anim('sad');return talk(OOPS,{ms:3000});};
-FR.speakList=()=>[OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
+FR.speakList=()=>[LISTEN,OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
   ...[...Object.values(STORY),STORY0].flatMap(([a,b])=>[a,FIRST+' '+a,LAST+' '+a,b,b+' '+ALL])];
+/* ---------- #389 listen first ----------
+   A new row of answer buttons (.chs .chb) rests until the spoken question has ended, 4 s at most; with no voice (offline,
+   auto-read off, reading practice where he reads first) it is open at once. A tap that comes fast after a wrong tap (Oren is
+   guessing) is not judged: the options rest 2 s, the friend says 'let's listen again' and the question is read again.
+   No penalty, no timer on screen. Not in the speed game (it has its own clock). window.__listen=false turns it off (tests). */
+const LISTEN='בּוֹא נַקְשִׁיב שׁוּב';
+const LS={MAX:4000,REST:2000,FAST:1500,log:[]};FR.listen=LS;LS.line=LISTEN;
+let vS=0;
+const lsOff=()=>window.__listen===false;
+const noVoice=()=>!!(window.__fast||window.__noAuto||navigator.onLine===false||(O.save&&O.save.set&&O.save.set.autoRead===0));
+const P4=()=>(window.__oren4||{}).play;
+const speedy=r=>{const p=P4();return !!(p&&p.mode==='speed'&&r.closest('#sPlay'));};
+const done=r=>!!r.querySelector('.ok,.show,.pop');
+const rest=(r,ms)=>{r.classList.add('lsn');r._ls.until=Date.now()+ms;};
+const reread=s=>{if(!s.re)return;s.re=0;if(O.sayNow)O.say(O.sayNow);};
+function free(r){r.classList.remove('lsn');const s=r._ls;s.until=0;s.wait=0;reread(s);}
+function gate(r){if(r._ls)return r._ls;const s=r._ls={t0:Date.now(),w:0,until:0,wait:0,re:0};
+  if(!lsOff()&&!noVoice()&&!speedy(r)){s.wait=1;rest(r,LS.MAX);}return s;}
+FR.held=b=>{const r=b&&b.closest&&b.closest('.chs');return !!(r&&r.classList.contains('lsn'));};
+/* the right button when the screen tells it (quiz, math training, math play): a right tap is never held */
+function right(r){try{const q=window.__quiz,l=window.__learn,p=P4();let a=null;
+  if(p&&p.choice&&p.choice.row===r)a=p.choice.ans;else if(q&&q.wrap&&q.wrap.contains(r))a=q.ans;else if(l&&l.wrap&&l.wrap.contains(r))a=l.ans;
+  return a==null?null:r.children[a];}catch(e){return null;}}
+document.addEventListener('click',e=>{const b=e.target&&e.target.closest&&e.target.closest('.chs .chb');if(!b||lsOff())return;const r=b.closest('.chs'),s=gate(r);
+  if(r.classList.contains('lsn')){e.stopImmediatePropagation();e.preventDefault();return;}
+  if(s.w&&Date.now()-s.w<LS.FAST&&!b.disabled&&!done(r)&&!speedy(r)&&right(r)!==b){e.stopImmediatePropagation();e.preventDefault();
+    s.w=0;rest(r,LS.REST);s.re=Date.now();LS.log.push('rest');talk(LISTEN,{ms:LS.REST});return;}
+  setTimeout(()=>{if(b.classList.contains('bad'))s.w=Date.now();},0);},true);
+O.on('voice',on=>{const t=Date.now();if(on){vS=t;return;}
+  document.querySelectorAll('.chs').forEach(r=>{const s=r._ls;if(!s)return;
+    if(s.re&&vS>=s.re){reread(s);return;}                       /* the friend's line ended: read the question again */
+    if(s.wait&&vS>=s.t0)free(r);});});                           /* the question was heard: open */
+setInterval(()=>{const t=Date.now();document.querySelectorAll('.chs.lsn').forEach(r=>{if(r._ls&&r._ls.until<=t)free(r);});},100);
+new MutationObserver(ms=>{if(lsOff())return;for(const m of ms)for(const n of m.addedNodes){if(n.nodeType!==1)continue;
+  const rs=n.matches('.chs')?[n]:n.querySelectorAll('.chs');rs.forEach(r=>{if(r.querySelector('.chb'))gate(r);});}}).observe(document.body,{childList:true,subtree:true});
 FR._cur=()=>cur;FR._lines={ok:OK,streak:[...Object.values(STREAK),STREAK_MORE],effort:EFFORT,wrong:WRONG,shown:SHOWN};
 window.FRIEND=FR;window.PATHBAR=PATHBAR;
 })();
