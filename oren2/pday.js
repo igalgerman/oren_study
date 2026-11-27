@@ -107,6 +107,41 @@ function fire(){const c=pend;if(!c)return;pend=null;const cu=DL.cur();if(!cu||cu
   if(O.hush)O.hush();const el=h('div','pdskip',`<div class="card"><div class="callp bob">${T.friend?T.friend():''}</div><h2>${SAYNEXT}</h2></div>`);document.body.appendChild(el);O.say(T.spk(SAYNEXT));
   setTimeout(()=>{el.remove();const nx=d.done.findIndex(x=>!x);if(nx>=0&&window.TAL_step)window.TAL_step(nx);else O.showMap();},D(1800));}
 P.pending=()=>pend;
+
+/* ---------- #616 Oren's own skip: one small "⏭️ דַּלֵּג" next to the help button on every question screen (help.js asks P.skipBtn) ----------
+   A tap reads the label, then: the next question (the host's o.skip) — or, from the first question, after 2 skips in a row, or where the
+   host has no per-question skip, the whole activity: the friend says SKIPSAY and the next planned mission opens (like the parent's skip).
+   Never a failure: no level change, no stars; the host puts the item back in its pool, due in 1 day (#360).
+   Parent setting save.set.skip (synced with the settings): 'off' · 3 = at most 3 a day · 'all' = no limit (default, #634: no play limits).
+   The day's count = x.sk on today's log lines (+ the open line), so it travels with the family save; the day view shows "דילג ×N". */
+const SKIPSAY='בְּסֵדֶר, נַעֲבֹר לְמַשֶּׁהוּ אַחֵר!',SKIPLBL='דַּלֵּג',SKIPMAX=3;
+if(T.addChoices)T.addChoices([SKIPLBL]);if(T.addSay)T.addSay([SKIPSAY]);
+P.skipSet=()=>{const v=((O.realSave||O.save).set||{}).skip;return v==='off'?'off':+v===SKIPMAX?SKIPMAX:'all';};   /* default 'all' (the owner: no play limits, #634) */
+P.skipsToday=d=>{d=d||today();const L=((((O.realSave||O.save).alog||{})[d]||{}).e)||[];const cu=DL.cur();
+  return L.reduce((a,e)=>a+((e[7]&&e[7].sk)|0),0)+(d===today()&&cu&&!cu.end&&cu.x?cu.x.sk|0:0);};
+P.skipCan=()=>{const m=P.skipSet();if(m==='off')return false;if(m==='all'||O.isParentPlay)return true;return P.skipsToday()<SKIPMAX;};
+let skRow=0;   /* skips in a row in this activity: an answer or a new activity starts again */
+O.on('tq',()=>{skRow=0;});O.on('ans',()=>{skRow=0;});O.on('dlBegin',()=>{skRow=0;});
+const skCount=(n=1)=>{const cu=DL.cur();if(cu&&!cu.end){cu.x=cu.x||{};cu.x.sk=Math.max(0,(cu.x.sk|0)+n);}O.persist();};
+/* o (the help button's host options): skip() = go to the next question; first() = this is the activity's first question */
+P.skipBtn=o=>{if(!P.skipCan())return null;o=o||{};const b=h('button','skipbtn','<span aria-hidden="true">⏭️</span> <span>'+SKIPLBL+'</span>');b.type='button';b.setAttribute('aria-label',SKIPLBL);
+  b.onclick=()=>{if(b.disabled||(O.tapTooSoon&&O.tapTooSoon()))return;b.disabled=true;if(O.sfx&&O.sfx.pop)O.sfx.pop(1);O.say(T.spk(SKIPLBL));skRow++;
+    let first=false;try{first=!!(o.first&&o.first());}catch(e){}
+    if(!o.skip||first||skRow>=2){skCount();skipAct();return;}
+    setTimeout(()=>{skCount();let r=false;try{r=o.skip()!==false;}catch(e){}if(!r){skCount(-1);skRow--;b.disabled=false;}},D(500));};   /* counted first (the next screen sees it); false: the question already ended, no skip used */
+  return b;};
+function skipAct(){skRow=0;if(window.HELP&&HELP.stop)try{HELP.stop();}catch(e){}const cu=DL.cur(),id=cu&&!cu.end?cu.id:null;const d=T.dailyEnsure();
+  if(id){const j=d.t.findIndex((x,n)=>!d.done[n]&&(x===id||(x==='math'&&/^lv:/.test(id))));if(j>=0)d.done[j]=2;DL.end('k');}
+  O.persist();if(T.setKey)T.setKey(null);
+  const el=h('div','pdskip',`<div class="card"><div class="callp bob">${T.friend?T.friend():''}</div><h2>${SKIPSAY}</h2></div>`);document.body.appendChild(el);
+  setTimeout(()=>{if(O.hush)O.hush();O.say(T.spk(SKIPSAY));},D(400));
+  setTimeout(()=>{el.remove();const nx=d.done.findIndex(x=>!x);if(nx>=0&&window.TAL_step)window.TAL_step(nx);else O.showMap();},D(2600));}
+P.skipAct=skipAct;
+/* the parent's setting (#616): one row of 3; today's count under it */
+P.skipSettings=(box,sec,refresh)=>{const st=SETS(),v=P.skipSet();
+  const s=sec(box,'⏭️ דילוג לאורן','<div class="pnote">כפתור קטן "דלג" ליד כפתור העזרה: אורן יכול לדלג על שאלה, או על כל הפעילות. דילוג אינו כישלון: בלי ירידת רמה ובלי כוכבים, והשאלה חוזרת ביום אחר.</div>');
+  const row=h('div','popt skset');[['off','כבוי'],[SKIPMAX,'עד 3 ביום'],['all','בלי הגבלה']].forEach(([k,n])=>{const c=h('button','pchip'+(v===k?' on':''),n);c.onclick=()=>{st.skip=k;O.persist();refresh();};row.appendChild(c);});
+  s.appendChild(row);s.appendChild(h('div','pnote','היום דילג: '+P.skipsToday()));};
 /* #614 the parent's "skip now" status: 'sent' (נשלח…) · 'late' (his device did not take it in 30 s) · 'done' (he left the activity: דולג ✓, for a minute) */
 P.nowState=()=>{const c=cmds().filter(x=>x.k==='now'&&!called(x.i)).pop();if(!c)return null;
   const row=DL.rows(today()).find(e=>e[6]==='p'&&e[7]&&e[7].pc===c.i);if(row)return Date.now()-(+row[7].ts||0)<60000?{c,s:'done'}:null;
