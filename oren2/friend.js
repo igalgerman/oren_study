@@ -253,7 +253,7 @@ FR.voiceList=()=>{const hl=HB()?[HB().clue,HB().offer].flatMap(h=>[HB().elim,HB(
   return [...new Set([...Object.values(EVENTS).map(e=>e.line),...KINDS.flatMap(k=>[k.intro,k.ok]),START,OOPS,RXL.hint,RXL.yday,LISTEN,
     EZ.q,...games().map(BRK.ask),TCH.claim,TCH.ask,TCH.thanks,TCH.gentle,...hl,
     ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([,b])=>[b,b+' '+ALL])):[])])];};
-FR.speakList=()=>[...new Set([...FR.voiceList(),...(window.SHIP&&SHIP.carrySay?SHIP.PIECES.map((_,i)=>SHIP.carrySay(i)):[]),...(window.GOALS?window.GOALS.speakList():[]),RXL.back,READFIRST,DONE,FREE,FREE+' '+MORE,FIRST,LAST,ALL,
+FR.speakList=()=>[...new Set([...FR.voiceList(),...(window.SHIP&&SHIP.carrySay?SHIP.PIECES.map((_,i)=>SHIP.carrySay(i)):[]),...(window.GOALS?window.GOALS.speakList():[]),RXL.back,READFIRST,FIRST,LAST,ALL,
   ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([a])=>[a,FIRST+' '+a,LAST+' '+a])):[]),...(SM()?SM().speakList():[])])];
 /* ---------- #389 listen first ----------
    A new row of answer buttons (.chs .chb) rests until the spoken question has ended, 4 s at most; with no voice (offline,

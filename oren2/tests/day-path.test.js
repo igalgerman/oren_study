@@ -66,7 +66,7 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  await p.locator('#sHome .bigbtn.huge').click({force:true}).catch(()=>{});await sleep(200);ok('suggestion only once a day',!(await p.evaluate(()=>!!document.querySelector('#ov')&&!document.querySelector('#ov').hidden&&document.querySelector('#ov').textContent.includes('רוֹצֶה לְשַׂחֵק'))));
  await p.evaluate(()=>{document.querySelector('#ov').hidden=true;});
  // --- real-world missions ---
- const r1=await p.evaluate(()=>{const O=window.OREN,T=window.TAL,d=T.S().daily;d.t.push('math');d.done.push(0);const nx=d.t.length-1;
+ const r1=await p.evaluate(()=>{const O=window.OREN,T=window.TAL,d=T.S().daily;d.ch=d.ch||'plan';/* #634 home opened the next choice: play on in a path */d.t.push('math');d.done.push(0);const nx=d.t.length-1;
    const w=O.WORLDS.find(x=>x.id==='add');w.levels.forEach(l=>O.save.s[l.id]=2);O.emit('levelDone',w.levels[w.levels.length-1],2);return {nx,t:d.t.slice(),done:d.done.slice()};});
  {const nx=r1.done.findIndex(x=>!x);ok('finishing a math world adds its real-world mission as the next step',r1.done[r1.nx]===1&&r1.t[nx]==='rw:add',JSON.stringify(r1));}
  const r2=await p.evaluate(()=>{const T=window.TAL,b=T.BUILD.find(x=>x.id==='think');b.acts.forEach(a=>T.record(a.id,2));return T.S().daily.t.filter(x=>x==='rw:think').length;});

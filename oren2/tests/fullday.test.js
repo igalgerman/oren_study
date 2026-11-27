@@ -33,7 +33,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   /* was a mission seen today while another one in the pool was not? */
   const note = async id => {
     if (id !== 'math' && !/:/.test(id)) {
-      if (st.seq.includes(id)) { const left = await p.evaluate(seen => window.TAL.dailyPool().filter(x => !seen.includes(x)).length, st.seq); if (left) st.reps.push(id + ' @' + st.seq.length + ' (' + left + ' unseen)'); }
+      if (st.seq.includes(id)) { if (process.env.DBG) console.log('REP', id, await p.evaluate(() => { const d = window.TAL.S().daily; return JSON.stringify({ t: d.t, bs: d.bs, ch: d.ch, last: window.TAL.S().last }); })); const left = await p.evaluate(seen => window.TAL.dailyPool().filter(x => !seen.includes(x)).length, st.seq); if (left) st.reps.push(id + ' @' + st.seq.length + ' (' + left + ' unseen)'); }
     }
     st.seq.push(id); };
   for (let n = 0; st.t < DAY && n < 200; n++) {

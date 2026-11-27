@@ -163,7 +163,7 @@ function bldCard(b,back){const bs=bState(b);const [got,max]=bStars(b);
   const c=h('button','wcard2 bld',`<span class="ico">${b.icon()}</span><span class="nm">${b.name}</span><span class="bar"><i style="width:${got/max*100}%"></i></span>`);c.style.setProperty('--lc',b.color);
   if(bs!=='on'){c.classList.add('lockb');c.appendChild(h('span','cnt','🔒 '+bs.lock));c.onclick=()=>{sfx.no();window.TAL_locked&&window.TAL_locked(b);};}else c.onclick=()=>{sfx.pop(2);openBuilding(b);};return c;}
 /* level 1: four big doors */
-function openHub(){KEY=null;PATH=0;O.setScreen('sTal','valley',O.showMap);O.hud(`<div class="starcount">${SPR.star}<span>${Object.values(S().tl).reduce((a,c)=>a+(c.s|0),0)}</span></div>`);
+function openHub(){KEY=null;O.setScreen('sTal','valley',O.showMap);O.hud(`<div class="starcount">${SPR.star}<span>${Object.values(S().tl).reduce((a,c)=>a+(c.s|0),0)}</span></div>`);
   const s=$('#sTal');s.innerHTML='';
   s.appendChild(h('div','whead',`<span class="gd bob">${X.portal}</span><h1>עִיר הַכִּשְׁרוֹנוֹת</h1>`));
   const g4=h('div','gdoors');
@@ -172,12 +172,12 @@ function openHub(){KEY=null;PATH=0;O.setScreen('sTal','valley',O.showMap);O.hud(
     c.style.setProperty('--gc',g.c);c.onclick=()=>{sfx.pop(3);const on=bs.filter(b=>bState(b)==='on');if(bs.length===1&&on.length===1)openBuilding(bs[0]);else openGroup(g);};g4.appendChild(c);});
   s.appendChild(g4);O.sayNow='עִיר הַכִּשְׁרוֹנוֹת. מָה נְשַׂחֵק?'+choiceSay(g4,'.gdoor b');O.emit('hub',s);}
 /* level 2: just the buildings of one door */
-function openGroup(g){KEY=null;PATH=0;O.setScreen('sTal','valley',openHub);O.hud('');const s=$('#sTal');s.innerHTML='';
+function openGroup(g){KEY=null;O.setScreen('sTal','valley',openHub);O.hud('');const s=$('#sTal');s.innerHTML='';
   s.appendChild(h('div','whead',`<span class="gd">${g.e}</span><h1>${g.n}</h1>`));const grid=h('div','hub gsub');visB(g).forEach(b=>grid.appendChild(bldCard(b)));s.appendChild(grid);O.sayNow=spk(g.n)+'.'+choiceSay(grid,'.nm');O.emit('group',s,g);}
 /* the activities a building shows: the ones already tried + new ones up to 4 (at least one new), so the rest open gradually; the parent's "all open" shows them all */
 function menuActs(b){const list=b.acts.filter(a=>(!a.avail||a.avail())&&!actOff(a.id)&&!a.noMenu);if(S().set.all)return list;
   const tried=a=>!!(S().tl[a.id]||{}).n;let k=Math.max(1,4-list.filter(tried).length);return list.filter(a=>tried(a)||k-->0);}
-function openBuilding(b){KEY=null;PATH=0;const gg=groupOf(b);const up=visB(gg).length>1?()=>openGroup(gg):openHub;const ma=menuActs(b);
+function openBuilding(b){KEY=null;const gg=groupOf(b);const up=visB(gg).length>1?()=>openGroup(gg):openHub;const ma=menuActs(b);
   if(ma.length===1){ma[0].run(up);return;}/* #8: a building with one activity opens it straight away (no extra tap) */
   O.setScreen('sTal',b.bg,up);O.hud('');const s=$('#sTal');s.innerHTML='';
   s.appendChild(h('div','whead',`<span class="gd">${b.icon()}</span><h1>${b.name}</h1>`));

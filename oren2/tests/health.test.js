@@ -83,7 +83,11 @@ const SH = process.env.HSHOTS; if (SH) fs.mkdirSync(SH, { recursive: true });
   // #634 no count limit: many short activities in one domain never close it for the day (only the minutes setting does)
   const sid = await p.evaluate(() => window.TAL.dailyPool().find(id => window.HEALTH.domOf(id) === 'sci'));
   if (sid) { for (let i = 0; i < 5; i++) { await playAct(sid); if (await lock()) break; }
-    ok('#634 5 science activities: no topic switch by count', !(await lock()) && !(await st()).rest.sci); }
+    ok('#634 5 science activities: no topic switch by count', !(await lock()) && !(await st()).rest.sci);
+    /* the minutes still do (the parent's setting): 16 min of science, then the topic switch */
+    await p.evaluate(id => { const r = window.HEALTH.day(); r.dom.sci = 16 * 60; window.HEALTH.onActivityEnd('sci', id); }, sid); await sleep(2900); await p.evaluate(() => window.HEALTH.check()); await sleep(200);
+    l = await lock(); ok('#634 16 minutes of science: topic switch for science', l && l.h2 === 'עָשִׂינוּ הַמּוֹן מַדָּע הַיּוֹם!', l && l.h2);
+    if (l) { await p.locator('.hlock .hone').click(); await sleep(300); } }
   // calm never rests
   await p.evaluate(() => { const r = window.HEALTH.day(); r.dom.calm = 3600; r.act.calm = 9; window.HEALTH.onActivityEnd('calm', 'x'); }); await sleep(2900); await p.evaluate(() => window.HEALTH.check()); await sleep(200);
   ok('calm activities never rest', !(await lock()) && !(await st()).rest.calm);

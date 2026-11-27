@@ -57,3 +57,4 @@ voice-audit-1 150          # #406 voice audit, first half: home, every world and
 voice-audit-2 150          # #406 the other half of the activities + #610 the explore question on the daily path (spoken, 🔊, sound button): ~70 s with 2 suites at once
 music2-desktop 60         # #615 play games first (4 games played through, unlock after 3 good rounds) + the theory levels: ~31 s
 music2-phone 60           # same file on the phone viewport: ~30 s
+fullday 60                # #634 a simulated 60-minute day on home (~40 missions) + 3 mission checks + 3 flag rounds: ~16 s

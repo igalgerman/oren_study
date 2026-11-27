@@ -174,7 +174,8 @@ function remPanel(box,sec,re){const m=(T.S().set||{}).rem;
   const g2=h('div','hmsgtype');g2.append(i,sb);f.appendChild(g2);s.appendChild(f);}
 
 /* two big cards of other domains Oren did least today */
-function cards(ex){const r=day();return DOMS.filter(d=>d.id!==ex&&!H.resting(d.id)&&enabled(d.id)).map(d=>[d,(r.dom[d.id]|0)+Math.random()]).sort((a,b)=>a[1]-b[1]).slice(0,2).map(x=>x[0]);}
+const fresh=dm=>{if(dm==='math'||dm==='arcade')return true;const dt=((T.S().daily||{}).t)||[];return T.dailyPool().some(id=>H.domOf(id)===dm&&!dt.includes(id));};   /* #634 a domain with a mission he has not played today */
+function cards(ex){const r=day();return DOMS.filter(d=>d.id!==ex&&!H.resting(d.id)&&enabled(d.id)&&fresh(d.id)).map(d=>[d,(r.dom[d.id]|0)+Math.random()]).sort((a,b)=>a[1]-b[1]).slice(0,2).map(x=>x[0]);}
 function goDom(dm){close();sfx.pop&&sfx.pop(3);
   if(dm==='math'){const lv=T.nextLevel&&T.nextLevel();if(lv){if(!O.save.story[lv.w.id+'-in'])O.showWorld(lv.w);else O.startLevel(lv);}else O.showJourney();return;}
   if(dm==='arcade'){window.TAL_arcade(O.showMap);return;}
