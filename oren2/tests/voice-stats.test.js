@@ -10,6 +10,7 @@ const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + 
 const HTML = fs.readFileSync(L.PAGE, 'utf8');
 // fake Audio: the URL's text decides what happens. MISSING = the server has no audio (JSON 429 -> media error 4),
 // NET = network error (media error 2), SLOW = never starts, BLOCK = play() refused (autoplay). Anything else plays.
+// LATE = a slow fetch: the audio arrives after 400 ms even if pause() was called while it loaded (#399).
 const INIT = () => {
   try { localStorage.clear(); } catch (e) {}
   window.__vsTest = true;
@@ -28,6 +29,9 @@ const INIT = () => {
     a.play = () => {
       if (/BLOCK/.test(t)) return Promise.reject(Object.assign(new Error('no gesture'), { name: 'NotAllowedError' }));
       setTimeout(() => {
+        if (/LATE/.test(t)) return setTimeout(() => { a.paused = false; a.onplay && a.onplay(); a.onplaying && a.onplaying();
+          if (a.paused) return; window.__played.push(t); window.__aev.push(['start', t]);
+          setTimeout(() => { if (a.paused) return; a.paused = true; a.ended = true; window.__aev.push(['end', t]); a.onended && a.onended(); }, 40); }, 400);
         if (a.stop) return;
         if (/MISSING/.test(t)) { a.error = { code: 4 }; a.onerror && a.onerror(); return; }
         if (/NET/.test(t)) { a.error = { code: 2 }; a.onerror && a.onerror(); return; }
@@ -140,6 +144,29 @@ const INIT = () => {
     const ev2 = (await two('שָׁלוֹשׁ', 'אַרְבַּע', true)).map(e => [e[0], e[1].replace(/[\u0591-\u05C7]/g, '')]);
     ok('#397 ' + name + ': hush() stops the voice and empties the queue (nothing waits to be said)', !ev2.some(e => e[1] === 'ארבע') && !ev2.some(e => e[0] === 'end'), JSON.stringify(ev2));
     ok('#397 ' + name + ': no page errors', !errs.length, errs.join('|'));
+    await ctx.close(); }
+
+  // #399 the line spoken always belongs to the current screen: each queued line carries its screen id, a line with an old id is dropped
+  { const { ctx, p, errs } = await open('https://oren.test');
+    await p.waitForFunction(() => window.__gv && window.__gv.ok, null, { timeout: 8000 });
+    const starts = () => p.evaluate(() => window.__aev.filter(e => e[0] === 'start').map(e => e[1].replace(/[\u0591-\u05C7]/g, '')));
+    // slow audio fetch + fast screen change: the old screen's audio arrives late and is not played; the new screen's line is
+    await p.evaluate(() => { window.__fast = false; window.__noAuto = true; window.OREN.hush(); window.__aev.length = 0;
+      window.OREN.say('LATE מַפָּה'); setTimeout(() => { window.OREN.setScreen('sTal', 'city', null); window.__noAuto = true; window.OREN.say('עִיר'); }, 60); });
+    await sleep(1000);
+    let st = await starts();
+    ok('#399 slow audio fetch + fast screen change: only the current screen\'s line plays', st.join() === 'עיר', JSON.stringify(st));
+    // queued lines of the old screen are dropped even when nothing emptied the queue: only the screen id changed
+    await p.evaluate(() => { window.OREN.hush(); window.__aev.length = 0; const q = window.__sq;
+      window.OREN.say('אֶחָד'); window.OREN.say('שְׁתַּיִם'); window.OREN.say('שָׁלוֹשׁ');
+      const ids = q.list.map(x => x.scr).concat(q.cur ? [q.cur.scr] : []); window.__ids = typeof q.scr === 'number' && ids.length === 3 && ids.every(x => x === q.scr); q.scr++; });
+    await sleep(700);
+    st = await starts();
+    ok('#399 each queued line carries its screen id', await p.evaluate(() => window.__ids), '');
+    ok('#399 a queued line with an old screen id is dropped', st.join() === 'אחד', JSON.stringify(st));
+    await p.evaluate(() => { window.OREN.say('אַרְבַּע'); }); await sleep(400); st = await starts();
+    ok('#399 a line of the current screen still plays after the drop', st.join() === 'אחד,ארבע', JSON.stringify(st));
+    ok('#399 no page errors', !errs.length, errs.join('|'));
     await ctx.close(); }
 
   // 6. source check: no screen makes its own browser utterance (only browserSay does), so one screen never mixes two voices
