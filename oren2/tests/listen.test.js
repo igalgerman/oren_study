@@ -34,7 +34,8 @@ const ACT = 'sci-animals';                                   /* a quiz with 4 op
   ok('a tap while resting is not judged (no penalty)', s.judged === 0 && s.locked, JSON.stringify(s));
   ok('no timer on screen', !s.timer);
   await L.shot(p, { path: L.SHOTDIR + `/389-listen-${L.variant}.png` });
-  await p.evaluate(() => { const u = speechSynthesis.last; if (u && u.onend) u.onend({}); }); await sleep(150);
+  /* #53 the first time in a new kind of task the friend's sentence comes first: end each line in turn (the question is the last) */
+  for (let k = 0; k < 3; k++) { await p.evaluate(() => { const u = speechSynthesis.last; if (u && u.onend && !u._ended) { u._ended = 1; u.onend({}); } }); await sleep(150); }
   s = await st();
   ok('the question ended: the answers open', !s.locked);
   await tap(wrongs(s)[0]); s = await st();
