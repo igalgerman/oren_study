@@ -125,7 +125,7 @@ const { chromium } = require('playwright');
     const screen = () => p.evaluate(() => { const s = [...document.querySelectorAll('.screen')].find(x => !x.hidden); return s ? s.id : ''; });
     const atHub = () => p.evaluate(() => !document.querySelector('#sTal').hidden && !!document.querySelector('#sTal .gdoors') && document.querySelector('#dlg').hidden);
     const ids = await p.evaluate(() => Object.keys(window.TAL.ACT));
-    const noBack = [], wrong = [], long = [], recount = [], MAXQ = 6;   // #59: a round opened from a building is about 5 questions (at most 6)
+    const noBack = [], wrong = [], long = [], recount = [], MAXQ = 6, bldQ = {};   // #59: a round opened from a building is about 5 questions (at most 6)
     const countQ = () => p.evaluate(() => { const pr = document.querySelector('#hud .progress'); return pr ? pr.children.length : 0; });
     for (const id of ids) {
       await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.TAL.openHub(); });
@@ -133,7 +133,7 @@ const { chromium } = require('playwright');
       await p.evaluate(() => { const ov = document.querySelector('#ov'); if (!ov.hidden) ov.hidden = true; });   // a first-time popup (placement, lesson pick) is not this test
       if (await atHub()) continue;                // not open yet for Oren (e.g. the champions' test): the activity went straight back
       const lesson = await p.evaluate(() => !!document.querySelector('#sTal .lccard'));
-      const nq = lesson ? 0 : await countQ(); if (nq > MAXQ && id !== 'mind-scan') long.push(id + ':' + nq); if (lesson) recount.push(id);   // mind-scan: 8 calm-down steps, no questions (~2 min)
+      const nq = lesson ? 0 : await countQ(); if (nq > MAXQ && id !== 'mind-scan') long.push(id + ':' + nq); if (lesson) recount.push(id); else bldQ[id] = nq;   // mind-scan: 8 calm-down steps, no questions (~2 min)
       const at = await backAt(); if (!at) { noBack.push(id); continue; }
       await p.mouse.click(at.x, at.y); await L.sleep(120);
       if (!(await atHub())) wrong.push(id + '→' + (await screen()));
@@ -146,7 +146,7 @@ const { chromium } = require('playwright');
       await p.evaluate(id => { document.querySelector('#ov').hidden = true; const T = window.TAL; T.openHub(); T.ACT[id].run(() => T.openHub()); }, id); await L.sleep(120);
       await p.evaluate(() => { const ov = document.querySelector('#ov'); if (!ov.hidden) ov.hidden = true; });
       if (await atHub()) continue;
-      const nq = await countQ(); if (nq > MAXQ && id !== 'mind-scan') long.push(id + ':' + nq);
+      const nq = await countQ(); if (nq > MAXQ && id !== 'mind-scan') long.push(id + ':' + nq); bldQ[id] = nq;
     }
     ok('#59 no activity round is longer than ' + MAXQ + ' questions (lesson cards off too)', long.length === 0 && recount.includes('mus2-rhythm') && recount.includes('eng-abc'), long.join(', ') + ' recounted: ' + recount.length);
     // #555: the rhythm and letters rounds still end normally: end screen, stars recorded, progress saved
@@ -168,6 +168,41 @@ const { chromium } = require('playwright');
       return { n: lv.length, long: lv.filter(l => l.n > (l.type === 'boss' ? 10 : 5)).map(l => l.id + ':' + l.n), pv: pv.map(l => l.n) }; });
     ok('#59 every journey level is at most 5 questions (a boss at most 10)', jl.n > 0 && jl.long.length === 0, jl.long.slice(0, 8).join(', '));
     ok('#59 place-value split: 3 levels of at most 5 questions', jl.pv.length === 3 && jl.pv.every(n => n <= 5), JSON.stringify(jl.pv));
+    // #394: on the daily path every mission is a short scene (at most 4 questions, a math level at most 5); opened from its building it keeps its full length
+    {
+      await p.evaluate(() => { window.__lessons = false; });
+      const pool = await p.evaluate(() => window.TAL.dailyPool()); const pathQ = {}, over = [];
+      for (const id of pool) {
+        await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.TAL.openHub(); });
+        await p.evaluate(id => { const T = window.TAL; T.S().daily = { d: window.OREN.today(), t: [id], done: [0], claimed: 0, ch: 'plan', cr: [] }; window.TAL_step(0); }, id); await L.sleep(120);
+        await p.evaluate(() => { const ov = document.querySelector('#ov'); if (!ov.hidden) ov.hidden = true; });
+        const cards = await p.evaluate(() => { let k = 0; while (document.querySelector('#sTal .e2card') && k < 9) { document.querySelector('#sTal .e2next').click(); k++; } return k; });   // explore lessons: a few short cards, then the questions
+        const n = await countQ(); pathQ[id] = n; if (n > 4 && id !== 'mind-scan') over.push(id + ':' + n); if (cards > 3 && n > 3) over.push(id + ':' + cards + ' cards+' + n);   // mind-scan: 8 calm steps of 9 s, no questions
+      }
+      const cut = Object.keys(bldQ).filter(id => id in pathQ && bldQ[id] > 4 && id !== 'mind-scan');
+      ok('#394 every path mission is at most 4 questions', pool.length > 20 && over.length === 0, over.join(', '));
+      ok('#394 rounds of 5-6 are cut to 3-4 on the path and keep their full length from the building', cut.length >= 10 && cut.every(id => pathQ[id] >= 3 && pathQ[id] <= 4 && bldQ[id] >= 5), cut.map(id => id + ':' + bldQ[id] + '>' + pathQ[id]).join(', '));
+      await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.TAL.openHub(); window.TAL.ACT['world-il'].run(() => window.TAL.openHub()); }); await L.sleep(120);
+      const rf = await countQ(); ok('#394 after the path, the same activity opened from its building is full length again', pathQ['world-il'] === 4 && rf === 5, pathQ['world-il'] + ' > ' + rf);
+      const lg = await p.evaluate(() => { const T = window.TAL; return { inPool: T.dailyPool().filter(id => T.ACT[id].long), long: Object.keys(T.ACT).filter(id => T.ACT[id].long) }; });
+      ok('#394 the open-ended long ones (free drawing, a full chess game) are building-only', lg.inPool.length === 0 && lg.long.includes('art-draw') && lg.long.includes('chess-play'), JSON.stringify(lg));
+      const ml = await p.evaluate(() => { const O = window.OREN, O4 = window.__oren4; const lv = O.ALLLV.find(l => l.type === 'boss' && l.n > 5);
+        O.pathLevel(lv.id); O4.playLevel(lv); const a = O4.play.qs.length; O.showMap(); O4.playLevel(lv); const b = O4.play.qs.length; O.showMap(); return { a, b, n: lv.n }; });
+      ok('#394 a math level on the path is at most 5 questions; from the journey it keeps its length', ml.a <= 5 && ml.a >= 3 && ml.b === ml.n, JSON.stringify(ml));
+      const gm = await p.evaluate(() => { const T = window.TAL, out = {}; ['think-mem', 'think-maze'].forEach(id => { T.S().tl[id] = Object.assign(T.S().tl[id] || {}, { n: 9 }); });
+        const size = () => ({ mem: document.querySelectorAll('#sTal .memg > *').length, mz: (document.querySelector('#sTal svg.mz') || { getAttribute: () => '0 0 0' }).getAttribute('viewBox').split(' ')[2] / 10 });
+        for (const id of ['think-mem', 'think-maze']) { T.S().daily = { d: window.OREN.today(), t: [id], done: [0], claimed: 0, ch: 'plan', cr: [] }; window.TAL_step(0); out[id + '-path'] = size()[id === 'think-mem' ? 'mem' : 'mz'];
+          T.openHub(); T.ACT[id].run(() => T.openHub()); out[id + '-bld'] = size()[id === 'think-mem' ? 'mem' : 'mz']; }
+        document.querySelector('#ov').hidden = true; return out; });
+      ok('#394 memory and maze are smaller on the path (6 pairs, 6x6), full size from the building (8 pairs, 8x8)', gm['think-mem-path'] === 12 && gm['think-mem-bld'] === 16 && gm['think-maze-path'] === 6 && gm['think-maze-bld'] === 8, JSON.stringify(gm));
+      // stars, level and progress still work on a short path round
+      await p.evaluate(() => { const T = window.TAL; document.querySelector('#ov').hidden = true; delete T.S().tl['world-il']; T.S().daily = { d: window.OREN.today(), t: ['world-il', 'math'], done: [0, 0], claimed: 0, ch: 'plan', cr: [] }; window.__pi = 0; window.TAL_step(0); }); await L.sleep(200);
+      for (let n = 0; n < 8 && await p.evaluate(() => document.getElementById('ov').hidden && !!window.__quiz && !!window.__quiz.wrap.isConnected); n++) {
+        await p.evaluate(() => { const q = window.__quiz; q.wrap.querySelectorAll('.chs .chb')[q.ans].click(); }); await L.sleep(250); }
+      const sr = await p.evaluate(() => { const T = window.TAL; return { tl: T.S().tl['world-il'], done: T.S().daily.done[window.__pi], card: !document.getElementById('ov').hidden }; });
+      ok('#394 a short path round still gives stars, counts the play and marks the mission done', sr.tl && sr.tl.s === 3 && sr.tl.n === 1 && sr.done === 1 && sr.card, JSON.stringify(sr));
+      await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.__lessons = true; window.OREN.showMap(); });
+    }
     // journey screens: back goes one step up
     const steps = [['journey', 'O.showJourney()', 'sHome'], ['kingdom', 'O.kingdom()', 'sHome'], ['arcade', 'window.TAL_arcade(O.showMap)', 'sHome'],
       ['world', 'O.save.story[O.WORLDS[0].id+"-in"]=1;O.showWorld(O.WORLDS[0])', 'sMap']];
