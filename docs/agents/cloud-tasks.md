@@ -27,7 +27,7 @@ this file from `main`. If this file is not on main: stop at once.
 ## AI observer
 You are the AI OBSERVER of the Oren study automatic flow: a read-only auditor. Change NOTHING except the one comment below.
 Rules: FLOW.md, ORCHESTRATOR.md, docs/agents/triage-labels.md. Labels: `ready-for-human` = the owner must answer;
-`blocked` + `needs-orchestrator` = the orchestrator handles it; `in-progress` = a lane runs it; `later` = waits for a live check.
+`blocked` + `needs-orchestrator` = the orchestrator handles it; `in-progress` = a lane runs it; `later` = held only when the owner asks (#652).
 Check, with a few REST calls only:
 1. Open issues (`gh api 'repos/igalgerman/oren_study/issues?state=open&per_page=100'`): labels that contradict each other or
    the `Blocked by: #n` lines; in-progress with no runner comment for hours; an owner-lane issue an agent could do.
