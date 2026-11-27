@@ -1543,9 +1543,15 @@ function ttsParts(s,max=400){s=String(s);if(s.includes('\u2063'))return s.split(
     for(const w of sen.split(' ')){for(let i=0;i<w.length;i+=max)put(w.slice(i,i+max));}}
   if(cur)out.push(cur);return out;}
 window.__ttsParts=ttsParts;
+const ttsUrl=(x,en,slow)=>'/api/tts?t='+encodeURIComponent(x)+'&v='+(en?GEN.v:GVOICE)+'&r='+(en?(slow?GEN.slow:GEN.r):GRATE)+'&k='+GV.ver;
+/* #402 no waiting: the audio of a sentence that comes soon (the next question) is asked for in the background, so it is in the
+   browser's cache (and the site's) when it is said. Google voice only; each URL once. */
+const PF=new Set();
+function ttsPrefetch(t,lang){if(!t||window.__fast)return;lang=lang||'he';if(GV.pending){GV.wait.then(()=>ttsPrefetch(t,lang));return;}if(!useGoogle(lang))return;const en=lang==='en';
+  for(const x of ttsParts(en?plain(t):fullSpell(t))){const u=ttsUrl(x,en,false);if(PF.has(u))continue;if(PF.size>200)PF.clear();PF.add(u);try{fetch(u).catch(()=>{});}catch(e){}}}
 function googleSay(t,lang,again,part,slow,done){done=done||(()=>{});const en=lang==='en';part=part|0;if(!part){try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}try{speechSynthesis.cancel();}catch(e){}}
   const parts=ttsParts(en?plain(t):fullSpell(t)),last=part>=parts.length-1;
-  const url='/api/tts?t='+encodeURIComponent(parts[part])+'&v='+(en?GEN.v:GVOICE)+'&r='+(en?(slow?GEN.slow:GEN.r):GRATE)+'&k='+GV.ver;
+  const url=ttsUrl(parts[part],en,slow);
   const a=new Audio(url);GV.audio=a;let go=false;const t0=Date.now();
   const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;if(sqOld(done))return drop();track('au',{ev:'fail',src:'google',why,ms:Date.now()-t0});try{a.pause();}catch(e){}GV.audio=null;
     if(!again&&why!=='no-audio'&&why!=='blocked'){logIssue('voice',why+' (retry)');track('retry',{what:'voice',why});googleSay(t,lang,1,part,slow,done);return;}browserSay(t,en?'en':'he',why,slow,done);if(why!=='blocked')logIssue('voice',why);};
@@ -2040,6 +2046,12 @@ function qSpeech(q){
   if(q.k==='rem')return `${nw(q.p)} חלקי ${nw(q.d)}, שווה כמה, ומה השארית?`;
   if(q.k==='col')return `${nw(q.a)} ${OPW[q.op]} ${nw(q.b)}. פותרים במאונך, מהאחדות.`;
   return [q.miss==='l'?'כמה':nw(q.l),OPW[q.op],q.miss==='r'?'כמה':nw(q.r),'שווה',q.miss==='res'?'כמה':nw(q.res)].join(' ')+'?';}
+/* #402 the math sentence set for pregen: every question of each small math unit (its sentences run out within 150), said exactly
+   as the game says it (numbers as words, #122). Bigger units are made on first use and fetched one question ahead. */
+function mathSpeechList(){const S=new Set();for(const u of ALLU){if(u.boss)continue;const s=new Set();let miss=0,t=0;
+    while(miss<300&&t<5000){t++;let x;try{x=qSpeech(u.gen(t%10));}catch(e){break;}if(s.has(x))miss++;else{s.add(x);miss=0;}}
+    if(miss>=300&&s.size<=150)s.forEach(x=>S.add(x));}
+  return [...S];}
 function bubbleOpts(q){const a=q.ans;const c=new Set([a]);const cand=[a+1,a-1,a+2,a-2,a+10,a-10];if(q.k==='bin'&&q.op==='×'&&q.miss==='res'){cand.unshift(q.l*(q.r+1),q.l*(q.r-1),(q.l+1)*q.r);}
   if(a>=10){const s=String(a);if(s.length===2&&s[0]!==s[1])cand.unshift(+(s[1]+s[0]));}
   for(const v of shuffle(cand.slice(0,3)).concat(cand.slice(3)))if(c.size<4&&v>=0&&v!==a)c.add(v);while(c.size<4)c.add(a+c.size*3);return shuffle([...c]);}
@@ -2102,7 +2114,7 @@ function showQ(){hush();/* #398: the next question: nothing of the last one (pra
   $('#hint').hidden=true;$('#hint').innerHTML='';helpStart(q);helpBtn(q);
   if(q.k==='col')colPrep(q,p.col);
   setBubble(q.k==='word'?'קְרָא וְחַשֵּׁב':q.k==='col'?'מַתְחִילִים מִיָּמִין':q.k==='rem'?'כַּמָּה, וּמָה הַשְּׁאֵרִית?':q.k==='ch'?(q.hand?(q.hand.t==='clock'?'גְּרֹר אֶת הַמְּחוֹגִים':'הַקֵּשׁ עַל הַפְּרוּסוֹת'):'בְּחַר תְּשׁוּבָה'):'כַּמָּה זֶה?');
-  sayNow=qSpeech(q);hudPlay();
+  sayNow=qSpeech(q);hudPlay();if(p.qs[p.i+1])ttsPrefetch(qSpeech(p.qs[p.i+1]));/* #402 */
   if(p.mode!=='speed'){let qj=null;try{qj=JSON.parse(JSON.stringify(p.qs));if(JSON.stringify(qj).length>60000)qj=null;}catch(e){qj=null;}
     hereProg(p.lv.type==='train'?'train':'lv:'+p.lv.id,{i:p.i,errors:p.errors,hints:p.hints,streak:p.streak,hp:p.hp,N:p.N,done:p.done,gemsEarned:p.gemsEarned,rq:[...p.requeued],qs:qj});}}
 function renderBoxes(){const p=play;p.boxes.forEach((b,i)=>{if(b.done)return;b.el.className='ans'+(b.val?'':' empty')+(i===p.bi&&p.boxes.length>1?' foc':'');b.el.textContent=b.val||'?';});}
@@ -2358,9 +2370,9 @@ function showFinal(){setScreen('sFinal','final',showMap);$('#hudMid').innerHTML=
 
 updateGems();cloudInit();
 const BUS={};function emit(e,...a){(BUS[e]||[]).forEach(f=>{try{f(...a);}catch(x){console.error(x);}});}
-window.OREN={get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
+window.OREN={mathSpeechList,get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
   set sayNow(v){sayNow=v;AUTO.gen++;},get sayNow(){return sayNow;},hud:html=>{$('#hudMid').innerHTML=html;document.body.classList.toggle('act',!document.body.classList.contains('inpar')&&/class="chip"/.test(html));},resetAll:keep=>{const snd=save.snd;save=blank();save.snd=snd;Object.assign(save,keep||{});persist();renderStart();},on:(e,f)=>{(BUS[e]=BUS[e]||[]).push(f);},emit,blank};
-window.__oren4={GT,HANDS,renderAudio,THEMES,RAW,setTheme,get mus(){return mus;},WORLDS,ALLLV,ALLU,hintHTML,hintData,uniq,colInit,colNeedBorrow,digs,qkey,bubbleOpts,storyFor,teachCheck,HEROES,get play(){return play;},get save(){return save;},startLevel,finishLevel,playLevel,showMap,showWorld,kingdom,studio,teacher,playSpeed,setFast:v=>{window.__fast=v;},mergeIn,migrateOld,lp};
+window.__oren4={qSpeech,GT,HANDS,renderAudio,THEMES,RAW,setTheme,get mus(){return mus;},WORLDS,ALLLV,ALLU,hintHTML,hintData,uniq,colInit,colNeedBorrow,digs,qkey,bubbleOpts,storyFor,teachCheck,HEROES,get play(){return play;},get save(){return save;},startLevel,finishLevel,playLevel,showMap,showWorld,kingdom,studio,teacher,playSpeed,setFast:v=>{window.__fast=v;},mergeIn,migrateOld,lp};
 /* #44 a finished task is not reopened */
 window.OREN.on('tlDone',()=>herePut(null));window.OREN.on('levelDone',()=>herePut(null));
 })();

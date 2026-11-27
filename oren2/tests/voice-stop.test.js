@@ -74,4 +74,32 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  const pg=require('fs').readFileSync(require('path').join(__dirname,'../cf/tools/pregen.js'),'utf8');
  ok('pregen static pass uses the same splitter',/__ttsParts\(/.test(pg)&&!/__fullSpell\(s\)\.slice\(0, 400\)/.test(pg));
  ok('short text: one request, unchanged',lt.short.length===1&&lt.short[0]===lt.shortWant,JSON.stringify(lt.short));
+ // #402 no waiting: while a question is shown, the next question's audio is already asked for in the background (mock fetch counts it);
+ // the URL is exactly the one the voice plays next, asked for once; no Google voice = nothing fetched
+ const pf=await p.evaluate(async()=>{const O=window.OREN,G=window.__oren4,fx=[],played=[];
+   window.fetch=(u,o)=>{u=String(u);if(u.startsWith('/api/tts?'))fx.push(u);return Promise.resolve(new Response('',{status:200}));};
+   window.Audio=function(u){played.push(u);const a={play(){setTimeout(()=>{a.onplaying&&a.onplaying();setTimeout(()=>a.onended&&a.onended(),10);},5);return Promise.resolve();},pause(){},addEventListener(){}};return a;};
+   const wait=ms=>new Promise(r=>setTimeout(r,ms));window.__gv.ok=true;window.__gv.pending=false;window.__fast=false;window.__noAuto=false;
+   const lv=O.ALLLV.find(l=>l.id==='add-1-1');G.playLevel(lv);await wait(700);const P=G.play,q1=P.qs[1];
+   const fx0=fx.slice(),pl0=played.slice();
+   /* answer the first question, the second one is shown and read */
+   const q=P.qs[0];if(P.choice)document.querySelectorAll('#qa .chs button, #qa .bubs button')[P.choice.ans].click();
+   else{for(const ch of String(q.ans))document.querySelector(`#pad .key[data-k="${ch}"]`).click();document.querySelector('#pad .key[data-k="go"]').click();}
+   for(let k=0;k<200&&!played.some(u=>fx0.includes(u));k++)await wait(30);const pl1=played.slice(pl0.length);
+   const off=async()=>{O.hush();fx.length=0;window.__gv.ok=false;G.playLevel(O.ALLLV.find(l=>l.id==='add-0-1'));await wait(500);return fx.length;};
+   const noG=await off();window.__fast=true;window.__noAuto=false;O.hush();
+   return {fx0,pl0,pl1,i:G.play&&G.play.i,noG,q1:G.qSpeech?G.qSpeech(q1):null};});
+ const want=pf.pl1.find(u=>pf.fx0.includes(u));
+ ok('#402 next question audio fetched in the background while a question is shown',pf.fx0.length>=1&&!pf.fx0.some(u=>pf.pl0.includes(u)),JSON.stringify({fx:pf.fx0.length,pl:pf.pl0.length}));
+ ok('#402 the next question plays the prefetched audio (same URL)',!!want,JSON.stringify({fx:pf.fx0,pl1:pf.pl1}).slice(0,400));
+ ok('#402 each prefetch URL asked for once',new Set(pf.fx0).size===pf.fx0.length,pf.fx0.length+'');
+ ok('#402 no Google voice: nothing prefetched',pf.noG===0,'fetches '+pf.noG);
+ // #402 the math sentence set (numbers as words, #122) is in pregen: every small math unit, said exactly as the game says it
+ const ms=await p.evaluate(()=>{const O=window.OREN,G=window.__oren4,L=O.mathSpeechList(),S=new Set(L);
+   const u=O.ALLU.find(x=>x.id==='add-0'),m=O.ALLU.find(x=>x.id==='mul-3');let miss=[];for(let i=0;i<40;i++)for(const x of [u,m]){const t=G.qSpeech(x.gen(i%10));if(!S.has(t))miss.push(t);}
+   return {n:L.length,uniq:S.size,digits:L.map(window.__fullSpell).filter(t=>/\d/.test(t)).slice(0,3),miss:miss.slice(0,3)};});
+ ok('#402 math sentence set: hundreds of sentences, no duplicates',ms.n>=500&&ms.uniq===ms.n,ms.n+' / '+ms.uniq);
+ ok('#402 math sentence set: numbers said as words (no digits in the spoken text)',!ms.digits.length,JSON.stringify(ms.digits));
+ ok('#402 math sentence set: covers every question of a small unit (add to 10, table of 4)',!ms.miss.length,JSON.stringify(ms.miss));
+ ok('#402 pregen adds the math sentence set (after the random-question filter)',/const L = \[\.\.\.SAID\.values\(\)\]\.filter\(x => !RANDOM\.test\(txt\(x\)\)\)\.concat\(MATH\)/.test(pg)&&/mathSpeechList\(\)/.test(pg));
  ok('no errors',!errs.length,errs.join('|'));await b.close();L.finish('voice-stop',res);})();
