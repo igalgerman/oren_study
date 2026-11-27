@@ -927,39 +927,41 @@ const GD={
 const NAMES=[['אוֹרֶן','m'],['נוֹעָה','f'],['דָּנִי','m'],['מָאיָה','f'],['יוֹנָתָן','m'],['תָּמָר','f'],['אִיתַי','m'],['שִׁירָה','f'],['עִדּוֹ','m'],['יָעֵל','f']];
 const ITEMS=['תַּפּוּחִים','בְּלוֹקִים','כַּדּוּרִים','קְלָפִים','בָּלוֹנִים','צְדָפִים','סֻכָּרִיּוֹת','מַדְבֵּקוֹת','עוּגִיּוֹת','גֻּלּוֹת','מְכוֹנִיּוֹת'];
 const EAT=['עוּגִיּוֹת','סֻכָּרִיּוֹת','תּוּתִים'];
+/* #416 the things of the story scene that plays now (STORYMIX.thing(): [one, many, gender]); no story -> the old things */
+const thing=list=>{let t=null;try{t=window.STORYMIX&&window.STORYMIX.thing&&window.STORYMIX.thing();}catch(e){}return t&&t[1]?t[1]:pick(list||ITEMS);};
 const noDag=s=>s.replace(/^(.[֑-ׇ]*?)ּ/,'$1');
 const lp=nm=>'לְ'+noDag(nm[0]);
 const two=()=>{const a=pick(NAMES);let b;do{b=pick(NAMES);}while(b===a);return [a,b];};
 const WP={
-  join:(lo,hi)=>()=>{const n=pick(NAMES),X=pick(ITEMS),g=(m,f)=>n[1]==='m'?m:f;const s=rand(lo,hi),a=rand(Math.max(2,Math.floor(s/4)),s-2),b=s-a;const t=rand(1,4);
+  join:(lo,hi)=>()=>{const n=pick(NAMES),X=thing(),g=(m,f)=>n[1]==='m'?m:f;const s=rand(lo,hi),a=rand(Math.max(2,Math.floor(s/4)),s-2),b=s-a;const t=rand(1,4);
     if(t===1)return W(`${lp(n)} הָיוּ ${nb(a)} ${X}. ${n[0]} ${g('קִבֵּל','קִבְּלָה')} עוֹד ${nb(b)} ${X}. כַּמָּה ${X} יֵשׁ ${g('לוֹ','לָהּ')} עַכְשָׁו?`,s,X,'"עוֹד" ← חִבּוּר',[`${a} + ${b} = ?`]);
     if(t===2)return W(`${n[0]} ${g('מָצָא','מָצְאָה')} ${nb(a)} ${X} בַּבֹּקֶר, וְעוֹד ${nb(b)} ${X} בָּעֶרֶב. כַּמָּה ${X} ${g('הוּא מָצָא','הִיא מָצְאָה')} בְּסַךְ הַכֹּל?`,s,X,'"בְּסַךְ הַכֹּל" ← חִבּוּר',[`${a} + ${b} = ?`]);
     if(t===3){const [p,q]=two();const them=p[1]==='f'&&q[1]==='f'?'לָהֶן':'לָהֶם';return W(`${lp(p)} יֵשׁ ${nb(a)} ${X}, וּ${lp(q)} יֵשׁ ${nb(b)} ${X}. כַּמָּה ${X} יֵשׁ ${them} בְּיַחַד?`,s,X,'"בְּיַחַד" ← חִבּוּר',[`${a} + ${b} = ?`]);}
     return W(`בָּאוֹטוֹבּוּס יָשְׁבוּ ${nb(a)} נוֹסְעִים. בַּתַּחֲנָה עָלוּ עוֹד ${nb(b)} נוֹסְעִים. כַּמָּה נוֹסְעִים יֵשׁ עַכְשָׁו בָּאוֹטוֹבּוּס?`,s,'נוֹסְעִים','"עָלוּ עוֹד" ← חִבּוּר',[`${a} + ${b} = ?`]);},
-  take:(lo,hi)=>()=>{const n=pick(NAMES),X=pick(ITEMS),g=(m,f)=>n[1]==='m'?m:f;const a=rand(lo,hi),b=rand(2,a-2),r=a-b;const t=rand(1,5);
+  take:(lo,hi)=>()=>{const n=pick(NAMES),X=thing(),g=(m,f)=>n[1]==='m'?m:f;const a=rand(lo,hi),b=rand(2,a-2),r=a-b;const t=rand(1,5);
     if(t===1)return W(`${lp(n)} הָיוּ ${nb(a)} ${X}. ${g('הוּא נָתַן','הִיא נָתְנָה')} ${nb(b)} ${X} לְחָבֵר. כַּמָּה ${X} נִשְׁאֲרוּ ${g('לוֹ','לָהּ')}?`,r,X,'"נָתַן" וְ"נִשְׁאֲרוּ" ← חִסּוּר',[`${a} − ${b} = ?`]);
     if(t===2)return W(`עַל הָעֵץ הָיוּ ${nb(a)} תַּפּוּחִים. ${nb(b)} תַּפּוּחִים נָפְלוּ. כַּמָּה תַּפּוּחִים נִשְׁאֲרוּ עַל הָעֵץ?`,r,'תַּפּוּחִים','"נָפְלוּ" ← חִסּוּר',[`${a} − ${b} = ?`]);
     if(t===3){const E=pick(EAT);return W(`בַּצַּלַּחַת הָיוּ ${nb(a)} ${E}. ${n[0]} ${g('אָכַל','אָכְלָה')} ${nb(b)} ${E}. כַּמָּה ${E} נִשְׁאֲרוּ בַּצַּלַּחַת?`,r,E,'"אָכַל" ← חִסּוּר',[`${a} − ${b} = ?`]);}
     if(t===4)return W(`בָּאוֹטוֹבּוּס יָשְׁבוּ ${nb(a)} נוֹסְעִים. בַּתַּחֲנָה יָרְדוּ ${nb(b)} נוֹסְעִים. כַּמָּה נוֹסְעִים נִשְׁאֲרוּ בָּאוֹטוֹבּוּס?`,r,'נוֹסְעִים','"יָרְדוּ" ← חִסּוּר',[`${a} − ${b} = ?`]);
     return W(`בַּסֵּפֶר יֵשׁ ${nb(a)} עַמּוּדִים. ${n[0]} ${g('קָרָא','קָרְאָה')} ${nb(b)} עַמּוּדִים. כַּמָּה עַמּוּדִים ${g('נִשְׁאֲרוּ לוֹ','נִשְׁאֲרוּ לָהּ')} לִקְרֹא?`,r,'עַמּוּדִים','מַה שֶּׁנִּשְׁאַר ← חִסּוּר',[`${a} − ${b} = ?`]);},
-  cmp:(lo,hi)=>()=>{const [p,q]=two(),X=pick(ITEMS),g1=(m,f)=>p[1]==='m'?m:f,g2=(m,f)=>q[1]==='m'?m:f;const a=rand(lo,hi),b=rand(Math.max(2,Math.floor(a/3)),a-2),d=a-b;const t=rand(1,4);
+  cmp:(lo,hi)=>()=>{const [p,q]=two(),X=thing(),g1=(m,f)=>p[1]==='m'?m:f,g2=(m,f)=>q[1]==='m'?m:f;const a=rand(lo,hi),b=rand(Math.max(2,Math.floor(a/3)),a-2),d=a-b;const t=rand(1,4);
     if(t===1)return W(`${lp(p)} יֵשׁ ${nb(a)} ${X}, וּ${lp(q)} יֵשׁ ${nb(b)} ${X}. כַּמָּה ${X} יֵשׁ ${lp(p)} יוֹתֵר מֵאֲשֶׁר ${lp(q)}?`,d,X,'"כַּמָּה יוֹתֵר?" ← הַגָּדוֹל פָּחוֹת הַקָּטָן',[`${a} − ${b} = ?`]);
     if(t===2)return W(`${p[0]} ${g1('בָּנָה','בָּנְתָה')} מִגְדָּל שֶׁל ${nb(a)} בְּלוֹקִים. ${q[0]} ${g2('בָּנָה','בָּנְתָה')} מִגְדָּל שֶׁל ${nb(b)} בְּלוֹקִים. בְּכַמָּה בְּלוֹקִים הַמִּגְדָּל שֶׁל ${p[0]} גָּבוֹהַּ יוֹתֵר?`,d,'בְּלוֹקִים','הַהֶפְרֵשׁ ← הַגָּדוֹל פָּחוֹת הַקָּטָן',[`${a} − ${b} = ?`]);
     if(t===3)return W(`${lp(p)} יֵשׁ ${nb(a)} ${X}. ${lp(q)} יֵשׁ ${nb(d)} ${X} פָּחוֹת ${g1('מִמֶּנּוּ','מִמֶּנָּה')}. כַּמָּה ${X} יֵשׁ ${lp(q)}?`,b,X,'"פָּחוֹת" ← חִסּוּר',[`${a} − ${d} = ?`]);
     return W(`${lp(p)} יֵשׁ ${nb(b)} ${X}. ${lp(q)} יֵשׁ ${nb(d)} ${X} יוֹתֵר ${g1('מִמֶּנּוּ','מִמֶּנָּה')}. כַּמָּה ${X} יֵשׁ ${lp(q)}?`,a,X,'"יוֹתֵר" ← חִבּוּר',[`${b} + ${d} = ?`]);},
-  unk:(lo,hi)=>()=>{const n=pick(NAMES),X=pick(ITEMS),g=(m,f)=>n[1]==='m'?m:f;const c=rand(lo,hi),a=rand(Math.max(2,Math.floor(c/4)),c-2),b=c-a;const t=rand(1,4);
+  unk:(lo,hi)=>()=>{const n=pick(NAMES),X=thing(),g=(m,f)=>n[1]==='m'?m:f;const c=rand(lo,hi),a=rand(Math.max(2,Math.floor(c/4)),c-2),b=c-a;const t=rand(1,4);
     if(t===1)return W(`${lp(n)} הָיוּ ${nb(a)} ${X}. ${g('הוּא קִבֵּל','הִיא קִבְּלָה')} עוֹד כַּמָּה, וְעַכְשָׁו יֵשׁ ${g('לוֹ','לָהּ')} ${nb(c)} ${X}. כַּמָּה ${X} ${g('הוּא קִבֵּל','הִיא קִבְּלָה')}?`,b,X,`כַּמָּה חָסֵר מ-${nb(a)} עַד ${nb(c)}? ← חִסּוּר`,[`${c} − ${a} = ?`]);
     if(t===2)return W(`${n[0]} ${g('קִבֵּל','קִבְּלָה')} ${nb(b)} ${X} מִסַּבְתָּא, וְעַכְשָׁו יֵשׁ ${g('לוֹ','לָהּ')} ${nb(c)} ${X}. כַּמָּה ${X} הָיוּ ${g('לוֹ','לָהּ')} קֹדֶם?`,a,X,'הוֹלְכִים אָחוֹרָה: מוֹרִידִים אֶת מַה שֶּׁהִתְקַבֵּל',[`${c} − ${b} = ?`]);
     if(t===3)return W(`${n[0]} ${g('נָתַן','נָתְנָה')} ${nb(b)} ${X} לְחָבֵר, וְנִשְׁאֲרוּ ${g('לוֹ','לָהּ')} ${nb(a)} ${X}. כַּמָּה ${X} הָיוּ ${g('לוֹ','לָהּ')} בַּהַתְחָלָה?`,c,X,'הוֹלְכִים אָחוֹרָה: מַחְזִירִים אֶת מַה שֶּׁנִּתַּן ← חִבּוּר',[`${a} + ${b} = ?`]);
     return W(`בָּאוֹטוֹבּוּס יָשְׁבוּ כַּמָּה נוֹסְעִים. בַּתַּחֲנָה עָלוּ ${nb(b)} נוֹסְעִים, וְעַכְשָׁו יֵשׁ ${nb(c)} נוֹסְעִים. כַּמָּה נוֹסְעִים יָשְׁבוּ בַּהַתְחָלָה?`,a,'נוֹסְעִים','הוֹלְכִים אָחוֹרָה: מוֹרִידִים אֶת מִי שֶׁעָלָה',[`${c} − ${b} = ?`]);},
   mul:()=>{const n=pick(NAMES),g=(m,f)=>n[1]==='m'?m:f;const t=rand(1,5);
-    if(t===1){const X=pick(['עוּגִיּוֹת','סֻכָּרִיּוֹת','מַדְבֵּקוֹת','כַּדּוּרִים']),k=rand(2,10),q=rand(2,9);return W(`בְּכָל קֻפְסָה יֵשׁ ${nb(k)} ${X}. ${n[0]} ${g('קָנָה','קָנְתָה')} ${nb(q)} קֻפְסָאוֹת. כַּמָּה ${X} יֵשׁ ${g('לוֹ','לָהּ')} בְּסַךְ הַכֹּל?`,q*k,X,'קְבוּצוֹת שָׁווֹת ← כֶּפֶל',[`${q} × ${k} = ?`]);}
+    if(t===1){const X=thing(['עוּגִיּוֹת','סֻכָּרִיּוֹת','מַדְבֵּקוֹת','כַּדּוּרִים']),k=rand(2,10),q=rand(2,9);return W(`בְּכָל קֻפְסָה יֵשׁ ${nb(k)} ${X}. ${n[0]} ${g('קָנָה','קָנְתָה')} ${nb(q)} קֻפְסָאוֹת. כַּמָּה ${X} יֵשׁ ${g('לוֹ','לָהּ')} בְּסַךְ הַכֹּל?`,q*k,X,'קְבוּצוֹת שָׁווֹת ← כֶּפֶל',[`${q} × ${k} = ?`]);}
     if(t===2){const A=pick([['כֶּלֶב','כְּלָבִים',4,'רַגְלַיִם'],['חִפּוּשִׁית','חִפּוּשִׁיּוֹת',6,'רַגְלַיִם'],['עַכָּבִישׁ','עַכָּבִישִׁים',8,'רַגְלַיִם'],['תַּרְנְגֹלֶת','תַּרְנְגוֹלוֹת',2,'רַגְלַיִם'],['מְכוֹנִית','מְכוֹנִיּוֹת',4,'גַּלְגַּלִּים']]),q=rand(2,9);return W(`לְכָל ${A[0]} יֵשׁ ${nb(A[2])} ${A[3]}. כַּמָּה ${A[3]} יֵשׁ ל-${nb(q)} ${A[1]}?`,q*A[2],A[3],`${nb(q)} פְּעָמִים ${nb(A[2])} ← כֶּפֶל`,[`${q} × ${A[2]} = ?`]);}
     if(t===3){const k=rand(3,10),q=rand(2,9);return W(`בָּאוּלָם יֵשׁ ${nb(q)} שׁוּרוֹת שֶׁל כִּסְאוֹת. בְּכָל שׁוּרָה יֵשׁ ${nb(k)} כִּסְאוֹת. כַּמָּה כִּסְאוֹת יֵשׁ בָּאוּלָם?`,q*k,'כִּסְאוֹת','שׁוּרוֹת שָׁווֹת ← כֶּפֶל',[`${q} × ${k} = ?`]);}
     if(t===4){const q=rand(2,9);return W(`בְּשָׁבוּעַ יֵשׁ ${nb(7)} יָמִים. כַּמָּה יָמִים יֵשׁ ב-${nb(q)} שָׁבוּעוֹת?`,q*7,'יָמִים','כָּל שָׁבוּעַ 7 יָמִים ← כֶּפֶל',[`${q} × 7 = ?`]);}
     const q=rand(2,9);return W(`לְכָל יֶלֶד יֵשׁ ${nb(10)} אֶצְבָּעוֹת בַּיָּדַיִם. כַּמָּה אֶצְבָּעוֹת יֵשׁ ל-${nb(q)} יְלָדִים?`,q*10,'אֶצְבָּעוֹת','קְבוּצוֹת שֶׁל 10 ← כֶּפֶל',[`${q} × 10 = ?`]);},
   div:()=>{const n=pick(NAMES),g=(m,f)=>n[1]==='m'?m:f;const t=rand(1,4);const k=rand(2,9),q=rand(2,9),p=k*q;
-    if(t===1){const X=pick(['סֻכָּרִיּוֹת','מַדְבֵּקוֹת','עוּגִיּוֹת','קְלָפִים']);return W(`${n[0]} ${g('חִלֵּק','חִלְּקָה')} ${nb(p)} ${X} שָׁוֶה בְּשָׁוֶה בֵּין ${nb(k)} חֲבֵרִים. כַּמָּה ${X} קִבֵּל כָּל חָבֵר?`,q,X,'מְחַלְּקִים שָׁוֶה בְּשָׁוֶה ← חִלּוּק',[`${p} : ${k} = ?`]);}
+    if(t===1){const X=thing(['סֻכָּרִיּוֹת','מַדְבֵּקוֹת','עוּגִיּוֹת','קְלָפִים']);return W(`${n[0]} ${g('חִלֵּק','חִלְּקָה')} ${nb(p)} ${X} שָׁוֶה בְּשָׁוֶה בֵּין ${nb(k)} חֲבֵרִים. כַּמָּה ${X} קִבֵּל כָּל חָבֵר?`,q,X,'מְחַלְּקִים שָׁוֶה בְּשָׁוֶה ← חִלּוּק',[`${p} : ${k} = ?`]);}
     if(t===2)return W(`בַּגַּן יֵשׁ ${nb(p)} יְלָדִים. הַגַּנֶּנֶת סִדְּרָה אוֹתָם בִּקְבוּצוֹת שֶׁל ${nb(k)}. כַּמָּה קְבוּצוֹת יֵשׁ?`,q,'קְבוּצוֹת',`כַּמָּה פְּעָמִים ${nb(k)} נִכְנָס ב-${nb(p)}? ← חִלּוּק`,[`${p} : ${k} = ?`]);
     if(t===3){const c=rand(2,9);return W(`בַּחֲנָיָה יֵשׁ ${nb(c*4)} גַּלְגַּלִּים שֶׁל מְכוֹנִיּוֹת. לְכָל מְכוֹנִית יֵשׁ ${nb(4)} גַּלְגַּלִּים. כַּמָּה מְכוֹנִיּוֹת יֵשׁ בַּחֲנָיָה?`,c,'מְכוֹנִיּוֹת','קְבוּצוֹת שֶׁל 4 ← חִלּוּק',[`${c*4} : 4 = ?`]);}
     const kk=pick([6,10]),qq=rand(2,9);return W(`${n[0]} ${g('צָרִיךְ','צְרִיכָה')} ${nb(kk*qq)} בֵּיצִים. בְּכָל קַרְטוֹן יֵשׁ ${nb(kk)} בֵּיצִים. כַּמָּה קַרְטוֹנִים ${g('הוּא צָרִיךְ','הִיא צְרִיכָה')} לִקְנוֹת?`,qq,'קַרְטוֹנִים',`כַּמָּה קְבוּצוֹת שֶׁל ${nb(kk)}? ← חִלּוּק`,[`${kk*qq} : ${kk} = ?`]);},
@@ -968,7 +970,7 @@ const WP={
     if(t===2){const B2=pick([20,50,100]);const c=rand(3,B2-2);return W(`${n[0]} ${g('קָנָה','קָנְתָה')} כַּדּוּר ב-${nb(c)} שְׁקָלִים, ${g('וְשִׁלֵּם','וְשִׁלְּמָה')} בִּשְׁטָר שֶׁל ${nb(B2)} שְׁקָלִים. כַּמָּה עֹדֶף ${g('הוּא קִבֵּל','הִיא קִבְּלָה')}?`,B2-c,'שְׁקָלִים','עֹדֶף = מַה שֶּׁשִּׁלַּמְתָּ פָּחוֹת הַמְּחִיר',[`${B2} − ${c} = ?`]);}
     if(t===3){const a=rand(5,40),b=rand(3,40);return W(`גְּלִידָה עוֹלָה ${nb(a)} שְׁקָלִים, וּמִיץ עוֹלֶה ${nb(b)} שְׁקָלִים. כַּמָּה עוֹלִים שְׁנֵיהֶם בְּיַחַד?`,a+b,'שְׁקָלִים','"בְּיַחַד" ← חִבּוּר',[`${a} + ${b} = ?`]);}
     const k=rand(2,10),q=rand(2,9);return W(`מַחְבֶּרֶת עוֹלָה ${nb(k)} שְׁקָלִים. ${lp(n)} יֵשׁ ${nb(k*q)} שְׁקָלִים. כַּמָּה מַחְבָּרוֹת ${g('הוּא יָכוֹל','הִיא יְכוֹלָה')} לִקְנוֹת?`,q,'מַחְבָּרוֹת',`כַּמָּה פְּעָמִים ${nb(k)} נִכְנָס ב-${nb(k*q)}? ← חִלּוּק`,[`${k*q} : ${k} = ?`]);},
-  two:()=>{const n=pick(NAMES),X=pick(ITEMS),g=(m,f)=>n[1]==='m'?m:f;const t=rand(1,5);
+  two:()=>{const n=pick(NAMES),X=thing(),g=(m,f)=>n[1]==='m'?m:f;const t=rand(1,5);
     if(t===1){const a=rand(8,40),b=rand(3,30),c=rand(2,a+b-2);const s=a+b;return W(`${lp(n)} הָיוּ ${nb(a)} ${X}. ${g('הוּא קִבֵּל','הִיא קִבְּלָה')} עוֹד ${nb(b)}, וְאַחַר כָּךְ ${g('נָתַן','נָתְנָה')} ${nb(c)} לְחָבֵר. כַּמָּה ${X} יֵשׁ ${g('לוֹ','לָהּ')} עַכְשָׁו?`,s-c,X,'קֹדֶם מְחַבְּרִים, אַחַר כָּךְ מְחַסְּרִים',[`${a} + ${b} = ${s}`,`${s} − ${c} = ?`]);}
     if(t===2){const q=rand(2,6),k=rand(3,10),s=q*k,c=rand(2,s-2);return W(`${n[0]} ${g('קָנָה','קָנְתָה')} ${nb(q)} חֲבִילוֹת, וּבְכָל חֲבִילָה ${nb(k)} מַדְבֵּקוֹת. ${g('הוּא הִדְבִּיק','הִיא הִדְבִּיקָה')} ${nb(c)} מַדְבֵּקוֹת בַּמַּחְבֶּרֶת. כַּמָּה מַדְבֵּקוֹת נִשְׁאֲרוּ?`,s-c,'מַדְבֵּקוֹת','קֹדֶם כֶּפֶל, אַחַר כָּךְ חִסּוּר',[`${q} × ${k} = ${s}`,`${s} − ${c} = ?`]);}
     if(t===3){const a=rand(30,90),b=rand(5,a-5),c=rand(3,40);return W(`בַּסִּפְרִיָּה הָיוּ ${nb(a)} סְפָרִים. בַּבֹּקֶר הִשְׁאִילוּ ${nb(b)} סְפָרִים, וּבַצָּהֳרַיִם הֶחֱזִירוּ ${nb(c)} סְפָרִים. כַּמָּה סְפָרִים יֵשׁ עַכְשָׁו בַּסִּפְרִיָּה?`,a-b+c,'סְפָרִים','קֹדֶם מְחַסְּרִים, אַחַר כָּךְ מְחַבְּרִים',[`${a} − ${b} = ${a-b}`,`${a-b} + ${c} = ?`]);}
@@ -5959,7 +5961,8 @@ H.merge=(dst,src)=>{if(!src||typeof src!=='object')return dst;dst=dst||{};
    card, then the story moves one scene on. Tomorrow (or after a skipped day) it goes on from the same scene. The end of the day
    gives a short hint about tomorrow. A save without mix (or a broken one) starts at chapter 1, scene 1.
      STORYMIX.pos()       {c, s} where the story is now (the scene still to play)
-     STORYMIX.scene()     {c, s, n: chapter name, open, close, topic, item}
+     STORYMIX.scene()     {c, s, n: chapter name, open, close, topic, item, thing: [one, many, gender] (#416)}
+     STORYMIX.thing()     the thing of the scene now, for the math word problems (#416)
      STORYMIX.advance()   one scene on (after 12.5 the story starts again at 1.1); the end of a chapter: O.bigCelebration() (#427)
      STORYMIX.hint()      the line for tomorrow (said at the end of the day)
      STORYMIX.speakList() every line of the script (for the voice pregen) */
@@ -6039,15 +6042,26 @@ const SCRIPT=[
   ['הַמְּבַלְבֵּל הֵכִין חִידָה אַחֲרוֹנָה, הֲכִי מַצְחִיקָה. בּוֹא נִפְתֹּר אוֹתָהּ!','פָּתַרְתָּ! הַמְּבַלְבֵּל צָחַק וְהִתְגַּלְגֵּל עַל הַסִּפּוּן.','think','מַגְלֵשָׁה לַיָּם'],
   ['יֵשׁ שֶׁלֶט חָדָשׁ עַל הַסְּפִינָה. בּוֹא נִקְרָא מָה כָּתוּב.','כָּתוּב: הַסְּפִינָה שֶׁל כֻּלָּנוּ! הַסְּפִינָה שְׁלֵמָה.','read','שֶׁלֶט שֵׁם']]}];
 const NC=SCRIPT.length,NS=5;
+/* #416 the things of the scene, for the math word problems on the path: [one, many, gender]. A math scene has its own thing
+   (the fish of the basket, the apples of the tree); any other scene uses the thing of its chapter. */
+const THING={'1.1':['קֶרֶשׁ','קְרָשִׁים','m'],'1.2':['דָּג','דָּגִים','m'],'2.5':['עוּגִיָּה','עוּגִיּוֹת','f'],'3.5':['כַּפְתּוֹר','כַּפְתּוֹרִים','m'],
+ '4.1':['בָּנָנָה','בָּנָנוֹת','f'],'4.2':['תַּפּוּחַ','תַּפּוּחִים','m'],'4.3':['אַגָּס','אֲגָסִים','m'],'4.5':['עֵנָב','עֲנָבִים','m'],'5.4':['עִפָּרוֹן','עֶפְרוֹנוֹת','m'],
+ '6.3':['אֶבֶן','אֲבָנִים','f'],'6.4':['סֻכָּרִיָּה','סֻכָּרִיּוֹת','f'],'7.1':['עוּגִיָּה','עוּגִיּוֹת','f'],'7.4':['לַחְמָנִיָּה','לַחְמָנִיּוֹת','f'],
+ '8.2':['גַּחֲלִילִית','גַּחֲלִילִיּוֹת','f'],'8.4':['כּוֹכָב','כּוֹכָבִים','m'],'9.2':['סֵפֶר','סְפָרִים','m'],'10.2':['דָּג','דָּגִים','m'],'10.4':['צֶדֶף','צְדָפִים','m'],
+ '11.2':['קֻבִּיָּה','קֻבִּיּוֹת','f'],'11.3':['גֶּרֶב','גַּרְבַּיִם','m'],'12.1':['בָּלוֹן','בָּלוֹנִים','m'],'12.2':['צַלַּחַת','צַלָּחוֹת','f']};
+const CH_THING=[['קֶרֶשׁ','קְרָשִׁים','m'],['שָׁעוֹן','שְׁעוֹנִים','m'],['אוֹת','אוֹתִיּוֹת','f'],['תַּפּוּחַ','תַּפּוּחִים','m'],['עִפָּרוֹן','עֶפְרוֹנוֹת','m'],['אֶבֶן','אֲבָנִים','f'],
+ ['עוּגִיָּה','עוּגִיּוֹת','f'],['כּוֹכָב','כּוֹכָבִים','m'],['סֵפֶר','סְפָרִים','m'],['צֶדֶף','צְדָפִים','m'],['קֻבִּיָּה','קֻבִּיּוֹת','f'],['בָּלוֹן','בָּלוֹנִים','m']];
 /* tomorrow: a new chapter -> "tomorrow we sail to <place>"; the same chapter -> a line of its own */
 const STAY=['מָחָר נַמְשִׁיךְ לְסַדֵּר אֶת הַנָּמָל!','מָחָר נַמְשִׁיךְ לְתַקֵּן שְׁעוֹנִים בָּאִי!','מָחָר נַמְשִׁיךְ לְסַדֵּר אוֹתִיּוֹת בָּאִי!','מָחָר נַמְשִׁיךְ לְסַדֵּר פֵּרוֹת בָּאִי!',
  'מָחָר נַמְשִׁיךְ לְדַבֵּר אַנְגְּלִית בָּאִי!','מָחָר נִפְתֹּר עוֹד חִידוֹת בַּמְּעָרָה!','מָחָר נַמְשִׁיךְ לַעֲזֹר לָאוֹפָה!','מָחָר נַמְשִׁיךְ לְהָאִיר אֶת הַלַּיְלָה!',
  'מָחָר נַמְשִׁיךְ לְסַדֵּר אֶת הַסְּפָרִים!','מָחָר נַמְשִׁיךְ לָשׁוּט בָּעֲרָפֶל!','מָחָר נַמְשִׁיךְ לִתְפֹּס אֶת הַמְּבַלְבֵּל!','מָחָר נַמְשִׁיךְ אֶת הַמְּסִבָּה!'];
 const SAIL=c=>c===1?'הַסְּפִינָה שְׁלֵמָה, וּמָחָר מַתְחִילִים מַסָּע חָדָשׁ!':c===NC?'מָחָר יֵשׁ מְסִבָּה עַל הַסְּפִינָה!':'מָחָר מַפְלִיגִים אֶל '+SCRIPT[c-1].n+'!';
 const ok=p=>p&&Number.isInteger(p.c)&&Number.isInteger(p.s)&&p.c>=1&&p.c<=NC&&p.s>=1&&p.s<=NS;
-const M={SCRIPT};
+const M={SCRIPT,THING,CH_THING};
 M.pos=()=>{const sv=O.save;if(!ok(sv.mix))sv.mix={c:1,s:1};return sv.mix;};
-M.scene=(p)=>{p=p||M.pos();const ch=SCRIPT[p.c-1],x=ch.sc[p.s-1];return {c:p.c,s:p.s,n:ch.n,open:x[0],close:x[1],topic:x[2],item:x[3]};};
+M.scene=(p)=>{p=p||M.pos();const ch=SCRIPT[p.c-1],x=ch.sc[p.s-1];return {c:p.c,s:p.s,n:ch.n,open:x[0],close:x[1],topic:x[2],item:x[3],thing:THING[p.c+'.'+p.s]||CH_THING[p.c-1]};};
+/* #416 the thing of the scene that plays now (word problems count it) */
+M.thing=()=>{try{return M.scene().thing;}catch(e){return null;}};
 M.next=p=>{p=p||M.pos();return p.s<NS?{c:p.c,s:p.s+1}:{c:p.c<NC?p.c+1:1,s:1};};
 /* #427 the last scene of a chapter ends with the big celebration (confetti + music); every other mission has the calm one */
 M.advance=()=>{const p=M.pos();O.save.mix=M.next(p);O.persist();if(p.s===NS&&O.bigCelebration)O.bigCelebration();return O.save.mix;};
@@ -10578,7 +10592,7 @@ const NOUN={goal:['גּוֹל','גּוֹלִים','m'],ball:['כַּדּוּר',
   row:['שׁוּרָה','שׁוּרוֹת','f'],jump:['קְפִיצָה','קְפִיצוֹת','f'],circle:['עִגּוּל','עִגּוּלִים','m'],word:['מִלָּה','מִלִּים','f']};
 const TWO={m:{'':'שְׁנֵי','בְּ':'בִּשְׁנֵי','לְ':'לִשְׁנֵי','וְ':'וּשְׁנֵי','מִ':'מִשְּׁנֵי'},f:{'':'שְׁתֵּי','בְּ':'בִּשְׁתֵּי','לְ':'לִשְׁתֵּי','וְ':'וּשְׁתֵּי','מִ':'מִשְּׁתֵּי'}};
 /* n + noun, agreeing in gender: "גּוֹל אֶחָד", "שְׁתֵּי דַּקּוֹת", "<b>5</b> כַּדּוּרִים"; with a prefix: "לִשְׁנֵי מִגְדָּלִים", "בְּ-<b>4</b> יָמִים" */
-function count(n,key,prep){const w=NOUN[key];if(!w)throw new Error('noun '+key);prep=prep||'';
+function count(n,key,prep){const w=Array.isArray(key)?key:NOUN[key];if(!w)throw new Error('noun '+key);prep=prep||'';
   if(n===1){if(prep)throw new Error('one with prefix '+key);return `${w[0]} ${w[2]==='m'?'אֶחָד':'אַחַת'}`;}
   if(n===2)return `${TWO[w[2]][prep]} ${w[1]}`;
   return `${prep?prep+'-':''}${B(n)} ${w[1]}`;}
@@ -10651,12 +10665,23 @@ const WT=[
  {id:'mo-change',th:'soccer',lv:[4,5],f:'c-a*b',g:x=>{const a=ri(3,9),b=ri(2,4),c=pk([50,100]);return [`כָּל כַּדּוּר עוֹלֶה ${x.c(a,'shekel')}. ${x.N} ${x.v('קָנָה','קָנְתָה')} ${x.c(b,'ball')} ${x.v('וְשִׁלֵּם','וְשִׁלְּמָה')} בִּשְׁטָר שֶׁל ${B(c)} שְׁקָלִים. כַּמָּה עֹדֶף ${x.v('הוּא קִבֵּל','הִיא קִבְּלָה')}?`,a,b,c];}},
  {id:'mo-two',th:'swim',lv:[3,5],f:'a+b',g:x=>{const a=ri(5,45),b=ri(5,45);return [`מִשְׁקְפֵי שְׂחִיָּה עוֹלִים ${x.c(a,'shekel')}, וְכוֹבַע יָם עוֹלֶה ${x.c(b,'shekel')}. ${x.N} ${x.v('קָנָה','קָנְתָה')} אֶת שְׁנֵיהֶם. כַּמָּה ${x.v('הוּא שִׁלֵּם','הִיא שִׁלְּמָה')}?`,a,b];}},
 ];
+/* #416 story templates: they count the thing of the story scene that plays now (x.t = [one, many, gender], STORYMIX.thing()) */
+const SCN=[
+ {id:'sc-add',th:'story',lv:[1,5],f:'a+b',g:x=>{const [a,b]=split(x.lv);return [`${x.N} ${x.v('אָסַף','אָסְפָה')} ${x.c(a,x.t)} בַּבֹּקֶר, וְעוֹד ${x.c(b,x.t)} בָּעֶרֶב. כַּמָּה ${x.t[1]} ${x.v('הוּא אָסַף','הִיא אָסְפָה')} בְּסַךְ הַכֹּל?`,a,b];}},
+ {id:'sc-sub',th:'story',lv:[1,5],f:'a-b',g:x=>{const [a,b]=pair(x.lv);return [`${x.N} ${x.v('אָסַף','אָסְפָה')} ${x.c(a,x.t)}. הַמְּבַלְבֵּל חָטַף ${x.c(b,x.t)} וּבָרַח. כַּמָּה ${x.t[1]} נִשְׁאֲרוּ ${x.v('לוֹ','לָהּ')}?`,a,b];}},
+ {id:'sc-mul',th:'story',lv:[3,5],f:'a*b',g:x=>{const a=pk([2,3,4,5,10]),b=ri(3,x.lv===3?5:9);return [`בְּכָל שׁוּרָה יֵשׁ ${x.c(a,x.t)}. כַּמָּה ${x.t[1]} יֵשׁ ${x.c(b,'row','בְּ')}?`,a,b];}},
+ {id:'sc-div',th:'story',lv:[4,5],f:'a/b',g:x=>{const b=ri(2,5),a=b*ri(2,9);return [`${x.N} ${x.v('חִלֵּק','חִלְּקָה')} ${x.c(a,x.t)} שָׁוֶה בְּשָׁוֶה ${x.c(b,'kid','לְ')}. כַּמָּה ${x.t[1]} יֵשׁ לְכָל יֶלֶד?`,a,b];}},
+];
+const sceneThing=()=>{const M=typeof window!=='undefined'&&window.STORYMIX;try{return M&&M.thing?M.thing():null;}catch(e){return null;}};
 const WT_BY_LV=lv=>WT.filter(t=>t.lv[0]<=lv&&lv<=t.lv[1]);
 /* the answer from the numbers, in text order */
 const solve=(f,nums)=>{const [a,b,c,d]=nums;return Function('a','b','c','d','return '+f)(a,b,c,d);};
-function wordQ(lv,tid){const pool=tid?WT.filter(t=>t.id===tid):WT_BY_LV(lv);const t=pk(pool);const fem=rnd()<.5;
+/* tid: one template; thing: [one, many, gender] (default: the story scene's thing -> story templates mixed in; none -> only the old themes) */
+function wordQ(lv,tid,thing){thing=thing||(tid&&!/^sc-/.test(tid)?null:sceneThing());const ALL=[...WT,...SCN];
+  /* the story templates are mixed in (about 1 in 3), the old themes and multi-step problems stay */
+  const pool=tid?ALL.filter(t=>t.id===tid):thing&&rnd()<1/3?SCN.filter(t=>t.lv[0]<=lv&&lv<=t.lv[1]):WT_BY_LV(lv);const t=pk(pool);if(!t||(t.th==='story'&&!thing))throw new Error('word template '+tid);const fem=rnd()<.5;
   const Nn=pk(fem?NAMES_F:NAMES_M);let Mn;do{Mn=pk(rnd()<.5?NAMES_F:NAMES_M);}while(Mn===Nn);const gM=NAMES_F.includes(Mn);
-  const x={lv:Math.max(t.lv[0],Math.min(t.lv[1],lv)),Nn,Mn,N:Nn,M:Mn,v:(m,f)=>mark(Nn,fem?f:m),w:(m,f)=>mark(Mn,gM?f:m),c:count};
+  const x={lv:Math.max(t.lv[0],Math.min(t.lv[1],lv)),Nn,Mn,N:Nn,M:Mn,v:(m,f)=>mark(Nn,fem?f:m),w:(m,f)=>mark(Mn,gM?f:m),c:count,t:thing};
   for(let k=0;k<40;k++){const [text,...nums]=t.g(x);const v=solve(t.f,nums);if(Number.isInteger(v)&&v>=0&&v<=200)
     return Object.assign({sk:'wp',lv,tid:t.id,th:t.th,f:t.f,nums,tx:text,text:'',v,html:`<div class="lnwp">${text}</div>`,ex:ex(t.f.replace(/[abcd]/g,ch=>nums['abcd'.indexOf(ch)]).replace(/\*/g,' × ').replace(/\//g,' : ').replace(/-/g,' − ').replace(/\+/g,' + ').replace(/\s+/g,' ')+' = '+v),key:'w'+t.id+nums.join(',')},numOpts(v,[v+1,v-1,...nums.filter(n=>n!==v)]));}
   throw new Error('word template '+t.id);}
@@ -10782,7 +10807,7 @@ return {core,
   seen:(bank,key,ok,helped)=>{if(HELD[bank])HELD[bank].delete(key);const r=seen(S(),bank,key,ok,helped);BIND.after&&BIND.after();return r;},
   pickItem:(bank,items,o)=>{const hd=held(bank);const r=pickItem(S(),bank,items,Object.assign({},o,{held:new Set([...hd.keys(),...((o&&o.held)||[])])}));if(r)hd.set(r.item.k,nowFn());return r;},hash,
   merge,zone,eff,acc,isDue,placeStart,placeStep,placeDone,placeResult,
-  MM,MM_IDS,DRILL_IDS,PW,WT,WT_BY_LV,wordQ,solve,CH,CH_BY_LV,chalQ,PM,PW,paperQ,gen,count,NOUN,NAMES_M,NAMES_F,lp,vav,MATH_LADDER,KID,PAR,IV,QUICK,maxLv,dayNum,
+  MM,MM_IDS,DRILL_IDS,PW,WT,SCN,WT_BY_LV,wordQ,solve,CH,CH_BY_LV,chalQ,PM,PW,paperQ,gen,count,NOUN,NAMES_M,NAMES_F,lp,vav,MATH_LADDER,KID,PAR,IV,QUICK,maxLv,dayNum,
   setMax:(sk,n)=>{MAXLV[sk]=Math.max(1,n|0);},/* #395 a mission's own top level */
   setRandom:f=>{rnd=f||Math.random;},setNow:f=>{nowFn=f||(()=>Date.now());}};})();
 

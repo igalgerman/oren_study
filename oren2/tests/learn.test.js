@@ -144,6 +144,37 @@ const gk = Object.keys(gprobs);
 ok(gk.length === 0, 'Hebrew: verbs/pronouns agree with each name (m/f), numbers agree with noun gender (אֶחָד/אַחַת, שְׁנֵי/שְׁתֵּי), 1–2 as words, nikud everywhere', gk.slice(0, 6).map(k => k + ': ' + gprobs[k][0]).join(' | '));
 const withPerson = C.WT.filter(t => /x\.v\(/.test(t.g.toString())).map(t => t.id);
 ok(withPerson.every(id => both.has(id + 'm') && both.has(id + 'f')), 'templates with a person come out for boys and for girls', withPerson.filter(id => !(both.has(id + 'm') && both.has(id + 'f'))).join(','));
+// #416 story word problems: the thing of every story scene (story.js THING + CH_THING), every story template, every level
+const storySrc = fs.readFileSync(path.join(ROOT, 'story.js'), 'utf8');
+const lit = name => { const m = new RegExp('const ' + name + '=([\\s\\S]*?);\\n').exec(storySrc); return Function('return ' + m[1])(); };
+const THINGS = [...Object.values(lit('THING')), ...lit('CH_THING')];
+// this test's own genders of the scene nouns (written separately from story.js)
+const SCENE_G = { 'קֶרֶשׁ': 'm', 'דָּג': 'm', 'עוּגִיָּה': 'f', 'כַּפְתּוֹר': 'm', 'בָּנָנָה': 'f', 'תַּפּוּחַ': 'm', 'אַגָּס': 'm', 'עֵנָב': 'm', 'עִפָּרוֹן': 'm', 'אֶבֶן': 'f',
+  'סֻכָּרִיָּה': 'f', 'לַחְמָנִיָּה': 'f', 'גַּחֲלִילִית': 'f', 'כּוֹכָב': 'm', 'סֵפֶר': 'm', 'צֶדֶף': 'm', 'קֻבִּיָּה': 'f', 'גֶּרֶב': 'm', 'בָּלוֹן': 'm', 'צַלַּחַת': 'f',
+  'שָׁעוֹן': 'm', 'אוֹת': 'f' };
+ok(THINGS.length >= 30 && THINGS.every(t => SCENE_G[t[0]] && SCENE_G[t[0]] === t[2] && NIK.test(t[1])), '#416 every scene thing has a gender this test agrees with (and nikud)',
+  THINGS.filter(t => SCENE_G[t[0]] !== t[2]).map(t => t.join('/')).join(', '));
+for (const t of THINGS) { SG[t[0]] = t[2]; PL[t[1]] = t[2]; PL[nd(t[1])] = t[2]; }
+let stN = 0; const stBoth = new Set();
+for (const th of THINGS) for (const t of C.SCN) for (let lv = t.lv[0]; lv <= t.lv[1]; lv++) for (let i = 0; i < 25; i++) {
+  let q; try { q = C.wordQ(lv, t.id, th); } catch (e) { bad('wp ' + t.id, e.message); continue; } stN++;
+  grammar(q.tx, t.id + ' ' + th[1], true); if (!q.tx.includes(th[1])) gbad(t.id, 'the scene thing is missing: ' + th[1]);
+  if (C.solve(q.f, q.nums) !== q.v || numsOf(q.tx).join(',') !== q.nums.join(',')) bad('wp ' + t.id, 'numbers ' + q.nums + ' → ' + q.v);
+  const nm = /<span data-w="([^"]+)"/.exec(q.tx); if (nm) stBoth.add(t.id + NAMES[nm[1]]); }
+const gk2 = Object.keys(gprobs).filter(k => /^sc-/.test(k));
+ok(stN > 0 && gk2.length === 0 && !Object.keys(probs).some(k => /sc-/.test(k)), `#416 story word problems: grammar (gender, 1-2 as words, nikud) and answers for all ${THINGS.length} scene things (${stN} questions)`,
+  gk2.slice(0, 4).map(k => k + ': ' + gprobs[k][0]).join(' | ') + Object.keys(probs).filter(k => /sc-/.test(k)).map(k => probs[k][0]).join(' | '));
+ok(C.SCN.filter(t => /x\.v\(/.test(t.g.toString())).every(t => stBoth.has(t.id + 'm') && stBoth.has(t.id + 'f')), '#416 story templates come out for boys and for girls');
+// the scene's thing is used when the story runs; no story (or no thing) -> the old themes
+{ const was = window.STORYMIX; const ids = new Set(C.SCN.map(t => t.id)); let inScene = 0, old = 0;
+  window.STORYMIX = { thing: () => ['דָּג', 'דָּגִים', 'm'] };
+  const oldIds = new Set(); let multi = 0;
+  for (let lv = 1; lv <= 5; lv++) for (let i = 0; i < 300; i++) { const q = C.wordQ(lv); if (ids.has(q.tid)) { if (q.tx.includes('דָּגִים')) inScene++; } else { oldIds.add(q.tid); if (q.f.length > 3) multi++; } }
+  window.STORYMIX = { thing: () => null };
+  for (let lv = 1; lv <= 5; lv++) for (let i = 0; i < 40; i++) if (!ids.has(C.wordQ(lv).tid)) old++;
+  window.STORYMIX = was; for (let lv = 1; lv <= 5; lv++) for (let i = 0; i < 40; i++) if (!ids.has(C.wordQ(lv).tid)) old++;
+  ok(inScene >= 300 && inScene <= 750 && oldIds.size >= 30 && multi > 0 && old === 400, '#416 story questions (fish in the fish scene) are mixed in (~1 in 3); the old themes and multi-step ones stay; without a thing only the old themes',
+    `scene ${inScene}/1500, old templates ${oldIds.size}, multi-step ${multi}, fallback ${old}/400`); }
 // the count helper itself
 ok(C.count(1, 'goal') === 'גּוֹל אֶחָד' && C.count(1, 'kick') === 'בְּעִיטָה אַחַת' && C.count(2, 'window') === 'שְׁנֵי חַלּוֹנוֹת' && C.count(2, 'rock') === 'שְׁתֵּי אֲבָנִים' && C.count(2, 'tower', 'לְ') === 'לִשְׁנֵי מִגְדָּלִים' && C.count(2, 'ship', 'לְ') === 'לִשְׁתֵּי חֲלָלִיּוֹת' && C.count(7, 'minute') === '<b>7</b> דַּקּוֹת',
   'count(): irregular genders (חַלּוֹנוֹת m, אֲבָנִים f) and prefixes');
