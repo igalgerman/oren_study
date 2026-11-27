@@ -41,6 +41,8 @@ const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout:
   { await B.locator('#sPar .pdmore').click(); await sleep(200); const t = await B.evaluate(() => [...document.querySelectorAll('#sPar summary')].map(x => x.textContent).join('|'));
     ok('"הגדרות ועוד" holds time, reminders + message, voice, the template', /זמן משחק/.test(t) && /תזכורת/.test(t) && /קול/.test(t) && /התבנית/.test(t), t);
     await B.locator('#sPar .pdback').click(); await sleep(200); }
+  { const m = await B.evaluate(() => ({ learn: !!document.querySelector('#sPar .pdlearn'), ask: !!document.querySelector('#sPar .pdask') }));
+    ok('#429 #430 nothing finished with a goal yet: no "מה למד היום", no question', !m.learn && !m.ask, JSON.stringify(m)); }
   if (process.env.SHOTS) { fs.mkdirSync(L.SHOTDIR, { recursive: true }); await B.screenshot({ path: path.join(L.SHOTDIR, 'pday-phone.png'), fullPage: true }); }
 
   // ---------- day navigation ----------
@@ -48,6 +50,7 @@ const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout:
   { const v = await view(); ok('› shows yesterday with yesterday\'s rows only, no plan', v.day === 'אתמול' && v.did.length === 1 && /✓ 5 · ✗ 1/.test(v.did[0]) && !v.plan.length, JSON.stringify(v)); }
   await B.locator('#sPar .pdprev').click(); await sleep(200);
   { const v = await view(); ok('a day without play says so', /לא שיחק ביום הזה/.test(v.txt) && !v.did.length, v.txt.slice(0, 120)); }
+  ok('#431 an empty week shows no week picture', !(await B.evaluate(() => !!document.querySelector('#sPar .pdweek'))));
   await B.locator('#sPar .pdnext').click(); await B.locator('#sPar .pdnext').click(); await sleep(200);
   { const v = await view(); ok('‹ back to today', v.day === 'היום' && v.did.length === 1 && await B.evaluate(() => document.querySelector('#sPar .pdnext').disabled), v.day); }
 
@@ -121,6 +124,40 @@ const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout:
   ok('back online: the queued skip is applied on the next sync', await A.evaluate(c => !!(window.OREN.save.pcA || {})[c.i] && !window.TAL.S().daily.t.filter((x, n) => !window.TAL.S().daily.done[n]).includes(c.a), last), JSON.stringify(last));
   // the parent's phone never applies commands itself
   ok('the parent\'s phone does not apply commands to its own copy', await B.evaluate(() => !Object.keys(window.OREN.save.pcA || {}).length || !localStorage.getItem('oren4-played')));
+  // ---------- #429 learned today, #430 one question, #431 the week picture ----------
+  const exp = await A.evaluate(ids => { const O = window.OREN, G = window.GOALS, DL = window.DAYLOG, T = window.TAL; const m = window.__m0 + 40;
+    const lv = (O.ALLLV || []).find(l => l.w && G.T['w:' + l.w.id] && l.w.id === 'add') || (O.ALLLV || [])[0];
+    const fin = ['lv:' + lv.id, ids.c, ids.e, 'eng-voc'];
+    fin.forEach((id, k) => DL.add(O.today(), [m + k, id, 2, 3, 4, 0, 'c', { lg: G.plain(id) }]));
+    const kd = k => { const x = new Date(); x.setDate(x.getDate() - k); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+    T.S().time[kd(0)] = 1500; T.S().time[kd(1)] = 600; T.S().time[kd(3)] = 2400;
+    O.persist(); O.famNow(); return { learned: G.learned(O.today()), all: Object.values(G.T).map(g => T.plainHe(g)), qs: [].concat(...Object.values(G.Q)) }; }, ids);
+  await B.evaluate(() => window.TAL.parentPanel('day'));
+  ok('#429 a finished mission: "מה למד היום" appears by itself', await until(B, () => document.querySelectorAll('#sPar .pdlearn li').length > 0, null, 8000));
+  { const r = await B.evaluate(() => { const v = document.querySelector('#sPar .pday'); const l = v.querySelector('.pdlearn'); const secs = [...v.children];
+      return { li: [...l.querySelectorAll('li')].map(x => x.textContent.trim()), title: l.querySelector('h3').textContent, at: secs.indexOf(l), did: secs.indexOf(v.querySelector('.dllog').closest('section')) }; });
+    ok('#429 up to 3 lines, at the top of the day view (before what he did)', r.title === 'מה למד היום' && r.li.length === 3 && r.at >= 0 && r.at < r.did, JSON.stringify(r));
+    ok('#429 the lines come from the goal table (the day\'s finished goals, in order)', JSON.stringify(r.li) === JSON.stringify(exp.learned.slice(0, 3)) && r.li.every(x => exp.all.includes(x)), JSON.stringify([r.li, exp.learned])); }
+  { const r = await B.evaluate(() => { const v = document.querySelector('#sPar .pday'); const q = v.querySelectorAll('.pdask'); const secs = [...v.children];
+      return { n: q.length, t: q[0] && q[0].textContent, last: !!q[0] && secs.indexOf(q[0]) === secs.length - 1 }; });
+    const q = (r.t || '').replace(/^.*?:\s*/, '');
+    ok('#430 one question at the end of the day, from the fixed list', r.n === 1 && r.last && /^תשאל אותו:/.test(r.t) && exp.qs.includes(q), JSON.stringify(r));
+    const same = await B.evaluate(() => { window.PDAY.refresh(); return document.querySelector('#sPar .pdask').textContent; });
+    ok('#430 the same question all day (one per day)', same === r.t, same); }
+  { const r = await A.evaluate(() => { const G = window.GOALS, O = window.OREN, all = [].concat(...Object.values(G.Q)); const out = new Set();
+      for (let k = 0; k < 20; k++) { const d = '2026-01-' + String(k + 1).padStart(2, '0'); const x = G.askOf(d, [['lv:' + ((O.ALLLV || [])[0] || {}).id, 'c'], ['read-first', 'c']]); if (x) out.add(x); }
+      return { tied: [...out].every(q => G.Q.math.includes(q) || G.Q.readg.includes(q)), many: out.size > 1, none: G.askOf('2026-01-01', []) === '' && G.askOf('2026-01-01', [['read-first', 'q']]) === '', inList: [...out].every(q => all.includes(q)) }; });
+    ok('#430 the question is tied to what he finished (its topic), changes by day, none when nothing finished', r.tied && r.many && r.none && r.inList, JSON.stringify(r)); }
+  { const r = await B.evaluate(() => { const w = document.querySelector('#sPar .pdweek'); if (!w) return null; const bars = [...w.querySelectorAll('.pdwk i')].map(x => parseFloat(x.style.height) || 0);
+      const nums = (w.textContent.match(/\d+/g) || []); return { bars, sh: [...w.querySelectorAll('.pdsh')].map(x => x.textContent), nums, barTxt: [...w.querySelectorAll('.pdwk')].map(x => x.textContent).join('') }; });
+    ok('#431 week picture: 7 bars of minutes (today on the right, the biggest day full height)', r && r.bars.length === 7 && r.bars[3] === 100 && r.bars[6] > r.bars[5] && r.bars[5] > 0 && r.bars[4] === 0, JSON.stringify(r));
+    ok('#431 under them 3 topic shares (math, reading, English) and no other numbers', r && r.sh.length === 3 && /חשבון/.test(r.sh[0]) && /קריאה/.test(r.sh[1]) && /אנגלית/.test(r.sh[2]) && r.nums.length === 3 && !/\d/.test(r.barTxt), JSON.stringify(r)); }
+  { const w = await A.evaluate(() => window.PDAY.week(window.OREN.today()));
+    ok('#431 shares come from the day log (math 1, reading 1 of the 3 topics, English 1)', w && w.sh.math > 0 && w.sh.readg > 0 && w.sh.eng > 0 && Math.round(w.sh.math + w.sh.readg + w.sh.eng) === 100, JSON.stringify(w)); }
+  if (process.env.SHOTS) { fs.mkdirSync(L.SHOTDIR, { recursive: true }); await B.screenshot({ path: path.join(L.SHOTDIR, 'pday-learn-phone.png'), fullPage: true });
+    await B.evaluate(() => document.querySelector('#sPar .pdweek').scrollIntoView()); await sleep(200); await B.screenshot({ path: path.join(L.SHOTDIR, 'pday-week-phone.png') });
+    await A.evaluate(() => window.TAL.parentPanel('day')); await sleep(300); await A.screenshot({ path: path.join(L.SHOTDIR, 'pday-learn-desktop.png'), fullPage: true });
+    await A.evaluate(() => document.querySelector('#sPar .pdweek').scrollIntoView()); await sleep(200); await A.screenshot({ path: path.join(L.SHOTDIR, 'pday-week-desktop.png') }); }
   ok('no page errors', !errs.length, errs.join(' | '));
   await b.close(); srv.close(); L.finish('pday', res);
 })().catch(e => { console.error(e); srv.close(); L.finish('pday', res.concat(['FAIL crashed: ' + e.message])); });

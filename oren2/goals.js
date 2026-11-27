@@ -73,5 +73,19 @@ G.learned=day=>{const e=(((O.realSave||O.save).alog||{})[day]||{}).e||[],out=[];
 /* the friend says it once a day per mission, when the mission starts (daylog.js emits dlBegin) */
 O.on('dlBegin',id=>{const k=G.key(id),F=window.FRIEND;if(!k||!F||!F.goal||O.isParentPlay)return;
   const s=O.save,d=O.today();if(!s.gls||s.gls.d!==d)s.gls={d,i:[]};if(s.gls.i.includes(k))return;s.gls.i.push(k);F.goal(G.line(id));});
+/* #430 one end-of-day question for the parent to ask Oren: a fixed list per topic of the goal table (parent text, no nikud).
+   askOf(day, [[id, o], ...]) picks, for that day, one topic of his finished missions (o 'c' with a goal) and one question of it. */
+G.Q={math:['איזה תרגיל פתרת היום? תראה לי איך','איך אתה בודק שהתשובה נכונה?','מה היה התרגיל הכי קשה היום?'],
+ readg:['איזו מילה קראת היום? תקרא לי אותה','איזו אות למדת היום? איזו מילה מתחילה בה?','תכתוב לי מילה אחת שלמדת היום'],
+ story:['מה למדת מהסיפור? מה קרה בו?','מה היית עושה במקום הגיבור?'],
+ eng:['איזו מילה באנגלית למדת היום?','איך אומרים באנגלית משהו שלמדת היום?'],
+ explore:['מה גילית היום שלא ידעת?','איך פתרת את החידה של היום?'],
+ create:['מה יצרת היום? תספר לי עליו','מה היה הכי כיף ליצור היום?'],
+ calm:['איך הרגשת אחרי התרגיל של השקט?','תראה לי איך נושמים לאט']};
+const qTop=k=>{if(k==='math'||/^(w:|ln-)/.test(k))return 'math';if(/^story-/.test(k))return 'story';if(/^(en|eng)-/.test(k))return 'eng';
+  const P=window.PDAY,t=P&&P.topOf?P.topOf(k):null;return G.Q[t]?t:null;};
+G.askOf=(day,list)=>{const tops=[];(list||[]).forEach(([id,o])=>{const k=o==='c'&&G.key(id);const t=k&&qTop(k);if(t&&!tops.includes(t))tops.push(t);});
+  if(!tops.length)return '';const n=parseInt(String(day).replace(/\D/g,''),10)||0;const q=G.Q[tops[n%tops.length]];return q[Math.floor(n/tops.length)%q.length];};
+G.ask=day=>G.askOf(day,((((O.realSave||O.save).alog||{})[day]||{}).e||[]).filter(x=>x&&x[7]&&x[7].lg).map(x=>[x[1],x[6]]));
 window.GOALS=G;
 })();

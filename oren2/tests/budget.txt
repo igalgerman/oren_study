@@ -21,7 +21,7 @@ voice-stats 100           # #404 missing recording: one more page (~4 s); #399 s
 friend-desktop 80         # #433 error-in-a-mission check + #386 story engine (2 reopened pages from a save, a step, the day-end hint) + #387 story picture for every path mission (~2 s) + #411 easy/hard question (7 scenes, 3 taps, parent view, ~2 s) + #407 memory lines (2 homes + a finale, ~4 s) + #414 mission goals (3 activities + a path step, ~5 s): ~50 s in all
 friend-phone 80           # same file on the phone viewport
 shots 90                  # #462 screenshots: worker + fake D1, then the real page (six moments, busy/offline, a played level, review page desktop + phone): ~40 s alone
-pday 90                   # #359 two devices through a fake save server: plan changes, skips, undo, offline queue, skip-now waiting for an answer: ~45 s alone
+pday 100                  # #359 two devices through a fake save server: plan changes, skips, undo, offline queue, skip-now waiting for an answer + #438 learned today, the question, the week picture (~5 s): ~50 s alone
 network 60                # #434 slow network (throttled) + offline (service worker, voice from the device, save after reconnect): ~18 s alone
 english2-desktop 60       # #425 adds the second-tap slow replay check (~3 s): ~39 s under load
 english2-phone 60         # same file on the phone viewport: ~38 s
@@ -37,8 +37,8 @@ resume-phone 60            # same file on the phone viewport
 instructions-desktop 90   # every activity's instruction (~50 s) + #266 the 16 choice screens (each clip in the pregen list) name their choices: ~69 s
 qa-fix-desktop 60          # #267 adds the hands-on checks (clock drag, pizza taps, carry/borrow board, times array) + #439 ten-frame lessons/hint/fill, coins, mistake hints (~4 s): ~19 s
 qa-fix-phone 60            # same file on the phone viewport: ~19 s
-listen-desktop 60         # #389 listen first: real voice timing (question end, 2 s rest, the 4 s cap) + #408 the four friend reactions: ~25 s
-listen-phone 60           # same file on the phone viewport
+listen-desktop 60         # #389 listen first: real voice timing (question end, 2 s rest, the 4 s cap) + #408 the four friend reactions: ~25 s + #435 answers read and lit (a second page, 5 activities, ~8 s): ~33 s
+listen-phone 60           # same file on the phone viewport (#435 included)
 day-path-desktop 60        # #424 English scene checks (~3 s) + #388 3-mission path walk + time-limit stop, #391 ship checks (finale piece, gem choice, reload) + #392 tap a piece / story door (~1 s): ~31 s together
 day-path-phone 60          # same file on the phone viewport
 worker 60                 # cf worker bundle + fake KV/D1, #570 voicecheck once-a-day/reserve rules (pure, < 1 ms): ~3 s

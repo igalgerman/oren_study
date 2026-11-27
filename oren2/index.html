@@ -1621,9 +1621,11 @@ function googleSay(t,lang,again,part,slow,done){done=done||(()=>{});const en=lan
   const tm=setTimeout(()=>{if(!go)fall('timeout');},GV.ms);/* the browser voice only after a retry and a long wait (#36) */
   /* #399 a slow fetch that arrives after the screen changed (or after hush) is not played: the line belongs to an old screen */
   const stale=()=>GV.audio!==a||sqOld(done);const drop=()=>{clearTimeout(tm);try{a.pause();}catch(e){}if(GV.audio===a)GV.audio=null;done();};
-  a.onplaying=()=>{if(stale())return drop();auHint(false);if(!go){vmOff(rp);if(!part)voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});sayGuard(parts[part],done);}go=true;clearTimeout(tm);};a.onplay=()=>{if(stale())return drop();duck(true);vo(1,a);};a.onended=()=>{if(GV.audio===a&&!last){googleSay(t,lang,0,part+1,slow,done);return;}duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a){GV.audio=null;vo(0,a);}done();};/* the next part; stopped (hush) or replaced: the rest is not spoken */
+  a.onplaying=()=>{if(stale())return drop();auHint(false);if(!go){vmOff(rp);try{emit('vpart',rp);}catch(e){}if(!part)voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});sayGuard(parts[part],done);}go=true;clearTimeout(tm);};a.onplay=()=>{if(stale())return drop();duck(true);vo(1,a);};a.onended=()=>{if(GV.audio===a&&!last){googleSay(t,lang,0,part+1,slow,done);return;}duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a){GV.audio=null;vo(0,a);}done();};/* the next part; stopped (hush) or replaced: the rest is not spoken */
   a.onerror=()=>fall(a.error&&a.error.code===4?'no-audio':'audio-error');/* 4: not audio, e.g. the server answered 429/502 (not made yet) */
   a.play().catch(e=>{if(e&&e.name==='NotAllowedError')auHint(true);fall(e&&e.name==='NotAllowedError'?'blocked':e&&e.name==='NotSupportedError'?'no-audio':'audio-error');});}
+/* #435 emit('vpart',text) when each clip (part) of a Google sentence starts, with its text as given to say(); emit('vpart','') on hush().
+   The answers lit one by one as they are read listen to it (talents.js). */
 /* #404 a recording still missing after its one retry (online): the text on the screen lights up with a 🔊 that tries again.
    The text is found as one element on the screen (one that has its own 🔊 keeps it, no second one); on a button, or not found, the
    top-bar 🔊 lights up and retries it. The light goes off when that line plays, and on hush(). */
@@ -1668,7 +1670,7 @@ setInterval(()=>{if(sayNow!==AUTO.cur||AUTO.gen!==AUTO.seen){AUTO.cur=sayNow;AUT
   if(!AUTO.wait||Date.now()-AUTO.at<300)return;AUTO.wait=false;
   if(window.__fast||window.__noAuto||(window.__autoSaid||0)>=AUTO.at||(save.set&&save.set.autoRead===0)||!$('#sPar').hidden||$('#hud').hidden)return;
   hush();say(sayNow);},100);
-const hush=()=>{vmClear();const it=SQ.cur;SQ.list=[];SQ.cur=null;if(it)clearTimeout(it.wd);try{speechSynthesis.cancel();}catch(e){}try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}if(TTS.ns&&!TTS.blocked)TTS.ns.stop().catch(()=>{});};
+const hush=()=>{vmClear();try{emit('vpart','');}catch(e){}const it=SQ.cur;SQ.list=[];SQ.cur=null;if(it)clearTimeout(it.wd);try{speechSynthesis.cancel();}catch(e){}try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}if(TTS.ns&&!TTS.blocked)TTS.ns.stop().catch(()=>{});};
 
 /* ---------- animated pixel background: cached static layer + live elements ---------- */
 const bg=$('#bg');let bx=bg.getContext('2d');let BW=192,BH=108,bgW='meadow',bgTimer=0,bgCache={key:'',cv:null};
@@ -3042,6 +3044,9 @@ body:has(#dlg:not([hidden])) .toast{top:74px;bottom:auto}
   .dcard b,.dcard.cont b{font-size:16px}.doors2 .door>b{font-size:16px}
   .pxpal{grid-template-columns:repeat(4,44px)}.pxpal .sw{width:44px;height:44px}.tbtn small{font-size:16px}
   .dmore{min-height:44px}.hbub2 .rdb::after{inset:-9px}}
+/* #435 the answer being read aloud is lit (the reading helper's word light) */
+.chs .chb.rdlit{background:#ffd23f;outline:4px solid #e8a400;box-shadow:0 0 0 8px rgba(255,210,63,.55),0 6px 0 rgba(0,0,0,.28);transform:scale(1.08);transition:none}
+@media (prefers-reduced-motion:reduce){.chs .chb.rdlit{transform:none}}
 
 /* ===== 🕹️ arcade ===== */
 .arc{width:min(980px,100%);box-sizing:border-box;display:flex;flex-direction:column;align-items:center;gap:16px;padding:18px 16px 22px;color:#fff;
@@ -3851,6 +3856,13 @@ svg.tl{width:60px;height:60px;display:block}
 .pdskip{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35)}
 .pdskip .card{max-width:420px;text-align:center}
 .pdsugi .pchip{flex:none;margin:0 6px 0 0}
+/* #429 learned today · #431 the week picture · #430 the question */
+.pdlearn ul{margin:4px 0 0;padding-inline-start:20px}.pdlearn li{margin:2px 0;font-size:15px}
+.pdbars{height:90px;padding-top:4px}
+.pdsplit{display:flex;height:12px;border-radius:6px;overflow:hidden;margin:10px 0 6px;direction:rtl;background:#eee}
+.pdsplit i{display:block;height:100%}
+.pdshs{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px}
+.pdask{font-size:16px;font-weight:700}
 
 /* AGAIN (#39): the home button and the list of big tiles by day */
 .againbtn{display:flex;align-items:center;gap:10px;font-size:22px;font-weight:900;padding:10px 22px;background:#fff;border-bottom:6px solid #3a8fc4;box-shadow:0 5px 0 rgba(0,0,0,.2)}
@@ -3893,6 +3905,17 @@ const orList=a=>{a=[...new Set(a.map(lab).filter(Boolean))];if(a.length>1)a[a.le
 const choiceList=()=>{addChoices(BUILD.map(b=>b.name).concat(Object.values(ACT).map(a=>a.name),GROUPS.map(g=>g.n)));
   addSay(GROUPS.map(g=>g.n+'.').concat(BUILD.map(b=>b.name+(b.blurb?'. '+b.blurb:''))));return [...CHOICES];};
 const choiceSay=(root,sel)=>root?orList([...root.querySelectorAll(sel)].filter(x=>!x.closest('[hidden]')).map(x=>x.textContent)):'';
+/* #435 a question that does not test reading (a flag per activity: T.quiz o.readAns, default: not a reading id): after the question the
+   voice reads the answers one by one ("א, ב, אוֹ ג", each its own clip, as on the choice screens), the answer being said is lit (.rdlit).
+   ansSay(row,labels) marks the row (data-ra) and returns the clips to put after the question; '' when an answer has no word or number
+   (a picture): then nothing is read or lit. The light follows the voice (the core's 'vpart' at each clip) and goes out when it ends or is hushed. */
+const READ_ACT=/^(read-|story-|rb2-|nik-|snd-|eng-)/;
+const raN=s=>spk(s).replace(/[\u0591-\u05C7]/g,'').replace(/^או\s+/,'').replace(/[^\p{L}\p{N}]+/gu,'');
+const ansSay=(row,a)=>{a=(a||[]).map(lab);if(!row||a.length<2||!a.every(x=>/[א-ת0-9]/.test(x)))return '';row.dataset.ra=1;return orList(a);};
+const unlit=()=>document.querySelectorAll('.chb.rdlit').forEach(b=>b.classList.remove('rdlit'));
+O.on('vpart',t=>{const k=raN(t);if(!k)return unlit();document.querySelectorAll('.chs[data-ra] .chb').forEach(b=>b.classList.toggle('rdlit',raN(b.textContent)===k));});
+O.on('voice',on=>{if(!on)unlit();});
+addChoices([...Array(101).keys()].map(String));   /* number answers (word math, number series): every clip in pregen */
 
 /* ---------- extra pixel sprites ---------- */
 const P=(rows,pal)=>sprite(rows,pal);
@@ -3981,12 +4004,13 @@ function quiz(o){if(o.lesson&&window.LESSONS&&!o._ls){o._ls=1;return window.LESS
   const gen=()=>{const q=o.gen(qs.length);if(!pb||q.bank||q.key==null)return q;const c=[q];for(let j=0;j<24;j++){const x=o.gen(qs.length);if(x.key!=null&&!c.some(y=>y.key===x.key))c.push(x);}
     try{const r=LN.pickItem(pb,c.filter(x=>!seen.has(x.key)).map(x=>({k:x.key})));const x=r&&c.find(y=>y.key===r.item.k);if(x)return Object.assign(x,{bank:pb});}catch(e){}return q;};
   const nQ=pathN(o.n);while(qs.length<nQ&&t++<400){const q=gen();const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k))continue;seen.add(k);qs.push(fit(q));}
-  let i=0,err=0,gems=0,lock=false,tries=0,HB=null;O.setScreen('sTal',o.bg||'valley',o.back);
+  let i=0,err=0,gems=0,lock=false,tries=0,HB=null;const RA=o.readAns!=null?!!o.readAns:!READ_ACT.test(o.id);O.setScreen('sTal',o.bg||'valley',o.back);
   const bk=O.hereTake&&O.hereTake('tq:'+o.id);if(bk){i=Math.min(Math.max(0,bk.i|0),qs.length-1);err=bk.err|0;gems=bk.gems|0;}/* #44: reopened mid-quiz = the same place */
   const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq');s.appendChild(wrap);if(o.lesson&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(o.lesson,o.back,()=>quiz(o)));
-  const render=()=>{const q=qs[i];q._t=Date.now();tries=0;lock=false;if(O.hereProg)O.hereProg('tq:'+o.id,{i,err,gems});if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||spoken(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
+  const render=()=>{const q=qs[i];q._t=Date.now();tries=0;lock=false;if(O.hereProg)O.hereProg('tq:'+o.id,{i,err,gems});if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));const row=h('div','chs'+(q.ltr?' ltr':''));const ra=RA?ansSay(row,q.opts):'';
+    O.sayNow=(q.say||spoken(q.pr))+(ra||(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):''));
     wrap.innerHTML='';const card=h('div','prq tqc',q.pr);if(q.play){const pb=h('button','hintbtn',ICON.say+`<span>${q.playLbl||'הַשְׁמַע'}</span>`);pb.onclick=q.play;card.appendChild(pb);}
-    wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});const row=h('div','chs'+(q.ltr?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>{if(!(O.tapTooSoon&&O.tapTooSoon()))pickA(k,b);};row.appendChild(b);});wrap.appendChild(row);
+    wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>{if(!(O.tapTooSoon&&O.tapTooSoon()))pickA(k,b);};row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');
     /* #54 one help button: clue, then the answer with its explanation (the question ends like after two mistakes) */
     HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,clue:q.clue,explain:q.explain,before:ex,reveal:()=>{if(lock)return;lock=true;err++;note(qs[i],false);if(window.FRIEND)window.FRIEND.onWrong({final:true,m:o.id});if(q.reveal)q.reveal(wrap.querySelector('.tqc'));setTimeout(next,D(4200));}}):null;if(o.side){const sb=h('button','bigbtn plain sm qside',o.side.lbl);sb.onclick=()=>o.side.open(wrap);wrap.appendChild(sb);}if(q.auto&&q.play)setTimeout(()=>{if(qs[i]===q)q.play();},D(350));};
@@ -4078,7 +4102,7 @@ O.timeTick=timeTick;setInterval(timeTick,15000);
 const breakTime=()=>window.HEALTH&&window.HEALTH.breakNow();
 
 /* exports for other chunks */
-window.TAL={ADAPT,pathN,pathOn:()=>{PATH=1;},get onPath(){return !!PATH;},fits,vary,spk,orList,choiceSay,choiceList,addChoices,addSay,openGroup,GROUPS,bState,dailyPool,S,X,ALLSPR,FACES,quiz,result,record,finishAct,building,ACT,BUILD,openHub,openBuilding,hudT,progressBar,starsHTML,plainHe,L_,nb,dailyEnsure,setKey:f=>{KEY=f;},get key(){return KEY;},breakTime,artSVG:(...a)=>artSVG(...a)};
+window.TAL={ADAPT,ansSay,READ_ACT,pathN,pathOn:()=>{PATH=1;},get onPath(){return !!PATH;},fits,vary,spk,orList,choiceSay,choiceList,addChoices,addSay,openGroup,GROUPS,bState,dailyPool,S,X,ALLSPR,FACES,quiz,result,record,finishAct,building,ACT,BUILD,openHub,openBuilding,hudT,progressBar,starsHTML,plainHe,L_,nb,dailyEnsure,setKey:f=>{KEY=f;},get key(){return KEY;},breakTime,artSVG:(...a)=>artSVG(...a)};
 function artSVG(str){return window.TAL_artSVG?window.TAL_artSVG(str):'';}
 
 })();
@@ -10035,9 +10059,11 @@ function openTracks(){const s=S();if((s.set||{}).all)return ORDER.slice();const 
 function round(o){/* o: {id, sk, title, bg, back, n, next(i) → q, again} */o=Object.assign({},o,{n:T.pathN(o.n)});/* #394 short on the daily path */
   let i=0,err=0,gems=0;const qs=[];O.setScreen('sTal',o.bg||'mount',o.back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq thq');s.appendChild(wrap);if(o.lesson&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(o.lesson,o.back,o.again));
   const render=()=>{let q;for(let t=0;t<30;t++){C.clearLB();q=o.next(i);if(!qs.some(x=>x.key===q.key))break;}qs.push(q);let tries=0,lock=false,first=true;
-    T.hudT(o.title,T.progressBar(i,o.n));O.sayNow=T.plainHe((q.say||'')+' '+(q.text||''));wrap.innerHTML='';
+    T.hudT(o.title,T.progressBar(i,o.n));const row=h('div','chs n'+q.opts.length+(q.opts[0].t==='num'?' ltr':''));/* #435 the answers are read one by one (not in reading comprehension) */
+    const ra=T.ansSay&&!T.READ_ACT.test(o.id)?T.ansSay(row,q.opts.map(op=>op.t==='num'||op.t==='tx'?String(op.v):'')):'';
+    O.sayNow=T.plainHe((q.say||'')+' '+(q.text||''))+ra;wrap.innerHTML='';
     const card=h('div','prq tqc',`${promptHTML(q)}${q.text?`<div class="qq">${q.text}</div>`:''}`);wrap.appendChild(card);if(T.rdQ&&q.text)T.rdQ(q,card);
-    const row=h('div','chs n'+q.opts.length+(q.opts[0].t==='num'?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+optCls(op),optHTML(op));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
+    q.opts.forEach((op,k)=>{const b=h('button','chb '+optCls(op),optHTML(op));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');
     const done=(ok)=>{if(!first)return;first=false;if(q.bank&&window.LEARN)try{window.LEARN.seen(q.bank,q.bkey,ok,false);}catch(e){}const ch=C.answer(TH(),o.sk,ok);hit(o.sk,ok);O.persist();if(ch===1)O.floatText(card,'🎉 עָלִיתָ שָׁלָב!');};
     const ruleHTML=()=>`<div>${sprTok(q.rule)}</div>${q.ruleItems?`<div class="thser sm">${q.ruleItems.map(x=>`<span class="thi">${optHTML(x)}</span>`).join('')}</div>`:''}`;
@@ -10714,8 +10740,8 @@ const hundred=(chart,show)=>{let s='<div class="lnhc" dir="ltr">';for(let i=1;i<
 /* one question card: one instruction line, multiple choice; the strategy (q.tip) only behind the help button (#216); a short explanation after a mistake */
 function askQ(wrap,q,i,n,title,onAns){T.hudT(title,T.progressBar(i,n));wrap.innerHTML='';const t0=Date.now();
   const card=h('div','prq tqc lnq',`${q.html||''}${q.chart?hundred(q.chart,false):''}${q.text?`<div class="qq">${q.text}</div>`:''}`);wrap.appendChild(card);if(T.rdQ&&q.text)T.rdQ(q,card);
-  O.sayNow=plain((q.text?'':(q.html||'')).replace(/<span class="lnbox"><\/span>/g,' מה ')+' '+(q.text||''));
-  const row=h('div','chs ltr');let tries=0,lock=false;
+  const row=h('div','chs ltr');/* #435 math is not a reading test: the answers are read one by one, each lit */
+  O.sayNow=plain((q.text?'':(q.html||'')).replace(/<span class="lnbox"><\/span>/g,' מה ')+' '+(q.text||''))+(T.ansSay?T.ansSay(row,q.opts.map(String)):'');let tries=0,lock=false;
   q.opts.forEach((v,k)=>{const b=h('button','chb num',String(v));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
   const exb=h('div','hintbox');exb.hidden=true;wrap.appendChild(exb);card.classList.add('flashin');
   /* only: the help box already shows the answer with the explanation, so the explanation box holds just 'continue' */
@@ -11502,6 +11528,20 @@ G.learned=day=>{const e=(((O.realSave||O.save).alog||{})[day]||{}).e||[],out=[];
 /* the friend says it once a day per mission, when the mission starts (daylog.js emits dlBegin) */
 O.on('dlBegin',id=>{const k=G.key(id),F=window.FRIEND;if(!k||!F||!F.goal||O.isParentPlay)return;
   const s=O.save,d=O.today();if(!s.gls||s.gls.d!==d)s.gls={d,i:[]};if(s.gls.i.includes(k))return;s.gls.i.push(k);F.goal(G.line(id));});
+/* #430 one end-of-day question for the parent to ask Oren: a fixed list per topic of the goal table (parent text, no nikud).
+   askOf(day, [[id, o], ...]) picks, for that day, one topic of his finished missions (o 'c' with a goal) and one question of it. */
+G.Q={math:['איזה תרגיל פתרת היום? תראה לי איך','איך אתה בודק שהתשובה נכונה?','מה היה התרגיל הכי קשה היום?'],
+ readg:['איזו מילה קראת היום? תקרא לי אותה','איזו אות למדת היום? איזו מילה מתחילה בה?','תכתוב לי מילה אחת שלמדת היום'],
+ story:['מה למדת מהסיפור? מה קרה בו?','מה היית עושה במקום הגיבור?'],
+ eng:['איזו מילה באנגלית למדת היום?','איך אומרים באנגלית משהו שלמדת היום?'],
+ explore:['מה גילית היום שלא ידעת?','איך פתרת את החידה של היום?'],
+ create:['מה יצרת היום? תספר לי עליו','מה היה הכי כיף ליצור היום?'],
+ calm:['איך הרגשת אחרי התרגיל של השקט?','תראה לי איך נושמים לאט']};
+const qTop=k=>{if(k==='math'||/^(w:|ln-)/.test(k))return 'math';if(/^story-/.test(k))return 'story';if(/^(en|eng)-/.test(k))return 'eng';
+  const P=window.PDAY,t=P&&P.topOf?P.topOf(k):null;return G.Q[t]?t:null;};
+G.askOf=(day,list)=>{const tops=[];(list||[]).forEach(([id,o])=>{const k=o==='c'&&G.key(id);const t=k&&qTop(k);if(t&&!tops.includes(t))tops.push(t);});
+  if(!tops.length)return '';const n=parseInt(String(day).replace(/\D/g,''),10)||0;const q=G.Q[tops[n%tops.length]];return q[Math.floor(n/tops.length)%q.length];};
+G.ask=day=>G.askOf(day,((((O.realSave||O.save).alog||{})[day]||{}).e||[]).filter(x=>x&&x[7]&&x[7].lg).map(x=>[x[1],x[6]]));
 window.GOALS=G;
 })();
 
@@ -11781,6 +11821,24 @@ function sugSec(box,sec){const days=[...Array(7)].map((_,i)=>DL.rows(dayAt(i)));
     if(x.k==='easy'){const id=openOf(x.tp);if(id&&(id==='math'||T.ACT[id])&&!cmds().some(c=>c.k==='know'&&c.a===id))bt('הוא כבר יודע',()=>P.send('know',id));}
     if(x.k==='miss'&&d&&!openOf(x.tp)){const id=pickOf(x.tp,d);if(id)bt('+ להוסיף להיום',()=>P.send('add',id));}
     s.appendChild(r);});}
+/* #429 what he learned on day d: up to 3 lines from the goal table (goals.js, x.lg on his finished lines); none -> hidden */
+function learnSec(box,d,sec){const G=window.GOALS;const L=G&&G.learned?G.learned(d).slice(0,3):[];if(!L.length)return;
+  const s=sec(box,'מה למד היום',`<ul>${L.map(x=>`<li>${x}</li>`).join('')}</ul>`);s.classList.add('pdlearn');}
+/* #431 the week up to day d: 7 bars of play minutes (oldest left, d right) + the shares of math / reading / English from the day log.
+   Pure data (the tests call it): {m: [7 minutes], sh: {math, readg, eng} in % or null}; an empty week -> null. */
+const W3={math:'🧮 חשבון',readg:'📖 קריאה',eng:'🔤 אנגלית'};
+const top3=id=>{id=String(id||'');if(/^(en|eng)-/.test(id))return 'eng';const t=topOf(id);return t==='math'||t==='readg'?t:null;};
+P.week=d=>{const [y,m,dd]=d.split('-').map(Number);const ks=[...Array(7)].map((_,i)=>dayKey(new Date(y,m-1,dd-6+i)));
+  const tm=T.S().time||{};const mins=ks.map(k=>Math.round((tm[k]|0)/60));const c={math:0,readg:0,eng:0};let n=0;
+  ks.forEach(k=>DL.rows(k).forEach(e=>{if('pxsf'.includes(e[6]))return;const t=top3(e[1]);if(t){c[t]++;n++;}}));
+  if(!n&&!mins.some(x=>x))return null;const sh=n?{math:c.math/n*100,readg:c.readg/n*100,eng:c.eng/n*100}:null;return {k:ks,m:mins,sh};};
+const WCOL={math:'#3a8fc4',readg:'#c0392b',eng:'#8e44ad'};
+function weekSec(box,d,sec){const w=P.week(d);if(!w)return;const mx=Math.max(1,...w.m);
+  const bars=w.k.map((k,i)=>{const [y,m,dd]=k.split('-').map(Number);return `<div class="pcol pdwk"><i style="height:${w.m[i]/mx*100}%"></i><small>${'אבגדהוש'[new Date(y,m-1,dd).getDay()]}</small></div>`;}).join('');
+  const sh=w.sh?`<div class="pdsplit">${Object.keys(W3).map(t=>`<i style="width:${w.sh[t]}%;background:${WCOL[t]}"></i>`).join('')}</div><div class="pdshs">${Object.keys(W3).map(t=>`<span class="pdsh"><b style="color:${WCOL[t]}">●</b> ${W3[t]} ${Math.round(w.sh[t])}%</span>`).join('')}</div>`:'';
+  const s=sec(box,'השבוע',`<div class="pchart pdbars">${bars}</div>${sh}`);s.classList.add('pdweek');}
+/* #430 one question to ask him about what he learned that day (goals.js), at the end of the day view; none -> hidden */
+function askSec(box,d){const G=window.GOALS;const q=G&&G.ask?G.ask(d):'';if(q)box.appendChild(h('section','psec pdask',`תשאל אותו: ${q}`));}
 /* the whole day view; opts = {sec, nowTop(el), more()} */
 P.view=(box,opts)=>{const d=P.vd&&P.vd<=today()&&P.vd>=dayAt(13)?P.vd:today();P.vd=d;last={box,opts};box.innerHTML='';const sec=opts.sec;
   const nav=h('div','pdnav');const prev=h('button','pchip pdprev','›');prev.setAttribute('aria-label','יום קודם');prev.disabled=d<=dayAt(13);
@@ -11789,7 +11847,7 @@ P.view=(box,opts)=>{const d=P.vd&&P.vd<=today()&&P.vd>=dayAt(13)?P.vd:today();P.
   nav.append(prev,h('b','pdday',dayName(d)),next);box.appendChild(nav);
   if(d===today()){const nb=h('div','pnow');box.appendChild(nb);opts.nowTop&&opts.nowTop(nb);}
   const sec0=((T.S().time||{})[d]|0);box.appendChild(h('div','pdtot',`⏱️ ${d===today()?'היום':'ביום הזה'}: <b>${Math.floor(sec0/60)} דק׳</b> משחק`));
-  didSec(box,d,sec);if(d===today()){planSec(box,sec);sugSec(box,sec);}strongSec(box,d,sec);};
+  learnSec(box,d,sec);didSec(box,d,sec);if(d===today()){planSec(box,sec);sugSec(box,sec);}strongSec(box,d,sec);weekSec(box,d,sec);askSec(box,d);};
 P.refresh=()=>{if(last&&last.box.isConnected)P.view(last.box,last.opts);};
 })();
 
