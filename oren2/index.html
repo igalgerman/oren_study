@@ -1174,7 +1174,10 @@ function migrateOld(o){if(!o||!o.s)return;const mapB={'add-16':'add-boss','sub-1
   for(const [k,v] of Object.entries(o.m||{}))save.m[k]=(save.m[k]|0)|(v|0);
   save.days=[...new Set([...save.days,...(o.days||[])])];save.ans=Math.max(save.ans,o.ans|0);save.ok=Math.max(save.ok,o.ok|0);save.gems=Math.max(save.gems,(o.ok|0));
   if(Object.keys(o.s).length)save.story.intro=1;}
-try{const v=JSON.parse(localStorage.getItem(KEY)||'null');if(v&&v.v===4)save=Object.assign(blank(),v);else{migrateOld(JSON.parse(localStorage.getItem('oren3-v1')||'null'));const o2=JSON.parse(localStorage.getItem('oren2-v1')||'null');if(o2&&o2.m)for(const [k,v2] of Object.entries(o2.m))save.m[k]=(save.m[k]|0)|(v2|0);}}catch(e){}
+/* #432 an old or damaged save: a missing field or one of the wrong type (null, a string for a list...) gets its blank value */
+const kindOf=x=>Array.isArray(x)?'a':x===null?'n':typeof x;
+function fixSave(v){const b=blank();if(kindOf(v.snd)!=='number')v.snd=v.music===false?1:2;for(const k in b)if(kindOf(v[k])!==kindOf(b[k]))v[k]=b[k];return v;}
+try{const v=JSON.parse(localStorage.getItem(KEY)||'null');if(v&&typeof v==='object'&&v.v===4)save=fixSave(v);else{migrateOld(JSON.parse(localStorage.getItem('oren3-v1')||'null'));const o2=JSON.parse(localStorage.getItem('oren2-v1')||'null');if(o2&&o2.m)for(const [k,v2] of Object.entries(o2.m))save.m[k]=(save.m[k]|0)|(v2|0);}}catch(e){}
 let cloud={ref:null,busy:false,dirty:false,timer:0};
 function mergeIn(o){if(!o||typeof o!=='object')return;
   for(const [k,v] of Object.entries(o.s||{}))if((v|0)>(save.s[k]|0))save.s[k]=v|0;
@@ -1293,7 +1296,7 @@ function evDevice(){const n=navigator,ua=n.userAgent||'',w=Math.min(screen.width
   addEventListener('pagehide',()=>{track('se',{dur:Math.round((Date.now()-EV.t0)/1000),n:EV.n,drop:EV.drop},true);evFlush('hide');});})();
 const COACH_DONE={tour:1,home:99,hub:99,group:99,map:99,'i-city':1,'i-map':1,'i-king':1,'i-arc':1};
 function parentSandbox(){const b=blank();b.coach=Object.assign({},kidSave&&kidSave.coach,COACH_DONE);b.story={intro:1};b.gems=500;b.set={all:1,brk:0,hide:{},lim:{daily:0,bed:0}};b.prof=kidSave&&kidSave.prof;b.daily=null;return b;}
-function parentPlay(on,fresh){if(on&&!kidSave){kidSave=save;let ps=null;if(!fresh)try{ps=JSON.parse(localStorage.getItem(KEY+'-parent'));}catch(e){}save=ps&&ps.v?ps:parentSandbox();if(!save.prof&&kidSave.prof)save.prof=kidSave.prof;save.coach=Object.assign({},kidSave.coach,save.coach,COACH_DONE);window.__parentPlay=true;document.body.classList.add('pplay');}
+function parentPlay(on,fresh){if(on&&!kidSave){kidSave=save;let ps=null;if(!fresh)try{ps=JSON.parse(localStorage.getItem(KEY+'-parent'));}catch(e){}save=ps&&typeof ps==='object'&&ps.v?fixSave(ps):parentSandbox();if(!save.prof&&kidSave.prof)save.prof=kidSave.prof;save.coach=Object.assign({},kidSave.coach,save.coach,COACH_DONE);window.__parentPlay=true;document.body.classList.add('pplay');}
   else if(!on&&kidSave){save=kidSave;kidSave=null;window.__parentPlay=false;document.body.classList.remove('pplay');}
   else if(on&&fresh){save=parentSandbox();}
   updateGems();emit('mode',!!kidSave);}
@@ -3782,7 +3785,9 @@ svg.tl{width:60px;height:60px;display:block}
 const O=window.OREN;if(!O)return;
 const {h,$,pick,shuffle,ICON,SPR,sprite}=O;
 const sfx=O.sfx;const D=O.D;
-const S=()=>{const s=O.save;s.tl=s.tl||{};s.mood=s.mood||[];s.jar=s.jar||[];s.art=s.art||[];s.set=s.set||{hide:{}};s.set.hide=s.set.hide||{};s.time=s.time||{};s.typ=s.typ||{best:{},wpm:0};return s;};
+/* #432 a missing field or one of the wrong type (an old or damaged save) gets its blank value */
+const isObj=x=>!!x&&typeof x==='object'&&!Array.isArray(x);
+const S=()=>{const s=O.save;for(const k of ['tl','time'])if(!isObj(s[k]))s[k]={};for(const k of ['mood','jar','art'])if(!Array.isArray(s[k]))s[k]=[];if(!isObj(s.set))s.set={hide:{}};if(!isObj(s.set.hide))s.set.hide={};if(!isObj(s.typ))s.typ={best:{},wpm:0};return s;};
 const today=O.today;
 /* #394 the daily path: a mission started from the path is a short scene (at most PATH_Q questions, ~60-90 s);
    the same activity opened from its building keeps its full length. PATH is on from the path step until home or the city hub. */
@@ -3982,7 +3987,7 @@ const fitPick=(seq,pool)=>{const f=pool.filter(x=>fits(seq,x));return pick(f.len
 const dailyPool=()=>Object.keys(ACT).filter(id=>bState(ACT[id].b)==='on'&&!actOff(id)&&!ACT[id].noDaily&&!ACT[id].long&&(!ACT[id].avail||ACT[id].avail()));
 /* the day's path: t = steps ('math', an activity id, 'tog:<k>' together, 'rw:<k>' real-world), ch = how it was formed (a domain Oren chose, or 'plan').
    No path until Oren answers "what do you feel like today?" (or the parent's template builds it). cr = real-world missions waiting for the path. */
-function dailyEnsure(){const s=S();if(s.daily&&s.daily.d===today()){const d=s.daily,pool=dailyPool();d.cr=d.cr||[];for(let i=0;i<d.t.length;i++)if(d.t[i]!=='math'&&!/:/.test(d.t[i])&&!d.done[i]&&!pool.includes(d.t[i])){const alt=pool.filter(x=>!d.t.includes(x));if(alt.length)d.t[i]=fitPick(d.t.slice(0,i),alt);}return d;}
+function dailyEnsure(){const s=S();if(s.daily&&s.daily.d===today()){const d=s.daily,pool=dailyPool();d.cr=d.cr||[];for(let i=0;i<d.t.length;i++)if(d.t[i]!=='math'&&!/:/.test(d.t[i])&&!d.done[i]&&!pool.includes(d.t[i])&&!(ACT[d.t[i]]&&ACT[d.t[i]].inPath&&ACT[d.t[i]].inPath())){const alt=pool.filter(x=>!d.t.includes(x));if(alt.length)d.t[i]=fitPick(d.t.slice(0,i),alt);}return d;}
   const prev=s.daily;const cr=prev?[...(prev.cr||[]),...prev.t.filter((x,i)=>/^rw:/.test(x)&&!prev.done[i]),...(prev.tm||[]).filter(x=>x==='math'||ACT[x])]:[];   /* #359: tm = missions of a topic the parent put off to tomorrow */
   const plan=S().set.plan;let t=[];
   if(plan&&plan.length){const used=new Set();t=plan.map(sp=>{if(sp==='math')return 'math';if(String(sp).startsWith('act:')){const aid=sp.slice(4);if(ACT[aid]&&dailyPool().includes(aid)&&!used.has(aid)){used.add(aid);return aid;}sp='any';}const pool=dailyPool().filter(id=>!used.has(id)&&(sp==='any'||ACT[id].b.id===sp));const id=pool.length?fitPick([...used],pool):pick(dailyPool().filter(x=>!used.has(x)));used.add(id);return id||'math';}).concat(cr);}
@@ -5138,11 +5143,16 @@ function wpick(arr,n){const a=arr.slice(),out=[];while(out.length<n&&a.length){l
 function choose(dm,first){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.bs|0)>0;let st=dm==='tog'?[togStep(true)]:first?[first]:[];
   if(dm!=='tog')st=st.concat(stepsOf(dm,(bonus?2:3)-st.length,new Set([...d.t,...st])));
   wpick(doms().filter(x=>x.id!==gid(dm)),bonus?(dm==='tog'?1:0):(dm==='tog'?2:1)).forEach(o=>{st=st.concat(stepsOf(o.id,1,new Set([...d.t,...st])));});
+  /* #424 at most one English a day: English the path picks by itself goes (the English scene comes instead, below); English Oren picked himself (the building, "continue") stays */
+  const isEn=x=>!!(ACT[x]&&ACT[x].b&&ACT[x].b.id==='eng'),noEn=a=>dm==='b:eng'?a:a.filter(x=>!isEn(x)||x===first);st=noEn(st);
   if(!st.length)st=['math'];
   /* a domain that rested yesterday: the path starts with it, where Oren stopped (once a day) */
-  if(!bonus&&!d.rv&&window.HEALTH){d.rv=1;const rv=window.HEALTH.review().find(x=>!d.t.includes(x)&&!st.includes(x));if(rv)st=[rv].concat(st);}
+  if(!bonus&&!d.rv&&window.HEALTH){d.rv=1;const rv=window.HEALTH.review().find(x=>!d.t.includes(x)&&!st.includes(x));if(rv&&!isEn(rv))st=[rv].concat(st);}
   /* #358 variety: a mission that would repeat the kind is swapped for the engine's next pick in this domain, then in the others */
-  st=T.vary(d.t,st,()=>{let ex=[];[dm,...wpick(doms().filter(x=>x.id!==gid(dm)),9).map(o=>o.id)].forEach(id=>{if(id!=='tog')ex=ex.concat(stepsOf(id,3,new Set([...d.t,...st,...ex])).filter(x=>!ex.includes(x)));});return ex;});
+  st=T.vary(d.t,st,()=>{let ex=[];[dm,...wpick(doms().filter(x=>x.id!==gid(dm)),9).map(o=>o.id)].forEach(id=>{if(id!=='tog')ex=ex.concat(noEn(stepsOf(id,3,new Set([...d.t,...st,...ex]))).filter(x=>!ex.includes(x)));});return ex;});
+  /* #424 one short English scene per path, once a day, while English is on for him */
+  const sc=ACT['en-day'];st=noEn(st);
+  if(!d.en&&!st.some(isEn)&&sc&&sc.inPath())st.push('en-day');if(st.some(isEn))d.en=1;
   if(!bonus){st=st.concat(d.cr||[]);d.cr=[];}st.forEach(x=>{d.t.push(x);d.done.push(0);});d.ch=dm;if(window.PDAY)window.PDAY.mark();
   if(dm!=='tog'){S0.dom=S0.dom||{};S0.dom[gid(dm)]=dayNum();}O.persist();sfx.ok(2);home();}
 function lastStep(){const l=T.S().last;if(!l)return null;if(l.id==='math')return nextLevel()?'math':null;return T.dailyPool().includes(l.id)?l.id:null;}
@@ -9096,6 +9106,13 @@ function teachCard(g){if(g.startsWith('L:')){const L=g.slice(2),x=LET[L];return 
   if(c==='w'){const s=SIGHT.find(x=>x[0]===v);return {g,kind:'sight',w:v,ex:s[1],exHe:s[2],say:s[1]===v?v:v+'. '+s[1],items:[g]};}
   return {g,kind:'phrase',p:v,say:v,items:[g]};}
 
+/* #424 the English scene of the daily path: SCENE cards, letters and sounds first, then words (once words are open).
+   [{lv,g}] = a teach card, [{lv,q}] = a question; a question is only about an item seen before or taught on a card of this scene */
+const SCENE=5;
+function scenePart(save,lv,d,n){if(n<=0)return [];const P=plan(save,lv,d);const tch=P.teach.slice(0,Math.max(0,n-1));const tt=new Set(tch.flatMap(g=>teachCard(g).items));
+  const qs=P.qs.filter(q=>seen(save,q.k)||tt.has(q.k)).slice(0,n-tch.length);return [...tch.map(g=>({lv,g})),...qs.map(q=>({lv,q}))];}
+function dayScene(save,d){if(d==null)d=day();const w=levelOpen(save,0)?scenePart(save,0,d,2):[];return [...scenePart(save,1,d,SCENE-w.length),...w];}
+
 /* ---------- everything the game speaks in English (to make the voice in advance) ---------- */
 function speakList(){const out=[];const add=s=>out.push(s);
   THEMES.forEach(t=>t.w.forEach(w=>add(w[0])));
@@ -9121,7 +9138,7 @@ function merge(save,o){if(!o||!o.en2)return;const E=st(save),F=o.en2;
 
 let UI=null,SAVE=null;      /* the game sets the live save (Part 2); tests pass one */
 const api={THEMES,WORD,EXTRA,CLASH,clash,LETTERS,LET,AZ,LGROUPS,SOUNDMATE,LOOK,CVC,CVCW,SIGHT,SENT,PHRASES,PH,PCLASH,PUNITS,SONGS,SONG,LEVELS,UNIT,ITEM_UNIT,OPEN,SKILLS,INT,
-  day,st,box,seen,known,taught,words,touch,mark,unitDone,doneUnits,levelOpen,songOpen,openSongs,curUnit,plan,gen,teachCard,groupOf,groupsOf,okey,sayIsFor,speakList,levelOf,levelText,report,merge,
+  day,st,box,seen,known,taught,words,touch,mark,unitDone,doneUnits,levelOpen,songOpen,openSongs,curUnit,plan,gen,dayScene,teachCard,groupOf,groupsOf,okey,sayIsFor,speakList,levelOf,levelText,report,merge,
   setRng:f=>{rnd=f||Math.random;},set save(s){SAVE=s;},get save(){return SAVE;},set ui(u){UI=u;},
   register:()=>{if(UI)UI.register();}};
 return api;
@@ -9212,18 +9229,22 @@ function clueOf(q){if(CLUE[q.type])return CLUE[q.type];
 
 /* ---------- one round of a level ---------- */
 const NAMES=['eng-voc','eng-abc','eng-read','eng-talk','eng-song'];
-const ACTN={'eng-voc':'מִלִּים','eng-abc':'אוֹתִיּוֹת וּצְלִילִים','eng-read':'קוֹרְאִים','eng-talk':'מְדַבְּרִים','eng-song':'שִׁירִים'};
+const SCENE_ID='en-day';
+const ACTN={'en-day':'רֶגַע שֶׁל אַנְגְּלִית','eng-voc':'מִלִּים','eng-abc':'אוֹתִיּוֹת וּצְלִילִים','eng-read':'קוֹרְאִים','eng-talk':'מְדַבְּרִים','eng-song':'שִׁירִים'};
 const snapshot=()=>({open:NAMES.map((_,lv)=>E2.levelOpen(O.save,lv)),units:E2.LEVELS.map(L=>L.units.filter(u=>E2.unitDone(O.save,u)).map(u=>u.id)),songs:E2.openSongs(O.save).length});
 function doneTitle(a,b){const nl=NAMES.findIndex((_,lv)=>b.open[lv]&&!a.open[lv]);if(nl>0)return `נִפְתַּח מִשְׂחָק חָדָשׁ: ${ACTN[NAMES[nl]]}! 🎉`;
   if(b.songs>a.songs)return 'נִפְתַּח שִׁיר חָדָשׁ! 🎵';
   for(let lv=0;lv<4;lv++){const nu=b.units[lv].find(id=>!a.units[lv].includes(id));if(nu)return `סִיַּמְתָּ: ${E2.UNIT[nu].he}! 🎉`;}return undefined;}
-function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save,lv,d);/* #394 on the daily path: at most 4 steps (the new words' cards + at least 1 question) */P.qs=P.qs.slice(0,Math.max(1,T.pathN(P.teach.length+P.qs.length)-P.teach.length));const id=NAMES[lv];const before=snapshot();
-  const steps=[...P.teach.map(g=>({t:'teach',c:E2.teachCard(g)})),...P.qs.map(s=>({t:'q',s}))];
-  const b0={};P.qs.forEach(s=>{if(!(s.k in b0))b0[s.k]=E2.box(save,s.k);});P.teach.forEach(g=>E2.teachCard(g).items.forEach(k=>{b0[k]=0;}));
+/* sc: the daily path's English scene (#424): its own 5 cards from E2.dayScene, recorded as SCENE_ID */
+function round(lv,back,sc){hush();const save=O.save,d=E2.day();let P,steps,id;const before=snapshot();
+  if(sc){P={unit:null,he:ACTN[SCENE_ID]};id=SCENE_ID;steps=E2.dayScene(save,d).map(x=>x.g?{t:'teach',c:E2.teachCard(x.g),lv:x.lv}:{t:'q',s:x.q,lv:x.lv});}
+  else{P=E2.plan(save,lv,d);/* #394 on the daily path: at most 4 steps (the new words' cards + at least 1 question) */P.qs=P.qs.slice(0,Math.max(1,T.pathN(P.teach.length+P.qs.length)-P.teach.length));id=NAMES[lv];
+    steps=[...P.teach.map(g=>({t:'teach',c:E2.teachCard(g)})),...P.qs.map(s=>({t:'q',s}))];}
+  const b0={};steps.forEach(x=>{if(x.t==='q'&&!(x.s.k in b0))b0[x.s.k]=E2.box(save,x.s.k);});steps.forEach(x=>{if(x.t==='teach')x.c.items.forEach(k=>{b0[k]=0;});});
   const res={};const asked=new Set();
   let i=0,err=0,gems=0,nq=0;O.setScreen('sTal','sea',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq e2');s.appendChild(wrap);
-  if(lv===1&&window.LESSONS)s.appendChild(window.LESSONS.againBtn('eng-abc',back,()=>round(1,back)));
-  const title=()=>P.unit?P.unit.he:'חֲזָרָה';
+  if(lv===1&&!sc&&window.LESSONS)s.appendChild(window.LESSONS.againBtn('eng-abc',back,()=>round(1,back)));
+  const title=()=>P.he||(P.unit?P.unit.he:'חֲזָרָה');
   let cur=null;
   function render(){const st=steps[i];hush();T.hudT(title(),T.progressBar(i,steps.length));wrap.innerHTML='';
     if(st.t==='teach')return renderTeach(st.c);renderQ(st.s);}
@@ -9258,13 +9279,14 @@ function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save
     const HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,before:ex,explain:v.explain?`<div class="e2ex">${v.explain}</div>`:'',
       clue:()=>{hinted=true;if(v.hint){if(v.karaoke){const tok=++TOK;karaoke(card.querySelector('.e2sent'),v.hint,tok);}else talk([['en',v.hint]]);}else playIt();return clueOf(q);},
       reveal:()=>{if(lock)return;lock=true;hush();if(!fin)err++;settle('bad');nq++;sayAfter();setTimeout(next,D(4200));}}):null;
+    const sk=NAMES[steps[i].lv!=null?steps[i].lv:lv];
     function pick(k,b){if(lock||b.disabled)return;
       if(k===q.ans){lock=true;hush();b.classList.add('ok');sfx.ok(i);const g=tries||hinted?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);
-        if(!tries&&T.skHit)T.skHit(NAMES[lv],!hinted);if(!tries&&KN)KN.hit(NAMES[lv],!hinted);settle(tries?'bad':hinted?'hint':'ok');nq++;reveal();setTimeout(next,D(v.after||v.afterK?2600:1700));return;}
-      if(!tries&&T.skHit)T.skHit(NAMES[lv],false);if(!tries&&KN)KN.hit(NAMES[lv],false);tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();
+        if(!tries&&T.skHit)T.skHit(sk,!hinted);if(!tries&&KN)KN.hit(sk,!hinted);settle(tries?'bad':hinted?'hint':'ok');nq++;reveal();setTimeout(next,D(v.after||v.afterK?2600:1700));return;}
+      if(!tries&&T.skHit)T.skHit(sk,false);if(!tries&&KN)KN.hit(sk,false);tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();
       if(tries>=2){if(HB&&HB.el.isConnected){fin=true;HB.answer();return;}lock=true;hush();settle('bad');nq++;row.children[q.ans].classList.add('show');reveal();setTimeout(next,D(3000));}}
     }
-  function next(){if(!wrap.isConnected)return;i++;if(i>=steps.length){T.setKey(null);const t=doneTitle(before,snapshot());T.finishAct(id,err,Math.max(1,nq),gems,back,()=>round(lv,back),t);}else render();}
+  function next(){if(!wrap.isConnected)return;i++;if(i>=steps.length){T.setKey(null);const t=doneTitle(before,snapshot());T.finishAct(id,err,Math.max(1,nq),gems,back,()=>round(lv,back,sc),t);}else render();}
   T.setKey(e=>{if(/^[1-9]$/.test(e.key)){const r=wrap.querySelector('.chs');const b=r&&r.children[+e.key-1];if(b)b.click();}});
   window.__quiz={get ans(){return cur&&cur.ans;},get i(){return i;},get wrap(){return wrap;}};
   window.__e2={get step(){return steps[i];},steps,P};
@@ -9301,8 +9323,10 @@ if(KN)KN.area('english',{name:'אנגלית',skills:NAMES.slice(0,4).map(id=>({i
   asks:[{id:'eng-voc',q:'מכיר מילים בסיסיות באנגלית',skills:['eng-voc']},{id:'eng-abc',q:'מכיר את האותיות באנגלית והצלילים שלהן',skills:['eng-abc']},{id:'eng-read',q:'קורא מילים קצרות באנגלית',skills:['eng-read']}]});
 const runLv=(lv,back)=>(lv>=2&&lv<=3&&KN&&KN.stepped(NAMES[lv]))?runLv(lv-1,back):lv===4?songs(back):lv===1&&LN?LN.first('eng-abc',back,()=>ABC(back)):round(lv,back);
 const ACTS=NAMES.map((id,lv)=>({id,name:ACTN[id],icon:ICONS[id],avail:()=>lv===4?E2.openSongs(O.save).length>0:E2.levelOpen(O.save,lv),run:back=>runLv(lv,back)}));
+/* #424 the daily path's English scene: not a building card, not a random pick (noDaily); talents' choose() adds it once a day while English is on (inPath) */
+const SCENE={id:SCENE_ID,name:ACTN[SCENE_ID],icon:ICONS['eng-abc'],noDaily:true,inPath:()=>T.dailyPool().includes('eng-abc'),run:back=>LN?LN.first('eng-abc',back,()=>round(1,back,1)):round(1,back,1)};
 function register(){const b=T.BUILD.find(x=>x.id==='eng');if(!b||b._e2)return;b._e2=1;
-  b.acts.forEach(a=>{if(T.ACT[a.id]===a)delete T.ACT[a.id];});b.acts=[ACTS[1],ACTS[0],...ACTS.slice(2)];   /* letters and sounds first (#58) */ACTS.forEach(a=>{a.b=b;T.ACT[a.id]=a;});
+  b.acts.forEach(a=>{if(T.ACT[a.id]===a)delete T.ACT[a.id];});b.acts=[ACTS[1],ACTS[0],...ACTS.slice(2)];   /* letters and sounds first (#58) */ACTS.forEach(a=>{a.b=b;T.ACT[a.id]=a;});SCENE.b=b;T.ACT[SCENE_ID]=SCENE;
   b.blurb='לוֹמְדִים אַנְגְּלִית צַעַד אַחַר צַעַד. לוֹחֲצִים עַל הָרַמְקוֹל כְּדֵי לִשְׁמֹעַ.';}
 E2.ui={register};
 E2.screens={round,songs,sing,pic,ACTS};
@@ -11387,7 +11411,7 @@ const G={T:{
  'blk-plan':'לִבְנוֹת לְפִי תָּכְנִית','blk-count':'לִסְפֹּר קֻבִּיּוֹת, גַּם כָּאֵלֶּה שֶׁלֹּא רוֹאִים','blk-mirror':'לִבְנוֹת כְּמוֹ בְּמַרְאָה',
  'blk-view':'אֵיךְ דָּבָר נִרְאֶה מִלְמַעְלָה וּמִקָּדִימָה','blk-free':'לְתַכְנֵן וְלִבְנוֹת בְּעַצְמְךָ',
  /* English */
- 'eng-voc':'מִלִּים חֲדָשׁוֹת בְּאַנְגְּלִית','eng-abc':'אוֹתִיּוֹת וּצְלִילִים בְּאַנְגְּלִית','eng-read':'לִקְרֹא מִלִּים בְּאַנְגְּלִית',
+ 'en-day':'אוֹתִיּוֹת וּמִלִּים בְּאַנְגְּלִית','eng-voc':'מִלִּים חֲדָשׁוֹת בְּאַנְגְּלִית','eng-abc':'אוֹתִיּוֹת וּצְלִילִים בְּאַנְגְּלִית','eng-read':'לִקְרֹא מִלִּים בְּאַנְגְּלִית',
  'eng-talk':'לְדַבֵּר בְּאַנְגְּלִית','eng-song':'לָשִׁיר בְּאַנְגְּלִית',
  /* music, art, typing, calm */
  'mus-notes':'אֶת הַשֵּׁמוֹת שֶׁל הַתָּוִים','mus-dur':'שֶׁיֵּשׁ תָּוִים אֲרֻכִּים וְתָוִים קְצָרִים','mus-ear':'לִשְׁמֹעַ אִם צְלִיל גָּבוֹהַּ אוֹ נָמוּךְ',
