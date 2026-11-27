@@ -37,7 +37,7 @@ resume-phone 60            # same file on the phone viewport
 instructions-desktop 90   # every activity's instruction (~50 s) + #266 the 16 choice screens (each clip in the pregen list) name their choices: ~69 s
 qa-fix-desktop 60          # #267 adds the hands-on checks (clock drag, pizza taps, carry/borrow board, times array): ~15 s
 qa-fix-phone 60            # same file on the phone viewport: ~14 s
-listen-desktop 60         # #389 listen first: real voice timing (question end, 2 s rest, the 4 s cap): ~15 s alone
+listen-desktop 60         # #389 listen first: real voice timing (question end, 2 s rest, the 4 s cap) + #408 the four friend reactions: ~25 s
 listen-phone 60           # same file on the phone viewport
 day-path-desktop 60        # #388 3-mission path walk + time-limit stop, #391 ship checks (finale piece, gem choice, reload) + #392 tap a piece / story door (~1 s): ~31 s together
 day-path-phone 60          # same file on the phone viewport

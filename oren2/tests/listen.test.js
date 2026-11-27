@@ -68,6 +68,54 @@ const ACT = 'sci-animals';                                   /* a quiz with 4 op
   await sleep(1300); s = await st();
   ok('4 s cap: open after 4 s without the voice ending', !s.locked);
 
+  // --- #408 the friend reacts to how Oren plays: one short line, at most one reaction per question ---
+  const RX = await p.evaluate(() => { const R = window.FRIEND.react; R.QUIET = 700; return { lines: R.lines, NIK: Object.values(R.lines).every(t => /[ְ-ׇ]/.test(t)), all: Object.values(R.lines).every(t => window.FRIEND.speakList().includes(t)) }; });
+  ok('#408 four triggers, one line each, nikud, all in the voice pregen list', Object.keys(RX.lines).length === 4 && RX.NIK && RX.all, JSON.stringify(RX));
+  ok('#408 fast guessing is the listen-first line (one trigger)', RX.lines.fast === line, RX.lines.fast);
+  const endVoice = () => p.evaluate(() => { const u = speechSynthesis.last; if (u && u.onend) u.onend({}); });
+  /* the question was read to the end: end every line before it (the one speech queue waits for each), then the question's own line */
+  const heard = async () => { for (let k = 0; k < 60; k++) { const st2 = await p.evaluate(back => { const b = t => String(t || '').replace(/[\u0591-\u05C7]/g, '').replace(/[^א-תa-z0-9]/gi, '');
+        const q = b(window.OREN.sayNow).replace(b(back), '').slice(0, 10), u = speechSynthesis.last; return { q: !!q && !!u && b(u.text).includes(q), u: !!u }; }, RX.lines.back);
+      await endVoice(); if (st2.q) break; await sleep(100); }
+    await p.waitForFunction(() => { const r = document.querySelector('#sTal .chs'); return r && !r.classList.contains('lsn') && !(window.OREN.tapTooSoon && window.OREN.tapTooSoon()); }, null, { timeout: 5000 }).catch(() => {}); await sleep(50); };   /* #436: taps in the first 400 ms are ignored */
+  const rlog = () => p.evaluate(() => window.FRIEND.react.log.slice());
+  const fresh = () => p.evaluate(() => { window.FRIEND.react.log.length = 0; const O = window.OREN; O.save.frt = Date.now(); delete O.save.frh; });
+  // silence: a long quiet while a question waits -> the friend offers a hint (the help button lights up), only once
+  await fresh(); await open(); await heard(); await sleep(1100);
+  let r = await p.evaluate(() => ({ last: window.FRIEND.last, offer: !!document.querySelector('#sTal .helpq.offer'), log: window.FRIEND.react.log.slice() }));
+  ok('#408 silence: the friend offers a hint, the help button lights up', r.last === RX.lines.hint && r.offer && r.log.join() === 'hint', JSON.stringify(r));
+  await endVoice(); await sleep(1100);
+  ok('#408 silence: at most one reaction per question', (await rlog()).join() === 'hint', JSON.stringify(await rlog()));
+  // fast guessing: the listen-first rest says its line once; no hint on that question afterwards
+  await fresh(); await open(); await heard(); s = await st();
+  await p.evaluate(() => { speechSynthesis.log = []; }); await tap(wrongs(s)[0]); await sleep(100); await tap(wrongs(s)[1]); await sleep(100);
+  ok('#408 fast guessing: the listen-first line', (await rlog()).join() === 'fast' && await p.evaluate(() => window.FRIEND.last) === line, JSON.stringify(await rlog()));
+  await endVoice(); await sleep(200); await endVoice(); await sleep(2300); await endVoice(); await sleep(1100);
+  ok('#408 fast guessing: no second message on that question (no hint after it)', (await rlog()).join() === 'fast', JSON.stringify(await rlog()));
+  // hard yesterday, right today: one line on the first right answer, then normal praise again
+  const yday = await p.evaluate(() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); });
+  await fresh(); await p.evaluate(([a, y]) => { window.OREN.save.frh = { [a]: { d: y, n: 3 } }; }, [ACT, yday]);
+  await open(); await heard(); s = await st(); await tap(s.ans); await sleep(100);
+  ok('#408 hard yesterday, right today: the friend notices', await p.evaluate(() => window.FRIEND.last) === RX.lines.yday && (await rlog()).join() === 'yday', JSON.stringify(await rlog()));
+  await sleep(1400); await heard(); s = await st(); await tap(s.ans); await sleep(100);
+  ok('#408 ...only once (the next right answer gets the usual praise)', await p.evaluate(() => window.FRIEND.last) !== RX.lines.yday && (await rlog()).join() === 'yday', JSON.stringify(await rlog()));
+  await fresh(); await p.evaluate(([a, y]) => { window.OREN.save.frh = { [a]: { d: y, n: 1 } }; }, [ACT, yday]);
+  await open(); await heard(); s = await st(); await tap(s.ans); await sleep(1400);
+  const noY = await p.evaluate(() => window.FRIEND.last);
+  await heard(); s = await st(); await tap(wrongs(s)[0]); await sleep(100);
+  const fh = await p.evaluate(a => window.OREN.save.frh[a], ACT);
+  ok('#408 not hard yesterday (1 mistake): no line; today\'s mistakes are counted', noY !== RX.lines.yday && !(await rlog()).length && fh.n === 1 && fh.d !== yday, JSON.stringify({ noY, fh, log: await rlog() }));
+  // back from a break: a welcome before the question is read, once
+  await fresh(); await p.evaluate(() => { window.OREN.save.frt = Date.now() - 3 * 3600e3; });
+  await open(); await sleep(150);
+  r = await p.evaluate(() => ({ last: window.FRIEND.last, say: window.OREN.sayNow, log: window.FRIEND.react.log.slice() }));
+  ok('#408 back from a break: the friend welcomes him, before the question', r.last === RX.lines.back && bare(r.say).startsWith(bare(RX.lines.back)) && r.log.join() === 'back', JSON.stringify(r));
+  await endVoice(); await sleep(200); await endVoice(); await sleep(1100);
+  ok('#408 back from a break: no second reaction on that question', (await rlog()).join() === 'back', JSON.stringify(await rlog()));
+  await open(); await sleep(150);
+  ok('#408 ...and no welcome again right after', (await rlog()).join() === 'back', JSON.stringify(await rlog()));
+  await p.evaluate(() => { window.FRIEND.react.QUIET = 20000; window.OREN.showMap(); }); await sleep(200);
+
   // --- 4. no voice: open at once (offline, auto-read off) ---
   await p.evaluate(() => { Object.defineProperty(navigator, 'onLine', { get: () => false, configurable: true }); });
   await open(); await sleep(150); s = await st();
