@@ -87,7 +87,7 @@ const { chromium } = require('playwright');
   ok('P1.9 water break / meal: no clock digits', !r.w.clock && !r.m.clock && r.w.counters === 0 && r.m.counters === 0, JSON.stringify([r.w, r.m]));
   ok('P1.9 break and meal buttons fill as progress', [r.j, r.w, r.m].every(x => x.fill !== ''), JSON.stringify(r));
   /* ---------- P2 kid (docs/simplicity-spec.md) ---------- */
-  const btns = () => p.evaluate(() => [...document.querySelectorAll('#sTal button')].filter(b => b.offsetParent !== null).map(b => b.textContent.replace(/\s+/g, ' ').trim()).filter(t => t !== '🔊'));
+  const btns = () => p.evaluate(() => [...document.querySelectorAll('#sTal button')].filter(b => b.offsetParent !== null).map(b => b.textContent.replace(/\s+/g, ' ').trim()).filter(t => t !== '🔊' && !/הַרְאֵה לִי שׁוּב/.test(t)));   // the small lesson 'show me again' (#258) is not a main action
   // P2.1 code robot: one big "שָׁלָב N ▶" (the next unfinished level), no level grid
   r = await p.evaluate(() => { const T = window.TAL; T.S().code = { 0: 3, 1: 2 }; T.ACT['code-maze'].run(() => window.OREN.showMap()); return { grid: document.querySelectorAll('#sTal .lvb').length, go: [...document.querySelectorAll('#sTal .lvgo')].map(b => b.textContent.trim()) }; });
   ok('P2.1 code menu: no level tiles, one big "שָׁלָב 3" button', r.grid === 0 && r.go.length === 1 && /שָׁלָב 3\b/.test(r.go[0]), JSON.stringify(r));

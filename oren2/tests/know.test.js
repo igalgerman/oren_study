@@ -119,7 +119,7 @@ const { chromium } = require('playwright'); const sleep = ms => new Promise(r =>
   ok('English: the reading activity quietly plays the easier letters round', await p.evaluate(() => !!(window.__e2 && window.__e2.P && window.__e2.P.lv === 1)));
 
   // ---- math: no placement test in the game; the parent's answer sets the start ----
-  await hide(); await p.evaluate(() => window.LEARN.run('ln-math', () => {})); await sleep(300);
+  await hide(); await p.evaluate(() => { ['math-ten', 'math-dbl', 'math-comp', 'math-skip', 'math-pv'].forEach(l => window.LESSONS.mark(l, 1)); window.LEARN.run('ln-math', () => {}); }); await sleep(300);   // #258 strategy lessons seen
   ok('math: no placement test in the game, the round starts at once', await p.evaluate(() => !!document.querySelector('#sTal .lnq')));
   const ma = await p.evaluate(() => { window.OREN.showMap(); window.KNOW.set('math', 'math-20', 1); const k = window.OREN.save.lrn.k; return ['mm-ten', 'mm-dbl', 'mm-pv'].map(x => (k[x] || {}).l || 1); });
   ok('math: "adds up to 20: yes" → the strategies start at level 3', ma.every(l => l === 3), ma.join(','));

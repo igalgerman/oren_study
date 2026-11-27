@@ -114,7 +114,8 @@ const { chromium } = require('playwright');
   // show the back/home control in the top bar (not covered), a real tap lands on the screen Oren came from; the phone back gesture never leaves the game
   {
     const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
-    await ctx.addInitScript(() => { try { localStorage.clear(); } catch (e) {} window.__fast = true; window.__noFamily = true; });
+    // window.__lessons: lesson cards on here, as before #258 (a first lesson stands in front of an activity's round, like in the game)
+    await ctx.addInitScript(() => { try { localStorage.clear(); } catch (e) {} window.__fast = true; window.__noFamily = true; window.__lessons = true; });
     const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('dialog', d => d.dismiss());
     await p.goto(L.URL); await L.noCoach(p);
     await p.evaluate(() => { const O = window.OREN; O.save.story.intro = 1; O.save.set = Object.assign(O.save.set || {}, { brk: 0 }); window.TAL.S().prof = { an: 'cat', col: '#3a8fc4', love: 'art' }; O.showMap(); });
