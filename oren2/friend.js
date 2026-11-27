@@ -69,6 +69,10 @@ FR.question=(q,card)=>{FR.mount();missed=false;const w=q&&q.word?T.spk(q.word):'
 function takeLead(){const t=lead;lead='';if(t)bubble(t,3500);return t;}
 /* other screens of a step: put the story line before whatever the screen says */
 function leadOnScreen(){if(!lead)return;if(window.__noAuto){O.say(takeLead());return;}const t=takeLead();O.sayNow=t+' '+(O.sayNow||'');}
+/* #414 the mission's learning goal (goals.js): its own clip, after the path's story line and before the screen's instruction.
+   A quiz takes it with its first question; any other screen gets it once the mission's screen is drawn. */
+const GSEP='\u2063';
+FR.goal=t=>{if(!t)return;lead=(lead?lead+' '+GSEP:'')+t+GSEP;setTimeout(()=>{if(lead.includes(t))leadOnScreen();},0);};
 
 /* ---------- the day's path ---------- */
 let cur=null;                                  /* {i, d: the day, done: announced} while inside a path step */
@@ -127,7 +131,7 @@ O.on('levelDone',()=>setTimeout(FR.stepCheck,D(600)));
 /* #433: an error in the middle of a mission sent Oren home (core error handler): the friend says it on the home screen */
 const OOPS='אוֹי, חוֹזְרִים לַמַּסָּע';
 FR.oops=()=>{FR.mount();anim('sad');return talk(OOPS,{ms:3000});};
-FR.speakList=()=>[LISTEN,RXL.hint,RXL.yday,RXL.back,OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
+FR.speakList=()=>[...(window.GOALS?window.GOALS.speakList():[]),LISTEN,RXL.hint,RXL.yday,RXL.back,OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
   ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([a,b])=>[a,FIRST+' '+a,LAST+' '+a,b,b+' '+ALL])):[]),...(SM()?SM().speakList():[])];
 /* ---------- #389 listen first ----------
    A new row of answer buttons (.chs .chb) rests until the spoken question has ended, 4 s at most; with no voice (offline,
