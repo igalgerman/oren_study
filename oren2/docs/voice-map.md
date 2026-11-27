@@ -18,7 +18,7 @@ For each sentence the queue picks ONE voice, in this order:
 |---|---|---|---|
 | 1 | Google voice (he-IL-Chirp3-HD-Kore 0.9; English en-US-Chirp3-HD-Despina 0.85, slow 0.7) | on the family website, after `/api/tts/status` answered ok | `index.html:1543` `googleSay` |
 | 2 | Claude artifact voice (`window.claude.use('tts')`) | inside the Claude artifact | `index.html:1557` (in `say`), setup `index.html:1451-1456` (`TTS`, `useClaude`) |
-| 3 | browser voice (`speechSynthesis`) | the one fallback (owner, answer 3: only when the whole session is offline) | `index.html:1518` `browserSay` |
+| 3 | browser voice (`speechSynthesis`) | the one fallback (owner, answer 3: only when the whole session is offline; on the family site, online, Google is tried even when the status check failed, #404) | `index.html:1518` `browserSay` |
 
 - `sayNext()` — waits for the status check (`GV.pending`); `sayOne()` rechecks the status in the background, then picks the voice.
 - `index.html:2343` — `say`, `hush` and `sayNow` are given to every pack file as `O.say` / `O.hush` / `O.sayNow`.
@@ -26,8 +26,10 @@ For each sentence the queue picks ONE voice, in this order:
 ### Google voice details (`googleSay`, `index.html:1543`)
 - `new Audio('/api/tts?t=…&v=…&r=…&k=<ver>')` (`index.html:1546`), one part at a time: texts over 400 chars are cut by
   `ttsParts` (`index.html:1535`, #401); the next part starts on `onended`.
-- On a failure (`timeout` after `GV.ms` = 8 s, `audio-error`, `no-audio`, `blocked`): one retry, then `browserSay`
-  (`index.html:1547`). Note: today this also happens online when one recording is missing — audit 9/11 (#404) sets the rule.
+- On a failure (`timeout` after `GV.ms` = 8 s, `audio-error`, `no-audio`): one retry (`blocked` = autoplay refused: no retry).
+  Then (#404, audit 9/11): offline (`navigator.onLine === false`) -> `browserSay`; online -> `vmMark`: the text on the screen
+  lights up (`.vmiss`) with a 🔊 (`.vmissb`) that tries again; text on a button or not on the screen -> the top-bar 🔊
+  (`#btnSay`) lights up and retries that line. `hush()` turns the lights off (`vmClear`). Test: `voice-stats` (#404 lines).
 - `/api/tts/status` check: `index.html:1525` (`GV.check`, 3 tries at start, again after 20 s when it failed).
 
 ### Claude voice (artifact)
