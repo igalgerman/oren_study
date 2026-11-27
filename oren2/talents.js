@@ -1375,7 +1375,7 @@ function stepsOfRnd(dm,n,used){if(dm==='math')return Array(n).fill('math');const
 const age=id=>{const v=(T.S().dom||{})[id];return v==null?15:Math.min(14,Math.max(0,dayNum()-v))+1;};
 function wpick(arr,n){const a=arr.slice(),out=[];while(out.length<n&&a.length){let r=Math.random()*a.reduce((x,y)=>x+age(y.id),0),k=0;for(;k<a.length-1;k++){r-=age(a[k].id);if(r<=0)break;}out.push(a.splice(k,1)[0]);}return out;}
 /* 3 steps in the chosen domain + 1 surprise from another one ("together" = 1 together step + 2 surprises) */
-function choose(dm,first){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.bs|0)>0;let st=dm==='tog'?[togStep(true)]:first?[first]:[];
+function choose(dm,first,quiet){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.bs|0)>0;let st=dm==='tog'?[togStep(true)]:first?[first]:[];
   /* #634 every path of the day is a full one (3 + a surprise), the next one too */
   if(dm!=='tog')st=st.concat(stepsOf(dm,3-st.length,new Set([...d.t,...st])));
   wpick(doms().filter(x=>x.id!==gid(dm)),dm==='tog'?2:1).forEach(o=>{st=st.concat(stepsOf(o.id,1,new Set([...d.t,...st])));});
@@ -1390,7 +1390,10 @@ function choose(dm,first){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.bs|0)>
   const sc=ACT['en-day'];st=noEn(st);
   if(!d.en&&!st.some(isEn)&&sc&&sc.inPath())st.push('en-day');if(st.some(isEn))d.en=1;
   if(!bonus){st=st.concat(d.cr||[]);d.cr=[];}st.forEach(x=>{d.t.push(x);d.done.push(0);});d.ch=dm;if(window.PDAY)window.PDAY.mark();
-  if(dm!=='tog'){S0.dom=S0.dom||{};S0.dom[gid(dm)]=dayNum();}O.persist();sfx.ok(2);home();}
+  if(dm!=='tog'){S0.dom=S0.dom||{};S0.dom[gid(dm)]=dayNum();}O.persist();if(quiet)return;sfx.ok(2);home();}
+/* #648 the parent's "new day": the open missions are put aside (done=2: they stay on today's record, so the new path never repeats them
+   or anything he did today), and a new full path starts at once in a domain the quiet balancing picks; stars, gems and the ship stay */
+function newDay(){const d=T.dailyEnsure();d.done=d.done.map(x=>x||2);d.bs=d.t.length;d.ch=null;const dm=(wpick(doms(),1)[0]||{id:'math'}).id;choose(dm,null,1);}
 function lastStep(){const l=T.S().last;if(!l)return null;if(l.id==='math')return nextLevel()?'math':null;const d=T.S().daily;/* #634 not a mission he already played today */
   return T.dailyPool().includes(l.id)&&!(d&&d.d===O.today()&&d.t.includes(l.id))?l.id:null;}
 /* "something else": a few big tiles (math, the doors, together time); a door drills down to its buildings */
@@ -1499,7 +1502,7 @@ function doorsEl(){const doors=h('div','doors2');
   if(window.TAL_arcade)DOORS.push(['arcade','אַרְקֵייד','<span style="font-size:46px;line-height:1">🕹️</span>','#ff3fa4',()=>window.TAL_arcade(O.showMap)]);
   DOORS.forEach(([k,n,ic,c,fn])=>{const b=h('button','door '+k,`<span class="dico">${ic}</span><b>${n}</b>`);b.style.setProperty('--dc',c);b.onclick=()=>{sfx.pop(2);fn();};doors.appendChild(b);});
   return doors;}
-window.TAL_home=home;T.home=home;T.chooseDay=choose;T.otherDay=other;
+window.TAL_home=home;T.home=home;T.chooseDay=choose;T.newDay=newDay;T.otherDay=other;
 /* the guide: points at the one thing to press, says it, then gets out of the way */
 let coachEl=null;
 function coach(target,text,key,times){if(!target||!target.isConnected||!$('#ov').hidden||!$('#dlg').hidden||document.querySelector('.tlock,.tour,.hlock'))return;const S0=T.S();S0.coach=S0.coach||{};const n=S0.coach[key]|0;if(n>=(times||1))return;S0.coach[key]=n+1;O.persist();

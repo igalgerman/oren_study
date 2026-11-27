@@ -117,6 +117,40 @@ const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout:
   ok('... and the ✕ is applied there (the mission is off today)', await until(A, id => { const d = window.TAL.S().daily, c = window.PDAY.cmds().filter(x => x.k === 'drop').pop();
     return !!(window.OREN.save.pcA || {})[c.i] && !d.t.some((x, n) => x === id && !d.done[n]); }, ids.c, 4000));
   ok('his laptop keeps its play heartbeat after the panel', await A.evaluate(() => { window.DAYLOG.beat(); return window.OREN.save.now.dv === window.OREN.dev; }));
+
+  // ---------- #648 "יום חדש": a done plan + the command -> a new path of missions not done today, on Oren's device only ----------
+  await A.locator('.hlock .hback').click().catch(() => { }); await sleep(300);
+  const before = await A.evaluate(() => { const O = window.OREN, T = window.TAL, d = T.dailyEnsure(); d.done = d.done.map(() => 1); d.claimed = 1; O.persist(); O.showMap();
+    window.__tracked = []; const tr = O.track; O.track = function (k, ...a) { window.__tracked.push(k); return tr.call(this, k, ...a); };
+    const did = [...new Set([...d.t, ...window.DAYLOG.rows(O.today()).map(e => e[1])])].filter(x => x !== 'math');
+    window.__kidUI = []; window.__kidTx = []; new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1 && n.matches && n.matches('.pdskip')) window.__kidTx.push(n.textContent); }))).observe(document.body, { childList: true });
+    return { did, stars: O.totalStars(), gems: O.save.gems | 0, n: d.t.length }; });
+  await A.evaluate(() => window.OREN.famNow()); await sleep(600);
+  const bDaily0 = await B.evaluate(() => { window.__kidUI = []; return JSON.stringify(window.TAL.S().daily); });
+  await B.evaluate(() => window.TAL.parentPanel('day')); await sleep(400);
+  const nd = B.locator('#sPar .bigbtn', { hasText: 'יום חדש' });
+  ok('the parent day view has one "יום חדש" button', (await nd.count()) === 1);
+  await nd.click(); await sleep(300);
+  { const r = await B.evaluate(() => { const c = window.PDAY.cmds().filter(x => x.k === 'new').pop(); return { c, me: window.OREN.dev }; });
+    ok('the new-day command is for Oren\'s device and carries the sender', r.c && r.c.to === 'kid' && r.c.by === r.me, JSON.stringify(r)); }
+  ok('the parent sees "יום חדש · נשלח…" in today\'s timeline', /יום חדש[^]*נשלח…/.test(await B.locator('#sPar .dllog').textContent().catch(() => '')));
+  await exitB();
+  ok('the parent\'s phone does not take the new day (no overlay, its own path copy unchanged)', !(await bKid()).length && !(await B.evaluate(() => (window.__tracked || []).includes('newday'))) &&
+    !(await B.evaluate(() => window.DAYLOG.rows(window.OREN.today()).some(e => e[1] === 'newday'))), JSON.stringify(await bKid()));
+  await pullA();
+  ok('Oren\'s laptop: the friend says "יוֹם חָדָשׁ, מַסָּע חָדָשׁ!"', await until(A, () => window.__kidTx.some(t => /יוֹם חָדָשׁ, מַסָּע חָדָשׁ!/.test(t)), null, 4000));
+  { const r = await A.evaluate(() => { const O = window.OREN, d = window.TAL.S().daily, o = d.bs | 0;
+      return { t: d.t.slice(o), open: d.done.slice(o).filter(x => !x).length, stars: O.totalStars(), gems: O.save.gems | 0, ev: (window.__tracked || []).includes('newday'),
+        row: window.DAYLOG.rows(O.today()).some(e => e[1] === 'newday'), map: !document.querySelector('#sHome').hidden }; });
+    ok('a new path with open missions starts at once', r.t.length >= 3 && r.open === r.t.length && r.map, JSON.stringify(r));
+    ok('none of its missions was done today', !r.t.some(x => before.did.includes(x)), JSON.stringify({ t: r.t, did: before.did }));
+    ok('stars and gems unchanged', r.stars === before.stars && r.gems === before.gems, JSON.stringify({ r, before }));
+    ok('a play log event and a day log line on his laptop', r.ev && r.row, JSON.stringify(r)); }
+  await sleep(2500); await A.evaluate(() => window.OREN.famNow()); await sleep(600);
+  await B.evaluate(() => window.TAL.parentPanel('day')); await sleep(300);
+  ok('the parent\'s timeline shows "יום חדש" with "אורן שמע ✓"', await until(B, () => [...document.querySelectorAll('#sPar .dllog .dlrow')].some(r => /יום חדש/.test(r.textContent) && /אורן שמע ✓/.test(r.textContent)), null, 6000),
+    await B.evaluate(() => [...document.querySelectorAll('#sPar .dllog .dlrow')].map(r => r.textContent).join(' | ')));
+  ok('no kid overlay on the parent\'s phone after the new day', !(await bKid()).length, JSON.stringify(await bKid()) + ' ' + bDaily0.length);
   ok('no page errors', !errs.length, errs.join(' | '));
   await b.close(); srv.close();
   console.log(res.join('\n')); const f = res.filter(x => x.startsWith('FAIL')).length; console.log('RESULT kidcmd', res.length - f, f); process.exit(f ? 1 : 0);
