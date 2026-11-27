@@ -63,7 +63,7 @@ const NIK = /[ְ-ּ]/;
     ['sci-animals', ['sci-groups'], '.tq .chs .chb', /יוֹנֵק/],
     ['sci-mag', ['sci-mag'], '.tq .chs .chb', /בַּרְזֶל/],
     ['world-ani', ['world-cont'], '.tq .chs .chb', /יַבֶּשֶׁת/],
-    ['mus2-read', ['mus-staff'], '.m2', /חֲמִשָּׁה/],
+    ['mus2-read', ['mus-staff'], '.m2', /חֲמֻשָּׁה/],
     ['think-ana', ['think-ana'], '.thq .chs .chb', /זוּג/],
     ['think-mat', ['think-mat'], '.thq .chs .chb', /שׁוּרָה/],
     ['code-maze', ['code-prog'], '.lvgo', /חִצִּים/],

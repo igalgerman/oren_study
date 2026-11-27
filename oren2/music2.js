@@ -222,8 +222,8 @@ if(LN){LN.add('mus-len',{title:'כַּמָּה זְמַן נִמְשָׁךְ ת�
     {art:()=>`<div class="lcrow">${staffSVG([{i:0,d:'e',beam:'s'},{i:0,d:'e',beam:'e'}],{one:true,minW:160})}<span class="lcarr">=</span>${staffSVG([{i:0,d:'q'}],{one:true,minW:160})}</div>`,t:'שְׁתֵּי שְׁמִינִיּוֹת יַחַד נִמְשָׁכוֹת כְּמוֹ רֶבַע אֶחָד.'}]});
   /* the staff before the first note-reading questions (#258): where do, re, mi sit */
   LN.add('mus-staff',{title:'אֵיפֹה יוֹשְׁבִים הַתָּוִים?',bg:'final',cards:[
-    {art:()=>staffSVG([],{minW:240}),t:'אֵלֶּה חֲמִשָּׁה קַוִּים, וְקוֹרְאִים לָהֶם הַחֲמִשָּׁה. כָּל תָּו יוֹשֵׁב עַל קַו אוֹ בֵּין שְׁנֵי קַוִּים.'},
-    {art:()=>staffSVG([{i:0}],{minW:240}),t:'זֶה דּוֹ. הוּא יוֹשֵׁב מִתַּחַת לַחֲמִשָּׁה, עַל קַו קָטָן מִשֶּׁלּוֹ.'},
+    {art:()=>staffSVG([],{minW:240}),t:'אֵלֶּה חֲמִשָּׁה קַוִּים, וְקוֹרְאִים לָהֶם הַחֲמֻשָּׁה. כָּל תָּו יוֹשֵׁב עַל קַו אוֹ בֵּין שְׁנֵי קַוִּים.'},
+    {art:()=>staffSVG([{i:0}],{minW:240}),t:'זֶה דּוֹ. הוּא יוֹשֵׁב מִתַּחַת לַחֲמֻשָּׁה, עַל קַו קָטָן מִשֶּׁלּוֹ.'},
     {art:()=>staffSVG([{i:0},{i:1},{i:2}],{minW:240}),t:'כָּל צַעַד לְמַעְלָה הוּא הַתָּו הַבָּא: דּוֹ, רֶה, מִי. מִי יוֹשֵׁב עַל הַקַּו הַתַּחְתּוֹן.'}]});}
 /* what Oren knows (#57): reading notes and rhythm, each a ladder of skills over the activity's levels (lv = [from, to]) */
 const KN=window.KNOW;

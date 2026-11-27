@@ -117,5 +117,33 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  ok('#359 day: break/meal settings, reading level and reminders are under settings, not on the day view',!s7.dayHealth&&!s7.dayRead&&!s7.dayRem&&/תזכורת/.test(s7.sm)&&s7.hs&&s7.rd,JSON.stringify(s7));
  const s8=await p.evaluate(()=>{window.TAL.parentPanel('msg');const d=document.querySelector('#sPar details[open] .pdin');return {chips:d.querySelectorAll('.pchip').length,gift:/מתנה|💎/.test(d.textContent)};});
  ok('P2 msg: no gift chips',s8.chips===0&&!s8.gift,JSON.stringify(s8));
+ // #61: suggestions from what the system learned (1-3 plain lines, hidden when there is nothing; one button where the action is obvious)
+ const s9=await p.evaluate(()=>{const P=window.PDAY,T=window.TAL,pool=T.dailyPool();const by=t=>pool.find(id=>P.topOf(id)===t&&!/^ln-/.test(id));const ids={r:by('readg'),e:by('explore'),c:by('create')};
+   const row=(id,ok,n)=>[600,id,1,ok,n,0,'c'];const tops=['math','readg','explore','create'];
+   const kinds=(days,t)=>P.suggest(days,t||tops).map(x=>x.k+':'+x.tp);
+   return {ids,none:kinds([]),hard:kinds([[row(ids.r,2,8),row('math',5,6),row(ids.e,3,4),row(ids.c,0,0)]]),easy:kinds([[row('lv:a1',10,10),row(ids.r,6,8)],[row('math',9,10),row(ids.e,4,6),row(ids.c,0,0)]]),
+     miss:kinds([[row('math',6,8),row(ids.r,6,8)],[row(ids.e,0,0)]]),few:kinds([[row('math',1,1),row(ids.r,0,2),row(ids.e,0,0),row(ids.c,0,0)]]),
+     max:P.suggest([[row('math',20,20),row(ids.r,1,8),row(ids.e,1,8)]],tops).length,skip:kinds([[row('math',6,8),row(ids.r,6,8),row(ids.e,0,0,),[600,ids.c,0,0,0,0,'p']]])};});
+ ok('#61 no data: no suggestions',s9.none.length===0,JSON.stringify(s9.none));
+ ok('#61 too hard: a topic under 60% (5+ answers this week)',s9.hard.join()==='hard:readg',JSON.stringify(s9.hard));
+ ok('#61 too easy: a topic at 90%+ (10+ answers this week)',s9.easy.join()==='easy:math',JSON.stringify(s9.easy));
+ ok('#61 not played: a topic with no play this week',s9.miss.join()==='miss:create',JSON.stringify(s9.miss));
+ ok('#61 too few answers: no easy/hard guess',s9.few.length===0,JSON.stringify(s9.few));
+ ok('#61 at most 3 suggestions',s9.max===3,String(s9.max));
+ ok('#61 a parent skip is not play',s9.skip.join()==='miss:create',JSON.stringify(s9.skip));
+ const s10=await p.evaluate(ids=>{const O=window.OREN,T=window.TAL,P=window.PDAY;const sv=O.realSave;const keep=JSON.stringify({a:sv.alog,d:T.S().daily,pc:(sv.set||{}).pc});
+   const dk=b=>{const x=new Date();x.setDate(x.getDate()-b);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');};
+   sv.alog={};T.S().daily={d:O.today(),t:['math',ids.r],done:[0,0],ch:'math',cr:[]};T.parentPanel('day');const empty=!document.querySelector('#sPar .pdsug');
+   sv.alog[dk(1)]={a:{},s:0,k:{},e:[[600,'math',3,10,10,0,'c'],[620,ids.r,1,2,8,0,'c'],[640,ids.e,3,4,5,0,'c']]};sv.alog[O.today()]={a:{},s:0,k:{},e:[[600,'lv:x',3,5,5,0,'c']]};
+   T.parentPanel('day');const el=document.querySelector('#sPar .pdsug');const its=el?[...el.querySelectorAll('.pdsugi')].map(x=>x.textContent):[];
+   const btns=el?[...el.querySelectorAll('button')].map(x=>x.textContent):[];return {empty,its,btns,before:keep};},s9.ids);
+ ok('#61 the block is hidden when there is nothing to suggest',s10.empty);
+ ok('#61 the panel shows 1-3 plain lines: hard, easy, not played',s10.its.length===3&&/קשה לו/.test(s10.its[0])&&/קל לו/.test(s10.its[1])&&/לא שיחק/.test(s10.its[2])&&!s10.its.join('').match(/[ְ-ׇ]/),JSON.stringify(s10.its));
+ ok('#61 one button where the action is obvious (easy -> he knows it, not played -> add today)',s10.btns.length===2&&/כבר יודע/.test(s10.btns[0])&&/להוסיף/.test(s10.btns[1]),JSON.stringify(s10.btns));
+ await p.evaluate(()=>document.querySelector('#sPar .pdsug').scrollIntoView({block:'center'}));await shot('suggest');
+ const s11=await p.evaluate(()=>{const P=window.PDAY;const b=[...document.querySelectorAll('#sPar .pdsug button')];b[0].click();const k1=P.cmds().slice(-1)[0];
+   [...document.querySelectorAll('#sPar .pdsug button')].find(x=>/להוסיף/.test(x.textContent)).click();const k2=P.cmds().slice(-1)[0];return {k1:k1&&[k1.k,k1.a],k2:k2&&[k2.k,P.topOf(k2.a)]};});
+ ok('#61 the buttons send the existing commands (know math, add a create mission)',JSON.stringify(s11.k1)==='["know","math"]'&&JSON.stringify(s11.k2)==='["add","create"]',JSON.stringify(s11));
+ await p.evaluate(k=>{const O=window.OREN,T=window.TAL;const x=JSON.parse(k);O.realSave.alog=x.a||{};T.S().daily=x.d;O.realSave.set=O.realSave.set||{};O.realSave.set.pc=x.pc||[];O.persist();},s10.before);
  ok('no JS errors',!errs.length,errs.slice(0,5).join(' | '));
  await b.close();L.finish('parent-'+L.variant,res);})();

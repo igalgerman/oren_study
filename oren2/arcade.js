@@ -23,7 +23,7 @@ function openArcade(back){if(back)back0=back;back0=back0||O.showMap;T.setKey(nul
 const later=f=>setTimeout(f,D(700));
 /* ---------- shared game frame ---------- */
 let cur=null;
-function frame(id,title){const gm=G(id);O.setScreen('sTal','final',()=>{if(cur)cur.stop();openArcade();});T.hudT(gm.n);
+function frame(id,title){const gm=G(id);O.setScreen('sTal','final',()=>{if(cur)cur.stop();openArcade();});T.hudT(gm.n);if(O.hereBegin)O.hereBegin('arc:'+id);/* #44 the place + the pause button */
   const s=$('#sTal');s.innerHTML='';const box=h('div','arc game');box.style.setProperty('--nc',gm.c);
   const top=h('div','gtop',`<div class="rule">${title||''}</div><div class="gstat"><span class="sc">⭐ <b>0</b></span><span class="tm"></span></div>`);
   const field=h('div','field');box.append(top,field);s.appendChild(box);
@@ -53,7 +53,7 @@ function balloon(){const F=frame('balloon','פּוֹצֵץ כַּמָּה שֶׁ
   function hit(o){if(!alive||o.dead)return;o.dead=true;o.el.classList.add('boom');setTimeout(()=>o.el.remove(),D(260));list=list.filter(x=>x!==o);
     if(good(o)){score++;pops++;F.score(score);sfx.pop(score%8);O.floatText(o.el,'+1');if(phase===0&&pops>=8){phase=1;pops=0;rule();}else if(phase===1&&pops>=6&&t.wide){phase=2;pops=0;rule();}}
     else{sfx.no();o.el.classList.add('bad');}}
-  const loop=now=>{if(!alive||!F.field.isConnected){alive=false;return;}const dt=Math.min(50,now-last);last=now;spawn-=dt;if(spawn<=0){mk();spawn=D(t.spawn);}
+  const loop=now=>{if(!alive||!F.field.isConnected){alive=false;return;}if(O.paused){end+=now-last;last=now;requestAnimationFrame(loop);return;}/* #44 paused: frozen */const dt=Math.min(50,now-last);last=now;spawn-=dt;if(spawn<=0){mk();spawn=D(t.spawn);}
     list.forEach(o=>{o.y-=o.sp*dt;o.el.style.top=o.y+'px';});list.filter(o=>o.y<-90).forEach(o=>{o.el.remove();});list=list.filter(o=>o.y>=-90);
     const left=Math.max(0,Math.ceil((end-now)/1000));F.time('⏱️ '+left);if(now>=end){done();return;}requestAnimationFrame(loop);};
   function done(){if(!alive)return;alive=false;const st=score>=20?3:score>=12?2:1;finish('balloon',score,st);}
@@ -70,12 +70,12 @@ function mole(){const F=frame('mole');let score=0,alive=true,end=0,tmr=0;const t
     const m=hl.querySelector('.mole');m.onpointerdown=e=>{e.preventDefault();whack(i);};}
   F.field.appendChild(g);F.field.classList.add('mf');
   const state=Array(9).fill(null);
-  function pop(){if(!alive||!g.isConnected)return;const free=[...Array(9).keys()].filter(i=>!state[i]);if(free.length){const i=pick(free);const ex=mkEx(Math.random()<.6);state[i]=ex;holes[i].querySelector('.tag').textContent=ex.t;holes[i].classList.add('up');
-      const stay=D(t.stay);setTimeout(()=>{if(state[i]===ex){state[i]=null;holes[i].classList.remove('up');}},stay);}
+  function pop(){if(!alive||!g.isConnected)return;if(O.paused){tmr=setTimeout(pop,250);return;}/* #44 */const free=[...Array(9).keys()].filter(i=>!state[i]);if(free.length){const i=pick(free);const ex=mkEx(Math.random()<.6);state[i]=ex;holes[i].querySelector('.tag').textContent=ex.t;holes[i].classList.add('up');
+      const stay=D(t.stay);const hide=()=>{if(O.paused)return setTimeout(hide,250);if(state[i]===ex){state[i]=null;holes[i].classList.remove('up');}};setTimeout(hide,stay);}
     tmr=setTimeout(pop,D(t.gap));}
   function whack(i){const ex=state[i];if(!alive||!ex)return;state[i]=null;const hl=holes[i];hl.classList.remove('up');
     if(ex.ok){score++;F.score(score);sfx.hit?sfx.hit():sfx.pop(4);hl.classList.add('bonk');setTimeout(()=>hl.classList.remove('bonk'),D(300));O.floatText(hl,'+1');}else{sfx.no();hl.classList.add('wrong');setTimeout(()=>hl.classList.remove('wrong'),D(500));}}
-  const tick=()=>{if(!alive||!g.isConnected){alive=false;return;}const left=Math.max(0,Math.ceil((end-performance.now())/1000));F.time('⏱️ '+left);if(left<=0)return done();setTimeout(tick,250);};
+  let tl=0;const tick=()=>{if(!alive||!g.isConnected){alive=false;return;}const tn=performance.now();if(O.paused&&tl)end+=tn-tl;tl=tn;if(O.paused){setTimeout(tick,250);return;}/* #44 paused: the clock waits */const left=Math.max(0,Math.ceil((end-performance.now())/1000));F.time('⏱️ '+left);if(left<=0)return done();setTimeout(tick,250);};
   function done(){if(!alive)return;alive=false;clearTimeout(tmr);const st=score>=12?3:score>=7?2:1;finish('mole',score,st);}
   T.setKey(e=>{const n=+e.key;if(n>=1&&n<=9)whack([6,7,8,3,4,5,0,1,2][n-1]);});
   cur={stop:()=>{alive=false;clearTimeout(tmr);},finish:(sc)=>{if(sc!=null)score=sc;done();},hit:()=>{const i=state.findIndex(x=>x&&x.ok);if(i>=0)whack(i);else{score++;F.score(score);}},get score(){return score;}};
@@ -135,7 +135,7 @@ function basket(){const F=frame('basket');const cfg=tune('basket');const N=8;let
     area.appendChild(answers(q,(ok,b,row)=>{if(phase!=='q')return;if(ok){b.classList.add('ok');sfx.ok(k);setTimeout(()=>{if(alive)aim();},D(350));}else{b.classList.add('bad');b.disabled=true;sfx.no();phase='x';
       setTimeout(()=>{row.querySelectorAll('.ab').forEach(x=>{if(+x.textContent===q.ans)x.classList.add('ok');});msg.textContent='הַתְּשׁוּבָה: '+q.ans;setTimeout(next,D(1300));},D(300));}}));};
   const aim=()=>{phase='aim';area.innerHTML='';area.append(bar,shoot);F.rule('👆 לְחַץ "זְרֹק!" כְּשֶׁהַפַּס בַּיָּרֹק!','לְחַץ זְרֹק כְּשֶׁהַפַּס בַּיָּרֹק');meter=0;dir=1;last=performance.now();T.setKey(e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();throwIt();}});requestAnimationFrame(swing);};
-  const swing=now=>{if(!alive||phase!=='aim'||!bar.isConnected)return;const dt=now-last;last=now;meter+=dir*dt*cfg.meter;if(meter>=100){meter=100;dir=-1;}if(meter<=0){meter=0;dir=1;}bar.querySelector('.cur').style.left=meter+'%';requestAnimationFrame(swing);};
+  const swing=now=>{if(!alive||phase!=='aim'||!bar.isConnected)return;if(O.paused){last=now;requestAnimationFrame(swing);return;}const dt=now-last;last=now;meter+=dir*dt*cfg.meter;if(meter>=100){meter=100;dir=-1;}if(meter<=0){meter=0;dir=1;}bar.querySelector('.cur').style.left=meter+'%';requestAnimationFrame(swing);};
   shoot.onclick=()=>throwIt();
   function throwIt(force){if(phase!=='aim')return;phase='fly';const ok=force||Math.abs(meter-50)<=zone/2;ball.className='bball '+(ok?'swish':'miss');sfx.whoosh?sfx.whoosh():sfx.pop(2);
     setTimeout(()=>{if(!hoop.isConnected)return;if(ok){made++;F.score(made);msg.textContent='סַל! 🎉';msg.className='kmsg win';hoop.classList.add('shake');sfx.win();setTimeout(()=>hoop.classList.remove('shake'),D(500));}else{msg.textContent='כִּמְעַט! 💪';msg.className='kmsg';sfx.no();}setTimeout(next,D(1000));},D(650));}
@@ -152,7 +152,7 @@ function swim(){const F=frame('swim');const cfg=tune('swim');const N=10;let you=
   const ask=()=>{q=qGen(cfg);area.innerHTML='';F.rule(`🏊 עֲנֵה מַהֵר כְּדֵי לִשְׂחוֹת: <span class="big ltr">${q.txt} = ?</span>`,'עֲנֵה מַהֵר כְּדֵי לִשְׂחוֹת. '+sayQ(q.txt));
     area.appendChild(answers(q,(good,b)=>{if(!alive)return;if(good){you++;ok++;F.score(ok);b.classList.add('ok');me.classList.remove('stroke');void me.offsetWidth;me.classList.add('stroke');sfx.pop(4);put();if(you>=N)return end(true);setTimeout(()=>{if(alive)ask();},D(250));}
       else{b.classList.add('bad');b.disabled=true;sfx.no();}}));};
-  const loop=now=>{if(!alive||!lanes.isConnected){alive=false;return;}const dt=Math.min(50,now-last);last=now;rival=Math.min(1,rival+dt/D(rivalT));put();F.time(rival>you/N?'🐬 מוֹבִיל':'🏊 מוֹבִיל');if(rival>=1)return end(false);requestAnimationFrame(loop);};
+  const loop=now=>{if(!alive||!lanes.isConnected){alive=false;return;}if(O.paused){last=now;requestAnimationFrame(loop);return;}/* #44 the dolphin waits too */const dt=Math.min(50,now-last);last=now;rival=Math.min(1,rival+dt/D(rivalT));put();F.time(rival>you/N?'🐬 מוֹבִיל':'🏊 מוֹבִיל');if(rival>=1)return end(false);requestAnimationFrame(loop);};
   function end(win){if(!alive)return;alive=false;const st=win?(rival<.75?3:2):1;finish('swim',ok,st,win?' · נִצַּחְתָּ! 🏆':' · הַדּוֹלְפִין נִצֵּחַ הַפַּעַם');}
   cur={stop:()=>{alive=false;},finish:sc=>{if(sc!=null)ok=sc;end(ok>=N);},hit:()=>{const b=[...area.querySelectorAll('.ab')].find(x=>+x.textContent===q.ans);if(b)b.click();},get score(){return ok;}};
   put();ask();countdown(F,()=>{last=performance.now();requestAnimationFrame(loop);});}
