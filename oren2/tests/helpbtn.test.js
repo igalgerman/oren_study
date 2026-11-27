@@ -71,6 +71,16 @@ const NOFEED = ['think-test'];
   ok(withQ.length >= 30 && !miss.length, `question screens found in ${withQ.length} activities` + (miss.length ? ' — missing ' + miss.join(',') : ''));
   ok(!bad.length, 'every question has one help button: clue (#409 in the friend\'s bubble, no box), then answer + explanation, offered after 2 wrong (' + bad.length + ') ' + bad.slice(0, +(process.env.HB_ALL || 12)).join(' | '));
 
+  /* #622 a picture answer (read-sent 'מה אבא בונה?' → 🪜): tap 2 must not send the emoji to the voice and must not say only 'the answer is:' */
+  const pic = await p.evaluate(async () => { const EMO = /[\p{Extended_Pictographic}️‍]/u, NIK = /[֑-ׇ]/g;
+    for (let k = 0; k < 30; k++) { document.querySelector('#ov').hidden = true; window.TAL.ACT['read-sent'].run(() => {}); await new Promise(r => setTimeout(r, 60));
+      const w = document.querySelector('#sTal .helpq'), h = w && w._help, bs = [...document.querySelectorAll('#sTal .chs .chb')];
+      if (!h || !bs.length || !bs[h.ans] || !bs[h.ans].querySelector('.pic') || /[א-ת]/.test(bs[h.ans].textContent)) continue;
+      h.tap(); h.tap(); const said = String(window.OREN.sayNow || ''), bare = said.replace(NIK, '').replace(/[\s:.]+/g, ' ').trim();
+      return { said, emoji: EMO.test(said), bare: bare === 'התשובה היא' || !bare, lit: bs[h.ans].classList.contains('show') }; }
+    return null; });
+  ok(pic && !pic.emoji && !pic.bare && pic.lit, '#622 read-sent picture answer: help tap 2 says no emoji, not just "the answer is:", the picture is lit ' + JSON.stringify(pic));
+
   /* 3. the math levels (#sPlay) */
   await p.evaluate(() => { document.querySelector('#ov').hidden = true; document.querySelector('#sTal').innerHTML = ''; });   // #424: the last activity's round (its timers) ends here, before the math levels
   const math = await p.evaluate(async () => { const O = window.OREN, G = window.__oren4, out = [], seen = new Set();
