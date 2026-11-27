@@ -223,7 +223,7 @@ def tick(ts, now=None):
     for q in start:                                       # #368: the page, started by python itself
         name, key = win_name(q), q["key"]
         st[key] = {"name": name, "since": now, "source": q.get("source", ""), "issue": issue_no(q), "text": q.get("text", ""),
-                   "pid": start_page(q)}
+                   "gates": q.get("gates", []), "pid": start_page(q)}
         log(f"{name}: page started for {key} (pid {st[key]['pid']})")
     idle = [t["name"] for n in PUSHERS for t in ts if t.get("name") == n and t.get("state") == "live" and t.get("status") in IDLE]
     for key, e in st.items():
@@ -285,10 +285,13 @@ def answer(key, text, from_page=False, from_tg=False, tg=0):
     """Relay the owner's answer: comment on the source issue, ANSWERED in the questions issue, tell the orchestrator,
     and a cloud worker (remote-<n>) gets it in its session. -> dict of what was done."""
     st = load()
-    info = st.get(key) or next(({"source": q.get("source", ""), "issue": issue_no(q), "text": q.get("text", "")}
+    info = st.get(key) or next(({"source": q.get("source", ""), "issue": issue_no(q), "text": q.get("text", ""),
+                                      "gates": q.get("gates", [])}
                                      for q in OQ.open_list() or [] if q["key"] == key), {})
     n, src, done = info.get("issue", 0), info.get("source", ""), {}
     if n: done["issue"] = _gh("issue", "comment", str(n), "--body", R.redact(OQ.answer_body(key, text)))[0] == 0
+    for g in [g for g in info.get("gates", []) if g != n]:     # #630: the record also on each issue the question gates
+        done.setdefault("gates", {})[g] = _gh("issue", "comment", str(g), "--body", R.redact(OQ.answer_body(key, text)))[0] == 0
     done["answered"] = OQ.mark_answered(key, text)
     resumes = src.startswith("remote-") and n and R.where_of(n) == "remote"   # #135: runner-managed: the watchdog resumes the session from the issue comment
     if src.startswith("remote-") and n and not resumes:
