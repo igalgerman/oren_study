@@ -49,10 +49,11 @@ const ACT = 'sci-animals';                                   /* a quiz with 4 op
   await p.waitForFunction(() => speechSynthesis.log.length > 0, null, { timeout: 3000 }).catch(() => {}); s = await st();
   ok('the friend says "let\'s listen again" (nikud)', s.said.length >= 1 && window_has(s.said[0], line) && NIK.test(line), JSON.stringify(s.said));
   ok('the friend line is in the voice pregen list', await p.evaluate(l => window.FRIEND.speakList().includes(l), line));
-  const q = await p.evaluate(() => window.OREN.sayNow);
+  const q0 = await p.evaluate(() => window.OREN.sayNow), q = await p.evaluate(() => window.FRIEND.noGoal(window.OREN.sayNow));   // #414 the mission's goal is said once, not again
   await p.evaluate(() => { const u = speechSynthesis.last; if (u && u.onend) u.onend({}); }); await sleep(150);
   s = await st();
   ok('then the question is read again', s.said.length >= 2 && s.said[s.said.length - 1] === speechSynthesis_like(q, s.said), JSON.stringify({ said: s.said, q }));
+  ok('#414 the question read again is the question alone (the goal is not said again)', !/נלמד/.test(bare(s.said[s.said.length - 1] || '')) && (q0 === q || /נִלְמַד/.test(q0)), JSON.stringify({ said: s.said, q0 }));
   ok('still resting before 2 s', s.locked);
   await sleep(2100); s = await st();
   ok('after 2 s the options are open again', !s.locked);

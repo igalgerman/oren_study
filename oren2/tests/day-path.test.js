@@ -81,7 +81,7 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
    const w=O.WORLDS.find(x=>x.id==='sub');w.levels.forEach(l=>O.save.s[l.id]=2);O.emit('levelDone',w.levels[0],2);const wait=d.t.length===0&&d.cr.includes('rw:sub');T.chooseDay('math');return wait&&T.S().daily.t.includes('rw:sub');}));
  // --- fewer rewards ---
  await p.evaluate(()=>{window.__toasts=0;new MutationObserver(m=>m.forEach(r=>r.addedNodes.forEach(n=>{if(n.classList&&n.classList.contains('toast'))window.__toasts++;}))).observe(document.body,{childList:true});window.OREN.showMap();});await sleep(4800);
- ok('badges are earned quietly (no toast)',await p.evaluate(()=>window.__toasts===0&&Object.keys(window.TAL.S().bdg||{}).length>0));
+ ok('#426 no badges earned, no toast',await p.evaluate(()=>window.__toasts===0&&!Object.keys(window.TAL.S().bdg||{}).length));
  await p.evaluate(()=>window.TAL_arcade(window.OREN.showMap));await sleep(200);
  ok('arcade has no tickets or prize shop',await p.locator('.prize,.tkbig').count()===0&&await p.evaluate(()=>window.__arc.state().tickets===undefined));
  // --- #424 one short English scene per daily path (5 cards, letters and sounds first), at most one a day unless Oren picks English himself ---

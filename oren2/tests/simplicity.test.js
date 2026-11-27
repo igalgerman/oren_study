@@ -126,12 +126,6 @@ const { chromium } = require('playwright');
   // P2.5 gratitude jar: 6 options
   r = await p.evaluate(() => { window.TAL.ACT['mind-jar'].run(() => window.OREN.showMap()); return document.querySelectorAll('#sTal .thb').length; });
   ok('P2.5 jar: 6 options', r === 6, String(r));
-  // P2.6 badges: earned ones + one "next badge"; no "x/N" in the top bar
-  r = await p.evaluate(() => { const T = window.TAL; const S = T.S(); S.tl = {}; S.bdg = { star1: 1 }; S.art = ['.', '.']; S.jar = []; S.typ = { best: {} }; S.code = {}; S.wr = {}; T.badges(() => window.OREN.showMap());
-    const c = [...document.querySelectorAll('#sTal .bdg')]; return { n: c.length, got: c.filter(x => x.classList.contains('got')).length, next: c.filter(x => x.classList.contains('next')).map(x => x.textContent), hud: document.querySelector('#hud').textContent }; });
-  ok('P2.6 badges: only the earned ones + one next', r.n === 2 && r.got === 1 && r.next.length === 1, JSON.stringify(r));
-  ok('P2.6 badges: the next one is the closest (2 of 3 pictures → צַיָּר)', r.next.length === 1 && r.next[0].includes('צַיָּר'), JSON.stringify(r.next));
-  ok('P2.6 badges: no "x/N" count in the top bar', !/\d+\s*\/\s*\d+/.test(r.hud), r.hud);
   /* ---------- batch #216: G2 one "▶ הַמְשֵׁךְ", G3 balanced options, G4 one instruction line + one 🔊 ---------- */
   // G2: every kid "next step" button says הַמְשֵׁךְ (no הַבָּא / לַשְּׁאֵלוֹת / לַחִידוֹן / מַמְשִׁיכִים / הַלְאָה ... on a ▶ button)
   { const src = require('fs').readFileSync(require('path').join(L.ROOT, 'index.html'), 'utf8');
@@ -205,7 +199,7 @@ const { chromium } = require('playwright');
   const studioRows = first => p.evaluate(f => { window.OREN.save.gems = 0; window.OREN.studio(f, () => {}); return [...document.querySelectorAll('#sStudio .orow h4')].map(e => e.textContent); }, first);
   const s1 = await studioRows(true), s2 = await studioRows(false);
   ok('#8 studio: 4 rows, first visit hair/skin/shirt/friend', s1.length === 4 && s1.includes('צֶבַע עוֹר') && !s1.includes('כּוֹבַע') && !s1.includes('מִכְנָסַיִם'), s1.join());
-  ok('#8 studio: 4 rows later, hats instead of skin', s2.length === 4 && s2.includes('כּוֹבַע') && !s2.includes('צֶבַע עוֹר') && !s2.includes('מִכְנָסַיִם'), s2.join());
+  ok('#8/#426 studio: 3 rows later (no skin, no hats)', s2.length === 3 && !s2.includes('כּוֹבַע') && !s2.includes('צֶבַע עוֹר') && !s2.includes('מִכְנָסַיִם'), s2.join());
   r = await p.evaluate(() => ({ sw: Math.min(...[...document.querySelectorAll('#sStudio .sw')].map(e => e.getBoundingClientRect().width)) }));
   if (L.variant === 'phone') ok('#8 studio: colour swatches >= 44px on the phone', r.sw >= 43.5, String(r.sw));
   // reading: the music note "תָּו" is never a picture to guess
@@ -227,6 +221,35 @@ const { chromium } = require('playwright');
   // "one more" on a resting door is a real button with an icon
   r = await p.evaluate(() => { window.HEALTH.showRest('read', document.body); const o = document.querySelector('.hlock .hone'); const out = o ? { t: o.textContent, h: o.getBoundingClientRect().height, u: getComputedStyle(o).textDecorationLine } : null; document.querySelectorAll('.hlock').forEach(e => e.remove()); return out; });
   ok('#8 rest: "one more" is an icon button, not an underlined link', r && /⏭️/.test(r.t) && r.h >= 43.5 && r.u !== 'underline', JSON.stringify(r));
+  /* ---------- #426 rewards: only stars + gems (gems build the kingdom); badges, hats and records are gone ---------- */
+  await p.evaluate(() => { document.querySelector('#ov').hidden = true; const O = window.OREN; O.save.story.intro = 1; O.kingdom(); }); await L.sleep(200);
+  r = await p.evaluate(() => ({ btn: [...document.querySelectorAll('.kmine .tool')].map(x => x.textContent), wall: typeof window.TAL.badges }));
+  ok('#426 kingdom: no badges button, no badge wall', !r.btn.some(t => /תַּגִּים/.test(t)) && r.btn.some(t => /הַגִּבּוֹר/.test(t)) && r.wall === 'undefined', JSON.stringify(r));
+  await L.shot(p, { path: require('path').join(L.SHOTDIR, `426-kingdom-${L.variant}.png`) });
+  await p.evaluate(() => window.OREN.studio(false, () => {})); await L.sleep(200);
+  r = await p.evaluate(() => ({ rows: [...document.querySelectorAll('#sStudio .orow h4')].map(x => x.textContent), price: document.querySelectorAll('#sStudio .pr').length }));
+  ok('#426 studio: no hat row, nothing to buy', !r.rows.some(t => /כּוֹבַע/.test(t)) && r.price === 0 && r.rows.length >= 2, JSON.stringify(r));
+  await L.shot(p, { path: require('path').join(L.SHOTDIR, `426-studio-${L.variant}.png`) });
+  r = await p.evaluate(() => { const T = window.TAL; T.parentPanel('full'); return /תגים/.test(document.querySelector('#sPar').textContent); });
+  ok('#426 parent panel: no badge count', !r);
+  await p.locator('#sPar .bigbtn', { hasText: 'יציאה' }).click(); await L.sleep(300);
+  await p.evaluate(() => { window.__arc.state().best.frog = 5; document.querySelector('#ov').hidden = true; window.__arc.open(() => {}); }); await L.sleep(150);
+  ok('#426 arcade cabinets: no record tag', await p.evaluate(() => !/שִׂיא/.test(document.querySelector('#sTal .cabs').textContent) && !document.querySelector('#sTal .hs')));
+  const ovRec = () => p.evaluate(() => { const o = document.querySelector('#ov'); const t = o.hidden ? '' : o.textContent; o.hidden = true; return t; });
+  await p.evaluate(() => window.__arc.start('frog')); await L.sleep(200); await p.evaluate(() => window.__arc.finish(99)); await L.sleep(300);
+  r = await ovRec(); ok('#426 arcade: a new best shows no "record" title', r && !/שִׂיא/.test(r), r);
+  await p.evaluate(() => { window.OREN.save.sp = {}; window.__oren4.playSpeed(window.OREN.WORLDS[0]); }); await L.sleep(200);
+  await p.evaluate(() => { const q = window.__oren4.play; q.score = 12; q.end = 0; }); await L.sleep(500);
+  r = await ovRec(); ok('#426 speed challenge: the end card has no record line', /12/.test(r) && !/שִׂיא/.test(r), r);
+  await p.evaluate(() => { window.TAL.S().tl['read-flu'] = { s: 2, n: 1, b: 9 }; window.GAPS.dict = null; window.GAPS.race(() => {}); }); await L.sleep(200);
+  r = await p.evaluate(() => document.querySelector('#sTal').textContent);
+  ok('#426 word race: the start screen has no record line', !/שִׂיא/.test(r), r);
+  await p.evaluate(() => window.GAPS.raceRun(() => {}, null, 9)); await L.sleep(150); await p.evaluate(() => window.__race.end()); await L.sleep(300);
+  r = await ovRec(); ok('#426 word race: the end card has no record line', r && !/שִׂיא/.test(r), r);
+  // an old save with badges, a bought hat and records still loads; the hat's gems come back once
+  r = await p.evaluate(() => { const O = window.OREN; O.mergeIn({ t: Date.now() + 1e6, gems: 5, av: { hair: 'black', skin: 'light', shirt: 'green', hat: 'crown', pet: 'cat' }, owned: { none: 1, cap: 1, crown: 1, helmet: 1 }, bdg: { star1: 1 }, sp: { add: 9 }, arc: { best: { frog: 7 }, plays: 3 } });
+    O.hatsBack(); const a = O.save.gems; O.hatsBack(); const svg = O.AV(); return { a, b: O.save.gems, hat: O.save.av.hat, svg: /<svg/.test(svg) }; });
+  ok('#426 old save: a bought hat is refunded once (crown 60 + helmet 20), the hero still draws', r.a === 85 && r.b === 85 && !r.hat && r.svg, JSON.stringify(r));
   await p.evaluate(() => window.OREN.showMap());
   ok('no page errors', !errs.length, errs.join(' | '));
   await b.close();
