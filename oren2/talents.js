@@ -103,7 +103,7 @@ function result(o){const ov=$('#ov');ov.hidden=false;
   ov.innerHTML=`<div class="card"><h2>${o.title||'כָּל הַכָּבוֹד!'}</h2>${o.sub?`<div class="sub">${o.sub}</div>`:''}${o.stars!=null?starsHTML(o.stars):''}${o.gems?`<div class="gain">+${o.gems} ${SPR.gem}</div>`:''}${o.extra||''}</div>`;
   const row=h('div','btnrow');if(o.again){const a=h('button','bigbtn plain sm',ICON.redo+'<span>שׁוּב</span>');a.onclick=()=>{ov.hidden=true;o.again();};row.appendChild(a);}
   const b=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');b.onclick=()=>{ov.hidden=true;o.back();};row.appendChild(b);ov.firstChild.appendChild(row);
-  O.duck(true);setTimeout(()=>O.duck(false),D(2000));sfx.win();if(window.FRIEND)setTimeout(()=>window.FRIEND.stepCheck(),0);if(o.stars!=null)for(let k=0;k<o.stars;k++)setTimeout(()=>sfx.star(k),D(300+k*350));O.rain();setTimeout(()=>b.focus(),300);}
+  O.celebrate(ov.firstChild);/* #427 one fixed 2 s celebration; the big one only at a chapter end (story.js) */if(window.FRIEND)setTimeout(()=>window.FRIEND.stepCheck(),0);setTimeout(()=>b.focus(),300);}
 function finishAct(id,errors,n,gems,back,again,title){const st=errors<=Math.max(1,n*.1)?3:errors<=Math.max(3,n*.3)?2:1;const bonus=5+st*2;O.addGems(bonus);record(id,st);result({title,stars:st,gems:gems+bonus,back,again});}
 /* generic multiple-choice quiz: q = {pr, opts, ans, cls, ltr, play, auto, reveal(el), explain, key, bank, bkey}
    q.bank: the item comes from a finite bank — its first answer is recorded there (LEARN.seen, key q.bkey or q.key; #360).
@@ -1391,7 +1391,7 @@ function special(i,id){const [kind,k]=id.split(':');const isT=kind==='tog';const
   const L=learned(),kid=isT?(typeof a.kid==='function'?a.kid(L):a.kid):a.t,par=isT?(typeof a.par==='function'?a.par(L):a.par):'';
   O.setScreen('sTal','meadow',O.showMap);T.hudT(isT?'🤝 זְמַן בְּיַחַד':'🏠 מְשִׂימָה בַּבַּיִת');const s=$('#sTal');s.innerHTML='';
   const box=h('div','tspec'+(isT?' tog':''),`<div class="tse bob">${a.e}</div><h1>${isT?a.n:'מְשִׂימָה בַּבַּיִת'}</h1><div class="lsent">${kid}</div>${isT?`<div class="tpar">להורה: ${par}</div>`:''}`);
-  const row=h('div','btnrow');const b=h('button','bigbtn huge',`<span>${isT?'סִיַּמְנוּ':'סִיַּמְתִּי'} ✓</span>`);b.onclick=()=>{fin();sfx.win();O.rain();O.showMap();};row.appendChild(b);box.appendChild(row);s.appendChild(box);
+  const row=h('div','btnrow');const b=h('button','bigbtn huge',`<span>${isT?'סִיַּמְנוּ':'סִיַּמְתִּי'} ✓</span>`);b.onclick=()=>{fin();O.celebrate();O.showMap();};row.appendChild(b);box.appendChild(row);s.appendChild(box);
   O.sayNow=T.spk(kid);setTimeout(()=>{if(box.isConnected)O.say(T.spk(kid));},D(400));}
 function runStep(i){const d=T.dailyEnsure();const id=d.t[i];if(window.FRIEND)window.FRIEND.stepStart(i);if(/:/.test(id)){special(i,id);return;}
   if(id==='math'){const lv=(window.FRIEND&&window.FRIEND.ezRep&&window.FRIEND.ezRep())||nextLevel();/* #411 'hard' -> that level again */if(!lv){O.showJourney();return;}if(O.pathLevel)O.pathLevel(lv.id);
@@ -1426,7 +1426,7 @@ T.stepName=id=>{const P=T.plainHe;if(id==='math')return '🧮 שלב בחשבו�
 function finale(d,q){d.claimed=1;const SH=window.SHIP,pc=SH?SH.award():null;/* #391 the day's ship piece */O.persist();q=quest();/* #386: the day ends with a short hint about tomorrow */const ov=$('#ov');ov.hidden=false;ov.innerHTML=`<div class="card qwin"><div class="qbig">${q.e}</div><h2>${q.z}</h2>${SH?SH.cardHTML(pc):''}</div>`;
   const after=()=>{if(!d.sg&&!d.t.some(x=>/^tog:/.test(x))){d.sg=1;O.persist();suggestTog();}else home();};
   const r=h('div','btnrow');const ok=h('button','bigbtn',ICON.play+'<span>יֶשׁ!</span>');ok.onclick=()=>{ov.hidden=true;if(SH)SH.offer(after);else after();};
-  r.appendChild(ok);ov.firstChild.appendChild(r);sfx.win();O.rain();O.say(T.spk(q.z)+(pc?'\u2063'+T.spk(SH.newSay(pc)):''));}
+  r.appendChild(ok);ov.firstChild.appendChild(r);O.celebrate(ov.firstChild);O.say(T.spk(q.z)+(pc?'\u2063'+T.spk(SH.newSay(pc)):''));}
 function suggestTog(){const pr=T.S().prof||{};const ov=$('#ov');ov.hidden=false;
   ov.innerHTML=`<div class="card"><div class="callp bob">${T.friend()}</div><h2>רוֹצֶה לְשַׂחֵק עִם אַבָּא אוֹ אִמָּא?</h2><div class="sub">לֵךְ לִשְׁאֹל אִם יֵשׁ לָהֶם זְמַן!</div></div>`;
   const r=h('div','btnrow');const no=h('button','bigbtn plain sm','<span>אַחַר כָּךְ</span>');no.onclick=()=>{ov.hidden=true;home();};
@@ -1443,7 +1443,7 @@ function home(){const S0=T.S();
   const mem=d&&!d.done.some(Boolean)&&window.STORYMIX&&window.STORYMIX.dayStart?window.STORYMIX.dayStart():'';
   const say=!d?`${T.hello()}, אוֹרֶן! בְּמָה נְשַׂחֵק?`:dayDone?window.FRIEND.homeSay(d):mem?mem:pickDay?'שָׁלוֹם אוֹרֶן! מָה בָּא לְךָ הַיּוֹם?':nx>=0?`${q.e} ${q.a}`:d.claimed?'כָּל הַכָּבוֹד! עַכְשָׁו זְמַן חוֹפְשִׁי 🎈':'סִיַּמְתָּ אֶת הַשְּׁבִיל! בּוֹא נִרְאֶה אֵיךְ נִגְמַר הַסִּפּוּר.';
   const tl='';
-  s.appendChild(h('div','hstage',`${say?`<div class="hbub2" style="--fc:${pr.col||'#4fae4f'}">${say}${tl}</div>`:''}<div class="hrow"><div class="hpair" role="button" aria-label="מָה אֶפְשָׁר לַעֲשׂוֹת כָּאן?"><span class="hav bob">${O.AV()}</span><span class="hpet2 bob" style="animation-delay:-.7s">${T.friend()}</span></div>${window.SHIP?window.SHIP.el():''}</div>`));
+  s.appendChild(h('div','hstage',`${say?`<div class="hbub2" style="--fc:${pr.col||'#4fae4f'}">${say}${tl}</div>`:''}<div class="hrow"><div class="hpair" role="button" aria-label="מָה אֶפְשָׁר לַעֲשׂוֹת כָּאן?"><span class="hav bob">${O.AV()}</span><span class="hpet2 bob" style="animation-delay:-.7s">${T.friend()}</span>${window.SHIP&&window.SHIP.held?window.SHIP.held():''}</div>${window.SHIP?window.SHIP.el():''}</div>`));
   s.querySelector('.hpair').onclick=()=>{sfx.pop(2);if(dayDone&&d.free)window.FRIEND.bonus();else if(window.TOPIC)window.TOPIC.open();else tour();};
   if(pickDay){/* "what do you feel like today?": 3 big cards (one is "continue" when there is a last activity) + something else */
     const all=doms(),ln=lastStep(),lg=ln&&domOf(ln);if(!d.o||all.some(x=>!d.o.includes(x.id))){d.o=wpick(all,all.length).map(x=>x.id);O.persist();}

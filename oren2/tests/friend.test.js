@@ -30,9 +30,9 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
   ok('"first letter": the picture\'s word is said', !!w && await has(s, w), JSON.stringify({ w, s }));
   ok('step start: the friend ties it to the day\'s story', s.some(x => /בוא|מתחילים|עוד צעד/.test(x.replace(/[\u0591-\u05C7]/g, ''))), JSON.stringify(s));
   const ui = await p.evaluate(() => { const f = document.querySelector('.frc'), pb = document.querySelector('#hudMid #frPath');
-    return { fr: !!f && !f.hidden, dots: pb ? pb.querySelectorAll('i').length : 0, on: pb ? pb.querySelectorAll('i.on').length : 0, cur: pb ? pb.querySelectorAll('i.cur').length : 0, pic: !!document.querySelector('#sTal .tqc .pic.frpic') }; });
+    const t = pb && pb.querySelector('.fpt'); return { fr: !!f && !f.hidden, hero: !!(pb && pb.querySelector('.fph svg')), mix: !!(pb && pb.querySelector('.fpm svg')), k: t ? t.dataset.k : '', label: pb && pb.getAttribute('aria-label'), pic: !!document.querySelector('#sTal .tqc .pic.frpic') }; });
   ok('friend is on the activity screen', ui.fr);
-  ok('path strip in the top bar: one dot per step, done + current marked', ui.dots === 4 && ui.on === 1 && ui.cur === 1, JSON.stringify(ui));
+  ok('path strip in the top bar: the hero chases the Mixer, one step per finished mission (#393)', ui.hero && ui.mix && ui.k === '1' && ui.label === '1/4', JSON.stringify(ui));
   ok('tapping the picture says the word again', ui.pic);
   const overlap = () => p.evaluate(() => { const f = document.querySelector('.frc'); if (!f || f.hidden) return false; const a = f.getBoundingClientRect();
     return [...document.querySelectorAll('#screens .chb, #screens .tqc, #screens .bigbtn')].some(x => { const r = x.getBoundingClientRect(); return r.width && a.left < r.right && a.right > r.left && a.top < r.bottom && a.bottom > r.top; }); });
@@ -168,7 +168,7 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
       const sc = M.scene(); F.stepStart(1); const lead = F._lead(); d.done[1] = 1;
       const ov = document.querySelector('#ov'); ov.innerHTML = '<div class="card"><h2>x</h2><div class="btnrow"><button class="bigbtn">ok</button></div></div>'; ov.hidden = false;
       F.stepCheck(); const pic = ov.querySelector('.frsp'), shp = pic && pic.querySelectorAll('.shp').length, nw = pic && pic.querySelectorAll('.shp.nw').length;
-      F._lead(''); ov.hidden = true; ov.innerHTML = ''; return { open: lead.endsWith(sc.open), pic: !!pic, shp, nw, item: pic && pic.getAttribute('aria-label') === sc.item }; }, id);
+      F._lead(''); ov.hidden = true; ov.innerHTML = ''; return { open: lead.includes(sc.open), pic: !!pic, shp, nw, item: pic && pic.getAttribute('aria-label') === sc.item }; }, id);
     if (!(r.open && r.pic && r.shp === 8 && r.nw === 1 && r.item)) miss.push(id + ' ' + JSON.stringify(r));
   }
   ok('#387 every path mission (' + ids.length + '): the scene\'s opening line + a story picture with the new ship piece', ids.length >= 5 && !miss.length, miss.join(' | '));
@@ -299,7 +299,7 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
   await p.evaluate(() => { const O = window.OREN, T = window.TAL; O.save.gls = null; O.showMap(); const d = T.dailyEnsure(); d.t = ['math', 'read-wp', 'read-pw']; d.done = [1, 0, 0]; O.persist(); });
   s = await said(() => p.evaluate(() => window.TAL_step(1)), 900);
   const gp = await p.evaluate(() => window.GOALS.line('read-wp'));
-  ok('#414 path mission: the goal is said at its start, after the story line', (await voiced(s, gp) || s.some(x => x.replace(/[\u0591-\u05C7]/g, '').includes(gp.replace(/[\u0591-\u05C7]/g, '')))) && s.some(x => /^[^⁣]+ ⁣היום נלמד/.test(x.replace(/[\u0591-\u05C7]/g, ''))), JSON.stringify({ gp, s }));
+  ok('#414 path mission: the goal is said at its start, after the story line', (await voiced(s, gp) || s.some(x => x.replace(/[\u0591-\u05C7]/g, '').includes(gp.replace(/[\u0591-\u05C7]/g, '')))) && s.some(x => /^(נקח אתנו[^⁣]+⁣)?([^⁣]+ ⁣)+היום נלמד/.test(x.replace(/[\u0591-\u05C7]/g, ''))), JSON.stringify({ gp, s }));
   // finished -> the goal goes into the day log line (parent text, no nikud); left in the middle -> not learned
   const grec = await p.evaluate(() => { const O = window.OREN, T = window.TAL, G = window.GOALS; O.emit('tlDone', 'read-wp', 2);
     T.ACT['sci-mag'].run(O.showMap); O.showMap();
@@ -308,5 +308,106 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
   ok('#414 finished: the goal is recorded on its day log line (no nikud)', grec.done && grec.done[6] === 'c' && grec.done[7] && grec.done[7].lg === grec.want && !NIK.test(grec.want), JSON.stringify(grec));
   ok('#414 left in the middle: no goal recorded; the day\'s learned list has the finished one', grec.left && !(grec.left[7] && grec.left[7].lg) && grec.learned.includes(grec.want) && grec.learned.length === 1, JSON.stringify(grec));
   ok('#414 no page errors', !errs.length, errs.join(' | '));
+  // --- friend moments (#572): a fake scene result card; 'continue' runs the card's own button unless a moment comes first ---
+  const scene = (o) => p.evaluate(o => { const O = window.OREN, T = window.TAL, F = window.FRIEND, ov = document.querySelector('#ov');
+    if (o.frb != null) O.save.frb = o.frb; if ('frtch' in o) O.save.frtch = o.frtch; O.save.mix = { c: 1, s: 2 };
+    const d = T.dailyEnsure(); d.t = ['read-first', 'world-flag']; d.done = [0, 0]; d.bs = o.bs | 0; O.persist();
+    F.stepStart(1); d.done[1] = 1; ov.innerHTML = '<div class="card"><h2>x</h2><div class="btnrow"><button class="bigbtn">ok</button></div></div>'; ov.hidden = false;
+    window.__tapped = 0; ov.querySelector('.bigbtn').onclick = () => { window.__tapped++; ov.hidden = true; }; F.stepCheck(); const pic = ov.querySelector('.frsp'); if (pic) pic.click();
+    ov.querySelector('.btnrow .bigbtn').click();
+    const m = ov.hidden ? null : ov.querySelector('.frbrk') ? 'brk' : ov.querySelector('.frtch') ? 'tch' : null; F._lead(''); return { m, tapped: window.__tapped, frb: O.save.frb, key: d.d + ':' + (d.bs | 0) }; }, o);
+  const noKnow = () => p.evaluate(() => { const K = window.KNOW.st(); Object.keys(K.k).forEach(id => { if (K.k[id].ok) K.k[id].ok = 0; }); });
+  await noKnow();
+  // #428 the break: every third scene, the friend picks the game, one tap yes / skip
+  const brks = []; await p.evaluate(() => { window.OREN.save.frb = 0; });
+  for (let k = 0; k < 6; k++) { const r = await scene({}); brks.push(r.m === 'brk' ? 1 : 0);
+    if (r.m === 'brk') await p.evaluate(() => document.querySelector('#ov .frbrk .bigbtn.plain').click()); }
+  ok('#428 the break is offered after every 3rd scene only (scenes 3 and 6 of 6)', brks.join('') === '001001', brks.join(''));
+  const off = await scene({ frb: 2 });
+  const offer = await p.evaluate(() => { const c = document.querySelector('#ov .frbrk'), G = window.TAL.arcGames;
+    return { bs: c ? [...c.querySelectorAll('.btnrow .bigbtn')].map(x => x.textContent) : [], game: c && G.some(g => c.textContent.includes(g.n)), menu: c ? c.querySelectorAll('.cab').length : -1,
+      voice: window.FRIEND.speakList().includes(window.FRIEND.last), nik: /[ְ-ׇּׁׂ]/.test(c ? c.textContent : '') }; });
+  ok('#428 the offer: the friend names ONE game he picked (no menu), two buttons yes / skip, said and in the voice list', off.m === 'brk' && off.tapped === 0 && offer.bs.length === 2 && offer.game && offer.menu === 0 && offer.voice && offer.nik, JSON.stringify({ off, offer }));
+  await L.shot(p, { path: L.SHOTDIR + '/break-offer-' + L.variant + '.png' });
+  const skipB = await p.evaluate(() => { document.querySelector('#ov .frbrk .bigbtn.plain').click(); return { tapped: window.__tapped, frb: window.OREN.save.frb }; });
+  ok('#428 skip: the story goes on at once (the card\'s continue)', skipB.tapped === 1 && skipB.frb === 0, JSON.stringify(skipB));
+  await scene({ frb: 2 });
+  const play = await p.evaluate(() => { const A = window.__arc, st = A.state(); st.lv = {}; window.TAL.arcGames.forEach(g => { st.lv[g.id] = 4; });
+    document.querySelector('#ov .frbrk .bigbtn:not(.plain)').click(); const g = { id: A.brkId };
+    return { inBreak: A.inBreak, tal: !document.querySelector('#sTal').hidden, game: !!document.querySelector('#sTal .arc.game'), lv: g.id ? A.tune(g.id).lv : -1, ov: document.querySelector('#ov').hidden }; });
+  ok('#428 yes: one round of that game at the calm base speed (#351 level 0, even after good rounds)', play.inBreak && play.tal && play.game && play.lv === 0 && play.ov, JSON.stringify(play));
+  await sleep(300);
+  const back = await p.evaluate(async () => { const A = window.__arc; A.finish(3); await new Promise(r => setTimeout(r, 200)); const ov = document.querySelector('#ov');
+    const bs = [...ov.querySelectorAll('.btnrow .bigbtn')]; const again = bs.length; bs[bs.length - 1].click(); await new Promise(r => setTimeout(r, 100));
+    return { again, tapped: window.__tapped, inBreak: A.inBreak, lv: A.state().lv[Object.keys(A.state().lv)[0]] }; });
+  ok('#428 after the round: one "continue" (no "again"), back to the story; the game\'s own level is untouched', back.again === 1 && back.tapped === 1 && !back.inBreak && back.lv === 4, JSON.stringify(back));
+  await p.evaluate(() => window.OREN.showMap()); await sleep(200);
+  // #410 teach the friend: once per path, only on a skill he knows, one tap of 3 corrects him
+  let t0 = await scene({ frb: 0, frtch: null });
+  ok('#410 nothing he knows yet: no mistake to correct', t0.m === null && t0.tapped === 1, JSON.stringify(t0));
+  await p.evaluate(() => { window.KNOW.st().k['mm-ten@1'] = { r: 3, w: 0, ok: 1 }; });
+  t0 = await scene({ frb: 0, frtch: null });
+  const tq = await p.evaluate(() => { const c = document.querySelector('#ov .frtch'), q = window.FRIEND.teaching, bs = c ? [...c.querySelectorAll('.frto')] : [];
+    return { n: bs.length, vals: bs.map(x => +x.dataset.v), q, wrongShown: c && c.querySelector('.frtq .frtw').textContent === String(q.wrong), gems: window.OREN.save.gems | 0 }; });
+  ok('#410 the friend gets a known skill wrong (mm-ten), 3 choices with the right one', t0.m === 'tch' && tq.q.skill === 'mm-ten@1' && tq.n === 3 && tq.vals.includes(tq.q.right) && tq.vals.includes(tq.q.wrong) && tq.wrongShown, JSON.stringify({ t0, tq }));
+  await L.shot(p, { path: L.SHOTDIR + '/teach-' + L.variant + '.png' });
+  const fix = await p.evaluate(async r => { document.querySelector(`#ov .frtch .frto[data-v="${r}"]`).click(); const c = document.querySelector('#ov .frtch');
+    const o = { t: c.querySelector('.frmt').textContent, ok: !!c.querySelector('.frto.ok'), dis: [...c.querySelectorAll('.frto')].every(x => x.disabled) };
+    await new Promise(r => setTimeout(r, 400)); o.tapped = window.__tapped; o.gems = window.OREN.save.gems | 0; return o; }, tq.q.right);
+  ok('#410 one tap corrects him: the friend says thanks, the story goes on', fix.t === await p.evaluate(() => window.FRIEND.TCH.thanks) && fix.ok && fix.dis && fix.tapped === 1 && fix.gems === tq.gems, JSON.stringify(fix));
+  const again1 = await scene({ frb: 0 });
+  ok('#410 at most once per path (the same path: not again)', again1.m === null && again1.tapped === 1, JSON.stringify(again1));
+  await scene({ frb: 0, bs: 1 });
+  const gentle = await p.evaluate(async () => { const q = window.FRIEND.teaching, c = document.querySelector('#ov .frtch'); if (!c) return { none: 1 };
+    const w = [...c.querySelectorAll('.frto')].find(x => +x.dataset.v !== q.right); w.click(); const o = { t: c.querySelector('.frmt').textContent, show: !!c.querySelector(`.frto.show[data-v="${q.right}"]`) };
+    await new Promise(r => setTimeout(r, 400)); o.tapped = window.__tapped; o.known = window.KNOW.known(q.skill); o.gems = window.OREN.save.gems | 0; return o; });
+  ok('#410 the next path: again once; a wrong correction is gentle (the right one lights up), no penalty', !gentle.none && gentle.t === await p.evaluate(() => window.FRIEND.TCH.gentle) && gentle.show && gentle.tapped === 1 && gentle.known && gentle.gems === tq.gems, JSON.stringify(gentle));
+  ok('#410 the lines: kid text with nikud, in the voice list', await p.evaluate(() => { const T = window.FRIEND.TCH, all = window.FRIEND.speakList(); return Object.values(T).every(t => /[ְ-ׇּׁׂ]/.test(t) && all.includes(t)); }));
+  await noKnow();
+  // #412 the friend holds the latest collected item on home and mentions it when a scene opens
+  const held = await p.evaluate(() => { const O = window.OREN, S = window.SHIP; O.save.ship = { n: 0, x: [] }; O.persist(); O.showMap();
+    const none = !document.querySelector('#sHome .hpair .hheld'); O.save.ship = { n: 3, x: [], d: '2000-01-01' }; O.persist(); O.showMap();
+    const e = document.querySelector('#sHome .hpair .hheld'); return { none, txt: e && e.textContent, want: S.PIECES[2].n }; });
+  ok('#412 home: the latest piece is shown with the friend (none on an empty ship)', held.none && held.txt && held.txt.includes(held.want), JSON.stringify(held));
+  await L.shot(p, { path: L.SHOTDIR + '/held-' + L.variant + '.png' });
+  s = await said(() => p.evaluate(() => document.querySelector('#sHome .hheld').click()), 300);
+  ok('#412 a tap on it: the friend says what it is (#392 line)', await p.evaluate(() => document.querySelector('#sHome .hbub2').textContent) === await p.evaluate(() => window.SHIP.pieceSay(2)));
+  const open1 = await p.evaluate(() => { const O = window.OREN, T = window.TAL, F = window.FRIEND, S = window.SHIP; const d = T.dailyEnsure(); d.t = ['read-first', 'world-flag']; d.done = [0, 0]; d.bs = 0; O.persist();
+    F.stepStart(1); const a = F._lead(''); O.save.ship = { n: 0, x: [] }; F.stepStart(1); const z = F._lead(''); O.showMap(); return { a, z, want: S.carrySay(2), open: window.STORYMIX.scene().open }; });
+  ok('#412 the scene\'s opening line mentions the last item, as its own clip before the scene line', open1.a.split('⁣')[0] === open1.want && open1.a.includes(open1.open), JSON.stringify(open1));
+  ok('#412 no item yet: the opening line is the scene line alone', !open1.z.includes('קִבַּלְתָּ') && open1.z.includes(open1.open), JSON.stringify(open1));
+  ok('#412 every item line: nikud, in the voice list', await p.evaluate(() => { const S = window.SHIP, all = window.FRIEND.speakList(); return S.PIECES.every((_, i) => all.includes(S.carrySay(i)) && /[ְ-ׇּׁׂ]/.test(S.carrySay(i))); }));
+  // --- #423 one English word per scene, in the English program's order; it comes back on later days (en2 spaced review) ---
+  const EW = await p.evaluate(() => { const O = window.OREN, M = window.STORYMIX, E = window.ENGLISH2, SEP = '⁣';
+    const order = E.LEVELS[0].units.flatMap(u => u.items).map(k => k.slice(2));
+    O.save.en2 = {}; O.save.mixw = {}; delete O.save.mixs; O.save.mix = { c: 1, s: 1 }; const got = [], leads = [];
+    for (let k = 0; k < 7; k++) { const w1 = M.word(), w2 = M.word(); leads.push(M.lead()); got.push(w1 === w2 ? w1 : '!' + w1 + '/' + w2); M.advance(); }
+    const t = E.day(), red = O.save.en2.i['v:red'].slice();
+    // the English building already taught the first 12 words: the next scene gets the 13th
+    O.save.en2 = { i: {} }; order.slice(0, 12).forEach(w => { O.save.en2.i['v:' + w] = [2, t + 5]; }); O.save.mix = { c: 3, s: 2 }; const skip = M.word();
+    // a later day: 'red' was taught, now it is due -> it comes back in the next scene; then not again until its next review day
+    O.save.en2 = { i: { 'v:red': [0, t] } }; O.save.mixw = { red: t - 1 }; O.save.mix = { c: 4, s: 1 }; const back = M.lead(), due1 = O.save.en2.i['v:red'][1];
+    M.advance(); const again = M.lead();
+    O.save.en2.i['v:red'] = [3, t - 2]; M.advance(); M.lead(); const due3 = O.save.en2.i['v:red'][1];
+    // a word taught today does not come back the same day
+    O.save.en2 = { i: { 'v:red': [0, t] } }; O.save.mixw = { red: t }; O.save.mix = { c: 5, s: 1 }; const same = M.lead();
+    delete O.save.mix; delete O.save.mixw; O.save.en2 = {}; O.persist();
+    return { order: order.slice(0, 7), got, leads, red, t, skip, want13: order[12], back, due1, again, due3, same, SEP,
+      say0: M.wordSay('red'), back0: M.backSay('red'), all: M.speakList(), fr: window.FRIEND.speakList(), n: order.length,
+      lines: order.flatMap(w => [M.wordSay(w), M.backSay(w)]), key: M.wordSay('key') }; });
+  ok('#423 each scene has one word, the next one of the English program (no word out of order), the same word all scene long',
+    JSON.stringify(EW.got) === JSON.stringify(EW.order), JSON.stringify(EW));
+  ok('#423 a word he already learned in the English building is not taught again: the next unlearned one', EW.skip === EW.want13, EW.skip + ' / ' + EW.want13);
+  ok('#423 the scene\'s opening line + the word as its own clip ("key זֶה מַפְתֵּחַ")', EW.leads[0].split(EW.SEP)[1] === EW.say0 && EW.key === 'key זֶה מַפְתֵּחַ.', JSON.stringify(EW.leads[0]));
+  ok('#423 the taught word goes into the English skill model (en2), due tomorrow', EW.red[0] === 0 && EW.red[1] === EW.t + 1, JSON.stringify(EW.red));
+  ok('#423 a later day: the due word comes back in the next scene ("זוֹכֵר? ...")', EW.back.split(EW.SEP).includes(EW.back0) && !EW.again.includes(EW.back0), JSON.stringify([EW.back, EW.again]));
+  ok('#423 ...spaced by the skill model: box 0 -> back in 1 day, box 3 -> in 3 days', EW.due1 === EW.t + 1 && EW.due3 === EW.t + 3, JSON.stringify([EW.due1, EW.due3, EW.t]));
+  ok('#423 a word taught today does not come back the same day', !EW.same.includes(EW.back0), EW.same);
+  ok('#423 every word line: Hebrew with nikud, in the voice list (pregen)', EW.lines.length === 2 * EW.n && EW.lines.every(x => NIK.test(x) && EW.all.includes(x) && EW.fr.includes(x)),
+    EW.lines.filter(x => !NIK.test(x) || !EW.fr.includes(x)).join(' | '));
+  const st423 = await p.evaluate(() => { const O = window.OREN, T = window.TAL, F = window.FRIEND; O.save.en2 = {}; delete O.save.mixs; O.save.mix = { c: 1, s: 1 }; const d = T.dailyEnsure(); d.t = ['read-first', 'world-flag']; d.done = [0, 0]; d.bs = 0; O.persist();
+    F.stepStart(1); const a = F._lead(''); O.showMap(); return { a, want: window.STORYMIX.wordSay('red') }; });
+  ok('#423 the path step: the friend says the scene word after the opening line', st423.a.split('⁣').includes(st423.want), JSON.stringify(st423));
+  ok('#572 no page errors', !errs.length, errs.join(' | '));
   await b.close(); L.finish('friend', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT friend 0 1'); process.exitCode = 1; });

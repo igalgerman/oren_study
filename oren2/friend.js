@@ -7,7 +7,7 @@
    While Oren is inside a step of the day's path:
      FRIEND.stepStart(i)    the friend says the opening line of the story's scene (story.js, #386; said before the screen's instruction)
      FRIEND.stepCheck()     after a step is done: the scene's closing line on the result card, and the story moves one scene on
-     PATHBAR.render()       a thin strip in the top bar: today's quest + one dot per step
+     PATHBAR.render()       a thin strip in the top bar: today's quest + the hero chasing the Mixer, one step per finished mission (#393)
    FRIEND.speakList() lists every line the friend may say (for the voice pregen). */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;const {h,$}=O;const D=O.D||(x=>x);
 
@@ -45,7 +45,8 @@ function anim(c){if(!el)return;el.classList.remove('joy','sad');void el.offsetWi
 function bubble(t,ms){if(petOnScreen()){const b=$('#bText');if(b)b.innerHTML=t;return;}if(!FR.shown())return;
   bub.innerHTML=t;bub.hidden=false;bub.classList.remove('pop');void bub.offsetWidth;bub.classList.add('pop');clearTimeout(bubT);bubT=setTimeout(()=>{if(bub)bub.hidden=true;},D(ms||2200));}
 const onAct=()=>['sTal','sPlay'].some(id=>{const e=$('#'+id);return e&&!e.hidden;});
-function talk(t,o){o=o||{};last=t;FR.log.push(t);if(FR.log.length>50)FR.log.shift();if(!FR.shown()&&onAct())FR.mount();if(!o.nobub)bubble(t,o.ms);if(!o.quiet)O.say(T.spk(t));return t;}
+let hintAt=0;   /* #409 a hint just said keeps the bubble and the voice: a reaction line right after it is skipped */
+function talk(t,o){o=o||{};if(!o.hint&&Date.now()-hintAt<1500)return t;last=t;FR.log.push(t);if(FR.log.length>50)FR.log.shift();if(!FR.shown()&&onAct())FR.mount();if(!o.nobub)bubble(t,o.ms);if(!o.quiet)O.say(T.spk(t));return t;}
 
 /* ---------- reactions ---------- */
 /* ctx: {tries} = wrong tries on this question before the right answer; {quiet} = bubble only (something else is about to speak);
@@ -56,6 +57,11 @@ FR.onCorrect=ctx=>{ctx=ctx||{};if(!FR.shown()&&onAct())FR.mount();const fixed=(c
   return talk(t,ctx);};
 FR.onWrong=ctx=>{ctx=ctx||{};if(!FR.shown()&&onAct())FR.mount();streak=0;const x=hk(kindOf(ctx));if(x)x.n++;missed=!ctx.final;anim('sad');if(ctx.final)missed=false;return talk(draw(ctx.final?SHOWN:WRONG),ctx);};
 FR.reset=()=>{streak=0;missed=false;};
+/* #409 the first hint of the help button (#54) is said by the friend in his bubble (no popup). The voice is the caller's.
+   false = no friend on this screen (the caller shows its own box). */
+const friendHere=()=>petOnScreen()||FR.shown();
+FR.hint=html=>{if(!friendHere()&&ACTS.some(id=>{const e=$('#'+id);return e&&!e.hidden;}))FR.mount();if(!friendHere())return false;
+  FR.hinted=html;talk(html,{quiet:1,ms:7000,hint:1});hintAt=Date.now();return true;};
 /* a story opens: try to read alone first (#355). Bubble only: the screen's own instruction (sayNow) says it */
 const READFIRST='קוֹדֶם נְנַסֶּה לִקְרֹא לְבַד!';FR.READFIRST=READFIRST;FR.readFirst=()=>talk(READFIRST,{quiet:1,ms:4000});
 
@@ -85,13 +91,15 @@ const quest=()=>(T.quest&&T.quest())||{e:'⭐',k:'⭐'};
 const isScene=id=>!/:/.test(String(id));
 FR.stepStart=i=>{const d=daily();if(!d||i==null||i<0||i>=d.t.length){cur=null;return;}cur={i,d:d.d,id:d.t[i]};
   const dn=d.done.slice(d.bs|0),left=dn.filter(x=>!x).length,first=!dn.some(Boolean);
-  lead=SM()&&isScene(cur.id)?(first?FIRST+' ':left<=1?LAST+' ':'')+SM().scene().open:'';PATHBAR.render();};
+  /* #412 the latest piece he collected comes along: its own clip before the scene's opening line */
+  const it=window.SHIP&&SHIP.latest&&SHIP.latest(),carry=it?SHIP.carrySay(it.i)+GSEP:'';
+  lead=SM()&&isScene(cur.id)?carry+(first?FIRST+' ':left<=1?LAST+' ':'')+(SM().lead?SM().lead():SM().scene().open):'';PATHBAR.render();};
 FR.stepCheck=()=>{if(!cur)return;const d=daily();if(!d||d.d!==cur.d||d.t[cur.i]!==cur.id||!d.done[cur.i]||cur.done)return;cur.done=1;PATHBAR.render();
   if(!SM()||!isScene(cur.id))return;const sc=SM().scene(),close=sc.close;SM().advance();
   const t=d.done.slice(d.bs|0).every(Boolean)?close+' '+ALL:close;
   const card=$('#ov:not([hidden]) .card');if(card&&!card.querySelector('.frstory')){const s=h('div','frstory',`<span class="frq">${quest().k}</span><span>${t}</span>`);
     const row=card.querySelector('.btnrow');if(row)card.insertBefore(s,row);else card.appendChild(s);setTimeout(()=>{if(s.isConnected){last=t;O.say(T.spk(t));}},D(1200));
-    storyPic(card,sc);ezAsk(card,cur.id,t);}
+    storyPic(card,sc);ezAsk(card,cur.id,t);moments(card);}
   else talk(t,{ms:3500});};
 /* #411 at the end of a scene, at most every third scene (save.ez.n counts the scenes since the last question): 'easy or hard?'
    with two big faces, one tap. The answer moves that mission's level one step (hard = one easier, easy = one harder; a level the
@@ -110,6 +118,45 @@ function ezSet(id,lv,a){const S=O.save,LN=window.LEARN,DL=window.DAYLOG;
   else if(LN&&LN.state)try{const st=LN.state(),sk=id==='ln-math'?(st.rc||[]).find(x=>(LN.DRILL_IDS||[]).includes(x)):'a:'+id,k=sk&&st.k[sk];
     if(k&&!k.lk){const l=Math.max(1,Math.min(LN.maxLv(sk),(k.l|0||1)+(a==='h'?-1:1)));if(l!==k.l)LN.setLevel(sk,l);}}catch(e){}
   if(DL&&DL.add){const d=new Date();DL.add(O.today(),[d.getHours()*60+d.getMinutes(),lv?'lv:'+lv.id:id,0,0,0,0,'f',{ez:a}]);}O.persist();}
+/* ---------- friend moments: after 'continue' on a scene's result card, before the story goes on (one at a time) ----------
+   #428 every third scene (save.frb counts the scenes): ONE short arcade round as a break; the friend picks the game, one tap yes / skip.
+   #410 once per path (save.frtch = the path): the friend makes a funny mistake on something Oren knows (KNOW: known), one tap
+   corrects him (3 choices); he says thanks; a wrong tap is gentle (the right one lights up), no penalty, nothing recorded. */
+const BRK={EVERY:3,ask:g=>'הִגִּיעַ זְמַן לְהַפְסָקָה קְטַנָּה! בָּחַרְתִּי לָנוּ מִשְׂחָק: '+g.n+'.',yes:'כֵּן, נְשַׂחֵק!',no:'לֹא, מַמְשִׁיכִים'};FR.BRK=BRK;
+const TCH={claim:'אֲנִי חוֹשֵׁב שֶׁזֶּה',ask:'נָכוֹן? מָה הַתְּשׁוּבָה הַנְּכוֹנָה?',thanks:'תּוֹדָה! צָדַקְתָּ, אֲנִי טָעִיתִי. 😄',gentle:'לֹא נוֹרָא! הִנֵּה הַתְּשׁוּבָה הַנְּכוֹנָה. תּוֹדָה שֶׁעָזַרְתָּ לִי!'};FR.TCH=TCH;
+T.addChoices&&T.addChoices([BRK.yes,BRK.no]);
+const games=()=>T.arcGames||[];
+const pathKey=()=>{const d=daily();return d?d.d+':'+(d.bs|0):'';};
+/* a question of a math skill Oren knows (KNOW), with a number answer and 3 choices: [right, the friend's wrong one, one more] */
+function teachQ(){const K=window.KNOW,LN=window.LEARN;if(!K||!K.st||!LN||!LN.gen)return null;
+  const ks=Object.keys(K.st().k).filter(id=>K.known(id)&&(K.skillOf(id)||{}).area==='math');
+  for(const id of O.shuffle(ks)){const s=K.skillOf(id);let q;try{q=LN.gen(s.sk,s.lv);}catch(e){continue;}
+    if(!q||!Array.isArray(q.opts)||q.opts.length<3||!/\?/.test(q.html||''))continue;const r=q.opts[q.ans];const ws=O.shuffle([...new Set(q.opts.filter(x=>x!==r))]);if(ws.length<2)continue;
+    return {skill:id,html:q.html,right:r,wrong:ws[0],opts:O.shuffle([r,ws[0],ws[1]])};}
+  return null;}
+FR.teachQ=teachQ;
+function momentFor(){const S=O.save;if(!S||window.__moments===false)return null;   /* __moments=false: off (tests of the path flow) */
+  if((S.frb|0)>=BRK.EVERY&&games().length)return 'brk';
+  if(S.frtch!==pathKey()&&teachQ())return 'tch';return null;}
+function moments(card){const S=O.save;if(!S)return;S.frb=(S.frb|0)+1;O.persist();
+  const rows=card.querySelectorAll('.btnrow'),b=rows.length&&rows[rows.length-1].lastElementChild;if(!b||b._fm)return;const go=b.onclick;if(!go)return;b._fm=1;
+  b.onclick=e=>{const k=momentFor(),next=()=>{const ov=$('#ov');if(ov)ov.hidden=true;go.call(b,e);};
+    if(k==='brk')brkOffer(next);else if(k==='tch')teach(next);else go.call(b,e);};}
+function momentCard(cls,html){const ov=$('#ov');ov.hidden=false;ov.innerHTML=`<div class="card frm ${cls}"><div class="frms">${sprite()}</div>${html}</div>`;return ov.firstChild;}
+function brkOffer(next){const S=O.save;S.frb=0;O.persist();const g=O.shuffle(games().slice())[0],t=BRK.ask(g);
+  const c=momentCard('frbrk',`<div class="frmt">${t}</div><div class="frbg">${g.e}</div>`),row=h('div','btnrow');
+  const y=h('button','bigbtn','<span>'+BRK.yes+'</span>'),n=h('button','bigbtn plain','<span>'+BRK.no+'</span>');
+  y.onclick=()=>{O.sfx.pop&&O.sfx.pop(3);$('#ov').hidden=true;cur=null;lead='';T.arcBreak(g.id,next);};
+  n.onclick=()=>{O.sfx.pop&&O.sfx.pop(1);next();};row.append(y,n);c.appendChild(row);last=t;O.say(T.spk(t));return c;}
+function teach(next){const q=teachQ();if(!q)return next();O.save.frtch=pathKey();O.persist();
+  const eq=v=>q.html.replace('?',`<b class="frtw">${v}</b>`);
+  const c=momentCard('frtch',`<div class="frtq">${eq(q.wrong)}</div><div class="frmt">${TCH.claim} <b>${q.wrong}</b>! 🤪 ${TCH.ask}</div>`),row=h('div','frtr');
+  q.opts.forEach(v=>{const b=h('button','bigbtn plain frto','<span class="ltr">'+v+'</span>');b.dataset.v=v;
+    b.onclick=()=>{if(row._a)return;row._a=1;row.querySelectorAll('button').forEach(x=>{x.disabled=true;});const good=v===q.right;
+      row.querySelectorAll('button').forEach(x=>{if(+x.dataset.v===q.right)x.classList.add(good?'ok':'show');});c.querySelector('.frtq').innerHTML=eq(q.right);
+      const t=good?TCH.thanks:TCH.gentle;c.querySelector('.frmt').textContent=t;anim(good?'joy':'sad');last=t;O.sfx.pop&&O.sfx.pop(good?3:1);O.say(T.spk(t));
+      setTimeout(()=>{if(c.isConnected)next();},D(3500));};row.appendChild(b);});
+  c.appendChild(row);last=TCH.claim;O.say(T.spk(TCH.claim)+GSEP+q.wrong+GSEP+T.spk(TCH.ask));FR.teaching=q;return c;}
 /* the next path math mission after a 'hard' answer: that level again, once */
 FR.ezRep=()=>{const S=O.save,z=S&&S.ez;if(!z||!z.rep)return null;const id=z.rep;z.rep=null;O.persist();return (O.ALLLV||[]).find(l=>l.id===id)||null;};
 /* #387: the end of a scene, a 2 s picture of what changed in the story: the ship as the story has it, the scene's new piece
@@ -137,7 +184,9 @@ const PATHBAR={render(){let b=$('#frPath');const d=cur&&daily();
   const mid=$('#hudMid');if(!mid)return;if(!b){b=h('div','frpath');b.id='frPath';b.setAttribute('role','img');}if(b.parentNode!==mid)mid.appendChild(b);
   const q=quest();const o=d.bs|0,t=d.t.slice(o),dn=d.done.slice(o),n=t.length,k=dn.filter(Boolean).length;
   b.setAttribute('aria-label',`${k}/${n}`);
-  b.innerHTML=`<span class="fpq">${q.e}</span>`+t.map((_,j)=>`<i class="${dn[j]?'on':j+o===cur.i?'cur':''}"></i>`).join('')+`<span class="fpg${k>=n?' won':''}">🎁</span>`;}};
+  /* #393 the hero chases the Mixer: one step closer per finished mission, the last one catches him (same size as the old dots) */
+  const sp=b.querySelector('.fpt');if(!sp){b.innerHTML=`<span class="fpq">${q.e}</span><span class="fpt"><span class="fph">${O.AV()}</span><span class="fpm">${O.SPR.mixer}</span></span>`;}
+  const tr=b.querySelector('.fpt');tr.style.setProperty('--n',n);tr.style.setProperty('--k',Math.min(k,n));tr.dataset.k=Math.min(k,n);tr.classList.toggle('caught',k>=n);}};
 
 /* the top bar is rewritten by every screen: keep the strip in it while inside a step */
 (()=>{const mid=$('#hudMid');if(mid)new MutationObserver(()=>{const b=$('#frPath');if(cur&&(!b||b.parentNode!==mid))PATHBAR.render();}).observe(mid,{childList:true});})();
@@ -153,7 +202,7 @@ O.on('levelDone',()=>setTimeout(FR.stepCheck,D(600)));
 /* #433: an error in the middle of a mission sent Oren home (core error handler): the friend says it on the home screen */
 const OOPS='אוֹי, חוֹזְרִים לַמַּסָּע';
 FR.oops=()=>{FR.mount();anim('sad');return talk(OOPS,{ms:3000});};
-FR.speakList=()=>[EZ.q,...(window.GOALS?window.GOALS.speakList():[]),LISTEN,RXL.hint,RXL.yday,RXL.back,OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
+FR.speakList=()=>[EZ.q,...games().map(BRK.ask),TCH.claim,TCH.ask,TCH.thanks,TCH.gentle,...(window.SHIP&&SHIP.carrySay?SHIP.PIECES.map((_,i)=>SHIP.carrySay(i)):[]),...(window.GOALS?window.GOALS.speakList():[]),LISTEN,RXL.hint,RXL.yday,RXL.back,OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
   ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([a,b])=>[a,FIRST+' '+a,LAST+' '+a,b,b+' '+ALL])):[]),...(SM()?SM().speakList():[])];
 /* ---------- #389 listen first ----------
    A new row of answer buttons (.chs .chb) rests until the spoken question has ended, 4 s at most; with no voice (offline,

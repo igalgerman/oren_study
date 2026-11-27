@@ -39,14 +39,19 @@ const IN=n=>n[0]==='ה'?(n[1]==='\u05B8'?'בָּ':'בַּ')+n.slice(2):(n[1]==='
 S.pieceSay=i=>{const M=window.STORYMIX,sc=M&&M.scene({c:Math.floor(i/5)+1,s:i%5+1});return NAMES[i]+'! קִבַּלְנוּ אֶת זֶה'+(sc?' '+(HOW[sc.topic]||'')+' '+IN(sc.n):'')+'.';};
 S.extraSay=id=>{const e=S.EXTRAS.find(x=>x.id===id);return e?e.n+'! קָנִינוּ אֶת זֶה בַּיַּהֲלוֹמִים שֶׁאָסַפְנוּ.':'';};
 S.doorSay=i=>'הַדֶּלֶת שֶׁל הַסִּפּוּר נִפְתַּחַת עִם '+NAMES[i]+'!';
-S.says=()=>[TITLE,...NAMES.map(NEW),...NAMES.map((_,i)=>S.pieceSay(i)),...S.EXTRAS.map(e=>S.extraSay(e.id)),...NAMES.map((_,i)=>S.doorSay(i))];
+/* #412 the friend holds the latest piece on home and mentions it when a scene opens */
+S.carrySay=i=>'נִקַּח אִתָּנוּ אֶת מָה שֶׁקִּבַּלְתָּ: '+NAMES[i]+'!';
+S.says=()=>[TITLE,...NAMES.map((_,i)=>S.carrySay(i)),...NAMES.map(NEW),...NAMES.map((_,i)=>S.pieceSay(i)),...S.EXTRAS.map(e=>S.extraSay(e.id)),...NAMES.map((_,i)=>S.doorSay(i))];
 T.addSay&&T.addSay(S.says());T.addChoices&&T.addChoices(S.EXTRAS.map(x=>x.n));
 S.get=()=>{let s=O.save.ship;if(!s||typeof s!=='object'||Array.isArray(s))s=O.save.ship={n:0,x:[]};
   s.n=Math.max(0,Math.min(NAMES.length,s.n|0));if(!Array.isArray(s.x))s.x=[];s.x=s.x.filter((id,i,a)=>S.EXTRAS.some(e=>e.id===id)&&a.indexOf(id)===i);return s;};
+S.latest=()=>{const s=S.get();return s.n?{i:s.n-1,n:NAMES[s.n-1]}:null;};
+S.held=()=>{const l=S.latest();return l?'<span class="hheld" data-i="'+l.i+'" aria-label="'+l.n+'">🎁 <b>'+l.n+'</b></span>':'';};
 S.door=()=>{const s=S.get();return s.d===O.today()||s.n>=NAMES.length?null:{n:NAMES[s.n],say:S.doorSay(s.n)};};
 /* the friend says it in the home bubble, with the voice */
 S.talk=t=>{if(!t)return;let b=$('#sHome .hbub2');const st=$('#sHome .hstage');if(!b&&st){b=h('div','hbub2');st.prepend(b);}if(b)b.textContent=t;O.say(T.spk(t));};
-document.addEventListener('click',e=>{const sh=e.target.closest&&e.target.closest('#sHome .hship');if(!sh)return;const k=e.target.closest('[data-i],[data-x]'),s=S.get();
+document.addEventListener('click',e=>{const hd=e.target.closest&&e.target.closest('#sHome .hheld');if(hd){e.stopPropagation();O.sfx&&O.sfx.pop&&O.sfx.pop(2);S.talk(S.pieceSay(+hd.dataset.i));return;}
+  const sh=e.target.closest&&e.target.closest('#sHome .hship');if(!sh)return;const k=e.target.closest('[data-i],[data-x]'),s=S.get();
   const t=k?(k.dataset.i!=null?S.pieceSay(+k.dataset.i):S.extraSay(k.dataset.x)):s.n?S.pieceSay(s.n-1):'';if(t){O.sfx&&O.sfx.pop&&O.sfx.pop(2);S.talk(t);}});
 S.award=()=>{const s=S.get(),d=O.today();if(s.d===d||s.n>=NAMES.length)return null;s.n++;s.d=d;O.persist();return S.PIECES[s.n-1];};
 /* the drawing: 12 parts (viewBox 120x92, bow on the left); a part shows from the bottom up, one fifth per piece */

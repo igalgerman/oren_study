@@ -467,7 +467,7 @@ async function ui(variant) {
   ok(c1.qq <= 1 && c1.boxes === 0 && !c1.tipShown && !c1.bulb && c1.say === 0, V + 'ln-math card: one instruction line, no second box, the strategy is not shown by default (G4)', JSON.stringify(c1));
   ok(await rows() === '2+2', V + 'ln-math: 4 options in 2×2 (G3)', await rows()); await shot(p, '14-ln-card');
   await p.locator('#sTal .helpbtn').click(); await sleep(150);
-  ok(await p.evaluate(t => { const b = document.querySelector('#sTal .helpbox'); return !!b && !b.hidden && b.innerText.includes(t); }, c1.tip), V + 'ln-math: tapping help shows the strategy line', c1.tip);
+  ok(await p.evaluate(t => { const F = window.FRIEND; return !!F && String(F.hinted || '').replace(/<[^>]+>/g, '').includes(t); }, c1.tip), V + 'ln-math: tapping help shows the strategy line (#409 in the friend\'s bubble)', c1.tip);
   await p.evaluate(() => { const L = window.__learn; const bs = L.wrap.querySelectorAll('.chs .chb'); bs[(L.ans + 1) % 4].click(); }); await sleep(150);
   await p.evaluate(() => { const L = window.__learn; L.wrap.querySelectorAll('.chs .chb')[L.ans].click(); }); await sleep(200);
   const ex1 = await p.evaluate(() => { const L = window.__learn, b = L.wrap.querySelector('.hintbox:not([hidden])'), d = document.createElement('div'); d.innerHTML = L.q.tip; const nb = b && b.querySelector('.bigbtn');
