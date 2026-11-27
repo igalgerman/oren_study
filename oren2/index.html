@@ -1343,14 +1343,16 @@ async function cloudFlush(){if(!cloud.ref||cloud.busy||!cloud.dirty)return;if(Da
 const FAM={id:null,on:false,last:0,sf:0,upT:0,hide:false};
 /* Oren's own device today (pday.js sets the flag when he plays here; the parent's phone never has it) */
 const kidHere=()=>{try{return localStorage.getItem('oren4-played')===today();}catch(e){return false;}};
-/* #617: the parent's commands to Oren (message, reminder, skip, time) are taken only on Oren's play device: never where the parent panel is
-   open or was used in the last PAR_MIN minutes, never on the device that sent them (c.by = its device id), and with two play devices only on
-   the one with the latest play heartbeat (save.now.dv). Without the family save there is one device, so it is always his. */
+/* #617: the parent's commands to Oren (message, reminder, skip, time) are taken only on Oren's play device = the one with the latest play
+   heartbeat (save.now.dv; no dv yet: where he played today), also when the parent sent them from that device (they wait while its panel is
+   open). Another device that just used the panel gives no heartbeat for PAR_MIN minutes, so the parent's phone never becomes his device by
+   the parent's taps. c.by = the sending device (kept for the record). Without the family save there is one device, so it is always his. */
 const DEV=(()=>{try{let d=localStorage.getItem('oren4-dev');if(!d){d=Date.now().toString(36)+Math.random().toString(36).slice(2,8);localStorage.setItem('oren4-dev',d);}return d;}catch(e){return 'x';}})();
 const PAR_MIN=5;
 function parMark(){try{localStorage.setItem('oren4-par',String(Date.now()));}catch(e){}}
 const parRecent=()=>{const sp=document.getElementById('sPar');if(sp&&!sp.hidden)return true;let t=0;try{t=+localStorage.getItem('oren4-par')||0;}catch(e){}return Date.now()-t<(window.__parMin!=null?window.__parMin:PAR_MIN)*60000;};
-function kidDev(c){if(kidSave)return false;if(!FAM.on)return true;if(parRecent()||(c&&c.by===DEV))return false;const dv=(save.now||{}).dv;return dv?dv===DEV:kidHere();}
+const myBeat=()=>{const dv=(save.now||{}).dv;return dv?dv===DEV:kidHere();};
+function kidDev(c){if(kidSave)return false;if(!FAM.on)return true;const sp=document.getElementById('sPar');return myBeat()&&!(sp&&!sp.hidden);}
 /* #612: a save request never hangs (a stuck request kept cloud.busy and stopped every later save) */
 function famFetch(url,o){const c=typeof AbortController==='function'?new AbortController():null;const tm=c?setTimeout(()=>c.abort(),window.__famTimeout||20000):0;
   return fetch(url,Object.assign({},o,c?{signal:c.signal}:{})).finally(()=>clearTimeout(tm));}
@@ -2486,7 +2488,7 @@ function showFinal(){setScreen('sFinal','final',showMap);$('#hudMid').innerHTML=
 
 updateGems();cloudInit();
 const BUS={};function emit(e,...a){(BUS[e]||[]).forEach(f=>{try{f(...a);}catch(x){console.error(x);}});}
-window.OREN={mathSpeechList,hatsBack,get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,famStale:()=>FAM.sf&&FAM.sf>FAM.upT?FAM.upT||((save.now||{}).t|0)||FAM.sf:0,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,celebrate,bigCelebration,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,dev:DEV,kidDev,parMark,parBusy:()=>FAM.on&&parRecent(),parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
+window.OREN={mathSpeechList,hatsBack,get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,famStale:()=>FAM.sf&&FAM.sf>FAM.upT?FAM.upT||((save.now||{}).t|0)||FAM.sf:0,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,celebrate,bigCelebration,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,dev:DEV,kidDev,parMark,parBusy:()=>FAM.on&&parRecent()&&(save.now||{}).dv!==DEV,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
   set sayNow(v){sayNow=v;AUTO.gen++;},get sayNow(){return sayNow;},hud:html=>{$('#hudMid').innerHTML=html;document.body.classList.toggle('act',!document.body.classList.contains('inpar')&&/class="chip"/.test(html));},resetAll:keep=>{const snd=save.snd;save=blank();save.snd=snd;Object.assign(save,keep||{});persist();renderStart();},on:(e,f)=>{(BUS[e]=BUS[e]||[]).push(f);},emit,blank};
 window.__oren4={MK,mistakeKind,TF,TFC,tfFillQ,COIN,GC,qSpeech,GT,HANDS,renderAudio,THEMES,RAW,setTheme,get mus(){return mus;},WORLDS,ALLLV,ALLU,hintHTML,hintData,uniq,colInit,colNeedBorrow,digs,qkey,bubbleOpts,storyFor,teachCheck,HEROES,get play(){return play;},get save(){return save;},startLevel,finishLevel,playLevel,showMap,showWorld,kingdom,studio,teacher,playSpeed,setFast:v=>{window.__fast=v;},mergeIn,migrateOld,lp};
 /* #44 a finished task is not reopened */
@@ -11983,7 +11985,7 @@ DL.add=add;
 /* ---------- the activity being played ---------- */
 let cur=null;
 const GAP=3*60000;
-/* dv: this device (#617: the latest heartbeat's device takes the parent's commands); a device that just used the parent panel gives no heartbeat */
+/* dv: this device (#617: the latest heartbeat's device takes the parent's commands); another device that just used the parent panel gives no heartbeat (his own device keeps it) */
 const mark=id=>{if(O.isParentPlay||(O.parBusy&&O.parBusy()))return;const t=Date.now(),p=S().now;S().now={id,t,s:p&&p.s&&t-(+p.t||0)<GAP?p.s:t,dv:O.dev};};
 const now=()=>mark(cur?cur.id:null);
 /* the heartbeat: every active play tick (talents.js timeTick, which saves anyway) — never from the parent panel */

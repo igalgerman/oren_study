@@ -97,6 +97,24 @@ const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout:
   ok('... and takes it once its heartbeat is the latest again', await until(A, () => (document.querySelector('.hlock.hmsg h2') || {}).textContent === 'עוד הודעה', null, 4000));
   ok('no kid overlay on the parent\'s phone at all', !(await bKid()).length, JSON.stringify(await bKid()));
 
+  // ---------- the parent uses the panel on Oren's own laptop (it holds the latest heartbeat): a reminder and a ✕ still reach it ----------
+  await A.locator('.hlock .hface').first().click(); await sleep(300);
+  ids.c = await A.evaluate(() => { const O = window.OREN, T = window.TAL, d = T.S().daily; const id = T.dailyPool().find(x => window.PDAY.topOf(x) === 'create' && !/^ln-/.test(x) && !d.t.includes(x));
+    d.t.push(id); d.done.push(0); O.persist(); window.__kidUI = []; return id; });
+  await A.evaluate(() => window.TAL.parentPanel('rem')); await sleep(400);
+  const remA = () => A.locator('#sPar .psec', { hasText: 'תזכורת לאורן' });
+  await remA().locator('.pchip', { hasText: /^עכשיו$/ }).click(); await sleep(150);
+  await remA().locator('.bigbtn', { hasText: 'מים' }).click(); await sleep(300);
+  await A.evaluate(() => window.TAL.parentPanel('day')); await sleep(400);
+  const nmR = await A.evaluate(id => window.TAL.stepName(id), ids.c);
+  await A.locator('#sPar .pdplan', { hasText: nmR }).last().locator('.tdx').click(); await sleep(400);
+  { const r = await A.evaluate(() => { const c = window.PDAY.cmds().filter(x => x.k === 'drop').pop(); return { c, done: !!(window.OREN.save.pcA || {})[c && c.i], me: window.OREN.dev, ui: window.__kidUI.length }; });
+    ok('panel open on his laptop: the reminder waits (no overlay over the panel), the command is from this device', r.c && r.c.by === r.me && !r.ui, JSON.stringify(r)); }
+  await A.locator('#sPar .bigbtn', { hasText: 'יציאה מלוח ההורים' }).click(); await sleep(400); await A.evaluate(() => window.HEALTH.check());
+  ok('panel closed on his laptop: the reminder shows there', await until(A, () => !!document.querySelector('.hlock.hrem .hk') && /מַיִם/.test(document.querySelector('.hlock.hrem h2').textContent), null, 4000));
+  ok('... and the ✕ is applied there (the mission is off today)', await until(A, id => { const d = window.TAL.S().daily, c = window.PDAY.cmds().filter(x => x.k === 'drop').pop();
+    return !!(window.OREN.save.pcA || {})[c.i] && !d.t.some((x, n) => x === id && !d.done[n]); }, ids.c, 4000));
+  ok('his laptop keeps its play heartbeat after the panel', await A.evaluate(() => { window.DAYLOG.beat(); return window.OREN.save.now.dv === window.OREN.dev; }));
   ok('no page errors', !errs.length, errs.join(' | '));
   await b.close(); srv.close();
   console.log(res.join('\n')); const f = res.filter(x => x.startsWith('FAIL')).length; console.log('RESULT kidcmd', res.length - f, f); process.exit(f ? 1 : 0);

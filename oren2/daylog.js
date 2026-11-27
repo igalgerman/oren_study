@@ -24,7 +24,7 @@ DL.add=add;
 /* ---------- the activity being played ---------- */
 let cur=null;
 const GAP=3*60000;
-/* dv: this device (#617: the latest heartbeat's device takes the parent's commands); a device that just used the parent panel gives no heartbeat */
+/* dv: this device (#617: the latest heartbeat's device takes the parent's commands); another device that just used the parent panel gives no heartbeat (his own device keeps it) */
 const mark=id=>{if(O.isParentPlay||(O.parBusy&&O.parBusy()))return;const t=Date.now(),p=S().now;S().now={id,t,s:p&&p.s&&t-(+p.t||0)<GAP?p.s:t,dv:O.dev};};
 const now=()=>mark(cur?cur.id:null);
 /* the heartbeat: every active play tick (talents.js timeTick, which saves anyway) — never from the parent panel */
