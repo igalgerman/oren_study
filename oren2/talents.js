@@ -1038,13 +1038,17 @@ function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(
   if(openSec&&curTab==='more')setTimeout(()=>{const o=s.querySelector('details[open]');if(o&&tab===openSec)o.scrollIntoView({block:'start'});else $('#screens').scrollTop=sy;},0);}
 T.parentPanel=t=>{parentOn=true;panel(t);};
 /* #352: the top line of the day: "playing now · N min (from HH:MM)" + stop, and (#359) "skip now", or "last played" */
+let nowPull=0;
 function nowTop(el){const DL=window.DAYLOG,PD=window.PDAY;el.innerHTML=DL?DL.nowLine():'';
   /* #612: Oren's device cannot upload (the server got its save failures): say so, instead of looking up to date */
   const st=O.famStale&&O.famStale();if(st){const d=new Date(st);el.appendChild(h('div','dlnow pdstale',`אין עדכון מהמשחק מאז ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`));}
   const left=T.limLeft();if(!DL||!DL.playing()||(left&&left.min<=0))return;
-  const row=el.querySelector('.dlnow:not(.pdstale)')||el;const pc=PD&&PD.cmds().find(c=>c.k==='now'&&!(O.realSave.pcA||{})[c.i]);
-  if(PD&&(O.realSave.now||{}).id){if(pc){const b=h('button','pchip','⏭ נשלח… בטל');b.onclick=()=>{PD.undo(pc.i);nowTop(el);};row.appendChild(b);}
-    else{const b=h('button','pchip pdskipnow','⏭ דלג עכשיו');b.onclick=()=>{PD.send('now');sfx.ok&&sfx.ok(1);nowTop(el);};row.appendChild(b);}}
+  const row=el.querySelector('.dlnow:not(.pdstale)')||el;const nw=(O.realSave.now||{}).id;
+  /* #614: נשלח… → דולג ✓ (his device left the activity), or "המשחק לא קיבל עדיין" after 30 s; while it waits the panel pulls every 5 s */
+  if(PD&&nw){const st=PD.nowState&&PD.nowState();
+    if(st&&st.s!=='done'){const b=h('button','pchip pdskipwait',st.s==='late'?'⏭ המשחק לא קיבל עדיין · בטל':'⏭ נשלח… בטל');b.onclick=()=>{PD.undo(st.c.i);nowTop(el);};row.appendChild(b);
+      clearTimeout(nowPull);nowPull=setTimeout(()=>{if(el.isConnected)parPull();},window.__parPull||5000);}
+    else{if(st)row.appendChild(h('span','pchip pdskipped','דולג ✓'));if(!st||st.c.a!==nw){const b=h('button','pchip pdskipnow','⏭ דלג עכשיו');b.onclick=()=>{PD.send('now',nw);sfx.ok&&sfx.ok(1);nowTop(el);};row.appendChild(b);}}}
   const b=h('button','pchip bad','⏹ לעצור עכשיו');b.onclick=()=>{stopNow();sfx.ok&&sfx.ok(1);nowTop(el);};row.appendChild(b);}
 /* while the parent panel is open: pull the family save every 30 s so the day view follows Oren live, also from another house;
    #612: and at once when the phone screen is opened again (a locked phone runs no timers) */

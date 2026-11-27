@@ -195,7 +195,9 @@ jobs:
         working-directory: oren2
         run: |
           npm i --no-save --no-package-lock playwright
-          npx playwright install --with-deps chromium
+          # retry: the browser download sometimes fails with a TLS error (#614)
+          for i in 1 2 3; do npx playwright install --with-deps chromium && break
+            [ $i = 3 ] && exit 1; echo "playwright install failed, retry $i"; sleep $((i*10)); done
       - name: Build
         working-directory: oren2
         run: python3 build_talents.py

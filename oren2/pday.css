@@ -21,3 +21,4 @@
 .pdsplit i{display:block;height:100%}
 .pdshs{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px}
 .pdask{font-size:16px;font-weight:700}
+.pnow .pdskipped{background:#e6f6ea;color:#1e7b34;border-color:#9fd6ae;cursor:default}   /* #614 the skip reached his device */

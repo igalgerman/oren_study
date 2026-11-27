@@ -7,7 +7,7 @@ explore2-phone 90         # same file on the phone viewport: ~70 s
 edge-cases 90             # real-speed level transitions and timers: ~68 s
 help-desktop 90           # every generated question's explainer: ~68 s
 help-phone 90             # same file on the phone viewport: ~67 s
-helpbtn-desktop 90        # #54 walks all ~114 activities twice (help button: clue, answer, offered after 2 wrong) + the math kinds: ~35 s
+helpbtn-desktop 90        # #54 walks all ~114 activities twice (help button: clue, answer, offered after 2 wrong) + the math kinds: ~35 s + #622 a read-sent picture answer: tap 2 says no emoji (< 2 s)
 helpbtn-phone 90          # same file on the phone viewport
 regressions 115           # #356 walks all ~114 activities, taps back on each + #59 counts each round's questions (#555: again with lessons off for the ~12 behind a lesson card, and plays rhythm + letters rounds to the end) + #394 walks every path mission and counts it: ~75 s under load
 playthrough-desktop 300   # FULL=1 only: plays every world level by level
@@ -21,7 +21,7 @@ voice-stats 100           # #404 missing recording: one more page (~4 s); #399 s
 friend-desktop 80         # #433 error-in-a-mission check + #386 story engine (2 reopened pages from a save, a step, the day-end hint) + #387 story picture for every path mission (~2 s) + #411 easy/hard question (7 scenes, 3 taps, parent view, ~2 s) + #407 memory lines (2 homes + a finale, ~4 s) + #414 mission goals (3 activities + a path step, ~5 s) + #572 friend moments (break, teach, held item; ~5 s) + #423 scene English word (one page call + a step, <1 s) + #53 coaching (events, voice, rate limit, silence hint, ~4 s): ~52 s in all
 friend-phone 80           # same file on the phone viewport
 shots 90                  # #462 screenshots: worker + fake D1, then the real page (six moments, busy/offline, a played level, review page desktop + phone): ~40 s alone
-pday 100                  # #359 two devices through a fake save server: plan changes, skips, undo, offline queue, skip-now waiting for an answer + #438 learned today, the question, the week picture (~5 s): ~50 s alone
+pday 100                  # #359 (+ #614 a third parent copy, skip-now feedback, offline + undo: ~30 s) two devices through a fake save server: plan changes, skips, undo, offline queue, skip-now waiting for an answer + #438 learned today, the question, the week picture (~5 s): ~50 s alone
 kidcmd 60                # #617 two devices through a fake save server: message, reminder, skip only on the kid device + delivery status (~25 s alone)
 livepanel 90              # #612 three pages through a fake save server: 4 activities, a save outage (capped retry), screen lock/unlock, the "no update since" line: ~18 s alone
 network 60                # #434 slow network (throttled) + offline (service worker, voice from the device, save after reconnect): ~18 s alone
@@ -56,3 +56,5 @@ feel-phone 60             # same file on the phone viewport
 math-logic 60             # all generated math questions + #439 mistake classifier table, ten-frame logic, coin logic and price voice (< 1 s more) + #416 story-scene word problems for 34 scene things (~2 s): ~8 s alone
 voice-audit-1 150          # #406 voice audit, first half: home, every world and level start, arcade + every 2nd activity (each read, 5 answers) in a fake player; #610 a silent screen is opened again (up to 4 s): ~100 s with 2 suites at once + #602 שני/שתי numbers self-check (< 1 ms)
 voice-audit-2 150          # #406 the other half of the activities + #610 the explore question on the daily path (spoken, 🔊, sound button): ~70 s with 2 suites at once
+music2-desktop 60         # #615 play games first (4 games played through, unlock after 3 good rounds) + the theory levels: ~31 s
+music2-phone 60           # same file on the phone viewport: ~30 s

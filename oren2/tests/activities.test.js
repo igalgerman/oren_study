@@ -33,6 +33,8 @@ const URL=L.URL;const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   'read-flu':OPENED,
   'write-spell':OPENED,
   'mus2-rhythm':OPENED,
+  'mus3-copy':OPENED,
+  'mus3-song':OPENED,
   'chess-board':OPENED,
   'sky-sun':OPENED,
   'sky-planets':OPENED,
