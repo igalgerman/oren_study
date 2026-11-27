@@ -48,3 +48,5 @@ unlock-tablet 60          # same on the Android tablet profile (Galaxy Tab S4, t
 oldsaves 60               # #432 opens the game on 20 old or damaged saves (4 browsers at once): start, home, world map: ~25 s
 simplicity-desktop 60     # #426 adds the rewards checks (no badges/hats/records, old-save hat refund) + 2 screenshots: ~10 s
 simplicity-phone 60       # same file on the phone viewport: ~10 s
+voice-audit-1 150          # #406 voice audit, first half: home, every world and level start, arcade + every 2nd activity (each read, 5 answers) in a fake player: ~80 s with 2 suites at once
+voice-audit-2 150          # #406 the other half of the activities: ~65 s with 2 suites at once
