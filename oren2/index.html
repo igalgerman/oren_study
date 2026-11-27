@@ -3822,7 +3822,9 @@ function finishAct(id,errors,n,gems,back,again,title){const st=errors<=Math.max(
 const ADAPT={'world-flag':2,'world-ani':2,'world-il':2,'sci-body':2,'sci-animals':3};
 function quiz(o){if(o.lesson&&window.LESSONS&&!o._ls){o._ls=1;return window.LESSONS.first(o.lesson,o.back,()=>quiz(o));}const qs=[],seen=new Set();let t=0;const LN=window.LEARN,pb=o.pool&&LN&&LN.pickItem?'tq-'+o.id:null;
   const ask=ADAPT[o.id]&&LN&&LN.state?'a:'+o.id:null;let lv=0,wr=0;
-  if(ask)try{const mx=ADAPT[o.id],k=LN.state().k[ask];LN.setMax(ask,mx);lv=LN.start(ask,k&&k.n?1:mx);lv=Math.max(1,Math.min(mx,lv|0));LN.state().k[ask].l=lv;}catch(e){lv=0;}
+  /* the first adaptive round starts at the top: an older star level in the same skill (noteAct, 1..5) is ignored (q = adaptive since) */
+  if(ask)try{const mx=ADAPT[o.id],k0=LN.state().k[ask],first=!k0||!k0.q;LN.setMax(ask,mx);lv=LN.start(ask,first?mx:1);const k=LN.state().k[ask];
+    if(first&&!k.lk)lv=mx;lv=Math.max(1,Math.min(mx,lv|0));k.l=lv;k.q=1;}catch(e){lv=0;}
   /* fewer choices: keep the right one and the first lv distractors of a fixed random order (so each step down removes one more) */
   const fit=q=>{if(!lv)return q;if(!q._all){const ds=q.opts.map((_,k)=>k).filter(k=>k!==q.ans);q._all={opts:q.opts.slice(),ans:q.ans,ds:shuffle(ds)};}
     const A=q._all,keep=new Set([A.ans,...A.ds.slice(0,lv)]);q.opts=A.opts.filter((_,k)=>keep.has(k));q.ans=q.opts.indexOf(A.opts[A.ans]);return q;};

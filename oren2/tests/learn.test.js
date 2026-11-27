@@ -417,6 +417,10 @@ async function ui(variant) {
   ok(r2[0].c === 2, V + '#395 flags: the next round starts at the model\'s level (2 choices)', JSON.stringify(r2.map(x => x.c)));
   const k2 = await lvOf('world-flag'); ok(k2.l === 2, V + '#395 flags: a perfect round → back to today\'s level, never above it', JSON.stringify(k2));
   ok(await p.evaluate(() => { const T = window.TAL; return T.dailyPool().includes('world-flag'); }), V + '#395 flags is still a path mission');
+  // review of #577: an old star level from before (noteAct, l:1, no q) must not make the first adaptive round easier
+  await p.evaluate(() => { window.OREN.save.lrn.k['a:world-il'] = { l: 1, h: '0', n: 1, d: 0, i: 0, u: 0, f: 0 }; });
+  const r3 = await play('world-il', ['r', 'r', 'r', 'r', 'r']);
+  ok(r3[0] && r3[0].c === 3 && r3.every(x => x.c === 3), V + '#395 Israel: a saved old star level (l:1) → the first adaptive round still starts at today\'s difficulty (3 choices)', JSON.stringify(r3.map(x => x && x.c)));
   for (const id of Object.keys(AD)) { await p.evaluate(id => { window.OREN.save.lrn.k['a:' + id] = { l: 5, h: '', n: 3, d: 0, i: 0, u: 0, f: 0 }; }, id);
     const rr = await play(id, ['w', 'w', 'r', 'r', 'r']); const want = AD[id] + 1;
     ok(rr[0] && rr[0].c === want && rr[1].c === want && rr[2].c === want - 1, V + `#395 ${id}: starts at its own top (${want} choices, even if the saved level is higher), 2 wrong → ${want - 1}`, JSON.stringify(rr.map(x => x && x.c))); }
