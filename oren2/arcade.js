@@ -12,13 +12,13 @@ const GAMES=[
 const G=id=>GAMES.find(g=>g.id===id);
 /* ---------- the hall ---------- */
 function openArcade(back){if(back)back0=back;back0=back0||O.showMap;T.setKey(null);O.setScreen('sTal','final',back0);O.musicStart&&0;
-  const a=A();T.hudT('הָאַרְקֵייד');O.sayNow='הָאַרְקֵייד. בְּחַר מִשְׂחָק.';
+  const a=A();T.hudT('הָאַרְקֵייד');
   const s=$('#sTal');s.innerHTML='';const hall=h('div','arc');
   hall.appendChild(h('div','arch',`<span class="neon">🕹️ הָאַרְקֵייד</span>`));
   const g=h('div','cabs');
   GAMES.forEach((gm,i)=>{const best=a.best[gm.id]|0;const played=!!(T.S().tl['arc-'+gm.id]||{}).n;const tag=best?`<span class="hs">🏆 שִׂיא: ${best}</span>`:played?'':'<span class="hs new">✨ חָדָשׁ</span>';const c=h('button','cab',`<span class="scr"><span class="ce">${gm.e}</span></span><b>${gm.n}</b><small>${gm.d}</small>${tag}`);
     c.style.setProperty('--nc',gm.c);c.style.animationDelay=(i*.08)+'s';c.onclick=()=>{sfx.pop(3);start(gm.id);};g.appendChild(c);});
-  hall.appendChild(g);
+  hall.appendChild(g);O.sayNow='הָאַרְקֵייד. בְּחַר מִשְׂחָק: '+T.choiceSay(g,'.cab b');
   s.appendChild(hall);later(()=>{const c=g.querySelector('.cab');if(c&&T.intro)T.intro('i-arc',c,'זֶה הָאַרְקֵייד! מִשְׂחָקִים קְצָרִים וּמְהִירִים, סְתָם בִּשְׁבִיל הַכֵּיף. בְּחַר אֶחָד!');});}
 const later=f=>setTimeout(f,D(700));
 /* ---------- shared game frame ---------- */
