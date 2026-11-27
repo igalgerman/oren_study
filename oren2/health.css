@@ -19,7 +19,7 @@ body.hlocked #ov{position:fixed;z-index:100}
 @keyframes hstretch{0%,100%{transform:scaleY(1)}50%{transform:scaleY(1.22) scaleX(.92)}}
 .hcards{display:flex;gap:16px;justify-content:center;width:100%}
 .hcards .dcard{width:200px;min-height:160px}
-.hone{background:none;font-size:18px;font-weight:800;text-decoration:underline;color:var(--ink-soft);padding:6px 10px}
+.hone{display:inline-flex;align-items:center;gap:6px;min-height:44px;background:#fff;font-size:18px;font-weight:800;color:var(--ink);padding:6px 14px;box-shadow:inset -3px -3px 0 rgba(0,0,0,.12),0 3px 0 rgba(0,0,0,.2)}
 .hpar{background:none;font-size:13px;color:var(--ink-soft);opacity:.75;padding:4px 8px}
 .hrest{position:relative}.hrest>*:not(.hmoon){filter:saturate(.3);opacity:.75}
 .hmoon{position:absolute;top:6px;left:6px;background:#2d3a5a;color:#fff1a8;font-size:13px;font-weight:800;padding:2px 8px;border-radius:12px;white-space:nowrap;pointer-events:none}

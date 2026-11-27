@@ -61,7 +61,7 @@ const W_RAW={
 כַּד|כד|home|🏺|jug
 אָח|אח|family|-|brother
 הַר|הר|nature|mount|mountain
-תָּו|תו|music|note|note
+תָּו|תו|music|-|note
 נַ-עַל|נעל|clothes|shoe|shoe
 שַׁ-עַר|שער|sport|🥅|goal
 אַ-בָּא|אבא|family|👨|dad
