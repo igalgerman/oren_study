@@ -33,6 +33,30 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  // the new screen's own speech right after the switch is not cut
  const r=await p.evaluate(()=>{window.__fast=false;speechSynthesis.log.length=0;window.OREN.setScreen('sTal','valley',window.OREN.showMap);window.OREN.say('שָׁלוֹם');const l=speechSynthesis.log.slice();window.__fast=true;return l;});
  ok('speech said right after a switch still plays',/^speak:/.test(r[r.length-1]||''),JSON.stringify(r));
+ // #398: the voice stops when the screen changes: audio stopped AND the waiting line emptied, so nothing of the old screen is said later
+ const OLD=['יָשָׁן אַחַת','יָשָׁן שְׁתַּיִם','יָשָׁן שָׁלוֹשׁ'];
+ const fill=()=>p.evaluate(o=>{const O=window.OREN;O.hush();window.__fast=false;window.__noAuto=true;speechSynthesis.log.length=0;o.forEach(t=>O.say(t));
+   const q=window.__sq;return {cur:q.cur&&q.cur.t,wait:q.list.length};},OLD);
+ const oldLeft=()=>p.evaluate(o=>{const q=window.__sq,all=[q.cur,...q.list].filter(Boolean).map(x=>x.t);return {left:all.filter(t=>o.includes(t)),log:speechSynthesis.log.slice()};},OLD);
+ const qf=await fill();ok('queue test setup: one speaking, two waiting',qf.cur===OLD[0]&&qf.wait===2,JSON.stringify(qf));
+ await p.evaluate(()=>window.OREN.showMap());await sleep(50);
+ let ql=await oldLeft();ok('screen change: queue cleared and voice cancelled',!ql.left.length&&ql.log.includes('cancel'),JSON.stringify(ql));
+ await p.evaluate(()=>{window.__fast=true;window.__noAuto=false;});
+ // next question in a level: old lines (praise, the last question) do not go on into the new question
+ await p.evaluate(()=>{const O=window.OREN;O.save.story.intro=1;const lv=O.ALLLV.find(l=>l.id==='add-0-0');O.save.story[lv.w.id+'-in']=1;O.startLevel(lv);});await sleep(300);await L.doLesson(p);await sleep(200);
+ const nq=await p.evaluate(async o=>{const O=window.OREN,P=window.__oren4.play;if(!P||!P.qs[P.i])return {err:'no play',scr:[...document.querySelectorAll('.screen:not([hidden])')].map(e=>e.id),dlg:!document.querySelector('#dlg').hidden};const q=P.qs[P.i];
+   const mk=document.createElement('i');mk.id='oldq';document.querySelector('#qa').appendChild(mk);
+   if(P.choice){document.querySelectorAll('#qa .chs button, #qa .bubs button')[P.choice.ans].click();}
+   else{for(const ch of String(q.ans)){document.querySelector(`#pad .key[data-k="${ch}"]`).click();}document.querySelector('#pad .key[data-k="go"]').click();}
+   O.hush();window.__fast=false;window.__noAuto=true;speechSynthesis.log.length=0;o.forEach(t=>O.say(t));const before=window.__sq.list.length;
+   for(let k=0;k<100&&document.querySelector('#oldq');k++)await new Promise(r=>setTimeout(r,30));
+   const sq=window.__sq,all=[sq.cur,...sq.list].filter(Boolean).map(x=>x.t);window.__fast=true;window.__noAuto=false;
+   return {before,moved:!document.querySelector('#oldq'),left:all.filter(t=>o.includes(t)),log:speechSynthesis.log.slice(-3)};},OLD);
+ ok('next question: old lines cleared, voice stopped',nq.before===2&&nq.moved&&!nq.left.length&&nq.log.includes('cancel'),JSON.stringify(nq));
+ // the new screen's first line is not cut: said right after the switch, it is the one speaking and nothing cancels it later
+ const nl=await p.evaluate(async()=>{const O=window.OREN;window.__fast=false;window.__noAuto=false;await new Promise(r=>setTimeout(r,500));O.say('יָשָׁן');O.setScreen('sTal','valley',O.showMap);speechSynthesis.log.length=0;O.sayNow='הוֹרָאָה שֶׁל הַמָּסָךְ';O.say('חָדָשׁ רִאשׁוֹן');
+   await new Promise(r=>setTimeout(r,700));const l=speechSynthesis.log.slice(),sq=window.__sq;window.__fast=true;O.hush();return {log:l,cur:sq.cur&&sq.cur.t};});
+ const si=nl.log.findIndex(x=>/^speak:.*חדש/.test(x));ok('new screen first line plays and is not cut',si>=0&&!nl.log.slice(si+1).includes('cancel'),JSON.stringify(nl));
  // #401: a long text (1200 chars) is spoken fully, in order, in parts of at most 400 chars cut at sentence ends;
  // each next part is asked for only when the previous one ended; a short text is one request, as before
  const lt=await p.evaluate(async()=>{const urls=[],live=[];window.Audio=function(u){urls.push(u);const a={play(){live.push(a);setTimeout(()=>{a.onplaying&&a.onplaying();setTimeout(()=>a.onended&&a.onended(),20);},5);return Promise.resolve();},pause(){},addEventListener(){}};return a;};
