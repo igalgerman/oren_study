@@ -1193,7 +1193,7 @@ function hereResume(){const r=HERE.boot;HERE.boot=null;if(!r||!r.id||kidSave)ret
 /* the pause button: one big "continue" button over the game; play time does not count; a reload comes back paused */
 const paused=()=>document.body.classList.contains('paused');
 function pauseOn(){if(paused())return;hush();document.body.classList.add('paused');const o=h('div','pzov',`<div class="card"><div class="pzi">${ICON.pause}</div><h2>עָצַרְנוּ לְרֶגַע</h2></div>`);
-  const b=h('button','bigbtn',ICON.play+'<span>מַמְשִׁיכִים</span>');b.onclick=()=>{sfx.pop(2);pauseOff();};o.firstChild.appendChild(b);document.body.appendChild(o);
+  const b=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');b.onclick=()=>{sfx.pop(2);pauseOff();};o.firstChild.appendChild(b);document.body.appendChild(o);
   const r=hereGet();if(r){r.pz=1;herePut(r);}setTimeout(()=>b.focus(),50);}
 function pauseOff(){document.querySelectorAll('.pzov').forEach(e=>e.remove());document.body.classList.remove('paused');const r=hereGet();if(r&&r.pz){delete r.pz;herePut(r);}}
 function pzSync(){const b=$('#btnPause');if(!b)return;b.hidden=!(hereGet()&&ACTIVE_S.some(id=>{const x=$('#'+id);return x&&!x.hidden;}));document.body.classList.toggle('pzon',!b.hidden);}
@@ -1645,7 +1645,7 @@ function studio(first,back){setScreen('sStudio','meadow',first?null:(back||showM
     for(const [k,p] of Object.entries(PETS)){const b=h('button','hatb'+(save.av.pet===k?' sel':''),p.s());b.title=plain(p.n);b.onclick=()=>{save.av.pet=k;sfx.pop(3);persist();render();};pr.appendChild(b);}
     rows.append(hr,pr);
     const nm=h('div','lcap',`הֶחָבֵר שֶׁלְּךָ: ${PET().n}`);
-    const go=h('button','bigbtn',ICON.play+`<span>${first?'יוֹצְאִים לַמַּסָּע!':'מוּכָן!'}</span>`);go.onclick=()=>back?back():showMap(first);
+    const go=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=()=>back?back():showMap(first);
     const col=h('div','');col.style.cssText='display:flex;flex-direction:column;align-items:center;gap:10px';col.append(pv,nm);wrap.append(col,rows);s.append(wrap,go);};
   render();}
 
@@ -1669,10 +1669,14 @@ function showJourney(greet){
   tool(`<span style="color:#3a8fc4;display:grid">${ICON.grid}</span>`,'לוּחַ הַכֶּפֶל',()=>showTable(showJourney));
   if(stars('fin-boss'))tool(`<span style="color:#8e6fd1;display:grid">${ICON.trophy}</span>`,'הַתְּעוּדָה',showFinal);
   m.appendChild(tb);
+  /* G5 (#98): the next world is one big "continue"; tiles only for worlds he has stars in (no locked, no 0-star tiles), unless the parent opened everything */
+  const allOpen=!!(save.set&&save.set.all);
+  if(nextW&&!allOpen){const go=h('button','bigbtn huge jnext',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=()=>showWorld(nextW);m.appendChild(go);}
   const grid=h('div','worlds');
   WORLDS.forEach(Wd=>{const open=worldOpen(Wd);const done=Wd.levels.filter(l=>stars(l.id)).length;const fr=freed(Wd);
     const b=h('button','wcard2'+(open?'':' locked')+(Wd===nextW?' next':''));b.style.setProperty('--lc',Wd.color);b.setAttribute('aria-label',Wd.say);
     b.innerHTML=`<span class="op ltr">${Wd.op}</span>${fr?`<span class="gd" style="position:absolute">${GUARD[Wd.gd]}</span>`:''}${open?'':`<span class="lk">${SPR.lock}</span>`}<span class="ico">${Wd.icon()}</span><span class="nm">${Wd.name}</span><span class="bar"><i style="width:${done/Wd.levels.length*100}%"></i></span>`;
+    if(!allOpen&&(!open||!done))b.hidden=true;
     b.onclick=()=>{if(!open){b.classList.remove('shake');void b.offsetWidth;b.classList.add('shake');sfx.no();return;}showWorld(Wd);};grid.appendChild(b);});
   m.appendChild(grid);
   m.appendChild(h('div','statline',`<span>${ICON.cal}<b>${save.days.length}</b> יְמֵי אִמּוּן</span><span>${SPR.flame}<b>${dayStreak()}</b> בִּרְצִיפוּת</span><span>${ICON.grid.replace('currentColor','#3a8fc4')}<bdi dir="ltr"><b>${masteredCount()}</b>/100</bdi></span>${save.rq.length?`<span>טָעֻיּוֹת לְתַרְגֵּל: <b>${save.rq.length}</b></span>`:''}<span id="saveNote"></span>`));
@@ -1691,7 +1695,7 @@ function showWorld(Wd){
   if(!save.story[Wd.id+'-in']){curWorld=Wd;setScreen('sWorld',Wd.bg,showJourney);$('#sWorld').innerHTML='';story(Wd.intro.map(t=>[Wd.gd,t]),()=>{save.story[Wd.id+'-in']=1;persist();showWorld(Wd);});return;}
   curWorld=Wd;setScreen('sWorld',Wd.bg,showJourney);walkFrom=null;
   const got=Wd.levels.reduce((s,l)=>s+stars(l.id),0);
-  $('#hudMid').innerHTML=`<div class="starcount">${SPR.star}<span>${got} / ${Wd.levels.length*3}</span></div>`;
+  $('#hudMid').innerHTML=`<div class="starcount">${SPR.star}<span>${got}</span></div>`;
   const s=$('#sWorld');s.innerHTML='';
   let curIdx=Wd.levels.findIndex(lv=>unlocked(lv)&&!stars(lv.id));const all=curIdx<0;if(all)curIdx=Wd.levels.length-1;const cur=Wd.levels[curIdx];
   const said=all?'סִיַּמְתָּ אֶת כָּל הָעוֹלָם! אֶפְשָׁר לְשַׂחֵק שׁוּב בְּכָל שָׁלָב.':cur.type==='boss'?(cur.u.final?'עַכְשָׁו הַקְּרָב הָאַחֲרוֹן!':'עַכְשָׁו הַבּוֹס: עֲנַק הַבְּלוֹקִים!')
@@ -1699,7 +1703,7 @@ function showWorld(Wd){
   sayNow=plain(said);
   s.appendChild(h('div','whead',`<span class="gd ${freed(Wd)?'bob':''}">${GUARD[Wd.gd]}</span><h1>${Wd.name}</h1>`));
   const top=h('div','wtop',`<div class="wsay"><span class="wpet">${PET().s()}</span><span>${said}</span></div>`);
-  const go=h('button','bigbtn huge',ICON.play+'<span>מַמְשִׁיכִים</span>');go.onclick=()=>startLevel(cur);top.appendChild(go);s.appendChild(top);
+  const go=h('button','bigbtn huge',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=()=>startLevel(cur);top.appendChild(go);s.appendChild(top);
   const trail=h('div','wtrail');let n=0;
   Wd.units.forEach((u,ui)=>{const sec=h('div','wsec'+(ui%2?' alt':''));if(!u.boss)sec.appendChild(h('div','wban',`<span>${u.name}</span>`));const row=h('div','wrow');
     u.lv.forEach(lv=>{const i=Wd.levels.indexOf(lv),ok=unlocked(lv),st=stars(lv.id),isCur=i===curIdx&&!all;
@@ -1883,7 +1887,7 @@ function lesson(lv){const u=lv.u;setScreen('sLearn',u.w.bg,()=>showWorld(u.w));
   wrap.innerHTML=`<h1>${u.name}</h1><div class="lsent">${u.lesson}</div>`;
   const stage=h('div','exstage');const btns=h('div','btnrow');wrap.append(stage,btns);s.appendChild(wrap);sayNow=u.lesson;
   const start=()=>{save.seen[u.id]=1;persist();playLevel(lv);};
-  const next=h('button','bigbtn',ICON.play+'<span>הַבָּא</span>');
+  const next=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');
   const turn=()=>{next.querySelector('span').textContent='עַכְשָׁו תּוֹרְךָ!';next.onclick=start;if(!next.isConnected)btns.appendChild(next);};
   const tell=el=>{const t=String(el.innerText||el.textContent).replace(/[‎‏]/g,'').replace(/(\d)\s*:\s*(\d)/g,'$1 חלקי $2').replace(/[+−×=]/g,c=>' '+OPW[c]+' ').replace(/[←→?]/g,' ').replace(/\s+/g,' ').trim();if(t){sayNow=t;AUTO.gen++;}};
   let ex=u.gen(5);
@@ -2115,7 +2119,7 @@ function finishLevel(){const p=play;if(!p||p.finished)return;p.finished=true;p.l
     const cont=()=>{walkFrom=lv.i;
       if(lv.type==='boss'&&!save.story[lv.w.id+'-out']){story(lv.w.outro.map(t=>[lv.w.gd,t]).concat(u.final?[['pet','אוֹרֶן, אַתָּה אַלּוּף הַחֶשְׁבּוֹן שֶׁל אֶרֶץ הַבְּלוֹקִים!']]:[]),()=>{save.story[lv.w.id+'-out']=1;persist();u.final?showFinal():showWorld(lv.w);});return;}
       if(u.final)return showFinal();showWorld(lv.w);};
-    const n=h('button','bigbtn',ICON.play+`<span>${nextLv?'הַבָּא':'הַמְשֵׁךְ'}</span>`);n.onclick=nextLv?()=>{walkFrom=lv.i;startLevel(nextLv);}:cont;
+    const n=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');n.onclick=nextLv?()=>{walkFrom=lv.i;startLevel(nextLv);}:cont;
     row.appendChild(n);card.appendChild(row);
     duck(true);setTimeout(()=>duck(false),D(2200));sfx.win();rain();for(let k=0;k<st;k++)setTimeout(()=>sfx.star(k),D(300+k*350));if(r1>r0)setTimeout(()=>sfx.build(),D(1300));
     setTimeout(()=>{const b=row.lastChild;b&&b.focus();},300);},D(lv.type==='boss'?900:300));}
@@ -2132,7 +2136,7 @@ function speedHud(){const p=play;const s=$('#score');if(s)s.textContent='★ '+(
 function nextSpeedQ(){const p=play;if(Date.now()>=p.end)return finishSpeed();let q,t=0;do{q=p.lv.gen(0);}while(t++<20&&p.qs.slice(-5).some(x=>qkey(x)===qkey(q)));p.qs.push(q);showQ();speedHud();}
 function finishSpeed(){const p=play;if(!p||p.lock&&p.finished)return;p.lock=true;p.finished=true;const Wd=p.lv.w;const best=save.sp[Wd.id]|0;const rec=p.score>best;if(rec)save.sp[Wd.id]=p.score;persist();
   const ov=$('#ov');ov.hidden=false;ov.innerHTML=`<div class="card"><h2>${rec?'שִׂיא חָדָשׁ!':'נִגְמַר הַזְּמַן!'}</h2><div class="gain">★ ${p.score}</div><div class="sub">הַשִּׂיא שֶׁלְּךָ: <span class="ltr">${Math.max(best,p.score)}</span></div></div>`;
-  const row=h('div','btnrow');const a=h('button','bigbtn purple sm',ICON.redo+'<span>עוֹד פַּעַם</span>');a.onclick=()=>playSpeed(Wd);const m=h('button','bigbtn',ICON.play+'<span>לַמַּסְלוּל</span>');m.onclick=()=>showWorld(Wd);row.append(a,m);ov.firstChild.appendChild(row);
+  const row=h('div','btnrow');const a=h('button','bigbtn purple sm',ICON.redo+'<span>עוֹד פַּעַם</span>');a.onclick=()=>playSpeed(Wd);const m=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');m.onclick=()=>showWorld(Wd);row.append(a,m);ov.firstChild.appendChild(row);
   sfx.win();if(rec)rain();}
 
 /* ---------- KINGDOM (Oren builds) ---------- */
@@ -2198,7 +2202,7 @@ function teacher(tab,back){if(back)tBack=back;setScreen('sTeach','city',tBack||s
           T.made=(save.made[today()]|0);const gemsOk=T.made<5;save.made[today()]=T.made+1;
           save.tc.unshift({op:T.op,a,b,ans:q.res,tx:T.story?tx:null,d:today(),solved:0});save.tc=save.tc.slice(0,30);if(gemsOk)addGems(3,box);persist();
           tState=null;const ov=$('#ov');ov.hidden=false;ov.innerHTML=`<div class="card"><h2>הַחִידָה נִשְׁמְרָה!</h2><div class="sub">עַכְשָׁו תֵּן לְאַבָּא אוֹ לְאִמָּא לִפְתֹּר אוֹתָהּ.</div>${gemsOk?`<div class="gain">+3 ${SPR.gem}</div>`:''}</div>`;
-          const row=h('div','btnrow');const a1=h('button','bigbtn plain sm',ICON.redo+'<span>עוֹד חִידָה</span>');a1.onclick=()=>teacher('make');const a2=h('button','bigbtn',ICON.play+'<span>לַחִידוֹת</span>');a2.onclick=()=>teacher('list');row.append(a1,a2);ov.firstChild.appendChild(row);return;}
+          const row=h('div','btnrow');const a1=h('button','bigbtn plain sm',ICON.redo+'<span>עוֹד חִידָה</span>');a1.onclick=()=>teacher('make');const a2=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');a2.onclick=()=>teacher('list');row.append(a1,a2);ov.firstChild.appendChild(row);return;}
         tries++;sfx.no();box.classList.add('shake');setTimeout(()=>box.classList.remove('shake'),450);hb.hidden=false;hb.innerHTML=cap('בְּדֹק שׁוּב 🙂')+hintHTML(q,tries>=2?2:1);val='';}
       else if(val.length<4){if(val==='0')val='';val+=k;}
       box.textContent=val||'?';box.className='ans'+(val?'':' empty');};pad2.appendChild(bt);});
@@ -2669,7 +2673,7 @@ body.pplay .dlg,body.pplay .overlay{padding-bottom:78px}
 .hwp{font-size:40px;line-height:1.1}.hww{font-size:24px;font-weight:800}
 .story .sl .rw{cursor:pointer}.story.noline .sl .rw{cursor:default}
 /* read first, listen later (#355): the per-line 🔊 waits for its time */
-.story.noline .sl .rdb{display:none}.story.noline .sl{cursor:default}
+.story.noline .sl{cursor:default}
 .stpeek{display:flex;flex-direction:column;align-items:center;gap:10px;width:100%}
 .tq .qside{margin:14px auto 0;display:flex}
 #sTal,#sHome{padding-bottom:72px}
@@ -2790,6 +2794,16 @@ body:has(#dlg:not([hidden])) .toast{top:74px;bottom:auto}
 .prow .pmore{min-width:44px;min-height:36px;font-weight:900}.prow .practs{display:none;gap:6px;flex-wrap:wrap}.prow.open .practs{display:flex}.prow:has(.pmore){flex-wrap:wrap}
 .pbig{display:flex;gap:10px;flex-wrap:wrap}.pbig .bigbtn{font-size:20px;padding:10px 22px}
 .dnh{animation:pulse 1.6s infinite}
+
+/* G3 (#96): options in balanced rows, never 3+1 — four options on a phone are 2x2; letter tiles (read-bank2 tiles) use --c columns */
+@media (max-width:760px){.chs:has(> .chb:nth-child(4):last-child){display:grid;grid-template-columns:repeat(2,auto);justify-content:center}}
+.chs.rbt{display:grid;grid-template-columns:repeat(var(--c),auto);justify-content:center}
+@media (max-width:760px){.chs.rbt.c4 .chb.tx{min-width:0;width:72px;padding:0}}
+/* G7 (#100): on a phone, kid text >= 16px and tap targets >= 44px on the menus */
+@media (max-width:760px){.tool{font-size:16px}.wcard2 .nm{font-size:16px}.wban{font-size:16px}.pnode .kl,.pnode.fut .kl{font-size:16px}
+  .dcard b,.dcard.cont b{font-size:16px}.doors2 .door>b{font-size:16px}
+  .pxpal{grid-template-columns:repeat(4,44px)}.pxpal .sw{width:44px;height:44px}.tbtn small{font-size:16px}
+  .dmore{min-height:44px}.hbub2 .rdb::after{inset:-9px}}
 
 /* ===== 🕹️ arcade ===== */
 .arc{width:min(980px,100%);box-sizing:border-box;display:flex;flex-direction:column;align-items:center;gap:16px;padding:18px 16px 22px;color:#fff;
@@ -3263,6 +3277,10 @@ circle.e2hit.e2show,rect.e2hit.e2show{fill:rgba(255,209,102,.6)!important;stroke
   .e2bgrid{--bc:44px}
   .e2pc{width:44px;height:44px}.e2pal{gap:8px}
 }
+@media (max-width:760px){.e2card .sent{font-size:22px;line-height:1.4}}
+.e2art{flex-wrap:wrap}.e2art .e2leg{flex-basis:100%}
+.e2art.sm .e2svg.e2wide{width:min(400px,86vw);max-height:none}
+@media (max-width:760px){.e2world .e2lbl,.e2world .e2sea{font-size:19px}}
 
 /* ===== ENGLISH 2 (english2.js) ===== */
 .e2 .tqc{min-width:min(420px,100%)}
@@ -3438,6 +3456,7 @@ svg.tl{width:60px;height:60px;display:block}
 }
 /* answer options: a row of 2–3, or 2×2 — never 3+1 */
 .lnr .chs{display:grid;grid-template-columns:repeat(2,minmax(96px,auto));justify-content:center}
+.lnr .chs:not(:has(>.chb:nth-child(4))){grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(96px,auto)}
 
 /* ===== help ladder (help.js) ===== */
 .hlp{width:100%;max-width:740px;display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:rgba(255,255,255,.92);box-shadow:0 5px 0 rgba(0,0,0,.14),inset 0 0 0 3px #ffcf4d;direction:rtl}
@@ -3863,9 +3882,9 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
   if(window.DAYLOG&&DAYLOG.note)DAYLOG.note(o.act,ss.log);
   const shows=k=>(ss.wrong&&help.wrong.includes(k))||(help[k]!=null&&Date.now()-ss.t0>=D(help[k]*1000));
   const heard=()=>{ss.heard=true;ss.log.r='l';};
-  /* the story and, under its last line (normal flow, never over the text), one row: "read to me" (when allowed) and one forward button */
+  /* the story and, under its last line (normal flow, never over the text), one row: one 🔊 "read to me" (when allowed) and one forward "▶ הַמְשֵׁךְ" (G2/G4: no per-line 🔊, a tap on a line reads it) */
   function page(box,fwd){const pg=h('div','story');pg.innerHTML=`<div class="sth"><span>${o.spr[0]}</span><h2>${o.title}</h2><span>${o.spr[1]}</span></div>`+o.lines.map((x,i)=>`<p class="sl" data-i="${i}">${x}</p>`).join('');box.appendChild(pg);
-    const row=h('div','btnrow strow');const rd=h('button','bigbtn blue sm strd',ICON.say+'<span>הַקְרֵא לִי</span>');row.append(rd,fwd);box.appendChild(row);
+    const row=h('div','btnrow strow');const rd=h('button','bigbtn blue sm strd',ICON.say);rd.setAttribute('aria-label','הַקְרֵא לִי');row.append(rd,fwd);box.appendChild(row);
     const mark=i=>pg.querySelectorAll('.sl').forEach(p=>p.classList.toggle('cur',+p.dataset.i===i));
     pg.addEventListener('click',e=>{if(e.target.closest('.rdb'))heard();},true);
     /* a tap on a word says just that word (with nikud) and keeps it for word practice the next day (#420); 🔊 reads the line */
@@ -3879,7 +3898,7 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
     upd();[help.line,help.all].forEach(sec=>{if(sec==null)return;const left=D(sec*1000)-(Date.now()-ss.t0);if(left>0)setTimeout(upd,left+30);});
     return pg;}
   const peek=wrap=>{const s=wrap.parentNode,say0=O.sayNow;O.hush();wrap.hidden=true;const box=h('div','stpeek');s.appendChild(box);O.sayNow='';
-    const bk=h('button','bigbtn stback',ICON.play+'<span>לַשְּׁאֵלָה</span>');bk.onclick=()=>{T.readStop&&T.readStop();box.remove();wrap.hidden=false;O.sayNow=say0;};
+    const bk=h('button','bigbtn stback',ICON.play+'<span>הַמְשֵׁךְ</span>');bk.onclick=()=>{T.readStop&&T.readStop();box.remove();wrap.hidden=false;O.sayNow=say0;};
     page(box,bk);s.scrollTop=0;};
   const questions=()=>{O.hush();T.readStop&&T.readStop();quiz({id:o.id,title:o.name,bg:'final',back:o.qback||o.back,n:o.q.length,
     gen:i=>{const q=o.q[i];/* the index, not a counter: "again" restarts at 0 (#350) */const opts=shuffle([q.a,...q.ds]);return {pr:`<div class="sent">${q.pr}</div>`,opts,ans:opts.indexOf(q.a),cls:'tx',say:q.say,key:q.pr};},
@@ -3888,7 +3907,7 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
   /* #420: "words we will meet": 2-3 hard words of the story with a picture, a tap says the word */
   if(o.hw&&o.hw.length){const c=h('div','sthw',`<div class="sthwt">${HW_T}</div>`);const r=h('div','sthwr');
     o.hw.forEach(([w,pic])=>{const b=h('button','hwt',`<span class="hwp">${pic}</span><span class="hww">${w}</span>`);b.type='button';b.onclick=()=>{O.sfx.pop(1);O.say(w);};r.appendChild(b);});c.appendChild(r);s.appendChild(c);}
-  const go=h('button','bigbtn stgo',ICON.play+'<span>לַשְּׁאֵלוֹת</span>');go.onclick=questions;page(s,go);
+  const go=h('button','bigbtn stgo',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=questions;page(s,go);
   if(window.FRIEND&&FRIEND.readFirst){O.sayNow=T.spk(FRIEND.READFIRST);FRIEND.readFirst();}else O.sayNow='קְרָא אֶת הַסִּפּוּר, וְאַחַר כָּךְ עוֹנִים עַל שְׁאֵלוֹת.';}
 T.storyScreen=storyScreen;T.READ_HELP=READ_HELP;T.helpOf=helpOf;window.__story={get ss(){return SS;}};
 function readStory(k,back){const st=STORIES[k];storyScreen({act:'story-'+k,id:'story-'+k,title:st.t,name:st.t,tp:T.plainHe(st.t),goal:st.goal,spr:st.spr.map(x=>ALLSPR(x)),lines:st.s,hw:st.hw,
@@ -4042,14 +4061,14 @@ function circuit(back){let wire=false,sw=false;O.setScreen('sTal','city',back);T
 /* ice-water-steam */
 function states(back){let temp=1;O.setScreen('sTal','mount',back);T.hudT('קֶרַח, מַיִם וְאֵדִים');O.sayNow='גְּרֹר אֶת הָעִגּוּל כְּדֵי לְקָרֵר אוֹ לְחַמֵּם.';const s=$('#sTal');s.innerHTML='';
   const v=h('div','statev');const rng=h('input','');rng.type='range';rng.min=0;rng.max=2;rng.value=1;rng.id='tempR';rng.className='trng';rng.setAttribute('aria-label','חום');
-  const lab=h('div','lcap');const go=h('button','bigbtn',ICON.play+'<span>לַשְּׁאֵלוֹת</span>');const rw=h('div','trw');rw.append(h('span','tre','❄️'),rng,h('span','tre','🔥'));go.hidden=true;const hint=h('div','lcap dnh','👆 גְּרֹר אֶת הָעִגּוּל ↔ לְקַר וּלְחַם');const seen=new Set([1]);s.append(v,rw,hint,lab,go);
+  const lab=h('div','lcap');const go=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');const rw=h('div','trw');rw.append(h('span','tre','❄️'),rng,h('span','tre','🔥'));go.hidden=true;const hint=h('div','lcap dnh','👆 גְּרֹר אֶת הָעִגּוּל ↔ לְקַר וּלְחַם');const seen=new Set([1]);s.append(v,rw,hint,lab,go);
   const draw=()=>{temp=+rng.value;v.innerHTML=temp===0?'<div class="ice">🧊</div>':temp===1?'<div class="wat">💧💧💧</div>':'<div class="steam">♨️</div>';lab.innerHTML=['קַר מְאוֹד: הַמַּיִם קוֹפְאִים לְקֶרַח','חַמִּים: מַיִם נוֹזְלִים','חַם מְאוֹד: הַמַּיִם רוֹתְחִים וְהוֹפְכִים לְאֵדִים'][temp];};
   rng.oninput=()=>{draw();sfx.pop(temp+1);seen.add(temp);if(seen.size>=3){go.hidden=false;hint.hidden=true;}};draw();
   go.onclick=()=>{const Q=[['מָה קוֹרֶה לְקֶרַח בַּשֶּׁמֶשׁ?','הוּא נָמֵס לְמַיִם',['הוּא נִהְיֶה אֶבֶן','הוּא נִהְיֶה גָּדוֹל']],['מָה קוֹרֶה לְמַיִם בַּמַּקְפִּיא?','הֵם קוֹפְאִים לְקֶרַח',['הֵם רוֹתְחִים','הֵם נֶעֱלָמִים']],['מָה יוֹצֵא מִקֻּמְקוּם רוֹתֵחַ?','אֵדִים',['קֶרַח','חוֹל']],['קֶרַח, מַיִם וְאֵדִים הֵם...','אוֹתוֹ חֹמֶר',['שְׁלוֹשָׁה דְּבָרִים שׁוֹנִים לְגַמְרֵי','סוּגִים שֶׁל אֶבֶן']]];
     quiz({id:'sci-states',title:'קֶרַח, מַיִם וְאֵדִים',bg:'mount',back,n:4,gen:i=>{const [q,a,ds]=Q[i];const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}});};}
 /* day & night */
 function dayNight(back){O.setScreen('sTal','final',back);T.hudT('יוֹם וְלַיְלָה');O.sayNow='גְּרֹר אֶת הָעִגּוּל וְסוֹבֵב אֶת כַּדּוּר הָאָרֶץ.';const s=$('#sTal');s.innerHTML='';let ang=0;
-  const v=h('div','dnv');const lab=h('div','lcap');const rng=h('input','trng');rng.type='range';rng.min=0;rng.max=359;rng.value=0;rng.id='earthR';rng.setAttribute('aria-label','סיבוב');const go=h('button','bigbtn',ICON.play+'<span>לַשְּׁאֵלוֹת</span>');go.hidden=true;const hint=h('div','lcap dnh','👆 גְּרֹר אֶת הָעִגּוּל ↔ וְסוֹבֵב אֶת כַּדּוּר הָאָרֶץ');s.append(v,rng,hint,lab,go);
+  const v=h('div','dnv');const lab=h('div','lcap');const rng=h('input','trng');rng.type='range';rng.min=0;rng.max=359;rng.value=0;rng.id='earthR';rng.setAttribute('aria-label','סיבוב');const go=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');go.hidden=true;const hint=h('div','lcap dnh','👆 גְּרֹר אֶת הָעִגּוּל ↔ וְסוֹבֵב אֶת כַּדּוּר הָאָרֶץ');s.append(v,rng,hint,lab,go);
   const draw=()=>{ang=+rng.value;const day=Math.cos(ang*Math.PI/180)>0;v.innerHTML=`<svg viewBox="0 0 320 180" class="csvg" aria-hidden="true"><circle cx="40" cy="90" r="30" fill="#ffcf4d"/><g stroke="#ffcf4d" stroke-width="4">${[0,1,2,3,4,5,6,7].map(k=>`<line x1="${40+38*Math.cos(k*Math.PI/4)}" y1="${90+38*Math.sin(k*Math.PI/4)}" x2="${40+46*Math.cos(k*Math.PI/4)}" y2="${90+46*Math.sin(k*Math.PI/4)}"/>`).join('')}</g>
     <circle cx="220" cy="90" r="60" fill="#3a8fc4"/><path d="M220 30 A60 60 0 0 1 220 150 Z" fill="rgba(10,15,40,.55)"/><g transform="rotate(${-ang} 220 90)"><rect x="152" y="80" width="14" height="14" fill="#e4572e"/><path d="M150 80 L159 70 L168 80Z" fill="#94613a"/></g></svg>`;
     lab.innerHTML=day?'☀️ בַּבַּיִת שֶׁל אוֹרֶן עַכְשָׁו יוֹם':'🌙 בַּבַּיִת שֶׁל אוֹרֶן עַכְשָׁו לַיְלָה';};
@@ -4115,7 +4134,7 @@ function mixLab(back){O.setScreen('sTal','valley',back);T.hudT('מְעַרְבְ
     else{const wk=sel.includes('white')?'white':'black',oth=sel[0]===wk?sel[1]:sel[0];const hx=c=>[1,3,5].map(k=>parseInt(c.slice(k,k+2),16));const a=hx(CN[oth][1]),b=hx(CN[wk][1]);const m=a.map((v,k)=>Math.round(v*.6+b[k]*.4));
       p.style.background=`rgb(${m.join(',')})`;lab.innerHTML=`${CN[sel[0]][0]} + ${CN[sel[1]][0]} = ${CN[oth][0]} ${wk==='white'?'בָּהִיר':'כֵּהֶה'}`;sfx.ok(1);}
     sel=[];};
-  const tried=new Set();const go=h('button','bigbtn',ICON.play+'<span>לַחִידוֹן</span>');go.hidden=true;go.onclick=()=>mixQuiz(back);const r2=h('div','btnrow');r2.appendChild(go);
+  const tried=new Set();const go=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');go.hidden=true;go.onclick=()=>mixQuiz(back);const r2=h('div','btnrow');r2.appendChild(go);
   s.append(pot,lab,row,r2);show();}
 function mixQuiz(back){quiz({id:'art-mix',title:'מְעַרְבְּבִים צְבָעִים',bg:'valley',back,n:6,gen:i=>{const m=MIX[i%MIX.length];const rev=Math.random()<.35&&i>2;
   if(rev){const opts=shuffle([m[1],...shuffle(['red','blue','yellow','white','black'].filter(x=>x!==m[0]&&x!==m[1])).slice(0,2)]);return {pr:`<div class="mixq">${blob(m[0])}<b>+</b><span class="blob q">?</span><b>=</b>${blob(m[2])}</div><div class="qq">${CN[m[0]][0]} וְעוֹד אֵיזֶה צֶבַע נוֹתְנִים ${CN[m[2]][0]}?</div>`,opts:opts.map(swatch),ans:opts.indexOf(m[1]),cls:'tx sw2',key:'r'+m[2]};}
@@ -4240,7 +4259,7 @@ function jar(back){clearT();O.setScreen('sTal','forest',back);T.hudT('צִנְצ
 /* --- body scan --- */
 const SCAN=[['שְׁבוּ בְּנוֹחוּת וְעִצְמוּ עֵינַיִם.',null],['שִׂימוּ לֵב לְכַפּוֹת הָרַגְלַיִם. הֵן נוֹגְעוֹת בָּרִצְפָּה.',92],['עַכְשָׁו הָרַגְלַיִם. הֵן כְּבֵדוֹת וּרְגוּעוֹת.',80],['הַבֶּטֶן עוֹלָה וְיוֹרֶדֶת עִם הַנְּשִׁימָה.',62],['הַיָּדַיִם. סִגְרוּ אֶגְרוֹף חָזָק... וְשַׁחְרְרוּ.',66],['הַכְּתֵפַיִם. הָרִימוּ אוֹתָן לָאָזְנַיִם... וְהוֹרִידוּ.',46],['הַפָּנִים. חַיְּכוּ חִיּוּךְ קָטָן.',30],['כָּל הַגּוּף רָגוּעַ. פִּקְחוּ עֵינַיִם לְאַט.',null]];
 function scan(back){clearT();const bk=leave(back);O.setScreen('sTal','forest',bk);quiet();T.hudT('סְרִיקַת גּוּף');const s=$('#sTal');s.innerHTML='';let i=0;
-  const fig=h('div','scanf',`${O.AV()}<span class="glow"></span>`);guard=fig;const txt=h('div','lsent big2');const row=h('div','btnrow');const nx=h('button','bigbtn',ICON.play+'<span>הַלְאָה</span>');row.appendChild(nx);s.append(fig,txt,row);
+  const fig=h('div','scanf',`${O.AV()}<span class="glow"></span>`);guard=fig;const txt=h('div','lsent big2');const row=h('div','btnrow');const nx=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');row.appendChild(nx);s.append(fig,txt,row);
   const show=()=>{clearT();const [t,y]=SCAN[i];txt.innerHTML=t;const gl=fig.querySelector('.glow');gl.style.opacity=y==null?0:1;if(y!=null)gl.style.top=y+'%';O.say(t);soft(220,1.5,.05);
     T.hudT('סְרִיקַת גּוּף',T.progressBar(i,SCAN.length));later(()=>nx.click(),D(9000));};
   nx.onclick=()=>{i++;if(i>=SCAN.length){clearT();T.record('mind-scan',3);O.addGems(4);T.result({title:'כָּל הַכָּבוֹד!',sub:'הַגּוּף וְהָרֹאשׁ נָחִים.',gems:4,back:bk});return;}show();};show();}
@@ -4375,7 +4394,7 @@ const wordFor=l=>(T.WORDS||[]).find(w=>w.w.replace(/[֑-ׇ]/g,'')[0]===l);
 const FONT='bold 230px "Segoe UI", Arial, "Noto Sans Hebrew", sans-serif';
 function menu(back){O.setScreen('sTal','meadow',back);T.hudT('בֵּית הַכְּתִיבָה');O.sayNow='בוא נכתוב אותיות!';const s=$('#sTal');s.innerHTML='';
   s.appendChild(h('div','whead',`<span class="gd">${X.pen}</span><h1>כּוֹתְבִים אוֹתִיּוֹת</h1>`));
-  const w=W();const nx=AB.findIndex(([l])=>!(w[l]|0));const row=h('div','btnrow');const go=h('button','bigbtn huge',ICON.play+'<span>מַתְחִילִים לִכְתֹּב</span>');const st=nx<0?Math.floor(Math.random()*AB.length):nx;
+  const w=W();const nx=AB.findIndex(([l])=>!(w[l]|0));const row=h('div','btnrow');const go=h('button','bigbtn huge',ICON.play+'<span>הַמְשֵׁךְ</span>');const st=nx<0?Math.floor(Math.random()*AB.length):nx;
   go.onclick=()=>trace(st,back,[0,1,2,3].map(k=>(st+k)%AB.length));row.appendChild(go);s.appendChild(row);
   const pickL=h('button','dmore','🔤 <span>לִבְחֹר אוֹת</span>');s.appendChild(h('div','dpick')).appendChild(pickL);
   const g=h('div','abg');g.hidden=true;pickL.onclick=()=>{g.hidden=false;pickL.parentNode.remove();O.sfx.pop(2);};AB.forEach(([l],i)=>{const st=w[l]|0;const b=h('button','abb'+(st?' got':''),`<b>${l}</b><span>${[0,1,2].map(k=>k<st?SPR.star:SPR.starOff).join('')}</span>`);b.onclick=()=>trace(i,back,[i,...[1,2,3].map(k=>(i+k)%AB.length)]);g.appendChild(b);});
@@ -4480,7 +4499,7 @@ function profile(back){const pr=Object.assign({},prof()||{});let step=0;O.setScr
     const g=h('div','profg');opts.forEach(([v,html])=>{const b=h('button','pfb'+(pr[key]===v?' on':''),html);b.onclick=()=>{pr[key]=v;sfx.pop(step+2);step++;if(step<Q.length)run();else done();};g.appendChild(b);});s.appendChild(g);};
   const done=()=>{const S0=T.S();S0.prof=pr;S0.profT=Date.now();O.persist();sfx.win();s.innerHTML='';T.hudT('הַכַּרְטִיס שֶׁלִּי');
     s.appendChild(h('div','pcard',`<div class="pcav">${O.AV()}<span class="pcpet bob">${T.friend()}</span></div><h2>נָעִים לְהַכִּיר, אוֹרֶן!</h2><div class="lsent">${O.PET().n} יְלַוֶּה אוֹתְךָ 😊</div>`));
-    s.querySelector('.pcard').style.setProperty('--fc',pr.col);const row=h('div','btnrow');const b=h('button','bigbtn',ICON.play+'<span>יוֹצְאִים!</span>');b.onclick=back;row.appendChild(b);s.appendChild(row);O.say('נעים להכיר, אורן!');};
+    s.querySelector('.pcard').style.setProperty('--fc',pr.col);const row=h('div','btnrow');const b=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');b.onclick=back;row.appendChild(b);s.appendChild(row);O.say('נעים להכיר, אורן!');};
   run();}
 T.profile=profile;T.hello=()=>hello();
 /* ---------- personal greeting in the hub ---------- */
@@ -5012,7 +5031,7 @@ function home(){const S0=T.S();
       const b=h('div','tstep2'+(d.done[i]?' done':i===nx?' cur':'')+(/^tog:/.test(id)?' tog':''),`<span class="ti2">${d.done[i]?`<span class="qk">${q.k}</span>`:inf.ic}</span>`);b.style.setProperty('--sc',inf.c);b.title=T.plainHe(inf.n);b.setAttribute('role','img');b.setAttribute('aria-label',T.plainHe(inf.n));path.appendChild(b);});
     path.appendChild(h('i','tlink'+(nx<0?' on':'')));path.appendChild(h('span','tgoal'+(nx<0?' won':''),`<span>${nx<0?'🏆':q.e}</span>`));
     card.appendChild(path);const row=h('div','btnrow');
-    if(nx>=0){const go=h('button','bigbtn huge',ICON.play+'<span>מַמְשִׁיכִים</span>');go.onclick=()=>{sfx.pop(3);runStep(nx);};row.appendChild(go);}
+    if(nx>=0){const go=h('button','bigbtn huge',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=()=>{sfx.pop(3);runStep(nx);};row.appendChild(go);}
     else if(!d.claimed){const c=h('button','bigbtn gold huge',`${q.e} <span>סוֹף הַסִּפּוּר</span>`);c.onclick=()=>finale(d,q);row.appendChild(c);}
     if(row.children.length)card.appendChild(row);s.appendChild(card);
     const more=h('button','dmore','🔍 <span>מַשֶּׁהוּ אַחֵר</span>');more.onclick=()=>{sfx.pop(2);other();};s.appendChild(h('div','dpick')).appendChild(more);}
@@ -5063,7 +5082,7 @@ O.on('screen',id=>{if(id==='sHome')later(()=>{if($('#sHome').hidden||!$('#ov').h
   const d=T.S().daily;const b=$('#sHome .bigbtn.huge');if(b)coach(b,d&&d.done.some(x=>!x)?'הַכַּפְתּוֹר הַגָּדוֹל מַמְשִׁיךְ בַּשְּׁבִיל!':'כָּאן רוֹאִים אֵיךְ נִגְמַר הַסִּפּוּר!','home',1);});});
 O.on('hub',s=>later(()=>{const b=s.querySelector('.gdoor');if(b)intro('i-city',b,'זֹאת עִיר הַכִּשְׁרוֹנוֹת! כָּאן קוֹרְאִים, חוֹקְרִים, יוֹצְרִים וְנִרְגָּעִים. בְּחַר דֶּלֶת!',()=>coach(b,'בְּחַר דֶּלֶת — וּבוֹא נְשַׂחֵק!','hub',2));}));
 O.on('group',s=>later(()=>{const b=s.querySelector('.bld:not(.lockb)');if(b)coach(b,'לְחַץ עַל בִּנְיָן כְּדֵי לְהִכָּנֵס','group',2);}));
-O.on('map',m=>later(()=>{const b=m.querySelector('.worlds .wcard2:not(.locked)');if(b&&!$('#sMap').hidden)intro('i-map',b,'זֶה הַמַּסָּע! בְּכָל עוֹלָם יֵשׁ חֶשְׁבּוֹן וְחָבֵר שֶׁצָּרִיךְ עֶזְרָה. אוֹסְפִים כּוֹכָבִים וּמַצִּילִים אוֹתוֹ!',()=>coach(b,'לְחַץ עַל עוֹלָם כְּדֵי לְהַתְחִיל אֶת הַמַּסָּע','map',2));}));
+O.on('map',m=>later(()=>{const b=m.querySelector('.jnext')||m.querySelector('.worlds .wcard2:not(.locked):not([hidden])');if(b&&!$('#sMap').hidden)intro('i-map',b,'זֶה הַמַּסָּע! בְּכָל עוֹלָם יֵשׁ חֶשְׁבּוֹן וְחָבֵר שֶׁצָּרִיךְ עֶזְרָה. אוֹסְפִים כּוֹכָבִים וּמַצִּילִים אוֹתוֹ!',()=>coach(b,'לְחַץ עַל עוֹלָם כְּדֵי לְהַתְחִיל אֶת הַמַּסָּע','map',2));}));
 O.on('kingdomScene',sc=>later(()=>{const b=sc.querySelector('.cs');if(b&&!$('#sKing').hidden)intro('i-king',b,'זֹאת הַמַּמְלָכָה שֶׁלְּךָ! הָאַרְמוֹן גָּדֵל עִם הַכּוֹכָבִים. בַּיַּהֲלוֹמִים קוֹנִים דְּבָרִים, וְשָׂמִים אוֹתָם עַל הַדֶּשֶׁא.');}));
 O.on('synced',()=>{if(!$('#sHome').hidden&&$('#ov').hidden&&!document.querySelector('.tour'))home();});
 /* a home button that is always in the same place */
@@ -5237,7 +5256,7 @@ window.__arc={open:openArcade,start,get cur(){return cur;},finish:sc=>cur&&cur.f
 })();
 
 /* ===== READING: "קוֹדֶם אַתָּה, אַחַר כָּךְ אֲנִי" =====
-   Every text Oren should read gets a small 🔊. Pressing it reads the text and lights up each word as it is said.
+   Every text Oren should read gets a small 🔊 (not story lines: a tap on a line reads it, one 🔊 reads the story, G4). Pressing it reads the text and lights up each word as it is said.
    On quiz questions the game first lets him try; at level 1/2 it reads by itself after a pause.
    Levels go up by themselves when he answers correctly without hearing the question first ("solo"). */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;const {h,$}=O;const D=O.D;
@@ -5246,7 +5265,7 @@ const RD=()=>{const s=T.S();s.rd=s.rd||{lvl:1,solo:0};return s.rd;};
 const mode=()=>{const m=(T.S().set||{}).rdMode;return m===1||m===2||m===3?m:'auto';};
 const level=()=>{const m=mode();return m==='auto'?((RD().lvl|0)||1):m;};
 const UP={1:25,2:85};                         /* solo answers needed to move up from level 1 / level 2 */
-const TARGETS='#sTal .tqc .qq,#sTal .tqc .sent,#sTal .sl,#sTal .lsent:not(.blab),#sHome .hbub2';
+const TARGETS='#sTal .tqc .qq:not(.tqi),#sTal .tqc .sent,#sTal .lsent:not(.blab),#sHome .hbub2';
 
 /* ---- words: wrap each word once, keep the element's own markup ---- */
 function words(el){if(el._rw&&el._rw.length&&el._rw.every(w=>w.isConnected))return el._rw;const out=[];
@@ -5707,7 +5726,7 @@ function run(ids,back,then){ids=ids.slice();if(!ids.length)return then();const i
   const show=()=>{const c=cards[i];T.hudT(d.title,T.progressBar(i,cards.length));s.innerHTML='';
     const wrap=h('div','tq lc');s.appendChild(wrap);
     const card=h('div','prq tqc lccard',`<div class="lcart">${typeof c.art==='function'?c.art():c.art||''}</div><div class="sent">${c.t}</div>`);wrap.appendChild(card);card.classList.add('flashin');
-    const row=h('div','chs');const go=h('button','chb lcgo',ICON.play+`<span>${i<cards.length-1?'הַמְשֵׁךְ':'מַתְחִילִים!'}</span>`);row.appendChild(go);wrap.appendChild(row);
+    const row=h('div','chs');const go=h('button','chb lcgo',ICON.play+'<span>הַמְשֵׁךְ</span>');row.appendChild(go);wrap.appendChild(row);
     go.onclick=()=>{if(go.disabled)return;go.disabled=true;T.readStop&&T.readStop();sfx.pop(2);i++;
       if(i<cards.length)return show();LC()[id]=1;O.persist();window.__quiz=null;T.setKey(null);run(ids,back,then);};
     window.__quiz={ans:0,get i(){return i;},wrap};O.sayNow=T.spk?T.spk(c.t):c.t;
@@ -5917,8 +5936,8 @@ window.HELP_TEXTS=(window.HELP_TEXTS||[]).concat(Object.values(SPH));
 const spLen=(w,L)=>{const n=w.plain.length;return L===1?n<=3:L===2?n===4:n>=5;};
 function spell(back,L0){const L=L0||level('spell',3);const pool=shuffle(WD.filter(w=>spLen(w,L))).slice(0,6);let i=0,err=0,gems=0,lets=0;
   O.setScreen('sTal','meadow',back);const s=$('#sTal');
-  const run=()=>{const w=pool[i];const need=[...w.plain];let k=0,miss=0,HB=null;T.hudT('כּוֹתְבִים מִלִּים',T.progressBar(i,pool.length));O.sayNow=T.spk(w.w);s.innerHTML='';lets+=need.length;
-    const card=h('div','prq tqc gp-sp',`<div class="qq">שׁוֹמְעִים וְכוֹתְבִים</div>${pic(w)}<div class="slots">${need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
+  const run=()=>{const w=pool[i];const need=[...w.plain];let k=0,miss=0,HB=null;T.hudT('כּוֹתְבִים מִלִּים',T.progressBar(i,pool.length));O.sayNow='שׁוֹמְעִים וְכוֹתְבִים. '+T.spk(w.w);s.innerHTML='';lets+=need.length;
+    const card=h('div','prq tqc gp-sp',`<div class="qq tqi">שׁוֹמְעִים וְכוֹתְבִים</div>${pic(w)}<div class="slots">${need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
     const pb=h('button','hintbtn',ICON.say+'<span>הַשְׁמַע</span>');pb.onclick=()=>sayW(w);card.appendChild(pb);s.appendChild(card);
     const extra=[];const last=need[need.length-1];if(L>1&&FINAL[last]&&!need.includes(FINAL[last]))extra.push(FINAL[last]);
     for(const c of shuffle(LETTERS)){if(extra.length>=L)break;if(!need.some(x=>sameSound(x,c))&&!extra.some(x=>sameSound(x,c)))extra.push(c);}
@@ -6972,8 +6991,8 @@ function speakList(){const out=new Set();const add=s=>{if(s)out.add(String(s).re
   order.forEach(o=>add(o.t));paper.forEach(p=>{add(p.t);p.chk.forEach(add);});Object.values(UI).forEach(add);
   return [...out];}
 /* fixed kid-facing lines of the activities */
-const UI={first:'בְּאֵיזוֹ אוֹת מַתְחִילָה הַמִּלָּה?',pw:'אֵיזוֹ מִלָּה מַתְאִימָה לַתְּמוּנָה?',wp:'אֵיזוֹ תְּמוּנָה מַתְאִימָה לַמִּלָּה?',build:'לוֹחֲצִים עַל הַהֲבָרוֹת לְפִי הַסֵּדֶר, מִיָּמִין לִשְׂמֹאל',
- copy:'כְּתֹב אֶת הַמִּלָּה: לוֹחֲצִים עַל הָאוֹתִיּוֹת לְפִי הַסֵּדֶר',dict:'שׁוֹמְעִים אֶת הַמִּלָּה וְכוֹתְבִים אוֹתָהּ',miss:'אֵיזוֹ אוֹת חֲסֵרָה?',order:'סַדֵּר אֶת הַמִּלִּים לְמִשְׁפָּט',
+const UI={first:'בְּאֵיזוֹ אוֹת מַתְחִילָה הַמִּלָּה?',pw:'אֵיזוֹ מִלָּה מַתְאִימָה לַתְּמוּנָה?',wp:'אֵיזוֹ תְּמוּנָה מַתְאִימָה לַמִּלָּה?',build:'סַדֵּר אֶת הַהֲבָרוֹת',
+ copy:'כְּתֹב אֶת הַמִּלָּה',dict:'שׁוֹמְעִים וְכוֹתְבִים',miss:'אֵיזוֹ אוֹת חֲסֵרָה?',order:'סַדֵּר אֶת הַמִּלִּים לְמִשְׁפָּט',
  paperGo:'סִיַּמְתִּי לִכְתֹּב',paperChk:'בּוֹא נִבְדֹּק:',paperOk:'בָּדַקְתִּי',paperPar:'הַרְאֵה לְאַבָּא אוֹ לְאִמָּא',paperParOk:'אַבָּא אוֹ אִמָּא רָאוּ',paperEx:'דֻּגְמָאוֹת:',
  paperTake:'קַח דַּף וְעִפָּרוֹן',storyRead:'הַקְרֵא לִי',storyQ:'לַשְּׁאֵלוֹת',finHint:'בְּסוֹף מִלָּה כּוֹתְבִים אוֹת סוֹפִית',again:'נַסֵּה שׁוּב',heard:'אֵיזוֹ מִלָּה שָׁמַעְתָּ?',
  /* #54 the help button on the tile screens */
@@ -7053,11 +7072,12 @@ function wp(back){const L=level('word');T.quiz({id:'rb2-wp-'+L,title:'אֵיזו
   return {pr:`<div class="bigw">${w.w}</div><div class="qq">${UI.wp}</div>`,opts:opts.map(x=>pic(x.pic)),ans:opts.indexOf(w),cls:'picb',reveal:()=>say(w.w),key:w.w,bank:'rb-word'};})});}
 /* tap tiles in order (syllables, letters or words); calls done(errors, gems). o.unit = 'syl'|'let'|'word', o.whole = the word/sentence.
    #54 one help button: tap 1 = the next tile glows, tap 2 = the whole answer with a short explanation (counts as a mistake, no gems). */
-function tiles(s,o,done){let k=0,err=0,miss=0,HB=null;s.innerHTML='';const card=h('div','prq tqc',`${o.head||''}<div class="slots">${o.need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
+/* G4: o.tip = one short instruction line at the top of the card, spoken with the word (no 🔊 of its own); G3: letter tiles in balanced rows (4 = 2x2, 7 = 4+3) */
+function tiles(s,o,done){let k=0,err=0,miss=0,HB=null;s.innerHTML='';if(o.tip)O.sayNow=T.spk(o.tip)+'. '+(O.sayNow||'');const card=h('div','prq tqc',`${o.tip?`<div class="qq tqi">${o.tip}</div>`:''}${o.head||''}<div class="slots">${o.need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
   if(o.play){const pb=h('button','hintbtn',ICON.say+'<span>הַשְׁמַע</span>');pb.onclick=o.play;card.appendChild(pb);}s.appendChild(card);
-  const row=h('div','chs');const fb=h('div','lcap','');const unit=o.unit||'let';
+  const row=h('div','chs');const fb=h('div','lcap','');const unit=o.unit||'let';const nt=o.tiles.length;if(unit!=='word'){row.classList.add('rbt');row.style.setProperty('--c',nt<=3?nt:Math.ceil(nt/2));if(nt>=7)row.classList.add('c4');}
   shuffle(o.tiles.map((x,i)=>[x,i])).forEach(([x])=>{const b=h('button','chb tx'+(o.big?' big2':''),x);b.dataset.t=x;b.onclick=()=>tap(b);row.appendChild(b);});
-  s.appendChild(row);s.appendChild(fb);if(o.tip)s.appendChild(h('div','lsent',o.tip));
+  s.appendChild(row);s.appendChild(fb);
   const nextT=()=>k<o.need.length?[...row.children].find(y=>!y.disabled&&y.dataset.t===o.need[k]):null;
   const fill=(j,x)=>{const sl=card.querySelectorAll('.slot2')[j];sl.textContent=x;sl.classList.add('on');};
   const complete=g=>{sfx.ok(1);card.querySelector('.slots').classList.add('flash');if(g){O.addGems(g,card);O.floatText(card,'+'+g);}if(o.end)o.end(card);setTimeout(()=>{if(card.isConnected)done(err,g);},D(g?1400:4200));};
@@ -7731,8 +7751,8 @@ const ROWX=[496,456,414,372,306,222,148,80],ROWR=[5,8,8.5,6.5,25,17,12,11.5];
 const planetRow=hi=>SV('0 0 560 110',`<rect width="560" height="110" rx="14" fill="#1d2140"/><circle cx="600" cy="55" r="70" fill="#ffcf4d"/>`+
   PLANETS.map((p,i)=>`<g opacity="${hi&&!hi.includes(p.k)?.3:1}">${pl(p.k,ROWX[i],55,ROWR[i])}</g>`).join(''),'e2wide');
 const EARTH_DN=SV('0 0 400 170',`<rect width="400" height="170" rx="14" fill="#1d2140"/><circle cx="345" cy="85" r="42" fill="#ffcf4d"/><g stroke="#ffcf4d" stroke-width="4" opacity=".55">${[-30,-15,0,15,30].map(d=>`<line x1="290" y1="${85+d}" x2="200" y2="${85+d*1.4}"/>`).join('')}</g>
-  ${pl('earth',120,85,62)}<path d="M120 23 A62 62 0 0 0 120 147 Z" fill="rgba(8,12,35,.62)"/><text x="160" y="90" class="e2lbl" font-size="15" fill="#1d2631">☀ יוֹם</text><text x="80" y="90" class="e2lbl" font-size="15" style="fill:#fff;stroke:none">לַיְלָה</text>
-  <path d="M75 15 A70 70 0 0 1 170 20" fill="none" stroke="#fff" stroke-width="3" marker-end="url(#e2ar)"/><defs><marker id="e2ar" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#fff"/></marker></defs>`);
+  ${pl('earth',120,85,62)}<path d="M120 23 A62 62 0 0 0 120 147 Z" fill="rgba(8,12,35,.62)"/><text x="160" y="90" class="e2lbl" font-size="22" fill="#1d2631">☀ יוֹם</text><text x="80" y="92" class="e2lbl" font-size="22" style="fill:#fff;stroke:none">לַיְלָה</text>
+  <path d="M75 15 A70 70 0 0 1 170 20" fill="none" stroke="#fff" stroke-width="3" marker-end="url(#e2ar)"/><defs><marker id="e2ar" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#fff"/></marker></defs>`,'e2wide');
 const ASTRO=SV('0 0 200 200',`<rect width="200" height="200" rx="16" fill="#1d2140"/>${[[20,30],[170,25],[160,150],[30,160],[100,15],[185,95]].map(([x,y])=>`<circle cx="${x}" cy="${y}" r="2" fill="#fff"/>`).join('')}
   <rect x="62" y="70" width="76" height="80" rx="22" fill="#9aa1a8"/><rect x="70" y="78" width="60" height="78" rx="20" fill="#f4f4f4" stroke="#c9ccd1" stroke-width="3"/><rect x="88" y="100" width="24" height="16" rx="3" fill="#3a8fc4"/><circle cx="94" cy="108" r="3" fill="#e4572e"/><circle cx="104" cy="108" r="3" fill="#ffd166"/>
   <rect x="44" y="88" width="30" height="16" rx="8" fill="#f4f4f4" stroke="#c9ccd1" stroke-width="3" transform="rotate(-25 59 96)"/><rect x="126" y="88" width="30" height="16" rx="8" fill="#f4f4f4" stroke="#c9ccd1" stroke-width="3" transform="rotate(25 141 96)"/>
@@ -7780,13 +7800,13 @@ const KIN=[[32.89,35.6],[32.85,35.64],[32.78,35.65],[32.71,35.60],[32.70,35.57],
 const JORDAN=[[33.2,35.62],[33.0,35.61],[32.89,35.6]],JORDAN2=[[32.70,35.57],[32.5,35.57],[32.2,35.55],[32.0,35.53],[31.77,35.53]];
 const CITIES={jer:['יְרוּשָׁלַיִם',[31.78,35.22],[-4,20]],ta:['תֵּל אָבִיב',[32.08,34.80],[34,-6]],hai:['חֵיפָה',[32.79,35.03],[24,5]],bs:['בְּאֵר שֶׁבַע',[31.25,34.79],[6,20]],eil:['אֵילַת',[29.56,34.95],[-28,-2]]};
 const SEAS={med:['הַיָּם הַתִּיכוֹן',[32.45,34.18]],kin:['הַכִּנֶּרֶת',[32.8,35.585],[14,-16]],dead:['יָם הַמֶּלַח',[31.42,35.49],[-4,52]],red:['יָם סוּף',[29.35,34.88],[-36,5]]};
-const REGIONS={galil:['הַגָּלִיל',[[33.1,35.11],[33.2,35.6],[32.72,35.55],[32.6,35.3],[32.75,35.12]],[32.95,35.33]],negev:['הַנֶּגֶב',[[31.35,34.25],[31.3,35.3],[30.6,35.2],[29.6,34.99],[29.55,34.9],[30.4,34.45]],[30.6,34.85]]};
+const REGIONS={galil:['הַגָּלִיל',[[33.1,35.07],[33.2,35.6],[32.72,35.55],[32.6,35.3],[32.75,35.07]],[32.95,35.33]],negev:['הַנֶּגֶב',[[31.35,34.25],[31.3,35.3],[30.6,35.2],[29.6,34.99],[29.55,34.9],[30.4,34.45]],[30.6,34.85]]};
 const cityPos=k=>ilP(CITIES[k][1]);
 function ilMap(o={}){const lab=o.labels||[],hit=o.hit||'';const L=(k,n,[x,y],off=[0,0],fs=16)=>lab.includes(k)?`<text x="${x+off[0]}" y="${y+off[1]}" class="e2lbl" font-size="${fs}">${n}</text>`:'';
   let s=`<defs><linearGradient id="e2land" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a8d08d"/><stop offset=".45" stop-color="#cfe0a0"/><stop offset=".6" stop-color="#ead39a"/><stop offset="1" stop-color="#e6c27f"/></linearGradient></defs>
   <rect x="0" y="0" width="204" height="420" fill="url(#e2land)"/>
   <polygon points="0,0 ${pts(MED)} 0,232" fill="#7cc3ea" data-k="med" class="${hit==='sea'?'e2hit':''}"/>
-  <polygon points="${pts(GULF)}" fill="#7cc3ea"/>${hit==='sea'?`<rect x="80" y="380" width="40" height="40" fill="transparent" data-k="red" class="e2hit"/><polygon points="${pts(GULF)}" fill="transparent" data-k="red" class="e2hit"/>`:''}
+  <polygon points="${pts(GULF)}" fill="#7cc3ea"/>${hit==='sea'?`<rect x="78" y="376" width="44" height="44" fill="transparent" data-k="red" class="e2hit"/><polygon points="${pts(GULF)}" fill="transparent" data-k="red" class="e2hit"/>`:''}
   <polyline points="${pts(JORDAN)}" fill="none" stroke="#5fa8d8" stroke-width="2.5"/><polyline points="${pts(JORDAN2)}" fill="none" stroke="#5fa8d8" stroke-width="2.5"/>
   <polygon points="${pts(DEAD)}" fill="#5fb0d8" stroke="#3a8fc4" stroke-width="1"/><polygon points="${pts(KIN)}" fill="#4aa3e0" stroke="#3a8fc4" stroke-width="1"/>`;
   if(hit==='sea'){const[dx,dy]=ilP([31.42,35.49]),[kx,ky]=ilP([32.8,35.585]);s+=`<circle cx="${dx}" cy="${dy}" r="24" fill="transparent" data-k="dead" class="e2hit"/><circle cx="${kx}" cy="${ky}" r="22" fill="transparent" data-k="kin" class="e2hit"/>`;}
@@ -7818,7 +7838,9 @@ const CONT={
  antarctica:['אַנְטַארְקְטִיקָה',[[[-90,-180],[-70,-180],[-71,-160],[-74,-140],[-73,-120],[-73,-100],[-71,-80],[-68,-68],[-64,-60],[-63,-57],[-65,-58],[-70,-60],[-73,-60],[-77,-50],[-75,-35],[-71,-15],[-70,0],[-69,20],[-69,40],[-67,55],[-67,70],[-69,75],[-66,90],[-66,110],[-67,130],[-68,150],[-71,165],[-72,170],[-70,180],[-90,180]]],[-75,10]]};
 const CONT_COL={namerica:'#f2a65a',samerica:'#e9c46a',europe:'#8e9fe0',africa:'#e88f6b',asia:'#7cc35f',australia:'#c895e0',antarctica:'#eef3f7'};
 const OCEANS={pacific:['הָאוֹקְיָנוֹס הַשָּׁקֵט',[0,-140],'הַשָּׁקֵט'],atlantic:['הָאוֹקְיָנוֹס הָאַטְלַנְטִי',[22,-42],'הָאַטְלַנְטִי'],indian:['הָאוֹקְיָנוֹס הַהֹדִּי',[-20,75],'הַהֹדִּי']};
+const PAD={antarctica:[20,121,320,44]};
 function worldMap(o={}){const lab=o.labels||[];let s=`<rect width="360" height="165" fill="#8fd0f2"/>`;
+  if(o.hit)for(const k in CONT){const [x,y]=wP(CONT[k][2]),r=PAD[k]||[x-24,y-24,48,48];s+=`<g data-k="${k}" class="e2hit"><rect x="${r[0]}" y="${r[1]}" width="${r[2]}" height="${r[3]}" fill="transparent"/></g>`;}
   for(const k in CONT){const [n,polys]=CONT[k];s+=`<g data-k="${k}" class="${o.hit?'e2hit':''}" fill="${o.plain?'#c9d6a3':CONT_COL[k]}" stroke="#5c6b73" stroke-width=".5">${polys.map(p=>`<polygon points="${wpts(p)}"/>`).join('')}</g>`;}
   s+=`<polygon points="${wpts([[63,-94],[60,-94],[57,-92.5],[55,-85],[52,-80],[55,-77],[58,-77],[61,-78],[62.5,-82],[64,-87]])}" fill="#8fd0f2"/><ellipse cx="${wP([43.2,34.5])[0]}" cy="${wP([43.2,34.5])[1]}" rx="6.5" ry="2.2" fill="#8fd0f2"/><ellipse cx="${wP([42,50.5])[0]}" cy="${wP([42,50.5])[1]}" rx="2.6" ry="5" fill="#8fd0f2"/>`;
   if(o.il){const [x,y]=wP([31.5,35]);s+=`<circle cx="${x}" cy="${y}" r="2.6" fill="#e4572e" stroke="#fff" stroke-width="1" pointer-events="none"/>`;}
@@ -7870,13 +7892,14 @@ const spk=T.spk;
    card = {art, t} */
 /* a card shows one short line; the whole text is spoken (the line lights up, the rest follows) */
 const HEB_PL=x=>x.replace(/[\u0591-\u05C7]/g,'');
-function splitLine(t){const re=/[.!?:,–]/g;let m;while((m=re.exec(t))){const head=t.slice(0,m.index+1),rest=t.slice(m.index+1).trim();if(!rest)break;if(HEB_PL(head).length>=12)return [head.replace(/\s*[,:–]$/,''),rest];}return [t,''];}
+function splitLine(t){const re=/[.!?:,–]/g;let m,head=t;while((m=re.exec(t))){const hd=t.slice(0,m.index+1);if(!t.slice(m.index+1).trim())break;if(HEB_PL(hd).length>=12){head=hd.replace(/\s*[,:–]$/,'');break;}}
+  if(HEB_PL(head).length<=28)return [head];const ws=head.split(' ');let out='';for(const w of ws){const nx=out?out+' '+w:w;if(HEB_PL(nx).length>26)break;out=nx;}return [out.replace(/[,:–]$/,'')+'…'];}
 function lesson(o){const cards=o.cards.filter(c=>c);if(!cards.length)return o.then();let i=0;O.setScreen('sTal',o.bg,o.back);const s=$('#sTal');
   const show=()=>{const c=cards[i];T.hudT(o.title,T.progressBar(i,cards.length));O.sayNow=spk(c.t);s.innerHTML='';
-    const [vis,rest]=splitLine(c.t);const card=h('div','prq tqc e2card',`<div class="e2art">${c.art||''}</div><div class="sent">${vis}</div>`);s.appendChild(card);card.classList.add('flashin');
+    const [vis]=splitLine(c.t);const card=h('div','prq tqc e2card',`<div class="e2art">${c.art||''}</div><div class="sent" data-rd="1">${vis}</div>`);s.appendChild(card);card.classList.add('flashin');
     const nx=h('button','bigbtn e2next',ICON.play+'<span>הַמְשֵׁךְ</span>');
     nx.onclick=()=>{T.readStop&&T.readStop();sfx.pop(2);i++;if(i<cards.length)show();else{STEP=null;o.then();}};s.appendChild(nx);
-    setTimeout(async()=>{const se=card.querySelector('.sent');if(!card.isConnected||!se)return;if(T.readEl)await T.readEl(se);else O.say(spk(vis));if(rest&&card.isConnected&&cards[i]===c)O.say(spk(rest));},D(450));setStep(()=>nx.click());};
+    setTimeout(()=>{if(card.isConnected&&cards[i]===c)O.say(O.sayNow);},D(450));setStep(()=>nx.click());};
   show();}
 /* question bank → T.quiz. q = {lv, q, a, ds, art, ex, cls} */
 const Q=(lv,q,a,ds,x)=>Object.assign({lv,q,a,ds},x||{});
@@ -9685,7 +9708,7 @@ const MM={
   if(d>0)st=off+d*ri(0,lv<=2?3:5);else st=-d*ri(len,len+6)+(lv>=4?ri(0,1)*(-d===10?5:0):0);
   const seq=Array.from({length:len},(_,j)=>st+d*j);if(seq.some(x=>x<0||x>300))return MM['mm-skip'](lv);
   const qi=lv<=2?len-1:ri(1,len-1);const v=seq[qi];
-  return Q('mm-skip',lv,{v,html:`<div class="lnx lnseq">${L(seq.map((x,j)=>j===qi?'?':x).join(', '))}</div>`,text:'בְּכַמָּה קוֹפְצִים? מָה הַמִּסְפָּר הֶחָסֵר?',ds:[v+1,v-1,v+(d>0?d:-d)],
+  return Q('mm-skip',lv,{v,html:`<div class="lnx lnseq">${L(seq.map((x,j)=>j===qi?'?':x).join(', '))}</div>`,text:'מָה הַמִּסְפָּר הֶחָסֵר?',tip:'בְּכַמָּה קוֹפְצִים כָּל פַּעַם?',ds:[v+1,v-1,v+(d>0?d:-d)],
     ex:`<div>קוֹפְצִים כָּל פַּעַם ${L((d>0?'+':'−')+Math.abs(d))}</div>`,seq,qi,step:d,key:'s'+seq.join(',')+qi});},
  'mm-pv':lv=>{
   const moves=lv===1?[pk([10,-10])]:lv===2?shuf([pk([10,-10]),pk([1,-1])]):lv===3?[pk([20,30,-20]),pk([1,2,3,-1,-2])]:lv===4?[pk([11,9,-11,-9])]:[pk([10,20,-10]),pk([1,-1,2]),pk([11,9,-11,-9])];
@@ -9807,13 +9830,13 @@ const CH={
  balance:lv=>{const [f1,f2,f3]=shuf(FRUIT);const A=ri(2,lv>=3?12:6),Bv=ri(1,lv>=3?15:8);
    const rows=[[`${f1} + ${f1}`,2*A],[`${f1} + ${f2}`,A+Bv]];let v=Bv,ask=f2,p={eqs:[[[0,0],2*A],[[0,1],A+Bv]],ask:1};
    if(lv>=4){const Cv=ri(1,12);rows.push([`${f2} + ${f3}`,Bv+Cv]);v=Cv;ask=f3;p={eqs:[[[0,0],2*A],[[0,1],A+Bv],[[1,2],Bv+Cv]],ask:2};}
-   return {kind:'balance',p,v,html:`<div class="lnbal">${rows.map(r=>`<div>${L(`${r[0]} = ${r[1]}`)}</div>`).join('')}<div class="lnask">${L(`${ask} = ?`)}</div></div>`,text:'כָּל פְּרִי שָׁוֶה מִסְפָּר. כַּמָּה שָׁוֶה הַפְּרִי הָאַחֲרוֹן?',ds:[rows[rows.length-1][1],A,v+1],key:'b'+rows.map(r=>r[1]).join(',')};},
+   return {kind:'balance',p,v,html:`<div class="lnbal">${rows.map(r=>`<div>${L(`${r[0]} = ${r[1]}`)}</div>`).join('')}<div class="lnask">${L(`${ask} = ?`)}</div></div>`,text:'כַּמָּה שָׁוֶה הַפְּרִי הָאַחֲרוֹן?',tip:'כָּל פְּרִי שָׁוֶה מִסְפָּר. מַתְחִילִים מֵהַשּׁוּרָה הָרִאשׁוֹנָה.',ds:[rows[rows.length-1][1],A,v+1],key:'b'+rows.map(r=>r[1]).join(',')};},
  digits:lv=>{if(lv<=3){const t=ri(1,8),d=ri(1,9-t);return {kind:'digits',p:{t,d},v:t*10+t+d,text:`אֲנִי מִסְפָּר דּוּ-סִפְרָתִי. סִפְרַת הָעֲשָׂרוֹת שֶׁלִּי הִיא ${B(t)}, וְסִפְרַת הָאֲחָדוֹת גְּדוֹלָה מִמֶּנָּה בְּ-${B(d)}. מִי אֲנִי?`,ds:[(t+d)*10+t,t*10+d,t*10+t],key:'g'+t+d};}
    let t,u;do{u=ri(0,8);t=ri(u+1,9);}while(t+u>18);const s=t+u,d=t-u;return {kind:'digits2',p:{s,d},v:t*10+u,text:`אֲנִי מִסְפָּר דּוּ-סִפְרָתִי. סְכוּם הַסְּפָרוֹת שֶׁלִּי הוּא ${B(s)}, וְסִפְרַת הָעֲשָׂרוֹת גְּדוֹלָה בְּ-${B(d)} מִסִּפְרַת הָאֲחָדוֹת. מִי אֲנִי?`,ds:[u*10+t,t*10+u+1,s*10+d].filter(x=>x<100),key:'h'+s+d};},
  grow:lv=>{let seq,rule;if(lv<=3){const a=ri(1,10),d0=ri(1,2);seq=[a];for(let j=0;j<5;j++)seq.push(seq[j]+d0+j);rule='הַקְּפִיצָה גְּדֵלָה בְּ-1 כָּל פַּעַם';}
    else if(lv===4){const a=ri(10,30),x=ri(3,6),y=ri(1,x-1);seq=[a];for(let j=0;j<5;j++)seq.push(seq[j]+(j%2?-y:x));rule=`קָדִימָה ${x}, אָחוֹרָה ${y}, וְשׁוּב`;}
    else{const a=ri(1,5),k=2;seq=[a];for(let j=0;j<4;j++)seq.push(seq[j]*k);rule='כָּל מִסְפָּר גָּדוֹל פִּי 2 מֵהַקּוֹדֵם';}
-   const v=seq.pop();return {kind:'grow',p:{seq},v,html:`<div class="lnx lnseq">${L(seq.join(', ')+', ?')}</div>`,text:'מָה הַמִּסְפָּר הַבָּא? חַפֵּשׂ אֶת הַחֻקִּיּוּת.',rule,ds:[v+1,v-1,2*seq[seq.length-1]-seq[seq.length-2]],key:'q'+seq.join(',')};},
+   const v=seq.pop();return {kind:'grow',p:{seq},v,html:`<div class="lnx lnseq">${L(seq.join(', ')+', ?')}</div>`,text:'מָה הַמִּסְפָּר הַבָּא?',tip:'חַפֵּשׂ אֶת הַחֻקִּיּוּת.',rule,ds:[v+1,v-1,2*seq[seq.length-1]-seq[seq.length-2]],key:'q'+seq.join(',')};},
  legs:lv=>{const a=ri(2,lv===5?6:4),b=ri(2,lv===5?6:4);return {kind:'legs',p:{a,b},v:4*a+2*b,text:`בֶּחָצֵר יֵשׁ ${count(a,'dog')} וְעוֹד ${count(b,'hen')}. לְכָל כֶּלֶב יֵשׁ ${B(4)} רַגְלַיִם, וּלְכָל תַּרְנְגֹלֶת יֵשׁ שְׁתֵּי רַגְלַיִם. כַּמָּה רַגְלַיִם יֵשׁ לְכֻלָּם בְּיַחַד?`,ds:[2*(a+b),4*(a+b),4*a+2*b+2],key:'l'+a+b};},
 };
 const CH_BY_LV=[null,['miss','riddle'],['miss','riddle','balance'],['miss','riddle','balance','digits','grow'],['miss','riddle','balance','digits','grow'],['miss','riddle','balance','digits','grow','legs']];
@@ -10000,7 +10023,7 @@ C.runwayOf=actId=>{const rs=C.runwayAll().filter(r=>r.acts.includes(actId));if(!
 
 /* ---------- the screen pieces ---------- */
 const hundred=(chart,show)=>{let s='<div class="lnhc" dir="ltr">';for(let i=1;i<=100;i++){const cls=i===chart.start?' st':show&&chart.path.includes(i)?(i===chart.path[chart.path.length-1]?' en':' pt'):'';s+=`<span class="${cls.trim()}">${i}</span>`;}return s+'</div>';};
-/* one question card: multiple choice; a short explanation after a mistake */
+/* one question card: one instruction line, multiple choice; the strategy (q.tip) only behind the help button (#216); a short explanation after a mistake */
 function askQ(wrap,q,i,n,title,onAns){T.hudT(title,T.progressBar(i,n));wrap.innerHTML='';const t0=Date.now();
   const card=h('div','prq tqc lnq',`${q.html||''}${q.chart?hundred(q.chart,false):''}${q.text?`<div class="qq">${q.text}</div>`:''}`);wrap.appendChild(card);if(T.rdQ&&q.text)T.rdQ(q,card);
   O.sayNow=plain((q.text?'':(q.html||'')).replace(/<span class="lnbox"><\/span>/g,' מה ')+' '+(q.text||''));
@@ -10008,7 +10031,7 @@ function askQ(wrap,q,i,n,title,onAns){T.hudT(title,T.progressBar(i,n));wrap.inne
   q.opts.forEach((v,k)=>{const b=h('button','chb num',String(v));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
   const exb=h('div','hintbox');exb.hidden=true;wrap.appendChild(exb);card.classList.add('flashin');
   /* only: the help box already shows the answer with the explanation, so the explanation box holds just 'continue' */
-  const showEx=(only)=>{if(q.chart){const c=card.querySelector('.lnhc');if(c)c.outerHTML=hundred(q.chart,true);}exb.hidden=false;exb.innerHTML=only?'':`<div class="cap">${q.tip?`<div>💡 ${q.tip}</div>`:''}${q.ex||''}</div>`;
+  const showEx=(only)=>{if(q.chart){const c=card.querySelector('.lnhc');if(c)c.outerHTML=hundred(q.chart,true);}exb.hidden=false;exb.innerHTML=only||!q.ex?'':`<div class="cap">${q.ex}</div>`;
     const nb=h('button','bigbtn',O.ICON.play+'<span>הַמְשֵׁךְ</span>');nb.onclick=()=>{sfx.pop(1);onAns(null);};exb.appendChild(nb);setTimeout(()=>nb.focus(),50);T.setKey(e=>{if(e.key==='Enter'||e.key===' ')nb.click();});};
   /* #54 one help button: the strategy tip as the clue, then the answer with its explanation (the question ends like after two mistakes) */
   const HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,clue:q.tip,explain:q.ex||(q.tip?'💡 '+q.tip:''),before:exb,

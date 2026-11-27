@@ -148,6 +148,18 @@ ok(withPerson.every(id => both.has(id + 'm') && both.has(id + 'f')), 'templates 
 ok(C.count(1, 'goal') === 'גּוֹל אֶחָד' && C.count(1, 'kick') === 'בְּעִיטָה אַחַת' && C.count(2, 'window') === 'שְׁנֵי חַלּוֹנוֹת' && C.count(2, 'rock') === 'שְׁתֵּי אֲבָנִים' && C.count(2, 'tower', 'לְ') === 'לִשְׁנֵי מִגְדָּלִים' && C.count(2, 'ship', 'לְ') === 'לִשְׁתֵּי חֲלָלִיּוֹת' && C.count(7, 'minute') === '<b>7</b> דַּקּוֹת',
   'count(): irregular genders (חַלּוֹנוֹת m, אֲבָנִים f) and prefixes');
 ok(C.lp('דָּנִי') === 'לְדָנִי' && C.vav('מָאיָה') === 'וּמָאיָה' && C.vav('תָּמָר') === 'וְתָמָר', 'prefixes before names: לְדָנִי, וּמָאיָה, וְתָמָר');
+// #216 (G4) one short instruction line per question card; the strategy goes into the help clue (q.tip), not the card
+{ const he = s => strip(s).replace(/[֑-ׇ]/g, ''); const badL = new Set();
+  const chk = (q, key) => { const t = he(q.text || ''); if (t && (t.split(/[.?!]/).filter(x => x.trim()).length > 1 || t.length > 34)) badL.add(key + ': ' + t); };
+  for (const sk of C.MM_IDS) for (let lv = 1; lv <= 5; lv++) for (let i = 0; i < 40; i++) chk(C.gen(sk, lv), sk + lv);
+  for (let lv = 1; lv <= 5; lv++) for (const kind of C.CH_BY_LV[lv]) for (let i = 0; i < 40; i++) chk(C.chalQ(lv, kind), 'ch-' + kind);
+  ok(!badL.size, 'ln-math: the instruction line in the card is one short sentence (G4)', [...badL].slice(0, 4).join(' | '));
+  const tipOf = q => he(q.tip || ''); const sq = C.gen('mm-skip', 2), gq = C.chalQ(3, 'grow'), bq = C.chalQ(2, 'balance');
+  ok(/קופצים/.test(tipOf(sq)) && /חקיות/.test(tipOf(gq)) && /פרי/.test(tipOf(bq)), 'ln-math: the strategy sentences moved into the 💡 help clue (q.tip)', [tipOf(sq), tipOf(gq), tipOf(bq)].join(' | ')); }
+// #216 (G2) every next/continue button of learn.js is exactly "▶ הַמְשֵׁךְ"
+{ const src = fs.readFileSync(path.join(ROOT, 'learn.js'), 'utf8'); const btns = src.match(/h\('button','bigbtn[^']*',[^;]*?\)/g) || [];
+  const nextB = btns.filter(b => /ICON\.play|הַבָּא|לַשְּׁאֵלוֹת|מַתְחִילִים|לְחִידוֹן|הָלְאָה/.test(b));
+  ok(nextB.length >= 2 && nextB.every(b => /O\.ICON\.play\+'<span>הַמְשֵׁךְ<\/span>'/.test(b)), 'ln-math: next buttons say only "▶ הַמְשֵׁךְ" (G2)', nextB.filter(b => !/הַמְשֵׁךְ/.test(b)).join(' | ')); }
 
 /* ---------- 3. the engine with simulated learners ---------- */
 let day = 20000; C.setNow(() => day * 864e5 + 12 * 3600e3);
@@ -370,6 +382,26 @@ async function ui(variant) {
   await p.evaluate(() => { document.getElementById('ov').hidden = true; window.TAL.ACT['world-flag'].run(window.OREN.showMap); }); await sleep(300); await answerQuiz(0); await sleep(200);
   const fl = await bankOf('tq-world-flag'); ok(fl.sn.length === 5 && Object.keys(fl.wr).length === 1 && Object.values(fl.wr)[0][0] === fl.t + 1, V + 'flags quiz: 5 answers recorded (#59), the wrong one back in 1 day', JSON.stringify(fl));
   await p.evaluate(() => { document.getElementById('ov').hidden = true; });
+  // #216 the ln-math question card: one instruction line, strategy only behind the help button, 2×2 / one-row options, "הַמְשֵׁךְ"
+  await p.evaluate(() => { const C = window.LEARN; C._g0 = C.gen; C._n = 0; C.gen = () => { const q = C._g0('mm-comp', 2); q.key += Math.random();
+      if (C._n++ >= 1) { const keep = q.opts.filter((o, k) => k === q.ans || k === (q.ans + 1) % 4 || k === (q.ans + 2) % 4); q.ans = keep.indexOf(q.opts[q.ans]); q.opts = keep; } return q; };
+    window.LEARN.run('ln-math', window.OREN.showMap); }); await sleep(300);
+  const rows = () => p.evaluate(() => { const t = {}; window.__learn.wrap.querySelectorAll('.chs .chb').forEach(b => { const y = Math.round(b.getBoundingClientRect().top); t[y] = (t[y] || 0) + 1; }); return Object.keys(t).sort((a, b) => a - b).map(k => t[k]).join('+'); });
+  const c1 = await p.evaluate(() => { const L = window.__learn, d = document.createElement('div'); d.innerHTML = L.q.tip; const tip = d.textContent.trim();
+    const vis = e => !!e && !e.closest('[hidden]') && e.getClientRects().length > 0;
+    return { qq: L.wrap.querySelectorAll('.qq').length, boxes: [...L.wrap.querySelectorAll('.hintbox,.helpbox,.lnintro')].filter(vis).length, tipShown: L.wrap.innerText.includes(tip), bulb: /💡/.test(L.wrap.innerText), say: L.wrap.querySelectorAll('.sl,.rdb,.saybtn').length, tip }; });
+  ok(c1.qq <= 1 && c1.boxes === 0 && !c1.tipShown && !c1.bulb && c1.say === 0, V + 'ln-math card: one instruction line, no second box, the strategy is not shown by default (G4)', JSON.stringify(c1));
+  ok(await rows() === '2+2', V + 'ln-math: 4 options in 2×2 (G3)', await rows()); await shot(p, '14-ln-card');
+  await p.locator('#sTal .helpbtn').click(); await sleep(150);
+  ok(await p.evaluate(t => { const b = document.querySelector('#sTal .helpbox'); return !!b && !b.hidden && b.innerText.includes(t); }, c1.tip), V + 'ln-math: tapping help shows the strategy line', c1.tip);
+  await p.evaluate(() => { const L = window.__learn; const bs = L.wrap.querySelectorAll('.chs .chb'); bs[(L.ans + 1) % 4].click(); }); await sleep(150);
+  await p.evaluate(() => { const L = window.__learn; L.wrap.querySelectorAll('.chs .chb')[L.ans].click(); }); await sleep(200);
+  const ex1 = await p.evaluate(() => { const L = window.__learn, b = L.wrap.querySelector('.hintbox:not([hidden])'), d = document.createElement('div'); d.innerHTML = L.q.tip; const nb = b && b.querySelector('.bigbtn');
+    return { bulb: !!b && /💡/.test(b.innerText) , tip: !!b && b.querySelector('.cap') ? b.querySelector('.cap').innerText.includes(d.textContent.trim()) : false, nb: nb ? nb.innerText.trim() : '', icon: !!(nb && nb.querySelector('svg')) }; });
+  ok(!ex1.bulb && !ex1.tip && ex1.nb === 'הַמְשֵׁךְ' && ex1.icon, V + 'ln-math: the explanation after a mistake has no strategy line; one "▶ הַמְשֵׁךְ" (G2)', JSON.stringify(ex1));
+  await p.locator('#sTal .hintbox .bigbtn').click(); await sleep(250);
+  ok(await rows() === '3', V + 'ln-math: 3 options in one row, never 2+1 (G3)', await rows()); await shot(p, '15-ln-three');
+  await p.evaluate(() => { const C = window.LEARN; C.gen = C._g0; delete C._g0; window.OREN.showMap(); });
   ok(errs.length === 0, V + 'no page errors', errs.slice(0, 3).join(' | '));
   await b.close();
 }

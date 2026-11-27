@@ -111,8 +111,8 @@ window.HELP_TEXTS=(window.HELP_TEXTS||[]).concat(Object.values(SPH));
 const spLen=(w,L)=>{const n=w.plain.length;return L===1?n<=3:L===2?n===4:n>=5;};
 function spell(back,L0){const L=L0||level('spell',3);const pool=shuffle(WD.filter(w=>spLen(w,L))).slice(0,6);let i=0,err=0,gems=0,lets=0;
   O.setScreen('sTal','meadow',back);const s=$('#sTal');
-  const run=()=>{const w=pool[i];const need=[...w.plain];let k=0,miss=0,HB=null;T.hudT('כּוֹתְבִים מִלִּים',T.progressBar(i,pool.length));O.sayNow=T.spk(w.w);s.innerHTML='';lets+=need.length;
-    const card=h('div','prq tqc gp-sp',`<div class="qq">שׁוֹמְעִים וְכוֹתְבִים</div>${pic(w)}<div class="slots">${need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
+  const run=()=>{const w=pool[i];const need=[...w.plain];let k=0,miss=0,HB=null;T.hudT('כּוֹתְבִים מִלִּים',T.progressBar(i,pool.length));O.sayNow='שׁוֹמְעִים וְכוֹתְבִים. '+T.spk(w.w);s.innerHTML='';lets+=need.length;
+    const card=h('div','prq tqc gp-sp',`<div class="qq tqi">שׁוֹמְעִים וְכוֹתְבִים</div>${pic(w)}<div class="slots">${need.map(()=>'<span class="slot2"></span>').join('')}</div>`);
     const pb=h('button','hintbtn',ICON.say+'<span>הַשְׁמַע</span>');pb.onclick=()=>sayW(w);card.appendChild(pb);s.appendChild(card);
     const extra=[];const last=need[need.length-1];if(L>1&&FINAL[last]&&!need.includes(FINAL[last]))extra.push(FINAL[last]);
     for(const c of shuffle(LETTERS)){if(extra.length>=L)break;if(!need.some(x=>sameSound(x,c))&&!extra.some(x=>sameSound(x,c)))extra.push(c);}

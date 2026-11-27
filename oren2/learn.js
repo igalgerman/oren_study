@@ -151,7 +151,7 @@ const MM={
   if(d>0)st=off+d*ri(0,lv<=2?3:5);else st=-d*ri(len,len+6)+(lv>=4?ri(0,1)*(-d===10?5:0):0);
   const seq=Array.from({length:len},(_,j)=>st+d*j);if(seq.some(x=>x<0||x>300))return MM['mm-skip'](lv);
   const qi=lv<=2?len-1:ri(1,len-1);const v=seq[qi];
-  return Q('mm-skip',lv,{v,html:`<div class="lnx lnseq">${L(seq.map((x,j)=>j===qi?'?':x).join(', '))}</div>`,text:'בְּכַמָּה קוֹפְצִים? מָה הַמִּסְפָּר הֶחָסֵר?',ds:[v+1,v-1,v+(d>0?d:-d)],
+  return Q('mm-skip',lv,{v,html:`<div class="lnx lnseq">${L(seq.map((x,j)=>j===qi?'?':x).join(', '))}</div>`,text:'מָה הַמִּסְפָּר הֶחָסֵר?',tip:'בְּכַמָּה קוֹפְצִים כָּל פַּעַם?',ds:[v+1,v-1,v+(d>0?d:-d)],
     ex:`<div>קוֹפְצִים כָּל פַּעַם ${L((d>0?'+':'−')+Math.abs(d))}</div>`,seq,qi,step:d,key:'s'+seq.join(',')+qi});},
  'mm-pv':lv=>{
   const moves=lv===1?[pk([10,-10])]:lv===2?shuf([pk([10,-10]),pk([1,-1])]):lv===3?[pk([20,30,-20]),pk([1,2,3,-1,-2])]:lv===4?[pk([11,9,-11,-9])]:[pk([10,20,-10]),pk([1,-1,2]),pk([11,9,-11,-9])];
@@ -273,13 +273,13 @@ const CH={
  balance:lv=>{const [f1,f2,f3]=shuf(FRUIT);const A=ri(2,lv>=3?12:6),Bv=ri(1,lv>=3?15:8);
    const rows=[[`${f1} + ${f1}`,2*A],[`${f1} + ${f2}`,A+Bv]];let v=Bv,ask=f2,p={eqs:[[[0,0],2*A],[[0,1],A+Bv]],ask:1};
    if(lv>=4){const Cv=ri(1,12);rows.push([`${f2} + ${f3}`,Bv+Cv]);v=Cv;ask=f3;p={eqs:[[[0,0],2*A],[[0,1],A+Bv],[[1,2],Bv+Cv]],ask:2};}
-   return {kind:'balance',p,v,html:`<div class="lnbal">${rows.map(r=>`<div>${L(`${r[0]} = ${r[1]}`)}</div>`).join('')}<div class="lnask">${L(`${ask} = ?`)}</div></div>`,text:'כָּל פְּרִי שָׁוֶה מִסְפָּר. כַּמָּה שָׁוֶה הַפְּרִי הָאַחֲרוֹן?',ds:[rows[rows.length-1][1],A,v+1],key:'b'+rows.map(r=>r[1]).join(',')};},
+   return {kind:'balance',p,v,html:`<div class="lnbal">${rows.map(r=>`<div>${L(`${r[0]} = ${r[1]}`)}</div>`).join('')}<div class="lnask">${L(`${ask} = ?`)}</div></div>`,text:'כַּמָּה שָׁוֶה הַפְּרִי הָאַחֲרוֹן?',tip:'כָּל פְּרִי שָׁוֶה מִסְפָּר. מַתְחִילִים מֵהַשּׁוּרָה הָרִאשׁוֹנָה.',ds:[rows[rows.length-1][1],A,v+1],key:'b'+rows.map(r=>r[1]).join(',')};},
  digits:lv=>{if(lv<=3){const t=ri(1,8),d=ri(1,9-t);return {kind:'digits',p:{t,d},v:t*10+t+d,text:`אֲנִי מִסְפָּר דּוּ-סִפְרָתִי. סִפְרַת הָעֲשָׂרוֹת שֶׁלִּי הִיא ${B(t)}, וְסִפְרַת הָאֲחָדוֹת גְּדוֹלָה מִמֶּנָּה בְּ-${B(d)}. מִי אֲנִי?`,ds:[(t+d)*10+t,t*10+d,t*10+t],key:'g'+t+d};}
    let t,u;do{u=ri(0,8);t=ri(u+1,9);}while(t+u>18);const s=t+u,d=t-u;return {kind:'digits2',p:{s,d},v:t*10+u,text:`אֲנִי מִסְפָּר דּוּ-סִפְרָתִי. סְכוּם הַסְּפָרוֹת שֶׁלִּי הוּא ${B(s)}, וְסִפְרַת הָעֲשָׂרוֹת גְּדוֹלָה בְּ-${B(d)} מִסִּפְרַת הָאֲחָדוֹת. מִי אֲנִי?`,ds:[u*10+t,t*10+u+1,s*10+d].filter(x=>x<100),key:'h'+s+d};},
  grow:lv=>{let seq,rule;if(lv<=3){const a=ri(1,10),d0=ri(1,2);seq=[a];for(let j=0;j<5;j++)seq.push(seq[j]+d0+j);rule='הַקְּפִיצָה גְּדֵלָה בְּ-1 כָּל פַּעַם';}
    else if(lv===4){const a=ri(10,30),x=ri(3,6),y=ri(1,x-1);seq=[a];for(let j=0;j<5;j++)seq.push(seq[j]+(j%2?-y:x));rule=`קָדִימָה ${x}, אָחוֹרָה ${y}, וְשׁוּב`;}
    else{const a=ri(1,5),k=2;seq=[a];for(let j=0;j<4;j++)seq.push(seq[j]*k);rule='כָּל מִסְפָּר גָּדוֹל פִּי 2 מֵהַקּוֹדֵם';}
-   const v=seq.pop();return {kind:'grow',p:{seq},v,html:`<div class="lnx lnseq">${L(seq.join(', ')+', ?')}</div>`,text:'מָה הַמִּסְפָּר הַבָּא? חַפֵּשׂ אֶת הַחֻקִּיּוּת.',rule,ds:[v+1,v-1,2*seq[seq.length-1]-seq[seq.length-2]],key:'q'+seq.join(',')};},
+   const v=seq.pop();return {kind:'grow',p:{seq},v,html:`<div class="lnx lnseq">${L(seq.join(', ')+', ?')}</div>`,text:'מָה הַמִּסְפָּר הַבָּא?',tip:'חַפֵּשׂ אֶת הַחֻקִּיּוּת.',rule,ds:[v+1,v-1,2*seq[seq.length-1]-seq[seq.length-2]],key:'q'+seq.join(',')};},
  legs:lv=>{const a=ri(2,lv===5?6:4),b=ri(2,lv===5?6:4);return {kind:'legs',p:{a,b},v:4*a+2*b,text:`בֶּחָצֵר יֵשׁ ${count(a,'dog')} וְעוֹד ${count(b,'hen')}. לְכָל כֶּלֶב יֵשׁ ${B(4)} רַגְלַיִם, וּלְכָל תַּרְנְגֹלֶת יֵשׁ שְׁתֵּי רַגְלַיִם. כַּמָּה רַגְלַיִם יֵשׁ לְכֻלָּם בְּיַחַד?`,ds:[2*(a+b),4*(a+b),4*a+2*b+2],key:'l'+a+b};},
 };
 const CH_BY_LV=[null,['miss','riddle'],['miss','riddle','balance'],['miss','riddle','balance','digits','grow'],['miss','riddle','balance','digits','grow'],['miss','riddle','balance','digits','grow','legs']];
@@ -466,7 +466,7 @@ C.runwayOf=actId=>{const rs=C.runwayAll().filter(r=>r.acts.includes(actId));if(!
 
 /* ---------- the screen pieces ---------- */
 const hundred=(chart,show)=>{let s='<div class="lnhc" dir="ltr">';for(let i=1;i<=100;i++){const cls=i===chart.start?' st':show&&chart.path.includes(i)?(i===chart.path[chart.path.length-1]?' en':' pt'):'';s+=`<span class="${cls.trim()}">${i}</span>`;}return s+'</div>';};
-/* one question card: multiple choice; a short explanation after a mistake */
+/* one question card: one instruction line, multiple choice; the strategy (q.tip) only behind the help button (#216); a short explanation after a mistake */
 function askQ(wrap,q,i,n,title,onAns){T.hudT(title,T.progressBar(i,n));wrap.innerHTML='';const t0=Date.now();
   const card=h('div','prq tqc lnq',`${q.html||''}${q.chart?hundred(q.chart,false):''}${q.text?`<div class="qq">${q.text}</div>`:''}`);wrap.appendChild(card);if(T.rdQ&&q.text)T.rdQ(q,card);
   O.sayNow=plain((q.text?'':(q.html||'')).replace(/<span class="lnbox"><\/span>/g,' מה ')+' '+(q.text||''));
@@ -474,7 +474,7 @@ function askQ(wrap,q,i,n,title,onAns){T.hudT(title,T.progressBar(i,n));wrap.inne
   q.opts.forEach((v,k)=>{const b=h('button','chb num',String(v));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
   const exb=h('div','hintbox');exb.hidden=true;wrap.appendChild(exb);card.classList.add('flashin');
   /* only: the help box already shows the answer with the explanation, so the explanation box holds just 'continue' */
-  const showEx=(only)=>{if(q.chart){const c=card.querySelector('.lnhc');if(c)c.outerHTML=hundred(q.chart,true);}exb.hidden=false;exb.innerHTML=only?'':`<div class="cap">${q.tip?`<div>💡 ${q.tip}</div>`:''}${q.ex||''}</div>`;
+  const showEx=(only)=>{if(q.chart){const c=card.querySelector('.lnhc');if(c)c.outerHTML=hundred(q.chart,true);}exb.hidden=false;exb.innerHTML=only||!q.ex?'':`<div class="cap">${q.ex}</div>`;
     const nb=h('button','bigbtn',O.ICON.play+'<span>הַמְשֵׁךְ</span>');nb.onclick=()=>{sfx.pop(1);onAns(null);};exb.appendChild(nb);setTimeout(()=>nb.focus(),50);T.setKey(e=>{if(e.key==='Enter'||e.key===' ')nb.click();});};
   /* #54 one help button: the strategy tip as the clue, then the answer with its explanation (the question ends like after two mistakes) */
   const HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,clue:q.tip,explain:q.ex||(q.tip?'💡 '+q.tip:''),before:exb,

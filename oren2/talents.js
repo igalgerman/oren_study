@@ -296,9 +296,9 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
   if(window.DAYLOG&&DAYLOG.note)DAYLOG.note(o.act,ss.log);
   const shows=k=>(ss.wrong&&help.wrong.includes(k))||(help[k]!=null&&Date.now()-ss.t0>=D(help[k]*1000));
   const heard=()=>{ss.heard=true;ss.log.r='l';};
-  /* the story and, under its last line (normal flow, never over the text), one row: "read to me" (when allowed) and one forward button */
+  /* the story and, under its last line (normal flow, never over the text), one row: one 🔊 "read to me" (when allowed) and one forward "▶ הַמְשֵׁךְ" (G2/G4: no per-line 🔊, a tap on a line reads it) */
   function page(box,fwd){const pg=h('div','story');pg.innerHTML=`<div class="sth"><span>${o.spr[0]}</span><h2>${o.title}</h2><span>${o.spr[1]}</span></div>`+o.lines.map((x,i)=>`<p class="sl" data-i="${i}">${x}</p>`).join('');box.appendChild(pg);
-    const row=h('div','btnrow strow');const rd=h('button','bigbtn blue sm strd',ICON.say+'<span>הַקְרֵא לִי</span>');row.append(rd,fwd);box.appendChild(row);
+    const row=h('div','btnrow strow');const rd=h('button','bigbtn blue sm strd',ICON.say);rd.setAttribute('aria-label','הַקְרֵא לִי');row.append(rd,fwd);box.appendChild(row);
     const mark=i=>pg.querySelectorAll('.sl').forEach(p=>p.classList.toggle('cur',+p.dataset.i===i));
     pg.addEventListener('click',e=>{if(e.target.closest('.rdb'))heard();},true);
     /* a tap on a word says just that word (with nikud) and keeps it for word practice the next day (#420); 🔊 reads the line */
@@ -312,7 +312,7 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
     upd();[help.line,help.all].forEach(sec=>{if(sec==null)return;const left=D(sec*1000)-(Date.now()-ss.t0);if(left>0)setTimeout(upd,left+30);});
     return pg;}
   const peek=wrap=>{const s=wrap.parentNode,say0=O.sayNow;O.hush();wrap.hidden=true;const box=h('div','stpeek');s.appendChild(box);O.sayNow='';
-    const bk=h('button','bigbtn stback',ICON.play+'<span>לַשְּׁאֵלָה</span>');bk.onclick=()=>{T.readStop&&T.readStop();box.remove();wrap.hidden=false;O.sayNow=say0;};
+    const bk=h('button','bigbtn stback',ICON.play+'<span>הַמְשֵׁךְ</span>');bk.onclick=()=>{T.readStop&&T.readStop();box.remove();wrap.hidden=false;O.sayNow=say0;};
     page(box,bk);s.scrollTop=0;};
   const questions=()=>{O.hush();T.readStop&&T.readStop();quiz({id:o.id,title:o.name,bg:'final',back:o.qback||o.back,n:o.q.length,
     gen:i=>{const q=o.q[i];/* the index, not a counter: "again" restarts at 0 (#350) */const opts=shuffle([q.a,...q.ds]);return {pr:`<div class="sent">${q.pr}</div>`,opts,ans:opts.indexOf(q.a),cls:'tx',say:q.say,key:q.pr};},
@@ -321,7 +321,7 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
   /* #420: "words we will meet": 2-3 hard words of the story with a picture, a tap says the word */
   if(o.hw&&o.hw.length){const c=h('div','sthw',`<div class="sthwt">${HW_T}</div>`);const r=h('div','sthwr');
     o.hw.forEach(([w,pic])=>{const b=h('button','hwt',`<span class="hwp">${pic}</span><span class="hww">${w}</span>`);b.type='button';b.onclick=()=>{O.sfx.pop(1);O.say(w);};r.appendChild(b);});c.appendChild(r);s.appendChild(c);}
-  const go=h('button','bigbtn stgo',ICON.play+'<span>לַשְּׁאֵלוֹת</span>');go.onclick=questions;page(s,go);
+  const go=h('button','bigbtn stgo',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=questions;page(s,go);
   if(window.FRIEND&&FRIEND.readFirst){O.sayNow=T.spk(FRIEND.READFIRST);FRIEND.readFirst();}else O.sayNow='קְרָא אֶת הַסִּפּוּר, וְאַחַר כָּךְ עוֹנִים עַל שְׁאֵלוֹת.';}
 T.storyScreen=storyScreen;T.READ_HELP=READ_HELP;T.helpOf=helpOf;window.__story={get ss(){return SS;}};
 function readStory(k,back){const st=STORIES[k];storyScreen({act:'story-'+k,id:'story-'+k,title:st.t,name:st.t,tp:T.plainHe(st.t),goal:st.goal,spr:st.spr.map(x=>ALLSPR(x)),lines:st.s,hw:st.hw,
@@ -475,14 +475,14 @@ function circuit(back){let wire=false,sw=false;O.setScreen('sTal','city',back);T
 /* ice-water-steam */
 function states(back){let temp=1;O.setScreen('sTal','mount',back);T.hudT('קֶרַח, מַיִם וְאֵדִים');O.sayNow='גְּרֹר אֶת הָעִגּוּל כְּדֵי לְקָרֵר אוֹ לְחַמֵּם.';const s=$('#sTal');s.innerHTML='';
   const v=h('div','statev');const rng=h('input','');rng.type='range';rng.min=0;rng.max=2;rng.value=1;rng.id='tempR';rng.className='trng';rng.setAttribute('aria-label','חום');
-  const lab=h('div','lcap');const go=h('button','bigbtn',ICON.play+'<span>לַשְּׁאֵלוֹת</span>');const rw=h('div','trw');rw.append(h('span','tre','❄️'),rng,h('span','tre','🔥'));go.hidden=true;const hint=h('div','lcap dnh','👆 גְּרֹר אֶת הָעִגּוּל ↔ לְקַר וּלְחַם');const seen=new Set([1]);s.append(v,rw,hint,lab,go);
+  const lab=h('div','lcap');const go=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');const rw=h('div','trw');rw.append(h('span','tre','❄️'),rng,h('span','tre','🔥'));go.hidden=true;const hint=h('div','lcap dnh','👆 גְּרֹר אֶת הָעִגּוּל ↔ לְקַר וּלְחַם');const seen=new Set([1]);s.append(v,rw,hint,lab,go);
   const draw=()=>{temp=+rng.value;v.innerHTML=temp===0?'<div class="ice">🧊</div>':temp===1?'<div class="wat">💧💧💧</div>':'<div class="steam">♨️</div>';lab.innerHTML=['קַר מְאוֹד: הַמַּיִם קוֹפְאִים לְקֶרַח','חַמִּים: מַיִם נוֹזְלִים','חַם מְאוֹד: הַמַּיִם רוֹתְחִים וְהוֹפְכִים לְאֵדִים'][temp];};
   rng.oninput=()=>{draw();sfx.pop(temp+1);seen.add(temp);if(seen.size>=3){go.hidden=false;hint.hidden=true;}};draw();
   go.onclick=()=>{const Q=[['מָה קוֹרֶה לְקֶרַח בַּשֶּׁמֶשׁ?','הוּא נָמֵס לְמַיִם',['הוּא נִהְיֶה אֶבֶן','הוּא נִהְיֶה גָּדוֹל']],['מָה קוֹרֶה לְמַיִם בַּמַּקְפִּיא?','הֵם קוֹפְאִים לְקֶרַח',['הֵם רוֹתְחִים','הֵם נֶעֱלָמִים']],['מָה יוֹצֵא מִקֻּמְקוּם רוֹתֵחַ?','אֵדִים',['קֶרַח','חוֹל']],['קֶרַח, מַיִם וְאֵדִים הֵם...','אוֹתוֹ חֹמֶר',['שְׁלוֹשָׁה דְּבָרִים שׁוֹנִים לְגַמְרֵי','סוּגִים שֶׁל אֶבֶן']]];
     quiz({id:'sci-states',title:'קֶרַח, מַיִם וְאֵדִים',bg:'mount',back,n:4,gen:i=>{const [q,a,ds]=Q[i];const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}});};}
 /* day & night */
 function dayNight(back){O.setScreen('sTal','final',back);T.hudT('יוֹם וְלַיְלָה');O.sayNow='גְּרֹר אֶת הָעִגּוּל וְסוֹבֵב אֶת כַּדּוּר הָאָרֶץ.';const s=$('#sTal');s.innerHTML='';let ang=0;
-  const v=h('div','dnv');const lab=h('div','lcap');const rng=h('input','trng');rng.type='range';rng.min=0;rng.max=359;rng.value=0;rng.id='earthR';rng.setAttribute('aria-label','סיבוב');const go=h('button','bigbtn',ICON.play+'<span>לַשְּׁאֵלוֹת</span>');go.hidden=true;const hint=h('div','lcap dnh','👆 גְּרֹר אֶת הָעִגּוּל ↔ וְסוֹבֵב אֶת כַּדּוּר הָאָרֶץ');s.append(v,rng,hint,lab,go);
+  const v=h('div','dnv');const lab=h('div','lcap');const rng=h('input','trng');rng.type='range';rng.min=0;rng.max=359;rng.value=0;rng.id='earthR';rng.setAttribute('aria-label','סיבוב');const go=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');go.hidden=true;const hint=h('div','lcap dnh','👆 גְּרֹר אֶת הָעִגּוּל ↔ וְסוֹבֵב אֶת כַּדּוּר הָאָרֶץ');s.append(v,rng,hint,lab,go);
   const draw=()=>{ang=+rng.value;const day=Math.cos(ang*Math.PI/180)>0;v.innerHTML=`<svg viewBox="0 0 320 180" class="csvg" aria-hidden="true"><circle cx="40" cy="90" r="30" fill="#ffcf4d"/><g stroke="#ffcf4d" stroke-width="4">${[0,1,2,3,4,5,6,7].map(k=>`<line x1="${40+38*Math.cos(k*Math.PI/4)}" y1="${90+38*Math.sin(k*Math.PI/4)}" x2="${40+46*Math.cos(k*Math.PI/4)}" y2="${90+46*Math.sin(k*Math.PI/4)}"/>`).join('')}</g>
     <circle cx="220" cy="90" r="60" fill="#3a8fc4"/><path d="M220 30 A60 60 0 0 1 220 150 Z" fill="rgba(10,15,40,.55)"/><g transform="rotate(${-ang} 220 90)"><rect x="152" y="80" width="14" height="14" fill="#e4572e"/><path d="M150 80 L159 70 L168 80Z" fill="#94613a"/></g></svg>`;
     lab.innerHTML=day?'☀️ בַּבַּיִת שֶׁל אוֹרֶן עַכְשָׁו יוֹם':'🌙 בַּבַּיִת שֶׁל אוֹרֶן עַכְשָׁו לַיְלָה';};
@@ -548,7 +548,7 @@ function mixLab(back){O.setScreen('sTal','valley',back);T.hudT('מְעַרְבְ
     else{const wk=sel.includes('white')?'white':'black',oth=sel[0]===wk?sel[1]:sel[0];const hx=c=>[1,3,5].map(k=>parseInt(c.slice(k,k+2),16));const a=hx(CN[oth][1]),b=hx(CN[wk][1]);const m=a.map((v,k)=>Math.round(v*.6+b[k]*.4));
       p.style.background=`rgb(${m.join(',')})`;lab.innerHTML=`${CN[sel[0]][0]} + ${CN[sel[1]][0]} = ${CN[oth][0]} ${wk==='white'?'בָּהִיר':'כֵּהֶה'}`;sfx.ok(1);}
     sel=[];};
-  const tried=new Set();const go=h('button','bigbtn',ICON.play+'<span>לַחִידוֹן</span>');go.hidden=true;go.onclick=()=>mixQuiz(back);const r2=h('div','btnrow');r2.appendChild(go);
+  const tried=new Set();const go=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');go.hidden=true;go.onclick=()=>mixQuiz(back);const r2=h('div','btnrow');r2.appendChild(go);
   s.append(pot,lab,row,r2);show();}
 function mixQuiz(back){quiz({id:'art-mix',title:'מְעַרְבְּבִים צְבָעִים',bg:'valley',back,n:6,gen:i=>{const m=MIX[i%MIX.length];const rev=Math.random()<.35&&i>2;
   if(rev){const opts=shuffle([m[1],...shuffle(['red','blue','yellow','white','black'].filter(x=>x!==m[0]&&x!==m[1])).slice(0,2)]);return {pr:`<div class="mixq">${blob(m[0])}<b>+</b><span class="blob q">?</span><b>=</b>${blob(m[2])}</div><div class="qq">${CN[m[0]][0]} וְעוֹד אֵיזֶה צֶבַע נוֹתְנִים ${CN[m[2]][0]}?</div>`,opts:opts.map(swatch),ans:opts.indexOf(m[1]),cls:'tx sw2',key:'r'+m[2]};}
@@ -673,7 +673,7 @@ function jar(back){clearT();O.setScreen('sTal','forest',back);T.hudT('צִנְצ
 /* --- body scan --- */
 const SCAN=[['שְׁבוּ בְּנוֹחוּת וְעִצְמוּ עֵינַיִם.',null],['שִׂימוּ לֵב לְכַפּוֹת הָרַגְלַיִם. הֵן נוֹגְעוֹת בָּרִצְפָּה.',92],['עַכְשָׁו הָרַגְלַיִם. הֵן כְּבֵדוֹת וּרְגוּעוֹת.',80],['הַבֶּטֶן עוֹלָה וְיוֹרֶדֶת עִם הַנְּשִׁימָה.',62],['הַיָּדַיִם. סִגְרוּ אֶגְרוֹף חָזָק... וְשַׁחְרְרוּ.',66],['הַכְּתֵפַיִם. הָרִימוּ אוֹתָן לָאָזְנַיִם... וְהוֹרִידוּ.',46],['הַפָּנִים. חַיְּכוּ חִיּוּךְ קָטָן.',30],['כָּל הַגּוּף רָגוּעַ. פִּקְחוּ עֵינַיִם לְאַט.',null]];
 function scan(back){clearT();const bk=leave(back);O.setScreen('sTal','forest',bk);quiet();T.hudT('סְרִיקַת גּוּף');const s=$('#sTal');s.innerHTML='';let i=0;
-  const fig=h('div','scanf',`${O.AV()}<span class="glow"></span>`);guard=fig;const txt=h('div','lsent big2');const row=h('div','btnrow');const nx=h('button','bigbtn',ICON.play+'<span>הַלְאָה</span>');row.appendChild(nx);s.append(fig,txt,row);
+  const fig=h('div','scanf',`${O.AV()}<span class="glow"></span>`);guard=fig;const txt=h('div','lsent big2');const row=h('div','btnrow');const nx=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');row.appendChild(nx);s.append(fig,txt,row);
   const show=()=>{clearT();const [t,y]=SCAN[i];txt.innerHTML=t;const gl=fig.querySelector('.glow');gl.style.opacity=y==null?0:1;if(y!=null)gl.style.top=y+'%';O.say(t);soft(220,1.5,.05);
     T.hudT('סְרִיקַת גּוּף',T.progressBar(i,SCAN.length));later(()=>nx.click(),D(9000));};
   nx.onclick=()=>{i++;if(i>=SCAN.length){clearT();T.record('mind-scan',3);O.addGems(4);T.result({title:'כָּל הַכָּבוֹד!',sub:'הַגּוּף וְהָרֹאשׁ נָחִים.',gems:4,back:bk});return;}show();};show();}
@@ -808,7 +808,7 @@ const wordFor=l=>(T.WORDS||[]).find(w=>w.w.replace(/[֑-ׇ]/g,'')[0]===l);
 const FONT='bold 230px "Segoe UI", Arial, "Noto Sans Hebrew", sans-serif';
 function menu(back){O.setScreen('sTal','meadow',back);T.hudT('בֵּית הַכְּתִיבָה');O.sayNow='בוא נכתוב אותיות!';const s=$('#sTal');s.innerHTML='';
   s.appendChild(h('div','whead',`<span class="gd">${X.pen}</span><h1>כּוֹתְבִים אוֹתִיּוֹת</h1>`));
-  const w=W();const nx=AB.findIndex(([l])=>!(w[l]|0));const row=h('div','btnrow');const go=h('button','bigbtn huge',ICON.play+'<span>מַתְחִילִים לִכְתֹּב</span>');const st=nx<0?Math.floor(Math.random()*AB.length):nx;
+  const w=W();const nx=AB.findIndex(([l])=>!(w[l]|0));const row=h('div','btnrow');const go=h('button','bigbtn huge',ICON.play+'<span>הַמְשֵׁךְ</span>');const st=nx<0?Math.floor(Math.random()*AB.length):nx;
   go.onclick=()=>trace(st,back,[0,1,2,3].map(k=>(st+k)%AB.length));row.appendChild(go);s.appendChild(row);
   const pickL=h('button','dmore','🔤 <span>לִבְחֹר אוֹת</span>');s.appendChild(h('div','dpick')).appendChild(pickL);
   const g=h('div','abg');g.hidden=true;pickL.onclick=()=>{g.hidden=false;pickL.parentNode.remove();O.sfx.pop(2);};AB.forEach(([l],i)=>{const st=w[l]|0;const b=h('button','abb'+(st?' got':''),`<b>${l}</b><span>${[0,1,2].map(k=>k<st?SPR.star:SPR.starOff).join('')}</span>`);b.onclick=()=>trace(i,back,[i,...[1,2,3].map(k=>(i+k)%AB.length)]);g.appendChild(b);});
@@ -913,7 +913,7 @@ function profile(back){const pr=Object.assign({},prof()||{});let step=0;O.setScr
     const g=h('div','profg');opts.forEach(([v,html])=>{const b=h('button','pfb'+(pr[key]===v?' on':''),html);b.onclick=()=>{pr[key]=v;sfx.pop(step+2);step++;if(step<Q.length)run();else done();};g.appendChild(b);});s.appendChild(g);};
   const done=()=>{const S0=T.S();S0.prof=pr;S0.profT=Date.now();O.persist();sfx.win();s.innerHTML='';T.hudT('הַכַּרְטִיס שֶׁלִּי');
     s.appendChild(h('div','pcard',`<div class="pcav">${O.AV()}<span class="pcpet bob">${T.friend()}</span></div><h2>נָעִים לְהַכִּיר, אוֹרֶן!</h2><div class="lsent">${O.PET().n} יְלַוֶּה אוֹתְךָ 😊</div>`));
-    s.querySelector('.pcard').style.setProperty('--fc',pr.col);const row=h('div','btnrow');const b=h('button','bigbtn',ICON.play+'<span>יוֹצְאִים!</span>');b.onclick=back;row.appendChild(b);s.appendChild(row);O.say('נעים להכיר, אורן!');};
+    s.querySelector('.pcard').style.setProperty('--fc',pr.col);const row=h('div','btnrow');const b=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');b.onclick=back;row.appendChild(b);s.appendChild(row);O.say('נעים להכיר, אורן!');};
   run();}
 T.profile=profile;T.hello=()=>hello();
 /* ---------- personal greeting in the hub ---------- */
@@ -1445,7 +1445,7 @@ function home(){const S0=T.S();
       const b=h('div','tstep2'+(d.done[i]?' done':i===nx?' cur':'')+(/^tog:/.test(id)?' tog':''),`<span class="ti2">${d.done[i]?`<span class="qk">${q.k}</span>`:inf.ic}</span>`);b.style.setProperty('--sc',inf.c);b.title=T.plainHe(inf.n);b.setAttribute('role','img');b.setAttribute('aria-label',T.plainHe(inf.n));path.appendChild(b);});
     path.appendChild(h('i','tlink'+(nx<0?' on':'')));path.appendChild(h('span','tgoal'+(nx<0?' won':''),`<span>${nx<0?'🏆':q.e}</span>`));
     card.appendChild(path);const row=h('div','btnrow');
-    if(nx>=0){const go=h('button','bigbtn huge',ICON.play+'<span>מַמְשִׁיכִים</span>');go.onclick=()=>{sfx.pop(3);runStep(nx);};row.appendChild(go);}
+    if(nx>=0){const go=h('button','bigbtn huge',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=()=>{sfx.pop(3);runStep(nx);};row.appendChild(go);}
     else if(!d.claimed){const c=h('button','bigbtn gold huge',`${q.e} <span>סוֹף הַסִּפּוּר</span>`);c.onclick=()=>finale(d,q);row.appendChild(c);}
     if(row.children.length)card.appendChild(row);s.appendChild(card);
     const more=h('button','dmore','🔍 <span>מַשֶּׁהוּ אַחֵר</span>');more.onclick=()=>{sfx.pop(2);other();};s.appendChild(h('div','dpick')).appendChild(more);}
@@ -1496,7 +1496,7 @@ O.on('screen',id=>{if(id==='sHome')later(()=>{if($('#sHome').hidden||!$('#ov').h
   const d=T.S().daily;const b=$('#sHome .bigbtn.huge');if(b)coach(b,d&&d.done.some(x=>!x)?'הַכַּפְתּוֹר הַגָּדוֹל מַמְשִׁיךְ בַּשְּׁבִיל!':'כָּאן רוֹאִים אֵיךְ נִגְמַר הַסִּפּוּר!','home',1);});});
 O.on('hub',s=>later(()=>{const b=s.querySelector('.gdoor');if(b)intro('i-city',b,'זֹאת עִיר הַכִּשְׁרוֹנוֹת! כָּאן קוֹרְאִים, חוֹקְרִים, יוֹצְרִים וְנִרְגָּעִים. בְּחַר דֶּלֶת!',()=>coach(b,'בְּחַר דֶּלֶת — וּבוֹא נְשַׂחֵק!','hub',2));}));
 O.on('group',s=>later(()=>{const b=s.querySelector('.bld:not(.lockb)');if(b)coach(b,'לְחַץ עַל בִּנְיָן כְּדֵי לְהִכָּנֵס','group',2);}));
-O.on('map',m=>later(()=>{const b=m.querySelector('.worlds .wcard2:not(.locked)');if(b&&!$('#sMap').hidden)intro('i-map',b,'זֶה הַמַּסָּע! בְּכָל עוֹלָם יֵשׁ חֶשְׁבּוֹן וְחָבֵר שֶׁצָּרִיךְ עֶזְרָה. אוֹסְפִים כּוֹכָבִים וּמַצִּילִים אוֹתוֹ!',()=>coach(b,'לְחַץ עַל עוֹלָם כְּדֵי לְהַתְחִיל אֶת הַמַּסָּע','map',2));}));
+O.on('map',m=>later(()=>{const b=m.querySelector('.jnext')||m.querySelector('.worlds .wcard2:not(.locked):not([hidden])');if(b&&!$('#sMap').hidden)intro('i-map',b,'זֶה הַמַּסָּע! בְּכָל עוֹלָם יֵשׁ חֶשְׁבּוֹן וְחָבֵר שֶׁצָּרִיךְ עֶזְרָה. אוֹסְפִים כּוֹכָבִים וּמַצִּילִים אוֹתוֹ!',()=>coach(b,'לְחַץ עַל עוֹלָם כְּדֵי לְהַתְחִיל אֶת הַמַּסָּע','map',2));}));
 O.on('kingdomScene',sc=>later(()=>{const b=sc.querySelector('.cs');if(b&&!$('#sKing').hidden)intro('i-king',b,'זֹאת הַמַּמְלָכָה שֶׁלְּךָ! הָאַרְמוֹן גָּדֵל עִם הַכּוֹכָבִים. בַּיַּהֲלוֹמִים קוֹנִים דְּבָרִים, וְשָׂמִים אוֹתָם עַל הַדֶּשֶׁא.');}));
 O.on('synced',()=>{if(!$('#sHome').hidden&&$('#ov').hidden&&!document.querySelector('.tour'))home();});
 /* a home button that is always in the same place */

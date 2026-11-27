@@ -23,7 +23,7 @@ function run(ids,back,then){ids=ids.slice();if(!ids.length)return then();const i
   const show=()=>{const c=cards[i];T.hudT(d.title,T.progressBar(i,cards.length));s.innerHTML='';
     const wrap=h('div','tq lc');s.appendChild(wrap);
     const card=h('div','prq tqc lccard',`<div class="lcart">${typeof c.art==='function'?c.art():c.art||''}</div><div class="sent">${c.t}</div>`);wrap.appendChild(card);card.classList.add('flashin');
-    const row=h('div','chs');const go=h('button','chb lcgo',ICON.play+`<span>${i<cards.length-1?'הַמְשֵׁךְ':'מַתְחִילִים!'}</span>`);row.appendChild(go);wrap.appendChild(row);
+    const row=h('div','chs');const go=h('button','chb lcgo',ICON.play+'<span>הַמְשֵׁךְ</span>');row.appendChild(go);wrap.appendChild(row);
     go.onclick=()=>{if(go.disabled)return;go.disabled=true;T.readStop&&T.readStop();sfx.pop(2);i++;
       if(i<cards.length)return show();LC()[id]=1;O.persist();window.__quiz=null;T.setKey(null);run(ids,back,then);};
     window.__quiz={ans:0,get i(){return i;},wrap};O.sayNow=T.spk?T.spk(c.t):c.t;

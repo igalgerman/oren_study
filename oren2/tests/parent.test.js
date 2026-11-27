@@ -39,7 +39,7 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
    const prof=JSON.stringify(T.S().prof);document.querySelector('#sTal .bigbtn').click();await new Promise(r=>setTimeout(r,250));
    const head=!!document.querySelector('.hhead .hbub');const fav=!!document.querySelector('.gdoor.fav');const names=[];T.GROUPS.forEach(g=>{T.openGroup(g);document.querySelectorAll('#sTal .bld .nm').forEach(e=>names.push(e.textContent));});
    T.openBuilding(T.BUILD.find(b=>b.id==='read'));const acts=[...document.querySelectorAll('.actc .an')].map(e=>e.textContent);
-   O.showJourney();await new Promise(r=>setTimeout(r,200));const hiddenCards=[...document.querySelectorAll('.worlds > .wcard2')].filter(c=>c.hidden).length;
+   const s0=O.save.s;O.save.s={...s0};O.WORLDS.forEach(w=>{if(w.id!=='fin')O.save.s[w.levels[0].id]=1;});/* G5 (#98): 0-star worlds are hidden anyway: give each a star */O.showJourney();await new Promise(r=>setTimeout(r,200));const hiddenCards=[...document.querySelectorAll('.worlds > .wcard2')].filter((c,i)=>c.hidden&&O.WORLDS[i].id!=='fin').length;O.save.s=s0;
    const d=T.dailyEnsure();return {wiz,prof,lab:names.some(n=>n.replace(/[\u0591-\u05C7]/g,'')==='המעבדה'),head,fav,first:acts.some(a=>a.includes('אוֹת רִאשׁוֹנָה')),hiddenCards,daily:d.t.some(id=>id.startsWith('sci-')||id==='read-first')};});
  ok('profile wizard on first hub visit (no animal: the friend is the studio pet)',r1.wiz&&r1.prof.includes('love')&&!r1.prof.includes('"an"'),r1.prof);ok('favourite door marked',r1.fav);
  ok('disabled building hidden',!r1.lab);ok('disabled activity hidden',!r1.first);ok('disabled world hidden on map',r1.hiddenCards===1);ok('daily missions skip disabled parts',!r1.daily);
