@@ -366,7 +366,7 @@ function classify(q,ctx){if(!q||typeof q!=='object')return null;ctx=ctx||{};
     return g('generic',{topic:ctx.topic});}
   if(q.k==='ch'&&q.chk){const c=q.chk;
     if(c.t==='cmp')return g('cmp',{a:c.a,b:c.b,max:Math.max(c.a,c.b)>=100?1000:100});
-    if(c.t==='clock')return g('clock',{h:c.h,m:c.m});
+    if(c.t==='clock'||c.t==='setclock')return g('clock',{h:c.h,m:c.m});
     if(c.t==='frac')return g('frac',{parts:c.parts,shape:/<path/.test(q.pr)?'circle':'bar'});
     return null;}                                    /* other check types (pictures, shapes, graphs from the gaps pack): no step-by-step explainer yet, the game's own hint stays */
   if(q.k==='word')return g('story',{});

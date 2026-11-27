@@ -3,7 +3,7 @@ const L = require('./lib');
 const {chromium}=require('playwright');
 (async()=>{const b=await chromium.launch();const p=await b.newPage();const errs=[];p.on('pageerror',e=>errs.push(e.message));
 await p.goto(L.URL);
-const r=await p.evaluate(()=>{const O=window.__oren4;const bad=[];let n=0;const kinds={};
+const r=await p.evaluate(()=>{const O=window.__oren4;const bad=[];let n=0;const kinds={};const seenT={};
  const ev=expr=>{const t=expr.trim().split(/\s+/);const vals=[],ops=[];for(let i=0;i<t.length;i++){if(i%2===0)vals.push(Number(t[i]));else ops.push(t[i]);}
    if(vals.some(isNaN))return NaN;for(let i=0;i<ops.length;){if(ops[i]==='×'||ops[i]===':'){const v=ops[i]==='×'?vals[i]*vals[i+1]:vals[i]/vals[i+1];vals.splice(i,2,v);ops.splice(i,1);}else i++;}
    let v=vals[0];for(let i=0;i<ops.length;i++)v=ops[i]==='+'?v+vals[i+1]:v-vals[i+1];return v;};
@@ -42,6 +42,10 @@ const r=await p.evaluate(()=>{const O=window.__oren4;const bad=[];let n=0;const 
       if(c.t==='clock'&&right!==tstr(c.h,c.m))bad.push(tag+' clock');
       if(c.t==='add'&&right!==tstr(h12(c.h+c.k),c.m))bad.push(tag+' clockadd');
       if(c.t==='frac'&&right!==['חֲצִי','שְׁלִישׁ','רֶבַע'][c.parts-2])bad.push(tag+' frac');
+      if(c.t==='setclock'){const hm=lv.u.id==='time-h'?[0]:lv.u.id==='time-half'?[0,30]:[0,15,30,45];if(q.opts.length!==1||!(c.h>=1&&c.h<=12)||!hm.includes(c.m)||!q.hand||q.hand.t!=='clock')bad.push(tag+' setclock '+JSON.stringify(c));}
+      if(c.t==='pzeat'&&(q.opts.length!==1||![2,3,4].includes(c.parts)||!q.hand||q.hand.eat!==1))bad.push(tag+' pzeat '+JSON.stringify(c));
+      if(c.t==='pzleft'&&(+right!==c.parts-1||![2,3,4].includes(c.parts)))bad.push(tag+' pzleft '+JSON.stringify(c));
+      if(c.t)seenT[lv.u.id+':'+c.t]=1;
       if(c.t==='clock'||c.t==='add'){if(q.opts.some(o=>!/^([1-9]|1[0-2]):[0-5][05]$/.test(o)))bad.push(tag+' bad time opt '+q.opts);}}
     if(q.k==='col'){const st=O.colInit(q);if((q.op==='+'?q.a+q.b:q.a-q.b)!==q.res)bad.push(tag+' col math');if(q.op==='−'&&st.R.length!==st.A.length)bad.push(tag+' lead0');
       let carry=0;for(let c=0;c<st.R.length;c++){let digit;if(q.op==='+'){const s=(st.A[c]|0)+(st.B[c]|0)+carry;digit=s%10;carry=s>=10?1:0;if(c>=st.A.length&&c>=st.B.length)digit=s;}
@@ -50,6 +54,8 @@ const r=await p.evaluate(()=>{const O=window.__oren4;const bad=[];let n=0;const 
  // teacher mode
  for(const op of ['+','−','×',':'])for(const hero of O.HEROES){const t=O.storyFor(op,hero,'תַּפּוּחִים',12,3);if(/undefined/.test(t))bad.push('story '+op);}
  if(O.teachCheck(':',10,3,false)==='')bad.push('teachCheck div');if(O.teachCheck('−',3,10,false)==='')bad.push('teachCheck sub');if(O.teachCheck('+',5,4,false)!=='')bad.push('teachCheck ok');
+ /* #267: the hands-on questions are mixed into the existing levels (clock h / half / q / boss, fractions + boss) */
+ for(const k of ['time-h:setclock','time-half:setclock','time-q:setclock','time-boss:setclock','time-frac:pzeat','time-frac:pzleft','time-frac:frac','time-boss:pzeat','time-h:clock'])if(!seenT[k])bad.push('#267 never seen '+k);
  return {n,levels:O.ALLLV.length,kinds,bad:[...new Set(bad)].slice(0,30),cnt:new Set(bad).size};});
 await b.close();
 L.finish('math-logic',[(r.cnt===0?'PASS':'FAIL')+` all generated math questions valid (${r.n} checked across ${r.levels} levels)`+(r.cnt?' — '+r.bad.join(' | '):''),(errs.length?'FAIL':'PASS')+' no JS errors '+errs.slice(0,3).join(' | ')]);})();
