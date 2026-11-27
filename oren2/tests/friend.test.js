@@ -155,7 +155,7 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
   await p.evaluate(() => { const O = window.OREN, d = window.TAL.dailyEnsure(); O.save.mix = { c: 1, s: 5 }; window.STORYMIX.advance(); d.done = d.t.map(() => 1); d.claimed = 0; d.sg = 1; O.persist(); O.showMap(); }); await sleep(300);
   s = await said(() => p.evaluate(() => document.querySelector('#sHome .bigbtn.huge').click()), 700);
   const fin = await p.evaluate(() => ({ h: (document.querySelector('#ov:not([hidden]) .qwin h2') || { textContent: '' }).textContent, hint: window.STORYMIX.hint() }));
-  ok('#386 end of the day: a hint for tomorrow (next chapter: we sail to the island of clocks)', fin.h === fin.hint && /מַפְלִיגִים אֶל אִי הַשְּׁעוֹנִים/.test(fin.h) && await voiced(s, fin.hint), JSON.stringify({ fin, s }));
+  ok('#386 end of the day: a hint for tomorrow (next chapter: we sail to the island of clocks)', fin.h.endsWith(fin.hint) && /מַפְלִיגִים אֶל אִי הַשְּׁעוֹנִים/.test(fin.h) && await voiced(s, fin.hint), JSON.stringify({ fin, s }));
   await L.shot(p, { path: L.SHOTDIR + '/story-hint-' + L.variant + '.png' });
   ok('#386 family save: the device further on in the story wins', await p.evaluate(() => { const M = window.STORYMIX; return JSON.stringify(M.merge({ c: 1, s: 2 }, { c: 2, s: 1 })) === '{"c":2,"s":1}' && JSON.stringify(M.merge({ c: 3, s: 1 }, { c: 2, s: 4 })) === '{"c":3,"s":1}' && JSON.stringify(M.merge(undefined, { c: 1, s: 3 })) === '{"c":1,"s":3}'; }));
   ok('#386 no page errors', !errs.length, errs.join(' | '));
@@ -234,5 +234,47 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
   await p.evaluate(() => { const ov = document.querySelector('#ov'); ov.hidden = true; ov.innerHTML = ''; window.FRIEND._lead(''); });
   ok('#411 screenshot of the question on the result card', shot);
   ok('#411 no page errors', !errs.length, errs.join(' | '));
+  // --- #407 the friend remembers: at the start of the day yesterday + today, at the end two things he did + a hint ---
+  const SEP = '⁣', nSent = t => (t.match(/[^.!?]+[.!?]+/g) || [t]).filter(x => /[א-ת]/.test(x)).length;
+  const R = await p.evaluate(() => { const M = window.STORYMIX, T = window.TAL, O = window.OREN;
+    const ids = Object.keys(T.ACT), by = {}; ids.forEach(id => { const k = M.topicOf(id); if (k && !by[k]) by[k] = id; }); by.math = 'lv:x';
+    const ks = Object.keys(by), outs = [];
+    const keep = JSON.stringify({ alog: O.save.alog, mix: O.save.mix });
+    for (const a of ks) for (const c of ks) for (let ch = 1; ch <= 12; ch++) { const e = [[600, by[a], 1, 3, 3, 0, 'c'], [620, by[c], 1, 3, 3, 0, 'c']];
+      O.save.mix = { c: ch, s: ch === 1 ? 1 : 3 }; O.save.alog = { [M.dayKey(-1)]: { e }, [O.today()]: { e } }; outs.push(M.dayStart(), M.dayEnd()); }
+    const k0 = JSON.parse(keep); O.save.alog = k0.alog || {}; O.save.mix = k0.mix; return { ks, outs, voice: window.FRIEND.speakList() }; });
+  const parts = [...new Set(R.outs.flatMap(t => t.split(SEP).map(x => x.trim())))];
+  ok('#407 the lines are built from fixed parts that are all in the voice list (pregen)', R.ks.length >= 5 && parts.every(t => R.voice.includes(t)), parts.filter(t => !R.voice.includes(t)).slice(0, 5).join(' | '));
+  ok('#407 every start / end line: at most 2 sentences, kid text with nikud', R.outs.every(t => nSent(t.split(SEP).join(' ')) <= 2) && parts.every(t => NIK.test(t)),
+    R.outs.filter(t => nSent(t.split(SEP).join(' ')) > 2).slice(0, 3).join(' | '));
+  // the save: yesterday he did math and a reading mission (and left a riddle in the middle: not a fact)
+  const mem = await p.evaluate(() => { const M = window.STORYMIX, O = window.OREN, T = window.TAL;
+    O.save.alog = { [M.dayKey(-1)]: { e: [[600, 'lv:a1', 2, 3, 3, 0, 'c'], [610, 'read-first', 1, 4, 5, 0, 'c'], [620, 'read-wp', 1, 2, 2, 0, 'c'], [630, M.byTopic('think'), 0, 0, 1, 0, 'q']] } };
+    O.save.mix = { c: 2, s: 3 }; return { s: M.dayStart(), math: M.DID.math[0], read: M.DID.read[1], think: M.DID.think, today: M.TODAY(2) }; });
+  ok('#407 start of the day: by name, what we did yesterday (math + reading), what comes today', mem.s.startsWith('אוֹרֶן, אֶתְמוֹל ') && mem.s.includes(mem.math) && mem.s.includes(mem.read) && mem.s.endsWith(SEP + mem.today), JSON.stringify(mem));
+  ok('#407 no invented facts: a mission left in the middle is not told', !mem.think.some(t => mem.s.includes(t)), mem.s);
+  const empty = await p.evaluate(() => { const M = window.STORYMIX, O = window.OREN; O.save.alog = { [M.dayKey(-3)]: { e: [[600, 'read-first', 1, 4, 5, 0, 'c']] } }; return { s: M.dayStart(), z: M.dayEnd(), hint: M.hint() }; });
+  ok('#407 empty history (nothing yesterday): no memory line; the day ends with the hint alone', empty.s === '' && empty.z === empty.hint, JSON.stringify(empty));
+  // home at the start of the day: the memory line is said; with no history, the plain welcome
+  const home = async (log) => p.evaluate(log => { const M = window.STORYMIX, O = window.OREN, T = window.TAL; O.save.alog = log ? { [M.dayKey(-1)]: { e: log } } : {};
+    O.save.mix = { c: 1, s: 2 }; O.save.daily = null; const d = T.dailyEnsure(); d.t = []; d.done = []; d.ch = 0; O.persist(); window.__fast = false; speechSynthesis.log = []; O.showMap();
+    return new Promise(r => setTimeout(() => { window.__fast = true; r({ bub: (document.querySelector('#sHome .hbub2') || { textContent: '' }).textContent, said: speechSynthesis.log.slice(), want: M.dayStart() }); }, 900)); }, log);
+  let hm = await home([[600, 'lv:a1', 2, 3, 3, 0, 'c'], [610, 'read-first', 1, 4, 5, 0, 'c']]);
+  ok('#407 home at the start of the day: the friend says the memory line', /אֶתְמוֹל/.test(hm.bub) && await voiced(hm.said, hm.want.split(SEP)[0]), JSON.stringify(hm));
+  await L.shot(p, { path: L.SHOTDIR + '/memory-start-' + L.variant + '.png' });
+  hm = await home(null);
+  ok('#407 empty history: a plain welcome on home', !/אֶתְמוֹל/.test(hm.bub) && /אוֹרֶן/.test(hm.bub), JSON.stringify(hm));
+  const later = await p.evaluate(() => { const M = window.STORYMIX, O = window.OREN, T = window.TAL; O.save.alog = { [M.dayKey(-1)]: { e: [[600, 'lv:a1', 2, 3, 3, 0, 'c']] } };
+    const d = T.dailyEnsure(); d.t = ['math', 'read-first']; d.done = [1, 0]; d.ch = 'math'; O.persist(); O.showMap(); return (document.querySelector('#sHome .hbub2') || { textContent: '' }).textContent; });
+  ok('#407 after the first step of the day: no memory line any more', !/אֶתְמוֹל/.test(later), later);
+  // the end of the day: two things he did today + the hint for tomorrow
+  await p.evaluate(() => { const M = window.STORYMIX, O = window.OREN, d = window.TAL.dailyEnsure(); O.save.alog = { [O.today()]: { e: [[600, 'lv:a1', 2, 3, 3, 0, 'c'], [610, 'read-first', 1, 4, 5, 0, 'c'], [620, 'lv:a2', 2, 3, 3, 0, 'c']] } };
+    O.save.mix = { c: 1, s: 3 }; d.t = ['math', 'read-first']; d.done = [1, 1]; d.claimed = 0; d.sg = 1; O.persist(); O.showMap(); }); await sleep(300);
+  s = await said(() => p.evaluate(() => document.querySelector('#sHome .bigbtn.huge').click()), 700);
+  const end = await p.evaluate(() => { const M = window.STORYMIX; return { h: (document.querySelector('#ov:not([hidden]) .qwin h2') || { textContent: '' }).textContent, z: M.dayEnd(), hint: M.hint(), math: M.DID.math[0], read: M.DID.read[1] }; });
+  ok('#407 end of the day: two things he did today, then the hint', end.h === end.z && end.z.startsWith('הַיּוֹם ' + end.math + ' ' + end.read) && end.z.endsWith(SEP + end.hint) && await voiced(s, end.hint), JSON.stringify({ end, s }));
+  await L.shot(p, { path: L.SHOTDIR + '/memory-end-' + L.variant + '.png' });
+  await p.evaluate(() => { document.querySelector('#ov').hidden = true; });
+  ok('#407 no page errors', !errs.length, errs.join(' | '));
   await b.close(); L.finish('friend', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT friend 0 1'); process.exitCode = 1; });
