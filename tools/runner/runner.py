@@ -331,18 +331,21 @@ def push_ref(n, br):
 PC_TESTS = ("Do NOT run the game suites or Playwright here (oren2/tests/run.sh, node tests/*.test.js): on this PC they refuse, they run in CI "
             "on the PR (#284); run only the python tool tests you touched (python3 tools/runner/test_*.py). ")
 
+REBUILD = ("Right after ANY merge of main into the branch (also one you did not plan), run `python3 build_talents.py` (in oren2/) and commit BOTH "
+           "rebuilt files oren2/index.html and oren2/cf/public/index.html in the same push (CI is red when they differ from a fresh build, #503, #594). ")
+
 def ci_fix_prompt(n, names, br=None):
     br = br or f"lane/{n}"
     return (f"Issue #{n}: the CI check(s) {', '.join(names) or '(see the PR)'} failed on {br} even after one rerun. "
             f"Use `gh run list --branch {br}` and `gh run view <id> --log-failed`, fix the real cause in this worktree, "
-            + PC_TESTS + f"Commit, and `git push {REMOTE} {push_ref(n, br)}`. Never force-push, never push to {BRANCH}. "
+            + REBUILD + PC_TESTS + f"Commit, and `git push {REMOTE} {push_ref(n, br)}`. Never force-push, never push to {BRANCH}. "
             "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
 
 def resolve_prompt(n, files, br=None):
     br = br or f"lane/{n}"
     return (f"Issue #{n}: merging {br} into {BRANCH} failed because {BRANCH} moved on" + (f" (conflicting files: {', '.join(files)})" if files else "") + ". "
             f"In this worktree run `git fetch {REMOTE} && git merge -X renormalize {REMOTE}/{BRANCH}`, resolve the conflicts keeping BOTH sides' intent, "
-            "run `python3 build_talents.py` (in oren2/). " + PC_TESTS + "Commit, "
+            + REBUILD + PC_TESTS + "Commit, "
             f"and `git push {REMOTE} {push_ref(n, br)}`. Never force-push, never rewrite {BRANCH}, never push to {BRANCH}. "
             "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
 
@@ -354,7 +357,7 @@ def remote_resolve_prompt(n, files, br=None, ci=False):
             f"{br} conflicts with {BRANCH}" + (f" (files: {', '.join(files)})" if files else "") +
             f": run `git merge -X renormalize {REMOTE}/{BRANCH}`, resolve the conflicts keeping BOTH sides' intent, run `python3 build_talents.py` (in oren2/)")
     return (f"You are an unattended resolve worker for GitHub issue #{n} in repo {REPO}. Read CLAUDE.md and FLOW.md. "
-            f"`git fetch {REMOTE} {br} {BRANCH} && git checkout {br}` (the PR's branch). Then {what}. Run the tests you touched, commit "
+            f"`git fetch {REMOTE} {br} {BRANCH} && git checkout {br}` (the PR's branch). Then {what}. " + REBUILD + "Run the tests you touched, commit "
             f"(after `python3 build_talents.py` in oren2/, WITH the rebuilt oren2/index.html and oren2/cf/public/index.html (CI is red when they differ from a fresh build, #503)) and `git push {REMOTE} {br}` (no new PR). Never force-push, never rewrite {BRANCH}, never push to {BRANCH}. "
             "You have no terminal the owner can see: report ONLY through an issue comment, that line on its own line. "
             f"LAST STEP (mandatory): `gh issue comment {n} --repo {REPO} --body \"RESULT: DONE <PR url>\"` (or `RESULT: STUCK <why>`).")
@@ -621,7 +624,7 @@ def remote_worker_prompt(n, lane, bug=False, retry=False):
     if retry:                                    # #137: an earlier cloud session died without a RESULT comment
         base += (f"An earlier cloud session for this issue ended without a RESULT comment: if lane/{n} exists on GitHub, "
                  f"continue from it (`git fetch {REMOTE} lane/{n}` and check it out) instead of starting over.\n")
-    return base + (f"Work on branch lane/{n} (create it from {BRANCH}). Follow the worker rules in FLOW.md: run the tests you touched, commit "
+    return base + REBUILD + (f"Work on branch lane/{n} (create it from {BRANCH}). Follow the worker rules in FLOW.md: run the tests you touched, commit "
                    f"(after `python3 build_talents.py` in oren2/, WITH the rebuilt oren2/index.html and oren2/cf/public/index.html (CI is red when they differ from a fresh build, #503)), `git push -u {REMOTE} lane/{n}`, and open a PR to {BRANCH} "
                    f"with `gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Fixes #{n}` (if you may only push claude/* branches, use your claude/* branch instead; the runner finds the PR by `Fixes #{n}`). Never deploy, never force-push, never push to {BRANCH}.\n"
                    f"You have no terminal the owner can see, so report ONLY through an issue comment (that line on its own line): "
@@ -1379,7 +1382,7 @@ def worker_prompt(n, lane, review_text=None, bug=False):
     if bug:
         base += ("This is a BUG: follow docs/agents/skills/diagnosing-bugs.md, then tdd: reproduce it with a failing test (add it to the relevant suite in oren2/tests/), then fix it so the test passes; "
                  "say the root cause in the PR body.\n")
-    steps = ("Steps: 1) implement; 2) python3 build_talents.py (in oren2/, PATH already has python3); " + PC_TESTS + "3) for each changed screen take screenshots (skip them when no oren2/ file changed) at phone 390x844 and desktop 1366x768 into "
+    steps = (REBUILD + "Steps: 1) implement; 2) python3 build_talents.py (in oren2/, PATH already has python3); " + PC_TESTS + "3) for each changed screen take screenshots (skip them when no oren2/ file changed) at phone 390x844 and desktop 1366x768 into "
              f"C:/work/Oren_study/shots/{n}/ and LOOK at them (simple, one main action, Hebrew with nikud); 4) commit, WITH the rebuilt oren2/index.html "
              f"and oren2/cf/public/index.html (CI is red when they differ from a fresh build, #503; not node_modules, package*.json, tests/.tmp); 5) `git push -u {REMOTE} lane/{n}`; 6) open a PR to {BRANCH} with "
              f"`gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Closes #{n}` (use the mattpocock-skills:pr skill to write the PR body; skip if a PR already exists). "
@@ -1482,7 +1485,7 @@ def remote_review(n, pr, round1, start, get_verdict, sleep, clock, timeout_s=360
 def remote_fix_prompt(n, review_text, br=None):
     br = br or f"lane/{n}"
     return (f"Fix round for issue #{n} in {REPO}: the reviewer of the PR on branch {br} asked for fixes. If you are not on that branch: "
-            f"`git fetch {REMOTE} {br} && git checkout {br}`; read CLAUDE.md and FLOW.md. Fix exactly these points (new commit, "
+            f"`git fetch {REMOTE} {br} && git checkout {br}`; read CLAUDE.md and FLOW.md. " + REBUILD + "Fix exactly these points (new commit, "
             f"`git push {REMOTE} {br}`, no new PR, never force-push, never push to {BRANCH}), run the tests you touched, then post an issue comment on #{n} "
             "with `RESULT: DONE <PR url>` (or `RESULT: STUCK <why>`, or `QUESTION: <question, options>` and stop) on its own line:\n---\n"
             + review_text[-6000:] + "\n---")
@@ -1697,6 +1700,28 @@ def log_to(log, text):
         with open(log, "a", encoding="utf-8") as f: f.write(text + "\n")
     except OSError: pass
 
+BUILT = ("oren2/index.html", "oren2/cf/public/index.html")
+
+def update_lane(wt, br, log):
+    """#166 + #594: merge main into the PR branch, rebuild the built files right after (commit both when they changed), push.
+    -> (rc, text, new_sha): 0 ok (new_sha '' = nothing pushed), 2 conflict (files in text), 5 push failed, 7 build failed."""
+    run(["git", "fetch", "-q", REMOTE], cwd=wt, log=log)
+    rc, out = run(["git", "merge", "--no-edit", "-X", "renormalize", f"{REMOTE}/{BRANCH}"], cwd=wt, log=log)
+    if rc:
+        files = run(["git", "diff", "--name-only", "--diff-filter=U"], cwd=wt, log=log)[1].split()
+        run(["git", "merge", "--abort"], cwd=wt, log=log)
+        return 2, "CONFLICTS (fix by hand, or send back to the lane):\n" + "\n".join(files), ""
+    if (Path(wt) / "oren2" / "build_talents.py").exists():          # #594: a merge of main leaves index.html stale -> CI red (#503)
+        rc, out = run([sys.executable, "build_talents.py"], cwd=str(Path(wt) / "oren2"), log=log)
+        if rc: return 7, "build_talents.py failed after merging main: " + out[-300:], ""
+        run(["git", "add", "--", *BUILT], cwd=wt, log=log)
+        if run(["git", "diff", "--cached", "--quiet"], cwd=wt)[0]:
+            if run(["git", "commit", "-q", "-m", "Rebuild index.html after merging main (#594)"], cwd=wt, log=log)[0]:
+                return 7, "could not commit the rebuilt index.html after merging main", ""
+    if run(["git", "rev-parse", "HEAD"], cwd=wt)[1] == run(["git", "rev-parse", f"{REMOTE}/{br}"], cwd=wt)[1]: return 0, "", ""
+    if run(["git", "push", "-q", REMOTE, f"HEAD:{br}"], cwd=wt, log=log)[0]: return 5, "push failed", ""
+    return 0, "", run(["git", "rev-parse", "HEAD"], cwd=wt)[1].strip()
+
 def ci_integrate(n, wt, log, over=None, sha=""):
     """CI-based integrate (#74): update the lane with main, push, wait for the PR checks, `gh pr merge --squash`. -> (rc, out) like integrate.sh:
     0 merged (or already merged), 2 conflict, 4 no PR, 5 push failed, 6 CI red after one rerun, 7 CI timeout / merge failed (blocked, real reason in out),
@@ -1712,15 +1737,10 @@ def ci_integrate(n, wt, log, over=None, sha=""):
         disable_auto(pr, log); return 7, f"PR #{pr}: {why}"
     mergeable = gh("pr", "view", str(pr), "--json", "mergeable", "-q", ".mergeable", log=log)[1].strip()
     if needs_branch_update(mergeable):                           # #166: only a real conflict updates the branch
-        run(["git", "fetch", "-q", REMOTE], cwd=wt, log=log)
-        rc, out = run(["git", "merge", "--no-edit", "-X", "renormalize", f"{REMOTE}/{BRANCH}"], cwd=wt, log=log)
-        if rc:
-            files = run(["git", "diff", "--name-only", "--diff-filter=U"], cwd=wt, log=log)[1].split()
-            run(["git", "merge", "--abort"], cwd=wt, log=log)
-            return 2, "CONFLICTS (fix by hand, or send back to the lane):\n" + "\n".join(files)
-        if run(["git", "rev-parse", "HEAD"], cwd=wt)[1] != run(["git", "rev-parse", f"{REMOTE}/{br}"], cwd=wt)[1]:
-            if run(["git", "push", "-q", REMOTE, f"HEAD:{br}"], cwd=wt, log=log)[0]: return 5, "push failed"
-            sha = run(["git", "rev-parse", "HEAD"], cwd=wt)[1].strip()   # #185: the runner's own merge-main commit is the new head to match
+        rc, out, new = update_lane(wt, br, log)
+        if rc: return rc, out
+        if new:
+            sha = new                                                # #185: the runner's own merge-main commit is the new head to match
             time.sleep(20)                                           # let GitHub start the new run
     why = {"merge": ""}
     def get_checks():

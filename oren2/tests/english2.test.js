@@ -208,6 +208,20 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
   ok(hasMom && ps.teach.includes('v:mom') && ps.teach.includes('v:dad') && E.teachCard('v:mom').kind === 'word', 'a sentence word not taught yet (mom, dad) gets its word card first', JSON.stringify(ps.teach));
 }
 
+/* #424 the English scene of the daily path: 5 cards, letters and sounds first, then words */
+{
+  const isL = x => x.g ? x.g.startsWith('L:') : /^[ncs]:/.test(x.q.k);
+  const okOrder = sc => { const f = sc.findIndex(x => !isL(x)); return f < 0 || sc.slice(f).every(x => !isL(x)); };
+  const s0 = freshSave(), d0 = E.day(); const sc0 = E.dayScene(s0, d0);
+  ok(sc0.length === 5 && sc0.every(isL) && sc0[0].g && sc0[0].lv === 1, '#424 a new player\'s English scene: 5 cards, all letters and sounds, a letter card first', JSON.stringify(sc0));
+  const s1 = freshSave(); E.LEVELS[1].units[0].items.forEach(k => { E.st(s1).i[k] = [2, d0 + 3]; });
+  let allOk = true, words = 0, bad = '';
+  for (let r = 0; r < 12; r++) { const sc = E.dayScene(s1, d0); const taughtNow = new Set(sc.filter(x => x.g).flatMap(x => E.teachCard(x.g).items));
+    if (sc.length !== 5 || !okOrder(sc) || !sc.some(isL) || sc.some(x => x.q && !E.seen(s1, x.q.k) && !taughtNow.has(x.q.k))) { allOk = false; bad = JSON.stringify(sc); }
+    words += sc.filter(x => !isL(x)).length; }
+  ok(allOk && words > 0, '#424 words open: still 5 cards, letters and sounds before words, no question on an untaught item', bad);
+}
+
 /* ======================= Part 2: the screens (Playwright) ======================= */
 (async () => {
   let chromium; try { ({ chromium } = require('playwright')); } catch (e) { ok(false, 'playwright missing'); return L.finish('english2', out); }
