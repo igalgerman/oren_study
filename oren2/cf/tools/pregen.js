@@ -44,7 +44,7 @@ function literal(file, name) {
 }
 
 /* random math questions (new numbers every time) are skipped: made on first use, then cached */
-const RANDOM = /שווה כמה|כמה שווה|ועוד כמה|כמה כפול|פותרים במאונך|^מה השעה\?|קטן, שווה, גדול$|^\d+ \? \d+|בבוקר, ועוד \d+|(התשובה|זריקה|לשחות)\. \d|חילק \d+|^‎?\d+ : \?/;
+const RANDOM = /שווה כמה|כמה שווה|ועוד כמה|כמה כפול|פותרים במאונך|^מה השעה\?|קטן, שווה, גדול$|^\d+ \? \d+|בבוקר, ועוד \d+|(התשובה|זריקה|לשחות)\. \d|חילק \d+|^‎?\d+ : \?|המבלבל חטף|בבוקר, ועוד|בכל שורה יש .* שורות\?|שווה בשווה ל|כמה עגולים ציי?רת\?$/;   /* #416: the story word problems (numbers said as words); the draw paper task */
 /* static pass: finite data through the client's own text path (fullSpell, then the same 400-char parts, #401); runs in the page.
    D = { SENT, STORIES, INTRO } (literal() of talents.js / index.html). Also used by tests/voice-audit.test.js (#406). */
 const STATIC = D => { const O = window.OREN, T = window.TAL, out = [], sp = s => String(s).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -66,6 +66,7 @@ const STATIC = D => { const O = window.OREN, T = window.TAL, out = [], sp = s =>
   tryf(() => W.GAPS.speakList().forEach(add));   /* rhymes (#419) */
   tryf(() => W.EXPLORE2.kidTexts().forEach(s => add(sp(s))));
   tryf(() => W.FRIEND.speakList().forEach(s => add(sp(s))));
+  tryf(() => W.BW.speakList().forEach(s => add(sp(s))));   /* the building world (#64) */
   tryf(() => W.HELP.allTexts().forEach(s => add(sp(s))));
   tryf(() => W.LESSONS.speakList().forEach(s => add(sp(s))));
   tryf(() => W.HEALTH.remTexts().forEach(add));

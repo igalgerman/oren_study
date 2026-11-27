@@ -93,7 +93,7 @@ svg.px{shape-rendering:crispEdges;display:block}
 .bigbtn.plain{background:var(--birch);color:var(--ink);box-shadow:inset -6px -6px 0 rgba(0,0,0,.15),inset 6px 6px 0 rgba(255,255,255,.6),0 7px 0 rgba(0,0,0,.25)}
 .bigbtn.sm{font-size:19px;padding:9px 18px}.bigbtn.sm svg{width:22px;height:22px}
 .btnrow{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;align-items:center}
-@media (hover:hover){.ibtn:hover,.bigbtn:hover,.key:hover,.wcard2:hover,.pnode:not(:disabled):hover,.tcell:hover,.hintbtn:hover,.chb:hover,.tool:hover,.kcell:hover,.opt:hover{filter:brightness(1.08) saturate(1.1)}}
+@media (hover:hover){.ibtn:hover,.bigbtn:hover,.key:hover,.wcard2:hover,.pnode:not(:disabled):hover,.tcell:hover,.hintbtn:hover,.chb:hover,.tool:hover{filter:brightness(1.08) saturate(1.1)}}
 .ibtn:active,.bigbtn:active,.key:active,.chb:active{transform:translateY(3px)}
 
 .title{font-weight:900;font-size:clamp(42px,7vw,88px);margin:0;color:#fff;text-align:center;line-height:1.25;-webkit-text-stroke:9px var(--ink);paint-order:stroke fill;text-shadow:5px 5px 0 var(--ink)}
@@ -323,7 +323,6 @@ body:has(#dlg:not([hidden])) .hud{z-index:8}/* #356: back/home stay visible abov
 body.inpar #gemc,body.inpar #btnMusic{display:none}
 /* G1: kid activity screens show only back + repeat (title is spoken) */
 body.act #gemc,body.act #btnMusic,body.act #btnHome,body.act .hud-mid .chip,body.act .tpill{display:none!important}
-.khint{animation:pulse 2s infinite}
 @media (max-width:760px){.lch .chb{min-width:84px;height:70px;font-size:28px}.mbo{grid-template-columns:repeat(5,14px)}.mbo .one{width:14px;height:14px}.mbt .rod i{width:13px;height:6px}}
 .flat{display:grid;grid-template-columns:repeat(10,5px);gap:1px;padding:1px;background:rgba(0,0,0,.18)}
 .flat i{width:5px;height:5px;background:var(--c)}
@@ -377,20 +376,6 @@ body.act #gemc,body.act #btnMusic,body.act #btnHome,body.act .hud-mid .chip,body
 /* KINGDOM */
 .kwrap{display:flex;gap:18px;align-items:flex-start;justify-content:center;flex-wrap:wrap;width:min(1160px,100%)}
 .kscene{display:flex;flex-direction:column;align-items:center;background:rgba(255,255,255,.35);padding:10px}
-.ktop{display:flex;align-items:flex-end;gap:6px}
-.ktop .cs svg{width:300px;max-width:60vw}
-.ktop .fr{display:flex;gap:2px;align-items:flex-end}.ktop .fr svg{width:34px}
-.kgrid{display:grid;grid-template-columns:repeat(12,44px);grid-template-rows:repeat(4,44px);background:repeating-linear-gradient(90deg,#7cc35f 0 44px,#74b957 44px 88px);direction:ltr}
-.kcell{width:44px;height:44px;display:grid;place-items:center;box-shadow:inset 0 0 0 1px rgba(0,0,0,.05)}
-.kcell svg{max-width:38px;max-height:38px;width:auto;height:auto}
-.kcell.new svg{animation:pop .4s}
-.shop{display:grid;grid-template-columns:repeat(3,88px);gap:8px;background:rgba(255,255,255,.85);padding:10px;box-shadow:0 6px 0 rgba(0,0,0,.15)}
-.shop h3{grid-column:1/-1;margin:0;font-size:20px;text-align:center}
-.opt{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px;background:var(--paper);box-shadow:inset -3px -3px 0 rgba(0,0,0,.12),0 3px 0 rgba(0,0,0,.18);font-weight:800;font-size:14px}
-.opt .si{height:36px;display:grid;place-items:center}.opt .si svg{max-height:34px;max-width:44px;width:auto;height:auto}
-.opt .pr{direction:ltr;display:flex;gap:3px;align-items:center;font-size:14px}.opt .pr svg{width:13px}
-.opt.sel{box-shadow:0 0 0 4px var(--gold),0 3px 0 rgba(0,0,0,.18)}
-.opt.poor{opacity:.45}
 /* AVATAR STUDIO */
 .studio{display:flex;gap:26px;align-items:center;justify-content:center;flex-wrap:wrap}
 .studio .pv{display:flex;align-items:flex-end;gap:8px;background:rgba(255,255,255,.6);padding:18px}
@@ -455,7 +440,7 @@ body.act #gemc,body.act #btnMusic,body.act #btnHome,body.act .hud-mid .chip,body
 
 
 /* polish: pixel outlines, effects */
-.bigbtn,.key,.chb,.ibtn,.tool,.wcard2,.opt,.hatb,.hintbtn,.gemc,.chip,.starcount,.streak{outline:3px solid rgba(29,38,49,.88);outline-offset:0}
+.bigbtn,.key,.chb,.ibtn,.tool,.wcard2,.hatb,.hintbtn,.gemc,.chip,.starcount,.streak{outline:3px solid rgba(29,38,49,.88);outline-offset:0}
 .bigbtn:focus-visible,.key:focus-visible,.chb:focus-visible,.ibtn:focus-visible{outline:4px solid #1f6feb}
 .eqcard,.wcard,.prq,.colwrap,.card,.dbox{outline:4px solid #1d2631}
 .pnode{outline:3px solid #1d2631}
@@ -513,14 +498,12 @@ body.act #gemc,body.act #btnMusic,body.act #btnHome,body.act .hud-mid .chip,body
   .skip b{min-width:32px;height:30px;font-size:15px}
   .learn h1{font-size:25px}.lsent{font-size:20px}.facts{font-size:16px}.bigeq{font-size:36px}.lcap{font-size:16px}
   .card{padding:14px 16px}.card h2{font-size:25px}.card .stars span svg{width:48px}.card .cs svg{width:200px}
-  .kgrid{grid-template-columns:repeat(12,28px);grid-template-rows:repeat(4,28px);background:repeating-linear-gradient(90deg,#7cc35f 0 28px,#74b957 28px 56px)}.kcell{width:28px;height:28px}.kcell svg{max-width:24px;max-height:24px}
-  .shop{grid-template-columns:repeat(4,72px)}.opt{font-size:12px}
   .studio .pv .a svg{width:80px}.studio .pv .p svg{width:60px}.orow h4{width:auto;font-size:17px}.sw{width:44px;height:44px}.hatb{width:46px;height:44px}.hatb svg{width:30px}
   .optrow button{font-size:17px}.optrow button.big{font-size:26px}
   .final{padding:16px 20px 12px}.final .rl{font-size:20px}.final .cs svg{width:200px}
 }
-@media (max-width:400px){.kgrid{grid-template-columns:repeat(12,24px);grid-template-rows:repeat(4,24px);background:repeating-linear-gradient(90deg,#7cc35f 0 24px,#74b957 24px 48px)}.kcell{width:24px;height:24px}.kcell svg{max-width:20px;max-height:20px}.kscene{padding:6px}}
-@media (max-width:440px){.worlds{grid-template-columns:repeat(2,minmax(120px,1fr))}.eqcard{font-size:32px}.pad{grid-template-columns:repeat(4,1fr)}.colwrap{--cw:38px}.shop{grid-template-columns:repeat(3,80px)}}
+@media (max-width:400px){.kscene{padding:6px}}
+@media (max-width:440px){.worlds{grid-template-columns:repeat(2,minmax(120px,1fr))}.eqcard{font-size:32px}.pad{grid-template-columns:repeat(4,1fr)}.colwrap{--cw:38px}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition:none!important}}
 </style>
 
@@ -927,39 +910,41 @@ const GD={
 const NAMES=[['אוֹרֶן','m'],['נוֹעָה','f'],['דָּנִי','m'],['מָאיָה','f'],['יוֹנָתָן','m'],['תָּמָר','f'],['אִיתַי','m'],['שִׁירָה','f'],['עִדּוֹ','m'],['יָעֵל','f']];
 const ITEMS=['תַּפּוּחִים','בְּלוֹקִים','כַּדּוּרִים','קְלָפִים','בָּלוֹנִים','צְדָפִים','סֻכָּרִיּוֹת','מַדְבֵּקוֹת','עוּגִיּוֹת','גֻּלּוֹת','מְכוֹנִיּוֹת'];
 const EAT=['עוּגִיּוֹת','סֻכָּרִיּוֹת','תּוּתִים'];
+/* #416 the things of the story scene that plays now (STORYMIX.thing(): [one, many, gender]); no story -> the old things */
+const thing=list=>{let t=null;try{t=window.STORYMIX&&window.STORYMIX.thing&&window.STORYMIX.thing();}catch(e){}return t&&t[1]?t[1]:pick(list||ITEMS);};
 const noDag=s=>s.replace(/^(.[֑-ׇ]*?)ּ/,'$1');
 const lp=nm=>'לְ'+noDag(nm[0]);
 const two=()=>{const a=pick(NAMES);let b;do{b=pick(NAMES);}while(b===a);return [a,b];};
 const WP={
-  join:(lo,hi)=>()=>{const n=pick(NAMES),X=pick(ITEMS),g=(m,f)=>n[1]==='m'?m:f;const s=rand(lo,hi),a=rand(Math.max(2,Math.floor(s/4)),s-2),b=s-a;const t=rand(1,4);
+  join:(lo,hi)=>()=>{const n=pick(NAMES),X=thing(),g=(m,f)=>n[1]==='m'?m:f;const s=rand(lo,hi),a=rand(Math.max(2,Math.floor(s/4)),s-2),b=s-a;const t=rand(1,4);
     if(t===1)return W(`${lp(n)} הָיוּ ${nb(a)} ${X}. ${n[0]} ${g('קִבֵּל','קִבְּלָה')} עוֹד ${nb(b)} ${X}. כַּמָּה ${X} יֵשׁ ${g('לוֹ','לָהּ')} עַכְשָׁו?`,s,X,'"עוֹד" ← חִבּוּר',[`${a} + ${b} = ?`]);
     if(t===2)return W(`${n[0]} ${g('מָצָא','מָצְאָה')} ${nb(a)} ${X} בַּבֹּקֶר, וְעוֹד ${nb(b)} ${X} בָּעֶרֶב. כַּמָּה ${X} ${g('הוּא מָצָא','הִיא מָצְאָה')} בְּסַךְ הַכֹּל?`,s,X,'"בְּסַךְ הַכֹּל" ← חִבּוּר',[`${a} + ${b} = ?`]);
     if(t===3){const [p,q]=two();const them=p[1]==='f'&&q[1]==='f'?'לָהֶן':'לָהֶם';return W(`${lp(p)} יֵשׁ ${nb(a)} ${X}, וּ${lp(q)} יֵשׁ ${nb(b)} ${X}. כַּמָּה ${X} יֵשׁ ${them} בְּיַחַד?`,s,X,'"בְּיַחַד" ← חִבּוּר',[`${a} + ${b} = ?`]);}
     return W(`בָּאוֹטוֹבּוּס יָשְׁבוּ ${nb(a)} נוֹסְעִים. בַּתַּחֲנָה עָלוּ עוֹד ${nb(b)} נוֹסְעִים. כַּמָּה נוֹסְעִים יֵשׁ עַכְשָׁו בָּאוֹטוֹבּוּס?`,s,'נוֹסְעִים','"עָלוּ עוֹד" ← חִבּוּר',[`${a} + ${b} = ?`]);},
-  take:(lo,hi)=>()=>{const n=pick(NAMES),X=pick(ITEMS),g=(m,f)=>n[1]==='m'?m:f;const a=rand(lo,hi),b=rand(2,a-2),r=a-b;const t=rand(1,5);
+  take:(lo,hi)=>()=>{const n=pick(NAMES),X=thing(),g=(m,f)=>n[1]==='m'?m:f;const a=rand(lo,hi),b=rand(2,a-2),r=a-b;const t=rand(1,5);
     if(t===1)return W(`${lp(n)} הָיוּ ${nb(a)} ${X}. ${g('הוּא נָתַן','הִיא נָתְנָה')} ${nb(b)} ${X} לְחָבֵר. כַּמָּה ${X} נִשְׁאֲרוּ ${g('לוֹ','לָהּ')}?`,r,X,'"נָתַן" וְ"נִשְׁאֲרוּ" ← חִסּוּר',[`${a} − ${b} = ?`]);
     if(t===2)return W(`עַל הָעֵץ הָיוּ ${nb(a)} תַּפּוּחִים. ${nb(b)} תַּפּוּחִים נָפְלוּ. כַּמָּה תַּפּוּחִים נִשְׁאֲרוּ עַל הָעֵץ?`,r,'תַּפּוּחִים','"נָפְלוּ" ← חִסּוּר',[`${a} − ${b} = ?`]);
     if(t===3){const E=pick(EAT);return W(`בַּצַּלַּחַת הָיוּ ${nb(a)} ${E}. ${n[0]} ${g('אָכַל','אָכְלָה')} ${nb(b)} ${E}. כַּמָּה ${E} נִשְׁאֲרוּ בַּצַּלַּחַת?`,r,E,'"אָכַל" ← חִסּוּר',[`${a} − ${b} = ?`]);}
     if(t===4)return W(`בָּאוֹטוֹבּוּס יָשְׁבוּ ${nb(a)} נוֹסְעִים. בַּתַּחֲנָה יָרְדוּ ${nb(b)} נוֹסְעִים. כַּמָּה נוֹסְעִים נִשְׁאֲרוּ בָּאוֹטוֹבּוּס?`,r,'נוֹסְעִים','"יָרְדוּ" ← חִסּוּר',[`${a} − ${b} = ?`]);
     return W(`בַּסֵּפֶר יֵשׁ ${nb(a)} עַמּוּדִים. ${n[0]} ${g('קָרָא','קָרְאָה')} ${nb(b)} עַמּוּדִים. כַּמָּה עַמּוּדִים ${g('נִשְׁאֲרוּ לוֹ','נִשְׁאֲרוּ לָהּ')} לִקְרֹא?`,r,'עַמּוּדִים','מַה שֶּׁנִּשְׁאַר ← חִסּוּר',[`${a} − ${b} = ?`]);},
-  cmp:(lo,hi)=>()=>{const [p,q]=two(),X=pick(ITEMS),g1=(m,f)=>p[1]==='m'?m:f,g2=(m,f)=>q[1]==='m'?m:f;const a=rand(lo,hi),b=rand(Math.max(2,Math.floor(a/3)),a-2),d=a-b;const t=rand(1,4);
+  cmp:(lo,hi)=>()=>{const [p,q]=two(),X=thing(),g1=(m,f)=>p[1]==='m'?m:f,g2=(m,f)=>q[1]==='m'?m:f;const a=rand(lo,hi),b=rand(Math.max(2,Math.floor(a/3)),a-2),d=a-b;const t=rand(1,4);
     if(t===1)return W(`${lp(p)} יֵשׁ ${nb(a)} ${X}, וּ${lp(q)} יֵשׁ ${nb(b)} ${X}. כַּמָּה ${X} יֵשׁ ${lp(p)} יוֹתֵר מֵאֲשֶׁר ${lp(q)}?`,d,X,'"כַּמָּה יוֹתֵר?" ← הַגָּדוֹל פָּחוֹת הַקָּטָן',[`${a} − ${b} = ?`]);
     if(t===2)return W(`${p[0]} ${g1('בָּנָה','בָּנְתָה')} מִגְדָּל שֶׁל ${nb(a)} בְּלוֹקִים. ${q[0]} ${g2('בָּנָה','בָּנְתָה')} מִגְדָּל שֶׁל ${nb(b)} בְּלוֹקִים. בְּכַמָּה בְּלוֹקִים הַמִּגְדָּל שֶׁל ${p[0]} גָּבוֹהַּ יוֹתֵר?`,d,'בְּלוֹקִים','הַהֶפְרֵשׁ ← הַגָּדוֹל פָּחוֹת הַקָּטָן',[`${a} − ${b} = ?`]);
     if(t===3)return W(`${lp(p)} יֵשׁ ${nb(a)} ${X}. ${lp(q)} יֵשׁ ${nb(d)} ${X} פָּחוֹת ${g1('מִמֶּנּוּ','מִמֶּנָּה')}. כַּמָּה ${X} יֵשׁ ${lp(q)}?`,b,X,'"פָּחוֹת" ← חִסּוּר',[`${a} − ${d} = ?`]);
     return W(`${lp(p)} יֵשׁ ${nb(b)} ${X}. ${lp(q)} יֵשׁ ${nb(d)} ${X} יוֹתֵר ${g1('מִמֶּנּוּ','מִמֶּנָּה')}. כַּמָּה ${X} יֵשׁ ${lp(q)}?`,a,X,'"יוֹתֵר" ← חִבּוּר',[`${b} + ${d} = ?`]);},
-  unk:(lo,hi)=>()=>{const n=pick(NAMES),X=pick(ITEMS),g=(m,f)=>n[1]==='m'?m:f;const c=rand(lo,hi),a=rand(Math.max(2,Math.floor(c/4)),c-2),b=c-a;const t=rand(1,4);
+  unk:(lo,hi)=>()=>{const n=pick(NAMES),X=thing(),g=(m,f)=>n[1]==='m'?m:f;const c=rand(lo,hi),a=rand(Math.max(2,Math.floor(c/4)),c-2),b=c-a;const t=rand(1,4);
     if(t===1)return W(`${lp(n)} הָיוּ ${nb(a)} ${X}. ${g('הוּא קִבֵּל','הִיא קִבְּלָה')} עוֹד כַּמָּה, וְעַכְשָׁו יֵשׁ ${g('לוֹ','לָהּ')} ${nb(c)} ${X}. כַּמָּה ${X} ${g('הוּא קִבֵּל','הִיא קִבְּלָה')}?`,b,X,`כַּמָּה חָסֵר מ-${nb(a)} עַד ${nb(c)}? ← חִסּוּר`,[`${c} − ${a} = ?`]);
     if(t===2)return W(`${n[0]} ${g('קִבֵּל','קִבְּלָה')} ${nb(b)} ${X} מִסַּבְתָּא, וְעַכְשָׁו יֵשׁ ${g('לוֹ','לָהּ')} ${nb(c)} ${X}. כַּמָּה ${X} הָיוּ ${g('לוֹ','לָהּ')} קֹדֶם?`,a,X,'הוֹלְכִים אָחוֹרָה: מוֹרִידִים אֶת מַה שֶּׁהִתְקַבֵּל',[`${c} − ${b} = ?`]);
     if(t===3)return W(`${n[0]} ${g('נָתַן','נָתְנָה')} ${nb(b)} ${X} לְחָבֵר, וְנִשְׁאֲרוּ ${g('לוֹ','לָהּ')} ${nb(a)} ${X}. כַּמָּה ${X} הָיוּ ${g('לוֹ','לָהּ')} בַּהַתְחָלָה?`,c,X,'הוֹלְכִים אָחוֹרָה: מַחְזִירִים אֶת מַה שֶּׁנִּתַּן ← חִבּוּר',[`${a} + ${b} = ?`]);
     return W(`בָּאוֹטוֹבּוּס יָשְׁבוּ כַּמָּה נוֹסְעִים. בַּתַּחֲנָה עָלוּ ${nb(b)} נוֹסְעִים, וְעַכְשָׁו יֵשׁ ${nb(c)} נוֹסְעִים. כַּמָּה נוֹסְעִים יָשְׁבוּ בַּהַתְחָלָה?`,a,'נוֹסְעִים','הוֹלְכִים אָחוֹרָה: מוֹרִידִים אֶת מִי שֶׁעָלָה',[`${c} − ${b} = ?`]);},
   mul:()=>{const n=pick(NAMES),g=(m,f)=>n[1]==='m'?m:f;const t=rand(1,5);
-    if(t===1){const X=pick(['עוּגִיּוֹת','סֻכָּרִיּוֹת','מַדְבֵּקוֹת','כַּדּוּרִים']),k=rand(2,10),q=rand(2,9);return W(`בְּכָל קֻפְסָה יֵשׁ ${nb(k)} ${X}. ${n[0]} ${g('קָנָה','קָנְתָה')} ${nb(q)} קֻפְסָאוֹת. כַּמָּה ${X} יֵשׁ ${g('לוֹ','לָהּ')} בְּסַךְ הַכֹּל?`,q*k,X,'קְבוּצוֹת שָׁווֹת ← כֶּפֶל',[`${q} × ${k} = ?`]);}
+    if(t===1){const X=thing(['עוּגִיּוֹת','סֻכָּרִיּוֹת','מַדְבֵּקוֹת','כַּדּוּרִים']),k=rand(2,10),q=rand(2,9);return W(`בְּכָל קֻפְסָה יֵשׁ ${nb(k)} ${X}. ${n[0]} ${g('קָנָה','קָנְתָה')} ${nb(q)} קֻפְסָאוֹת. כַּמָּה ${X} יֵשׁ ${g('לוֹ','לָהּ')} בְּסַךְ הַכֹּל?`,q*k,X,'קְבוּצוֹת שָׁווֹת ← כֶּפֶל',[`${q} × ${k} = ?`]);}
     if(t===2){const A=pick([['כֶּלֶב','כְּלָבִים',4,'רַגְלַיִם'],['חִפּוּשִׁית','חִפּוּשִׁיּוֹת',6,'רַגְלַיִם'],['עַכָּבִישׁ','עַכָּבִישִׁים',8,'רַגְלַיִם'],['תַּרְנְגֹלֶת','תַּרְנְגוֹלוֹת',2,'רַגְלַיִם'],['מְכוֹנִית','מְכוֹנִיּוֹת',4,'גַּלְגַּלִּים']]),q=rand(2,9);return W(`לְכָל ${A[0]} יֵשׁ ${nb(A[2])} ${A[3]}. כַּמָּה ${A[3]} יֵשׁ ל-${nb(q)} ${A[1]}?`,q*A[2],A[3],`${nb(q)} פְּעָמִים ${nb(A[2])} ← כֶּפֶל`,[`${q} × ${A[2]} = ?`]);}
     if(t===3){const k=rand(3,10),q=rand(2,9);return W(`בָּאוּלָם יֵשׁ ${nb(q)} שׁוּרוֹת שֶׁל כִּסְאוֹת. בְּכָל שׁוּרָה יֵשׁ ${nb(k)} כִּסְאוֹת. כַּמָּה כִּסְאוֹת יֵשׁ בָּאוּלָם?`,q*k,'כִּסְאוֹת','שׁוּרוֹת שָׁווֹת ← כֶּפֶל',[`${q} × ${k} = ?`]);}
     if(t===4){const q=rand(2,9);return W(`בְּשָׁבוּעַ יֵשׁ ${nb(7)} יָמִים. כַּמָּה יָמִים יֵשׁ ב-${nb(q)} שָׁבוּעוֹת?`,q*7,'יָמִים','כָּל שָׁבוּעַ 7 יָמִים ← כֶּפֶל',[`${q} × 7 = ?`]);}
     const q=rand(2,9);return W(`לְכָל יֶלֶד יֵשׁ ${nb(10)} אֶצְבָּעוֹת בַּיָּדַיִם. כַּמָּה אֶצְבָּעוֹת יֵשׁ ל-${nb(q)} יְלָדִים?`,q*10,'אֶצְבָּעוֹת','קְבוּצוֹת שֶׁל 10 ← כֶּפֶל',[`${q} × 10 = ?`]);},
   div:()=>{const n=pick(NAMES),g=(m,f)=>n[1]==='m'?m:f;const t=rand(1,4);const k=rand(2,9),q=rand(2,9),p=k*q;
-    if(t===1){const X=pick(['סֻכָּרִיּוֹת','מַדְבֵּקוֹת','עוּגִיּוֹת','קְלָפִים']);return W(`${n[0]} ${g('חִלֵּק','חִלְּקָה')} ${nb(p)} ${X} שָׁוֶה בְּשָׁוֶה בֵּין ${nb(k)} חֲבֵרִים. כַּמָּה ${X} קִבֵּל כָּל חָבֵר?`,q,X,'מְחַלְּקִים שָׁוֶה בְּשָׁוֶה ← חִלּוּק',[`${p} : ${k} = ?`]);}
+    if(t===1){const X=thing(['סֻכָּרִיּוֹת','מַדְבֵּקוֹת','עוּגִיּוֹת','קְלָפִים']);return W(`${n[0]} ${g('חִלֵּק','חִלְּקָה')} ${nb(p)} ${X} שָׁוֶה בְּשָׁוֶה בֵּין ${nb(k)} חֲבֵרִים. כַּמָּה ${X} קִבֵּל כָּל חָבֵר?`,q,X,'מְחַלְּקִים שָׁוֶה בְּשָׁוֶה ← חִלּוּק',[`${p} : ${k} = ?`]);}
     if(t===2)return W(`בַּגַּן יֵשׁ ${nb(p)} יְלָדִים. הַגַּנֶּנֶת סִדְּרָה אוֹתָם בִּקְבוּצוֹת שֶׁל ${nb(k)}. כַּמָּה קְבוּצוֹת יֵשׁ?`,q,'קְבוּצוֹת',`כַּמָּה פְּעָמִים ${nb(k)} נִכְנָס ב-${nb(p)}? ← חִלּוּק`,[`${p} : ${k} = ?`]);
     if(t===3){const c=rand(2,9);return W(`בַּחֲנָיָה יֵשׁ ${nb(c*4)} גַּלְגַּלִּים שֶׁל מְכוֹנִיּוֹת. לְכָל מְכוֹנִית יֵשׁ ${nb(4)} גַּלְגַּלִּים. כַּמָּה מְכוֹנִיּוֹת יֵשׁ בַּחֲנָיָה?`,c,'מְכוֹנִיּוֹת','קְבוּצוֹת שֶׁל 4 ← חִלּוּק',[`${c*4} : 4 = ?`]);}
     const kk=pick([6,10]),qq=rand(2,9);return W(`${n[0]} ${g('צָרִיךְ','צְרִיכָה')} ${nb(kk*qq)} בֵּיצִים. בְּכָל קַרְטוֹן יֵשׁ ${nb(kk)} בֵּיצִים. כַּמָּה קַרְטוֹנִים ${g('הוּא צָרִיךְ','הִיא צְרִיכָה')} לִקְנוֹת?`,qq,'קַרְטוֹנִים',`כַּמָּה קְבוּצוֹת שֶׁל ${nb(kk)}? ← חִלּוּק`,[`${kk*qq} : ${kk} = ?`]);},
@@ -968,7 +953,7 @@ const WP={
     if(t===2){const B2=pick([20,50,100]);const c=rand(3,B2-2);return W(`${n[0]} ${g('קָנָה','קָנְתָה')} כַּדּוּר ב-${nb(c)} שְׁקָלִים, ${g('וְשִׁלֵּם','וְשִׁלְּמָה')} בִּשְׁטָר שֶׁל ${nb(B2)} שְׁקָלִים. כַּמָּה עֹדֶף ${g('הוּא קִבֵּל','הִיא קִבְּלָה')}?`,B2-c,'שְׁקָלִים','עֹדֶף = מַה שֶּׁשִּׁלַּמְתָּ פָּחוֹת הַמְּחִיר',[`${B2} − ${c} = ?`]);}
     if(t===3){const a=rand(5,40),b=rand(3,40);return W(`גְּלִידָה עוֹלָה ${nb(a)} שְׁקָלִים, וּמִיץ עוֹלֶה ${nb(b)} שְׁקָלִים. כַּמָּה עוֹלִים שְׁנֵיהֶם בְּיַחַד?`,a+b,'שְׁקָלִים','"בְּיַחַד" ← חִבּוּר',[`${a} + ${b} = ?`]);}
     const k=rand(2,10),q=rand(2,9);return W(`מַחְבֶּרֶת עוֹלָה ${nb(k)} שְׁקָלִים. ${lp(n)} יֵשׁ ${nb(k*q)} שְׁקָלִים. כַּמָּה מַחְבָּרוֹת ${g('הוּא יָכוֹל','הִיא יְכוֹלָה')} לִקְנוֹת?`,q,'מַחְבָּרוֹת',`כַּמָּה פְּעָמִים ${nb(k)} נִכְנָס ב-${nb(k*q)}? ← חִלּוּק`,[`${k*q} : ${k} = ?`]);},
-  two:()=>{const n=pick(NAMES),X=pick(ITEMS),g=(m,f)=>n[1]==='m'?m:f;const t=rand(1,5);
+  two:()=>{const n=pick(NAMES),X=thing(),g=(m,f)=>n[1]==='m'?m:f;const t=rand(1,5);
     if(t===1){const a=rand(8,40),b=rand(3,30),c=rand(2,a+b-2);const s=a+b;return W(`${lp(n)} הָיוּ ${nb(a)} ${X}. ${g('הוּא קִבֵּל','הִיא קִבְּלָה')} עוֹד ${nb(b)}, וְאַחַר כָּךְ ${g('נָתַן','נָתְנָה')} ${nb(c)} לְחָבֵר. כַּמָּה ${X} יֵשׁ ${g('לוֹ','לָהּ')} עַכְשָׁו?`,s-c,X,'קֹדֶם מְחַבְּרִים, אַחַר כָּךְ מְחַסְּרִים',[`${a} + ${b} = ${s}`,`${s} − ${c} = ?`]);}
     if(t===2){const q=rand(2,6),k=rand(3,10),s=q*k,c=rand(2,s-2);return W(`${n[0]} ${g('קָנָה','קָנְתָה')} ${nb(q)} חֲבִילוֹת, וּבְכָל חֲבִילָה ${nb(k)} מַדְבֵּקוֹת. ${g('הוּא הִדְבִּיק','הִיא הִדְבִּיקָה')} ${nb(c)} מַדְבֵּקוֹת בַּמַּחְבֶּרֶת. כַּמָּה מַדְבֵּקוֹת נִשְׁאֲרוּ?`,s-c,'מַדְבֵּקוֹת','קֹדֶם כֶּפֶל, אַחַר כָּךְ חִסּוּר',[`${q} × ${k} = ${s}`,`${s} − ${c} = ?`]);}
     if(t===3){const a=rand(30,90),b=rand(5,a-5),c=rand(3,40);return W(`בַּסִּפְרִיָּה הָיוּ ${nb(a)} סְפָרִים. בַּבֹּקֶר הִשְׁאִילוּ ${nb(b)} סְפָרִים, וּבַצָּהֳרַיִם הֶחֱזִירוּ ${nb(c)} סְפָרִים. כַּמָּה סְפָרִים יֵשׁ עַכְשָׁו בַּסִּפְרִיָּה?`,a-b+c,'סְפָרִים','קֹדֶם מְחַסְּרִים, אַחַר כָּךְ מְחַבְּרִים',[`${a} − ${b} = ${a-b}`,`${a-b} + ${c} = ?`]);}
@@ -1210,9 +1195,6 @@ const ALLU=WORLDS.flatMap(w=>w.units);
 const MAXPTS=ALLLV.length*4;
 const GUARD={turtle:SPR.turtle,owl:SPR.owl,dwarf:SPR.dwarf,eagle:SPR.eagle,whale:SPR.whale,prof:SPR.prof,bot:SPR.bot,mixer:SPR.mixer};
 
-/* ---------- kingdom shop ---------- */
-const SHOP=[['flower','פֶּרַח',5],['tree','עֵץ',10],['flag','דֶּגֶל',8],['lantern','פָּנָס',12],['sheep','כִּבְשָׂה',15],['pond','אֲגַם',25],['hut','בַּיִת',30],['tower','מִגְדָּל',40],['fountain','מִזְרָקָה',50],['windmill','טַחֲנַת רוּחַ',60],['dragon','דְּרָקוֹן',80],['rainbow','קֶשֶׁת',100]];
-
 /* ---------- storage: browser + private cloud copy ---------- */
 const KEY='oren4-v1';
 const blank=()=>({v:4,snd:2,t:0,s:{},m:{},seen:{},story:{},rq:[],days:[],ans:0,ok:0,trains:0,music:true,gems:0,av:{hair:'lightbrown',skin:'light',shirt:'black',pants:'olive',pet:'cat'},owned:{},k:{},tc:[],sp:{},made:{}});
@@ -1252,7 +1234,7 @@ function mergeIn(o){if(!o||typeof o!=='object')return;
   if(o.help&&typeof o.help==='object'){const hp=save.help=save.help||{items:{},tb:[],t:0};hp.items=hp.items||{};for(const [k,v] of Object.entries(o.help.items||{})){const c=hp.items[k];if(!c||(v.n|0)>(c.n|0)||((v.n|0)===(c.n|0)&&String(v.last||'')>String(c.last||'')))hp.items[k]=v;}
     if((o.help.tb||[]).length>(hp.tb||[]).length)hp.tb=o.help.tb;hp.t=Math.max(hp.t|0,o.help.t|0);}
   if(o.health&&window.HEALTH)save.health=window.HEALTH.merge(save.health||{},o.health);else if(o.health&&!save.health)save.health=o.health;
-  if((+o.t||0)>(+save.t||0)){for(const k of ['gems','av','k','tc','made','art','daily','typ','kpic','jar','mood','prof','arc','togL','ship'])if(o[k]!=null)save[k]=o[k];if(o.set&&!(+o.setT||0)&&!(+save.setT||0))save.set=o.set;save.t=o.t;}hatsBack();}
+  if((+o.t||0)>(+save.t||0)){for(const k of ['gems','av','k','bw','tc','made','art','daily','typ','kpic','jar','mood','prof','arc','togL','ship'])if(o[k]!=null)save[k]=o[k];if(o.set&&!(+o.setT||0)&&!(+save.setT||0))save.set=o.set;save.t=o.t;}hatsBack();}
 /* #426: hats are gone; a hat bought earlier gives its gems back, once per hat (save.hb, synced like the other max-merged maps) */
 function hatsBack(){const P={helmet:20,crown:60,wizard:120};let g=0;for(const [k,v] of Object.entries(P))if(save.owned&&save.owned[k]&&!(save.hb&&save.hb[k])){save.hb=save.hb||{};save.hb[k]=1;g+=v;}
   if(g)save.gems=(save.gems|0)+g;if(save.av&&save.av.hat)delete save.av.hat;return g;}
@@ -2399,24 +2381,10 @@ function finishSpeed(){const p=play;if(!p||p.lock&&p.finished)return;p.lock=true
   celebrate(ov.firstChild);}
 
 /* ---------- KINGDOM (Oren builds) ---------- */
-let kSel='flower';
-function kingdom(){setScreen('sKing','meadow',showMap);$('#hudMid').innerHTML=`<div class="chip">הַמַּמְלָכָה שֶׁל אוֹרֶן</div>`;sayNow='בחר משהו מהחנות, ולחץ על הדשא כדי לשים אותו.';
-  const s=$('#sKing');s.innerHTML='';const wrap=h('div','kwrap');const scene=h('div','kscene');
-  const fr=WORLDS.filter(freed).map(w=>GUARD[w.gd]).join('');
-  scene.innerHTML=`<div class="ktop"><div class="fr">${fr}</div><div class="cs">${castle(revealedFor(pts()))}</div><div class="fr"><span class="bob">${AV()}</span>${PET().s()}</div></div>`;emit('kingdomScene',scene);
-  const grid=h('div','kgrid');
-  for(let y=0;y<4;y++)for(let x=0;x<12;x++){const key=x+','+y;const c=h('button','kcell');c.setAttribute('aria-label','משבצת');const it=save.k[key];if(it&&SPR[it])c.innerHTML=SPR[it];
-    c.onclick=()=>{if(kSel==='erase'){if(save.k[key]){const pr=(SHOP.find(i=>i[0]===save.k[key])||[0,0,0])[2];delete save.k[key];save.gems+=pr;updateGems(true);sfx.pop(1);persist();c.innerHTML='';renderShop();}return;}
-      if(save.k[key])return;const item=SHOP.find(i=>i[0]===kSel);if(!item)return;if((save.gems|0)<item[2]){c.classList.remove('shake');void c.offsetWidth;c.classList.add('shake');sfx.no();say('חסרים יהלומים. אפשר להרוויח עוד בשלבים!');return;}
-      save.gems-=item[2];save.k[key]=item[0];const kh=scene.querySelector('.khint');if(kh)kh.remove();c.innerHTML=SPR[item[0]];c.classList.remove('new');void c.offsetWidth;c.classList.add('new');sfx.buy();updateGems(true);persist();burst(...center(c),12);renderShop();};
-    grid.appendChild(c);}
-  if(!Object.keys(save.k).length)scene.appendChild(h('div','lcap khint','👇 בְּחַר מֵהַחֲנוּת, וְלַחַץ עַל הַדֶּשֶׁא כְּדֵי לָשִׂים'));
-  scene.appendChild(grid);
-  const shop=h('div','shop','<h3>הַחֲנוּת</h3>');
-  const renderShop=()=>{[...shop.querySelectorAll('.opt')].forEach(e=>e.remove());
-    for(const [id,name,price] of SHOP){const o=h('button','opt'+(kSel===id?' sel':'')+((save.gems|0)<price?' poor':''),`<span class="si">${SPR[id]}</span><span>${name}</span><span class="pr">${SPR.gem}${price}</span>`);o.onclick=()=>{kSel=id;sfx.pop(2);renderShop();};shop.appendChild(o);}
-    const er=h('button','opt'+(kSel==='erase'?' sel':''),`<span class="si">${ICON.erase}</span><span>מַחַק</span><span class="pr">↺</span>`);er.onclick=()=>{kSel='erase';renderShop();};shop.appendChild(er);};
-  renderShop();wrap.append(scene,shop);s.appendChild(wrap);}
+/* the kingdom = the building world (#64, build.js): the scene is drawn by BW.render, then the screen's extras (my hero, badges, picture) */
+function kingdom(){setScreen('sKing','meadow',showMap);$('#hudMid').innerHTML=`<div class="chip">הַמַּמְלָכָה שֶׁל אוֹרֶן</div>`;
+  const s=$('#sKing');s.innerHTML='';const wrap=h('div','kwrap');const scene=h('div','kscene');wrap.appendChild(scene);s.appendChild(wrap);
+  if(window.BW)window.BW.render(scene);emit('kingdomScene',scene);}
 
 /* ---------- TEACHER MODE (Oren makes puzzles for the family) ---------- */
 const HEROES=[['אַבָּא','m'],['אִמָּא','f'],['סָבָא','m'],['סַבְתָּא','f'],['אוֹרֶן','m']];
@@ -3344,6 +3312,60 @@ body.fron #screens{padding-bottom:84px}
 .hpair .hheld{align-self:flex-end;margin-inline-start:-4px;margin-bottom:4px;font-size:14px;font-weight:700;color:#5b3a1a;background:#fff3c4;border:2px solid #e0c36a;border-radius:10px;padding:1px 6px;white-space:nowrap;cursor:pointer}
 @media (min-width:761px){.hpair .hheld{font-size:16px}}
 
+/* ===== the building world (#64) ===== */
+#sKing .kscene{position:relative;width:min(640px,100%)}
+@media (max-width:440px){#sKing .kscene{padding-inline:0}}
+.kmine .kpic{position:static;padding:3px;align-self:center}.kmine .kpic svg{width:40px;height:40px}
+.bw{display:flex;flex-direction:column;align-items:center;gap:8px;width:100%}
+.bwbox{position:relative;width:min(576px,100%,max(352px,calc(100dvh - 330px)))}
+.bwgrid{display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);aspect-ratio:1;width:100%;direction:ltr;position:relative;overflow:hidden;box-shadow:0 6px 0 rgba(0,0,0,.2)}
+.bwgrid.bw-meadow{background:linear-gradient(#9fd8f2,#e3f5fd)}
+.bwgrid.bw-beach{background:linear-gradient(#5cc0ea,#c8ecfa)}
+.bwgrid.bw-sky{background:radial-gradient(circle at 20% 30%,#fff 0 1.5px,transparent 2px),radial-gradient(circle at 70% 15%,#fff 0 1.5px,transparent 2px),radial-gradient(circle at 85% 55%,#fff 0 1px,transparent 1.5px),radial-gradient(circle at 40% 70%,#fff 0 1px,transparent 1.5px),linear-gradient(#2c2f6b,#7a5aa8)}
+.bwc{position:relative;z-index:1;display:grid;place-items:center;padding:0;margin:0;border:0;background:transparent;min-width:0;min-height:0;overflow:hidden;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
+.bwc svg{width:100%;height:100%;display:block;shape-rendering:crispEdges}
+.bwhero{position:absolute;z-index:0;left:0;bottom:25%;width:12.5%;height:12.5%;pointer-events:none;display:grid;place-items:end center}
+.bwhero svg{width:90%;height:auto;max-height:100%}
+.bwgrid.bw-sky .bwhero{bottom:12.5%}
+.bwarr{position:absolute;z-index:2;top:calc(50% - 32px);width:46px;height:64px;padding:0;font-size:30px;font-weight:900;color:#fff;background:rgba(29,38,49,.55);border:0;cursor:pointer}
+.bwarr.nx{left:-8px}.bwarr.pv{right:-8px}
+@media (min-width:760px){.bwarr.nx{left:-58px}.bwarr.pv{right:-58px}}
+.bwarr.pulse{animation:pulse 1s 3}
+.bwhint{animation:pulse 2s infinite}
+.bwnext{display:flex;gap:6px;align-items:center;padding:2px 10px;border:0;background:rgba(255,255,255,.75);font:inherit;font-weight:800;font-size:16px;cursor:pointer}
+.bwsil svg{width:24px;height:24px;display:block;filter:brightness(0);opacity:.45}
+.bwbar{display:flex;gap:8px;overflow-x:auto;max-width:100%;padding:10px 6px 8px}
+.bwb{flex:0 0 auto;width:64px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 2px;border:0;background:var(--paper);font:inherit;font-weight:800;font-size:14px;cursor:pointer;box-shadow:inset -3px -3px 0 rgba(0,0,0,.12),0 3px 0 rgba(0,0,0,.18)}
+.bwb .si{width:44px;height:44px;display:grid;place-items:center}.bwb .si svg{width:44px;height:44px;display:block;shape-rendering:crispEdges}
+.bwb .pr{direction:ltr;font-size:13px}
+.bwb.sel{transform:translateY(-6px);box-shadow:0 0 0 4px var(--gold),0 6px 0 rgba(0,0,0,.18)}
+/* living blocks (CSS only; a hidden screen does not animate) */
+@keyframes bwsway{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(5deg)}}
+@keyframes bwwave{0%,100%{transform:translateX(-1px)}50%{transform:translateX(1px)}}
+@keyframes bwglow{0%,100%{filter:drop-shadow(0 0 1px #ffd166)}50%{filter:drop-shadow(0 0 7px #ffd166)}}
+@keyframes bwflap{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.82)}}
+@keyframes bwshim{to{filter:hue-rotate(360deg)}}
+@keyframes bwshine{from{background-position:150% 0}to{background-position:-150% 0}}
+@keyframes bwdrop{from{transform:translateY(calc(var(--d,0) * -100%))}}
+.bwc[data-b=flower] svg{transform-origin:50% 100%;animation:bwsway 2.4s ease-in-out infinite}
+.bwc[data-b=water] svg,.bwc[data-b=fish] svg{animation:bwwave 2s ease-in-out infinite}
+.bwc[data-b=lamp] svg{animation:bwglow 2.2s ease-in-out infinite}
+.bwc[data-b=bird] svg{animation:bwflap .5s ease-in-out infinite}
+.bwc[data-b=rainbow] svg{animation:bwshim 4s linear infinite}
+.bwc[data-b=glass]::after,.bwc[data-b=gold]::after{content:'';position:absolute;inset:0;pointer-events:none;background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.85) 50%,transparent 58%);background-size:300% 100%;animation:bwshine 3s linear infinite}
+.bwc.drop svg{animation:bwdrop .3s ease-in}
+.bwc.new svg{animation:pop .4s}
+@media (prefers-reduced-motion:reduce){.bwc svg,.bwc::after{animation:none!important}}
+/* unlock card */
+@keyframes bwspin{from{transform:rotate(-360deg) scale(.2)}}
+@keyframes bwjump{50%{transform:translateY(-18px)}}
+.bwcard .bwnew svg{width:120px;height:120px;display:block;margin:6px auto;animation:bwspin .7s ease-out;shape-rendering:crispEdges}
+.bwcard .bwfr svg{width:60px;height:auto;display:block;margin:0 auto;animation:bwjump .6s ease-in-out 3}
+/* parent day tab: one picture */
+.bwpic{margin:14px auto 6px;text-align:center}
+.bwpic svg{width:min(240px,70vw);height:auto;display:block;margin:0 auto;shape-rendering:crispEdges;box-shadow:0 4px 0 rgba(0,0,0,.18)}
+.bwcap{font-weight:700;margin-top:6px}
+
 /* ===== LESSON CARDS (#56) ===== */
 .lccard{width:min(640px,100%)}
 .lcart{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:10px;min-height:130px}
@@ -4119,7 +4141,7 @@ function dailyMark(id){const d=dailyEnsure();const i=d.t.indexOf(id);if(i>=0&&!d
 O.on('levelDone',(lv)=>{if(!lv||lv.type==='train')return;S().last={id:'math',d:today()};const d=dailyEnsure();const i=d.t.findIndex((x,k)=>x==='math'&&!d.done[k]);if(i>=0){d.done[i]=1;O.persist();}});
 /* ---------- map integration ---------- */
 O.on('map',m=>{const rs=m.querySelector('.reset');if(rs)rs.remove();if(window.TAL_noHome)return;m.querySelectorAll('.hello,.statline').forEach(e=>e.remove());m.querySelectorAll('.topbar .tool').forEach(t=>{if(/הַמַּמְלָכָה|הַגִּבּוֹר שֶׁלִּי/.test(t.textContent))t.remove();});});
-O.on('kingdomScene',sc=>{if(!window.TAL_noHome&&!sc.querySelector('.kmine')){const r=h('div','kmine');const a=h('button','tool',`<span class="ti">${O.AV()}</span><span>הַגִּבּוֹר שֶׁלִּי</span>`);a.onclick=()=>O.studio(false,O.kingdom);r.append(a);sc.prepend(r);}const s=S();if(s.kpic!=null&&s.art[s.kpic]){const f=h('div','kpic',artSVG(s.art[s.kpic]));sc.querySelector('.ktop').appendChild(f);}});
+O.on('kingdomScene',sc=>{if(!window.TAL_noHome&&!sc.querySelector('.kmine')){const r=h('div','kmine');const a=h('button','tool',`<span class="ti">${O.AV()}</span><span>הַגִּבּוֹר שֶׁלִּי</span>`);a.onclick=()=>O.studio(false,O.kingdom);r.append(a);sc.prepend(r);}const s=S();if(s.kpic!=null&&s.art[s.kpic]){const f=h('div','kpic',artSVG(s.art[s.kpic]));(sc.querySelector('.kmine')||sc).appendChild(f);}});
 
 /* ---------- time tracking (body breaks, meals and topic switching live in health.js) ---------- */
 let lastAct=Date.now(),session=0;
@@ -4934,7 +4956,7 @@ function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(
   const sy=$('#screens').scrollTop;O.setScreen('sPar','valley',exitParent);O.hud('<div class="chip">לוח הורים</div>');const s=$('#sPar');s.innerHTML='';
   s.appendChild(h('div','whead',`<h1>${curTab==='more'?'הגדרות ועוד':'לוח הורים'}</h1>`));
   const body=h('div','pbody');s.appendChild(body);
-  if(curTab==='day'){const v=h('div','pday');body.appendChild(v);if(window.PDAY)window.PDAY.view(v,{sec,nowTop});
+  if(curTab==='day'){const v=h('div','pday');body.appendChild(v);if(window.PDAY)window.PDAY.view(v,{sec,nowTop});{const pic=window.BW&&window.BW.parentPic();if(pic)body.appendChild(pic);}
     const mr=h('div','btnrow');const mb=h('button','bigbtn plain sm pdmore','⚙️ <span>הגדרות ועוד</span>');mb.onclick=()=>{openSec=null;panel('more');};mr.appendChild(mb);body.appendChild(mr);}
   else{const bk=h('button','pchip pdback','→ חזרה ליום');bk.onclick=()=>panel('day');body.appendChild(bk);warns(body);
     MORE.filter(([id])=>!HAS[id]||HAS[id]()).forEach(([id,n])=>{const d=document.createElement('details');d.className='pdet';const sm=document.createElement('summary');sm.textContent=n;d.appendChild(sm);const inner=h('div','pdin');d.appendChild(inner);let done=false;
@@ -5423,7 +5445,7 @@ O.on('screen',id=>{if(id==='sHome')later(()=>{if($('#sHome').hidden||!$('#ov').h
 O.on('hub',s=>later(()=>{const b=s.querySelector('.gdoor');if(b)intro('i-city',b,'זֹאת עִיר הַכִּשְׁרוֹנוֹת! כָּאן קוֹרְאִים, חוֹקְרִים, יוֹצְרִים וְנִרְגָּעִים. בְּחַר דֶּלֶת!',()=>coach(b,'בְּחַר דֶּלֶת — וּבוֹא נְשַׂחֵק!','hub',2));}));
 O.on('group',s=>later(()=>{const b=s.querySelector('.bld:not(.lockb)');if(b)coach(b,'לְחַץ עַל בִּנְיָן כְּדֵי לְהִכָּנֵס','group',2);}));
 O.on('map',m=>later(()=>{const b=m.querySelector('.jnext')||m.querySelector('.worlds .wcard2:not(.locked):not([hidden])');if(b&&!$('#sMap').hidden)intro('i-map',b,'זֶה הַמַּסָּע! בְּכָל עוֹלָם יֵשׁ חֶשְׁבּוֹן וְחָבֵר שֶׁצָּרִיךְ עֶזְרָה. אוֹסְפִים כּוֹכָבִים וּמַצִּילִים אוֹתוֹ!',()=>coach(b,'לְחַץ עַל עוֹלָם כְּדֵי לְהַתְחִיל אֶת הַמַּסָּע','map',2));}));
-O.on('kingdomScene',sc=>later(()=>{const b=sc.querySelector('.cs');if(b&&!$('#sKing').hidden)intro('i-king',b,'זֹאת הַמַּמְלָכָה שֶׁלְּךָ! הָאַרְמוֹן גָּדֵל עִם הַכּוֹכָבִים. בַּיַּהֲלוֹמִים קוֹנִים דְּבָרִים, וְשָׂמִים אוֹתָם עַל הַדֶּשֶׁא.');}));
+O.on('kingdomScene',sc=>later(()=>{const b=sc.querySelector('.bwgrid');if(b&&!$('#sKing').hidden&&$('#ov').hidden)intro('i-king',b,'זֹאת הַמַּמְלָכָה שֶׁלְּךָ! בַּיַּהֲלוֹמִים בּוֹנִים, וְהַכּוֹכָבִים פּוֹתְחִים קֻבִּיּוֹת חֲדָשׁוֹת.');}));
 O.on('synced',()=>{if(!$('#sHome').hidden&&$('#ov').hidden&&!document.querySelector('.tour'))home();});
 /* a home button that is always in the same place */
 (()=>{const bb=$('#btnBack');if(!bb)return;const hb=h('button','ibtn','');hb.id='btnHome';hb.innerHTML=ICON.home;hb.setAttribute('aria-label','בית');hb.title='הַבַּיִת';hb.hidden=true;hb.onclick=()=>{O.hush&&O.hush();sfx.pop(1);O.showMap();};bb.after(hb);
@@ -5959,7 +5981,8 @@ H.merge=(dst,src)=>{if(!src||typeof src!=='object')return dst;dst=dst||{};
    card, then the story moves one scene on. Tomorrow (or after a skipped day) it goes on from the same scene. The end of the day
    gives a short hint about tomorrow. A save without mix (or a broken one) starts at chapter 1, scene 1.
      STORYMIX.pos()       {c, s} where the story is now (the scene still to play)
-     STORYMIX.scene()     {c, s, n: chapter name, open, close, topic, item}
+     STORYMIX.scene()     {c, s, n: chapter name, open, close, topic, item, thing: [one, many, gender] (#416)}
+     STORYMIX.thing()     the thing of the scene now, for the math word problems (#416)
      STORYMIX.advance()   one scene on (after 12.5 the story starts again at 1.1); the end of a chapter: O.bigCelebration() (#427)
      STORYMIX.hint()      the line for tomorrow (said at the end of the day)
      STORYMIX.speakList() every line of the script (for the voice pregen) */
@@ -6039,15 +6062,26 @@ const SCRIPT=[
   ['הַמְּבַלְבֵּל הֵכִין חִידָה אַחֲרוֹנָה, הֲכִי מַצְחִיקָה. בּוֹא נִפְתֹּר אוֹתָהּ!','פָּתַרְתָּ! הַמְּבַלְבֵּל צָחַק וְהִתְגַּלְגֵּל עַל הַסִּפּוּן.','think','מַגְלֵשָׁה לַיָּם'],
   ['יֵשׁ שֶׁלֶט חָדָשׁ עַל הַסְּפִינָה. בּוֹא נִקְרָא מָה כָּתוּב.','כָּתוּב: הַסְּפִינָה שֶׁל כֻּלָּנוּ! הַסְּפִינָה שְׁלֵמָה.','read','שֶׁלֶט שֵׁם']]}];
 const NC=SCRIPT.length,NS=5;
+/* #416 the things of the scene, for the math word problems on the path: [one, many, gender]. A math scene has its own thing
+   (the fish of the basket, the apples of the tree); any other scene uses the thing of its chapter. */
+const THING={'1.1':['קֶרֶשׁ','קְרָשִׁים','m'],'1.2':['דָּג','דָּגִים','m'],'2.5':['עוּגִיָּה','עוּגִיּוֹת','f'],'3.5':['כַּפְתּוֹר','כַּפְתּוֹרִים','m'],
+ '4.1':['בָּנָנָה','בָּנָנוֹת','f'],'4.2':['תַּפּוּחַ','תַּפּוּחִים','m'],'4.3':['אַגָּס','אֲגָסִים','m'],'4.5':['עֵנָב','עֲנָבִים','m'],'5.4':['עִפָּרוֹן','עֶפְרוֹנוֹת','m'],
+ '6.3':['אֶבֶן','אֲבָנִים','f'],'6.4':['סֻכָּרִיָּה','סֻכָּרִיּוֹת','f'],'7.1':['עוּגִיָּה','עוּגִיּוֹת','f'],'7.4':['לַחְמָנִיָּה','לַחְמָנִיּוֹת','f'],
+ '8.2':['גַּחֲלִילִית','גַּחֲלִילִיּוֹת','f'],'8.4':['כּוֹכָב','כּוֹכָבִים','m'],'9.2':['סֵפֶר','סְפָרִים','m'],'10.2':['דָּג','דָּגִים','m'],'10.4':['צֶדֶף','צְדָפִים','m'],
+ '11.2':['קֻבִּיָּה','קֻבִּיּוֹת','f'],'11.3':['גֶּרֶב','גַּרְבַּיִם','m'],'12.1':['בָּלוֹן','בָּלוֹנִים','m'],'12.2':['צַלַּחַת','צַלָּחוֹת','f']};
+const CH_THING=[['קֶרֶשׁ','קְרָשִׁים','m'],['שָׁעוֹן','שְׁעוֹנִים','m'],['אוֹת','אוֹתִיּוֹת','f'],['תַּפּוּחַ','תַּפּוּחִים','m'],['עִפָּרוֹן','עֶפְרוֹנוֹת','m'],['אֶבֶן','אֲבָנִים','f'],
+ ['עוּגִיָּה','עוּגִיּוֹת','f'],['כּוֹכָב','כּוֹכָבִים','m'],['סֵפֶר','סְפָרִים','m'],['צֶדֶף','צְדָפִים','m'],['קֻבִּיָּה','קֻבִּיּוֹת','f'],['בָּלוֹן','בָּלוֹנִים','m']];
 /* tomorrow: a new chapter -> "tomorrow we sail to <place>"; the same chapter -> a line of its own */
 const STAY=['מָחָר נַמְשִׁיךְ לְסַדֵּר אֶת הַנָּמָל!','מָחָר נַמְשִׁיךְ לְתַקֵּן שְׁעוֹנִים בָּאִי!','מָחָר נַמְשִׁיךְ לְסַדֵּר אוֹתִיּוֹת בָּאִי!','מָחָר נַמְשִׁיךְ לְסַדֵּר פֵּרוֹת בָּאִי!',
  'מָחָר נַמְשִׁיךְ לְדַבֵּר אַנְגְּלִית בָּאִי!','מָחָר נִפְתֹּר עוֹד חִידוֹת בַּמְּעָרָה!','מָחָר נַמְשִׁיךְ לַעֲזֹר לָאוֹפָה!','מָחָר נַמְשִׁיךְ לְהָאִיר אֶת הַלַּיְלָה!',
  'מָחָר נַמְשִׁיךְ לְסַדֵּר אֶת הַסְּפָרִים!','מָחָר נַמְשִׁיךְ לָשׁוּט בָּעֲרָפֶל!','מָחָר נַמְשִׁיךְ לִתְפֹּס אֶת הַמְּבַלְבֵּל!','מָחָר נַמְשִׁיךְ אֶת הַמְּסִבָּה!'];
 const SAIL=c=>c===1?'הַסְּפִינָה שְׁלֵמָה, וּמָחָר מַתְחִילִים מַסָּע חָדָשׁ!':c===NC?'מָחָר יֵשׁ מְסִבָּה עַל הַסְּפִינָה!':'מָחָר מַפְלִיגִים אֶל '+SCRIPT[c-1].n+'!';
 const ok=p=>p&&Number.isInteger(p.c)&&Number.isInteger(p.s)&&p.c>=1&&p.c<=NC&&p.s>=1&&p.s<=NS;
-const M={SCRIPT};
+const M={SCRIPT,THING,CH_THING};
 M.pos=()=>{const sv=O.save;if(!ok(sv.mix))sv.mix={c:1,s:1};return sv.mix;};
-M.scene=(p)=>{p=p||M.pos();const ch=SCRIPT[p.c-1],x=ch.sc[p.s-1];return {c:p.c,s:p.s,n:ch.n,open:x[0],close:x[1],topic:x[2],item:x[3]};};
+M.scene=(p)=>{p=p||M.pos();const ch=SCRIPT[p.c-1],x=ch.sc[p.s-1];return {c:p.c,s:p.s,n:ch.n,open:x[0],close:x[1],topic:x[2],item:x[3],thing:THING[p.c+'.'+p.s]||CH_THING[p.c-1]};};
+/* #416 the thing of the scene that plays now (word problems count it) */
+M.thing=()=>{try{return M.scene().thing;}catch(e){return null;}};
 M.next=p=>{p=p||M.pos();return p.s<NS?{c:p.c,s:p.s+1}:{c:p.c<NC?p.c+1:1,s:1};};
 /* #427 the last scene of a chapter ends with the big celebration (confetti + music); every other mission has the calm one */
 M.advance=()=>{const p=M.pos();O.save.mix=M.next(p);O.persist();if(p.s===NS&&O.bigCelebration)O.bigCelebration();return O.save.mix;};
@@ -6468,6 +6502,148 @@ S.offer=next=>{const s=S.get(),left=S.EXTRAS.filter(e=>!s.x.includes(e.id));if((
     b.onclick=()=>{if(b.disabled)return;row.querySelectorAll('button').forEach(x=>x.disabled=true);O.save.gems=Math.max(0,(O.save.gems|0)-S.COST);s.x.push(e.id);O.persist();O.updateGems&&O.updateGems(true);
       O.sfx&&O.sfx.win&&O.sfx.win();ov.hidden=true;next();};row.appendChild(b);});
   ov.firstChild.appendChild(row);O.say(T.spk(TITLE)+T.choiceSay(row,'b'));};
+})();
+
+/* ===== THE BUILDING WORLD (#64, spec: oren2/docs/building-world.md; injected into index.html by build) =====
+   One free 8×8 block world on the kingdom screen: gems (💎) are the building material, stars (⭐) only unlock blocks and areas.
+   Tap an empty cell = place the selected block (pay its gems); tap a filled cell = take it away (the gems come back).
+   Sand, water and fish fall to the lowest empty cell; the sheep walks. Save: save.bw = {a:{area:{'x,y':id}}, seen:[...], first}.
+   BW.render(scene) draws it (called by the core's kingdom()); BW.parentPic() = the parent day tab's picture; BW.speakList() for pregen. */
+(()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O)return;
+const {h,$,sprite}=O;const sfx=O.sfx;const D=O.D||(x=>x);
+const BW=window.BW={};
+const N=8;
+const say=t=>{try{O.say(T&&T.spk?T.spk(t):t);}catch(e){}};
+
+/* ---------- original 16×16 pixel blocks (same px style as SPR) ---------- */
+const hs=(x,y)=>(x*7+y*13+x*y*3)%11;
+const gen=f=>Array.from({length:16},(_,y)=>Array.from({length:16},(_,x)=>f(x,y,hs(x,y))).join(''));
+const tile=(f,pal)=>sprite(gen(f),pal,false);
+const art=(rows,pal)=>sprite(rows,pal);
+const WATER=(x,y,k)=>(y%5===1&&(x+y)%6<3)?'w':k%7===0?'d':'B';
+const ART={
+  grass:tile((x,y,k)=>y<3?(k%5===0?'g':'G'):y===3?((x%3===1)?'g':'D'):(k%7===0?'d':'D'),{G:'#5fb846',g:'#4a9c37',D:'#9a6a3f',d:'#7c5230'}),
+  dirt:tile((x,y,k)=>k%6===0?'d':k===1&&y%3===0?'s':'D',{D:'#9a6a3f',d:'#7c5230',s:'#b5926c'}),
+  wood:tile((x,y,k)=>y%4===3?'d':x===((y>>2)*5+3)%16?'d':k%9===0?'l':'W',{W:'#c68b4e',d:'#8a5a2e',l:'#dca468'}),
+  stone:tile((x,y,k)=>y%4===0||x===(((y>>2)%2)?3:11)?'M':k%8===0?'s':'S',{S:'#9aa3ab',s:'#808a93',M:'#6b737b'}),
+  flower:art(['.......','..PPP..','.PPYPP.','..PPP..','...G...','.LLG...','...GLL.','...G...'],{P:'#ff7eb6',Y:'#ffd166',G:'#3f8f3a',L:'#5fb846'}),
+  leaves:tile((x,y,k)=>k%4===0?'l':k%5===0?'d':'L',{L:'#4fa83f',l:'#76c95e',d:'#2f7a2a'}),
+  glass:tile((x,y)=>x===0||y===0||x===15||y===15?'F':(x+y===6||x+y===7||x+y===12)?'W':'g',{F:'#7fb3c9',g:'rgba(200,236,250,.55)',W:'#ffffff'}),
+  door:tile((x,y)=>x<2||x>13||y<1?'F':(y===7||x===7||x===8)?'F':(x===11&&y===9)?'K':(y%3===0?'d':'W'),{F:'#6b4423',W:'#b07a45',d:'#94613a',K:'#ffd166'}),
+  roof:tile((x,y)=>y%4===3?'d':(x+((y>>2)%2)*2)%4===0?'d':y%4===0?'r':'R',{R:'#d1493b',r:'#e87766',d:'#9c2f25'}),
+  water:tile(WATER,{B:'#3a8fc4',d:'#2f7aac',w:'#9fd6f2'}),
+  sand:tile((x,y,k)=>k%5===0?'s':k===3?'d':'S',{S:'#f0d58c',s:'#e2c070',d:'#c9a85a'}),
+  sheep:art(['..WWWWWW....','.WWWWWWWW...','WWWWWWWWWKK.','WWWWWWWWKEKK','WWWWWWWWKKK.','.WWWWWWWW...','.K.K..K.K...','.K.K..K.K...'],{W:'#ffffff',K:'#3a3a44',E:'#ffffff'}),
+  lamp:art(['..KKK..','.KYYYK.','.KYWYK.','.KYYYK.','..KKK..','...K...','...K...','...K...','..KKK..'],{K:'#3a3f47',Y:'#ffd166',W:'#fff6c8'}),
+  fish:sprite(gen((x,y,k)=>{const fx=x-4,fy=y-6;if(fy>=0&&fy<4&&fx>=0&&fx<7)return (fx===1&&fy===1)?'E':'O';if(fx>=7&&fx<9&&fy>=-1&&fy<5&&Math.abs(fy-1.5)<=fx-6)return 'O';return WATER(x,y,k);}),{B:'#3a8fc4',d:'#2f7aac',w:'#9fd6f2',O:'#f28c28',E:'#1d2631'},false),
+  bird:art(['...RR....','..RRRR...','.RRKRROO.','RRRRRR...','.RRRRR...','..RRR....','...O.O...'],{R:'#e4572e',K:'#1d2631',O:'#ffd166'}),
+  gold:tile((x,y)=>x===0||y===0||x===15||y===15?'d':(x-y===3||x-y===4||x-y===-6)?'W':'Y',{Y:'#f2c230',d:'#b88a12',W:'#fff3b0'}),
+  cloud:art(['....WWW.....','..WWWWWWW...','.WWWWWWWWWW.','WWWWWWWWWWWW','.WWWWWWWWWW.'],{W:'#ffffff'}),
+  rainbow:sprite(gen((x,y)=>{const d=Math.hypot(x-7.5,y-15);return d>15?'.':d>12.5?'R':d>10?'O':d>7.5?'Y':d>5?'G':d>2.5?'B':'.';}),{R:'#e4572e',O:'#f28c28',Y:'#ffd166',G:'#5fb846',B:'#3a8fc4'}),
+};
+/* id, kid name (nikud), gem cost, star unlock, falls / walks */
+const BLOCKS=[['grass','דֶּשֶׁא',1,0],['dirt','אֲדָמָה',1,0],['wood','עֵץ',2,0],['stone','אֶבֶן',2,0],['flower','פֶּרַח',2,3],['leaves','עָלִים',1,8],
+  ['glass','זְכוּכִית',3,8],['door','דֶּלֶת',5,15],['roof','גַּג',3,15],['water','מַיִם',3,25,1],['sand','חוֹל',1,35,1],['sheep','כִּבְשָׂה',10,50,0,1],
+  ['lamp','פָּנָס',4,70],['fish','דָּג',8,90,1],['bird','צִפּוֹר',8,90],['gold','זָהָב',20,120],['cloud','עָנָן',2,150],['rainbow','קֶשֶׁת',30,200]]
+  .map(([id,n,c,u,fall,walk],i)=>({id,n,c,u,i,fall:!!fall,walk:!!walk,svg:ART[id]}));
+const B=Object.fromEntries(BLOCKS.map(b=>[b.id,b]));
+/* areas: starter ground (row 6, row 7) */
+const AREAS=[{id:'meadow',n:'אָחוּ',in:'הָאָחוּ',u:0,g:['grass','dirt']},{id:'beach',n:'חוֹף',in:'הַחוֹף',u:35,g:['sand','sand']},{id:'sky',n:'שָׁמַיִם',in:'הַשָּׁמַיִם',u:150,g:[null,'cloud']}];
+const AREA_ART={
+  meadow:tile((x,y,k)=>y<10?(k===2&&y<4?'W':'S'):y<11?'G':y<13?(k%4===0?'g':'G'):'D',{S:'#bfe6f5',W:'#ffffff',G:'#5fb846',g:'#4a9c37',D:'#9a6a3f'}),
+  beach:tile((x,y,k)=>(x-12)**2+(y-3)**2<5?'Y':y<7?'S':y<11?(y%2&&k%3===0?'w':'B'):k%5===0?'s':'A',{S:'#9fdcf5',Y:'#ffd166',B:'#3a8fc4',w:'#9fd6f2',A:'#f0d58c',s:'#e2c070'}),
+  sky:tile((x,y,k)=>(x-4)**2+(y-4)**2<6?'M':(k===0&&y<10)?'*':y>12&&(x<6||x>9)?'C':'N',{N:'#3b3f8f',M:'#fff1a8','*':'#ffffff',C:'#f1f4ff'}),
+};
+/* the old shop's prices: old kingdom items are refunded once (#64 §10) */
+const OLD={flower:5,tree:10,flag:8,lantern:12,sheep:15,pond:25,hut:30,tower:40,fountain:50,windmill:60,dragon:80,rainbow:100};
+
+/* ---------- kid text (Hebrew with nikud; all of it in BW.speakList for the voice pregen) ---------- */
+const HINT='👇 בְּחַר קֻבִּיָּה, וּלְחַץ עַל מָקוֹם רֵיק כְּדֵי לִבְנוֹת.';
+const REMOVE='לְחִיצָה עַל קֻבִּיָּה מוֹרִידָה אוֹתָהּ, וְהַיַּהֲלוֹמִים חוֹזְרִים.';
+const NOGEM='חֲסֵרִים יַהֲלוֹמִים. אֶפְשָׁר לְהַרְוִיחַ עוֹד בַּשְּׁלַבִּים!';
+const FIRST='וַאוּ! בָּנִיתָ אֶת הַקֻּבִּיָּה הָרִאשׁוֹנָה!';
+const NEXT=n=>n===1?'עוֹד כּוֹכָב אֶחָד לַקֻּבִּיָּה הַבָּאָה':`עוֹד ${n} כּוֹכָבִים לַקֻּבִּיָּה הַבָּאָה`;
+const NEWB=b=>`כָּל הַכָּבוֹד! פָּתַחְתָּ קֻבִּיָּה חֲדָשָׁה: ${b.n}!`;
+const NEWA=a=>`פָּתַחְתָּ מָקוֹם חָדָשׁ: ${a.in}!`;
+const GO='הַמְשֵׁךְ';
+BW.speakList=()=>{const gaps=new Set();const us=[...new Set(BLOCKS.map(b=>b.u))].sort((a,b)=>a-b);for(let i=1;i<us.length;i++)for(let n=1;n<=us[i]-us[i-1];n++)gaps.add(n);
+  return [HINT.replace('👇 ',''),REMOVE,NOGEM,FIRST,...BLOCKS.map(b=>b.n),...AREAS.map(a=>a.n),...BLOCKS.filter(b=>b.u).map(NEWB),...AREAS.filter(a=>a.u).map(NEWA),...[...gaps].map(NEXT)];};
+BW.BLOCKS=BLOCKS;BW.AREAS=AREAS;
+
+/* ---------- save ---------- */
+const S=()=>O.save;
+const W=()=>{const s=S();if(!s.bw||typeof s.bw!=='object')s.bw={a:{},seen:[],first:0};const w=s.bw;w.a=w.a||{};w.seen=w.seen||[];return w;};
+const starter=id=>{const a=AREAS.find(x=>x.id===id)||AREAS[0],m={};a.g.forEach((b,r)=>{if(b)for(let x=0;x<N;x++){if(id==='sky'&&(x===3||x===4))continue;m[x+','+(6+r)]=b;}});return m;};
+const area=id=>{const w=W();if(!w.a[id]||typeof w.a[id]!=='object')w.a[id]=starter(id);return w.a[id];};
+/* one time: the old kingdom items give their gems back, then the old list is cleared (he loses nothing) */
+function migrate(){const s=S();if(s.bw)return;let g=0;for(const v of Object.values(s.k||{}))g+=OLD[v]|0;s.gems=(s.gems|0)+g;s.k={};W();area('meadow');O.persist();}
+BW.migrate=migrate;
+const allStars=()=>{let n=0;try{n=O.totalStars();}catch(e){}for(const v of Object.values(S().tl||{}))n+=(v&&v.s)|0;return n;};
+BW.allStars=allStars;
+const open=st=>AREAS.filter(a=>a.u<=st);
+
+/* ---------- the screen ---------- */
+let cur='meadow',sel=null,root=null,walkT=0;
+const persist=()=>{try{O.persist();}catch(e){}};
+BW.render=sc=>{migrate();const st=allStars();if(!open(st).find(a=>a.id===cur))cur='meadow';area(cur);
+  O.sayNow=HINT.replace('👇 ','');root=h('div','bw');sc.appendChild(root);draw();
+  clearInterval(walkT);walkT=setInterval(()=>{if(!root||!root.isConnected||$('#sKing').hidden){clearInterval(walkT);return;}BW.tick();},4000);
+  const news=BLOCKS.filter(b=>b.u&&b.u<=st).concat(AREAS.filter(a=>a.u&&a.u<=st)).filter(x=>!W().seen.includes(x.id)).sort((a,b)=>a.u-b.u);
+  if(news.length)setTimeout(()=>cards(news),0);};
+function bar(st){return BLOCKS.filter(b=>b.u<=st).sort((a,b)=>b.u-a.u||a.i-b.i);}
+function draw(drop){if(!root)return;const w=W(),st=allStars(),A=area(cur),ar=open(st),ai=ar.findIndex(a=>a.id===cur),list=bar(st);
+  if(!sel||!list.find(b=>b.id===sel))sel=list[0].id;
+  root.innerHTML='';const box=h('div','bwbox');const g=h('div','bwgrid bw-'+cur);
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++){const id=A[x+','+y],c=h('button','bwc',id&&B[id]?B[id].svg:'');c.dataset.x=x;c.dataset.y=y;if(id)c.dataset.b=id;
+    c.setAttribute('aria-label',id&&B[id]?B[id].n.replace(/[֑-ׇ]/g,''):'מקום ריק');c.onclick=()=>tap(x,y,c);g.appendChild(c);
+    if(drop&&drop.x===x&&drop.y===y){c.style.setProperty('--d',drop.d);c.classList.add(drop.d?'drop':'new');}}
+  const hero=h('div','bwhero',O.AV());g.appendChild(hero);box.appendChild(g);
+  const arrow=(k,dir,cls)=>{const a=h('button','bwarr '+cls,dir);a.setAttribute('aria-label',ar[k].n.replace(/[֑-ׇ]/g,''));a.onclick=()=>{cur=ar[k].id;area(cur);persist();sfx.pop&&sfx.pop(2);say(ar[k].n);draw();};box.appendChild(a);return a;};
+  if(ai<ar.length-1)arrow(ai+1,'◀','nx');if(ai>0)arrow(ai-1,'▶','pv');
+  root.appendChild(box);
+  if(!w.first)root.appendChild(h('div','lcap bwhint',HINT));
+  const nx=BLOCKS.filter(b=>b.u>st).sort((a,b)=>a.u-b.u)[0];
+  if(nx){const n=nx.u-st,l=h('button','bwnext',`<span class="bwsil">${nx.svg}</span><span>⭐ עוֹד ${n} לַקֻּבִּיָּה הַבָּאָה</span>`);l.onclick=()=>say(NEXT(n));root.appendChild(l);}
+  const bb=h('div','bwbar');for(const b of list){const o=h('button','bwb'+(b.id===sel?' sel':''),`<span class="si">${b.svg}</span><span class="pr">💎${b.c}</span>`);o.dataset.b=b.id;
+    o.setAttribute('aria-label',b.n.replace(/[֑-ׇ]/g,''));o.onclick=()=>{sel=b.id;sfx.pop&&sfx.pop(2);say(b.n);draw();};bb.appendChild(o);}
+  root.appendChild(bb);const s=bb.querySelector('.sel');if(s&&s.scrollIntoView&&bb.scrollWidth>bb.clientWidth)try{s.scrollIntoView({block:'nearest',inline:'nearest'});}catch(e){}}
+function tap(x,y,c){const w=W(),A=area(cur),k=x+','+y,id=A[k];
+  if(id){delete A[k];const back=(B[id]||{c:0}).c;S().gems=(S().gems|0)+back;O.updateGems(true);sfx.pop&&sfx.pop(1);O.floatText(c,'+'+back);persist();draw();return;}
+  const b=B[sel];if(!b)return;
+  if((S().gems|0)<b.c){c.classList.remove('shake');void c.offsetWidth;c.classList.add('shake');sfx.no&&sfx.no();say(NOGEM);return;}
+  let ty=y;if(b.fall)while(ty+1<N&&!A[x+','+(ty+1)])ty++;
+  S().gems-=b.c;A[x+','+ty]=b.id;O.updateGems(true);sfx.buy&&sfx.buy();persist();
+  const firstNow=!w.first;if(firstNow)w.first=1;
+  draw({x,y:ty,d:ty-y});const nc=root.querySelector(`.bwc[data-x="${x}"][data-y="${ty}"]`);
+  setTimeout(()=>{if(nc&&nc.isConnected)O.burst(...O.center(nc),b.fall?8:12);},D(b.fall&&ty>y?250:0));
+  if(firstNow){say(FIRST);setTimeout(()=>{if(root&&root.isConnected)say(REMOVE);},D(2600));}}
+/* the sheep: one step left or right onto an empty cell with a block under it (turns at walls) */
+const dirs={};
+BW.tick=()=>{const w=W();let moved=0;for(const [aid,A] of Object.entries(w.a)){for(const [k,id] of Object.entries(Object.assign({},A))){if(!B[id]||!B[id].walk)continue;
+  const [x,y]=k.split(',').map(Number);let d=dirs[aid+k]||(Math.random()<.5?-1:1);
+  const okAt=nx=>nx>=0&&nx<N&&!A[nx+','+y]&&(y+1>=N||!!A[nx+','+(y+1)]);
+  if(!okAt(x+d))d=-d;if(!okAt(x+d))continue;delete A[k];const nk=(x+d)+','+y;A[nk]=id;dirs[aid+nk]=d;delete dirs[aid+k];moved=1;}}
+  if(moved){persist();if(root&&root.isConnected&&!$('#sKing').hidden)draw();}};
+
+/* ---------- unlock cards: one after another, the friend cheers, the newest block is selected ---------- */
+function cards(list){const ov=$('#ov');let i=0;const friend=()=>{try{return T&&T.friend?T.friend():O.PET().s();}catch(e){return '';}};
+  const next=()=>{if(i>=list.length){ov.hidden=true;ov.innerHTML='';const lb=list.filter(x=>B[x.id]).pop();if(lb)sel=lb.id;draw();const la=list.filter(x=>!B[x.id]).pop();
+      if(la){const a=root&&root.querySelector('.bwarr.nx');if(a)a.classList.add('pulse');}return;}
+    const x=list[i++],isB=!!B[x.id];W().seen.push(x.id);persist();
+    const pic=isB?x.svg:AREA_ART[x.id],line=isB?NEWB(x):NEWA(x);
+    ov.hidden=false;ov.innerHTML=`<div class="card bwcard" data-u="${x.id}"><div class="bwnew">${pic}</div><div class="bwfr">${friend()}</div><h2>${line}</h2></div>`;
+    const b=h('button','bigbtn',(O.ICON&&O.ICON.play||'▶')+`<span>${GO}</span>`);b.onclick=()=>{sfx.pop&&sfx.pop(2);next();};ov.firstChild.appendChild(b);
+    try{sfx.star&&sfx.star(2);O.rain();}catch(e){}say(line);};
+  next();}
+
+/* ---------- the parent day tab: one picture of what he built (no buttons, no counts) ---------- */
+/* how many cells differ from the starter ground */
+const diff=(A,id)=>{const s0=starter(id);let n=0;for(const k of new Set([...Object.keys(A||{}),...Object.keys(s0)]))if((A||{})[k]!==s0[k])n++;return n;};
+BW.parentPic=()=>{const rs=O.realSave||O.save,w=rs&&rs.bw;if(!w||!w.a)return null;
+  let best=null,bn=0;for(const id of Object.keys(w.a)){const n=diff(w.a[id],id);if(n>bn){bn=n;best=id;}}
+  if(!best)return null;const A=w.a[best],bg={meadow:'#bfe6f5',beach:'#9fdcf5',sky:'#3b3f8f'}[best]||'#bfe6f5';
+  const inner=Object.entries(A).filter(([,id])=>B[id]).map(([k,id])=>{const [x,y]=k.split(',').map(Number);return B[id].svg.replace('<svg ',`<svg x="${x*16}" y="${y*16}" width="16" height="16" `);}).join('');
+  return h('div','bwpic',`<svg viewBox="0 0 128 128" role="img" aria-label="מה אורן בנה"><rect width="128" height="128" fill="${bg}"/>${inner}</svg><div class="bwcap">מה אורן בנה</div>`);};
 })();
 
 /* ===== LESSON CARDS (#56): teach a new idea before its first questions =====
@@ -9512,7 +9688,8 @@ function round(lv,back,sc){hush();const save=O.save,d=E2.day();let P,steps,id;co
       if(!tries&&T.skHit)T.skHit(sk,false);if(!tries&&KN)KN.hit(sk,false);tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();
       if(tries>=2){if(HB&&HB.el.isConnected){fin=true;HB.answer();return;}lock=true;hush();settle('bad');nq++;row.children[q.ans].classList.add('show');reveal();setTimeout(next,D(3000));}}
     }
-  function next(){if(!wrap.isConnected)return;i++;if(i>=steps.length){T.setKey(null);const t=doneTitle(before,snapshot());T.finishAct(id,err,Math.max(1,nq),gems,back,()=>round(lv,back,sc),t);}else render();}
+  /* #592 the round's screen is gone (home, another screen): a pending step/finish timer does nothing */
+  function next(){if(!wrap.isConnected||$('#sTal').hidden)return;i++;if(i>=steps.length){T.setKey(null);const t=doneTitle(before,snapshot());T.finishAct(id,err,Math.max(1,nq),gems,back,()=>round(lv,back,sc),t);}else render();}
   T.setKey(e=>{if(/^[1-9]$/.test(e.key)){const r=wrap.querySelector('.chs');const b=r&&r.children[+e.key-1];if(b)b.click();}});
   window.__quiz={get ans(){return cur&&cur.ans;},get i(){return i;},get wrap(){return wrap;}};
   window.__e2={get step(){return steps[i];},steps,P};
@@ -10577,7 +10754,7 @@ const NOUN={goal:['גּוֹל','גּוֹלִים','m'],ball:['כַּדּוּר',
   row:['שׁוּרָה','שׁוּרוֹת','f'],jump:['קְפִיצָה','קְפִיצוֹת','f'],circle:['עִגּוּל','עִגּוּלִים','m'],word:['מִלָּה','מִלִּים','f']};
 const TWO={m:{'':'שְׁנֵי','בְּ':'בִּשְׁנֵי','לְ':'לִשְׁנֵי','וְ':'וּשְׁנֵי','מִ':'מִשְּׁנֵי'},f:{'':'שְׁתֵּי','בְּ':'בִּשְׁתֵּי','לְ':'לִשְׁתֵּי','וְ':'וּשְׁתֵּי','מִ':'מִשְּׁתֵּי'}};
 /* n + noun, agreeing in gender: "גּוֹל אֶחָד", "שְׁתֵּי דַּקּוֹת", "<b>5</b> כַּדּוּרִים"; with a prefix: "לִשְׁנֵי מִגְדָּלִים", "בְּ-<b>4</b> יָמִים" */
-function count(n,key,prep){const w=NOUN[key];if(!w)throw new Error('noun '+key);prep=prep||'';
+function count(n,key,prep){const w=Array.isArray(key)?key:NOUN[key];if(!w)throw new Error('noun '+key);prep=prep||'';
   if(n===1){if(prep)throw new Error('one with prefix '+key);return `${w[0]} ${w[2]==='m'?'אֶחָד':'אַחַת'}`;}
   if(n===2)return `${TWO[w[2]][prep]} ${w[1]}`;
   return `${prep?prep+'-':''}${B(n)} ${w[1]}`;}
@@ -10650,12 +10827,23 @@ const WT=[
  {id:'mo-change',th:'soccer',lv:[4,5],f:'c-a*b',g:x=>{const a=ri(3,9),b=ri(2,4),c=pk([50,100]);return [`כָּל כַּדּוּר עוֹלֶה ${x.c(a,'shekel')}. ${x.N} ${x.v('קָנָה','קָנְתָה')} ${x.c(b,'ball')} ${x.v('וְשִׁלֵּם','וְשִׁלְּמָה')} בִּשְׁטָר שֶׁל ${B(c)} שְׁקָלִים. כַּמָּה עֹדֶף ${x.v('הוּא קִבֵּל','הִיא קִבְּלָה')}?`,a,b,c];}},
  {id:'mo-two',th:'swim',lv:[3,5],f:'a+b',g:x=>{const a=ri(5,45),b=ri(5,45);return [`מִשְׁקְפֵי שְׂחִיָּה עוֹלִים ${x.c(a,'shekel')}, וְכוֹבַע יָם עוֹלֶה ${x.c(b,'shekel')}. ${x.N} ${x.v('קָנָה','קָנְתָה')} אֶת שְׁנֵיהֶם. כַּמָּה ${x.v('הוּא שִׁלֵּם','הִיא שִׁלְּמָה')}?`,a,b];}},
 ];
+/* #416 story templates: they count the thing of the story scene that plays now (x.t = [one, many, gender], STORYMIX.thing()) */
+const SCN=[
+ {id:'sc-add',th:'story',lv:[1,5],f:'a+b',g:x=>{const [a,b]=split(x.lv);return [`${x.N} ${x.v('אָסַף','אָסְפָה')} ${x.c(a,x.t)} בַּבֹּקֶר, וְעוֹד ${x.c(b,x.t)} בָּעֶרֶב. כַּמָּה ${x.t[1]} ${x.v('הוּא אָסַף','הִיא אָסְפָה')} בְּסַךְ הַכֹּל?`,a,b];}},
+ {id:'sc-sub',th:'story',lv:[1,5],f:'a-b',g:x=>{const [a,b]=pair(x.lv);return [`${x.N} ${x.v('אָסַף','אָסְפָה')} ${x.c(a,x.t)}. הַמְּבַלְבֵּל חָטַף ${x.c(b,x.t)} וּבָרַח. כַּמָּה ${x.t[1]} נִשְׁאֲרוּ ${x.v('לוֹ','לָהּ')}?`,a,b];}},
+ {id:'sc-mul',th:'story',lv:[3,5],f:'a*b',g:x=>{const a=pk([2,3,4,5,10]),b=ri(3,x.lv===3?5:9);return [`בְּכָל שׁוּרָה יֵשׁ ${x.c(a,x.t)}. כַּמָּה ${x.t[1]} יֵשׁ ${x.c(b,'row','בְּ')}?`,a,b];}},
+ {id:'sc-div',th:'story',lv:[4,5],f:'a/b',g:x=>{const b=ri(2,5),a=b*ri(2,9);return [`${x.N} ${x.v('חִלֵּק','חִלְּקָה')} ${x.c(a,x.t)} שָׁוֶה בְּשָׁוֶה ${x.c(b,'kid','לְ')}. כַּמָּה ${x.t[1]} יֵשׁ לְכָל יֶלֶד?`,a,b];}},
+];
+const sceneThing=()=>{const M=typeof window!=='undefined'&&window.STORYMIX;try{return M&&M.thing?M.thing():null;}catch(e){return null;}};
 const WT_BY_LV=lv=>WT.filter(t=>t.lv[0]<=lv&&lv<=t.lv[1]);
 /* the answer from the numbers, in text order */
 const solve=(f,nums)=>{const [a,b,c,d]=nums;return Function('a','b','c','d','return '+f)(a,b,c,d);};
-function wordQ(lv,tid){const pool=tid?WT.filter(t=>t.id===tid):WT_BY_LV(lv);const t=pk(pool);const fem=rnd()<.5;
+/* tid: one template; thing: [one, many, gender] (default: the story scene's thing -> story templates mixed in; none -> only the old themes) */
+function wordQ(lv,tid,thing){thing=thing||(tid&&!/^sc-/.test(tid)?null:sceneThing());const ALL=[...WT,...SCN];
+  /* the story templates are mixed in (about 1 in 3), the old themes and multi-step problems stay */
+  const pool=tid?ALL.filter(t=>t.id===tid):thing&&rnd()<1/3?SCN.filter(t=>t.lv[0]<=lv&&lv<=t.lv[1]):WT_BY_LV(lv);const t=pk(pool);if(!t||(t.th==='story'&&!thing))throw new Error('word template '+tid);const fem=rnd()<.5;
   const Nn=pk(fem?NAMES_F:NAMES_M);let Mn;do{Mn=pk(rnd()<.5?NAMES_F:NAMES_M);}while(Mn===Nn);const gM=NAMES_F.includes(Mn);
-  const x={lv:Math.max(t.lv[0],Math.min(t.lv[1],lv)),Nn,Mn,N:Nn,M:Mn,v:(m,f)=>mark(Nn,fem?f:m),w:(m,f)=>mark(Mn,gM?f:m),c:count};
+  const x={lv:Math.max(t.lv[0],Math.min(t.lv[1],lv)),Nn,Mn,N:Nn,M:Mn,v:(m,f)=>mark(Nn,fem?f:m),w:(m,f)=>mark(Mn,gM?f:m),c:count,t:thing};
   for(let k=0;k<40;k++){const [text,...nums]=t.g(x);const v=solve(t.f,nums);if(Number.isInteger(v)&&v>=0&&v<=200)
     return Object.assign({sk:'wp',lv,tid:t.id,th:t.th,f:t.f,nums,tx:text,text:'',v,html:`<div class="lnwp">${text}</div>`,ex:ex(t.f.replace(/[abcd]/g,ch=>nums['abcd'.indexOf(ch)]).replace(/\*/g,' × ').replace(/\//g,' : ').replace(/-/g,' − ').replace(/\+/g,' + ').replace(/\s+/g,' ')+' = '+v),key:'w'+t.id+nums.join(',')},numOpts(v,[v+1,v-1,...nums.filter(n=>n!==v)]));}
   throw new Error('word template '+t.id);}
@@ -10781,7 +10969,7 @@ return {core,
   seen:(bank,key,ok,helped)=>{if(HELD[bank])HELD[bank].delete(key);const r=seen(S(),bank,key,ok,helped);BIND.after&&BIND.after();return r;},
   pickItem:(bank,items,o)=>{const hd=held(bank);const r=pickItem(S(),bank,items,Object.assign({},o,{held:new Set([...hd.keys(),...((o&&o.held)||[])])}));if(r)hd.set(r.item.k,nowFn());return r;},hash,
   merge,zone,eff,acc,isDue,placeStart,placeStep,placeDone,placeResult,
-  MM,MM_IDS,DRILL_IDS,PW,WT,WT_BY_LV,wordQ,solve,CH,CH_BY_LV,chalQ,PM,PW,paperQ,gen,count,NOUN,NAMES_M,NAMES_F,lp,vav,MATH_LADDER,KID,PAR,IV,QUICK,maxLv,dayNum,
+  MM,MM_IDS,DRILL_IDS,PW,WT,SCN,WT_BY_LV,wordQ,solve,CH,CH_BY_LV,chalQ,PM,PW,paperQ,gen,count,NOUN,NAMES_M,NAMES_F,lp,vav,MATH_LADDER,KID,PAR,IV,QUICK,maxLv,dayNum,
   setMax:(sk,n)=>{MAXLV[sk]=Math.max(1,n|0);},/* #395 a mission's own top level */
   setRandom:f=>{rnd=f||Math.random;},setNow:f=>{nowFn=f||(()=>Date.now());}};})();
 
