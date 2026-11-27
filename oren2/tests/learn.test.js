@@ -368,7 +368,7 @@ async function ui(variant) {
   const sa = await story(-1, true); ok(sa.e && sa.e[0] === sa.done.t + 1, V + 'story read aloud (helped) → counts as wrong, back in 1 day', JSON.stringify(sa.e));
   // #360 a quiz that had no recording (flags): each first answer goes into its own finite bank
   await p.evaluate(() => { document.getElementById('ov').hidden = true; window.TAL.ACT['world-flag'].run(window.OREN.showMap); }); await sleep(300); await answerQuiz(0); await sleep(200);
-  const fl = await bankOf('tq-world-flag'); ok(fl.sn.length === 8 && Object.keys(fl.wr).length === 1 && Object.values(fl.wr)[0][0] === fl.t + 1, V + 'flags quiz: 8 answers recorded, the wrong one back in 1 day', JSON.stringify(fl));
+  const fl = await bankOf('tq-world-flag'); ok(fl.sn.length === 5 && Object.keys(fl.wr).length === 1 && Object.values(fl.wr)[0][0] === fl.t + 1, V + 'flags quiz: 5 answers recorded (#59), the wrong one back in 1 day', JSON.stringify(fl));
   await p.evaluate(() => { document.getElementById('ov').hidden = true; });
   ok(errs.length === 0, V + 'no page errors', errs.slice(0, 3).join(' | '));
   await b.close();
