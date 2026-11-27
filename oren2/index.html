@@ -5372,7 +5372,7 @@ function stepsOfRnd(dm,n,used){if(dm==='math')return Array(n).fill('math');const
 const age=id=>{const v=(T.S().dom||{})[id];return v==null?15:Math.min(14,Math.max(0,dayNum()-v))+1;};
 function wpick(arr,n){const a=arr.slice(),out=[];while(out.length<n&&a.length){let r=Math.random()*a.reduce((x,y)=>x+age(y.id),0),k=0;for(;k<a.length-1;k++){r-=age(a[k].id);if(r<=0)break;}out.push(a.splice(k,1)[0]);}return out;}
 /* 3 steps in the chosen domain + 1 surprise from another one ("together" = 1 together step + 2 surprises) */
-function choose(dm,first){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.bs|0)>0;let st=dm==='tog'?[togStep(true)]:first?[first]:[];
+function choose(dm,first,quiet){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.bs|0)>0;let st=dm==='tog'?[togStep(true)]:first?[first]:[];
   /* #634 every path of the day is a full one (3 + a surprise), the next one too */
   if(dm!=='tog')st=st.concat(stepsOf(dm,3-st.length,new Set([...d.t,...st])));
   wpick(doms().filter(x=>x.id!==gid(dm)),dm==='tog'?2:1).forEach(o=>{st=st.concat(stepsOf(o.id,1,new Set([...d.t,...st])));});
@@ -5387,7 +5387,10 @@ function choose(dm,first){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.bs|0)>
   const sc=ACT['en-day'];st=noEn(st);
   if(!d.en&&!st.some(isEn)&&sc&&sc.inPath())st.push('en-day');if(st.some(isEn))d.en=1;
   if(!bonus){st=st.concat(d.cr||[]);d.cr=[];}st.forEach(x=>{d.t.push(x);d.done.push(0);});d.ch=dm;if(window.PDAY)window.PDAY.mark();
-  if(dm!=='tog'){S0.dom=S0.dom||{};S0.dom[gid(dm)]=dayNum();}O.persist();sfx.ok(2);home();}
+  if(dm!=='tog'){S0.dom=S0.dom||{};S0.dom[gid(dm)]=dayNum();}O.persist();if(quiet)return;sfx.ok(2);home();}
+/* #648 the parent's "new day": the open missions are put aside (done=2: they stay on today's record, so the new path never repeats them
+   or anything he did today), and a new full path starts at once in a domain the quiet balancing picks; stars, gems and the ship stay */
+function newDay(){const d=T.dailyEnsure();d.done=d.done.map(x=>x||2);d.bs=d.t.length;d.ch=null;const dm=(wpick(doms(),1)[0]||{id:'math'}).id;choose(dm,null,1);}
 function lastStep(){const l=T.S().last;if(!l)return null;if(l.id==='math')return nextLevel()?'math':null;const d=T.S().daily;/* #634 not a mission he already played today */
   return T.dailyPool().includes(l.id)&&!(d&&d.d===O.today()&&d.t.includes(l.id))?l.id:null;}
 /* "something else": a few big tiles (math, the doors, together time); a door drills down to its buildings */
@@ -5496,7 +5499,7 @@ function doorsEl(){const doors=h('div','doors2');
   if(window.TAL_arcade)DOORS.push(['arcade','אַרְקֵייד','<span style="font-size:46px;line-height:1">🕹️</span>','#ff3fa4',()=>window.TAL_arcade(O.showMap)]);
   DOORS.forEach(([k,n,ic,c,fn])=>{const b=h('button','door '+k,`<span class="dico">${ic}</span><b>${n}</b>`);b.style.setProperty('--dc',c);b.onclick=()=>{sfx.pop(2);fn();};doors.appendChild(b);});
   return doors;}
-window.TAL_home=home;T.home=home;T.chooseDay=choose;T.otherDay=other;
+window.TAL_home=home;T.home=home;T.chooseDay=choose;T.newDay=newDay;T.otherDay=other;
 /* the guide: points at the one thing to press, says it, then gets out of the way */
 let coachEl=null;
 function coach(target,text,key,times){if(!target||!target.isConnected||!$('#ov').hidden||!$('#dlg').hidden||document.querySelector('.tlock,.tour,.hlock'))return;const S0=T.S();S0.coach=S0.coach||{};const n=S0.coach[key]|0;if(n>=(times||1))return;S0.coach[key]=n+1;O.persist();
@@ -12203,6 +12206,7 @@ const ICO={c:'✓',q:'✗',s:'⏭',b:'⏸',p:'⏭',k:'⏭',f:'💬'},WHY={c:'',q
 const undone=e=>e[6]==='p'&&e[7]&&(O.realSave.pcU||{})[e[7].pc];
 DL.rows=d=>{const L=((O.realSave.alog||{})[d]||{}).e||[];return L.filter(e=>e[6]!=='x'&&!/^rb2-st-/.test(e[1])&&!undone(e)).sort((a,b)=>a[0]-b[0]);};
 DL.rowHTML=e=>{const [m,id,st,ok,n,hp,o,x]=e;const sx=x&&typeof x==='object'?x:null;
+  if(id==='newday')return `<div class="prow dlrow dl-p"><span class="pn"><b class="dli">🌅</b> ${hhmm(m)} · יום חדש</span><span class="pc">מסלול חדש (הורה)</span></div>`;   /* #648 */
   const story=sx&&sx.t;
   const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`✓ ${ok} · ✗ ${n-ok}`:'',sx&&sx.lv?'רמה '+(sx.lv|0):'',hp?`עזרה ×${hp}`:'',sx&&sx.sk?`דילג ×${sx.sk|0}`:'',story?(sx.r==='l'?'האזין להקראה':'קרא לבד'):'',sx&&sx.ra?(sx.ra===1?'הקראה אחת':`${sx.ra} הקראות`):'',sx&&sx.ez?(sx.ez==='h'?'אמר: היה קשה 😣':'אמר: היה קל 😀'):'',WHY[o]].filter(Boolean).join(' · ');
   const name=story?`${plain(sx.t)}${sx.g?` <span class="dlgoal">🎯 ${plain(sx.g)}</span>`:''}`:DL.nameOf(id);
@@ -12227,7 +12231,7 @@ DL.merge=(save,o)=>{for(const d in o.alog||{}){const src=(o.alog[d]||{}).e;if(!A
    Parent commands travel in save.set.pc (settings are newer-wins by setT and sent at once): [{i, k, a, d (day), t}]
      k: 'now' skip what he plays now · 'drop' a planned mission (a = step id) · 'up' / 'down' (a = step id) · 'add' (a = step id)
         'off' a topic not today (a = topic id) · 'know' he already knows the level of a mission (a = step id) · 'reset' back to the regular plan
-        'undo' (a = the command id)
+        'undo' (a = the command id) · 'new' a new path now, of missions he did not do today (#648)
    #614: the list is joined by id when two copies meet (index.html pcJoin), so a command is never taken out of it: an 'undo' calls it off.
    Oren's device applies each command once (save.pcA[id] = time, max-merged), only where Oren played today (a local flag, so the
    parent's phone never applies them), and checks for new ones every ~12 s while he plays (a read; it writes only when a command came).
@@ -12293,6 +12297,7 @@ const logP=(c,id,x)=>DL.add(today(),[minNow(),id,0,0,0,0,'p',Object.assign({pc:c
 const todayLog=()=>(((O.save.alog||{})[today()]||{}).e)||[];
 function run(c){const s=O.save;
   if(c.k==='now'){skipNow(c);return;}
+  if(c.k==='new'){newDay(c);return;}
   if(c.k==='know'){const x={k:'know'};
     if(c.a==='math'){const lv=T.nextLevel&&T.nextLevel();if(!lv)return;s.pk=s.pk||{};s.pk[lv.id]=Date.now();x.lid=lv.id;}
     else{const L=window.LEARN;if(!L||!L.setLevel||!T.ACT[c.a])return;const sk='a:'+c.a;const l0=lvOf(c.a)||1;x.sk=sk;x.l0=l0;L.setLevel(sk,l0+1);}
@@ -12332,6 +12337,13 @@ function fire(){const c=pend;if(!c)return;pend=null;const cu=DL.cur();if(!cu||cu
   if(O.hush)O.hush();const el=h('div','pdskip',`<div class="card"><div class="callp bob">${T.friend?T.friend():''}</div><h2>${SAYNEXT}</h2></div>`);document.body.appendChild(el);O.say(T.spk(SAYNEXT));
   setTimeout(()=>{el.remove();const nx=d.done.findIndex(x=>!x);if(nx>=0&&window.TAL_step)window.TAL_step(nx);else O.showMap();},D(1800));}
 P.pending=()=>pend;
+/* #648 "new day": what he plays now ends (a parent skip), the new path is on the map at once, the friend says so (text + voice together, #635) */
+const SAYNEW='יוֹם חָדָשׁ, מַסָּע חָדָשׁ!';
+P.speakList=()=>[SAYNEXT,SAYNEW];
+function newDay(c){const cu=DL.cur();if(cu&&!cu.end){cu.x=Object.assign(cu.x||{},{pc:c.i,k:'new',ts:Date.now()});DL.end('p');}
+  pend=null;T.newDay();logP(c,'newday',{k:'new'});if(O.track)O.track('newday',{pc:c.i});
+  if(O.hush)O.hush();O.showMap();const el=h('div','pdskip',`<div class="card"><div class="callp bob">${T.friend?T.friend():''}</div><h2>${SAYNEW}</h2></div>`);document.body.appendChild(el);O.say(T.spk(SAYNEW));
+  setTimeout(()=>el.remove(),D(2200));}
 
 /* ---------- #616 Oren's own skip: one small "⏭️ דַּלֵּג" next to the help button on every question screen (help.js asks P.skipBtn) ----------
    A tap reads the label, then: the next question (the host's o.skip) — or, from the first question, after 2 skips in a row, or where the
@@ -12384,21 +12396,24 @@ function planView(){const d0=T.S().daily;if(!d0||d0.d!==today())return null;cons
   cmds().filter(waiting).forEach(c=>planOp(d,c));return d;}
 const stepTop=id=>/:/.test(id)?null:topOf(id);
 const stepLv=id=>{if(id==='math'){const lv=T.nextLevel&&T.nextLevel();return lv?plain(lv.u.name):'';}const l=lvOf(id);return l?'רמה '+l:'';};
-function pendRowHTML(c){const id=c.k==='off'?null:c.a;const nm=c.k==='now'?'מה שהוא משחק עכשיו':c.k==='off'?TOP[c.a]||c.a:T.stepName(id);
+function pendRowHTML(c){if(c.k==='new')return `<span class="pn"><b class="dli">🌅</b> יום חדש</span><span class="pc">נשלח…</span>`;const id=c.k==='off'?null:c.a;const nm=c.k==='now'?'מה שהוא משחק עכשיו':c.k==='off'?TOP[c.a]||c.a:T.stepName(id);
   return `<span class="pn"><b class="dli">⏭</b> ${nm}</span><span class="pc">דילג (הורה)${KIND[c.k]?' · '+KIND[c.k]:''} · נשלח…</span>`;}
 /* what he did on day d: his log lines, a "בטל" on a skip until the next mission starts, and the skips still on their way */
-function didSec(box,d,sec){const rows=DL.rows(d);const pend=d===today()?cmds().filter(c=>waiting(c)&&['now','drop','off','know'].includes(c.k)):[];
+function didSec(box,d,sec){const rows=DL.rows(d);const pend=d===today()?cmds().filter(c=>waiting(c)&&['now','drop','off','know','new'].includes(c.k)):[];
   if(!rows.length&&!pend.length){if(d===today()&&DL.playing())return;/* #621 playing: the "playing now" line says it */box.appendChild(h('div','pnote pdnone',d===today()?'עוד לא שיחק היום':'לא שיחק ביום הזה'));return;}
   const s=sec(box,'מה הוא עשה','');const L=h('div','dllog');L.dataset.d=d;s.appendChild(L);
   const lastReal=Math.max(-1,...rows.filter(e=>e[6]!=='p').map(e=>e[0]));
   rows.forEach(e=>{const w=h('div','',DL.rowHTML(e));const r=w.firstChild;L.appendChild(r);const x=e[7]||{};
-    if(d===today()&&e[6]==='p'&&x.pc&&x.k==='now')r.querySelector('.pc').insertAdjacentHTML('beforeend',' · <b class="pdheard">אורן שמע ✓</b>');   /* #617 */
-    if(d===today()&&e[6]==='p'&&x.pc&&x.k!=='now'&&e[0]>=lastReal&&!cmds().some(c=>c.k==='undo'&&c.a===x.pc)){const b=h('button','pchip','בטל');b.onclick=()=>{P.undo(x.pc);P.refresh();};r.appendChild(b);}});
+    if(d===today()&&e[6]==='p'&&x.pc&&(x.k==='now'||e[1]==='newday'))r.querySelector('.pc').insertAdjacentHTML('beforeend',' · <b class="pdheard">אורן שמע ✓</b>');   /* #617 */
+    if(d===today()&&e[6]==='p'&&x.pc&&x.k!=='now'&&x.k!=='new'&&e[0]>=lastReal&&!cmds().some(c=>c.k==='undo'&&c.a===x.pc)){const b=h('button','pchip','בטל');b.onclick=()=>{P.undo(x.pc);P.refresh();};r.appendChild(b);}});
   pend.forEach(c=>{const r=h('div','prow dlrow dl-p pdpend',pendRowHTML(c));const b=h('button','pchip','בטל');b.onclick=()=>{P.undo(c.i);P.refresh();};r.appendChild(b);L.appendChild(r);});}
 /* the plan ahead: the missions still open today, in order; per row one ✕, a tap on the row shows the rest */
 let rowOpen=null;
 function planSec(box,sec){const d=planView();if(!d)return;const left=d.t.map((id,n)=>({id,n})).filter(x=>!d.done[x.n]);
   const s=sec(box,'התוכנית להמשך','');
+  /* #648 one button: a new path for him now (missions he did not do today); while it is on its way the plan waits for it */
+  const nd=h('div','btnrow');const nb=h('button','bigbtn plain sm','<span>🌅 יום חדש</span>');nb.onclick=()=>{rowOpen=null;P.send('new');P.refresh();};nd.appendChild(nb);
+  if(cmds().some(c=>c.k==='new'&&waiting(c))){s.appendChild(h('div','pnote','מסלול חדש בדרך לאורן'));return;}
   if(!left.length)s.appendChild(h('div','pnote','כל המשימות של היום בוצעו'));
   left.forEach((x,k)=>{const tp=stepTop(x.id),lv=stepLv(x.id);
     const r=h('div','prow tdrow pdplan'+(rowOpen===x.id?' open':''),`<span class="pn">${k+1}. ${T.stepName(x.id)}${lv?` <small>${lv}</small>`:''}</span>`);
@@ -12416,7 +12431,8 @@ function planSec(box,sec){const d=planView();if(!d)return;const left=d.t.map((id
   ab.onclick=()=>{tops.hidden=!tops.hidden;};
   Object.keys(TOP).forEach(tp=>{const id=pickOf(tp,d);if(!id)return;const b=h('button','pchip',TOP[tp]);b.onclick=()=>{P.send('add',id);P.refresh();};tops.appendChild(b);});
   if(tops.children.length)s.appendChild(ar);
-  if(d.po||cmds().some(c=>waiting(c)&&['drop','off','up','down','add'].includes(c.k))){const rs=h('div','btnrow');const b=h('button','bigbtn plain sm','<span>חזרה לתוכנית הרגילה</span>');b.onclick=()=>{rowOpen=null;P.send('reset');P.refresh();};rs.appendChild(b);s.appendChild(rs);}}
+  if(d.po||cmds().some(c=>waiting(c)&&['drop','off','up','down','add'].includes(c.k))){const rs=h('div','btnrow');const b=h('button','bigbtn plain sm','<span>חזרה לתוכנית הרגילה</span>');b.onclick=()=>{rowOpen=null;P.send('reset');P.refresh();};rs.appendChild(b);s.appendChild(rs);}
+  s.appendChild(nd);}
 /* the mission a topic adds: the learning engine's next pick (#358 rules live there), else one from the pool */
 function pickOf(tp,d){if(tp==='math')return T.nextLevel&&T.nextLevel()?'math':null;const used=new Set(d.t);
   try{if(window.LEARN&&LEARN.plan){const x=(LEARN.plan(tp,1,used)||[]).find(y=>y&&T.ACT[y]&&!used.has(y));if(x)return x;}}catch(e){}
