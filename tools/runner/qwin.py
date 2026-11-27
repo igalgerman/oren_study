@@ -12,8 +12,10 @@ worker/reviewer PURPLE/cloud QUESTION:/intake/orchestrator). The watchdog calls 
     10 min / no idle session for 10 min (Claude Code skips the push while the owner is active on this PC)
   - #440 Telegram, also at the SAME time (telegram.py; token + chat id only in ~/.oren/telegram.env, never logged): the
     question with numbered options; getUpdates polled every tick (offset in .runs/telegram.json); a reply (a number = that
-    option, other text = his own answer; Reply to the question's message, or plain text when one question is open) is
+    option, other text = his own answer; Reply or plain text) is
     recorded with answer(); a PC/chat answer posts a short 'answered' note there; 2 h reminder there too
+  - #632 Telegram has ONE open question at a time (the next after an answer), so a plain reply is never ambiguous;
+    notes (ai-observer, 'PR waits for your merge') go there once as plain notes that wait for nothing
   - first answer wins (page, chat or Telegram); the other side closes (answer() stops ask.py)
   - never two pages for the same question; at most MAX_WINDOWS questions at once, the rest wait (oldest first)
   - answered elsewhere (gone from the open list) -> ask.py stopped
@@ -134,34 +136,46 @@ def tg_answer(q_text, reply):
     opts = split_options(q_text)[1]
     return opts[int(reply) - 1] if reply.isdigit() and 1 <= int(reply) <= len(opts) else reply
 
+def is_note(e):
+    """#632: not a question (nothing to answer): ai-observer notes, 'PR #n waits for your merge'."""
+    return (e.get("source") or "").startswith("ai-observer") or bool(re.match(r"PR #\d+ waits for your merge", e.get("text") or ""))
+
 def tg_send(st, now):
-    """#440: every open question goes to Telegram too (once); a failure is logged once and retried next tick."""
+    """#440/#632: open questions go to Telegram ONE at a time (oldest first): the next one only after the current one is
+    answered (page, chat or Telegram), so a plain reply always has one question. Notes go once as plain notes, waiting for
+    nothing. A failure is logged once and retried next tick."""
     if not TG.config(): return
     for key, e in st.items():
-        if e.get("answered") or e.get("tg"): continue
-        mid = TG.send(tg_text(e))
-        if mid: e["tg"] = mid; log(f"{e['name']}: telegram message sent for {key}")
-        elif not e.get("tg_fail"): e["tg_fail"] = True; log(f"{e['name']}: telegram NOT sent for {key} (retried every tick)")
+        if e.get("answered") or e.get("tg") or e.get("tg_note") or not is_note(e): continue
+        mid = TG.send(R.one_line(e.get("text", "")))
+        if mid: e["tg_note"] = mid; log(f"{e['name']}: telegram note sent for {key}")
+    if not any(e.get("tg") and not e.get("answered") and not is_note(e) for e in st.values()):   # an old-state note never blocks
+        nxt = sorted(((e["since"], i, k) for i, (k, e) in enumerate(st.items())
+                      if not e.get("answered") and not e.get("tg") and not is_note(e)), key=lambda x: x[:2])
+        for _, _, key in nxt[:1]:
+            e = st[key]; mid = TG.send(tg_text(e))
+            if mid: e["tg"], e["tg_at"] = mid, now; log(f"{e['name']}: telegram message sent for {key}")
+            elif not e.get("tg_fail"): e["tg_fail"] = True; log(f"{e['name']}: telegram NOT sent for {key} (retried every tick)")
     for key, e in st.items():                             # 2 h unanswered: one reminder there, as a reply to the question
-        if e.get("tg") and not e.get("answered") and not e.get("tg_reminded") and now - e["since"] >= REMIND_S:
+        if e.get("tg") and not e.get("answered") and not e.get("tg_reminded") and now - e.get("tg_at", e["since"]) >= REMIND_S:
             r = TG.send("תזכורת: שעתיים בלי תשובה.\n" + tg_text(e), reply_to=e["tg"])
             if r: e["tg_reminded"], e["tg_r"] = True, r; log(f"{e['name']}: 2 h reminder in telegram")
 
 def tg_poll(st):
     """#440: read the owner's Telegram replies (getUpdates, offset in .runs) and record each one like a page answer."""
-    wait = {k: e for k, e in st.items() if e.get("tg") and not e.get("answered")}
+    wait = {k: e for k, e in st.items() if e.get("tg") and not e.get("answered") and not is_note(e)}
     if not wait or not TG.config(): return
     try: off = json.loads(TG_STATE.read_text(encoding="utf-8")).get("offset", 0)
     except Exception: off = 0
     new, msgs = TG.messages(off)
     if new != off: R.RUNS.mkdir(parents=True, exist_ok=True); TG_STATE.write_text(json.dumps({"offset": new}), encoding="utf-8")
     for m in msgs:
-        wait = {k: e for k, e in st.items() if e.get("tg") and not e.get("answered")}
+        wait = {k: e for k, e in st.items() if e.get("tg") and not e.get("answered") and not is_note(e)}
         key = next((k for k, e in st.items() if m["reply_to"] and m["reply_to"] in (e.get("tg"), e.get("tg_r"))), None)
-        if key is None and not m["reply_to"]:
-            fresh = [k for k, e in wait.items() if m["date"] >= e["since"] - 60]   # never an old message for a new question
+        if key is None and not m["reply_to"]:            # #632: at most one question is out: a plain reply is its answer
+            fresh = [k for k, e in wait.items() if m["date"] >= e.get("tg_at", e["since"]) - 60]   # never an old message
             if len(fresh) == 1: key = fresh[0]
-            elif len(fresh) > 1: TG.send("יש כמה שאלות פתוחות: ענה ב-Reply להודעה של השאלה.", reply_to=m["id"]); continue
+            elif len(fresh) > 1: TG.send("יש כמה שאלות פתוחות: ענה ב-Reply להודעה של השאלה.", reply_to=m["id"]); continue   # old state only (before #632)
         if key not in wait: continue                      # answered already (first answer wins) or not a question
         e = wait[key]
         answer(key, tg_answer(e.get("text", ""), m["text"]), from_tg=True); e["answered"] = True
@@ -248,7 +262,7 @@ def tick(ts, now=None):
         if _hc("send", e["via"], "WATCHDOG REMINDER: 2 hours without an answer. " + push_message({"key": k, "text": e.get("text", "")}), timeout=30)[0] == 0:
             e["reminded"] = True; log(f"{e['name']}: 2 h reminder via {e['via']}")
     check_pushes(st, now)
-    tg_send(st, now); tg_poll(st)                         # #440
+    tg_poll(st); tg_send(st, now)                         # #440; #632 poll first: an answer sends the next one now
     save(st)
 
 def push_result(screen, key):
