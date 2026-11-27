@@ -65,8 +65,20 @@ print("ok auto_resume cap 2")
 pj = {"number": 251, "mergeable": "CONFLICTING", "headRefOid": "abc",
       "commits": [{"committedDate": "2026-11-26T10:00:00Z"}, {"committedDate": "2026-11-26T11:00:00Z"}],
       "comments": [{"body": "VERDICT: PASS", "createdAt": "2026-11-26T12:00:00Z"}]}
-assert r.pr_resume_info(pj) == {"pr": 251, "mergeable": "CONFLICTING", "verdict": "VERDICT: PASS", "sha": "abc"}
+assert r.pr_resume_info(pj) == {"pr": 251, "mergeable": "CONFLICTING", "verdict": "VERDICT: PASS", "sha": "abc", "review": "VERDICT: PASS", "test": ""}
 print("ok pr_resume_info")
+
+# #618: the tester's result for the head counts in the resume: TEST: FAIL after a PASS -> fix with the repro, never merge
+pj2 = dict(pj, mergeable="MERGEABLE", comments=pj["comments"] + [{"body": "shots\nTEST: FAIL help -> read is silent", "createdAt": "2026-11-26T12:30:00Z"}])
+_i = r.pr_resume_info(pj2)
+assert _i["test"] == "TEST: FAIL help -> read is silent", _i
+st, red = r.resume_of(_i)
+assert st == "fix" and red.startswith("VERDICT: FIX") and "help -> read is silent" in red, (st, red)
+assert r.resume_of(r.pr_resume_info(dict(pj2, comments=pj2["comments"] + [{"body": "TEST: PASS", "createdAt": "2026-11-26T13:00:00Z"}]))) == ("merge", "VERDICT: PASS")
+assert r.resume_of(r.pr_resume_info(dict(pj, mergeable="MERGEABLE"))) == ("merge", "VERDICT: PASS")   # no test yet: merge step, which runs the tester gate
+old_fail = dict(pj, mergeable="MERGEABLE", comments=[{"body": "TEST: FAIL old head", "createdAt": "2026-11-26T09:00:00Z"}, *pj["comments"]])
+assert r.resume_of(r.pr_resume_info(old_fail))[0] == "merge"      # a FAIL on an older head does not count
+print("ok #618 resume_of: TEST: FAIL for the head -> fix")
 
 # ---- ready-for-human only for a real QUESTION ----
 hum = [{"number": 137, "labels": [{"name": "blocked"}, {"name": "ready-for-human"}], "comments": [{"body": "Runner: merge conflicts not resolved after 2 rounds."}]},
@@ -97,10 +109,12 @@ print("ok park_issue labels")
 
 # ---- end to end: process() picks up the stored step ----
 _names = ("gh", "run", "set_labels", "stat", "set_where", "issue_over", "tell_orchestrator", "find_pr", "branch_of", "agent",
-          "ci_integrate", "remote_review", "remote_fix", "remote_worker", "remote_task", "find_pr_merged", "deploy_main", "sync_main", "remove_worktree", "close_windows")
+          "ci_integrate", "remote_review", "remote_tester", "remote_fix", "remote_worker", "remote_task", "find_pr_merged", "deploy_main", "sync_main", "remove_worktree", "close_windows")
 _saved = {k: getattr(r, k) for k in _names}
-def e2e(n, step, verdicts, integ, where="remote", stored="", real_review=False):
-    calls = {"agent": [], "cloud": [], "review": 0, "fix": 0, "worker": 0, "labels": [], "comments": []}
+def e2e(n, step, verdicts, integ, where="remote", stored="", real_review=False, tests=None):
+    calls = {"agent": [], "cloud": [], "review": 0, "fix": 0, "worker": 0, "labels": [], "comments": [], "test": [], "fixtext": [], "ci": 0}
+    ts = list(tests or [])
+    r.remote_tester = lambda n, pr, level, *a, **k: calls["test"].append(level) or ("shots", ts.pop(0) if ts else "TEST: PASS")   # #618
     r.gh = lambda *a, **k: (calls["comments"].append(a[3]) if a[:2] == ("issue", "comment") else None) or (0, "sha1")
     r.run = lambda *a, **k: (0, ""); r.stat = lambda *a, **k: None; r.set_where = lambda *a: None
     r.issue_over = lambda n, since: False; r.tell_orchestrator = lambda t: None
@@ -109,12 +123,12 @@ def e2e(n, step, verdicts, integ, where="remote", stored="", real_review=False):
     r.remote_worker = lambda *a, **k: calls.__setitem__("worker", calls["worker"] + 1) or "RESULT: DONE"
     vs = list(verdicts)
     if not real_review:
-        r.remote_review = lambda *a, **k: (calls.__setitem__("review", calls["review"] + 1), ("", vs.pop(0)))[1]
-    r.remote_fix = lambda *a, **k: calls.__setitem__("fix", calls["fix"] + 1) or "RESULT: DONE"
+        r.remote_review = lambda *a, **k: (calls.__setitem__("review", calls["review"] + 1), (lambda v: (v, v.splitlines()[-1]))(vs.pop(0)))[1]
+    r.remote_fix = lambda n, sess, text, *a, **k: calls["fixtext"].append(text) or calls.__setitem__("fix", calls["fix"] + 1) or "RESULT: DONE"
     r.agent = lambda name, *a, **k: calls["agent"].append(name) or ("", "RESULT: STUCK cannot")
     r.remote_task = lambda n, text, *a, **k: calls["cloud"].append(text) or "RESULT: STUCK cannot"     # #289: a cloud lane resolves in the cloud
     ig = list(integ)
-    r.ci_integrate = lambda *a, **k: ig.pop(0)
+    r.ci_integrate = lambda *a, **k: calls.__setitem__("ci", calls["ci"] + 1) or ig.pop(0)
     r.find_pr_merged = lambda n: True; r.deploy_main = lambda log: "deployed"; r.sync_main = lambda log=None: ""
     r.remove_worktree = lambda *a, **k: None; r.close_windows = lambda n: None
     r.set_resume(n, step, stored)
@@ -133,6 +147,32 @@ res, c = e2e(188, "resolve", [], [(2, "CONFLICTS\na.js"), (2, "CONFLICTS\na.js")
 assert res.startswith("BLOCKED") and c["worker"] == c["review"] == 0 and len(c["cloud"]) == 1 and c["agent"] == [], (res, c)   # #289: no local resolve worker
 assert not any("ready-for-human" in a for a, _ in c["labels"]) and any("needs-orchestrator" in a for a, _ in c["labels"]), c["labels"]   # never the owner
 print("ok process resumes at review / fix / merge / resolve; conflicts -> needs-orchestrator")
+
+# #618: review -> test -> merge for T1+ (no TEST line = T2); T0 skips the tester; a tester FAIL goes back to the worker like a RED review
+res, c = e2e(618, "review", ["TEST: T0\nVERDICT: PASS"], [(0, "")])
+assert res.startswith("DONE") and c["test"] == [], (res, c)
+res, c = e2e(619, "review", ["VERDICT: PASS"], [(0, "")])
+assert res.startswith("DONE") and c["test"] == ["T2"], (res, c)
+res, c = e2e(620, "review", ["TEST: T3\nVERDICT: PASS-NOTES name", "TEST: T3\nVERDICT: PASS"], [(0, "")],
+             tests=["TEST: FAIL parent +10 min -> kid still locked", "TEST: PASS"])
+assert res.startswith("DONE") and c["test"] == ["T3", "T3"] and c["fix"] == 1 and c["review"] == 2, (res, c)
+assert "parent +10 min" in c["fixtext"][0] and "VERDICT: FIX" in c["fixtext"][0], c["fixtext"]
+res, c = e2e(621, "review", ["TEST: T1\nVERDICT: PASS"] * 3, [(0, "")], tests=["TEST: FAIL a"] * 3)
+assert res.startswith("BLOCKED") and c["fix"] == 2 and "still RED" in res, (res, c)                    # same #303 limit as a RED review
+print("ok #618 review -> test -> merge; T0 skips; tester FAIL -> fix loop")
+
+# #618 (review of PR #620): a blocked issue resumed at merge never reaches ci_integrate without a TEST: PASS for its head
+res, c = e2e(622, "merge", ["TEST: T2\nVERDICT: PASS"], [(0, "")], tests=["TEST: FAIL skip does nothing", "TEST: PASS"])
+assert res.startswith("DONE") and c["test"] == ["T2", "T2"] and c["fix"] == 1 and c["review"] == 1, (res, c)   # gate -> fix -> re-review -> test -> merge
+assert "skip does nothing" in c["fixtext"][0], c["fixtext"]
+res, c = e2e(623, "merge", ["TEST: T1\nVERDICT: PASS"] * 3, [(0, "")], tests=["TEST: FAIL a"] * 4)
+assert res.startswith("BLOCKED") and c["ci"] == 0, (res, c)                        # never reached ci_integrate
+# auto_resume after the tester FAILed: the head's TEST: FAIL -> resume at fix (not merge), with the repro as the red verdict
+log, kw = fakes(lambda n: _i)
+got = r.auto_resume([I(625, B)], **kw)
+assert got == [(625, "fix")] and "help -> read is silent" in r.take_resume_verdict(625), got
+r.take_resume(625)
+print("ok #618 auto-resume at merge runs the tester gate; a head TEST: FAIL resumes at fix")
 
 # review of #273: a dirty PR without a PASS is never merged unreviewed: fix + review run before ci_integrate
 res, c = e2e(190, "resolve", ["VERDICT: PASS"], [(0, "")], stored="VERDICT: FIX add a test")

@@ -24,6 +24,7 @@ const shuffle=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(M
 const tens=n=>n-n%10;
 const range=(a,b,s=1)=>{const o=[];if(s>0)for(let v=a;v<=b;v+=s)o.push(v);else for(let v=a;v>=b;v+=s)o.push(v);return o;};
 const E=t=>/^\d+$/.test(String(t))?String(t):`<span class="ltr">${t}</span>`;   /* equations stay left-to-right inside Hebrew */
+const EMO=/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u{1F3FB}-\u{1F3FF}\uFE0F\u200D\u20E3]/gu;/* #622 a picture (emoji) is never sent to the voice */
 const strip=s=>String(s==null?'':s).replace(/<svg[\s\S]*?<\/svg>/g,' ').replace(/<[^>]+>/g,' ').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&amp;/g,'&').replace(/\s+/g,' ').trim();
 const plain=s=>strip(s).replace(/[֑-ׇ]/g,'');
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -35,11 +36,11 @@ const F=['אפס','אחת','שתיים','שלוש','ארבע','חמש','שש','�
 const TN=['','','עשרים','שלושים','ארבעים','חמישים','שישים','שבעים','שמונים','תשעים'];
 const HN=['','מאה','מאתיים','שלוש מאות','ארבע מאות','חמש מאות','שש מאות','שבע מאות','שמונה מאות','תשע מאות'];
 function nw(n){n=+n;if(n<=20)return F[n];const p=[];const hh=n/100|0,r=n%100;if(hh)p.push(HN[hh]);if(r){if(r<=20)p.push(F[r]);else{p.push(TN[r/10|0]);if(r%10)p.push(F[r%10]);}}if(p.length>1)p[p.length-1]='ו'+p[p.length-1];return p.join(' ');}
-function speech(html){let t=strip(html);
+function speech(html){let t=strip(html).replace(EMO,' ');
   t=t.replace(/\b(\d{1,2}):(\d{2})\b/g,(m,h,mm)=>{mm=+mm;return nw(h)+(mm===0?'':mm===30?' וחצי':mm===15?' ורבע':' ו'+nw(mm));});
   t=t.replace(/\s*\+\s*/g,' ועוד ').replace(/\s*−\s*/g,' פחות ').replace(/\s*×\s*/g,' כפול ').replace(/(\d)\s+:\s+(\d)/g,'$1 חלקי $2')
      .replace(/\s*=\s*\?/g,' שווה כמה?').replace(/\s*=\s*/g,' שווה ').replace(/\s*<\s*/g,' קטן מ ').replace(/\s*>\s*/g,' גדול מ ').replace(/←/g,',').replace(/·/g,',');
-  return t.replace(/\d+/g,m=>nw(m)).replace(/-/g,' ').replace(/\s+/g,' ').trim();}
+  return t.replace(/\d+/g,m=>nw(m)).replace(/-/g,' ').replace(/\s+/g,' ').replace(/\s*:\s*$/,'').trim();}
 const say=t=>{try{const o=O();o.sayNow=speech(t);if(o.say)o.say(speech(t));}catch(e){}};
 
 /* ---------- animated pictures: elements carry data-t (ms) + data-to (transform) / data-op (opacity) / data-dash ---------- */
@@ -503,15 +504,15 @@ function stop(keepPend){if(S){clearTimeout(S.idleT);clearTimeout(S.exT);hidePane
    tap 1 = a small clue, tap 2 = the answer with a short explanation. After 2 wrong answers the host calls offer() (clue by itself)
    or answer() (when its question ends there). button(host,o): o = {clue()→html|'' , answer()→html, before}; mc(host,o) for choice rows:
    o = {row, ans, clue (text), explain (html), reveal()} — clue without text: wrong options go away until two are left. ---------- */
-const BT={lbl:'עֶזְרָה',clue:'רֶמֶז',offer:'צָרִיךְ עֶזְרָה? הִנֵּה רֶמֶז',elim:'הוֹרַדְתִּי תְּשׁוּבוֹת שֶׁלֹּא מַתְאִימוֹת.',again:'הַקְשֵׁב שׁוּב לַשְּׁאֵלָה וְחַשֵּׁב.',ans:'הַתְּשׁוּבָה הִיא'};
+const BT={lbl:'עֶזְרָה',clue:'רֶמֶז',offer:'צָרִיךְ עֶזְרָה? הִנֵּה רֶמֶז',elim:'הוֹרַדְתִּי תְּשׁוּבוֹת שֶׁלֹּא מַתְאִימוֹת.',again:'הַקְשֵׁב שׁוּב לַשְּׁאֵלָה וְחַשֵּׁב.',ans:'הַתְּשׁוּבָה הִיא',here:'הִנֵּה הַתְּשׁוּבָה'};
 function button(host,o){if(!host)return null;o=o||{};(host.isConnected?document:host).querySelectorAll('.helpq').forEach(x=>x.remove());/* a late timer of a closed screen never takes the live button away */
   const w=el('helpq'),box=el('helpbox');const b=btn('helpbtn','<span class="hq-i" aria-hidden="true">?</span><span>'+BT.lbl+'</span>',()=>tap(false));
   box.hidden=true;w.append(b,box);if(o.before&&o.before.parentNode===host)host.insertBefore(w,o.before);else host.appendChild(w);
   let n=0;const show=(html,voice)=>{box.hidden=false;box.innerHTML=html;box.classList.remove('in');void box.offsetWidth;box.classList.add('in');say(voice||html);};
   function tap(auto){if(n>=2||!w.isConnected)return;n++;track({h:'btn',n,auto:auto?1:0});
     if(n===1){let c='';try{c=o.clue?o.clue():'';}catch(e){}const head=auto?BT.offer:BT.clue,t=`<b>${head}:</b> ${c||BT.again}`;
-      /* #409 the first hint: in the friend's bubble with the voice, no box; later steps as before */
-      const F=window.FRIEND;if(F&&F.hint&&F.hint(t)){box.hidden=true;say(t);}else show(t);}
+      /* #409 the first hint: in the friend's bubble, said by the friend (#53), no box; later steps as before */
+      const F=window.FRIEND;if(F&&F.hint&&F.hint(t,speech(t))){box.hidden=true;}else show(t);}   /* #53 the friend says it, in his voice */
     else{let e='';try{e=o.answer?o.answer():'';}catch(x){}b.disabled=true;w.classList.remove('offer');w.classList.add('done');show(e||BT.ans);}}
   const api={el:w,box,btn:b,o,tap:()=>tap(false),offer(){if(n===0&&w.isConnected){w.classList.add('offer');tap(true);}},answer(){if(n<2&&w.isConnected){n=1;tap(true);}},get step(){return n;},get ans(){return o.ans;}};
   w._help=api;return api;}
@@ -521,7 +522,8 @@ function mc(host,o){o=o||{};const rowOf=()=>typeof o.row==='function'?o.row():o.
   return button(host,{before:o.before,get ans(){return ansOf();},
     clue:()=>{const t=typeof o.clue==='function'?o.clue():o.clue;if(t)return t;const row=rowOf();if(row&&elim(row,ansOf()))return BT.elim;return '';},
     answer:()=>{const row=rowOf(),a=row&&row.children[ansOf()];if(a)a.classList.add('show');const lbl=a?a.innerHTML:'';try{o.reveal&&o.reveal();}catch(e){}
-      const x=typeof o.explain==='function'?o.explain():o.explain;return `<div>${BT.ans}: <b class="hq-a">${lbl}</b></div>${x?`<div class="hq-x">${x}</div>`:''}`;}});}
+      const x=typeof o.explain==='function'?o.explain():o.explain;const pic=!/[\p{L}\d]/u.test(strip(lbl).replace(EMO,''));/* #622 a picture answer: 'here is the answer' + the lit picture */
+      return `<div>${pic?BT.here:BT.ans}: <b class="hq-a">${lbl}</b></div>${x?`<div class="hq-x">${x}</div>`:''}`;}});}
 /* packs (loaded before this file) put their fixed help texts in window.HELP_TEXTS, so pregen has them */
 const allTexts=()=>Object.values(BT).concat([BT.clue+': '+BT.elim,BT.clue+': '+BT.again,BT.offer+': '+BT.elim,BT.offer+': '+BT.again],[...new Set(window.HELP_TEXTS||[])]);
 

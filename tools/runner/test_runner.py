@@ -1182,12 +1182,14 @@ try:
     (r.RUNS / "8").mkdir(parents=True, exist_ok=True); (r.RUNS / "8" / "where").write_text("remote")
     (r.RUNS / "9").mkdir(parents=True, exist_ok=True); (r.RUNS / "9" / "where").write_text("remote")
     _lab.clear()
-    _list = [{"number": 8, "comments": [{"body": "QUESTION: a or b?"}, {"body": "Parked (cloud): x"}, {"body": "b"}]},
+    (r.RUNS / "11").mkdir(parents=True, exist_ok=True); (r.RUNS / "11" / "where").write_text("remote")
+    _list = [{"number": 8, "comments": [{"body": "QUESTION: a or b?"}, {"body": "Parked (cloud): x"}, {"body": _oq.answer_body("abcdef012345", "b")}]},
+             {"number": 11, "comments": [{"body": "QUESTION: a or b?"}, {"body": "HOLD (owner-merge) on PR #557; re-parked."}]},   # #608: the orchestrator's note is no owner answer
              {"number": 9, "comments": [{"body": "QUESTION: a or b?"}]},                           # no answer yet
              {"number": 10, "comments": [{"body": "QUESTION: a or b?"}, {"body": "b"}]}]           # not a cloud run: the old local flow
     r.gh = lambda *a, **k: (_gh.append(a), (0, json.dumps(_list)) if a[:2] == ("issue", "list") else (0, ""))[1]
     assert r.resume_answered() == [8]
-    assert r.take_answer(8) == "b" and r.take_answer(9) is None and r.take_answer(10) is None
+    assert r.take_answer(8) == "b" and r.take_answer(9) is None and r.take_answer(10) is None and r.take_answer(11) is None
     _la = next(a for a in _gh if a[:2] == ("issue", "list"))
     assert "blocked" in _la and "ready-for-human" in _la
     r.gh = lambda *a, **k: (1, "gh down")
@@ -1485,3 +1487,23 @@ assert "tab.settle" in _cw
 _pl = _src.split("def process_locked", 1)[1].split("def close_windows", 1)[0]
 assert _pl.count("close_windows(n)") >= 2 and "close_windows" not in _pl.split("except Parked", 1)[1].split("except", 1)[0]   # DONE + Ended settle; parked keeps tabs
 print("ok #26 ended issue tabs settled")
+
+# #608: workers and reviewers never write 'approved' for the owner; the gate is the owner_q record (owner_q.py gate), never comment text
+for _p in (r.worker_prompt(5, "pack"), r.remote_worker_prompt(5, "pack"), r.review_prompt(5, 9), r.remote_review_prompt(5, 9)):
+    assert "on the owner's behalf" in _p and "owner_q.py gate #5" in _p, _p[-800:]
+print("ok #608 prompts: no approvals on the owner's behalf; the gate is the owner_q record")
+
+# #618: the reviewer adds a TEST level line; after a PASS the tester (cloud session test-<n>, Sonnet / Opus for T3) plays the preview
+for _p in (r.review_prompt(5, 9), r.remote_review_prompt(5, 9)):
+    assert "TEST: T0" in _p and "T3" in _p and "counts as T2" in _p, _p[-1500:]
+_ts = []
+def _tstart(n, t, c, name=None, model=None): _ts.append((n, name, model, t)); return {"ok": True, "url": "u"}
+rv, v = r.remote_tester(7, 9, "T3", _tstart, lambda: {"state": "done", "line": "TEST: PASS", "body": "shots\nTEST: PASS"}, lambda s: None, lambda: 0, 60, 30)
+assert v == "TEST: PASS" and _ts[0][:3] == (7, "test-7", "opus") and "pr-9.oren-game.pages.dev" in _ts[0][3], _ts
+rv, v = r.remote_tester(7, 9, "T1", _tstart, lambda: {"state": "done", "line": "TEST: FAIL x", "body": "b"}, lambda s: None, lambda: 0, 60, 30)
+assert v == "TEST: FAIL x" and _ts[1][2] == "sonnet"
+rv, v = r.remote_tester(7, 9, "T1", lambda *a, **k: {"ok": False, "error": "403"}, lambda: {"state": "working"}, lambda s: None, lambda: 0, 60, 30)
+assert v == "" and "403" in rv
+rv, v = r.remote_tester(7, 9, "T2", _tstart, lambda: {"state": "working"}, lambda s: None, iter(range(0, 10**6, 60)).__next__, 120, 60)
+assert v == "" and "no TEST line" in rv, rv
+print("ok #618 tester: level line in the review prompts, cloud tester session test-<n> with the level's model")

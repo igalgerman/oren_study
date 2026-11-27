@@ -6,6 +6,7 @@ Usage:
   python tools/runner/owner_q.py ask <window|#n> "<question>"   # the orchestrator's own question (prints the comment url)
   python tools/runner/owner_q.py open                           # open questions: key, window, text, url
   python tools/runner/owner_q.py answered <KEY> "<answer>"       # mark answered (after relaying the answer)
+  python tools/runner/owner_q.py gate <#n>                      # #608: the owner's answers for issue n (exit 0 = gate open, 1 = closed)
 """
 import hashlib, json, re, sys
 from pathlib import Path
@@ -22,6 +23,7 @@ GH = R.gh             # tests swap in a fake gh
 KEY_RE = re.compile(r"<!-- owner-q:([0-9a-f]{12}) -->")
 MARK = "<!-- owner_q -->"  # #211: every post of this tool (same GitHub account as the owner) -> never counted as his answer
 QUICK_S = 10        # #469: an owner question never waits longer than this on GitHub (a limit -> other identity, else queued)
+ANSWER_RE = re.compile(r"<!-- owner-answer:([0-9a-f]{12}) -->")   # #608: the record qwin.answer writes on the asking issue
 OPT_RE = re.compile(r"^\s*[❯>›]?\s*(\d+[.)]\s+\S.*)$")
 
 def key_of(window, question):
@@ -54,6 +56,31 @@ def answered_keys(comments):
         m = KEY_RE.search(b)
         if m and any(g.get("users", {}).get("totalCount", 1) for g in c.get("reactionGroups") or []): done.add(m[1])
     return done
+
+def answer_body(key, text):
+    """#608: the owner's answer as recorded on the asking issue (only qwin.answer writes it): the one thing that counts as him."""
+    return f"OWNER ANSWER (question window, owner-q:{key}): {text}\n<!-- owner-answer:{key} -->"
+
+def record_answer(body):
+    """Pure (#608): (key, answer text) of an owner_q answer record, else None. Free comment text never is one."""
+    m = ANSWER_RE.search(body or "")
+    a = re.match(r"^OWNER ANSWER \(question window, owner-q:([0-9a-f]{12})\):\s*(.*)", (body or "").strip(), re.S)
+    if not (m and a and a[1] == m[1]): return None
+    return m[1], ANSWER_RE.sub("", a[2]).strip()
+
+def gate(n, issue_comments, question_comments):
+    """Pure (#608): the owner's answers to the owner questions about issue n, oldest first; [] = the owner gate is closed.
+    Counts only an answer record on issue n with the key of a #n question in the questions issue, or a reaction on that question."""
+    keys, out = {}, []
+    for c in question_comments:
+        b = c.get("body") or ""; m = KEY_RE.search(b)
+        if m and re.search(rf"\*\*#{n}\*\*", b): keys[m[1]] = c
+    for c in issue_comments:
+        r = record_answer(c.get("body"))
+        if r and r[0] in keys: out.append(r[1])
+    for c in keys.values():
+        out += [f"reaction {g.get('content', '')}" for g in c.get("reactionGroups") or [] if g.get("users", {}).get("totalCount", 1)]
+    return out
 
 def open_questions(comments):
     """Pure: unanswered question comments, oldest first -> [{key, window, text, url}]."""
@@ -181,6 +208,14 @@ def main(argv):
     if len(argv) in (2, 3) and argv[0] == "answered":
         ok = mark_answered(argv[1], argv[2] if len(argv) == 3 else "")
         print("marked answered" if ok else "could not mark (gh)"); return 0 if ok else 1
+    if len(argv) == 2 and argv[0] == "gate":
+        n = int(argv[1].lstrip("#"))
+        with ghcache.quick(QUICK_S):
+            q = find_issue(); qcs = comments(q) if q else None; ics = comments(n)
+        if qcs is None or ics is None: print("could not read GitHub (gh)"); return 2
+        got = gate(n, ics, qcs)
+        print(("OPEN: " + " | ".join(got)) if got else f"CLOSED: no owner_q answer for #{n} (free comments never count, #608)")
+        return 0 if got else 1
     print(__doc__); return 2
 
 if __name__ == "__main__":

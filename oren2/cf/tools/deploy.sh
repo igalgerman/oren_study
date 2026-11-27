@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Build and deploy "המסע של אורן" to Cloudflare Pages (project oren-game, D1 binding DB + old KV binding SAVES).
+# DEPLOY_BRANCH=pr-<n> (#618, .github/workflows/preview.yml): a preview at https://pr-<n>.oren-game.pages.dev instead of production (main).
 # Needs network access to api.cloudflare.com with a token (Pages:Edit, Workers KV Storage:Edit, D1:Edit, Account Settings:Read).
 set -euo pipefail
 cd "$(dirname "$0")/../.."          # oren2/
@@ -20,5 +21,5 @@ if [ -n "$DBID" ]; then
 fi
 curl -sS -X POST "https://api.cloudflare.com/client/v4/accounts/$ACC/pages/projects/oren-game/deployments" \
   ${CLOUDFLARE_API_TOKEN:+-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"} \
-  -F 'manifest={}' -F 'branch=main' -F '_worker.js=@cf/dist/_worker.js;filename=_worker.js;type=application/javascript+module' \
+  -F 'manifest={}' -F "branch=${DEPLOY_BRANCH:-main}" -F '_worker.js=@cf/dist/_worker.js;filename=_worker.js;type=application/javascript+module' \
   | python3 -c "import sys,json;d=json.load(sys.stdin);print('ok' if d.get('success') else d.get('errors'),(d.get('result') or {}).get('url'))"

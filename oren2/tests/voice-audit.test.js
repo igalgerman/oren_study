@@ -80,7 +80,10 @@ const INIT = () => {
     await ev(`window.OREN.showJourney()`, 300); await ev(`window.OREN.kingdom()`, 300); await ev(`window.OREN.studio(false)`, 300); }
   await ev(`window.TAL.openHub()`, 300); for (let g = 0; g < 4; g++) await ev(`window.TAL.openGroup(window.TAL.GROUPS[${g}])`, 200);
   const acts = await p.evaluate(() => window.TAL.BUILD.flatMap(b => [['B', b.id], ...b.acts.map(a => ['A', a.id])]));
-  let nAct = 0, nWant = 0, ai = 0; const silent = [], notRun = [];
+  let nAct = 0, nWant = 0, ai = 0; const silent = [], notRun = [], noBtn = [];
+  // #610 owner rule: every screen has a way to hear its text again (🔊) and to turn the music off (the top-bar sound button)
+  const btns = () => p.evaluate(() => { const v = s => { const e = document.querySelector(s); return !!e && !!e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden'; };
+    return { say: v('#btnSay'), snd: v('#btnMusic') }; }).catch(() => ({ say: false, snd: false }));
   for (const [k, id] of acts) {
     if (k === 'B') { await ev(`window.TAL.openBuilding(window.TAL.BUILD.find(b=>b.id==='${id}'))`, 150); continue; }
     if (ai++ % 2 !== HALF - 1) continue;
@@ -90,12 +93,47 @@ const INIT = () => {
       try { a.run(() => {}); return 'ok'; } catch (e) { return e.message; } }, id).catch(e => e.message);   // locked ones too (avail = progress)
     if (ran === 'ok') nAct++; else notRun.push(id + ': ' + ran);
     await sleep(450);   // the screen's own line is read after it settles (auto-read, 300 ms)
+    { const bt = await btns(); if (!bt.say || !bt.snd) noBtn.push(id + (bt.say ? '' : ' no 🔊') + (bt.snd ? '' : ' no sound button')); }
     for (let k2 = 0; k2 < 5; k2++) {
       await ev(`(()=>{const q=window.__quiz;if(q&&q.wrap.isConnected){const c=q.wrap.querySelector('.chs');if(c&&c.children[q.ans]){c.children[q.ans].click();}return;}
         const b=[...document.querySelectorAll('#sTal .bigbtn,#sTal .chb,#sTal .actc')].filter(x=>!x.disabled&&x.offsetParent);if(b.length)b[Math.floor(Math.random()*b.length)].click();})()`, 100);
       if (await p.evaluate(() => !document.querySelector('#ov').hidden).catch(() => false)) break;
     }
-    if (await p.evaluate(n => window.__clips.length === n, c0)) silent.push(id);
+    if (await p.evaluate(n => window.__clips.length === n, c0)) {   // #610 opened again alone, with time to settle: a screen that says nothing fails
+      const c1 = await p.evaluate(() => window.__clips.length);
+      await p.evaluate(id => { window.OREN.hush(); document.querySelector('#ov').hidden = true; try { window.TAL.ACT[id].run(() => {}); } catch (e) {} }, id).catch(() => {});
+      if (!(await p.waitForFunction(n => window.__clips.length > n, c1, { timeout: 4000 }).then(() => 1, () => 0))) silent.push(id); }   // up to 4 s: slow under load
+    // reading practice (TAL.READ_ACT) at a level where Oren reads first may wait silent (auto-read suite): it still needs its 🔊, checked above
+  }
+  // #610 the explore bank on the daily path (#394): the space question the owner met silent (castle/night scene) is read, question then
+  // each answer, its 🔊 reads it again, and the sound button is there
+  const path610 = {};
+  if (HALF === 2) {
+    await ev(`(()=>{const O=window.OREN,T=window.TAL;document.querySelector('#ov').hidden=true;delete T.S().daily;O.showMap();T.S().daily.o=['explore','math','readg','create','calm'];O.showMap();
+      document.querySelector('#sHome .dcard:not(.cont)').click();T.S().daily.t[0]='sky-astro';O.showMap();document.querySelector('#sHome .bigbtn.huge').click();})()`, 600);
+    const inQuiz = () => p.evaluate(() => !!(window.__quiz && window.__quiz.wrap.isConnected && window.__quiz.wrap.querySelector('.qq')));
+    let c0 = 0; for (let k = 0; k < 12 && !(await inQuiz()); k++) { c0 = await p.evaluate(() => window.__clips.length); await ev(`window.EXPLORE2.step()`, 300); }
+    await sleep(900);   // auto-read after the screen settles
+    const T = l => l.map(c => N(new URLSearchParams(c.url.split('?')[1]).get('t')).replace(/^או /, ''));
+    Object.assign(path610, await p.evaluate(() => { const w = window.__quiz && window.__quiz.wrap; return { onPath: window.TAL.onPath, quiz: !!(w && w.isConnected),
+      q: w ? w.querySelector('.qq').textContent.replace('🔊', '').trim() : '', opts: w ? [...w.querySelectorAll('.chs > *')].map(b => b.textContent.trim()) : [], card: !!(w && w.querySelector('.qq .rdb')) }; }));
+    path610.btn = await btns(); path610.want = await p.evaluate(L => L.map(x => window.__fullSpell(x).replace(/\s+/g, ' ').trim()), [path610.q, ...path610.opts]);
+    path610.auto = T(await p.evaluate(n => window.__clips.slice(n), c0));
+    let c1 = await p.evaluate(() => window.__clips.length); await p.evaluate(() => { window.OREN.hush(); document.querySelector('#sTal .qq .rdb').click(); }).catch(() => {}); await sleep(600);
+    path610.card1 = T(await p.evaluate(n => window.__clips.slice(n), c1));
+    c1 = await p.evaluate(() => window.__clips.length); await p.evaluate(() => { window.OREN.hush(); document.querySelector('#btnSay').click(); }).catch(() => {}); await sleep(600);
+    path610.top = T(await p.evaluate(n => window.__clips.slice(n), c1));
+    // #610 help -> read aloud (owner: silent on the site): each tap of עֶזְרָה (the clue, then the answer) is said by the game voice
+    const help = async () => { const out = []; for (let k = 0; k < 2; k++) { const c = await p.evaluate(() => window.__clips.length);
+      const t = await p.evaluate(() => { window.OREN.hush(); const b = [...document.querySelectorAll('#sTal .helpbtn')].find(x => !x.disabled && x.offsetParent); if (!b) return ''; b.click(); return 'tap'; });
+      const said = t && await p.waitForFunction(n => window.__clips.length > n, c, { timeout: 4000 }).then(() => 1, () => 0); out.push(said ? T(await p.evaluate(n => window.__clips.slice(n), c))[0] : t || 'no button'); await sleep(300); } return out; };
+    path610.help = await help();
+    await ev(`(()=>{const O=window.OREN;O.hush();document.querySelector('#ov').hidden=true;O.showMap();window.TAL.ACT['read-sent'].run(()=>{});})()`, 1500);
+    path610.readHelp = await help();
+    const helped = h => h.length === 2 && h.every(x => x && x !== 'tap' && x !== 'no button');
+    const all = L => path610.want.every(t => L.includes(t)) && L.indexOf(path610.want[0]) === 0;
+    path610.ok = path610.onPath && path610.quiz && path610.opts.length >= 2 && path610.btn.snd && path610.btn.say && path610.card &&
+      all(path610.auto) && all(path610.top) && path610.card1.join(' ').includes(path610.want[0]) && helped(path610.help) && helped(path610.readHelp);
   }
   if (HALF === 1) { await ev(`(()=>{document.querySelector('#ov').hidden=true;window.TAL_arcade(()=>{});})()`, 400);
     for (const g of ['balloon', 'soccer', 'basket', 'swim', 'mole', 'frog']) { await ev(`(()=>{window.TAL_arcade(()=>{});window.__arc.start('${g}');})()`, 400); await ev(`window.__arc.finish(9)`, 200); } }
@@ -119,9 +157,13 @@ const INIT = () => {
     for (let i = 0; i < w.length;) { let j = i; while (j < w.length && SRCN.includes(w.slice(i, j + 1).join(' '))) j++;   // at most 4 runs, 3 words left over
       if (j === i) { vars++; i++; } else { runs++; fixed += w.slice(i, j).join(' ').length; i = j; } }
     return runs <= 4 && vars <= 3 && fixed >= 4; };
-  const NUMW = /(^|\s)ו?(אחת|אחד|שתיים|שתים|שנים|שניים|שלוש|שלושה|ארבע|ארבעה|חמש|חמישה|שש|שישה|שבע|שבעה|שמונה|תשע|תשעה|עשר|עשרה|עשרים|שלושים|ארבעים|חמישים|שישים|שבעים|שמונים|תשעים|מאה)(?=[\s.,?!]|$)/g;
+  // the help's last step (help.js BT.ans): 'הַתְּשׁוּבָה הִיא: <answer>' + the explanation, e.g. the completed sentence (#608): the answer (1-3 words) + a 'word' line
+  const ANS = NN('הַתְּשׁוּבָה הִיא') + ':';
+  const helpAns = l => { const t = NN(l); if (!t.startsWith(ANS)) return false; const w = t.slice(ANS.length).trim().split(' ');
+    for (let k = 1; k <= 3 && k < w.length; k++) if (word(w.slice(k).join(' '))) return true; return false; };
+  const NUMW = /(^|\s)ו?(אחת|אחד|שתיים|שתים|שנים|שניים|שני|שתי|שלוש|שלושה|ארבע|ארבעה|חמש|חמישה|שש|שישה|שבע|שבעה|שמונה|תשע|תשעה|עשר|עשרה|עשרים|שלושים|ארבעים|חמישים|שישים|שבעים|שמונים|תשעים|מאה)(?=[\s.,?!]|$)/g;
   const numbers = c => /\d/.test(c.piece) || (c.t.match(NUMW) || []).length >= 2;
-  const why = c => PLAY.has(c.t) || SRCN.includes(NN(c.piece)) ? 'play' : PG.RANDOM.test(c.t) ? 'random' : numbers(c) ? 'numbers' : choices(c.t) ? 'choices' : word(c.piece) ? 'word' : '';
+  const why = c => PLAY.has(c.t) || SRCN.includes(NN(c.piece)) ? 'play' : PG.RANDOM.test(c.t) ? 'random' : numbers(c) ? 'numbers' : choices(c.t) ? 'choices' : word(c.piece) || helpAns(c.piece) ? 'word' : '';
   const check = (c, rec) => { const k = key(c.v, c.r, c.t);
     if (c.line == null) return noLine.push(c.t);
     lines.add(c.line);
@@ -136,6 +178,10 @@ const INIT = () => {
     .concat(uniq(missing).map(x => 'missing\t' + x), uniq(wrongLine).map(x => 'line\t' + x), uniq(badHash).map(x => 'hash\t' + x)).join('\n') + '\n');
   console.log('clips', clips.length, 'lines', lines.size, 'activities', nAct + '/' + nWant, 'silent', silent.join(' ') || '-', '·', counts, '·', Math.round((Date.now() - T0) / 1000) + 's');
   ok('the fake player heard every screen: every activity of this half opened, the game spoke', nAct === nWant && nAct >= 50 && clips.length >= 80, `activities=${nAct}/${nWant} clips=${clips.length} lines=${lines.size} ` + notRun.slice(0, 5).join(' | '));
+  ok('#610 every activity screen has the 🔊 replay and the sound button', !noBtn.length, noBtn.slice(0, 6).join(' | '));
+  const RA = new RegExp(await p.evaluate(() => window.TAL.READ_ACT.source)), mute = silent.filter(id => !RA.test(id));
+  ok('#610 every activity screen says something when it opens (opened again alone first; reading practice where Oren reads first excepted)', !mute.length, mute.join(' '));
+  if (HALF === 2) ok('#610 explore question on the daily path: read by itself (question, then each answer), its 🔊 reads it again, the top-bar 🔊 and the sound button are there; עֶזְרָה is said aloud (here and on a reading question)', path610.ok, JSON.stringify(path610));
   ok('every clip is asked for while a line is spoken (the speech queue)', !noLine.length, uniq(noLine).slice(0, 5).join(' | '));
   ok('every clip belongs to the line being spoken', !wrongLine.length, uniq(wrongLine).slice(0, 5).join(' | '));
   ok('every spoken line has a recording (pregen) or is made on first use by a named rule', !missing.length, uniq(missing).length + ': ' + uniq(missing).slice(0, 8).join(' | '));
@@ -146,7 +192,12 @@ const INIT = () => {
     const w0 = wrongLine.length;
     check({ ...c0, t: t1, line: t1, piece: t1, parts: [t1] }, REC); const R2 = new Map(REC); R2.set(k0, c0.t + ' אחר'); check(c0, R2); check({ ...c0, t: c0.t + ' אחר' }, REC);
     ok('self-check: a line without audio, audio of another text and a clip of another line all fail', missing.length === before[0] + 1 && badHash.length === before[1] + 1 && wrongLine.length === w0 + 1);
-    missing.length = before[0]; badHash.length = before[1]; wrongLine.length = w0; }
+    missing.length = before[0]; badHash.length = before[1]; wrongLine.length = w0;
+    ok('self-check: the help answer of a sentence completion is a put-together line (#608)', helpAns('הַתְּשׁוּבָה הִיא: יְשֵׁנִים בַּלַּיְלָה אֲנַחְנוּ יְשֵׁנִים בַּמִּטָּה.') && !helpAns('הַתְּשׁוּבָה הִיא: ' + t1)); }
+  // #602: a word problem with the number words שני/שתי is 'numbers' every run (not only when the random walk meets it)
+  { const n = 'רון נגן שני שירים בבקר, ועוד שני שירים בערב. כמה שירים הוא נגן היום?', x = 'רון נגן שירים בבקר, ועוד שירים בערב. כמה שירים הוא נגן היום?';
+    const wn = why({ t: n, piece: n }), wx = numbers({ t: x, piece: x });
+    ok('self-check (#602): a word problem with שני/שתי is "numbers", the same line without number words is not', wn === 'numbers' && !wx, `numbers=${wn || '-'} without=${wx}`); }
   ok('no page errors while playing every screen', !errs.length, errs.slice(0, 3).join(' | '));
   if (process.env.GITHUB_STEP_SUMMARY) {
     const m = uniq(missing), w = uniq(wrongLine), h = uniq(badHash);

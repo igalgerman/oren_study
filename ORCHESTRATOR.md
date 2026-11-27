@@ -11,6 +11,12 @@ The PC runs only the 3 control sessions (orchestrator, inbox, inspector), the wa
 - A conflicting PR gets a cloud resolve session by itself (watchdog, #262); all cloud lanes run in ONE `lanes` window (runner.py --lanes), never one `run-<n>` per lane.
 - The AI observer and the nightly retro are cloud scheduled tasks (docs/agents/cloud-tasks.md); the watchdog relays their findings to you.
 
+## Testing before merge and after deploy (#618, owner 27 Nov: "we are in production now")
+- Every review ends with `TEST: T0|T1|T2|T3` (rules in FLOW.md, Reviewer); none = T2. For T1+ the runner starts the cloud Tester `test-<n>` on the PR preview `https://pr-<pr>.oren-game.pages.dev` after the PASS; `TEST: FAIL` goes back to the worker like a RED review. Never merge a T1+ PR by hand without a `TEST: PASS` for its head.
+- After each deploy the regression tour runs on production (deploy.yml); a fail opens a P0 `Live tour failed after deploy <sha>` issue. When it carries `express` it is the automatic undo (revert of the last merge): let it run; otherwise fix forward.
+- A tester run by hand: start a cloud session with `python -c "import sys;sys.path.insert(0,'tools/runner');import tester;print(tester.prompt(<n>,<pr>,'T2',tester.preview_url(<pr>)))"` as its task.
+- The dashboard line `Bugs found by the tester · reported by the owner` shows if it works: report it to the owner when he asks about quality.
+
 ## Where things are
 - Repo: `C:\work\Oren_study\a`. `origin` = **igalgerman/oren_study** (private), branch **`main`** = what is live on the site.
   `old` = igalgerman/a (old history, never push there).
@@ -74,7 +80,7 @@ Trigger: your context is large (auto-compaction is near, or you re-read things y
 - Write every owner question (#205) the way docs/agents/skills/to-questionnaire.md says: clear options, a recommendation, Hebrew for decisions.
 - Your own question (or one from a reviewer PURPLE point / grill): `python tools/runner/owner_q.py ask <#n|window> "<question in Hebrew, options>"`. Never post in that issue with plain `gh`: we share the owner's GitHub account, so only posts with the tool's hidden `<!-- owner_q -->` marker are not taken as his answer (#211).
 - For each NEW question the watchdog (`tools/runner/qwin.py`, #220/#390, max 3 at once) opens the Hebrew page (tools/ask) in his browser AND, at the same moment, hands ONE `PHONE PUSH (owner-q:<key>)` line to an idle long-lived session (the inbox, else you): send exactly that PushNotification, write `PUSH-RESULT <key> ok|failed <reason>`, and when he answers it in your chat run the `qwin.py answer` command from that line (issue + questions issue + orchestrator; the page closes). First answer wins. A freshly opened window cannot push (Claude Code calls it 'active'), so no question windows any more. A 'NOT sent' result is logged in watchdog.log. Each question also goes to his Telegram at the same time (#440, `tools/runner/telegram.py`; his reply there is recorded with `qwin.py answer`, a PC answer posts a short note there). Never write 'waiting for you in window X' without the question text.
-- He answers in that issue (the watchdog types `OWNER ANSWERED ...` into your window) or here. Relay the answer to the window / issue, then `python tools/runner/owner_q.py answered <key> "<answer>"`. Open list: `owner_q.py open` (also in the dashboard 'Needs you').
+- He answers in that issue (the watchdog types `OWNER ANSWERED ...` into your window) or here. Record it with `python tools/runner/qwin.py answer <key> "<answer>"` (the owner_q answer record on the issue + ANSWERED + relay; #608: a plain comment of yours is never his answer, and never write 'approved' for him). Owner gate of an issue (design approved, merge OK, release OK): `python tools/runner/owner_q.py gate #n` (OPEN only from that record or his reaction in the questions issue). Open list: `owner_q.py open` (also in the dashboard 'Needs you').
 
 ## Questions from workers → the owner, in YOUR window (relay)
 Workers and reviewers report to you (herdr notes arrive in your terminal). The owner answers here, in your window, not in worker tabs.

@@ -33,7 +33,7 @@ const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout:
     plan: [...v.querySelectorAll('.pdplan .pn')].map(r => r.textContent), txt: v.textContent }; });
 
   // ---------- the main view ----------
-  { const v = await view(); ok('opens on today, with what he did: name, topic, ✓/✗, stars, level, help, read-aloud', v.day === 'היום' && v.did.length === 1 && /✓ 4 · ✗ 2/.test(v.did[0]) && /⭐⭐/.test(v.did[0]) && /רמה 2/.test(v.did[0]) && /עזרה ×1/.test(v.did[0]) && /הקראה ×1/.test(v.did[0]), JSON.stringify(v.did)); }
+  { const v = await view(); ok('opens on today, with what he did: name, topic, ✓/✗, stars, level, help, read-aloud', v.day === 'היום' && v.did.length === 1 && /✓ 4 · ✗ 2/.test(v.did[0]) && /⭐⭐/.test(v.did[0]) && /רמה 2/.test(v.did[0]) && /עזרה ×1/.test(v.did[0]) && /הקראה אחת/.test(v.did[0]), JSON.stringify(v.did)); }
   { const v = await view(); ok('the plan ahead: the open missions in order', v.plan.length === 4 && /חשבון/.test(v.plan[0]), JSON.stringify(v.plan)); }
   { const m = await B.evaluate(() => { const s = document.querySelector('#sPar'); return { inputs: s.querySelectorAll('input,select,textarea').length, more: [...s.querySelectorAll('button')].filter(x => /הגדרות ועוד/.test(x.textContent)).length,
       words: /הגבלה קבועה|סיסמה|בדיקת קול|תזכורת לאורן|תקלות/.test(s.textContent), tabs: s.querySelectorAll('.ptabs').length }; });
@@ -111,6 +111,48 @@ const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout:
   ok('and the next planned mission opens', await until(A, ids => { const d = window.TAL.S().daily; const cu = window.DAYLOG.cur(); return !document.querySelector('.pdskip') && cu && !cu.end && cu.id === ids.e && d.done[d.t.indexOf(ids.r)] === 2; }, ids, 5000), await A.evaluate(() => JSON.stringify([window.TAL.S().daily, window.DAYLOG.cur()])));
   { const r = await A.evaluate(id => { const e = window.OREN.save.alog[window.OREN.today()].e.filter(x => x[1] === id).pop(); return { o: e && e[6], st: (window.TAL.S().tl[id] || {}).s | 0 }; }, ids.r);
     ok('a skip is never a failure and gives no stars ("p", not "q")', r.o === 'p' && r.st === 0, JSON.stringify(r)); }
+
+  // ---------- #614 skip now from the panel: feedback, another parent copy, offline kid, undo ----------
+  const nowTxt = () => B.evaluate(() => (document.querySelector('#sPar .pnow') || {}).textContent || '');
+  ok('#614 the parent sees "דולג ✓" once his device left the activity', await until(B, () => /דולג ✓/.test((document.querySelector('#sPar .pnow') || {}).textContent || ''), null, 8000), await nowTxt());
+  const inAct = id => A.evaluate(id => { const c = window.DAYLOG.cur(); return !!(c && !c.end && c.id === id); }, id);
+  { /* a second parent copy (another phone / tab, loaded before the tap, not pulled since) changes a setting after the tap: the skip must survive */
+    const C = await (await b.newContext({ viewport: { width: 390, height: 844 } })).newPage(); C.on('pageerror', e => errs.push('C ' + e.message));
+    await C.addInitScript(() => { window.__fast = true; window.__moments = false; window.__famGap = 0; });
+    await C.goto(BASE); await C.waitForFunction(() => window.OREN && window.OREN.family, null, { timeout: 20000 }); await sleep(300);
+    await A.evaluate(() => { window.OREN.timeTick && window.OREN.timeTick(); return window.OREN.famNow(); });   /* his heartbeat: the next mission */
+    await A.route('**/api/save/**', r => r.abort());   /* his device is offline */
+    await B.evaluate(() => { window.__pcLate = 1500; window.TAL.parentPanel('day'); });
+    ok('#614 "דלג עכשיו" is back once the panel sees the next mission', await until(B, () => !!document.querySelector('#sPar .pnow .pdskipnow'), null, 8000), await nowTxt());
+    await B.locator('#sPar .pnow .pdskipnow').click(); await sleep(300);
+    const nid = await B.evaluate(() => window.PDAY.cmds().filter(c => c.k === 'now').pop().i);
+    ok('#614 right after the tap the parent sees "נשלח…"', /נשלח…/.test(await nowTxt()), await nowTxt());
+    ok('#614 (the skip is on the server)', ((JSON.parse(KV.values().next().value).set || {}).pc || []).some(c => c.i === nid));
+    /* each test page has its own fake clock from its load, so C's write gets a later time by hand (like a device whose clock runs ahead) */
+    await C.evaluate(() => { const O = window.OREN, s = window.TAL.S().set; s.brk = 30; O.persist(); O.save.setT = Date.now() + 600000; return O.famNow(); }); await sleep(300);
+    const srvPc = (JSON.parse(KV.values().next().value).set || {}).pc || [];
+    ok('#614 a later save from another parent copy keeps the skip on the server', srvPc.some(c => c.i === nid) && JSON.parse(KV.values().next().value).set.brk === 30, JSON.stringify(srvPc.map(c => c.k)));
+    await C.context().close();
+    ok('#614 his device is offline: after 30 s the parent sees "המשחק לא קיבל עדיין"', await until(B, () => /המשחק לא קיבל עדיין/.test((document.querySelector('#sPar .pnow') || {}).textContent || ''), null, 6000), await nowTxt());
+    await A.unroute('**/api/save/**');
+    ok('#614 back online: his device takes the skip within the poll time', await until(A, i => !!(window.OREN.save.pcA || {})[i] && !!window.PDAY.pending(), nid, 8000));
+    await A.evaluate(id => window.OREN.emit('tq', id, true), ids.e);
+    ok('#614 after his answer he leaves the activity, the next planned mission opens', await until(A, id => { const c = window.DAYLOG.cur(); return !document.querySelector('.pdskip') && !!c && !c.end && c.id !== id; }, ids.e, 6000));
+    ok('#614 ... and the parent sees "דולג ✓"', await until(B, () => /דולג ✓/.test((document.querySelector('#sPar .pnow') || {}).textContent || ''), null, 8000), await nowTxt());
+    ok('#614 the day view shows "דילג (הורה)" for both skips', await until(B, () => [...document.querySelectorAll('#sPar .dllog .dl-p')].filter(r => /דילג \(הורה\)/.test(r.textContent)).length >= 2, null, 6000)); }
+  { /* undo before his device took it */
+    await A.evaluate(() => { window.OREN.timeTick && window.OREN.timeTick(); return window.OREN.famNow(); });
+    const cur = await A.evaluate(() => window.DAYLOG.cur().id); await A.route('**/api/save/**', r => r.abort());
+    await B.evaluate(() => window.TAL.parentPanel('day')); await until(B, () => !!document.querySelector('#sPar .pnow .pdskipnow'), null, 6000);
+    await B.locator('#sPar .pnow .pdskipnow').click(); await sleep(300); await B.locator('#sPar .pnow .pdskipwait').click(); await sleep(500);
+    await A.unroute('**/api/save/**'); await pull(); await sleep(1500);
+    ok('#614 "בטל" before his device took it: he stays in the activity', !(await A.evaluate(() => !!window.PDAY.pending())) && await inAct(cur), await A.evaluate(() => JSON.stringify(window.DAYLOG.cur())));
+    /* undo after his device took it (it waits for his answer) */
+    await until(B, () => !!document.querySelector('#sPar .pnow .pdskipnow'), null, 6000);
+    await B.locator('#sPar .pnow .pdskipnow').click(); ok('#614 (taken, waiting for his answer)', await until(A, () => !!window.PDAY.pending(), null, 6000));
+    await until(B, () => !!document.querySelector('#sPar .pnow .pdskipwait'), null, 3000); await B.locator('#sPar .pnow .pdskipwait').click(); await sleep(500); await pull();
+    await A.evaluate(id => window.OREN.emit('tq', id, true), cur); await sleep(2500);
+    ok('#614 "בטל" after his device took it: the skip is called off, he stays in the activity', !(await A.evaluate(() => !!window.PDAY.pending())) && !(await A.evaluate(() => !!document.querySelector('.pdskip'))) && await inAct(cur), await A.evaluate(() => JSON.stringify(window.DAYLOG.cur()))); }
 
   // ---------- offline: queued, applied on the next sync ----------
   await A.evaluate(() => { const c = window.DAYLOG.cur(); if (c && !c.end) window.DAYLOG.end('q'); window.OREN.showMap(); }); await sleep(300);

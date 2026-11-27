@@ -110,3 +110,24 @@ assert d.main(["guard"]) == 0 and "current=false" in open(outp).read()
 os.environ.update(PLAN_SHA="b"); open(outp, "w").close()
 assert d.main(["guard"]) == 0 and "current=true" in open(outp).read()
 print("ok guard")
+
+# #618: the post-deploy regression tour: its TOUR line -> pass/fail + repro; a fail opens ONE P0 bug (+ the undo only after a passing tour)
+assert d.tour_result("PASS daily-path desktop\nTOUR: PASS\n") == ("pass", "")
+assert d.tour_result("FAIL story phone no question\nTOUR: FAIL story: open a story -> no question") == ("fail", "story: open a story -> no question")
+res, why = d.tour_result("Error: browser crashed\n"); assert res == "fail" and "did not finish" in why and "crashed" in why, why
+tl = os.path.join(tempfile.mkdtemp(), "tour.log"); open(tl, "w").write("TOUR: FAIL time-limit: +10 min did nothing\n"); open(outp, "w").close()
+assert d.main(["tour", tl]) == 0 and "tour=fail" in open(outp).read() and "repro=time-limit: +10 min did nothing" in open(outp).read()
+class R:
+    def __init__(self, found=""): self.found, self.calls = found, []
+    def __call__(self, cmd, **k):
+        self.calls.append(cmd); return type("P", (), {"stdout": self.found if cmd[2] == "list" else ""})()
+rr = R(); a, f = d.tour_issue({"REPRO": "help -> read is silent", "SHA": "abc1234ff", "TITLE": "x (#610)", "PREV": "pass"}, run=rr)
+cr = rr.calls[-1]
+assert cr[:3] == ["gh", "issue", "create"] and "Live tour failed after deploy abc1234" in cr and a["undo"], cr
+assert [cr[i + 1] for i, c in enumerate(cr) if c == "--label"] == ["P0", "bug", "express", "ready-for-agent", "pack"], cr
+assert "git revert --no-edit abc1234ff" in a["body"] and d.TESTER_MARK in a["body"]
+rr = R(); a, _ = d.tour_issue({"REPRO": "r", "SHA": "abc1234ff", "PREV": "fail"}, run=rr)
+assert not a["undo"] and "express" not in rr.calls[-1] and "git revert" not in a["body"]       # broken before: fix forward, no undo
+rr = R("77"); a, f = d.tour_issue({"REPRO": "r", "SHA": "abc1234ff", "PREV": "pass"}, run=rr)
+assert f == "77" and rr.calls[-1][:4] == ["gh", "issue", "comment", "77"] and len(rr.calls) == 2      # a rerun never opens it twice
+print("ok tour (#618)")

@@ -49,6 +49,9 @@ jobs:
       cancel-in-progress: false   # a running deploy is never cancelled (an older run could then put its sha live); GitHub keeps only the newest pending run
     outputs:
       deployed: ${{ steps.report.outputs.ok }}
+      tour: ${{ steps.tour.outputs.tour }}
+      repro: ${{ steps.tour.outputs.repro }}
+      prev: ${{ steps.tour.outputs.prev }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -92,6 +95,59 @@ jobs:
         # a failure fails this job: the GitHub deployment is failed (dashboard deploy event ok=false) and deploy-failed raises the P0 alarm
         if: steps.guard.outputs.current == 'true'
         run: python3 tools/ci/deploy_ci.py smoke "${{ steps.report.outputs.url }}" https://oren-game.pages.dev
+      # #618: the fixed regression tour of the core experience on production (tools/ci/tour.js, real browser, desktop + phone).
+      # It never fails this job (the site is live already): a fail -> tour-failed opens a P0 bug (+ undo when the previous tour passed).
+      - name: Previous tour result
+        if: steps.guard.outputs.current == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.tour
+          key: tour-last-${{ github.run_id }}
+          restore-keys: tour-last-
+      - uses: actions/setup-node@v4
+        if: steps.guard.outputs.current == 'true'
+        with:
+          node-version: 22
+      - name: Regression tour on production
+        id: tour
+        if: steps.guard.outputs.current == 'true'
+        timeout-minutes: 10
+        run: |
+          echo "prev=$(cat ~/.tour/last 2>/dev/null)" >> "$GITHUB_OUTPUT"
+          { npm i --no-save --no-package-lock playwright && npx playwright install --with-deps chromium; } > "$RUNNER_TEMP/pw.log" 2>&1 || tail -20 "$RUNNER_TEMP/pw.log"
+          node tools/ci/tour.js https://oren-game.pages.dev > "$RUNNER_TEMP/tour.log" 2>&1 || true
+          cat "$RUNNER_TEMP/tour.log"
+          python3 tools/ci/deploy_ci.py tour "$RUNNER_TEMP/tour.log"
+          mkdir -p ~/.tour; if grep -q '^TOUR: PASS' "$RUNNER_TEMP/tour.log"; then echo pass > ~/.tour/last; else echo fail > ~/.tour/last; fi
+      - uses: actions/cache/save@v4
+        if: steps.guard.outputs.current == 'true'
+        continue-on-error: true
+        with:
+          path: ~/.tour
+          key: tour-last-${{ github.run_id }}-${{ github.run_attempt }}
+
+  tour-failed:
+    # #618: the post-deploy tour failed on production -> ONE P0 bug with the repro (per deploy sha); the tour passed on the
+    # previous deploy -> the issue is also an express undo (revert of the last merge through the normal flow, .claude/commands/undo.md)
+    needs: [plan, deploy]
+    if: needs.deploy.outputs.tour == 'fail'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/ci
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ needs.plan.outputs.sha }}
+          REPRO: ${{ needs.deploy.outputs.repro }}
+          PREV: ${{ needs.deploy.outputs.prev }}
+        run: |
+          export TITLE=$(gh api "repos/$GH_REPO/commits/$SHA" --jq '.commit.message' | head -1)
+          python3 tools/ci/deploy_ci.py tour-issue
 
   deploy-failed:
     # one issue "Deploy failed" (P0): opened once, then commented on each new failure
@@ -139,7 +195,9 @@ jobs:
         working-directory: oren2
         run: |
           npm i --no-save --no-package-lock playwright
-          npx playwright install --with-deps chromium
+          # retry: the browser download sometimes fails with a TLS error (#614)
+          for i in 1 2 3; do npx playwright install --with-deps chromium && break
+            [ $i = 3 ] && exit 1; echo "playwright install failed, retry $i"; sleep $((i*10)); done
       - name: Build
         working-directory: oren2
         run: python3 build_talents.py

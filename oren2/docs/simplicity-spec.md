@@ -1,7 +1,7 @@
 # Simplicity spec (audit of HEAD c11528b + all packs injected) — screenshots in this folder
 
 ## Global rules
-G1 Top bar on kid activity screens: only back (start/right corner) + 🔊 repeat. Hide gems, music, home, title chip (title spoken). Home only on hub screens (city, map, kingdom, studio). Never home+back together. (setScreen ~1301, T.hudT)
+G1 Top bar on kid activity screens: back (start/right corner) + 🔊 repeat + the music/sound button (#610 owner rule, 27 Nov: a way to hear the text and to turn the music off on every screen). Hide gems, home, title chip (title spoken). Home only on hub screens (city, map, kingdom, studio). Never home+back together. (setScreen ~1301, T.hudT)
 G2 Max 1 primary (green, big, bottom-centre) + 1 secondary per kid screen. Next step always "▶ הַמְשֵׁךְ" (unify הַבָּא/לַשְּׁאֵלוֹת/מַתְחִילִים/לְחִידוֹן...).
 G3 2–4 options, balanced layout (row of 2–3 or 2x2), never 3+1 orphan.
 G4 One short spoken instruction line in the question card, one 🔊. No second instruction box, no adult text, no per-line 🔊 in stories.

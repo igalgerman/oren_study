@@ -14,6 +14,7 @@ import trends as T          # stuck reasons from runner.log
 import remote as RM         # cloud lanes (#136)
 import parked as PK         # #282: batch members, manual, later
 import stuck as SK          # #280: leftovers = open issues with no live state
+import tester as TS         # #618: bugs found by the tester vs by the owner
 
 OUT = R.RUNS / "dashboard.html"
 STATES = [("running", "Running now"), ("needs_you", "Needs you"), ("blocked", "Blocked"),
@@ -142,6 +143,7 @@ def model(issues, prs, events, now, log_text="", cloud=(), qnums=frozenset()):
                   "deploys_ok": sum(1 for d in deploys if d["ts"] > now - 86400 and d.get("ok")),
                   "deploys_fail": sum(1 for d in deploys if d["ts"] > now - 86400 and d.get("ok") is False),
                   "stuck": sorted(stuck.items(), key=lambda x: -len(x[1]))[:6]},
+        "bug_sources": TS.bug_sources(issues),
         "recent": [{"n": i["number"], "title": i["title"], "at": c, "open_s": c - (created[i["number"]] or c)} for c, i in recent],
     }
 
@@ -251,7 +253,8 @@ def text(m):
              f"Runner (24 h): started {tr['started']}, finished by itself {tr['by_runner']} ({pct(tr['by_runner'], tr['started'])}); "
              f"PRs not finished by the runner (by hand, or it crashed after merging) ≈ {max(0, m['merged_24h'] - tr['by_runner'])}; reviews sent back {tr['fixes']} of {tr['fixes'] + tr['passes']}; "
              f"to the orchestrator after 3 RED reviews: {tr.get('red_escalated', 0)}; canary PRs merged {tr.get('canary', 0)} (not counted above)",
-             f"Average: build {S.fmt(m['avg_build'])}, review {S.fmt(m['avg_review'])}, start to merge {S.fmt(m['avg_merge'])}"]
+             f"Average: build {S.fmt(m['avg_build'])}, review {S.fmt(m['avg_review'])}, start to merge {S.fmt(m['avg_merge'])}",
+             f"Bugs found by the tester: {m['bug_sources']['tester']} · reported by the owner from the live game: {m['bug_sources']['owner']}"]
     d = m["last_deploy"]
     if m.get("github"): lines.append(m["github"])                     # #329: calls/min, graphql/core left, alarm < 20%
     if m.get("canary"): lines.append("Canary: " + m["canary"])          # #330: flow ok HH:MM | NEEDS-ATTENTION ...
@@ -487,6 +490,8 @@ def page(m):
                  f'<b>{tr.get("canary", 0)}</b> canary pull requests (the automatic flow check) were merged too; they are not in these numbers.</li>'
                  f'<li>Reviews: {tr["passes"]} passed, <b>{tr["fixes"]}</b> sent back for fixes ({pct(tr["fixes"], tr["fixes"] + tr["passes"])}); '
                  f'<b>{tr.get("red_escalated", 0)}</b> still red after 3 reviews went to the orchestrator.</li>'
+                 f'<li>Bugs (#618): <b>{m.get("bug_sources", {}).get("tester", 0)}</b> found by the tester (before merge or the tour after deploy), '
+                 f'<b>{m.get("bug_sources", {}).get("owner", 0)}</b> reported by the owner from the live game.</li>'
                  f'<li>Runner deploys: {tr["deploys_ok"]} ok, {tr["deploys_fail"]} failed (hand deploys are not recorded).</li>'
                  f'<li>Average times (runner records): build {S.fmt(m["avg_build"])}, review {S.fmt(m["avg_review"])}, start to merge {S.fmt(m["avg_merge"])}.</li>'
                  f'<li>Pull requests: {m["merged_24h"]} merged in 24 hours, {m["merged_7d"]} in 7 days, {m["open_prs"]} open now. '
