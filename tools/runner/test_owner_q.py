@@ -188,3 +188,29 @@ assert OQ.merge_gate(64) == "closed" and OQ.merge_gate(65) == "none"
 g4.fail = True; OQ.STATE = tmp / "owner_q_merge2.json"
 assert OQ.merge_gate(64) == "error", "GitHub unreadable -> error (the runner refuses)"
 print("ok owner_q #636 merge gate: gated + CLOSED never merges")
+
+# #630: a question names the issue(s) it gates (owner_q.py ask --gates 64): gate #64 opens on its answer, whatever its window
+GK = OQ.key_of("orchestrator", "QUESTION: building world design ok?")
+gb = OQ.body(GK, "orchestrator", "QUESTION: building world design ok?", gates=[64])
+assert "<!-- gates: #64 -->" in gb and OQ.gates_of(gb) == [64], gb
+assert OQ.open_questions([{"body": gb, "url": "u"}])[0]["gates"] == [64]
+gq = [{"body": gb, "reactionGroups": []}]
+assert OQ.gate(64, [], gq) == [], "unanswered -> closed"
+assert OQ.gate(64, [{"body": OQ.answer_body(GK, "approve")}], gq) == ["approve"], "answered from window 'orchestrator' gating #64 -> OPEN"
+assert OQ.gate(65, [{"body": OQ.answer_body(GK, "approve")}], gq) == [], "it gates #64 only"
+assert OQ.gate(64, [{"body": OQ.answer_body(GK, "approve")}], [{"body": OQ.body(GK, "orchestrator", "QUESTION: building world design ok?")}]) == [], "no gates marker -> not #64's"
+gq[0]["reactionGroups"] = [{"content": "THUMBS_UP", "users": {"totalCount": 1}}]
+assert OQ.gate(64, [], gq) == ["reaction THUMBS_UP"]
+# the CLI: ask --gates 64 posts the marker; gate #64 is OPEN after the answer record on #64
+g4 = FakeGH(); OQ.STATE = tmp / "owner_q_gates.json"; OQ.GH = g4
+out = _Out()
+with contextlib.redirect_stdout(out): rc = OQ.main(["ask", "orchestrator", "building world design ok?", "--gates", "64"])
+qn = next(n for n, i in g4.issues.items() if i["title"] == OQ.TITLE)
+assert rc == 0 and OQ.gates_of(g4.issues[qn]["comments"][-1]["body"]) == [64], g4.issues
+g4.issues[64] = {"title": "x", "comments": [{"body": OQ.answer_body(GK, "approve")}]}
+out = _Out()
+with contextlib.redirect_stdout(out): rc = OQ.main(["gate", "#64"])
+assert rc == 0 and "OPEN" in out.getvalue(), out.getvalue()
+assert OQ.merge_state(64, [], [{"body": gb, "reactionGroups": []}]) == "closed", "#630+#636: an unanswered --gates 64 question gates the merge"
+assert OQ.merge_state(64, [{"body": OQ.answer_body(GK, "approve")}], [{"body": gb, "reactionGroups": []}]) == "open"
+print("ok owner_q #630 gate opens on an answered question that gates #n, whatever its window")
