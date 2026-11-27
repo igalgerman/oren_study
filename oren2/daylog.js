@@ -1,6 +1,7 @@
 /* ===== DAY LOG: everything Oren did, for the parent (also from another house, in real time through the family save) =====
    save.alog[day].e = [[min, id, stars, ok, n, helped, o], ...]   min = minutes after midnight when it started,
      ok/n = right on the first try / questions, o: 'c' done · 'q' left in the middle · 'x' opened and closed at once (only for Oren's "again" list) · 's' a path step he did not reach · 'b' stopped for a break
+     · 'f' his answer to 'easy or hard?' at the end of a scene (#411, x.ez 'e' easy · 'h' hard)
      · 'p' skipped by the parent (#359, x.pc = the command id; hidden when that command was undone: save.pcU[id])
    x (optional object): a story's {t, g, lv, r} (#355); any activity: lv = his level when it started (learning engine), ra = taps on read-aloud (#359)
    save.now = {id, t, s}  the activity being played, the last moment something happened (ms; also each active play tick, the heartbeat) and when this play
@@ -66,13 +67,13 @@ DL.nameOf=id=>{if(id==='math')return 'מסע החשבון';
   if(/^lv:/.test(id)){const lv=O.ALLLV.find(l=>l.id===id.slice(3));return lv?`${plain(lv.u.name)} (${plain(lv.w.name)})`:'חשבון';}
   const a=T.ACT[id];return a?plain(a.name):id;};
 DL.domOf=id=>{if(id==='math'||/^lv:/.test(id))return 'חשבון';const a=T.ACT[id];if(!a||!a.b)return '';const g=(T.GROUPS||[]).find(x=>x.ids.includes(a.b.id));return g?GN()[g.id]:plain(a.b.name);};
-const ICO={c:'✓',q:'✗',s:'⏭',b:'⏸',p:'⏭'},WHY={c:'',q:'יצא באמצע',s:'לא הגיע',b:'הפסקה',p:'דילג (הורה)'};
+const ICO={c:'✓',q:'✗',s:'⏭',b:'⏸',p:'⏭',f:'💬'},WHY={c:'',q:'יצא באמצע',s:'לא הגיע',b:'הפסקה',p:'דילג (הורה)',f:''};
 /* a bank story's own quiz line (rb2-st-N) repeats its 'story-new' line: not shown */
 const undone=e=>e[6]==='p'&&e[7]&&(O.realSave.pcU||{})[e[7].pc];
 DL.rows=d=>{const L=((O.realSave.alog||{})[d]||{}).e||[];return L.filter(e=>e[6]!=='x'&&!/^rb2-st-/.test(e[1])&&!undone(e)).sort((a,b)=>a[0]-b[0]);};
 DL.rowHTML=e=>{const [m,id,st,ok,n,hp,o,x]=e;const sx=x&&typeof x==='object'?x:null;
   const story=sx&&sx.t;
-  const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`✓ ${ok} · ✗ ${n-ok}`:'',sx&&sx.lv?'רמה '+(sx.lv|0):'',hp?`עזרה ×${hp}`:'',story?(sx.r==='l'?'האזין להקראה':'קרא לבד'):'',sx&&sx.ra?`הקראה ×${sx.ra}`:'',WHY[o]].filter(Boolean).join(' · ');
+  const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`✓ ${ok} · ✗ ${n-ok}`:'',sx&&sx.lv?'רמה '+(sx.lv|0):'',hp?`עזרה ×${hp}`:'',story?(sx.r==='l'?'האזין להקראה':'קרא לבד'):'',sx&&sx.ra?`הקראה ×${sx.ra}`:'',sx&&sx.ez?(sx.ez==='h'?'אמר: היה קשה 😣':'אמר: היה קל 😀'):'',WHY[o]].filter(Boolean).join(' · ');
   const name=story?`${plain(sx.t)}${sx.g?` <span class="dlgoal">🎯 ${plain(sx.g)}</span>`:''}`:DL.nameOf(id);
   return `<div class="prow dlrow dl-${o}"><span class="pn"><b class="dli">${ICO[o]||''}</b> ${o==='s'?'':hhmm(m)+' · '}${name} <small>${DL.domOf(id)}</small></span><span class="pc">${res}</span></div>`;};
 /* the top line of the summary: playing now / last played */
