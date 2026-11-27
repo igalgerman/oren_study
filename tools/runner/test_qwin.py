@@ -239,17 +239,18 @@ QW.STATE = tmp / "qwin7.json"
 TG.ENV = tmp / "telegram.env"; TG.ENV.write_text('TELEGRAM_BOT_TOKEN=SECRET123:abc\nTELEGRAM_CHAT_ID="777"\n', encoding="utf-8")
 opened[:] = [{"key": "t1", "window": "#21", "source": "issue-21", "text": "איזה צבע? 1) ירוק 2) כחול", "url": "u"},
              {"key": "t2", "window": "#22", "source": "issue-22", "text": "שם לדמות?", "url": "u"}]
-QW.tick(h6.ts(), now=50000)                                   # the pages and the Telegram messages at the same tick
+QW.tick(h6.ts(), now=50000)                                   # the pages and the first Telegram message at the same tick
 assert asked()[-2:] == ["t1", "t2"], asked()
-assert [(p["chat_id"], p["text"].split("\n")[0]) for p in sent()] == [("777", "איזה צבע?"), ("777", "שם לדמות?")], sent()
+assert [(p["chat_id"], p["text"].split("\n")[0]) for p in sent()] == [("777", "איזה צבע?")], sent()   # #632: one at a time
 assert "1. ירוק" in sent()[0]["text"] and "2. כחול" in sent()[0]["text"], sent()
 assert all(c[0] == "botSECRET123:abc" for c in FakeTG.calls)
-QW.tick(h6.ts(), now=50060); assert len(sent()) == 2           # one message per question
-t1, t2 = QW.load()["t1"]["tg"], QW.load()["t2"]["tg"]
+QW.tick(h6.ts(), now=50060); assert len(sent()) == 1           # one message per question
+t1 = QW.load()["t1"]["tg"]
 # a message from another chat is ignored; a reply '2' to t1's message = option 2, recorded like a page answer
 upd(1, "1", chat=555); upd(2, "2", reply=t1)
 QW.tick(h6.ts(), now=50120)
 assert marked == [("t1", "כחול")], marked
+t2 = QW.load()["t2"]["tg"]; assert sent()[-1]["text"].startswith("שם לדמות?"), sent()     # #632: t1 answered -> t2 sent now
 assert QW.load()["t1"]["answered"] and 4000 + asked().index("t1") + 1 in sp.killed        # the page closes
 assert json.loads((R.RUNS / "telegram.json").read_text())["offset"] == 3                  # offset kept in .runs
 gu = [c[2] for c in FakeTG.calls if c[1] == "getUpdates"]; assert gu[0]["offset"] == 0 and gu[-1]["offset"] == 0, gu
@@ -278,8 +279,31 @@ assert QW.load()["t4"].get("pid") and not QW.load()["t4"].get("tg")
 assert sum("telegram" in l.lower() and "not sent" in l.lower() for l in logged) == 1, logged
 FakeTG.down[0] = False; QW.tick(h6.ts(), now=70120); assert QW.load()["t4"]["tg"]
 assert not any("SECRET123" in l for l in logged), logged                                  # the token never in watchdog.log
-srv.shutdown(); TG.ENV = tmp / "no-telegram.env"; QW.log = lambda m: None
 print("ok qwin telegram second channel")
+
+# #632 ONE Telegram question at a time (live 27 Nov: 3 out at once, his plain reply matched all 3 and was lost): 3 open
+# questions -> 1 message; a plain reply is recorded for it; then the next one is sent. A note (ai-observer, 'PR waits for
+# your merge') goes out as a plain note that waits for nothing and never takes a plain reply.
+QW.STATE = tmp / "qwin8.json"; FakeTG.calls.clear(); FakeTG.updates.clear(); marked.clear()
+opened[:] = [{"key": "n1", "window": "#531", "source": "#531", "text": "PR #531 waits for your merge: x", "url": "u"},
+             {"key": "o1", "window": "#31", "source": "issue-31", "text": "ראשונה? 1) כן 2) לא", "url": "u"},
+             {"key": "o2", "window": "#32", "source": "issue-32", "text": "שנייה?", "url": "u"},
+             {"key": "o3", "window": "#33", "source": "issue-33", "text": "שלישית?", "url": "u"}]
+QW.tick(h6.ts(), now=80000); QW.tick(h6.ts(), now=80060)
+qs_out = [p for p in sent() if "ענה" in p["text"]]
+assert [p["text"].split("\n")[0] for p in qs_out] == ["ראשונה?"], sent()                  # only ONE question out
+notes = [p for p in sent() if p["text"].startswith("PR #531")]
+assert len(notes) == 1 and "ענה" not in notes[0]["text"], sent()                         # the note: once, asks nothing
+upd(10, "1", date=80100)                                                                 # a plain message, not a Reply
+QW.tick(h6.ts(), now=80120)
+assert marked == [("o1", "כן")], marked                                                  # recorded for the current one
+assert [p["text"].split("\n")[0] for p in sent() if "ענה" in p["text"]] == ["ראשונה?", "שנייה?"], sent()   # next one sent
+upd(11, "בסדר", date=80150); QW.tick(h6.ts(), now=80180)
+assert marked[-1] == ("o2", "בסדר") and not any(k == "n1" for k, _ in marked), marked   # the note never takes a reply
+assert sent()[-1]["text"].startswith("שלישית?"), sent()
+assert not any("כמה שאלות" in p["text"] for p in sent()), sent()                         # never 'several open, use Reply'
+srv.shutdown(); TG.ENV = tmp / "no-telegram.env"; QW.log = lambda m: None
+print("ok qwin telegram one question at a time")
 
 # #368 real process: the real _spawn starts the real ask.py (no browser), the URL is read from its log,
 # an answer POSTed to the page lands in <key>.answers.json and page_answer reads it
