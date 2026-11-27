@@ -1,5 +1,6 @@
 .dlnow{margin:4px 0 8px;padding:8px 12px;border-radius:12px;background:#f1f3f5;font-size:15px}
 .dlnow.on{background:#e3f6e3;font-weight:700}
+.dlnow.pdstale{background:#fdecea;color:#a33;font-weight:700}
 .dlrow .dli{display:inline-block;width:1.2em;text-align:center}
 .dlrow.dl-q,.dlrow.dl-s{opacity:.75}
 .pnow .dlnow{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.pnow .dlnow .pchip{margin:0}

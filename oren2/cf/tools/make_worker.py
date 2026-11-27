@@ -189,9 +189,14 @@ async function kvGet(env,k,type){
  if(o!=null){try{await dbPut(env,k,o);}catch(e){}return type==='json'?JSON.parse(o):o;}
  return null;}
 async function kvPut(env,k,v,o){if(!env.DB)return env.SAVES.put(k,v,o);return dbPut(env,k,v);}
+/* #612: the newest save failure Oren's device reported in its event log (meta sf:<family>, written only when a save fails);
+   GET /api/save sends it as x-sync-fail, so the parent's panel can say "no update from the game since HH:MM" (save.upT is older) */
+async function sfGet(env,id){if(!env.DB)return 0;try{await dbInit(env);const r=await env.DB.prepare('SELECT v FROM meta WHERE k=?').bind('sf:'+id).first();return r?+r.v||0:0;}catch(e){return 0;}}
+async function sfPut(env,id,ev){const t=Math.max(0,...ev.filter(e=>e.k==='sync'&&e.kid===1).map(e=>+e.t||0));if(!t)return;
+ try{const old=await sfGet(env,id);if(t>old)await dbPut(env,'sf:'+id,t);}catch(e){}}
 const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 async function api(req,env,id){if(!/^[a-f0-9]{32}$/.test(id))return new Response('{"error":"bad id"}',{status:400,headers:JH});
- if(req.method==='GET'){const v=await kvGet(env,id);return v?new Response(v,{headers:JH}):new Response('{}',{status:404,headers:JH});}
+ if(req.method==='GET'){const v=await kvGet(env,id);const sf=await sfGet(env,id);const hd=sf?Object.assign({'x-sync-fail':String(sf)},JH):JH;return v?new Response(v,{headers:hd}):new Response('{}',{status:404,headers:hd});}
  if(req.method==='PUT'){const t=await req.text();if(t.length>300000)return new Response('{"error":"too big"}',{status:413,headers:JH});
   try{const o=JSON.parse(t);if(!o||typeof o!=='object'||o.v!==4)throw 0;}catch(e){return new Response('{"error":"bad json"}',{status:400,headers:JH});}
   try{await kvPut(env,id,t);}catch(e){return J({error:'store',why:String(e&&e.message||e).slice(0,200)},503);}/* e.g. the daily write limit: the game shows the real reason (#129) */
@@ -264,6 +269,7 @@ async function evlog(req,env,u){const now=Date.now();
   if(!env.DB)return J({error:'no db'},503);await evInit(env);
   const fam=(await sha(String(o.fam))).slice(0,6),tz=Math.max(-900,Math.min(900,Math.round(+o.tz||0)));/* only a short hash of the family id, as in /api/diag */
   await env.DB.prepare('INSERT INTO evlog(fam,sid,at,tz,n,ev,sh,si,ns) VALUES(?,?,?,?,?,?,?,?,?)').bind(fam,String(o.sid),now,tz,ev.length,JSON.stringify(ev),sh.length?JSON.stringify(sh):null,sh.length?sh.map(x=>x.i).join(','):null,sh.length).run();
+  await sfPut(env,String(o.fam),ev);
   if(now-evPruneAt>36e5)await evPrune(env,now);
   return J({ok:true,n:ev.length,sh:sh.length});}
  if(u.pathname==='/api/log/summary'){if(req.method!=='GET')return J({error:'method'},405);
@@ -403,12 +409,14 @@ const AH={'content-type':'audio/mpeg','cache-control':'public, max-age=31536000,
 let verV=null,verAt=0;async function ttsVer(env,fresh){if(fresh||verV==null||Date.now()-verAt>FX_TTL){verV=+(await kvGet(env,'ttsver'))||1;verAt=Date.now();}return verV;}
 const monthKey=()=>'ttsuse:'+new Date().toISOString().slice(0,7);
 /* Daily KV write budget (Workers KV free tier: ~1000 writes a day, shared with the family save). Voice (TTS) writes stop at
-   TTS_DAY_BUDGET (env, default 600 new sentences a day); the family save (api) never looks at it. State: one KV key 'ttsday:YYYY-MM-DD',
+   TTS_DAY_BUDGET (env, default 600 new sentences a day; 5000 with D1, #610); the family save (api) never looks at it. State: one KV key 'ttsday:YYYY-MM-DD',
    written once per batch (pregen, queue) and at most every 5th single sentence. When it is used up /api/tts answers 429
    and the game plays the browser voice for audio that is not made yet. */
-const dayBudget=env=>+env.TTS_DAY_BUDGET||600;
-const GAME_SHARE=100;/* #36: the background (queue, pregen) stops this many before the budget, so a sentence the game meets is still made */
-const bgBudget=env=>dayBudget(env)-GAME_SHARE;
+/* #610 with D1 bound (#71: 100k writes a day) the KV limit is gone: 5000 a day, so the backlog of new sentences is made in a day or two
+   (600 left most sentences unmade for weeks: the game got 429 and stayed silent) */
+const dayBudget=env=>+env.TTS_DAY_BUDGET||(env.DB?5000:600);
+/* #36: the background (queue, pregen) stops this many before the budget, so a sentence the game meets is still made (a tenth, at least 100) */
+const bgBudget=env=>{const b=dayBudget(env);return b-Math.max(100,Math.round(b/10));};
 const dayKey=()=>'ttsday:'+new Date().toISOString().slice(0,10);
 const dayUsed=async env=>+(await kvGet(env,dayKey()))||0;
 const dayPut=(env,n)=>kvPut(env,dayKey(),String(n),{expirationTtl:172800});

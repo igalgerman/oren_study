@@ -33,7 +33,7 @@ const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout:
     plan: [...v.querySelectorAll('.pdplan .pn')].map(r => r.textContent), txt: v.textContent }; });
 
   // ---------- the main view ----------
-  { const v = await view(); ok('opens on today, with what he did: name, topic, ✓/✗, stars, level, help, read-aloud', v.day === 'היום' && v.did.length === 1 && /✓ 4 · ✗ 2/.test(v.did[0]) && /⭐⭐/.test(v.did[0]) && /רמה 2/.test(v.did[0]) && /עזרה ×1/.test(v.did[0]) && /הקראה ×1/.test(v.did[0]), JSON.stringify(v.did)); }
+  { const v = await view(); ok('opens on today, with what he did: name, topic, ✓/✗, stars, level, help, read-aloud', v.day === 'היום' && v.did.length === 1 && /✓ 4 · ✗ 2/.test(v.did[0]) && /⭐⭐/.test(v.did[0]) && /רמה 2/.test(v.did[0]) && /עזרה ×1/.test(v.did[0]) && /הקראה אחת/.test(v.did[0]), JSON.stringify(v.did)); }
   { const v = await view(); ok('the plan ahead: the open missions in order', v.plan.length === 4 && /חשבון/.test(v.plan[0]), JSON.stringify(v.plan)); }
   { const m = await B.evaluate(() => { const s = document.querySelector('#sPar'); return { inputs: s.querySelectorAll('input,select,textarea').length, more: [...s.querySelectorAll('button')].filter(x => /הגדרות ועוד/.test(x.textContent)).length,
       words: /הגבלה קבועה|סיסמה|בדיקת קול|תזכורת לאורן|תקלות/.test(s.textContent), tabs: s.querySelectorAll('.ptabs').length }; });

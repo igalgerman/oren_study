@@ -279,6 +279,18 @@ const path = require('path');
     const key = [...T.tts_audio.keys()][0]; const bytes = T.tts_audio.get(key).bin; T.tts_audio.clear(); kv2.set(key, bytes);
     const v3 = await g('/api/tts?t=' + encodeURIComponent('דִּין') + '&r=0.9');
     ok('D1: old audio in KV is served without Google and copied to D1', v3.status === 200 && calls.length === nc2 + 1 && T.tts_audio.size === 1);
+    // #610: the 600-a-day voice budget was for the KV free tier (1000 writes a day); with D1 (100k writes a day) the game's new sentences
+    // must not stop at 600 (most sentences were not made yet: the game got 429 and stayed silent). D1 default: 5000 a day, the game keeps 10%.
+    { const DK2 = 'ttsday:' + new Date().toISOString().slice(0, 10), c3 = calls.length;
+      T.meta.set(DK2, { v: '600' }); const n1 = await g('/api/tts?t=' + encodeURIComponent('אֵיךְ טָסִים לֶחָלָל?') + '&r=0.9');
+      ok('D1: the game still gets a new sentence after 600 new ones today (#610)', n1.status === 200 && calls.length === c3 + 1, n1.status);
+      T.meta.set(DK2, { v: '4400' }); const pb2 = await (await g('/api/tts/pregen', { method: 'POST', body: JSON.stringify({ texts: ['בַּחֲלָלִית', 'בְּסִירָה'] }) })).json();
+      ok('D1: pregen keeps going up to 4500 a day, the game keeps 500 (#610)', pb2.res.join() === 'new,new', JSON.stringify(pb2));
+      T.meta.set(DK2, { v: '4500' }); const pb3 = await (await g('/api/tts/pregen', { method: 'POST', body: JSON.stringify({ texts: ['בְּאוֹפַנַּיִם'] }) })).json();
+      const n2 = await g('/api/tts?t=' + encodeURIComponent('בְּאוֹפַנַּיִם') + '&r=0.9');
+      ok('D1: at 4500 pregen stops, the game still gets its sentence (#610)', pb3.res.join() === 'budget' && n2.status === 200, JSON.stringify(pb3) + ' ' + n2.status);
+      T.meta.set(DK2, { v: '5000' }); ok('D1: over 5000 a day the game gets 429', (await g('/api/tts?t=' + encodeURIComponent('עוֹד אֶחָד') + '&r=0.9')).status === 429);
+      T.meta.set(DK2, { v: '0' }); }
   }
   // #36 voice stats: the game posts day counts + browser-voice events in one batch; GET shows per day Google vs browser by reason
   { const d = new Date().toISOString().slice(0, 10);

@@ -15,7 +15,7 @@ const ACT = 'sci-animals';                                   /* a quiz with 4 op
     const fake = { log: [], last: null, speaking: false, speak(u) { this.log.push(u.text); this.last = u; }, cancel() {}, getVoices() { return []; }, onvoiceschanged: null, addEventListener() {} };
     Object.defineProperty(window, 'speechSynthesis', { value: fake, configurable: true }); });
   const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message)); await p.goto(L.URL); await L.noCoach(p);
-  await p.evaluate(() => { const O = window.OREN, T = window.TAL; O.save.story.intro = 1; T.S().prof = { an: 'cat', col: '#3a8fc4', love: 'art' }; O.showMap(); });
+  await p.evaluate(() => { const O = window.OREN, T = window.TAL; O.save.story.intro = 1; T.S().prof = { an: 'cat', col: '#3a8fc4', love: 'art' }; O.save.frk = Object.fromEntries(window.FRIEND.KINDS.map(k => [k.k, 1])); O.showMap(); });   /* #53 kinds already met: no first-time sentence before the question */
   await sleep(300);
   const open = () => p.evaluate(a => { speechSynthesis.log = []; speechSynthesis.last = null; window.TAL.ACT[a].run(() => {}); }, ACT);
   const st = () => p.evaluate(() => { const r = document.querySelector('#sTal .chs'); const q = window.__quiz;
@@ -34,8 +34,7 @@ const ACT = 'sci-animals';                                   /* a quiz with 4 op
   ok('a tap while resting is not judged (no penalty)', s.judged === 0 && s.locked, JSON.stringify(s));
   ok('no timer on screen', !s.timer);
   await L.shot(p, { path: L.SHOTDIR + `/389-listen-${L.variant}.png` });
-  /* #53 the first time in a new kind of task the friend's sentence comes first: end each line in turn (the question is the last) */
-  for (let k = 0; k < 3; k++) { await p.evaluate(() => { const u = speechSynthesis.last; if (u && u.onend && !u._ended) { u._ended = 1; u.onend({}); } }); await sleep(150); }
+  await p.evaluate(() => { const u = speechSynthesis.last; if (u && u.onend) u.onend({}); }); await sleep(150);
   s = await st();
   ok('the question ended: the answers open', !s.locked);
   await tap(wrongs(s)[0]); s = await st();
@@ -73,6 +72,17 @@ const ACT = 'sci-animals';                                   /* a quiz with 4 op
   ok('4 s cap: open after 4 s without the voice ending', !s.locked);
 
   // --- #408 the friend reacts to how Oren plays: one short line, at most one reaction per question ---
+  // --- #53 the friend's first-time sentence (a new kind of task) comes first and does not open the answers; the question does ---
+  await sleep(1500); await p.evaluate(() => { delete window.OREN.save.frk.know; }); await open();
+  await p.waitForFunction(() => speechSynthesis.log.length > 0, null, { timeout: 5000 }).catch(() => {});
+  const intro = await p.evaluate(() => window.FRIEND.KINDS.find(k => k.k === 'know').intro), nk = t => String(t || '').replace(/[\u0591-\u05C7]/g, '');
+  s = await st(); const f1 = s.said.slice();
+  await p.evaluate(() => { const u = speechSynthesis.last; if (u && u.onend) u.onend({}); }); await sleep(200); s = await st();
+  ok('#53 a new kind of task: the friend\'s sentence first; its end does not open the answers, the question is read next', nk(f1[0]) === nk(intro) && s.locked && s.said.length >= 2 && nk(s.said[1]) !== nk(intro), JSON.stringify({ f1, said: s.said, locked: s.locked }));
+  await p.evaluate(() => { const u = speechSynthesis.last; if (u && u.onend) u.onend({}); }); await sleep(200); s = await st();
+  ok('#53 ...the question heard: the answers open', !s.locked, JSON.stringify(s));
+  await p.evaluate(() => window.OREN.showMap()); await sleep(200);
+  await p.evaluate(() => window.FRIEND._own());   /* #53 the friend's own lines are one per 30 s: start this part with none just said */
   const RX = await p.evaluate(() => { const R = window.FRIEND.react; R.QUIET = 700; return { lines: R.lines, NIK: Object.values(R.lines).every(t => /[ְ-ׇ]/.test(t)), all: Object.values(R.lines).every(t => window.FRIEND.speakList().includes(t)) }; });
   ok('#408 four triggers, one line each, nikud, all in the voice pregen list', Object.keys(RX.lines).length === 4 && RX.NIK && RX.all, JSON.stringify(RX));
   ok('#408 fast guessing is the listen-first line (one trigger)', RX.lines.fast === line, RX.lines.fast);
