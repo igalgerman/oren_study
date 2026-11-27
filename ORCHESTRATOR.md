@@ -37,6 +37,7 @@ The PC runs only the 3 control sessions (orchestrator, inbox, inspector), the wa
 idea → `intake` herdr window (`/grill-me` → `/to-tickets`) → backlog → runner, 3 lanes (max 2 core; merge conflicts are resolved by the worker automatically, 2 rounds, then parked) → review → merge to main → tests → deploy → one line to the owner.
 - Bugs: same flow, label `bug`, no grilling, go first in the queue, worker writes a failing test first.
 - Clear tasks (already specified) skip grilling. Fuzzy ideas get `/grill-me` in the `intake` window, not in your context.
+- Close on merge + deploy (#652, owner 27 Nov): the run closes the issue after the merge and a good deploy, also a `later` one; no hold for live checks unless the owner asks; reopen if a problem shows up.
 - Deploy after every green merge (owner OK'd the flow). Never force-push. No secrets in chat.
 - Merge by hand ONLY with `python tools/runner/merge.py <pr>` (#636), never `gh pr merge`: it refuses a draft, a `blocked`/`no-automerge`/`owner-merge` PR and a CLOSED owner gate of its issue. Never tell a cloud session to merge.
 - Owner writes `approve #n` or `express #n`: add the label `express` to that issue at once (`gh issue edit n --repo igalgerman/oren_study --add-label express`) and answer in one line. Express issues get their own extra lane (`express_lanes` in config.toml), start first, and may exceed max_core (#72).
