@@ -245,10 +245,6 @@
 .pfb.on{outline:4px solid var(--ink)}.pfb .ae{font-size:44px}.swc.big{width:56px;height:56px}
 .pcard{display:flex;flex-direction:column;align-items:center;gap:10px;background:#fff;padding:18px 30px;box-shadow:inset 0 0 0 6px var(--fc,#4fae4f),0 8px 0 rgba(0,0,0,.2)}
 .pcard h2{margin:0;font-size:32px}.pcav{position:relative}.pcav>svg{width:110px;height:auto}.pcpet{position:absolute;bottom:0;inset-inline-start:-60px}.pcpet svg{width:64px;height:64px}
-.bdgg{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;width:min(860px,100%)}
-.bdg{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 6px;background:rgba(255,255,255,.6);text-align:center;filter:grayscale(1);opacity:.7}
-.bdg.got{background:#fff;filter:none;opacity:1;box-shadow:inset 0 0 0 4px var(--gold),0 5px 0 rgba(0,0,0,.2)}
-.bdg .bi{font-size:40px}.bdg b{font-size:17px}.bdg small{font-size:13px;color:var(--ink-soft);font-family:var(--read)}
 .ptabs{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;width:min(900px,100%)}
 .ptab{padding:8px 14px;background:rgba(255,255,255,.75);font-weight:800;font-size:15px;box-shadow:0 4px 0 rgba(0,0,0,.18)}.ptab.on{background:#fff;box-shadow:inset 0 -5px 0 var(--blue),0 4px 0 rgba(0,0,0,.18)}
 .pbody{display:flex;flex-direction:column;gap:14px;align-items:center;width:100%}
@@ -431,9 +427,6 @@ body.pplay .dlg,body.pplay .overlay{padding-bottom:78px}
 .hub.gsub{display:flex;flex-wrap:wrap;justify-content:center}.hub.gsub>.bld{width:220px}
 /* no focus ring on mouse/touch clicks */
 button:focus:not(:focus-visible){outline:none}
-/* readable locked-badge hints */
-.bdg small{font-size:14px;color:#4a5a66}.bdg{opacity:.85}
-.bdg.next{filter:none;opacity:1;background:rgba(255,255,255,.75);box-shadow:inset 0 0 0 3px var(--gold);outline:3px dashed var(--gold);outline-offset:4px}.bdg.next .bi{opacity:.55}
 /* notices at the bottom, never over titles */
 .toast{top:auto;bottom:24px}
 /* break: Oren's friend */

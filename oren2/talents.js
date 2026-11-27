@@ -200,7 +200,7 @@ function dailyMark(id){const d=dailyEnsure();const i=d.t.indexOf(id);if(i>=0&&!d
 O.on('levelDone',(lv)=>{if(!lv||lv.type==='train')return;S().last={id:'math',d:today()};const d=dailyEnsure();const i=d.t.findIndex((x,k)=>x==='math'&&!d.done[k]);if(i>=0){d.done[i]=1;O.persist();}});
 /* ---------- map integration ---------- */
 O.on('map',m=>{const rs=m.querySelector('.reset');if(rs)rs.remove();if(window.TAL_noHome)return;m.querySelectorAll('.hello,.statline').forEach(e=>e.remove());m.querySelectorAll('.topbar .tool').forEach(t=>{if(/הַמַּמְלָכָה|הַגִּבּוֹר שֶׁלִּי/.test(t.textContent))t.remove();});});
-O.on('kingdomScene',sc=>{if(!window.TAL_noHome&&!sc.querySelector('.kmine')){const r=h('div','kmine');const a=h('button','tool',`<span class="ti">${O.AV()}</span><span>הַגִּבּוֹר שֶׁלִּי</span>`);a.onclick=()=>O.studio(false,O.kingdom);const b=h('button','tool',`<span class="ti">🏅</span><span>הַתַּגִּים שֶׁלִּי</span>`);b.onclick=()=>window.TAL.badges(O.kingdom);r.append(a,b);sc.prepend(r);}const s=S();if(s.kpic!=null&&s.art[s.kpic]){const f=h('div','kpic',artSVG(s.art[s.kpic]));sc.querySelector('.ktop').appendChild(f);}});
+O.on('kingdomScene',sc=>{if(!window.TAL_noHome&&!sc.querySelector('.kmine')){const r=h('div','kmine');const a=h('button','tool',`<span class="ti">${O.AV()}</span><span>הַגִּבּוֹר שֶׁלִּי</span>`);a.onclick=()=>O.studio(false,O.kingdom);r.append(a);sc.prepend(r);}const s=S();if(s.kpic!=null&&s.art[s.kpic]){const f=h('div','kpic',artSVG(s.art[s.kpic]));sc.querySelector('.ktop').appendChild(f);}});
 
 /* ---------- time tracking (body breaks, meals and topic switching live in health.js) ---------- */
 let lastAct=Date.now(),session=0;
@@ -967,42 +967,8 @@ T.addSay(['עִיר הַכִּשְׁרוֹנוֹת. מָה נְשַׂחֵק?','�
 O.on('group',s=>{const pr=prof();if(!pr)return;s.querySelectorAll('.bld').forEach(c=>{const b=BUILD.find(x=>x.name===c.querySelector('.nm').textContent);if(b&&b.id===pr.love){c.classList.add('fav');c.appendChild(h('span','favh','❤️'));}});});
 /* remember the last activity */
 Object.values(ACT).forEach(a=>{const r=a.run;a.run=back=>{const s=T.S();s.last={id:a.id,d:O.today()};return r(back);};});
-/* ---------- badges ---------- */
-const tl=id=>T.S().tl[id]||{};const actsOf=bid=>(BUILD.find(b=>b.id===bid)||{acts:[]}).acts;
-/* each test gives how far along (1 = earned) so the wall can show the next one */
-const part=(a,b)=>b?Math.min(1,a/b):1;
-const BADGES=[
- ['star1','כּוֹכָב רִאשׁוֹן','⭐','לְסַיֵּם פְּעִילּוּת בָּעִיר',s=>Object.values(s.tl).some(c=>c.s>0)?1:0],
- ['explore','סַקְרָן','🧭','לְבַקֵּר בְּ-6 בִּנְיָנִים',s=>part(BUILD.filter(b=>b.acts.some(a=>tl(a.id).n)).length,6)],
- ['painter','צַיָּר','🎨','לְצַיֵּר 3 צִיּוּרִים',s=>part((s.art||[]).length,3)],
- ['reader','תּוֹלַעַת סְפָרִים','📚','לִקְרֹא 3 סִפּוּרִים',s=>part([0,1,2,3,4,5].filter(k=>tl('story-'+k).s).length,3)],
- ['typist','אֶצְבָּעוֹת זְרִיזוֹת','⌨️','לְסַיֵּם 5 שִׁעוּרֵי הַקְלָדָה',s=>part(Object.keys((s.typ||{}).best||{}).length,5)],
- ['coder','מְתַכְנֵת','🤖','לְסַיֵּם 10 שְׁלַבֵּי קוֹד',s=>part(Object.values(s.code||{}).filter(v=>v>0).length,10)],
- ['music','מוּזִיקַאי','🎵','לְנַגֵּן שִׁיר וּלְתוֹפֵף בַּקֶּצֶב',s=>part((tl('mus-piano').s?1:0)+(tl('mus-rhythm').s?1:0),2)],
- ['science','מַדְעָן','🧪','6 נִסּוּיִים בַּמַּעְבָּדָה',s=>part(actsOf('lab').filter(a=>tl(a.id).s).length,6)],
- ['calm','שַׁלְוָה','🫧','לִנְשֹׁם עִם הַבּוּעָה 5 פְּעָמִים',s=>part(tl('mind-breath').n|0,5)],
- ['heart','לֵב טוֹב','💛','15 דְּבָרִים טוֹבִים בַּצִּנְצֶנֶת',s=>part((s.jar||[]).reduce((a,j)=>a+(j.i?j.i.length:0),0),15)],
- ['writer','כּוֹתֵב אַלּוּף','✏️','לִכְתֹּב אֶת כָּל הָאוֹתִיּוֹת',s=>part(Object.keys(s.wr||{}).length,22)],
- ['thinker','רֹאשׁ גָּדוֹל','🧩','כָּל הַחִידוֹת בְּמִגְדַּל הַחֲשִׁיבָה',s=>{const a=actsOf('think');return part(a.filter(x=>tl(x.id).s).length,a.length);}],
- ['world','מְטַיֵּל','🌍','3 כּוֹכָבִים בְּכָל הָעוֹלָם',s=>{const a=actsOf('world');return part(a.filter(x=>tl(x.id).s>=3).length,a.length);}],
- ['streak3','שְׁלוֹשָׁה יָמִים בָּרֶצֶף','🔥','לְשַׂחֵק 3 יָמִים בָּרֶצֶף',s=>part(O.dayStreak(),3)],
- ['streak7','שָׁבוּעַ שָׁלֵם','🏆','לְשַׂחֵק 7 יָמִים בָּרֶצֶף',s=>part(O.dayStreak(),7)],
- ['times','אַלּוּף הַכֶּפֶל','✖️','50 תַּרְגִּילִים בְּלוּחַ הַכֶּפֶל',s=>part(O.masteredCount(),50)],
- ['math','כּוֹכַב הַחֶשְׁבּוֹן','🌟','100 כּוֹכָבִים בַּמַּסָּע',s=>part(O.totalStars(),100)],
- ['daily','מְשִׂימָה מֻשְׁלֶמֶת','✅','לְסַיֵּם אֶת כָּל הַשְּׁבִיל שֶׁל הַיּוֹם',s=>s.daily&&s.daily.claimed?1:0]];
-function earned(){const s=T.S();s.bdg=s.bdg||{};return s.bdg;}
-const howFar=f=>{try{return +f(T.S())||0;}catch(x){return 0;}};
-/* badges are a quiet collection: earned silently, seen in the kingdom */
-function checkBadges(){const e=earned();let got=0;for(const [id,,,,f] of BADGES){if(e[id])continue;if(howFar(f)>=1){e[id]=Date.now();got=1;}}if(got)O.persist();}
+/* #426: no badges any more (only stars + gems); an old save keeps its s.bdg, nothing reads it */
 function toast(html){if(parentOn||!$('#sPar').hidden)return;document.querySelectorAll('.toast').forEach(x=>x.remove());const t=h('div','toast',html);document.body.appendChild(t);sfx.star(1);setTimeout(()=>t.classList.add('out'),D(2400));setTimeout(()=>t.remove(),D(2900));}
-setInterval(()=>{if(!$('#ov').hidden||$('#hud').hidden||!$('#sPlay').hidden)return;checkBadges();},4000);
-/* the wall: the earned badges + one "next badge" (the closest one to earn) */
-function badges(back){O.setScreen('sTal','valley',back);const e=earned();T.hudT('הַתַּגִּים שֶׁלִּי');O.sayNow='הַתַּגִּים שֶׁלִּי';const s=$('#sTal');s.innerHTML='';
-  s.appendChild(h('div','whead',`<span class="gd">🏅</span><h1>הַתַּגִּים שֶׁלִּי</h1>`));const g=h('div','bdgg');
-  BADGES.filter(b=>e[b[0]]).forEach(([id,n,ic])=>g.appendChild(h('div','bdg got',`<span class="bi">${ic}</span><b>${n}</b>`)));
-  let nx=null,best=-1;BADGES.forEach(b=>{if(e[b[0]])return;const f=howFar(b[4]);if(f>best){best=f;nx=b;}});
-  if(nx)g.appendChild(h('div','bdg next',`<span class="bi">${nx[2]}</span><b>${nx[1]}</b><small>${nx[3]}</small>`));s.appendChild(g);}
-T.badges=badges;
 /* ---------- message from the parents ---------- */
 O.on('map',m=>{const st=SET();
   /* hide math worlds the parent switched off */
@@ -1084,7 +1050,7 @@ function fullTab(box){const s0=T.S(),sv=O.save;
     <div><b>${new Set([...(sv.days||[]),...Object.keys(s0.time).filter(k=>(s0.time[k]|0)>=60)]).size}</b><span>ימי משחק</span></div><div><b>${O.dayStreak()}</b><span>רצף ימים</span></div>
     <div><b>${acc}%</b><span>דיוק בחשבון (${sv.ans|0} שאלות)</span></div><div><b>${O.totalStars()}</b><span>כוכבים במסע</span></div>
     <div><b>${O.masteredCount()}/100</b><span>עובדות בלוח הכפל</span></div><div><b>${fmtMin(totT)}</b><span>זמן כולל</span></div>
-    <div><b>${talSt}</b><span>כוכבים בעיר הכשרונות</span></div><div><b>${Object.keys(s0.bdg||{}).length}/${BADGES.length}</b><span>תגים</span></div></div>`);
+    <div><b>${talSt}</b><span>כוכבים בעיר הכשרונות</span></div></div>`);
   const days=lastDays(14);const mx=Math.max(600,...days.map(([k])=>s0.time[k]|0));
   sec(box,'זמן משחק — 14 ימים אחרונים',`<div class="pchart">${days.map(([k,x])=>{const v=s0.time[k]|0;return `<div class="pcol" title="${k}: ${fmtMin(v)}"><span class="pv">${v?Math.round(v/60):''}</span><i style="height:${v/mx*100}%"></i><small>${'אבגדהוש'[x.getDay()]}</small></div>`;}).join('')}</div><div class="pnote">בדקות, היום מימין. נספר רק זמן פעיל.</div>`);
   if(T.thinkSkills)T.thinkSkills(box,sec,BAR);
