@@ -741,7 +741,7 @@ def _ci_int(pr_json, auto_rc=(0, "ok"), sha="abc123"):
     def g(*a, **k):
         calls.append(a)
         if a[:2] == ("pr", "view"):
-            return (0, pr_json) if "isDraft,labels" in a else (0, "MERGEABLE") if "mergeable" in a else (0, '{"state":"OPEN","mergeable":"MERGEABLE"}')
+            return (0, pr_json) if any(str(x).startswith("isDraft,labels") for x in a) else (0, "MERGEABLE") if "mergeable" in a else (0, '{"state":"OPEN","mergeable":"MERGEABLE"}')
         if a[:2] == ("pr", "checks"): return 0, '[{"name":"tests","bucket":"pass"}]'
         if a[:2] == ("pr", "merge") and "--auto" in a: return auto_rc
         return 0, ""
@@ -760,6 +760,55 @@ for _bad in ('{"isDraft":true,"labels":[]}', '{"isDraft":false,"labels":[{"name"
     assert _res[0] == 7 and not any("--auto" in x or "--squash" in x for x in _c) and ("pr", "merge", "251", "--disable-auto") in [tuple(x[:4]) for x in _c], _res
 assert _ci_int(_ok, sha="")[0][0] == 7                                                        # no reviewed sha: never merge
 print("ok #185 head-tied merge + draft/label guard")
+
+# #636: PR #557 had blocked + no-automerge + owner-merge and its issue's owner gate was CLOSED, yet it was merged.
+assert "owner-merge" in r.merge_refusal('{"isDraft":false,"labels":[{"name":"owner-merge"}]}')
+assert r.pr_issues("Fixes #64\nFixes #70, closes #71. Refs #72 (see #99)") == [64, 70, 71, 72]
+_gs = {64: "closed", 65: "open", 66: "none", 67: "error"}
+assert "#64" in r.gate_refusal("Refs #64", _gs.get) and "CLOSED" in r.gate_refusal("Refs #64", _gs.get)
+assert r.gate_refusal("Fixes #65\nFixes #66", _gs.get) == "" and r.gate_refusal("no refs", _gs.get) == ""
+assert r.gate_refusal("Fixes #67", _gs.get), "unreadable gate: refuse"
+assert "#64" in r.gate_refusal("Fixes #66\nFixes #64", _gs.get), "a batch PR: one closed member gate refuses"
+_g0 = r.GATE
+try:
+    r.GATE = _gs.get
+    for _bad in ('{"isDraft":false,"labels":[{"name":"owner-merge"}],"body":"Fixes #66"}',      # fake: owner-merge label -> no merge
+                 '{"isDraft":false,"labels":[{"name":"blocked"}],"body":"Fixes #66"}',          # fake: blocked label -> no merge
+                 '{"isDraft":false,"labels":[],"body":"Refs #64"}'):                            # fake: gate CLOSED -> no merge
+        _res, _c = _ci_int(_bad)
+        assert _res[0] == 7 and not any("--auto" in x or "--squash" in x for x in _c), (_bad, _res)
+    _res, _c = _ci_int('{"isDraft":false,"labels":[],"body":"Fixes #65"}')                    # gate OPEN -> merges
+    assert _res[0] == 0, _res
+finally: r.GATE = _g0
+# only the runner merges: no session prompt lets a Claude merge, and local agents may not run `gh pr merge`
+_ps = [r.remote_worker_prompt(64, "pack"), r.worker_prompt(64, "pack"), r.remote_review_prompt(64, 557), r.review_prompt(64, 557),
+       r.remote_fix_prompt(64, "FIX x"), r.ci_fix_prompt(64, []), r.resolve_prompt(64, []), r.remote_resolve_prompt(64, []),
+       r.remote_resolve_prompt(64, [], ci=True), r.tester.prompt(64, 557, "T1", "u")]
+for _p in _ps: assert r.NO_MERGE in _p, _p[:80]
+assert "gh pr merge" in r.NO_MERGE and "Bash(gh pr merge:*)" in r.DENY_TOOLS
+_sent = []
+r.remote_resume(64, "pack", False, "s1", "yes", lambda s, t: _sent.append(t) or {"ok": True}, None,
+                lambda: {"state": "done", "line": "RESULT: DONE x"}, lambda s: None, lambda: 0)
+assert _sent and r.NO_MERGE in _sent[0], "#557: the answer relay to the resumed session forbids merging"
+_ag = _src.split("def agent(", 1)[1].split("\ndef ", 1)[0]
+assert '"--disallowedTools", *DENY_TOOLS' in _ag
+# the orchestrator's hand merge goes through the same guard: tools/runner/merge.py <pr>
+import merge as _M
+def _mg(js, gate="none"):
+    calls = []
+    def g(*a, **k):
+        calls.append(a)
+        return (0, js) if a[:2] == ("pr", "view") else (0, "")
+    _M.R.gh, _g1, _G1 = g, _M.R.gh, _M.R.GATE
+    _M.R.GATE = lambda n: gate
+    try: rc = _M.main(["557"])
+    finally: _M.R.gh, _M.R.GATE = _g1, _G1
+    return rc, [x for x in calls if x[:2] == ("pr", "merge")]
+assert _mg('{"isDraft":false,"labels":[{"name":"blocked"}],"body":"Refs #64"}') == (1, [])
+assert _mg('{"isDraft":false,"labels":[],"body":"Refs #64"}', "closed") == (1, [])
+_rc, _m = _mg('{"isDraft":false,"labels":[],"body":"Refs #64"}', "open")
+assert _rc == 0 and _m == [("pr", "merge", "557", "--auto", "--squash")], _m
+print("ok #636 merge guard: labels, owner gate, no session merges")
 
 # #246: the runner finds a cloud worker's claude/* PR and uses its branch wherever lane/<n> was hard-coded
 import json as _js
@@ -1289,7 +1338,7 @@ def _ci_race(merge_out, final_state):
     st = {"merged": False}
     def g(*a, **k):
         if a[:2] == ("pr", "view"):
-            if "isDraft,labels" in a: return 0, '{"isDraft":false,"labels":[]}'
+            if "isDraft,labels,body" in a: return 0, '{"isDraft":false,"labels":[]}'
             if "mergeable" in a and "-q" in a: return 0, "MERGEABLE"
             return 0, '{"state":"%s","mergeable":"MERGEABLE"}' % (final_state if st["merged"] else "OPEN")
         if a[:2] == ("pr", "checks"): return 0, '[{"name":"tests","bucket":"pass"}]'

@@ -66,7 +66,7 @@ def ci(head, moved_once=False):
     def fake_gh(*a, **k):
         calls.append(a)
         if a[:2] == ("pr", "view"):
-            if "isDraft,labels" in a: return 0, '{"isDraft":false,"labels":[]}'
+            if "isDraft,labels,body" in a: return 0, '{"isDraft":false,"labels":[]}'
             if "headRefOid" in a: return 0, st["head"]
             if "mergeable" in a and "-q" in a: return 0, "MERGEABLE"
             return 0, '{"state":"%s","mergeable":"MERGEABLE"}' % ("MERGED" if st["merged"] else "OPEN")
