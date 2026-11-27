@@ -68,6 +68,7 @@ const NOFEED = ['think-test'];
   ok(!bad.length, 'every question has one help button: clue, then answer + explanation, offered after 2 wrong (' + bad.length + ') ' + bad.slice(0, +(process.env.HB_ALL || 12)).join(' | '));
 
   /* 3. the math levels (#sPlay) */
+  await p.evaluate(() => { document.querySelector('#ov').hidden = true; document.querySelector('#sTal').innerHTML = ''; });   // #424: the last activity's round (its timers) ends here, before the math levels
   const math = await p.evaluate(async () => { const O = window.OREN, G = window.__oren4, out = [], seen = new Set();
     for (const lv of O.ALLLV) { if (lv.type === 'learn' || lv.type === 'boss') continue; const q0 = lv.gen(0); const k = q0.k + (q0.k === 'bin' ? q0.op : ''); if (seen.has(k)) continue; seen.add(k);
       try { G.playLevel(lv); } catch (e) { out.push(lv.id + ' ERR ' + e.message); continue; } await new Promise(r => setTimeout(r, 40));

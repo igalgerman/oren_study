@@ -193,7 +193,7 @@ const fitPick=(seq,pool)=>{const f=pool.filter(x=>fits(seq,x));return pick(f.len
 const dailyPool=()=>Object.keys(ACT).filter(id=>bState(ACT[id].b)==='on'&&!actOff(id)&&!ACT[id].noDaily&&!ACT[id].long&&(!ACT[id].avail||ACT[id].avail()));
 /* the day's path: t = steps ('math', an activity id, 'tog:<k>' together, 'rw:<k>' real-world), ch = how it was formed (a domain Oren chose, or 'plan').
    No path until Oren answers "what do you feel like today?" (or the parent's template builds it). cr = real-world missions waiting for the path. */
-function dailyEnsure(){const s=S();if(s.daily&&s.daily.d===today()){const d=s.daily,pool=dailyPool();d.cr=d.cr||[];for(let i=0;i<d.t.length;i++)if(d.t[i]!=='math'&&!/:/.test(d.t[i])&&!d.done[i]&&!pool.includes(d.t[i])){const alt=pool.filter(x=>!d.t.includes(x));if(alt.length)d.t[i]=fitPick(d.t.slice(0,i),alt);}return d;}
+function dailyEnsure(){const s=S();if(s.daily&&s.daily.d===today()){const d=s.daily,pool=dailyPool();d.cr=d.cr||[];for(let i=0;i<d.t.length;i++)if(d.t[i]!=='math'&&!/:/.test(d.t[i])&&!d.done[i]&&!pool.includes(d.t[i])&&!(ACT[d.t[i]]&&ACT[d.t[i]].inPath&&ACT[d.t[i]].inPath())){const alt=pool.filter(x=>!d.t.includes(x));if(alt.length)d.t[i]=fitPick(d.t.slice(0,i),alt);}return d;}
   const prev=s.daily;const cr=prev?[...(prev.cr||[]),...prev.t.filter((x,i)=>/^rw:/.test(x)&&!prev.done[i]),...(prev.tm||[]).filter(x=>x==='math'||ACT[x])]:[];   /* #359: tm = missions of a topic the parent put off to tomorrow */
   const plan=S().set.plan;let t=[];
   if(plan&&plan.length){const used=new Set();t=plan.map(sp=>{if(sp==='math')return 'math';if(String(sp).startsWith('act:')){const aid=sp.slice(4);if(ACT[aid]&&dailyPool().includes(aid)&&!used.has(aid)){used.add(aid);return aid;}sp='any';}const pool=dailyPool().filter(id=>!used.has(id)&&(sp==='any'||ACT[id].b.id===sp));const id=pool.length?fitPick([...used],pool):pick(dailyPool().filter(x=>!used.has(x)));used.add(id);return id||'math';}).concat(cr);}
@@ -1349,11 +1349,16 @@ function wpick(arr,n){const a=arr.slice(),out=[];while(out.length<n&&a.length){l
 function choose(dm,first){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.bs|0)>0;let st=dm==='tog'?[togStep(true)]:first?[first]:[];
   if(dm!=='tog')st=st.concat(stepsOf(dm,(bonus?2:3)-st.length,new Set([...d.t,...st])));
   wpick(doms().filter(x=>x.id!==gid(dm)),bonus?(dm==='tog'?1:0):(dm==='tog'?2:1)).forEach(o=>{st=st.concat(stepsOf(o.id,1,new Set([...d.t,...st])));});
+  /* #424 at most one English a day: English the path picks by itself goes (the English scene comes instead, below); English Oren picked himself (the building, "continue") stays */
+  const isEn=x=>!!(ACT[x]&&ACT[x].b&&ACT[x].b.id==='eng'),noEn=a=>dm==='b:eng'?a:a.filter(x=>!isEn(x)||x===first);st=noEn(st);
   if(!st.length)st=['math'];
   /* a domain that rested yesterday: the path starts with it, where Oren stopped (once a day) */
-  if(!bonus&&!d.rv&&window.HEALTH){d.rv=1;const rv=window.HEALTH.review().find(x=>!d.t.includes(x)&&!st.includes(x));if(rv)st=[rv].concat(st);}
+  if(!bonus&&!d.rv&&window.HEALTH){d.rv=1;const rv=window.HEALTH.review().find(x=>!d.t.includes(x)&&!st.includes(x));if(rv&&!isEn(rv))st=[rv].concat(st);}
   /* #358 variety: a mission that would repeat the kind is swapped for the engine's next pick in this domain, then in the others */
-  st=T.vary(d.t,st,()=>{let ex=[];[dm,...wpick(doms().filter(x=>x.id!==gid(dm)),9).map(o=>o.id)].forEach(id=>{if(id!=='tog')ex=ex.concat(stepsOf(id,3,new Set([...d.t,...st,...ex])).filter(x=>!ex.includes(x)));});return ex;});
+  st=T.vary(d.t,st,()=>{let ex=[];[dm,...wpick(doms().filter(x=>x.id!==gid(dm)),9).map(o=>o.id)].forEach(id=>{if(id!=='tog')ex=ex.concat(noEn(stepsOf(id,3,new Set([...d.t,...st,...ex]))).filter(x=>!ex.includes(x)));});return ex;});
+  /* #424 one short English scene per path, once a day, while English is on for him */
+  const sc=ACT['en-day'];st=noEn(st);
+  if(!d.en&&!st.some(isEn)&&sc&&sc.inPath())st.push('en-day');if(st.some(isEn))d.en=1;
   if(!bonus){st=st.concat(d.cr||[]);d.cr=[];}st.forEach(x=>{d.t.push(x);d.done.push(0);});d.ch=dm;if(window.PDAY)window.PDAY.mark();
   if(dm!=='tog'){S0.dom=S0.dom||{};S0.dom[gid(dm)]=dayNum();}O.persist();sfx.ok(2);home();}
 function lastStep(){const l=T.S().last;if(!l)return null;if(l.id==='math')return nextLevel()?'math':null;return T.dailyPool().includes(l.id)?l.id:null;}
