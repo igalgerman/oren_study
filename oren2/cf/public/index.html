@@ -321,8 +321,8 @@ body:has(#dlg:not([hidden])) .hud{z-index:8}/* #356: back/home stay visible abov
 .wend{display:flex;justify-content:center;margin:6px 0 18px}
 .wcard2.next{box-shadow:0 0 0 5px var(--gold),0 8px 0 rgba(0,0,0,.25);animation:pulse 2s infinite}
 body.inpar #gemc,body.inpar #btnMusic{display:none}
-/* G1: kid activity screens show only back + repeat (title is spoken) */
-body.act #gemc,body.act #btnMusic,body.act #btnHome,body.act .hud-mid .chip,body.act .tpill{display:none!important}
+/* G1: kid activity screens show back + repeat + the music/sound button (title is spoken); #610 owner rule: a way to turn the music off on every screen */
+body.act #gemc,body.act #btnHome,body.act .hud-mid .chip,body.act .tpill{display:none!important}
 @media (max-width:760px){.lch .chb{min-width:84px;height:70px;font-size:28px}.mbo{grid-template-columns:repeat(5,14px)}.mbo .one{width:14px;height:14px}.mbt .rod i{width:13px;height:6px}}
 .flat{display:grid;grid-template-columns:repeat(10,5px);gap:1px;padding:1px;background:rgba(0,0,0,.18)}
 .flat i{width:5px;height:5px;background:var(--c)}

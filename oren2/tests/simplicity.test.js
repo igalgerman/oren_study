@@ -1,4 +1,4 @@
-// Simplicity G1/G6/G7 in the core: kid activity top bar has only back + repeat; hubs keep home/gems; tap targets >=44px.
+// Simplicity G1/G6/G7 in the core: kid activity top bar has back + repeat + the music/sound button (#610); hubs keep home/gems; tap targets >=44px.
 const L = require('./lib');
 const { chromium } = require('playwright');
 (async () => {
@@ -18,13 +18,18 @@ const { chromium } = require('playwright');
   await p.evaluate(() => { const O = window.OREN; O.setScreen('sTal', 'city', () => {}); window.TAL.hudT('בְּדִיקָה', ''); });
   t = await bar();
   ok('G1 activity: gems hidden', !t.gems, JSON.stringify(t));
-  ok('G1 activity: music hidden', !t.music, JSON.stringify(t));
+  ok('#610 owner rule: the music/sound button stays on activity screens', t.music, JSON.stringify(t));
   ok('G1 activity: home hidden', !t.home, JSON.stringify(t));
   ok('G1 activity: title chip hidden', !t.chip, JSON.stringify(t));
   ok('G1 activity: back + repeat stay', t.back && t.say, JSON.stringify(t));
   await p.evaluate(() => { window.OREN.setScreen('sTal', 'valley', () => {}); window.OREN.hud(''); });
   t = await bar();
   ok('G1 leaving the activity restores gems + music', t.gems && t.music, JSON.stringify(t));
+  // #610: the button on an activity screen has the same 3 states (music / effects only / quiet), and the choice is kept after a reload
+  { await p.evaluate(() => { window.OREN.setScreen('sTal', 'city', () => {}); window.TAL.hudT('בְּדִיקָה', ''); });
+    const st = []; for (let k = 0; k < 3; k++) { await p.click('#btnMusic'); st.push(await p.evaluate(() => [window.OREN.save.snd, document.querySelector('#btnMusic').title])); }
+    ok('#610 activity: the button cycles music -> effects only -> quiet', new Set(st.map(x => x[0])).size === 3 && st.every(x => x[1]), JSON.stringify(st));
+    }
   // G7: top-bar buttons are at least 44px
   const sz = await p.evaluate(() => ['#btnBack', '#btnSay', '#btnMusic'].map(s => { const r = document.querySelector(s).getBoundingClientRect(); return Math.min(r.width, r.height); }));
   ok('G7 top-bar buttons >=44px', sz.every(x => x >= 44), sz.join(','));
@@ -252,6 +257,12 @@ const { chromium } = require('playwright');
   ok('#426 old save: a bought hat is refunded once (crown 60 + helmet 20), the hero still draws', r.a === 85 && r.b === 85 && !r.hat && r.svg, JSON.stringify(r));
   await p.evaluate(() => window.OREN.showMap());
   ok('no page errors', !errs.length, errs.join(' | '));
+  // #610: the sound choice made on an activity screen is kept after a reload (own page: the save is cleared only once)
+  { const c2 = await b.newContext(L.VIEWPORT); await c2.addInitScript(() => { window.__fast = true; }); const q = await c2.newPage(); await q.goto(L.URL); await L.noCoach(q);
+    await q.evaluate(() => { const O = window.OREN; O.save.story.intro = 1; O.showMap(); O.setScreen('sTal', 'city', () => {}); window.TAL.hudT('בְּדִיקָה', ''); });
+    await q.click('#btnMusic'); await q.click('#btnMusic'); const want = await q.evaluate(() => window.OREN.save.snd);
+    await q.reload(); await L.noCoach(q); const got = await q.evaluate(() => [window.OREN.save.snd, document.querySelector('#btnMusic').title]);
+    ok('#610 the sound choice is kept after a reload', want === 0 && got[0] === 0 && got[1] === 'שֶׁקֶט', want + ' ' + JSON.stringify(got)); await c2.close(); }
   await b.close();
   L.finish('simplicity', res);
 })();
