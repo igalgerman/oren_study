@@ -12,3 +12,5 @@
 /* 🔊 buttons stay small but get a finger-size touch area */
 .rdb{position:relative}.rdb::after{content:"";position:absolute;inset:-7px;border-radius:50%}
 .sl .rdb::after{inset:-5px}
+/* #613 "reads alone": the text's 🔊 waits for a wrong answer */
+.rdhide>.rdb{display:none}

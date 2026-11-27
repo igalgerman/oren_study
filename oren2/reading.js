@@ -5,8 +5,9 @@
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;const {h,$}=O;const D=O.D;
 const HEB=/[א-ת]/;
 const RD=()=>{const s=T.S();s.rd=s.rd||{lvl:1,solo:0};return s.rd;};
-const mode=()=>{const m=(T.S().set||{}).rdMode;return m===1||m===2||m===3?m:'auto';};
-const level=()=>{const m=mode();return m==='auto'?((RD().lvl|0)||1):m;};
+/* #613 the parent's one "reading help" setting (O.readHelp, the core): it decides here, in the stories (talents.js) and in the voice */
+const RH=()=>O.readHelp?O.readHelp():{m:'try',w:25,slow:false,ans:true,hi:true,auto:true};
+const level=()=>(RD().lvl|0)||1;
 const UP={1:25,2:85};                         /* solo answers needed to move up from level 1 / level 2 */
 const TARGETS='#sTal .tqc .qq:not(.tqi),#sTal .tqc .sent,#sTal .lsent:not(.blab),#sHome .hbub2';
 
@@ -23,8 +24,8 @@ function words(el){if(el._rw&&el._rw.length&&el._rw.every(w=>w.isConnected))retu
 /* ---- speaking with lit-up words ---- */
 let cur=null;
 function stop(){if(!cur)return;const r=cur;cur=null;r.timers.forEach(clearTimeout);r.words.forEach(w=>w.classList.remove('on'));r.el.classList.remove('reading');r.resolve();}
-const light=(r,k)=>r.words.forEach((w,j)=>w.classList.toggle('on',j===k));
-const rate=()=>.9;                             /* the game voice speaks at 0.9 */
+const light=(r,k)=>{const hi=RH().hi;r.words.forEach((w,j)=>w.classList.toggle('on',hi&&j===k));};   /* #613 the parent may turn the word light off */
+const rate=()=>RH().slow?.72:.9;               /* the game voice speaks at 0.9 (slow: the same recording at 0.8 of that) */
 const wms=w=>(170+70*(String(w).match(/[א-תA-Za-z0-9]/g)||[]).length)/rate();   /* how long a word takes to say */
 /* light r.words one after the other from word `from`: each word wms(word) * scale after the one before, starting at t0; then end() */
 function plan(r,from,live,end,t0,scale){r.timers.forEach(clearTimeout);r.timers=[];let t=t0||0;scale=scale||1;
@@ -57,7 +58,7 @@ const at=(a,b)=>{if(!b.length||b.length>a.length)return -1;for(let i=0;i+b.lengt
 let fol=null;
 function folStop(){if(!fol)return;const r=fol;fol=null;r.timers.forEach(clearTimeout);r.words.forEach(w=>w.classList.remove('on'));}
 const shown=e=>!!e.offsetParent&&!e.closest('[hidden]');
-function follow(t,a){folStop();if(cur||!t)return;const cw=nw(t);if(!cw.length)return;
+function follow(t,a){folStop();if(cur||!t||!RH().hi)return;const cw=nw(t);if(!cw.length)return;
   for(const el of document.querySelectorAll('#screens '+FOLLOW.split(',').join(',#screens '))){if(!shown(el))continue;
     const ew=nw(el.textContent);if(!ew.length)continue;let i=at(cw,ew),from=0,to=ew.length;
     if(i<0){const j=at(ew,cw);if(j<0)continue;i=0;from=j;to=j+cw.length;}           /* the clip is a part of the line */
@@ -81,28 +82,41 @@ let raf=0;const mo=new MutationObserver(()=>{if(raf)return;raf=requestAnimationF
 let Q=null;
 function heard(el){if(Q&&Q.card&&Q.card.contains(el))Q.heard=true;}
 function clearQ(){if(Q){Q.timers.forEach(clearTimeout);Q.timers=[];}}
-/* only in reading activities, and only the text to read waits (a sentence / a word); the instruction (.qq) is said right away */
+/* only in reading activities, and only the text to read waits (a sentence / a word); the instruction (.qq) is said right away.
+   #613 by the parent's setting: read to him = the text is read with the question at once (no wait, no cue); tries first = the levels below;
+   reads alone = the text's 🔊 shows only after a wrong answer, never read by itself */
 T.rdQ=(q,card,o)=>{clearQ();decorateAll();const target=o&&o.read&&!q.play?card.querySelector('.sent')||card.querySelector('.bigw'):null;
-  Q={q,card,heard:false,answered:false,timers:[],target};if(!Q.target)return;
+  Q={q,card,heard:false,answered:false,timers:[],target};if(!Q.target)return;const m=RH().m;
+  if(m==='read'){const t=T.spk(target.textContent.replace(/🔊/g,' '));if(t&&!T.plainHe(O.sayNow||'').includes(T.plainHe(t)))O.sayNow=t+' '+(O.sayNow||'');return;}
   const tt=T.plainHe(target.textContent.replace(/🔊/g,'')).replace(/\s+/g,' ').trim();if(tt&&O.sayNow){const ns=T.plainHe(O.sayNow).replace(/\s+/g,' ').split(tt).join(' ').trim();O.sayNow=/[א-ת]/.test(ns)?ns:'';}
+  if(m==='alone'){Q.target.classList.add('rdhide');return;}
   const lv=level(),btn=Q.target.querySelector('.rdb');if(lv===3)return;
   if(lv===2&&btn)btn.classList.add('pulse');
   Q.target.after(h('div','rdcue','נַסֵּה לִקְרֹא 👀'));
   const me=Q,wrap=card.parentNode;if(wrap&&!wrap._rdL){wrap._rdL=1;wrap.addEventListener('click',e=>{if(Q&&e.target.closest('.chb'))Q.answered=true;},true);}
   me.timers.push(setTimeout(()=>{if(Q===me&&!me.answered&&!me.heard&&me.target.isConnected)T.readEl(me.target).then(()=>{/* then the answers that are words */
     if(Q!==me||me.answered||!wrap)return;const os=[...wrap.querySelectorAll('.chs .chb')].filter(b=>!b.disabled).map(b=>b.textContent.trim()).filter(t=>HEB.test(t));if(os.length)O.say(os.join(', '));});},D(lv===1?3000:8000)));};
-T.rdA=(q,tries,b)=>{if(!Q||Q.q!==q||!Q.target)return;clearQ();if(tries||Q.heard)return;
+T.rdA=(q,tries,b)=>{if(!Q||Q.q!==q||!Q.target)return;clearQ();if(tries||Q.heard||RH().m==='read')return;/* read to him: never "read alone" */
   const r=RD();r.solo=(r.solo|0)+1;
-  if(mode()==='auto'&&UP[r.lvl]&&r.solo>=UP[r.lvl]){r.lvl++;O.floatText(Q.card,'🎉 עָלִיתָ שָׁלָב בִּקְרִיאָה!');}
+  if(UP[r.lvl]&&r.solo>=UP[r.lvl]){r.lvl++;O.floatText(Q.card,'🎉 עָלִיתָ שָׁלָב בִּקְרִיאָה!');}
   else if(r.solo%4===1)O.floatText(Q.card,'קָרָאתָ לְבַד! ⭐');
   O.persist();};
 O.on('screen',()=>{clearQ();Q=null;seqTok++;stop();folStop();});
+O.on('tq',(id,right)=>{if(!right&&Q&&Q.target)Q.target.classList.remove('rdhide');});   /* reads alone: a wrong answer brings the 🔊 */
 
-/* ---- parent: one setting ---- */
-T.rdSettings=(body,sec,refresh)=>{const r=RD(),m=mode();
-  const box=sec(body,'📖 קריאה',`<div class="pnote">כשאורן רואה שאלה, הוא מנסה לקרוא לבד. אם לא הצליח, המשחק מקריא לו ומדגיש כל מילה בזמן שהיא נאמרת. ליד כל טקסט יש 🔊 לשמיעה.</div><div class="pnote">שלב נוכחי: <b>${level()}</b> · ענה נכון בלי הקראה: <b>${r.solo|0}</b> פעמים${m==='auto'&&UP[r.lvl]?` · לשלב הבא: ${UP[r.lvl]}`:''}</div>`);
-  const row=h('div','popt','<span>שלב:</span>');
-  [['auto','אוטומטי (מומלץ)'],[1,'1 · מקריאים אחרי 3 שניות'],[2,'2 · מקריאים אחרי 8 שניות'],[3,'3 · קורא לבד']].forEach(([v,n])=>{const c=h('button','pchip'+(m===v?' on':''),n);c.onclick=()=>{T.S().set.rdMode=v;O.persist();refresh();};row.appendChild(c);});
-  box.appendChild(row);};
-window.__rd={level,mode,RD,decorateAll,get cur(){return cur;}};
+/* ---- parent: one setting "עזרה בקריאה" (#613): the main choice in one row, the rest folded under "עוד"; defaults = the game as it was ---- */
+let moreOpen=false;
+T.rdSettings=(body,sec,refresh)=>{const st=T.S().set,r=RD(),cur=RH();
+  const box=sec(body,'📖 עזרה בקריאה','<div class="pnote">כמה עזרה בהקראה אורן מקבל בסיפורים ובמשפטים לקריאה. הוראות ושאלות שאינן בודקות קריאה תמיד מוקראות.</div>');
+  const put=(k,v)=>{const rh=st.rh&&typeof st.rh==='object'?st.rh:(st.rh={});rh[k]=v;O.persist();refresh();};
+  const row=(par,lbl,opts,val,set)=>{const w=h('div','popt'+(lbl?'':' rhmain'),lbl?`<span>${lbl}</span>`:'');opts.forEach(([v,n])=>{const c=h('button','pchip'+(val===v?' on':''),n);c.onclick=()=>set(v);w.appendChild(c);});par.appendChild(w);return w;};
+  row(box,'',[['read','מקריאים לו'],['try','קודם מנסה לבד'],['alone','קורא לבד']],cur.m,v=>put('m',v)).classList.add('rhm');
+  const d=document.createElement('details');d.className='pdet rhmore';d.open=moreOpen;d.ontoggle=()=>{moreOpen=d.open;};d.innerHTML='<summary>עוד</summary>';const din=h('div','pdin');d.appendChild(din);box.appendChild(d);
+  row(din,'כמה לחכות לפני עזרה',[[10,'10 שניות'],[25,'25 שניות'],[45,'45 שניות']],cur.w,v=>put('w',v)).dataset.k='w';
+  row(din,'מהירות הקראה',[[0,'רגילה'],[1,'איטית']],cur.slow?1:0,v=>put('slow',v)).dataset.k='slow';
+  row(din,'להקריא אוטומטית',[[1,'כן'],[0,'רק בלחיצה על 🔊']],cur.auto?1:0,v=>{st.autoRead=v;O.persist();refresh();}).dataset.k='auto';
+  row(din,'להקריא גם את התשובות',[[1,'כן'],[0,'לא']],cur.ans?1:0,v=>put('ans',v)).dataset.k='ans';
+  row(din,'להדגיש מילה בזמן ההקראה',[[1,'כן'],[0,'לא']],cur.hi?1:0,v=>put('hi',v)).dataset.k='hi';
+  din.appendChild(h('div','pnote',`"כמה לחכות" חל על "קודם מנסה לבד" (בשלב הסיפורים הנמוך: כמחצית). שלב קריאה במשפטים: <b>${level()}</b> · ענה נכון בלי הקראה: <b>${r.solo|0}</b> פעמים${UP[r.lvl]?` · לשלב הבא: ${UP[r.lvl]}`:''}`));};
+window.__rd={level,RH,RD,decorateAll,get cur(){return cur;}};
 })();
