@@ -409,7 +409,7 @@ function doneTitle(a,b){const nl=NAMES.findIndex((_,lv)=>b.open[lv]&&!a.open[lv]
 /* sc: the daily path's English scene (#424): its own 5 cards from E2.dayScene, recorded as SCENE_ID */
 function round(lv,back,sc){hush();const save=O.save,d=E2.day();let P,steps,id;const before=snapshot();
   if(sc){P={unit:null,he:ACTN[SCENE_ID]};id=SCENE_ID;steps=E2.dayScene(save,d).map(x=>x.g?{t:'teach',c:E2.teachCard(x.g),lv:x.lv}:{t:'q',s:x.q,lv:x.lv});}
-  else{P=E2.plan(save,lv,d);/* #394 on the daily path: at most 4 steps (the new words' cards + at least 1 question) */P.qs=P.qs.slice(0,Math.max(1,T.pathN(P.teach.length+P.qs.length)-P.teach.length));id=NAMES[lv];
+  else{P=E2.plan(save,lv,d);id=NAMES[lv];
     steps=[...P.teach.map(g=>({t:'teach',c:E2.teachCard(g)})),...P.qs.map(s=>({t:'q',s}))];}
   const b0={};steps.forEach(x=>{if(x.t==='q'&&!(x.s.k in b0))b0[x.s.k]=E2.box(save,x.s.k);});steps.forEach(x=>{if(x.t==='teach')x.c.items.forEach(k=>{b0[k]=0;});});
   const res={};const asked=new Set();
@@ -428,7 +428,7 @@ function round(lv,back,sc){hush();const save=O.save,d=E2.day();let P,steps,id;co
   async function speakTeach(c,card,v){const tok=++TOK;
     if(v.tiles){const ts=[...card.querySelectorAll('.e2t')];for(const t of ts){if(tok!==TOK)return;ts.forEach(x=>x.classList.remove('on'));t.classList.add('on');await sleep(D(450));}if(tok!==TOK)return;ts.forEach(x=>x.classList.add('on'));}
     en(c.say);await waitSay(c.say,'en',tok);if(tok===TOK)card.querySelectorAll('.e2t').forEach(x=>x.classList.remove('on'));}
-  function renderQ(step){const q=E2.gen(save,step);window.__e2q=q;const v=qView(q);let tries=0,lock=false,hinted=false,fin=false;cur={ans:q.ans};
+  function renderQ(step){const q=E2.gen(save,step);window.__e2q=q;/* #634 the event log counts the question (the owner's summary showed en-day with 0) */if(O.evQ)O.evQ(id+'|'+q.k+'|'+q.type,{m:id});const v=qView(q);let tries=0,lock=false,hinted=false,fin=false;cur={ans:q.ans};
     const card=h('div','prq tqc',v.pr);
     const playIt=()=>{if(v.seq)return playSeq();if(v.play)return talk(v.play);};
     if(v.play||v.seq){const pb=h('button','hintbtn',ICON.say+`<span>${v.seq?'שׁוּב':'הַשְׁמַע'}</span>`);pb.onclick=twice(()=>playIt());card.appendChild(pb);}
@@ -451,7 +451,7 @@ function round(lv,back,sc){hush();const save=O.save,d=E2.day();let P,steps,id;co
       clue:()=>{hinted=true;if(v.hint){if(v.karaoke){const tok=++TOK;karaoke(card.querySelector('.e2sent'),v.hint,tok);}else talk([['en',v.hint]]);}else playIt();return clueOf(q);},
       reveal:()=>{if(lock)return;lock=true;hush();if(!fin)err++;settle('bad');nq++;sayAfter();setTimeout(next,D(4200));}}):null;
     const sk=NAMES[steps[i].lv!=null?steps[i].lv:lv];
-    function pick(k,b){if(lock||b.disabled)return;
+    function pick(k,b){if(lock||b.disabled)return;if(O.evAns)O.evAns(k===q.ans,{m:id,tr:tries});
       if(k===q.ans){lock=true;hush();b.classList.add('ok');sfx.ok(i);const g=tries||hinted?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);
         if(!tries&&T.skHit)T.skHit(sk,!hinted);if(!tries&&KN)KN.hit(sk,!hinted);settle(tries?'bad':hinted?'hint':'ok');nq++;reveal();setTimeout(next,D(v.after||v.afterK?2600:1700));return;}
       if(!tries&&T.skHit)T.skHit(sk,false);if(!tries&&KN)KN.hit(sk,false);tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();

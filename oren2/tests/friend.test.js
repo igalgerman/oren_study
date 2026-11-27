@@ -122,25 +122,13 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
     const late = F.log.slice(n0).filter(x => x === F.react.lines.hint).length, lit = !!document.querySelector('#sTal .helpq.offer'); F.react.QUIET = 20000; return { early, late, lit }; });
   ok('#53 the silence hint (#408) is one of the friend\'s own lines: not within 30 s of another, then once, the help button lit', qh.early === 0 && qh.late === 1 && qh.lit, JSON.stringify(qh));
   await p.evaluate(() => window.OREN.showMap()); await sleep(200);
-  // --- the whole day done: one sentence, exactly two choices ---
+  // --- #634 the whole path done (and its story ending): no "day done" screen, the next path's choice comes at once ---
   await p.evaluate(() => { const O = window.OREN, d = window.TAL.dailyEnsure(); d.done = d.t.map(() => 1); d.claimed = 1; O.persist(); O.showMap(); }); await sleep(300);
-  const hd = await p.evaluate(() => ({ say: document.querySelector('#sHome .hbub2').textContent, ch: document.querySelectorAll('#sHome .frdone .bigbtn').length, badge: !!document.querySelector('#sHome .frbadge'), more: !!document.querySelector('#sHome .dmore'), doors: !!document.querySelector('#sHome .doors2') }));
-  ok('day done: "you finished all of today\'s missions", a done badge, two choices only', /סִיַּמְתָּ אֶת כָּל הַמְּשִׂימוֹת/.test(hd.say) && hd.ch === 2 && hd.badge && !hd.more && !hd.doors, JSON.stringify(hd));
-  await p.evaluate(() => window.OREN.showMap()); await sleep(300);
-  const again = await p.evaluate(() => ({ say: (document.querySelector('#sHome .hbub2') || { textContent: '' }).textContent, ch: document.querySelectorAll('#sHome .frdone .bigbtn').length }));
-  ok('back home, day still done: the sentence is not said again, the two choices stay', !/סִיַּמְתָּ/.test(again.say) && again.ch === 2, JSON.stringify(again));
-  await p.click('#sHome .frdone .bigbtn.blue'); await sleep(300);
-  ok('free time: the doors', await p.evaluate(() => !!document.querySelector('#sHome .doors2') && !document.querySelector('#sHome .frdone')));
-  await p.evaluate(() => window.OREN.showMap()); await sleep(200);
-  ok('free time: the friend reminds once that tapping it brings another path', /גַּע בִּי/.test(await p.evaluate(() => document.querySelector('#sHome .hbub2').textContent)));
-  await p.evaluate(() => window.OREN.showMap()); await sleep(200);
-  ok('...only once', !/גַּע בִּי/.test(await p.evaluate(() => document.querySelector('#sHome .hbub2').textContent)));
-  await p.click('#sHome .hpair'); await sleep(300);
-  const bn = await p.evaluate(() => ({ cards: document.querySelectorAll('#sHome .dchoice .dcard').length }));
-  ok('tapping the friend in free time: the choice cards for another path', bn.cards >= 2, JSON.stringify(bn));
+  const hd = await p.evaluate(() => ({ cards: document.querySelectorAll('#sHome .dchoice .dcard').length, more: !!document.querySelector('#sHome .dmore'), end: !!document.querySelector('#sHome .frdone,#sHome .frbadge') }));
+  ok('#634 path done: no end screen, the choice cards for the next path (and "something else")', hd.cards >= 2 && hd.more && !hd.end, JSON.stringify(hd));
   await p.click('#sHome .dchoice .dcard:not(.cont)'); await sleep(300);
-  const bp = await p.evaluate(() => { const d = window.TAL.dailyEnsure(); return { n: d.t.length - (d.bs | 0), circles: document.querySelectorAll('#sHome .tpath .tstep2').length, go: !!document.querySelector('#sHome .bigbtn.huge') }; });
-  ok('another path: 2-3 new steps, only they are on the path', bp.n >= 2 && bp.n <= 3 && bp.circles === bp.n && bp.go, JSON.stringify(bp));
+  const bp = await p.evaluate(() => { const d = window.TAL.dailyEnsure(); const nw = d.t.slice(d.bs | 0); return { n: nw.length, rep: nw.filter(x => x !== 'math' && d.t.slice(0, d.bs | 0).includes(x)), circles: document.querySelectorAll('#sHome .tpath .tstep2').length, go: !!document.querySelector('#sHome .bigbtn.huge') }; });
+  ok('#634 the next path is a full one (3-5 new steps), none of today\'s missions again, only they are on the path', bp.n >= 3 && bp.n <= 5 && !bp.rep.length && bp.circles === bp.n && bp.go, JSON.stringify(bp));
   await L.shot(p, { path: L.SHOTDIR + '/friend-' + L.variant + '.png' });
   // --- #433: an error in the middle of a mission: the friend says "oops, back to our path", home, progress kept, error logged ---
   const OOPS = 'אוֹי, חוֹזְרִים לַמַּסָּע';

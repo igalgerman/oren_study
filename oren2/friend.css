@@ -1,8 +1,6 @@
 /* ===== the friend on activity screens + the day's path strip ===== */
 .frc{position:fixed;left:max(10px,env(safe-area-inset-left));bottom:max(10px,env(safe-area-inset-bottom));z-index:6;pointer-events:none;display:flex;flex-direction:column;align-items:flex-start}
 .frc{direction:ltr}.frc[hidden]{display:none}
-.frbadge{display:inline-block;margin:6px auto 0;background:#4fae4f;color:#fff;font-weight:800;font-size:18px;border-radius:999px;padding:3px 14px;border:2px solid #2f7a2f}
-.frdone{gap:14px;flex-wrap:wrap;justify-content:center}
 body.pplay .frc{bottom:62px}
 .frc .frs{display:block;width:60px;height:60px;filter:drop-shadow(0 3px 0 rgba(0,0,0,.18));animation:frbob 2.4s ease-in-out infinite}
 .frc .frs svg{width:100%;height:100%;display:block}
@@ -48,7 +46,6 @@ body.fron #screens{padding-bottom:84px}
   .frpath .fph,.frpath .fpm{height:13px}.frpath .fph{width:12px;inset-inline-start:calc((100% - 20px)*var(--k,0)/var(--n,1))}.frpath .fpm{width:13px}
 }
 @media (prefers-reduced-motion:reduce){.frc .frs,.frpath .fpt.caught .fpm{animation:none}.frpath .fph{transition:none}}
-#sHome .frdone .bigbtn.huge{animation:none}
 /* #389 listen first: the answers rest (softly faded, no timer) until the question was heard */
 .chs.lsn .chb{opacity:.55;transition:opacity .3s}
 /* #411 'easy or hard?' at the end of a scene: two big faces, one tap */
