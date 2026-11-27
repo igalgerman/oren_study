@@ -31,7 +31,7 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  // the last 5 minutes
  await p.evaluate(()=>{window.__toasts=[];new MutationObserver(m=>m.forEach(r=>r.addedNodes.forEach(n=>{if(n.classList&&n.classList.contains('toast'))window.__toasts.push(n.textContent);}))).observe(document.body,{childList:true});const T=window.TAL,O=window.OREN;T.S().time[O.today()]=26*60;});await sleep(2600);ok('last 5 minutes: the pill turns orange',await p.evaluate(()=>document.querySelector('#hud .tpill').classList.contains('low')));
  // time up
- await p.evaluate(()=>{const T=window.TAL,O=window.OREN;T.S().time[O.today()]=31*60;});await sleep(5600);ok('time-up lock shown',await p.locator('.tlock').count()===1);
+ await p.evaluate(()=>{const T=window.TAL,O=window.OREN;T.S().time[O.today()]=31*60;});await sleep(5600);ok('time-up lock shown',await p.locator('.tlock').count()===1);ok('#8 time lock: the parent button is small and plain ("להורים", no nikud)',await p.evaluate(()=>{const b=document.querySelector('.tlock .bigbtn.tpb');return !!b&&b.textContent.includes('להורים')&&parseFloat(getComputedStyle(b).fontSize)<18;}));
  await L.shot(p,{path:L.SHOTDIR+'/timeup.png'});
  await p.evaluate(()=>{window.OREN.showMap();document.querySelector('#ov').hidden=true;});await sleep(5600);ok('lock persists (kid cannot dismiss)',await p.locator('.tlock').count()===1);
  await p.locator('.tlock .bigbtn').click();await sleep(150);await p.locator('#pw1').click();await p.keyboard.type('abcd');await p.keyboard.press('Enter');await sleep(200);await p.locator('#ov .bigbtn',{hasText:'+20'}).click();await sleep(300);

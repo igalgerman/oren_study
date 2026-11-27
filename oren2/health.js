@@ -180,8 +180,8 @@ function goDom(dm){close();sfx.pop&&sfx.pop(3);
 H.goDom=goDom;
 function chooser(cls,dm,head,sub,oneMore){const r=day();const el=lock('htopic '+cls,`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">🌙</span></div><h2>${head}</h2><div class="sub">${sub}</div>`);
   const row=h('div','hcards');cards(dm).forEach(d=>{const b=h('button','dcard',`<span class="dic"><span>${d.e}</span></span><b>${d.n}</b>`);b.style.setProperty('--dc',d.c);b.onclick=()=>goDom(d.id);row.appendChild(b);});el.firstChild.appendChild(row);
-  if(!r.one[dm]){const o=h('button','hone','<span>עוֹד אֶחָד קָטָן</span>');o.onclick=()=>{r.one[dm]=1;O.persist();sfx.pop&&sfx.pop(1);close();oneMore&&oneMore();};el.firstChild.appendChild(o);}
-  sfx.star&&sfx.star(0);say(head+' '+sub+T.choiceSay(el,'.hcards b,.hone span'));return el;}
+  if(!r.one[dm]){const o=h('button','hone','<span aria-hidden="true">⏭️</span><span>עוֹד אֶחָד קָטָן</span>');o.onclick=()=>{r.one[dm]=1;O.persist();sfx.pop&&sfx.pop(1);close();oneMore&&oneMore();};el.firstChild.appendChild(o);}
+  sfx.star&&sfx.star(0);say(head+' '+sub+T.choiceSay(el,'.hcards b,.hone span:last-child'));return el;}
 function showTopic(dm){const r=day(),d=DOM(dm);if(!r.rest[dm]){r.rest[dm]=r.lt[dm]||dm;O.persist();}
   return chooser('',dm,topicHead(d),TOPSUB,after);}
 const TOPSUB='נַמְשִׁיךְ מָחָר. מָה בָּא לְךָ עַכְשָׁו?',RESTH='זֶה נָח עַד מָחָר 🌙',RESTSUB='מָחָר נַמְשִׁיךְ מֵאֵיפֹה שֶׁעָצַרְנוּ. מָה בָּא לְךָ עַכְשָׁו?';

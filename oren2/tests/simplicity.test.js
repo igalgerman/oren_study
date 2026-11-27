@@ -194,6 +194,39 @@ const { chromium } = require('playwright');
       ok(`G7 phone ${nm}: text >= 16px, taps >= 44px`, !r.length, JSON.stringify(r));
     }
   }
+  /* ---------- #8 P3 leftovers (docs/simplicity-spec.md + docs/qa-deep-report.md) ---------- */
+  await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.__arc.open(() => {}); }); await L.sleep(150);
+  ok('#8 arcade: no "✨ new" tag on the cabinets', await p.evaluate(() => document.querySelectorAll('#sTal .cab').length === 6 && !document.querySelector('#sTal .hs.new') && !/חָדָשׁ/.test(document.querySelector('#sTal .cabs').textContent)));
+  await p.evaluate(() => window.__arc.start('frog')); await L.sleep(300);
+  r = await p.evaluate(() => { const bg = e => getComputedStyle(e).backgroundColor; const f = document.querySelector('.jb:not(.back)'), m = document.querySelector('.jb.back'); return { f: bg(f), m: bg(m) }; });
+  ok('#8 frog: "−1" is quieter than the forward jumps (not yellow)', r.m !== 'rgb(255, 210, 63)' && r.m !== r.f, JSON.stringify(r));
+  await p.evaluate(() => { if (window.__arc.cur) window.__arc.cur.stop(); document.querySelector('#ov').hidden = true; });
+  // studio: four rows; the first visit has skin and no hats, later visits hats and no skin; pants gone
+  const studioRows = first => p.evaluate(f => { window.OREN.save.gems = 0; window.OREN.studio(f, () => {}); return [...document.querySelectorAll('#sStudio .orow h4')].map(e => e.textContent); }, first);
+  const s1 = await studioRows(true), s2 = await studioRows(false);
+  ok('#8 studio: 4 rows, first visit hair/skin/shirt/friend', s1.length === 4 && s1.includes('צֶבַע עוֹר') && !s1.includes('כּוֹבַע') && !s1.includes('מִכְנָסַיִם'), s1.join());
+  ok('#8 studio: 4 rows later, hats instead of skin', s2.length === 4 && s2.includes('כּוֹבַע') && !s2.includes('צֶבַע עוֹר') && !s2.includes('מִכְנָסַיִם'), s2.join());
+  r = await p.evaluate(() => ({ sw: Math.min(...[...document.querySelectorAll('#sStudio .sw')].map(e => e.getBoundingClientRect().width)) }));
+  if (L.variant === 'phone') ok('#8 studio: colour swatches >= 44px on the phone', r.sw >= 43.5, String(r.sw));
+  // reading: the music note "תָּו" is never a picture to guess
+  ok('#8 read-first: "תָּו" has no picture (the note looked like other things)', await p.evaluate(() => !window.READBANK2.words.some(w => w.pic === 'note')));
+  // a home mission that asks "how many" ends with "tell dad or mom", so "done" fits
+  r = await p.evaluate(() => { window.TAL.dailyEnsure().t[0] = 'rw:num'; window.TAL_step(0); return document.querySelector('#sTal .tspec .lsent').textContent; });
+  ok('#8 home mission: "how many?" -> "tell dad or mom", then "done"', /סַפֵּר לְאַבָּא אוֹ לְאִמָּא/.test(r), r);
+  // play screen: the keypad is under the answer on every screen size (the speed challenge always shows the keypad)
+  await p.evaluate(() => window.__oren4.playSpeed(window.OREN.WORLDS[0])); await L.sleep(300);
+  r = await p.evaluate(() => { const qa = document.querySelector('#qa').getBoundingClientRect(), pd = document.querySelector('#pad').getBoundingClientRect(); return { qaB: Math.round(qa.bottom), padT: Math.round(pd.top), qaH: Math.round(qa.height) }; });
+  ok('#8 play: keypad under the answer slot', r.qaH > 0 && r.padT >= r.qaB, JSON.stringify(r));
+  ok('#8 speed challenge: one counter (the time bar), no score box', await p.evaluate(() => !!document.querySelector('#tbar') && !document.querySelector('#sPlay #score')));
+  // a stale top-bar label never stays on the next screen
+  r = await p.evaluate(() => { const O = window.OREN; document.querySelector('#hudMid').innerHTML = '<div class="chip">old</div>'; O.setScreen('sTal', 'city', () => {}); return document.querySelector('#hudMid').textContent; });
+  ok('#8 HUD: the last screen\'s label is cleared on a new screen', !r.includes('old'), r);
+  // a building with one activity opens it straight away
+  r = await p.evaluate(() => { const T = window.TAL, O = window.OREN; O.save.set.all = 0; O.save.en2 = {}; const b = T.BUILD.find(x => x.id === 'eng'); const n = b.acts.filter(a => (!a.avail || a.avail())).length; T.openBuilding(b); return { n, menu: !!document.querySelector('#sTal .acts') }; });
+  ok('#8 one-activity building: no menu, the activity opens', r.n === 1 && !r.menu, JSON.stringify(r));
+  // "one more" on a resting door is a real button with an icon
+  r = await p.evaluate(() => { window.HEALTH.showRest('read', document.body); const o = document.querySelector('.hlock .hone'); const out = o ? { t: o.textContent, h: o.getBoundingClientRect().height, u: getComputedStyle(o).textDecorationLine } : null; document.querySelectorAll('.hlock').forEach(e => e.remove()); return out; });
+  ok('#8 rest: "one more" is an icon button, not an underlined link', r && /⏭️/.test(r.t) && r.h >= 43.5 && r.u !== 'underline', JSON.stringify(r));
   await p.evaluate(() => window.OREN.showMap());
   ok('no page errors', !errs.length, errs.join(' | '));
   await b.close();

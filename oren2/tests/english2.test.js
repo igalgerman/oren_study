@@ -151,7 +151,7 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
       P.qs.forEach(q => { n++; const r1 = wrongEvery && n % wrongEvery === 0 ? 'bad' : 'ok'; res[q.k] = res[q.k] === 'bad' || r1 === 'bad' ? 'bad' : 'ok'; E.mark(save, q.k, res[q.k], b0[q.k], d); });
       if (r % 2) d++; } };
   const pl = E.plan(save, 1, d);
-  ok(pl.teach.length === 2 && pl.teach.every(g => /^L:[SATPIN]$/.test(g)) && pl.qs.length >= 6 && pl.qs.every(q => /^[ncs]:[SATPIN]$/.test(q.k)), 'first letter round: 2 letters of s a t p i n, their name/case/sound', JSON.stringify(pl));
+  ok(pl.teach.length === 2 && pl.teach.every(g => /^L:[SATPIN]$/.test(g)) && pl.qs.length >= 4 && pl.teach.length + pl.qs.length <= 6 && pl.qs.every(q => /^[ncs]:[SATPIN]$/.test(q.k)), 'first letter round: 2 letters of s a t p i n, their name/case/sound; 2 cards + 4 questions, at most 6 (#555)', JSON.stringify(pl));
   const lcB = E.teachCard('L:B');
   ok(lcB.w === 'ball' && lcB.say === 'B is for ball.' && lcB.he === 'בּ' && lcB.mean === 'כַּדּוּר', 'letter card: the voice reads the word, its Hebrew meaning is shown', JSON.stringify(lcB));
   let r0 = 0; while (E.doneUnits(save, 1) < 1 && r0 < 40) { play(1, 1); r0++; }
@@ -229,7 +229,7 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
   ok(i0.acts.join() === 'eng-abc,eng-voc,eng-read,eng-talk,eng-song' && i0.act.slice().sort().join() === i0.acts.slice().sort().join(), 'register(): the eng building has the 5 new acts (old ones gone from ACT)', JSON.stringify(i0));
   ok(i0.vis.join() === 'eng-abc', 'a new player sees only "letters and sounds" (first path, #58)', JSON.stringify(i0.vis));
   await p.evaluate(() => window.TAL.openBuilding(window.TAL.BUILD.find(x => x.id === 'eng'))); await L.sleep(200);
-  ok((await p.$$eval('#sTal .acts .actc', a => a.length)) === 1, 'building screen: one act card'); await shot('01-building-new');
+  ok((await p.$$eval('#sTal .acts .actc', a => a.length)) === 0 && await p.evaluate(() => !document.querySelector('#sTal').hidden && document.querySelector('#sTal').children.length > 0), 'building with one act: no menu, "letters and sounds" opens straight away (#8)'); await shot('01-building-new');
   /* play a real round with clicks (letters open words; then a word round) */
   await p.evaluate(() => { const E = window.ENGLISH2, s = window.OREN.save, d = E.day(); E.LEVELS[1].units[0].items.forEach(k => { E.st(s).i[k] = [2, d + 3]; }); });
   ok((await info()).vis.join() === 'eng-abc,eng-voc', 'after the first letter group: words appear');

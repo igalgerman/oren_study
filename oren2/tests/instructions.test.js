@@ -41,7 +41,7 @@ const {chromium}=require('playwright');
   ['friend: practice topics',()=>window.TOPIC.grid(),'#ov','.tpt b'],
   ['friend: finish the path first?',()=>{const T=window.TAL;T.S().set.noDaily=0;const d=T.dailyEnsure();d.t=['math','math','math'];d.done=[1,0,0];d.ch='math';window.TOPIC.nudge();},'#ov','.bigbtn span,.tpany'],
   ['home: day done, free time (doors)',()=>{const T=window.TAL;const d=T.dailyEnsure();d.t=['math'];d.done=[1];d.ch='math';d.claimed=1;d.free=1;window.OREN.showMap();},'#sHome','.door b,.againbtn b'],
-  ['rest: something else now',()=>window.HEALTH.showTopic('read'),'.hlock','.hcards b,.hone span'],
+  ['rest: something else now',()=>window.HEALTH.showTopic('read'),'.hlock','.hcards b,.hone span:last-child'],
  ];
  for(const [name,go,root,sel] of CH){
    await p.evaluate(()=>{const O=window.OREN;document.querySelectorAll('.hlock').forEach(x=>x.remove());document.body.classList.remove('hlocked');document.querySelector('#ov').hidden=true;O.showMap();});await reset();
