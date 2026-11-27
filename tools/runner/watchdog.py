@@ -913,7 +913,7 @@ def orch_idle_tick(now=None, ts=None):
         if not _orch["first"]: _orch["first"] = now
         _orch["nudged"] = now
         tell(f"WATCHDOG (#225): you are idle while PRs wait for review: #{', #'.join(map(str, waiting))}. Review them now "
-             f"(gh pr merge N --auto --squash after a PASS). Owner questions never stop your work.")
+             f"(python tools/runner/merge.py N after a PASS, never gh pr merge, #636). Owner questions never stop your work.")
     elif act == "escalate":
         _orch["escalated"] = now
         try: R.run([R.HERDR_APP, "do", "terminal.pin", json.dumps({"terminal": d.get("address"), "pinned": True})], timeout=30)

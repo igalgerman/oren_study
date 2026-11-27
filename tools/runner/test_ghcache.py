@@ -114,6 +114,27 @@ rc, out = ans("gh", "pr", "list", "--repo", R, "--state", "merged", "--json", "n
 assert json.loads(out) == [{"number": 19, "mergedAt": "2026-11-26T07:59:00Z"}]
 rc, out = ans("gh", "pr", "view", "20", "--repo", R, "--json", "comments")
 assert json.loads(out)["comments"][0]["body"] == "VERDICT: PASS"
+
+# #637: comments keep url + reactionGroups (a thumbs-up answers an owner question); > 100 comments -> real gh (it pages)
+for sel in (G._COMMENTS, G._Q.split("prs:")[1]):
+    assert "url" in sel.split("comments(")[1] and "reactionGroups{content users{totalCount}}" in sel and "totalCount" in sel.split("comments(")[1], sel
+import owner_q as OQ
+QB = "<!-- owner_q --><!-- owner-q:{k} -->\n**#{n}** חלון `remote-{n}`\n\n**שאלה:** q{n}?\n"
+QCS = [{"body": QB.format(k="47df330c6428", n=392), "createdAt": "2026-11-27T10:00:00Z", "author": {"login": "o"},
+        "url": "https://github.com/x/issues/205#issuecomment-1", "reactionGroups": [{"content": "THUMBS_UP", "users": {"totalCount": 1}}]},
+       {"body": QB.format(k="3381e878897f", n=53), "createdAt": "2026-11-27T10:01:00Z", "author": {"login": "o"},
+        "url": "https://github.com/x/issues/205#issuecomment-2", "reactionGroups": [{"content": "THUMBS_UP", "users": {"totalCount": 0}}]}]
+Q205 = {**OPEN[1], "number": 205, "title": "Questions for the owner", "comments": {"totalCount": 2, "nodes": QCS}}
+cc = G.load(); G._save({**cc, "open": cc["open"] + [G._flat(Q205)]})
+rc, out = ans("gh", "issue", "view", "205", "--json", "comments")
+qs = OQ.open_questions(json.loads(out)["comments"])
+assert [q["key"] for q in qs] == ["3381e878897f"] and qs[0]["url"] == "https://github.com/x/issues/205#issuecomment-2", qs
+G._save({**cc, "open": cc["open"] + [G._flat({**Q205, "comments": {"totalCount": 182, "nodes": QCS}})]})
+assert ans("gh", "issue", "view", "205", "--json", "comments") is None, "the cache holds only the last 100 comments -> real gh pages them all"
+assert json.loads(ans("gh", "issue", "view", "205", "--json", "title")[1]) == {"title": "Questions for the owner"}, "other fields still cached"
+assert ans("gh", "issue", "list", "--state", "open", "--limit", "200", "--json", "number,comments") is None, "a list with a cut comment list -> real gh"
+G._save(cc)
+print("ok #637 cached comments keep url + reactions; > 100 comments -> real gh")
 assert ans("gh", "pr", "list", "--state", "open", "--json", "number,reviewDecision") is None, "a field the cache lacks -> real gh"
 cc = G.load(); G._save({**cc, "prs_complete": False})                 # a repo with more PRs than the cache page
 assert ans("gh", "pr", "list", "--state", "all", "--limit", "500", "--json", "number") is None, "more than the cache holds -> real gh"
