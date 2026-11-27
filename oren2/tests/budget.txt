@@ -54,3 +54,5 @@ feel-phone 60             # same file on the phone viewport
 math-logic 60             # all generated math questions + #439 mistake classifier table, ten-frame logic, coin logic and price voice (< 1 s more) + #416 story-scene word problems for 34 scene things (~2 s): ~8 s alone
 voice-audit-1 150          # #406 voice audit, first half: home, every world and level start, arcade + every 2nd activity (each read, 5 answers) in a fake player: ~80 s with 2 suites at once + #602 שני/שתי numbers self-check (< 1 ms)
 voice-audit-2 150          # #406 the other half of the activities: ~65 s with 2 suites at once
+music2-desktop 60         # #615 play games first (4 games played through, unlock after 3 good rounds) + the theory levels: ~31 s
+music2-phone 60           # same file on the phone viewport: ~30 s

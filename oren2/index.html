@@ -3471,7 +3471,7 @@ body.fron #screens{padding-bottom:84px}
 .m2 .m2drum{width:130px;height:130px;font-size:64px}
 /* one-octave piano */
 .mkb{position:relative;display:flex;flex-wrap:nowrap;gap:0;row-gap:0;width:min(640px,96vw);height:190px;direction:ltr;background:var(--ink);padding:8px 8px 10px;box-sizing:border-box;box-shadow:0 8px 0 rgba(0,0,0,.3)}
-.mkb .mw{flex:1;min-width:0;margin:0 2px;background:#fff;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;padding:0 0 10px;font-family:var(--read);font-weight:900;font-size:19px;box-shadow:inset 0 -10px 0 #dfe6ea}
+.mkb .mw{flex:1;min-width:0;margin:0 2px;background:#fff;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;padding:0 0 18px;font-family:var(--read);font-weight:900;font-size:19px;box-shadow:inset 0 -14px 0 var(--nc,#dfe6ea)}
 .mkb .mbk{position:absolute;top:8px;width:6.8%;height:56%;background:#1d2631;box-shadow:inset -3px -6px 0 #000,0 3px 0 rgba(0,0,0,.4);z-index:2;padding:0}
 .mkb .mw.ok{background:#bfeab0}.mkb .mw.bad{background:#f6c2b6}.mkb .mbk.ok{background:#2e8b3e}.mkb .mbk.bad{background:#a83a2a}
 .mkb .mw.show{background:#bfe6f5;animation:pulse .9s infinite}.mkb .mbk.show{background:#3a8fc4}
@@ -3480,6 +3480,20 @@ body.fron #screens{padding-bottom:84px}
 @media (prefers-reduced-motion:reduce){.m2 .m2n.cur ellipse,.mkb .mw.show{animation:none}}
 /* 4 answers: 2x2 on phones (never 3+1) */
 @media (max-width:760px){.m2 .chs.g4{display:grid;grid-template-columns:repeat(2,auto);justify-content:center}}
+/* #615 play games: big targets, one color per note */
+.m2 .chb.m2hl{min-width:150px;min-height:120px;font-size:24px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.m2 .m2pe{font-size:58px;line-height:1}
+.m2 .m2big{width:150px;height:150px;font-size:76px}
+.m2dots{display:flex;gap:12px;justify-content:center;min-height:22px}
+.m2dots i{width:20px;height:20px;border-radius:50%;background:#d9dee3;transition:background .15s}
+.m2dots i.on{background:#f5a623}.m2dots i.ok{background:#2e8b3e}
+.m2pads{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;width:min(640px,94vw);direction:ltr}
+.m2pads .m2pad{flex:1 1 0;min-width:0;height:130px;border-radius:22px;border:0;box-shadow:0 7px 0 rgba(0,0,0,.28);filter:saturate(.75) brightness(.92);transition:transform .08s,filter .08s}
+.m2pads .m2pad.lit{filter:saturate(1.2) brightness(1.25);transform:translateY(4px) scale(1.04);box-shadow:0 3px 0 rgba(0,0,0,.28),0 0 26px rgba(255,255,255,.9)}
+.m2pads.m2song .m2pad{height:150px}
+.m2ico{display:inline-flex;gap:4px}.m2ico i{width:16px;height:30px;border-radius:5px;display:block}
+@media (max-width:760px){.m2pads{gap:10px}.m2pads .m2pad{height:110px}.m2pads.m2song .m2pad{height:120px}.m2 .chb.m2hl{min-width:130px;min-height:110px}.m2 .m2pe{font-size:50px}.m2 .m2big{width:130px;height:130px;font-size:64px}}
+@media (prefers-reduced-motion:reduce){.m2pads .m2pad{transition:none}.m2pads .m2pad.lit{transform:none}}
 
 /* ===== CHESS CLUB (chess.js) ===== */
 .cz{gap:12px}
@@ -8221,8 +8235,11 @@ return true;};
 if(window.OREN&&window.TAL&&window.TAL.BUILD)R.register();
 })();
 
-/* ===== MUSIC 2: reading notes, ear, rhythm and melodies — new activities inside the music hall =====
-   Connects to Oren's piano lessons: see a note on the staff -> name it -> play it on the on-screen piano.
+/* ===== MUSIC 2: play first, theory later (#615) — the music hall's activities =====
+   First the play games that need no theory: high or low (bird / bear), copy the rhythm on a big drum, color memory
+   (colored keys light up a growing melody) and my song (free play, then hear it back). Each note keeps one color.
+   After GOOD good play rounds (2+ stars) the theory opens (later levels): reading notes on the staff, ear, rhythm
+   values, melodies; see a note on the staff -> name it -> play it on the on-screen piano, in the same colors.
    Every activity has gradual levels; Oren always plays his current level and moves up with 2+ stars.
    Pure helpers (pitch, staff positions, engraving) work without the game, so the tests can check them in node. */
 (()=>{'use strict';
@@ -8268,7 +8285,28 @@ function staffSVG(notes,o={}){const clef=o.clef||'treble',one=!!o.one;let x=one?
 function parseMel(str){const out=[];str.trim().split(/\s+/).forEach(t=>{if(t==='|'){if(out.length)out[out.length-1].bar=1;return;}const m=t.match(/^(-?\d+)([whqe])$/);if(m)out.push({i:+m[1],d:m[2]});});return out;}
 const barBeats=notes=>{const bars=[];let cur=0;notes.forEach(n=>{cur+=BEATS[n.d];if(n.bar){bars.push(cur);cur=0;}});bars.push(cur);return bars;};
 const onsets=pat=>{let t=0;return pat.map(d=>{const o=t;t+=BEATS[d];return o;});};
-const ENG={SOL,SC,midiOf,freq,nameOf,yOf,stemUp,ledgers,CLEF,BEATS,staffSVG,parseMel,barBeats,onsets,TOP,BOT,GAP};
+/* ---------- #615 play games: pure right/wrong logic ---------- */
+/* one color per note, the same in every octave: do red, re orange, mi yellow, fa green, sol blue, la purple, si pink */
+const NCOL=['#e53935','#f57c00','#e0b000','#43a047','#1e88e5','#7e57c2','#d81b60'];
+const colOf=i=>NCOL[mod7(i)];
+const rint=(rnd,a,b)=>a+Math.floor(rnd()*(b-a+1));
+/* high or low: two different sounds; the gap (semitones) gets smaller by level */
+const HLGAP=[[9,12],[5,7],[3,4]];
+function hlPair(lv,rnd=Math.random){const [lo,hi]=HLGAP[Math.min(HLGAP.length,Math.max(1,lv))-1];const a=rint(rnd,60,69),g=rint(rnd,lo,hi);const up=rnd()<.5;const b=a+(up?g:-g);return {a,b,hi:b>a};}
+/* copy the rhythm: clap times in beats, 2-4 claps, growing slowly */
+const COPY=[[[0,1],[0,1,2],[0,2],[0,1,2]],[[0,1,2],[0,1,1.5],[0,.5,1.5],[0,1,3]],[[0,1,2,3],[0,.5,1,2],[0,1,1.5,2.5],[0,1,2,2.5]]];
+/* right when he taps as many times as the friend and every tap is within tol (ms) of the rhythm, counted from his first tap */
+function copyJudge(on,taps,tol){if(!taps||taps.length!==on.length)return false;return on.every((o,k)=>Math.abs((taps[k]-taps[0])-(o-on[0]))<tol);}
+/* color memory: 4 keys (do re mi sol); 'ok' = all repeated, 'more' = right so far, 'bad' = a wrong key */
+const MEMKEYS=[0,1,2,4];
+function memCheck(seq,taps){for(let k=0;k<taps.length;k++)if(taps[k]!==seq[k])return 'bad';return taps.length>=seq.length?'ok':'more';}
+/* the melodies of one round: each is the one before plus one note (level 1 starts at 2 notes, level 3 at 4) */
+function memSeqs(lv,rnd=Math.random){const n0=1+Math.min(3,Math.max(1,lv)),out=[];let s=[];while(s.length<n0-1)s.push(rint(rnd,0,MEMKEYS.length-1));
+  for(let k=0;k<4;k++){let x;do x=rint(rnd,0,MEMKEYS.length-1);while(s.length&&x===s[s.length-1]&&rnd()<.7);s=s.concat(x);out.push(s);}return out;}
+/* my song played back: notes [{m, t (ms)}] -> [{m, at (s from the start)}], pauses kept between 0.25 and 0.9 s */
+function songPlan(notes){let at=0;return notes.map((n,k)=>{if(k)at+=Math.min(.9,Math.max(.25,(n.t-notes[k-1].t)/1000));return {m:n.m,at};});}
+const GOOD=3;   /* good play rounds that open the theory */
+const ENG={SOL,SC,midiOf,freq,nameOf,yOf,stemUp,ledgers,CLEF,BEATS,staffSVG,parseMel,barBeats,onsets,TOP,BOT,GAP,NCOL,colOf,HLGAP,hlPair,COPY,copyJudge,MEMKEYS,memCheck,memSeqs,songPlan,GOOD};
 if(typeof module!=='undefined'&&module.exports){module.exports=ENG;}
 if(typeof window==='undefined')return;
 window.MUSIC2={ENG};
@@ -8294,8 +8332,12 @@ const MEL=[
   {names:0,songs:['0q 1q 2q 0q | 0q 1q 2q 0q | 2q 3q 4h | 2q 3q 4h','2q 2q 3q 4q | 4q 3q 2q 1q | 0q 0q 1q 2q | 2q 1q 1h','4q 2q 2h | 3q 1q 1h | 0q 1q 2q 3q | 4q 4q 4h']},
   {names:0,songs:['0q 0q 4q 4q | 5q 5q 4h | 3q 3q 2q 2q | 1q 1q 0h','0q 1q 2q 3q | 4q 5q 6q 7q | 7w','7q 4q 2q 4q | 7q 4q 2h | 0q 2q 4q 7q | 7w']}];
 const VALN={w:'שָׁלֵם',h:'חֲצִי',q:'רֶבַע',e:'שְׁמִינִית'},VALB={w:'4',h:'2',q:'1',e:'½'};
+/* #615 the play games come first; good = good play rounds so far (theory opens at GOOD) */
+const PLAY={hl:['mus3-hl','גָּבוֹהַּ אוֹ נָמוּךְ?',HLGAP.length],cp:['mus3-copy','חַקֵּה אֶת הַקֶּצֶב',COPY.length],mem:['mus3-mem','זִכְרוֹן הַצְּבָעִים',3],song:['mus3-song','הַשִּׁיר שֶׁלִּי',1]};
 const ACTS={read:['mus2-read','קְרִיאַת תָּוִים',READ.length],ear:['mus2-ear','שְׁמִיעָה',EAR.length],rhy:['mus2-rhythm','קוֹרְאִים קֶצֶב',RHY.length],mel:['mus2-melody','מְנַגְּנִים מֵהַתָּוִים',MEL.length]};
-const ST=()=>{const s=T.S();s.m2=s.m2||{};for(const k in ACTS)s.m2[k]=Math.min(ACTS[k][2],Math.max(1,s.m2[k]|0));return s.m2;};
+const ALL=Object.assign({},PLAY,ACTS);
+const ST=()=>{const s=T.S();s.m2=s.m2||{};for(const k in ALL)s.m2[k]=Math.min(ALL[k][2],Math.max(1,s.m2[k]|0));s.m2.good=s.m2.good|0;return s.m2;};
+const theoryOpen=()=>ST().good>=GOOD;
 
 /* ---------- sound (exact pitch through the game's own synth: O.NT = 440·2^((n-69)/12)) ---------- */
 const play=(m,dur=.7,vol=1,at=0)=>{if(T.playMidi)return T.playMidi(m,dur,vol,at);if((O.save.snd|0)<1||!O.audio())return;O.tone(O.NT(m),O.A.ctx.currentTime+at,dur,{type:'triangle',vol:.2*vol,rel:.35,lp:3200});};
@@ -8304,14 +8346,14 @@ const click=hi=>{if(O.audio()&&(O.save.snd|0)>=1)O.tone(hi?1760:1320,O.A.ctx.cur
 
 /* ---------- on-screen piano (one octave). Keys are the children of .chs so the shared test loop can press children[ans]. ---------- */
 function keyboard(lo,names,onKey){const kb=h('div','chs mkb');const whites=[];for(let m=lo;m<=lo+12;m++)if(SC.includes((m-lo)%12))whites.push(m);
-  whites.forEach(m=>{const k=h('button','mw',names?`<span>${SOL[SC.indexOf((m-lo)%12)]}</span>`:'');k.dataset.m=m;k.onclick=()=>onKey(m,k);kb.appendChild(k);});
+  whites.forEach(m=>{const st=SC.indexOf((m-lo)%12);const k=h('button','mw',names?`<span>${SOL[st]}</span>`:'');k.dataset.m=m;k.style.setProperty('--nc',NCOL[st]);k.onclick=()=>onKey(m,k);kb.appendChild(k);});
   whites.forEach((m,wi)=>{if(wi===whites.length-1||[4,11].includes((m-lo)%12))return;const k=h('button','mbk','');k.dataset.m=m+1;k.style.left=`calc(${(wi+1)/whites.length*100}% - 3.4%)`;k.onclick=()=>onKey(m+1,k);kb.appendChild(k);});
   kb.idx=m=>[...kb.children].findIndex(k=>+k.dataset.m===m);return kb;}
 const flash=(k,c)=>{k.classList.remove('ok','bad');void k.offsetWidth;k.classList.add(c);setTimeout(()=>k.classList.remove(c),D(500));};
 
 /* ---------- one runner for all four activities ---------- */
 let CUR=null;
-function lesson(key,qs,back){qs=qs.slice(0,T.pathN(qs.length));/* #394 short on the daily path */const [id,title,max]=ACTS[key];const lvl=ST()[key];let i=0,err=0,gems=0,items=0;qs.forEach(q=>{items+=q.items||1;});
+function lesson(key,qs,back){qs=qs.slice(0,T.pathN(qs.length));/* #394 short on the daily path */const [id,title,max]=ALL[key];const lvl=ST()[key];let i=0,err=0,gems=0,items=0;qs.forEach(q=>{items+=q.items||1;});
   O.setScreen('sTal','final',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq m2');s.appendChild(wrap);
   if(key==='rhy'&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(rhyLessons(),back,()=>rhyRun(back)));
   if(key==='read'&&window.LESSONS)s.appendChild(window.LESSONS.againBtn('mus-staff',back,()=>readRun(back)));
@@ -8320,8 +8362,11 @@ function lesson(key,qs,back){qs=qs.slice(0,T.pathN(qs.length));/* #394 short on 
   function done(e,first,el){err+=e;const g=first?2:e>=2&&!el?0:1;if(g){gems+=g;O.addGems(g,el||wrap);O.floatText(el||wrap,'+'+g);}
     setTimeout(()=>{if(!wrap.isConnected)return;i++;if(i<qs.length)show();else finish();},D(e>=2?2200:1300));}
   function finish(){CUR=null;T.setKey(null);const st=err<=Math.max(1,items*.1)?3:err<=Math.max(3,items*.3)?2:1;const up=st>=2&&lvl<max;const m2=ST();if(up)m2[key]=lvl+1;if(KN)KN.end('music');
+    /* #615 a good play round (not free play) counts toward the theory; the round that opens it says so */
+    let opened=false;if(PLAY[key]&&key!=='song'&&st>=2){opened=m2.good===GOOD-1;m2.good++;O.persist();}
     const bonus=5+st*2;O.addGems(bonus);T.record(id,st);
-    T.result({title:{read:'קוֹרֵא תָּוִים אַלּוּף!',ear:'אֹזֶן מְצֻיֶּנֶת!',rhy:'מְתוֹפֵף אַלּוּף!',mel:'נִגַּנְתָּ מֵהַתָּוִים!'}[key],sub:m2[key]>lvl?`עָלִיתָ לְשָׁלָב ${m2[key]}!`:st>=2&&lvl===max?'סִיַּמְתָּ אֶת כָּל הַשְּׁלָבִים!':'',stars:st,gems:gems+bonus,back,again:()=>START[key](back)});}
+    T.result({title:{read:'קוֹרֵא תָּוִים אַלּוּף!',ear:'אֹזֶן מְצֻיֶּנֶת!',rhy:'מְתוֹפֵף אַלּוּף!',mel:'נִגַּנְתָּ מֵהַתָּוִים!',hl:'אֹזֶן מְצֻיֶּנֶת!',cp:'מְתוֹפֵף אַלּוּף!',mem:'זִכָּרוֹן מְצֻיָּן!',song:'אֵיזֶה שִׁיר יָפֶה!'}[key],
+      sub:opened?'פָּתַחְתָּ מִשְׂחֲקֵי תָּוִים חֲדָשִׁים!':key==='song'?'':m2[key]>lvl?`עָלִיתָ לְשָׁלָב ${m2[key]}!`:st>=2&&lvl===max?'סִיַּמְתָּ אֶת כָּל הַשְּׁלָבִים!':'',stars:st,gems:gems+bonus,back,again:()=>START[key](back)});}
   window.__quiz={get ans(){return CUR&&CUR.ans?CUR.ans():undefined;},get i(){return i;},get wrap(){return wrap;}};
   show();}
 
@@ -8338,9 +8383,9 @@ const KIND={
       if(k===q.ans){if(T.rdA&&!q.play)T.rdA(q,tries,b);lock=true;b.classList.add('ok');sfx.ok(tries);if(q.after)q.after();done(tries,!tries&&!(HB&&HB.step),b);return;}
       tries++;b.classList.add('bad');b.disabled=true;sfx.no();
       if(tries>=2||q.opts.length<=2){lock=true;row.children[q.ans].classList.add('show');if(q.after)q.after();if(HB)HB.answer();done(Math.max(tries,2),false,null);}}
-    return {ans:()=>q.ans,solve:()=>row.children[q.ans].click()};},
+    return {q,ans:()=>q.ans,solve:()=>row.children[q.ans].click()};},
   /* see the note -> press it on the piano */
-  piano(q,wrap,done){let tries=0,lock=false;const card=h('div','prq tqc',`${staffSVG([{i:q.i,d:'q'}],{clef:q.clef,minW:200})}<div class="qq">נַגֵּן אֶת הַתָּו הַזֶּה בַּפְּסַנְתֵּר.</div>`);wrap.appendChild(card);O.sayNow='נגן את התו הזה בפסנתר.';
+  piano(q,wrap,done){let tries=0,lock=false;const card=h('div','prq tqc',`${staffSVG([{i:q.i,d:'q',col:colOf(q.i)}],{clef:q.clef,minW:200})}<div class="qq">נַגֵּן אֶת הַתָּו הַזֶּה בַּפְּסַנְתֵּר.</div>`);wrap.appendChild(card);O.sayNow='נגן את התו הזה בפסנתר.';
     const target=midiOf(q.i);let HB=null;const kb=keyboard(q.clef==='bass'?48:60,q.names,(m,k)=>{play(m);if(lock)return;
       if(m===target){lock=true;flash(k,'ok');sfx.ok(tries);done(tries,!tries&&!(HB&&HB.step),k);return;}
       tries++;flash(k,'bad');if(tries>=2)end();});
@@ -8391,7 +8436,53 @@ const KIND={
       for(let k=0;k<4;k++)later(()=>{click(k===0);msg.textContent=String(k+1);},(4+k)*beat+beat);
       later(()=>{phase='tap';taps=[];t0=performance.now();msg.textContent='עַכְשָׁו אַתָּה!';on.forEach((o,j)=>later(()=>lit(j),o*beat));},9*beat);
       later(()=>finishTry(judge()),9*beat+4.6*beat);};
-    return {pat,solve:()=>{phase='idle';finishTry(true);}};}};
+    return {pat,solve:()=>{phase='idle';finishTry(true);}};},
+  /* #615 copy the rhythm: the friend claps (the drum lights up), then Oren taps the same rhythm on the big drum; no count-in, he starts when he wants */
+  copy(q,wrap,done){const beat=600,on=q.on;let tries=0,taps=[],phase='demo',idle=null;
+    const card=h('div','prq tqc',`<div class="m2ear">👏</div><div class="qq">הַקְשֵׁב לַקֶּצֶב, וְתוֹפֵף אוֹתוֹ בְּדִיּוּק כָּךְ.</div>`);
+    const again=h('button','hintbtn',ICON.say+'<span>שׁוּב</span>');card.appendChild(again);
+    const dots=h('div','m2dots',on.map(()=>'<i></i>').join(''));const msg=h('div','lcap m2msg','');const dr=h('button','drum m2drum m2big','🥁');
+    wrap.append(card,dots,msg,dr);O.sayNow='הקשב לקצב, ותופף אותו בדיוק כך.';
+    const later=(f,ms)=>setTimeout(()=>{if(wrap.isConnected)f();},D(ms));
+    const bump=()=>{dr.classList.remove('hit');void dr.offsetWidth;dr.classList.add('hit');drum();};
+    const dot=(j,c)=>{const d=dots.children[j];if(d)d.className=c||'';};
+    const demo=()=>{phase='demo';taps=[];clearTimeout(idle);again.disabled=true;[...dots.children].forEach(d=>d.className='');msg.textContent='הַקְשֵׁב...';
+      on.forEach((o,j)=>later(()=>{bump();dot(j,'on');},o*beat));
+      later(()=>{phase='tap';again.disabled=false;[...dots.children].forEach(d=>d.className='');msg.textContent='עַכְשָׁו אַתָּה!';},on[on.length-1]*beat+beat);};
+    const judge=()=>{clearTimeout(idle);if(phase!=='tap')return;phase='judge';const good=copyJudge(on.map(o=>o*D(beat)),taps,Math.max(60,D(280)));
+      if(good){msg.textContent='מְעֻלֶּה! בְּדִיּוּק בַּקֶּצֶב.';sfx.ok(tries);done(tries,!tries,dr);return;}
+      tries++;sfx.no();if(tries>=2){msg.textContent='לֹא נוֹרָא, נַמְשִׁיךְ.';done(2,false,null);return;}
+      msg.textContent='כִּמְעַט! הַקְשֵׁב שׁוּב.';later(demo,1200);};
+    /* t: the tap time (ms), for the tests; a real tap uses the clock */
+    const hit=t=>{bump();if(phase!=='tap')return;taps.push(t==null?performance.now():t);dot(taps.length-1,'ok');clearTimeout(idle);
+      if(taps.length>=on.length)judge();else if(t==null)idle=setTimeout(()=>{if(wrap.isConnected)judge();},D(3*beat));};
+    dr.onclick=()=>hit();again.onclick=()=>{if(phase==='tap')demo();};T.setKey(e=>{if(e.code==='Space'||e.key===' '){e.preventDefault();hit();}});
+    later(demo,700);
+    return {on,beat:D(beat),hit,get phase(){return phase;},solve:()=>{if(phase==='judge')return;phase='judge';clearTimeout(idle);msg.textContent='מְעֻלֶּה! בְּדִיּוּק בַּקֶּצֶב.';done(tries,!tries,dr);}};},
+  /* #615 color memory: the colored keys light up and play a melody, Oren presses them in the same order */
+  mem(q,wrap,done){const seq=q.seq,gap=650;let taps=[],err=0,phase='show';
+    const card=h('div','prq tqc',`<div class="qq">הִסְתַּכֵּל וְהַקְשֵׁב, וְאָז לְחַץ בְּאוֹתוֹ סֵדֶר.</div>`);wrap.appendChild(card);O.sayNow='הסתכל והקשב, ואז לחץ באותו סדר.';
+    const pads=h('div','chs m2pads');MEMKEYS.forEach((st,k)=>{const b=h('button','m2pad','');b.style.background=NCOL[st];b.onclick=()=>press(k);pads.appendChild(b);});wrap.appendChild(pads);
+    const later=(f,ms)=>setTimeout(()=>{if(wrap.isConnected)f();},D(ms));
+    const light=k=>{const b=pads.children[k];b.classList.remove('lit');void b.offsetWidth;b.classList.add('lit');play(midiOf(MEMKEYS[k]),.45);setTimeout(()=>b.classList.remove('lit'),D(400));};
+    const show=()=>{phase='show';taps=[];seq.forEach((k,j)=>later(()=>light(k),400+j*gap));later(()=>{phase='tap';},400+seq.length*gap);};
+    function press(k){if(phase!=='tap')return;light(k);taps.push(k);const r=memCheck(seq,taps);if(r==='more')return;
+      if(r==='ok'){phase='done';sfx.ok(err);done(err,!err,pads.children[k]);return;}
+      err++;sfx.no();if(err>=2){phase='done';done(2,false,null);return;}show();}
+    show();
+    return {seq,get phase(){return phase;},get err(){return err;},ans:()=>phase==='tap'?seq[taps.length]:undefined,solve:()=>{if(phase!=='tap')return;while(phase==='tap')press(seq[taps.length]);}};},
+  /* #615 my song: free play on big colored keys; after a few notes "listen" plays his song back, the keys lighting up */
+  song(q,wrap,done){const KS=[0,1,2,4,5],notes=[];let lock=false;
+    const card=h('div','prq tqc',`<div class="qq">נַגֵּן מָה שֶׁבָּא לְךָ, וְאָז תִּשְׁמַע אֶת הַשִּׁיר שֶׁלְּךָ.</div>`);wrap.appendChild(card);O.sayNow='נגן מה שבא לך, ואז תשמע את השיר שלך.';
+    const pads=h('div','m2pads m2song');KS.forEach((st,k)=>{const b=h('button','m2pad','');b.style.background=NCOL[st];b.onclick=()=>tap(k);pads.appendChild(b);});
+    const go=h('button','bigbtn m2listen',ICON.play+'<span>הַשִּׁיר שֶׁלִּי</span>');go.hidden=true;wrap.append(pads,go);
+    const light=k=>{const b=pads.children[k];b.classList.remove('lit');void b.offsetWidth;b.classList.add('lit');setTimeout(()=>b.classList.remove('lit'),D(300));};
+    function tap(k){if(lock)return;light(k);const m=midiOf(KS[k]);play(m,.5);notes.push({m,t:performance.now(),k});if(notes.length>=4)go.hidden=false;if(notes.length>=16)listen();}
+    function listen(){if(lock||!notes.length)return;lock=true;go.hidden=true;const pl=songPlan(notes),sp=window.__fast?1/15:1;
+      pl.forEach((x,j)=>{play(x.m,.5,1,x.at*sp);setTimeout(()=>{if(wrap.isConnected)light(notes[j].k);},x.at*sp*1000);});
+      setTimeout(()=>{if(wrap.isConnected){sfx.ok(2);done(0,true,go);}},(pl[pl.length-1].at*sp+.6*sp)*1000);}
+    go.onclick=listen;T.setKey(e=>{const k='ASDFG'.indexOf((e.code||'').replace('Key',''));if(k>=0&&!e.repeat){e.preventDefault();tap(k);}});
+    return {notes,solve:()=>{while(notes.length<4)tap(notes.length%KS.length);listen();}};}};
 /* computer keyboard: A S D F G H J K = white keys from the lowest */
 function keyMap(kb){const ws=[...kb.querySelectorAll('.mw')];T.setKey(e=>{const k='ASDFGHJK'.indexOf((e.code||'').replace('Key',''));if(k>=0&&ws[k]&&!e.repeat){e.preventDefault();ws[k].click();}});}
 
@@ -8411,7 +8502,7 @@ const noteBtn=(i,clef)=>`<span class="m2opt">${staffSVG([{i,d:'q'}],{clef,minW:1
 function readQs(){const L0=READ[ST().read-1];const qs=[];let last=null;
   for(let n=0;n<QN;n++){const rv=rev('read'),L=rv?READ[rv.lv[1]-1]:L0;let i;do i=pick(L.pool);while(i===last&&L.pool.length>1);last=i;
     if(n%2===0){const right=nameOf(i);const names=[...new Set(L.pool.map(nameOf))].filter(x=>x!==right);const opts=shuffle([right,...shuffle(names).slice(0,L.opts-1)]);
-      qs.push({k:'choice',pr:`${staffSVG([{i,d:'q'}],{clef:L.clef,minW:200})}<div class="qq">אֵיזֶה תָּו זֶה?</div>`,opts,ans:opts.indexOf(right),explain:countUp(i),after:()=>play(midiOf(i)),key:'r'+n,rv:rv&&rv.id});}
+      qs.push({k:'choice',pr:`${staffSVG([{i,d:'q',col:colOf(i)}],{clef:L.clef,minW:200})}<div class="qq">אֵיזֶה תָּו זֶה?</div>`,opts,ans:opts.indexOf(right),explain:countUp(i),after:()=>play(midiOf(i)),key:'r'+n,rv:rv&&rv.id});}
     else qs.push({k:'piano',i,clef:L.clef,names:L.names,rv:rv&&rv.id});}
   return qs;}
 function earQs(){const kind=EAR[ST().ear-1];const qs=[];
@@ -8428,6 +8519,13 @@ function rhyQs(){const L0=RHY[ST().rhy-1];const qs=[];
     qs.push({k:'choice',pr:`${staffSVG([{i:0,d:v}],{one:true,minW:160})}<div class="qq">${byBeats?'כַּמָּה פְּעָמוֹת נִמְשָׁךְ הַתָּו הַזֶּה?':'אֵיזֶה תָּו זֶה?'}</div>`,opts,ans:opts.indexOf(right),explain:HM[v],cls:byBeats?'m2num':'',key:'v'+n,rv:rv&&rv.id});}
   shuffle(L0.pats.slice()).slice(0,Math.max(0,QN-L0.nq)).forEach(p=>qs.push({k:'tap',pat:p}));
   return qs;}
+/* #615 the play games' rounds: 5 high/low pairs, 4 rhythms to copy, 4 growing melodies, one song */
+const HLO=['<span class="m2pe">🐦</span><b>גָּבוֹהַּ</b>','<span class="m2pe">🐻</span><b>נָמוּךְ</b>'];
+function hlQs(){const lv=ST().hl;return Array.from({length:QN},()=>{const {a,b,hi}=hlPair(lv);
+  return {k:'choice',pr:`<div class="m2ear">🎵 🎵</div><div class="qq">הַצְּלִיל הַשֵּׁנִי גָּבוֹהַּ כְּמוֹ צִפּוֹר, אוֹ נָמוּךְ כְּמוֹ דֹּב?</div>`,opts:HLO,ans:hi?0:1,cls:'m2pic m2hl',explain:hi?HM.hi:HM.lo,
+    clue:()=>{play(a,.6);play(b,.6,1,1.4);return HM.hlClue;},play:()=>{play(a,.6);play(b,.6,1,.8);},auto:1,playLbl:'שׁוּב',say:'הצליל השני גבוה כמו ציפור, או נמוך כמו דוב?',a,b};});}
+function cpQs(){return shuffle(COPY[ST().cp-1].slice()).map(on=>({k:'copy',on}));}
+function memQs(){return memSeqs(ST().mem).map(seq=>({k:'mem',seq}));}
 function melQs(){const L=MEL[ST().mel-1];return L.songs.map(song=>({k:'melody',song,names:L.names,items:parseMel(song).length}));}
 /* lesson cards before the first rhythm questions (#56): note lengths; eighths get their own lesson when they first appear */
 const LN=window.LESSONS;
@@ -8465,22 +8563,27 @@ if(KN)KN.area('music',{name:'מוזיקה',skills:[
 const rhyLessons=()=>['mus-len',...(RHY[ST().rhy-1].vals.includes('e')?['mus-len8']:[])];
 const rhyRun=back=>lesson('rhy',rhyQs(),back);
 const readRun=back=>lesson('read',readQs(),back);
-const START={read:back=>LN?LN.first('mus-staff',back,()=>readRun(back)):readRun(back),ear:back=>lesson('ear',earQs(),back),rhy:back=>LN?LN.first(rhyLessons(),back,()=>rhyRun(back)):rhyRun(back),mel:back=>lesson('mel',melQs(),back)};
+const THEORY=['mus2-read','mus2-ear','mus2-rhythm','mus2-melody','mus-rhythm'];   /* mus-rhythm: the older drum round reads note symbols */
+const START={hl:back=>lesson('hl',hlQs(),back),cp:back=>lesson('cp',cpQs(),back),mem:back=>lesson('mem',memQs(),back),song:back=>lesson('song',[{k:'song'}],back),read:back=>LN?LN.first('mus-staff',back,()=>readRun(back)):readRun(back),ear:back=>lesson('ear',earQs(),back),rhy:back=>LN?LN.first(rhyLessons(),back,()=>rhyRun(back)):rhyRun(back),mel:back=>lesson('mel',melQs(),back)};
 
 /* ---------- registration + parent info ---------- */
-const ICONS={read:()=>staffSVG([{i:4,d:'q'}],{minW:96,cls:'mini'}),ear:()=>'<span style="font-size:34px">👂</span>',rhy:()=>staffSVG([{i:0,d:'e',beam:'s'},{i:0,d:'e',beam:'e'},{i:0,d:'q'}],{one:true,cls:'mini'}),mel:()=>staffSVG([{i:0,d:'q'},{i:2,d:'q'},{i:4,d:'q'}],{cls:'mini'})};
-const actList=()=>Object.keys(ACTS).map(k=>({id:ACTS[k][0],name:ACTS[k][1],icon:ICONS[k],run:START[k],avail:k==='mel'?()=>((T.S().tl['mus2-read']||{}).s|0)>0:undefined}));
+const ICONS={hl:()=>'<span style="font-size:34px">🐦🐻</span>',cp:()=>'<span style="font-size:34px">🥁</span>',mem:()=>`<span class="m2ico">${MEMKEYS.map(st=>`<i style="background:${NCOL[st]}"></i>`).join('')}</span>`,song:()=>'<span style="font-size:34px">🎹</span>',read:()=>staffSVG([{i:4,d:'q'}],{minW:96,cls:'mini'}),ear:()=>'<span style="font-size:34px">👂</span>',rhy:()=>staffSVG([{i:0,d:'e',beam:'s'},{i:0,d:'e',beam:'e'},{i:0,d:'q'}],{one:true,cls:'mini'}),mel:()=>staffSVG([{i:0,d:'q'},{i:2,d:'q'},{i:4,d:'q'}],{cls:'mini'})};
+const actList=()=>Object.keys(ALL).map(k=>({id:ALL[k][0],name:ALL[k][1],icon:ICONS[k],run:START[k],avail:k==='mel'?()=>theoryOpen()&&((T.S().tl['mus2-read']||{}).s|0)>0:ACTS[k]?theoryOpen:undefined}));
 const SKILLS={'קריאת תווים':['mus2-read','mus2-melody'],'שמיעה':['mus2-ear'],'קצב':['mus2-rhythm']};
 let reg=false;
 /* the new activities replace the hall's older note-name / note-length / ear quizzes (they stay in T.ACT, so old records still count) */
 const RETIRE=['mus-notes','mus-dur','mus-ear'];
 function register(building){if(reg)return;reg=true;const acts=actList();const hall=T.BUILD.find(b=>b.id==='music');
-  if(hall){hall.acts=hall.acts.filter(a=>!RETIRE.includes(a.id));const add=acts.filter(a=>!T.ACT[a.id]);hall.acts.unshift(...add);add.forEach(a=>{T.ACT[a.id]=a;a.b=hall;});}
+  if(hall){hall.acts=hall.acts.filter(a=>!RETIRE.includes(a.id));const add=acts.filter(a=>!T.ACT[a.id]);add.forEach(a=>{T.ACT[a.id]=a;a.b=hall;});
+    /* #615 play games first, then the rest; theory last, closed until GOOD good play rounds */
+    const old=T.ACT['mus-rhythm'];if(old&&!old.avail)old.avail=theoryOpen;
+    const play=add.filter(a=>!THEORY.includes(a.id)),rest=hall.acts.filter(a=>!THEORY.includes(a.id)),th=[...add.filter(a=>THEORY.includes(a.id)),...hall.acts.filter(a=>THEORY.includes(a.id))];
+    hall.acts=[...play,...rest,...th];hall.blurb='מַקְשִׁיבִים, מְתוֹפְפִים וּמְנַגְּנִים.';}
   else (building||T.building)({id:'music',name:'אוּלַם הַמּוּזִיקָה',color:'#b8860b',bg:'final',icon:()=>T.X.note,acts});}
 /* for the parent panel: one row per skill (plain text, no nikud) */
 function skills(){const tl=T.S().tl,m2=ST();const lv={'קריאת תווים':m2.read,'שמיעה':m2.ear,'קצב':m2.rhy};
   return Object.entries(SKILLS).map(([name,ids])=>({name,ids,stars:ids.reduce((a,id)=>a+((tl[id]||{}).s|0),0),max:ids.length*3,plays:ids.reduce((a,id)=>a+((tl[id]||{}).n|0),0),level:lv[name]}));}
-Object.assign(window.MUSIC2,{register,skills,SKILLS,START,ST,READ,EAR,RHY,MEL,play,rhyQs,readQs,
+Object.assign(window.MUSIC2,{register,skills,SKILLS,START,ST,READ,EAR,RHY,MEL,play,rhyQs,readQs,PLAY,THEORY,theoryOpen,
   setLevel:(k,n)=>{ST()[k]=n;O.persist();},solve:()=>CUR&&CUR.solve&&CUR.solve()});
 Object.defineProperty(window.MUSIC2,'cur',{get:()=>CUR});
 })();
@@ -11909,6 +12012,7 @@ const G={T:{
  'mus-notes':'אֶת הַשֵּׁמוֹת שֶׁל הַתָּוִים','mus-dur':'שֶׁיֵּשׁ תָּוִים אֲרֻכִּים וְתָוִים קְצָרִים','mus-ear':'לִשְׁמֹעַ אִם צְלִיל גָּבוֹהַּ אוֹ נָמוּךְ',
  'mus-rhythm':'לְהַקִּישׁ בַּקֶּצֶב','mus-piano':'לְנַגֵּן שִׁיר עַל פְּסַנְתֵּר','mus2-read':'לִקְרֹא תָּוִים','mus2-ear':'לְהַקְשִׁיב וּלְזַהוֹת צְלִילִים',
  'mus2-rhythm':'לִקְרֹא קֶצֶב מֵהַתָּוִים','mus2-melody':'לְנַגֵּן מַנְגִּינָה מֵהַתָּוִים',
+ 'mus3-hl':'לְהַבְחִין בֵּין צְלִיל גָּבוֹהַּ לִצְלִיל נָמוּךְ','mus3-copy':'לְחַקּוֹת קֶצֶב','mus3-mem':'לִזְכֹּר מַנְגִּינָה','mus3-song':'לְהַמְצִיא שִׁיר מִשֶּׁלְּךָ',
  'art-draw':'לְצַיֵּר בְּרִבּוּעִים קְטַנִּים','art-cbn':'לִפְתֹּר תַּרְגִּיל וְלִצְבֹּעַ לְפִי הַתְּשׁוּבָה',
  'art-mix':'אֵיזֶה צֶבַע יוֹצֵא מִשְּׁנֵי צְבָעִים','art-sym':'מָה זֶה סִימֶטְרִיָּה, כְּמוֹ בְּמַרְאָה',
  'type-lessons':'אֵיפֹה הָאוֹתִיּוֹת עַל הַמִּקְלֶדֶת','type-rain':'לִמְצֹא אוֹתִיּוֹת מַהֵר בַּמִּקְלֶדֶת',
