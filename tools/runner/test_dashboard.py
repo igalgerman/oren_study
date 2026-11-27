@@ -228,3 +228,13 @@ _lm = D.model(_li, [], [], now)
 assert [r["n"] for r in _lm["by_state"]["waiting"]] == [23] and 22 in [r["n"] for r in _lm["by_state"]["ready"]], _lm["by_state"]
 assert {r["n"]: r["blockers"] for r in _lm["rows"]}[22] == [], _lm["rows"]
 print("dashboard #465 OK")
+
+# #618: bugs found by the tester / the post-deploy tour vs bugs the owner reports from the live game (a photo or "Owner" in the body)
+_bm = D.model(issues + [I(30, "OPEN", ["bug", "P0"], body="tour failed\n<!-- found-by: tester -->"),
+                        I(31, "CLOSED", ["bug"], cl="2026-11-26T07:00:00Z", body="Owner (27 Nov): no voice"),
+                        I(32, "OPEN", ["bug"], body="![shot](https://x/y.png) skip does nothing"),
+                        I(33, "OPEN", ["enhancement"], body="Owner wants")], prs, ev, now)
+assert _bm["bug_sources"] == {"tester": 1, "owner": 2}, _bm["bug_sources"]
+assert "Bugs found by the tester: 1 · reported by the owner from the live game: 2" in D.text(_bm), D.text(_bm)
+assert "found by the tester" in D.page(_bm)
+print("dashboard #618 OK")

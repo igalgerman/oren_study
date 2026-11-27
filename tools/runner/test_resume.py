@@ -97,10 +97,12 @@ print("ok park_issue labels")
 
 # ---- end to end: process() picks up the stored step ----
 _names = ("gh", "run", "set_labels", "stat", "set_where", "issue_over", "tell_orchestrator", "find_pr", "branch_of", "agent",
-          "ci_integrate", "remote_review", "remote_fix", "remote_worker", "remote_task", "find_pr_merged", "deploy_main", "sync_main", "remove_worktree", "close_windows")
+          "ci_integrate", "remote_review", "remote_tester", "remote_fix", "remote_worker", "remote_task", "find_pr_merged", "deploy_main", "sync_main", "remove_worktree", "close_windows")
 _saved = {k: getattr(r, k) for k in _names}
-def e2e(n, step, verdicts, integ, where="remote", stored="", real_review=False):
-    calls = {"agent": [], "cloud": [], "review": 0, "fix": 0, "worker": 0, "labels": [], "comments": []}
+def e2e(n, step, verdicts, integ, where="remote", stored="", real_review=False, tests=None):
+    calls = {"agent": [], "cloud": [], "review": 0, "fix": 0, "worker": 0, "labels": [], "comments": [], "test": [], "fixtext": []}
+    ts = list(tests or [])
+    r.remote_tester = lambda n, pr, level, *a, **k: calls["test"].append(level) or ("shots", ts.pop(0) if ts else "TEST: PASS")   # #618
     r.gh = lambda *a, **k: (calls["comments"].append(a[3]) if a[:2] == ("issue", "comment") else None) or (0, "sha1")
     r.run = lambda *a, **k: (0, ""); r.stat = lambda *a, **k: None; r.set_where = lambda *a: None
     r.issue_over = lambda n, since: False; r.tell_orchestrator = lambda t: None
@@ -109,8 +111,8 @@ def e2e(n, step, verdicts, integ, where="remote", stored="", real_review=False):
     r.remote_worker = lambda *a, **k: calls.__setitem__("worker", calls["worker"] + 1) or "RESULT: DONE"
     vs = list(verdicts)
     if not real_review:
-        r.remote_review = lambda *a, **k: (calls.__setitem__("review", calls["review"] + 1), ("", vs.pop(0)))[1]
-    r.remote_fix = lambda *a, **k: calls.__setitem__("fix", calls["fix"] + 1) or "RESULT: DONE"
+        r.remote_review = lambda *a, **k: (calls.__setitem__("review", calls["review"] + 1), (lambda v: (v, v.splitlines()[-1]))(vs.pop(0)))[1]
+    r.remote_fix = lambda n, sess, text, *a, **k: calls["fixtext"].append(text) or calls.__setitem__("fix", calls["fix"] + 1) or "RESULT: DONE"
     r.agent = lambda name, *a, **k: calls["agent"].append(name) or ("", "RESULT: STUCK cannot")
     r.remote_task = lambda n, text, *a, **k: calls["cloud"].append(text) or "RESULT: STUCK cannot"     # #289: a cloud lane resolves in the cloud
     ig = list(integ)
@@ -133,6 +135,19 @@ res, c = e2e(188, "resolve", [], [(2, "CONFLICTS\na.js"), (2, "CONFLICTS\na.js")
 assert res.startswith("BLOCKED") and c["worker"] == c["review"] == 0 and len(c["cloud"]) == 1 and c["agent"] == [], (res, c)   # #289: no local resolve worker
 assert not any("ready-for-human" in a for a, _ in c["labels"]) and any("needs-orchestrator" in a for a, _ in c["labels"]), c["labels"]   # never the owner
 print("ok process resumes at review / fix / merge / resolve; conflicts -> needs-orchestrator")
+
+# #618: review -> test -> merge for T1+ (no TEST line = T2); T0 skips the tester; a tester FAIL goes back to the worker like a RED review
+res, c = e2e(618, "review", ["TEST: T0\nVERDICT: PASS"], [(0, "")])
+assert res.startswith("DONE") and c["test"] == [], (res, c)
+res, c = e2e(619, "review", ["VERDICT: PASS"], [(0, "")])
+assert res.startswith("DONE") and c["test"] == ["T2"], (res, c)
+res, c = e2e(620, "review", ["TEST: T3\nVERDICT: PASS-NOTES name", "TEST: T3\nVERDICT: PASS"], [(0, "")],
+             tests=["TEST: FAIL parent +10 min -> kid still locked", "TEST: PASS"])
+assert res.startswith("DONE") and c["test"] == ["T3", "T3"] and c["fix"] == 1 and c["review"] == 2, (res, c)
+assert "parent +10 min" in c["fixtext"][0] and "VERDICT: FIX" in c["fixtext"][0], c["fixtext"]
+res, c = e2e(621, "review", ["TEST: T1\nVERDICT: PASS"] * 3, [(0, "")], tests=["TEST: FAIL a"] * 3)
+assert res.startswith("BLOCKED") and c["fix"] == 2 and "still RED" in res, (res, c)                    # same #303 limit as a RED review
+print("ok #618 review -> test -> merge; T0 skips; tester FAIL -> fix loop")
 
 # review of #273: a dirty PR without a PASS is never merged unreviewed: fix + review run before ci_integrate
 res, c = e2e(190, "resolve", ["VERDICT: PASS"], [(0, "")], stored="VERDICT: FIX add a test")

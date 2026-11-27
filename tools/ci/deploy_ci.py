@@ -3,6 +3,9 @@
   python3 tools/ci/deploy_ci.py smoke <url> [<url>..] live check (#150): page loads, save round trip (random id, then deleted), D1 bound,
                                                       /api/tts/status; exit 1 on a failure. Workers: run it on demand against
                                                       https://oren-game.pages.dev to verify a fix on the live site; it leaves no data behind.
+  python3 tools/ci/deploy_ci.py tour <tour.log>         #618: the regression tour's result (tools/ci/tour.js output) -> outputs tour=pass|fail, repro
+  python3 tools/ci/deploy_ci.py tour-issue            #618: a failed tour on production -> one P0 bug issue (env REPRO, SHA, TITLE, PREV);
+                                                      PREV=pass (the tour passed on the previous deploy) -> also the express undo (revert) Acceptance
   python3 tools/ci/deploy_ci.py plan                  which sha to deploy (env EVENT, RUN_SHA, MAIN_SHA, GREEN_SHA) -> output sha ("" = skip)"""
 import json, os, secrets, subprocess, sys, time, urllib.error, urllib.request
 
@@ -86,6 +89,43 @@ def attempted_cache(sha):
     if p.returncode: raise SystemExit("could not read the Actions caches: " + p.stderr[:300])
     return key in json.loads(p.stdout or "[]")
 
+TESTER_MARK = "<!-- found-by: tester -->"   # #618: in every bug the tester / the post-deploy tour opens (dashboard count)
+
+def tour_result(log):
+    """tools/ci/tour.js prints `TOUR: PASS` or `TOUR: FAIL <id>: <repro>; ...` last -> (pass|fail, repro). No line = fail."""
+    lines = [l.strip() for l in (log or "").splitlines() if l.strip().startswith("TOUR:")]
+    if not lines: return "fail", "the tour did not finish (no TOUR line): " + " / ".join((log or "").strip().splitlines()[-3:])[:300]
+    rest = lines[-1][len("TOUR:"):].strip()
+    return ("pass", "") if rest == "PASS" else ("fail", rest[len("FAIL"):].strip() if rest.startswith("FAIL") else rest)
+
+def tour_fail_actions(repro, sha, merge_title, prev):
+    """Post-deploy tour failed on production -> the P0 bug issue to open. undo (an express revert of the last merge,
+    the /undo of .claude/commands/undo.md through the normal flow) only when the tour passed on the previous deploy
+    (prev = 'pass'); otherwise the bug was there before, a revert would not fix it."""
+    undo = prev == "pass"
+    title = f"Live tour failed after deploy {sha[:7]}"
+    body = (f"The post-deploy regression tour (tools/ci/tour.js) failed on https://oren-game.pages.dev after deploy {sha[:7]} ({merge_title}).\n\n"
+            f"Repro: {repro}\n\n")
+    if undo:
+        body += ("The tour passed on the previous deploy, so the last merge is undone (/undo):\n\n## Acceptance\n"
+                 f"- [ ] `git revert --no-edit {sha}` on a lane branch, PR to main with `Fixes` this issue, normal tests -> merge -> deploy\n"
+                 "- [ ] reopen the issue of that merge with a comment linking this one\n\nOut of scope: fixing the bug itself (the reopened issue does that).\n")
+    else:
+        body += "The tour also failed (or did not run) on the previous deploy, so no undo: fix forward.\n"
+    labels = ["P0", "bug"] + (["express", "ready-for-agent", "pack"] if undo else [])
+    return {"title": title, "body": body + "\n" + TESTER_MARK, "labels": labels, "undo": undo}
+
+def tour_issue(env, run=subprocess.run):
+    """Open the P0 bug once per deploy sha (a rerun of the job finds the open one and comments instead)."""
+    a = tour_fail_actions(env.get("REPRO", "?"), env.get("SHA", "?"), env.get("TITLE", ""), env.get("PREV", ""))
+    found = run(["gh", "issue", "list", "--state", "open", "--search", f'in:title "{a["title"]}"', "--json", "number", "--jq", ".[0].number"],
+                capture_output=True, text=True).stdout.strip()
+    if found:
+        run(["gh", "issue", "comment", found, "--body", "The tour failed again on a rerun: " + env.get("REPRO", "?")]); return a, found
+    cmd = ["gh", "issue", "create", "--title", a["title"], "--body", a["body"]]
+    for l in a["labels"]: cmd += ["--label", l]
+    run(cmd); return a, ""
+
 def _append(var, text):
     p = os.environ.get(var)
     if p:
@@ -105,6 +145,14 @@ def main(argv, attempted=attempted_cache):
             _append("GITHUB_STEP_SUMMARY", text); print(text)
         _append("GITHUB_OUTPUT", f"smoke={str(good).lower()}\n")
         return 0 if good else 1
+    if len(argv) == 2 and argv[0] == "tour":
+        res, repro = tour_result(open(argv[1], encoding="utf-8", errors="replace").read())
+        _append("GITHUB_OUTPUT", f"tour={res}\nrepro={repro.replace(chr(10), ' ')[:500]}\n")
+        text = f"\n## Regression tour on production: {'ok' if res == 'pass' else 'FAILED'}\n\n{repro}\n"; _append("GITHUB_STEP_SUMMARY", text); print(text)
+        return 0
+    if argv == ["tour-issue"]:
+        a, found = tour_issue(os.environ)
+        print(("commented on #" + found) if found else ("opened: " + a["title"] + (" (+ undo)" if a["undo"] else ""))); return 0
     if argv == ["plan"]:
         e = os.environ.get
         sha, why = plan(e("EVENT", ""), e("RUN_SHA", ""), e("MAIN_SHA", ""), e("GREEN_SHA", ""), attempted)

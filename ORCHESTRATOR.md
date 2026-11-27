@@ -11,6 +11,12 @@ The PC runs only the 3 control sessions (orchestrator, inbox, inspector), the wa
 - A conflicting PR gets a cloud resolve session by itself (watchdog, #262); all cloud lanes run in ONE `lanes` window (runner.py --lanes), never one `run-<n>` per lane.
 - The AI observer and the nightly retro are cloud scheduled tasks (docs/agents/cloud-tasks.md); the watchdog relays their findings to you.
 
+## Testing before merge and after deploy (#618, owner 27 Nov: "we are in production now")
+- Every review ends with `TEST: T0|T1|T2|T3` (rules in FLOW.md, Reviewer); none = T2. For T1+ the runner starts the cloud Tester `test-<n>` on the PR preview `https://pr-<pr>.oren-game.pages.dev` after the PASS; `TEST: FAIL` goes back to the worker like a RED review. Never merge a T1+ PR by hand without a `TEST: PASS` for its head.
+- After each deploy the regression tour runs on production (deploy.yml); a fail opens a P0 `Live tour failed after deploy <sha>` issue. When it carries `express` it is the automatic undo (revert of the last merge): let it run; otherwise fix forward.
+- A tester run by hand: start a cloud session with `python -c "import sys;sys.path.insert(0,'tools/runner');import tester;print(tester.prompt(<n>,<pr>,'T2',tester.preview_url(<pr>)))"` as its task.
+- The dashboard line `Bugs found by the tester · reported by the owner` shows if it works: report it to the owner when he asks about quality.
+
 ## Where things are
 - Repo: `C:\work\Oren_study\a`. `origin` = **igalgerman/oren_study** (private), branch **`main`** = what is live on the site.
   `old` = igalgerman/a (old history, never push there).

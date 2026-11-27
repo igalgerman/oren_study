@@ -8,7 +8,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import remote, ghcache, ghauth, pcload   # pcload: #293 PC load watch
+import remote, ghcache, ghauth, pcload, tester   # pcload: #293 PC load watch; tester: #618
 ROOT = HERE.parent.parent                      # repo checkout (tools/runner/../..)
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # #229: tests point this at a temp dir
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -1399,6 +1399,13 @@ def worker_prompt(n, lane, review_text=None, bug=False):
                   "re-run tests and screenshots:\n---\n" + review_text[-6000:] + "\n---")
     return base + steps
 
+# #618: the reviewer picks how much live testing the PR needs (FLOW.md, Reviewer section); the Tester runs after a PASS for T1+.
+TEST_LEVELS = ("Test level (#618): just before the VERDICT line, one line `TEST: T0|T1|T2|T3` by risk: "
+               "T0 none (docs/tooling only); T1 smoke (one kid screen, no shared code); "
+               "T2 flows (voice/sound, help, the mission picker, a screen used by many activities, or kid-facing text at scale); "
+               "T3 live two-device (sync/save, parent <-> kid commands, time limits, the parent panel). The highest that applies; "
+               "a missing TEST line counts as T2.")
+
 def review_colours(round1=""):
     colours = ("Verdict colours (the last line, exactly one): `VERDICT: PASS` (GREEN, nothing to say); "
                "`VERDICT: PASS-NOTES <note>; <note>` (BLUE: nothing wrong for Oren or the parent, only polish such as naming, small cleanup, extra test idea, comment wording; one line, notes split by `;`); "
@@ -1408,7 +1415,7 @@ def review_colours(round1=""):
                "a failing or missing test for the change, security, data loss, a broken build, "
                "a PR body that closes the issue (Fixes/Closes #n) while an Acceptance item still needs a live check after merge (owner, phone, after deploy, a measurement, a screenshot on a device; "
                "the fix: `Refs #n` + label `later` + a `Due:` line on the issue, #453). "
-               "Justify each RED point in one line. Everything else is a BLUE note, never FIX.")
+               "Justify each RED point in one line. Everything else is a BLUE note, never FIX.\n" + TEST_LEVELS)
     if round1:
         colours += ("\nThis is a re-review: check ONLY whether these round-1 RED points are fixed, raise NO new nits and no new points "
                     "(a new RED only if the fix itself broke something):\n---\n" + round1[-3000:] + "\n---")
@@ -1486,6 +1493,21 @@ def remote_review(n, pr, round1, start, get_verdict, sleep, clock, timeout_s=360
     if st["state"] == "ended": raise Ended("cloud review")
     if st["state"] == "timeout":
         return f"remote reviewer posted no VERDICT in {timeout_s // 60} min ({s.get('url', '')})", ""
+    return st.get("body") or st["line"], st["line"]
+
+def fresh_tester():
+    """#618 (#364): tester.py as it is on disk now."""
+    return fresh(tester, log_line)
+
+def remote_tester(n, pr, level, start, get_status, sleep, clock, timeout_s=5400, poll_s=60, ended=None):
+    """#618: the Tester as a cloud session `test-<n>` (Sonnet; Opus for T3) on the PR's preview; its result is a
+    `TEST: PASS|FAIL` PR comment (get_status = tester.status of this round). -> (comment, TEST line); '' line = none."""
+    s = start(n, tester.prompt(n, pr, level, tester.preview_url(pr)), CFG.get("main_checkout", "."),
+              name=tester.session_name(n), model=tester.model_for(level))
+    if not s.get("ok"): return f"tester start failed: {s.get('error', '?')}", ""
+    st = wait_remote(get_status, sleep, clock, timeout_s, poll_s, ended)
+    if st["state"] == "ended": raise Ended("cloud test")
+    if st["state"] == "timeout": return f"tester posted no TEST line in {timeout_s // 60} min ({s.get('url', '')})", ""
     return st.get("body") or st["line"], st["line"]
 
 def remote_fix_prompt(n, review_text, br=None):
@@ -1980,14 +2002,23 @@ def process_locked(issue, where="local"):
             if not (rnd == 1 and step == "fix"): (d / f"review{rnd}.out").write_text(redact(rv), encoding="utf-8")
             kind, text, extra = parse_verdict(verdict)
             if kind == "pass":
-                stat(n, lane, "review_pass"); break
+                stat(n, lane, "review_pass")
             if kind == "notes":                    # BLUE: merge now, notes go to the rolling polish issue
-                stat(n, lane, "review_pass", colour="blue"); post_polish(n, lane, pr, text); break
+                stat(n, lane, "review_pass", colour="blue"); post_polish(n, lane, pr, text)
             if kind == "purple":                   # PURPLE: owner question; merge-safe merges, hold parks
                 stat(n, lane, "review_pass" if extra == "merge-safe" else "parked", colour="purple")
                 ask_owner(n, pr, text, extra)
-                if extra == "merge-safe": break
-                raise Parked(f"owner question: {text[:200]}")
+                if extra != "merge-safe": raise Parked(f"owner question: {text[:200]}")
+            if kind in ("pass", "notes", "purple"):  # #618: review -> test (T1+, cloud tester on the preview) -> merge
+                since = utc()
+                go, level, ttext = fresh_tester().gate(rv or verdict, lambda lv: remote_tester(
+                    n, pr, lv, remote.start, lambda: fresh_tester().status(pr, since=since), poll_sleep, time.time, 5400, 60, ended=over))
+                if go == "merge":
+                    stat(n, lane, "test_pass" if level != "T0" else "test_skip", level=level); break
+                if go == "blocked": raise Blocked(f"tester ({level}): {ttext[:300]}")
+                stat(n, lane, "test_fail", level=level)
+                (d / f"test{rnd}.out").write_text(redact(ttext), encoding="utf-8")
+                kind, rv, verdict, text = "fix", ttext, ttext.splitlines()[0], ttext.splitlines()[0][len("VERDICT: FIX "):]
             if kind != "fix":
                 raise Blocked(verdict or "reviewer gave no VERDICT line" + (f": {rv[:300]}" if where == "remote" else ""))
             disable_auto(pr, log)                  # #185: FIX after a (hand) auto-merge mark: never merge the unfixed PR
