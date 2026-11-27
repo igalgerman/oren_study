@@ -5,8 +5,8 @@
      FRIEND.question(q,card) a picture that stands for a word: the word is said (q.word), tapping the picture says it again
      FRIEND.mount()/unmount() show / hide the friend (screens change → hidden; activities mount it)
    While Oren is inside a step of the day's path:
-     FRIEND.stepStart(i)    the friend ties the step to the day's story (said before the screen's instruction)
-     FRIEND.stepCheck()     after a step is done: one story line on the result card
+     FRIEND.stepStart(i)    the friend says the opening line of the story's scene (story.js, #386; said before the screen's instruction)
+     FRIEND.stepCheck()     after a step is done: the scene's closing line on the result card, and the story moves one scene on
      PATHBAR.render()       a thin strip in the top bar: today's quest + one dot per step
    FRIEND.speakList() lists every line the friend may say (for the voice pregen). */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;const {h,$}=O;const D=O.D||(x=>x);
@@ -20,12 +20,8 @@ const STREAK_MORE='עוֹד רֶצֶף אָרֹךְ! כָּל הַכָּבוֹד
 const EFFORT=['רָאִיתָ? נִסִּיתָ שׁוּב וְהִצְלַחְתָּ!','לֹא וִתַּרְתָּ, וְהִצְלַחְתָּ!','חָשַׁבְתָּ שׁוּב וּמָצָאתָ!','כָּכָה לוֹמְדִים: מְנַסִּים שׁוּב!','טָעִיתָ, תִּקַּנְתָּ וְהִצְלַחְתָּ!'];
 const WRONG=['כִּמְעַט! נַסֵּה שׁוּב.','לֹא נוֹרָא, נַסֵּה עוֹד פַּעַם.','הִסְתַּכֵּל שׁוּב, אַתָּה יָכוֹל!','זֶה בְּסֵדֶר לִטְעוֹת. נַסֵּה שׁוּב!','עוֹד נִסָּיוֹן אֶחָד!'];
 const SHOWN=['זֶה בְּסֵדֶר! עַכְשָׁו אַתָּה יוֹדֵעַ.','לֹא נוֹרָא, נִלְמַד אֶת זֶה יַחַד.','גַּם מִטָּעֻיּוֹת לוֹמְדִים!'];
-/* the day's story: what each step brings (by the quest's emoji, see QUESTS in talents.js) */
-const STORY={'🦸':['בּוֹא נַחְזִיר עוֹד גָּבִישׁ לָעִיר!','עוֹד גָּבִישׁ חָזַר לָעִיר!'],'🧱':['בּוֹא נוֹסִיף עוֹד חֵלֶק לַגֶּשֶׁר!','הַגֶּשֶׁר גָּדַל בְּעוֹד חֵלֶק!'],
- '⚽':['בּוֹא נַבְקִיעַ עוֹד גּוֹל!','גּוֹל! הַקְּבוּצָה שֶׁלְּךָ מוֹבִילָה!'],'🌊':['בּוֹא נִתְקָרֵב עוֹד קְצָת אֶל הַדָּג!','הִתְקָרַבְנוּ אֶל הַדָּג הַקָּטָן!'],
- '🎵':['בּוֹא נַחְזִיר עוֹד תָּו לַשִּׁיר!','עוֹד תָּו חָזַר לַשִּׁיר!'],'🏀':['בּוֹא נִקְלַע עוֹד סַל!','סַל! עוֹד שְׁתֵּי נְקֻדּוֹת!'],
- '🗝️':['בּוֹא נִפְתַּח עוֹד מַנְעוּל!','עוֹד מַנְעוּל נִפְתַּח!'],'🚀':['בּוֹא נָבִיא עוֹד כּוֹכָב לַחֲלָלִית!','הַחֲלָלִית קִבְּלָה עוֹד כּוֹכָב!']};
-const STORY0=['בּוֹא נִתְקַדֵּם בַּסִּפּוּר!','הִתְקַדַּמְנוּ בַּסִּפּוּר!'];
+/* the day's story is the script of story.js (#386): one scene per learning step */
+const SM=()=>window.STORYMIX;
 const FIRST='מַתְחִילִים אֶת הַמַּסָּע שֶׁל הַיּוֹם!',LAST='עוֹד צַעַד אֶחָד וְנַגִּיעַ לַסּוֹף!',ALL='סִיַּמְנוּ אֶת כָּל הַשְּׁבִיל!';
 
 /* ---------- picking lines: a shuffled bag, never the same line twice close together ---------- */
@@ -78,12 +74,14 @@ function leadOnScreen(){if(!lead)return;if(window.__noAuto){O.say(takeLead());re
 let cur=null;                                  /* {i, d: the day, done: announced} while inside a path step */
 const daily=()=>{try{return T.S().set.noDaily?null:T.dailyEnsure();}catch(e){return null;}};
 const quest=()=>(T.quest&&T.quest())||{e:'⭐',k:'⭐'};
-const story=()=>STORY[quest().e]||STORY0;
+/* a together / at-home step (tog:, rw:) is not a scene: no story line, the story does not move */
+const isScene=id=>!/:/.test(String(id));
 FR.stepStart=i=>{const d=daily();if(!d||i==null||i<0||i>=d.t.length){cur=null;return;}cur={i,d:d.d,id:d.t[i]};
   const dn=d.done.slice(d.bs|0),left=dn.filter(x=>!x).length,first=!dn.some(Boolean);
-  lead=(first?FIRST+' ':left<=1?LAST+' ':'')+story()[0];PATHBAR.render();};
+  lead=SM()&&isScene(cur.id)?(first?FIRST+' ':left<=1?LAST+' ':'')+SM().scene().open:'';PATHBAR.render();};
 FR.stepCheck=()=>{if(!cur)return;const d=daily();if(!d||d.d!==cur.d||d.t[cur.i]!==cur.id||!d.done[cur.i]||cur.done)return;cur.done=1;PATHBAR.render();
-  const t=d.done.slice(d.bs|0).every(Boolean)?story()[1]+' '+ALL:story()[1];
+  if(!SM()||!isScene(cur.id))return;const close=SM().scene().close;SM().advance();
+  const t=d.done.slice(d.bs|0).every(Boolean)?close+' '+ALL:close;
   const card=$('#ov:not([hidden]) .card');if(card&&!card.querySelector('.frstory')){const s=h('div','frstory',`<span class="frq">${quest().k}</span><span>${t}</span>`);
     const row=card.querySelector('.btnrow');if(row)card.insertBefore(s,row);else card.appendChild(s);setTimeout(()=>{if(s.isConnected){last=t;O.say(T.spk(t));}},D(1200));}
   else talk(t,{ms:3500});};
@@ -122,7 +120,7 @@ O.on('levelDone',()=>setTimeout(FR.stepCheck,D(600)));
 const OOPS='אוֹי, חוֹזְרִים לַמַּסָּע';
 FR.oops=()=>{FR.mount();anim('sad');return talk(OOPS,{ms:3000});};
 FR.speakList=()=>[OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
-  ...[...Object.values(STORY),STORY0].flatMap(([a,b])=>[a,FIRST+' '+a,LAST+' '+a,b,b+' '+ALL])];
+  ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([a,b])=>[a,FIRST+' '+a,LAST+' '+a,b,b+' '+ALL])):[]),...(SM()?SM().speakList():[])];
 FR._cur=()=>cur;FR._lines={ok:OK,streak:[...Object.values(STREAK),STREAK_MORE],effort:EFFORT,wrong:WRONG,shown:SHOWN};
 window.FRIEND=FR;window.PATHBAR=PATHBAR;
 })();

@@ -117,5 +117,47 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
   ok('#433 an error on the home screen does not loop (home stays)', home2 && await p.evaluate(() => !document.querySelector('#sHome').hidden));
   errs.splice(0, errs.length, ...errs.filter(m => !/test433/.test(m)));
   ok('no page errors', !errs.length, errs.join(' | '));
+  // --- #386 the story engine: the save keeps chapter + scene, the friend says the script's lines, a hint for tomorrow ---
+  const SM = await p.evaluate(() => { const M = window.STORYMIX; return { n: M.SCRIPT.length, sc: M.SCRIPT.map(c => c.sc.length), all: M.speakList(), fr: window.FRIEND.speakList(),
+    s11: M.scene({ c: 1, s: 1 }), s12: M.scene({ c: 1, s: 2 }), wrap: M.next({ c: 12, s: 5 }), ch: M.next({ c: 1, s: 5 }) }; });
+  ok('#386 the script: 12 chapters x 5 scenes', SM.n === 12 && SM.sc.every(x => x === 5), JSON.stringify(SM.sc));
+  ok('#386 every script line and hint has nikud and is in the voice list', SM.all.every(t => NIK.test(t) && SM.fr.includes(t)) && SM.all.length >= 120,
+    SM.all.filter(t => !NIK.test(t) || !SM.fr.includes(t)).join(' | '));
+  ok('#386 the story goes on: 1.5 -> 2.1, 12.5 -> 1.1', SM.ch.c === 2 && SM.ch.s === 1 && SM.wrap.c === 1 && SM.wrap.s === 1, JSON.stringify([SM.ch, SM.wrap]));
+  // a fresh day at scene 1.1: open line at the start, close line on the result card, the save moves to 1.2
+  const voiced = async (s, t) => has(s, t);
+  await p.evaluate(() => { const O = window.OREN, T = window.TAL; delete O.save.mix; const d = T.dailyEnsure(); d.t = ['read-first', 'read-wp']; d.done = [0, 0]; d.ch = 'readg'; d.claimed = 0; d.bs = 0; O.persist(); O.showMap(); });
+  s = await said(() => p.evaluate(() => window.TAL_step(0)), 900);
+  ok('#386 an old save without chapter/scene starts at chapter 1, scene 1 (no crash)', await p.evaluate(() => JSON.stringify(window.STORYMIX.pos())) === '{"c":1,"s":1}');
+  ok('#386 step start: the friend says the opening line of scene 1.1', await voiced(s, SM.s11.open), JSON.stringify(s));
+  for (let k = 0; k < 14 && await p.evaluate(() => document.querySelector('#ov').hidden); k++) { await pickAns(true).catch(() => {}); await sleep(300); await settle(); }
+  await p.waitForSelector('#ov:not([hidden]) .frstory', { timeout: 15000 }).catch(() => {});
+  const cl = await p.evaluate(() => { const e = document.querySelector('#ov:not([hidden]) .frstory'); return e && e.textContent; });
+  ok('#386 step done: the closing line of scene 1.1 on the result card', !!cl && cl.includes(SM.s11.close), String(cl));
+  const saved = await p.evaluate(() => { try { return JSON.parse(localStorage.getItem('oren4-v1') || '{}').mix; } catch (e) { return null; } });
+  ok('#386 the save moves on to chapter 1, scene 2', JSON.stringify(saved) === '{"c":1,"s":2}', JSON.stringify(saved));
+  await sleep(1500); await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.OREN.showMap(); }); await sleep(200);
+  // closing and reopening, and skipping a day: a new page from that save (yesterday's path, two days ago) goes on at 1.2
+  const json = await p.evaluate(() => { const sv = JSON.parse(localStorage.getItem('oren4-v1')); sv.daily.d = '2000-01-01'; return JSON.stringify(sv); });
+  const reopen = async (j, f) => { const c2 = await b.newContext(L.VIEWPORT); await c2.addInitScript(j => { try { localStorage.clear(); localStorage.setItem('oren4-v1', j); } catch (e) {} window.__fast = true; window.__noFamily = true;
+      const fake = { log: [], speaking: false, speak(u) { this.log.push(u.text); }, cancel() {}, getVoices() { return []; }, onvoiceschanged: null, addEventListener() {} };
+      Object.defineProperty(window, 'speechSynthesis', { value: fake, configurable: true }); }, j);
+    const p2 = await c2.newPage(); const e2 = []; p2.on('pageerror', e => e2.push(e.message)); await p2.goto(L.URL); await L.noCoach(p2); const r = await p2.evaluate(f); await sleep(300); await c2.close(); return { r, e2 }; };
+  const nx = await reopen(json, () => { const T = window.TAL, O = window.OREN, d = T.dailyEnsure(); d.t = ['read-first', 'read-wp']; d.done = [0, 0]; d.ch = 'readg'; O.persist(); speechSynthesis.log = []; window.__fast = false;
+    window.TAL_step(0); return new Promise(r => setTimeout(() => r({ pos: window.STORYMIX.pos(), fresh: d.d !== '2000-01-01', said: speechSynthesis.log.slice() }), 900)); });
+  ok('#386 reopened after a skipped day: a new day, the same scene (1.2)', nx.r.fresh && nx.r.pos.c === 1 && nx.r.pos.s === 2 && !nx.e2.length, JSON.stringify(nx));
+  ok('#386 ...and the friend opens with the line of scene 1.2', await voiced(nx.r.said, SM.s12.open), JSON.stringify(nx.r.said));
+  // an old save (no chapter/scene, the old quest day) loads without a crash and starts at 1.1
+  const old = await reopen(JSON.stringify({ gems: 5, story: { intro: 1 }, prof: { an: 'cat', col: '#3a8fc4' }, daily: { d: '2000-01-01', t: ['math'], done: [1], claimed: 1, ch: 'math' } }),
+    () => { window.OREN.showMap(); return { pos: window.STORYMIX.pos(), home: !document.querySelector('#sHome').hidden }; });
+  ok('#386 an old save without chapter/scene: home, chapter 1 scene 1, no page errors', old.r.home && old.r.pos.c === 1 && old.r.pos.s === 1 && !old.e2.length, JSON.stringify(old));
+  // the end of the day: the finale card gives the hint for tomorrow (and says it)
+  await p.evaluate(() => { const O = window.OREN, d = window.TAL.dailyEnsure(); O.save.mix = { c: 1, s: 5 }; window.STORYMIX.advance(); d.done = d.t.map(() => 1); d.claimed = 0; d.sg = 1; O.persist(); O.showMap(); }); await sleep(300);
+  s = await said(() => p.evaluate(() => document.querySelector('#sHome .bigbtn.huge').click()), 700);
+  const fin = await p.evaluate(() => ({ h: (document.querySelector('#ov:not([hidden]) .qwin h2') || { textContent: '' }).textContent, hint: window.STORYMIX.hint() }));
+  ok('#386 end of the day: a hint for tomorrow (next chapter: we sail to the island of clocks)', fin.h === fin.hint && /מַפְלִיגִים אֶל אִי הַשְּׁעוֹנִים/.test(fin.h) && await voiced(s, fin.hint), JSON.stringify({ fin, s }));
+  await L.shot(p, { path: L.SHOTDIR + '/story-hint-' + L.variant + '.png' });
+  ok('#386 family save: the device further on in the story wins', await p.evaluate(() => { const M = window.STORYMIX; return JSON.stringify(M.merge({ c: 1, s: 2 }, { c: 2, s: 1 })) === '{"c":2,"s":1}' && JSON.stringify(M.merge({ c: 3, s: 1 }, { c: 2, s: 4 })) === '{"c":3,"s":1}' && JSON.stringify(M.merge(undefined, { c: 1, s: 3 })) === '{"c":1,"s":3}'; }));
+  ok('#386 no page errors', !errs.length, errs.join(' | '));
   await b.close(); L.finish('friend', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT friend 0 1'); process.exitCode = 1; });
