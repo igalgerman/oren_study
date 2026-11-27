@@ -7,7 +7,7 @@
    While Oren is inside a step of the day's path:
      FRIEND.stepStart(i)    the friend says the opening line of the story's scene (story.js, #386; said before the screen's instruction)
      FRIEND.stepCheck()     after a step is done: the scene's closing line on the result card, and the story moves one scene on
-     PATHBAR.render()       a thin strip in the top bar: today's quest + one dot per step
+     PATHBAR.render()       a thin strip in the top bar: today's quest + the hero chasing the Mixer, one step per finished mission (#393)
    FRIEND.speakList() lists every line the friend may say (for the voice pregen). */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;const {h,$}=O;const D=O.D||(x=>x);
 
@@ -184,7 +184,9 @@ const PATHBAR={render(){let b=$('#frPath');const d=cur&&daily();
   const mid=$('#hudMid');if(!mid)return;if(!b){b=h('div','frpath');b.id='frPath';b.setAttribute('role','img');}if(b.parentNode!==mid)mid.appendChild(b);
   const q=quest();const o=d.bs|0,t=d.t.slice(o),dn=d.done.slice(o),n=t.length,k=dn.filter(Boolean).length;
   b.setAttribute('aria-label',`${k}/${n}`);
-  b.innerHTML=`<span class="fpq">${q.e}</span>`+t.map((_,j)=>`<i class="${dn[j]?'on':j+o===cur.i?'cur':''}"></i>`).join('')+`<span class="fpg${k>=n?' won':''}">🎁</span>`;}};
+  /* #393 the hero chases the Mixer: one step closer per finished mission, the last one catches him (same size as the old dots) */
+  const sp=b.querySelector('.fpt');if(!sp){b.innerHTML=`<span class="fpq">${q.e}</span><span class="fpt"><span class="fph">${O.AV()}</span><span class="fpm">${O.SPR.mixer}</span></span>`;}
+  const tr=b.querySelector('.fpt');tr.style.setProperty('--n',n);tr.style.setProperty('--k',Math.min(k,n));tr.dataset.k=Math.min(k,n);tr.classList.toggle('caught',k>=n);}};
 
 /* the top bar is rewritten by every screen: keep the strip in it while inside a step */
 (()=>{const mid=$('#hudMid');if(mid)new MutationObserver(()=>{const b=$('#frPath');if(cur&&(!b||b.parentNode!==mid))PATHBAR.render();}).observe(mid,{childList:true});})();

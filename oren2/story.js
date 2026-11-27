@@ -5,7 +5,7 @@
    gives a short hint about tomorrow. A save without mix (or a broken one) starts at chapter 1, scene 1.
      STORYMIX.pos()       {c, s} where the story is now (the scene still to play)
      STORYMIX.scene()     {c, s, n: chapter name, open, close, topic, item}
-     STORYMIX.advance()   one scene on (after 12.5 the story starts again at 1.1)
+     STORYMIX.advance()   one scene on (after 12.5 the story starts again at 1.1); the end of a chapter: O.bigCelebration() (#427)
      STORYMIX.hint()      the line for tomorrow (said at the end of the day)
      STORYMIX.speakList() every line of the script (for the voice pregen) */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;
@@ -94,7 +94,8 @@ const M={SCRIPT};
 M.pos=()=>{const sv=O.save;if(!ok(sv.mix))sv.mix={c:1,s:1};return sv.mix;};
 M.scene=(p)=>{p=p||M.pos();const ch=SCRIPT[p.c-1],x=ch.sc[p.s-1];return {c:p.c,s:p.s,n:ch.n,open:x[0],close:x[1],topic:x[2],item:x[3]};};
 M.next=p=>{p=p||M.pos();return p.s<NS?{c:p.c,s:p.s+1}:{c:p.c<NC?p.c+1:1,s:1};};
-M.advance=()=>{O.save.mix=M.next();O.persist();return O.save.mix;};
+/* #427 the last scene of a chapter ends with the big celebration (confetti + music); every other mission has the calm one */
+M.advance=()=>{const p=M.pos();O.save.mix=M.next(p);O.persist();if(p.s===NS&&O.bigCelebration)O.bigCelebration();return O.save.mix;};
 /* said at the end of the day: the story is already at the scene of tomorrow */
 M.hint=()=>{const p=M.pos();return p.s===1?SAIL(p.c):STAY[p.c-1];};
 /* the family save: the device that is further on in the story wins */
