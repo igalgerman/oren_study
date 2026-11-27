@@ -4,8 +4,9 @@
 const L = require('./lib');
 const { chromium } = require('playwright'); const sleep = L.sleep;
 const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + n + (i ? ' — ' + i : ''));
+let b = null;
 (async () => {
-  const b = await chromium.launch(); const ctx = await b.newContext(L.VIEWPORT);
+  b = await chromium.launch(); const ctx = await b.newContext(L.VIEWPORT);
   await ctx.addInitScript(() => { window.__fast = true; window.__noFamily = true; });
   let p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
   await p.goto(L.URL); await p.evaluate(() => localStorage.clear()); await p.reload();
@@ -39,28 +40,38 @@ const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + 
       ones: b.querySelectorAll('.mbo .one:not(.gst):not(.take)').length, ghosts: b.querySelectorAll('.mbo .one.gst').length, glow: b.querySelectorAll('.mbo .one.b10').length,
       took: b.querySelectorAll('.take').length, done: b.classList.contains('done'), rowHidden: !row || row.hidden || !row.offsetParent }; });
   const tapNext = () => p.evaluate(() => { const n = document.querySelector('#sLearn .mbh .nxt'); if (n) n.dispatchEvent(new MouseEvent('click', { bubbles: true })); return !!n; });
-  let cb = null; for (let k = 0; k < 30; k++) { await startLesson('add-8'); await sleep(150); cb = await board(); if (cb && cb.carry) break; }
-  await sleep(400); const cb0 = await board();
+  /* #574 the lesson question is random: retry until the board fits the check (carry: cubes reach 10; borrow: at least one loose cube,
+     a round first number like 40−7 has none), and every tap loop is bounded by the taps still needed, so the suite never crashes */
+  const pick = async (id, fits) => { let s = null; for (let k = 0; k < 30; k++) { await startLesson(id); await sleep(150); s = await board(); if (s && fits(s)) return s; } return null; };
+  const cb = await pick('add-8', s => s.carry && s.ones + s.ghosts >= 10);
+  await sleep(400); const cb0 = cb && await board();
   ok('#20 carry lesson: the board waits for Oren (no stick appears by itself, answers hidden)', cb0 && cb0.carry && cb0.newRod === 0 && cb0.ghosts > 0 && cb0.rowHidden, JSON.stringify(cb0));
-  let glowAt = null; for (let k = 0; k < 12; k++) { const s = await board(); if (s.glow === 10) { glowAt = s; break; } if (!await tapNext()) break; await sleep(30); }
-  ok('#20 carry: tapping adds the cubes one by one, 10 loose cubes light up', glowAt && glowAt.glow === 10 && glowAt.newRod === 0, JSON.stringify(glowAt));
-  await p.evaluate(() => document.querySelector('#sLearn .mbh .one.b10').dispatchEvent(new MouseEvent('click', { bubbles: true }))); await sleep(60);
-  const cb1 = await board();
-  ok('#20 carry: tapping the 10 cubes bundles them into one stick', cb1.newRod === 1 && cb1.ones < 10 && cb1.glow === 0, JSON.stringify(cb1));
-  for (let k = 0; k < 12 && await tapNext(); k++) await sleep(30);
-  const cb2 = await board();
-  ok('#20 carry: board done → the answers appear to count and answer', cb2.done && !cb2.rowHidden && cb2.ghosts === 0, JSON.stringify(cb2));
-  let sb = null; for (let k = 0; k < 30; k++) { await startLesson('sub-10'); await sleep(150); sb = await board(); if (sb && sb.borrow) break; }
+  let glowAt = null, last = cb0; if (cb0) for (let k = 0; k <= 10 - cb0.ones; k++) { last = await board(); if (last && last.glow === 10) { glowAt = last; break; } if (!await tapNext()) break; await sleep(30); }
+  ok('#20 carry: tapping adds the cubes one by one, 10 loose cubes light up', glowAt && glowAt.glow === 10 && glowAt.newRod === 0, JSON.stringify(glowAt || last));
+  if (!glowAt) ok('#20 carry: bundle and answers skipped (no board with 10 glowing cubes)', false, JSON.stringify(last));
+  else {
+    await p.evaluate(() => document.querySelector('#sLearn .mbh .one.b10').dispatchEvent(new MouseEvent('click', { bubbles: true }))); await sleep(60);
+    const cb1 = await board();
+    ok('#20 carry: tapping the 10 cubes bundles them into one stick', cb1.newRod === 1 && cb1.ones < 10 && cb1.glow === 0, JSON.stringify(cb1));
+    for (let k = 0; k <= cb1.ghosts && await tapNext(); k++) await sleep(30);
+    const cb2 = await board();
+    ok('#20 carry: board done → the answers appear to count and answer', cb2.done && !cb2.rowHidden && cb2.ghosts === 0, JSON.stringify(cb2));
+  }
+  const sb = await pick('sub-10', s => s.borrow && s.ones > 0);
   ok('#20 borrow lesson: waits for Oren, answers hidden', sb && sb.borrow && sb.took === 0 && sb.rowHidden, JSON.stringify(sb));
-  const o0 = sb.ones; await p.evaluate(() => document.querySelector('#sLearn .mbh .mbo .one').dispatchEvent(new MouseEvent('click', { bubbles: true }))); await sleep(60);
-  const sb1 = await board();
-  ok('#20 borrow: not enough cubes → a cube tap takes nothing yet', sb1.took === 0 && sb1.ones === o0, JSON.stringify(sb1));
-  await p.evaluate(() => { const r = document.querySelectorAll('#sLearn .mbh .mbt .rod'); r[r.length - 1].dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await sleep(60);
-  const sb2 = await board();
-  ok('#20 borrow: tapping a stick breaks it into 10 cubes', sb2.rods === sb.rods - 1 && sb2.ones === o0 + 10, JSON.stringify(sb2));
-  for (let k = 0; k < 20 && await tapNext(); k++) await sleep(30);
-  const sb3 = await board();
-  ok('#20 borrow: Oren takes the cubes and sticks away himself, then the answers appear', sb3.done && sb3.took > 0 && !sb3.rowHidden, JSON.stringify(sb3));
+  if (!sb) ok('#20 borrow: break and take skipped (no borrow board with a loose cube)', false);
+  else {
+    const o0 = sb.ones; await p.evaluate(() => document.querySelector('#sLearn .mbh .mbo .one').dispatchEvent(new MouseEvent('click', { bubbles: true }))); await sleep(60);
+    const sb1 = await board();
+    ok('#20 borrow: not enough cubes → a cube tap takes nothing yet', sb1.took === 0 && sb1.ones === o0, JSON.stringify(sb1));
+    await p.evaluate(() => { const r = document.querySelectorAll('#sLearn .mbh .mbt .rod'); r[r.length - 1].dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await sleep(60);
+    const sb2 = await board();
+    ok('#20 borrow: tapping a stick breaks it into 10 cubes', sb2.rods === sb.rods - 1 && sb2.ones === o0 + 10, JSON.stringify(sb2));
+    const r = await p.evaluate(() => +document.querySelector('#sLearn .mbh').dataset.r);
+    for (let k = 0; k <= r % 10 + Math.floor(r / 10) && await tapNext(); k++) await sleep(30);
+    const sb3 = await board();
+    ok('#20 borrow: Oren takes the cubes and sticks away himself, then the answers appear', sb3.done && sb3.took > 0 && !sb3.rowHidden, JSON.stringify(sb3));
+  }
   const hb = await p.evaluate(() => { const O = window.__oren4; O.playLevel(O.ALLLV.find(l => l.id === 'add-8-1'), [{ k: 'bin', l: 27, op: '+', r: 15, res: 42, miss: 'res', ans: 42 }]);
     const h = O.hintHTML(O.play.qs[0], 1); const d = document.createElement('div'); d.id = 'hbtest'; d.innerHTML = h; document.querySelector('#sPlay').appendChild(d);
     const b = d.querySelector('.mbh'); return { has: !!b, ghosts: b ? b.querySelectorAll('.one.gst').length : 0 }; });
@@ -180,5 +191,6 @@ const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + 
   ok('browser back at home: stays in the game', await p.evaluate(() => !document.querySelector('#sHome').hidden && /t\.html/.test(location.href)));
   p = p0; }
   ok('no page errors', !errs.length, errs.join(' | '));
-  await b.close(); L.finish('qa-fix-' + L.variant, res);
-})().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT qa-fix 0 1'); process.exitCode = 1; });
+  L.finish('qa-fix-' + L.variant, res);
+})().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT qa-fix 0 1'); process.exitCode = 1; })
+  .finally(() => b && b.close()); // #574: always close the browser, so a failing run exits on its own (no 120 s hang)
