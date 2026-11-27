@@ -5998,7 +5998,8 @@ H.panel=(box,sec,re,part)=>{const c=cfg(),r=day();if(part!=='set')remPanel(box,s
   const br=r.breaks.length?r.breaks.map(x=>`<span class="hlg${x.ok?'':' no'}">${BI[x.k]||''} ${x.t}</span>`).join(' '):'עוד לא היו הפסקות היום';
   const me=MEALS.filter(([k])=>r.meals[k]).map(([k,,n])=>{const m=r.meals[k];return `<span class="hlg">🍽️ ${n} ${hm(m.s)}${m.e?' – '+hm(m.e)+(m.p?' (הורה)':''):''}</span>`;}).join(' ');
   const s2=sec(box,'היום: הפסקות וזמן לפי תחום',`<div class="pnote">${br}${me?'<br>'+me:''}</div>`);
-  const ds=DOMS.filter(d=>(r.dom[d.id]|0)>=30||r.act[d.id]);if(!ds.length)s2.appendChild(h('div','pnote','עוד לא שיחק היום'));
+  const ds=DOMS.filter(d=>(r.dom[d.id]|0)>=30||r.act[d.id]);/* #621 not while he plays, nor once today has any minutes */
+  if(!ds.length&&!(window.DAYLOG&&window.DAYLOG.playing())&&!Object.values(r.dom).some(v=>v>0))s2.appendChild(h('div','pnote','עוד לא שיחק היום'));
   ds.forEach(d=>{const row=h('div','prow',`<span class="pn">${d.e} ${d.p}</span><span class="pc">${Math.round((r.dom[d.id]|0)/60)} דק׳ · ${r.act[d.id]|0} פעילויות</span>`);
     if(H.resting(d.id)){row.appendChild(h('span','hrs','🌙 נח עד מחר'));const b=h('button','pchip','לאפשר שוב היום');b.onclick=()=>{H.allow(d.id);re&&re();};row.appendChild(b);}s2.appendChild(row);});
   return s1;};
@@ -12285,7 +12286,7 @@ function pendRowHTML(c){const id=c.k==='off'?null:c.a;const nm=c.k==='now'?'מה
   return `<span class="pn"><b class="dli">⏭</b> ${nm}</span><span class="pc">דילג (הורה)${KIND[c.k]?' · '+KIND[c.k]:''} · ממתין למכשיר של אורן</span>`;}
 /* what he did on day d: his log lines, a "בטל" on a skip until the next mission starts, and the skips still on their way */
 function didSec(box,d,sec){const rows=DL.rows(d);const pend=d===today()?cmds().filter(c=>waiting(c)&&['now','drop','off','know'].includes(c.k)):[];
-  if(!rows.length&&!pend.length){box.appendChild(h('div','pnote pdnone',d===today()?'עוד לא שיחק היום':'לא שיחק ביום הזה'));return;}
+  if(!rows.length&&!pend.length){if(d===today()&&DL.playing())return;/* #621 playing: the "playing now" line says it */box.appendChild(h('div','pnote pdnone',d===today()?'עוד לא שיחק היום':'לא שיחק ביום הזה'));return;}
   const s=sec(box,'מה הוא עשה','');const L=h('div','dllog');L.dataset.d=d;s.appendChild(L);
   const lastReal=Math.max(-1,...rows.filter(e=>e[6]!=='p').map(e=>e[0]));
   rows.forEach(e=>{const w=h('div','',DL.rowHTML(e));const r=w.firstChild;L.appendChild(r);const x=e[7]||{};

@@ -95,7 +95,10 @@ async function tour(b, vp) {
     if (await P.evaluate(() => /משחק עכשיו/.test(document.querySelector('#sPar').textContent))) return 'already "playing" before the kid played';
     const id = await K.evaluate(() => window.TAL.dailyPool().find(id => !/^arc-/.test(id)));
     await K.evaluate(id => { window.TAL.ACT[id].run(() => {}); document.querySelector('#hud').hidden = false; window.OREN.timeTick(); }, id);
-    return await until(P, () => /משחק עכשיו/.test(document.querySelector('#sPar').textContent), null, 20000) || 'day view did not update'; });
+    /* #621: "playing now" and "not played yet today" never on the screen together (checked on every poll) */
+    if (!await until(P, () => { const t = document.querySelector('#sPar').textContent; if (/משחק עכשיו/.test(t) && /עוד לא שיחק היום/.test(t)) window.__both = 1; return /משחק עכשיו/.test(t); }, null, 20000)) return 'day view did not update';
+    await sleep(1500); const both = await P.evaluate(() => { const t = document.querySelector('#sPar').textContent; return !!window.__both || (/משחק עכשיו/.test(t) && /עוד לא שיחק היום/.test(t)); });
+    return !both || 'day view shows "משחק עכשיו" and "עוד לא שיחק היום" together'; });
 
   await check('parent-message', vp, K, `parent (${other}) taps "now" + a ready message; the kid's home (${vp}) shows it`, async () => {
     await K.evaluate(() => { window.__health = true; }); await home(K);   // health.js (reminders, messages) is off under automation unless __health
