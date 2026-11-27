@@ -199,7 +199,7 @@ const mkQ=q=>{const opts=shuffle([q.a,...q.ds]);return {pr:`${q.art?`<div class=
 function runQuiz(o,list){STEP=null;T.quiz({id:o.id,title:o.title,bg:o.bg,back:o.back,n:list.length,gen:i=>typeof list[i]==='function'?list[i]():mkQ(list[i])});}
 /* a lesson + quiz activity: def = {id,name,icon,bg,title,cards:[{lv,art,t}],bank:[Q...],n} */
 function lessonAct(def){return Object.assign({},def,{run:back=>{const L=lvl(def.id),o={id:def.id,title:def.title||def.name,bg:def.bg,back};
-  lesson({...o,cards:def.cards.filter(c=>c.lv===L),then:()=>runQuiz(o,def.gen?def.gen(L):pickQs(def.bank,L,def.n||6,def.id))});}});}
+  const cards=def.cards.filter(c=>c.lv===L);lesson({...o,cards,then:()=>{const qs=def.gen?def.gen(L):pickQs(def.bank,L,def.n||6,def.id);/* #394 on the daily path: 4 or more cards first -> 3 questions (the scene stays ~90 s) */runQuiz(o,T.onPath&&cards.length>3?qs.slice(0,3):qs);}});}});}
 
 /* tap things in the right order. rounds = [{q, items:[{html,lbl}] in order, start, ex}] */
 function orderGame(o){let r=0,err=0,gems=0;O.setScreen('sTal',o.bg,o.back);const s=$('#sTal');
@@ -215,7 +215,7 @@ function orderGame(o){let r=0,err=0,gems=0;O.setScreen('sTal',o.bg,o.back);const
   play();}
 
 /* tap the right place on a map; items = [{q, map(html), k, ex}] or plain multiple-choice items {mc:Q} */
-function mapQuiz(o){const items=o.items;let i=0,err=0,gems=0,tries=0,lock=false;O.setScreen('sTal',o.bg,o.back);const s=$('#sTal');
+function mapQuiz(o){const items=o.items.slice(0,T.pathN(o.items.length));/* #394 short on the daily path */let i=0,err=0,gems=0,tries=0,lock=false;O.setScreen('sTal',o.bg,o.back);const s=$('#sTal');
   const next=()=>{if(!s.isConnected)return;i++;if(i>=items.length){STEP=null;T.finishAct(o.id,err,items.length,gems,o.back,()=>o.again());}else show();};
   const show=()=>{const it=items[i];tries=0;lock=false;T.hudT(o.title,T.progressBar(i,items.length));O.sayNow=spk(it.q);s.innerHTML='';
     const card=h('div','prq tqc e2mapq',`${it.top||''}<div class="qq">${it.q}</div><div class="e2mapw">${it.map}</div>`);s.appendChild(card);card.classList.add('flashin');

@@ -45,17 +45,17 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
   ok('right answer: the friend says a short line', OKL.ok.includes(last) && await has(s, last), JSON.stringify({ last, s }));
   ok('friend hops', await p.evaluate(() => document.querySelector('.frc').classList.contains('joy')));
   const settle = () => p.waitForFunction(() => { const q = window.__quiz; return q && q.wrap.isConnected && ![...q.wrap.querySelectorAll('.chs .chb')].some(x => x.classList.contains('ok') || x.classList.contains('show')); }, null, { timeout: 8000 }).catch(() => {});
-  await sleep(300); await settle();
+  // streak + variety: questions 1-3 right (#394: a path round is 4 questions, so the mistake comes on question 4)
+  const got = [last]; await sleep(300); await settle();
+  for (let k = 0; k < 2; k++) { await pickAns(true); await sleep(80); got.push(await p.evaluate(() => window.FRIEND.last)); await sleep(300); await settle(); }
+  ok('three in a row: a streak line', got[2] === 'שָׁלֹשׁ בְּרֶצֶף!', JSON.stringify(got));
+  ok('lines are not repeated back to back', new Set(got).size === got.length, JSON.stringify(got));
   s = await said(() => pickAns(false), 300); last = await p.evaluate(() => window.FRIEND.last);
   ok('wrong answer: a gentle line', OKL.wrong.includes(last) && await has(s, last), last);
   ok('friend looks sad', await p.evaluate(() => document.querySelector('.frc').classList.contains('sad')));
   await pickAns(true); await sleep(100); last = await p.evaluate(() => window.FRIEND.last);
   ok('fixed after a mistake: praise for trying again', OKL.effort.includes(last), last);
-  // streak + variety
-  await sleep(300); await settle(); const got = [];
-  for (let k = 0; k < 3; k++) { await pickAns(true); await sleep(80); got.push(await p.evaluate(() => window.FRIEND.last)); await sleep(300); await settle(); }
-  ok('three in a row: a streak line', got[2] === 'שָׁלֹשׁ בְּרֶצֶף!', JSON.stringify(got));
-  ok('lines are not repeated back to back', new Set(got).size === got.length, JSON.stringify(got));
+  await sleep(300); await settle();
   // end of the step: one story line on the result card (answer the rest of the round first)
   for (let k = 0; k < 12 && await p.evaluate(() => document.querySelector('#ov').hidden); k++) { await pickAns(true).catch(() => {}); await sleep(300); await settle(); }
   await p.waitForSelector('#ov:not([hidden]) .frstory', { timeout: 15000 }).catch(() => {});

@@ -109,7 +109,7 @@ const FINAL={'ך':'כ','ם':'מ','ן':'נ','ף':'פ','ץ':'צ'};
 const SPH={next:'הָאוֹת הַבָּאָה',by:'אוֹת אַחֲרֵי אוֹת, מִיָּמִין לִשְׂמֹאל:',fin:'בְּסוֹף מִלָּה כּוֹתְבִים אוֹת סוֹפִית'};
 window.HELP_TEXTS=(window.HELP_TEXTS||[]).concat(Object.values(SPH));
 const spLen=(w,L)=>{const n=w.plain.length;return L===1?n<=3:L===2?n===4:n>=5;};
-function spell(back,L0){const L=L0||level('spell',3);const pool=shuffle(WD.filter(w=>spLen(w,L))).slice(0,6);let i=0,err=0,gems=0,lets=0;
+function spell(back,L0){const L=L0||level('spell',3);const pool=shuffle(WD.filter(w=>spLen(w,L))).slice(0,T.pathN(6));let i=0,err=0,gems=0,lets=0;
   O.setScreen('sTal','meadow',back);const s=$('#sTal');
   const run=()=>{const w=pool[i];const need=[...w.plain];let k=0,miss=0,HB=null;T.hudT('כּוֹתְבִים מִלִּים',T.progressBar(i,pool.length));O.sayNow='שׁוֹמְעִים וְכוֹתְבִים. '+T.spk(w.w);s.innerHTML='';lets+=need.length;
     const card=h('div','prq tqc gp-sp',`<div class="qq tqi">שׁוֹמְעִים וְכוֹתְבִים</div>${pic(w)}<div class="slots">${need.map(()=>'<span class="slot2"></span>').join('')}</div>`);

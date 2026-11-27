@@ -5,6 +5,10 @@ const {h,$,pick,shuffle,ICON,SPR,sprite}=O;
 const sfx=O.sfx;const D=O.D;
 const S=()=>{const s=O.save;s.tl=s.tl||{};s.mood=s.mood||[];s.jar=s.jar||[];s.art=s.art||[];s.set=s.set||{hide:{}};s.set.hide=s.set.hide||{};s.time=s.time||{};s.typ=s.typ||{best:{},wpm:0};return s;};
 const today=O.today;
+/* #394 the daily path: a mission started from the path is a short scene (at most PATH_Q questions, ~60-90 s);
+   the same activity opened from its building keeps its full length. PATH is on from the path step until home or the city hub. */
+let PATH=0;const PATH_Q=4;const pathN=n=>PATH?Math.min(n,PATH_Q):n;
+O.on('screen',id=>{if(id==='sHome')PATH=0;});
 const L_=t=>`<span class="ltr">${t}</span>`;
 const nb=n=>`<b>${n}</b>`;
 const plainHe=s=>String(s).replace(/<[^>]+>/g,' ').replace(/[֑-ׇ]/g,'').replace(/\s+/g,' ').trim();
@@ -109,7 +113,7 @@ function quiz(o){if(o.lesson&&window.LESSONS&&!o._ls){o._ls=1;return window.LESS
     if(ok){wr=0;return;}if(++wr>=2&&lv>1){lv--;wr=0;for(let j=i+1;j<qs.length;j++)fit(qs[j]);}};
   const gen=()=>{const q=o.gen(qs.length);if(!pb||q.bank||q.key==null)return q;const c=[q];for(let j=0;j<24;j++){const x=o.gen(qs.length);if(x.key!=null&&!c.some(y=>y.key===x.key))c.push(x);}
     try{const r=LN.pickItem(pb,c.filter(x=>!seen.has(x.key)).map(x=>({k:x.key})));const x=r&&c.find(y=>y.key===r.item.k);if(x)return Object.assign(x,{bank:pb});}catch(e){}return q;};
-  while(qs.length<o.n&&t++<400){const q=gen();const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k))continue;seen.add(k);qs.push(fit(q));}
+  const nQ=pathN(o.n);while(qs.length<nQ&&t++<400){const q=gen();const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k))continue;seen.add(k);qs.push(fit(q));}
   let i=0,err=0,gems=0,lock=false,tries=0,HB=null;O.setScreen('sTal',o.bg||'valley',o.back);
   const bk=O.hereTake&&O.hereTake('tq:'+o.id);if(bk){i=Math.min(Math.max(0,bk.i|0),qs.length-1);err=bk.err|0;gems=bk.gems|0;}/* #44: reopened mid-quiz = the same place */
   const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq');s.appendChild(wrap);if(o.lesson&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(o.lesson,o.back,()=>quiz(o)));
@@ -144,7 +148,7 @@ function bldCard(b,back){const bs=bState(b);const [got,max]=bStars(b);
   const c=h('button','wcard2 bld',`<span class="ico">${b.icon()}</span><span class="nm">${b.name}</span><span class="bar"><i style="width:${got/max*100}%"></i></span>`);c.style.setProperty('--lc',b.color);
   if(bs!=='on'){c.classList.add('lockb');c.appendChild(h('span','cnt','🔒 '+bs.lock));c.onclick=()=>{sfx.no();window.TAL_locked&&window.TAL_locked(b);};}else c.onclick=()=>{sfx.pop(2);openBuilding(b);};return c;}
 /* level 1: four big doors */
-function openHub(){KEY=null;O.setScreen('sTal','valley',O.showMap);O.hud(`<div class="starcount">${SPR.star}<span>${Object.values(S().tl).reduce((a,c)=>a+(c.s|0),0)}</span></div>`);
+function openHub(){KEY=null;PATH=0;O.setScreen('sTal','valley',O.showMap);O.hud(`<div class="starcount">${SPR.star}<span>${Object.values(S().tl).reduce((a,c)=>a+(c.s|0),0)}</span></div>`);
   const s=$('#sTal');s.innerHTML='';
   s.appendChild(h('div','whead',`<span class="gd bob">${X.portal}</span><h1>עִיר הַכִּשְׁרוֹנוֹת</h1>`));
   const g4=h('div','gdoors');
@@ -153,12 +157,12 @@ function openHub(){KEY=null;O.setScreen('sTal','valley',O.showMap);O.hud(`<div c
     c.style.setProperty('--gc',g.c);c.onclick=()=>{sfx.pop(3);const on=bs.filter(b=>bState(b)==='on');if(bs.length===1&&on.length===1)openBuilding(bs[0]);else openGroup(g);};g4.appendChild(c);});
   s.appendChild(g4);O.sayNow='עִיר הַכִּשְׁרוֹנוֹת. מָה נְשַׂחֵק?'+choiceSay(g4,'.gdoor b');O.emit('hub',s);}
 /* level 2: just the buildings of one door */
-function openGroup(g){KEY=null;O.setScreen('sTal','valley',openHub);O.hud('');const s=$('#sTal');s.innerHTML='';
+function openGroup(g){KEY=null;PATH=0;O.setScreen('sTal','valley',openHub);O.hud('');const s=$('#sTal');s.innerHTML='';
   s.appendChild(h('div','whead',`<span class="gd">${g.e}</span><h1>${g.n}</h1>`));const grid=h('div','hub gsub');visB(g).forEach(b=>grid.appendChild(bldCard(b)));s.appendChild(grid);O.sayNow=spk(g.n)+'.'+choiceSay(grid,'.nm');O.emit('group',s,g);}
 /* the activities a building shows: the ones already tried + new ones up to 4 (at least one new), so the rest open gradually; the parent's "all open" shows them all */
 function menuActs(b){const list=b.acts.filter(a=>(!a.avail||a.avail())&&!actOff(a.id)&&!a.noMenu);if(S().set.all)return list;
   const tried=a=>!!(S().tl[a.id]||{}).n;let k=Math.max(1,4-list.filter(tried).length);return list.filter(a=>tried(a)||k-->0);}
-function openBuilding(b){KEY=null;const gg=groupOf(b);const up=visB(gg).length>1?()=>openGroup(gg):openHub;const ma=menuActs(b);
+function openBuilding(b){KEY=null;PATH=0;const gg=groupOf(b);const up=visB(gg).length>1?()=>openGroup(gg):openHub;const ma=menuActs(b);
   if(ma.length===1){ma[0].run(up);return;}/* #8: a building with one activity opens it straight away (no extra tap) */
   O.setScreen('sTal',b.bg,up);O.hud('');const s=$('#sTal');s.innerHTML='';
   s.appendChild(h('div','whead',`<span class="gd">${b.icon()}</span><h1>${b.name}</h1>`));
@@ -183,7 +187,8 @@ function vary(seq,st,more){const out=[],left=st.slice();let extra=null;
     out.push(k>=0?extra.splice(k,1)[0]:left[0]);left.shift();}
   return out;}
 const fitPick=(seq,pool)=>{const f=pool.filter(x=>fits(seq,x));return pick(f.length?f:pool);};
-const dailyPool=()=>Object.keys(ACT).filter(id=>bState(ACT[id].b)==='on'&&!actOff(id)&&!ACT[id].noDaily&&(!ACT[id].avail||ACT[id].avail()));
+/* #394 long: open-ended, can't be a short scene (free drawing, a full chess game): building only, never on the path */
+const dailyPool=()=>Object.keys(ACT).filter(id=>bState(ACT[id].b)==='on'&&!actOff(id)&&!ACT[id].noDaily&&!ACT[id].long&&(!ACT[id].avail||ACT[id].avail()));
 /* the day's path: t = steps ('math', an activity id, 'tog:<k>' together, 'rw:<k>' real-world), ch = how it was formed (a domain Oren chose, or 'plan').
    No path until Oren answers "what do you feel like today?" (or the parent's template builds it). cr = real-world missions waiting for the path. */
 function dailyEnsure(){const s=S();if(s.daily&&s.daily.d===today()){const d=s.daily,pool=dailyPool();d.cr=d.cr||[];for(let i=0;i<d.t.length;i++)if(d.t[i]!=='math'&&!/:/.test(d.t[i])&&!d.done[i]&&!pool.includes(d.t[i])){const alt=pool.filter(x=>!d.t.includes(x));if(alt.length)d.t[i]=fitPick(d.t.slice(0,i),alt);}return d;}
@@ -206,7 +211,7 @@ O.timeTick=timeTick;setInterval(timeTick,15000);
 const breakTime=()=>window.HEALTH&&window.HEALTH.breakNow();
 
 /* exports for other chunks */
-window.TAL={ADAPT,fits,vary,spk,orList,choiceSay,choiceList,addChoices,addSay,openGroup,GROUPS,bState,dailyPool,S,X,ALLSPR,FACES,quiz,result,record,finishAct,building,ACT,BUILD,openHub,openBuilding,hudT,progressBar,starsHTML,plainHe,L_,nb,dailyEnsure,setKey:f=>{KEY=f;},get key(){return KEY;},breakTime,artSVG:(...a)=>artSVG(...a)};
+window.TAL={ADAPT,pathN,pathOn:()=>{PATH=1;},get onPath(){return !!PATH;},fits,vary,spk,orList,choiceSay,choiceList,addChoices,addSay,openGroup,GROUPS,bState,dailyPool,S,X,ALLSPR,FACES,quiz,result,record,finishAct,building,ACT,BUILD,openHub,openBuilding,hudT,progressBar,starsHTML,plainHe,L_,nb,dailyEnsure,setKey:f=>{KEY=f;},get key(){return KEY;},breakTime,artSVG:(...a)=>artSVG(...a)};
 function artSVG(str){return window.TAL_artSVG?window.TAL_artSVG(str):'';}
 
 })();
@@ -231,7 +236,7 @@ const SENT=[['הֶחָתוּל יָשֵׁן עַל הַכִּיסֵּא.','מִ�
  ['אַבָּא קָנָה עוּגָה לְיוֹם הַהֻלֶּדֶת.','מָה אַבָּא קָנָה?','cake',['shoe','key']],['הַסִּירָה שָׁטָה עַל הַמַּיִם.','מָה שָׁט עַל הַמַּיִם?','boat',['car','ball']],
  ['בַּבֹּקֶר הַשֶּׁמֶשׁ זוֹרַחַת.','מָה זוֹרֵחַ בַּבֹּקֶר?','sun',['moon','cloud']],['נוֹעָה שָׂמָה כּוֹבַע עַל הָרֹאשׁ.','מָה נוֹעָה שָׂמָה עַל הָרֹאשׁ?','hat',['shoe','cup']],
  ['אַבָּא פָּתַח אֶת הַדֶּלֶת בְּמַפְתֵּחַ.','בַּמֶּה אַבָּא פָּתַח אֶת הַדֶּלֶת?','key',['flag','heart']],['הַכִּבְשָׂה אוֹכֶלֶת דֶּשֶׁא בַּשָּׂדֶה.','מִי אוֹכֵל דֶּשֶׁא?','sheep',['fish','bird']]];
-function buildWord(back){const pool=shuffle(WORDS.filter(w=>w.syl.length>1)).slice(0,6);let i=0,err=0,gems=0;O.setScreen('sTal','city',back);
+function buildWord(back){const pool=shuffle(WORDS.filter(w=>w.syl.length>1)).slice(0,T.pathN(6));let i=0,err=0,gems=0;O.setScreen('sTal','city',back);
   const s=$('#sTal');const run=()=>{const w=pool[i];let k=0;T.hudT('בּוֹנִים מִלָּה',T.progressBar(i,pool.length));O.sayNow=T.spk(w.w);
     s.innerHTML='';const card=h('div','prq tqc',`${pic(w)}<div class="slots">${w.syl.map(()=>'<span class="slot2"></span>').join('')}</div>`);s.appendChild(card);
     const row=h('div','chs');shuffle(w.syl.map((x,ix)=>[x,ix])).forEach(([sy,ix])=>{const b=h('button','chb tx',sy);b.onclick=()=>{if(b.disabled)return;
@@ -582,7 +587,7 @@ function mixQuiz(back){quiz({id:'art-mix',title:'מְעַרְבְּבִים צְ
   return {pr:`<div class="mixq">${blob(m[0])}<b>+</b>${blob(m[1])}<b>=</b><span class="blob q">?</span></div><div class="qq">${CN[m[0]][0]} וְ${CN[m[1]][0]} נוֹתְנִים...</div>`,opts:opts.map(swatch),ans:opts.indexOf(m[2]),cls:'tx sw2',key:m[2],
     reveal:el=>{const q=el.querySelector('.blob.q');if(q){q.textContent='';q.style.setProperty('--c',CN[m[2]][1]);q.classList.remove('q');}}};}});}
 /* --- symmetry --- */
-function symmetry(back){const R=5,M=8;let r=0,err=0,gems=0;O.setScreen('sTal','valley',back);const s=$('#sTal');
+function symmetry(back){const R=T.pathN(5),M=8;let r=0,err=0,gems=0;O.setScreen('sTal','valley',back);const s=$('#sTal');
   const run=()=>{T.hudT('סִימֶטְרִיָּה',T.progressBar(r,R));O.sayNow='השלימו את הצד השני כמו במראה';
     const colr=pick([2,8,5,10,3]);const tgt=[];for(let y=0;y<M;y++)for(let x=0;x<M/2;x++)tgt[y*M+x]=Math.random()<.34+r*.05?1:0;
     for(let y=0;y<M;y++){let any=0;for(let x=0;x<M/2;x++)any|=tgt[y*M+x];if(!any&&y%2===0)tgt[y*M+rand(0,M/2-1)]=1;}
@@ -625,7 +630,7 @@ function colorByNum(back,pi){const lvl=Math.min(2,((T.S().tl['art-cbn']||{}).n|0
   T.setKey(e=>{const n=+e.key;if(n>=1&&n<=keys.length)legend.children[n-1].click();});
   window.__cbn={solve:()=>{[...g.children].forEach(c=>{if(c.dataset.k&&!c.classList.contains('done')){sel=keys.indexOf(c.dataset.k);c.click();}});},ans:ansOf,get left(){return left;}};}
 building({id:'art',name:'סְטוּדְיוֹ הָאָמָּנוּת',color:'#ff7eb6',bg:'valley',icon:()=>X.palette,blurb:'מְצַיְּרִים, מְעַרְבְּבִים צְבָעִים וּמְגַלִּים תְּמוּנוֹת.',acts:[
-  {id:'art-draw',name:'סְטוּדְיוֹ פִּיקְסֶלִים',icon:()=>X.pencil,run:back=>editor(back)},
+  {id:'art-draw',name:'סְטוּדְיוֹ פִּיקְסֶלִים',icon:()=>X.pencil,long:1,run:back=>editor(back)},
   {id:'art-cbn',name:'צְבִיעָה לְפִי מִסְפָּרִים',icon:()=>X.palette,run:back=>colorByNum(back)},
   {id:'art-mix',name:'מְעַרְבְּבִים צְבָעִים',icon:()=>X.flask,run:mixLab},
   {id:'art-sym',name:'סִימֶטְרִיָּה',icon:()=>'<span style="font-size:34px">🦋</span>',run:back=>window.LESSONS?window.LESSONS.first('art-sym',back,()=>symmetry(back)):symmetry(back)}]});
@@ -784,7 +789,7 @@ function sudoku(back){const SYM=shuffle(['apple','ball','fish','sun','heart','ca
 function genMaze(n){const W=Array.from({length:n*n},()=>[1,1,1,1]);const vis=new Set([0]);const st=[0];const D4=[[0,-1,0,2],[1,0,1,3],[0,1,2,0],[-1,0,3,1]];
   while(st.length){const c=st[st.length-1],x=c%n,y=(c/n)|0;const nb=shuffle(D4).filter(([dx,dy])=>{const nx=x+dx,ny=y+dy;return nx>=0&&ny>=0&&nx<n&&ny<n&&!vis.has(ny*n+nx);});
     if(!nb.length){st.pop();continue;}const [dx,dy,a,b]=nb[0];const id=(y+dy)*n+x+dx;W[c][a]=0;W[id][b]=0;vis.add(id);st.push(id);}return W;}
-function maze(back){const n=[5,6,7,8][Math.min(3,plays('think-maze'))];const W=genMaze(n);let p=0;const goal=n*n-1;O.setScreen('sTal','forest',back);T.hudT('מָבוֹךְ');O.sayNow='עזרו לחתול להגיע לעוגה';
+function maze(back){const n=Math.min([5,6,7,8][Math.min(3,plays('think-maze'))],T.onPath?6:9);/* #394 on the daily path: at most a 6x6 maze */const W=genMaze(n);let p=0;const goal=n*n-1;O.setScreen('sTal','forest',back);T.hudT('מָבוֹךְ');O.sayNow='עזרו לחתול להגיע לעוגה';
   const s=$('#sTal');s.innerHTML='';const wrap=h('div','mzw');const sz=100/n;
   let svg=`<svg viewBox="0 0 ${n*10} ${n*10}" class="mz" aria-hidden="true"><rect width="${n*10}" height="${n*10}" fill="#eaf6e1"/>`;
   W.forEach((w,c)=>{const x=(c%n)*10,y=((c/n)|0)*10;if(w[0])svg+=`<line x1="${x}" y1="${y}" x2="${x+10}" y2="${y}"/>`;if(w[1])svg+=`<line x1="${x+10}" y1="${y}" x2="${x+10}" y2="${y+10}"/>`;if(w[2])svg+=`<line x1="${x}" y1="${y+10}" x2="${x+10}" y2="${y+10}"/>`;if(w[3])svg+=`<line x1="${x}" y1="${y}" x2="${x}" y2="${y+10}"/>`;});
@@ -802,7 +807,7 @@ function maze(back){const n=[5,6,7,8][Math.min(3,plays('think-maze'))];const W=g
   window.__maze={solve:()=>{const prev=new Map([[0,null]]);const q=[0];const DD=[['U',0,-1,0],['R',1,0,1],['D',0,1,2],['L',-1,0,3]];while(q.length){const c=q.shift();for(const [d,dx,dy,wi] of DD){if(W[c][wi])continue;const id=c+dx+dy*n;if(!prev.has(id)){prev.set(id,[c,d]);q.push(id);}}}
     const path=[];let c=goal;while(prev.get(c)){path.unshift(prev.get(c)[1]);c=prev.get(c)[0];}path.forEach(mv);},n};}
 /* --- memory --- */
-function memory(back){const lv=Math.min(2,plays('think-mem'));const pairs=[4,6,8][lv];const pool=shuffle(['apple','ball','fish','sun','heart','car','bird','cake','boat','hat','key','cup','egg','shoe']).slice(0,pairs);
+function memory(back){const lv=Math.min(2,plays('think-mem'));const pairs=Math.min([4,6,8][lv],T.onPath?6:8);/* #394 on the daily path: at most 6 pairs */const pool=shuffle(['apple','ball','fish','sun','heart','car','bird','cake','boat','hat','key','cup','egg','shoe']).slice(0,pairs);
   const deck=shuffle([...pool,...pool]);let open=[],moves=0,found=0,lock=false;O.setScreen('sTal','city',back);T.hudT('זִכָּרוֹן');O.sayNow='מצאו זוגות';const s=$('#sTal');s.innerHTML='';
   const info=h('div','lcap','מִצְאוּ אֶת כָּל הַזּוּגוֹת');const g=h('div','memg c'+(pairs>6?4:pairs>4?4:4));
   deck.forEach((k,i)=>{const c=h('button','mc',`<span class="fr">${ALLSPR(k)}</span><span class="bk2">?</span>`);c.dataset.k=k;c.setAttribute('aria-label','קלף '+(i+1));
@@ -1419,7 +1424,7 @@ function runStep(i){const d=T.dailyEnsure();const id=d.t[i];if(window.FRIEND)win
     if(!O.save.story[lv.w.id+'-in'])O.showWorld(lv.w);else O.startLevel(lv);return;}
   /* #388: the result card's "continue" goes on to the next path mission; leaving before it is done goes home */
   const a=ACT[id];if(!a)return;const nDone=()=>T.dailyEnsure().done.filter(Boolean).length,n0=nDone();
-  const back=()=>{if(nDone()>n0)nextStep();else O.showMap();};back.home=1;a.run(back);}
+  const back=()=>{if(nDone()>n0)nextStep();else O.showMap();};back.home=1;T.pathOn();a.run(back);}
 window.TAL_step=runStep;
 /* #388: the next path mission, straight away. A break / meal / topic screen that is due comes first; home only at the end of
    the path, when today's time is up (the time-up screen follows), or when he taps something else on that screen. */
