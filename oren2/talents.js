@@ -81,13 +81,14 @@ function finishAct(id,errors,n,gems,back,again,title){const st=errors<=Math.max(
 /* generic multiple-choice quiz: q = {pr, opts, ans, cls, ltr, play, auto, reveal(el), explain, key, bank, bkey}
    q.bank: the item comes from a finite bank — its first answer is recorded there (LEARN.seen, key q.bkey or q.key; #360).
    o.pool: the generator draws from a finite list — the quiz keeps its own bank 'tq-<id>' and lets the learning engine choose (wrong ones back on schedule).
-   o.end(err): called once after the last question, before the result. */
-function quiz(o){const qs=[],seen=new Set();let t=0;const LN=window.LEARN,pb=o.pool&&LN&&LN.pickItem?'tq-'+o.id:null;
+   o.end(err): called once after the last question, before the result.
+   o.lesson: lesson card id(s) (lessoncard.js, #258) shown before the first questions, once; a "show me again" button on the screen. */
+function quiz(o){if(o.lesson&&window.LESSONS&&!o._ls){o._ls=1;return window.LESSONS.first(o.lesson,o.back,()=>quiz(o));}const qs=[],seen=new Set();let t=0;const LN=window.LEARN,pb=o.pool&&LN&&LN.pickItem?'tq-'+o.id:null;
   const gen=()=>{const q=o.gen(qs.length);if(!pb||q.bank||q.key==null)return q;const c=[q];for(let j=0;j<24;j++){const x=o.gen(qs.length);if(x.key!=null&&!c.some(y=>y.key===x.key))c.push(x);}
     try{const r=LN.pickItem(pb,c.filter(x=>!seen.has(x.key)).map(x=>({k:x.key})));const x=r&&c.find(y=>y.key===r.item.k);if(x)return Object.assign(x,{bank:pb});}catch(e){}return q;};
   while(qs.length<o.n&&t++<400){const q=gen();const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k))continue;seen.add(k);qs.push(q);}
   let i=0,err=0,gems=0,lock=false,tries=0,HB=null;O.setScreen('sTal',o.bg||'valley',o.back);
-  const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq');s.appendChild(wrap);
+  const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq');s.appendChild(wrap);if(o.lesson&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(o.lesson,o.back,()=>quiz(o)));
   const render=()=>{const q=qs[i];tries=0;lock=false;if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||spoken(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
     wrap.innerHTML='';const card=h('div','prq tqc',q.pr);if(q.play){const pb=h('button','hintbtn',ICON.say+`<span>${q.playLbl||'הַשְׁמַע'}</span>`);pb.onclick=q.play;card.appendChild(pb);}
     wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});const row=h('div','chs'+(q.ltr?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>{if(!(O.tapTooSoon&&O.tapTooSoon()))pickA(k,b);};row.appendChild(b);});wrap.appendChild(row);
@@ -257,7 +258,7 @@ const ISR=[['מָה הָעִיר הַבִּירָה שֶׁל יִשְׂרָאֵ�
  ['הַכִּנֶּרֶת הִיא...','אֲגַם',['הַר','מִדְבָּר']],['אֵיזֶה מִדְבָּר יֵשׁ בִּדְרוֹם יִשְׂרָאֵל?','הַנֶּגֶב',['הַגָּלִיל','הַגּוֹלָן']],['הַחֶרְמוֹן הוּא...','הַר',['יָם','עִיר']]];
 building({id:'world',name:'הָעוֹלָם וְיִשְׂרָאֵל',color:'#4fae4f',bg:'valley',icon:()=>X.globe,blurb:'דְּגָלִים, יַבָּשׁוֹת וְהָאָרֶץ שֶׁלָּנוּ.',acts:[
   {id:'world-flag',name:'דְּגָלִים',icon:()=>flag('il'),run:back=>quiz({id:'world-flag',pool:1,title:'דְּגָלִים',bg:'valley',back,n:5,gen:()=>{const ks=Object.keys(FL);const k=pick(ks);const opts=shuffle([k,...shuffle(ks.filter(x=>x!==k)).slice(0,2)]);return {pr:`${flag(k)}<div class="qq">שֶׁל אֵיזוֹ מְדִינָה הַדֶּגֶל?</div>`,opts:opts.map(x=>FL[x][0]),ans:opts.indexOf(k),cls:'tx',key:k};}})},
-  {id:'world-ani',name:'אֵיפֹה הֵם גָּרִים?',icon:()=>X.globe,run:back=>quiz({id:'world-ani',pool:1,title:'אֵיפֹה הֵם גָּרִים?',bg:'valley',back,n:5,gen:()=>{const [a,c,ds]=pick(ANI);const opts=shuffle([c,...ds]);return {pr:`<div class="bigw">${a}</div><div class="qq">בְּאֵיזוֹ יַבֶּשֶׁת חַי בַּעַל הַחַיִּים הַזֶּה בַּטֶּבַע?</div>`,opts,ans:opts.indexOf(c),cls:'tx',key:a};}})},
+  {id:'world-ani',name:'אֵיפֹה הֵם גָּרִים?',icon:()=>X.globe,run:back=>quiz({id:'world-ani',lesson:'world-cont',pool:1,title:'אֵיפֹה הֵם גָּרִים?',bg:'valley',back,n:5,gen:()=>{const [a,c,ds]=pick(ANI);const opts=shuffle([c,...ds]);return {pr:`<div class="bigw">${a}</div><div class="qq">בְּאֵיזוֹ יַבֶּשֶׁת חַי בַּעַל הַחַיִּים הַזֶּה בַּטֶּבַע?</div>`,opts,ans:opts.indexOf(c),cls:'tx',key:a};}})},
   {id:'world-il',name:'הָאָרֶץ שֶׁלָּנוּ',icon:()=>flag('il'),run:back=>quiz({id:'world-il',pool:1,title:'הָאָרֶץ שֶׁלָּנוּ',bg:'valley',back,n:5,gen:()=>{const [q,a,ds]=pick(ISR);const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}})}]});
 /* Bedtime stories */
 const STORIES=[
@@ -491,8 +492,8 @@ function dayNight(back){O.setScreen('sTal','final',back);T.hudT('יוֹם וְל
 const bodyFig=(x,y)=>`<div class="bodyf">${O.AV()}<span class="arrow" style="left:${x}%;top:${y}%"></span></div>`;
 building({id:'lab',name:'הַמַּעְבָּדָה',color:'#3cb371',bg:'mount',icon:()=>X.flask,blurb:'נִסּוּיִים קְטַנִּים: מְנַחֲשִׁים, בּוֹדְקִים וְלוֹמְדִים.',acts:[
   {id:'sci-float',name:'צָף אוֹ שׁוֹקֵעַ?',icon:()=>X.boat,run:back=>quiz({id:'sci-float',pool:1,title:'צָף אוֹ שׁוֹקֵעַ?',bg:'sea',back,n:5,gen:()=>{const [n,k,f,g]=pick(FLOAT);const fm=g==='f';return {pr:`${tank(k)}<div class="qq">${n}: ${fm?'תָּצוּף אוֹ תִּשְׁקַע?':'יָצוּף אוֹ יִשְׁקַע?'}</div>`,opts:fm?['תָּצוּף','תִּשְׁקַע']:['יָצוּף','יִשְׁקַע'],ans:f?0:1,cls:'tx',key:n,reveal:el=>{const it=el.querySelector('#itm');if(it)it.classList.add(f?'floats':'sinks');sfx.plank();},explain:`${n} ${f?(fm?'צָפָה':'צָף'):(fm?'שׁוֹקַעַת':'שׁוֹקֵעַ')}!`};}})},
-  {id:'sci-mag',name:'מַגְנֵטִים',icon:()=>X.magnet,run:back=>quiz({id:'sci-mag',pool:1,title:'מַגְנֵטִים',bg:'city',back,n:5,gen:()=>{const [n,k,m]=pick(MAG);return {pr:`<div class="magv"><span class="mg">${X.magnet}</span><span class="item" id="itm">${ALLSPR(k)}</span></div><div class="qq">הַאִם הַמַּגְנֵט יִמְשֹׁךְ אֶת ${n}?</div>`,opts:['כֵּן','לֹא'],ans:m?0:1,cls:'tx',key:n,reveal:el=>{const it=el.querySelector('#itm');if(it&&m)it.classList.add('pulled');},explain:m?'מַגְנֵט מוֹשֵׁךְ בַּרְזֶל וּפְלָדָה.':'מַגְנֵט לֹא מוֹשֵׁךְ עֵץ, אֶבֶן, פְּלַסְטִיק אוֹ אֹכֶל.'};}})},
-  {id:'sci-animals',name:'מִיּוּן בַּעֲלֵי חַיִּים',icon:()=>SPR.owl,run:back=>quiz({id:'sci-animals',pool:1,title:'מִיּוּן בַּעֲלֵי חַיִּים',bg:'forest',back,n:5,gen:()=>{const [n,k,c,ex,fm]=pick(ANIMALS);return {pr:`<span class="pic">${ALLSPR(k)}</span><div class="qq">${n} ${fm?'הִיא':'הוּא'}...</div>`,opts:CLASSES,ans:CLASSES.indexOf(c),cls:'tx',key:n,explain:ex||''};}})},
+  {id:'sci-mag',name:'מַגְנֵטִים',icon:()=>X.magnet,run:back=>quiz({id:'sci-mag',lesson:'sci-mag',pool:1,title:'מַגְנֵטִים',bg:'city',back,n:5,gen:()=>{const [n,k,m]=pick(MAG);return {pr:`<div class="magv"><span class="mg">${X.magnet}</span><span class="item" id="itm">${ALLSPR(k)}</span></div><div class="qq">הַאִם הַמַּגְנֵט יִמְשֹׁךְ אֶת ${n}?</div>`,opts:['כֵּן','לֹא'],ans:m?0:1,cls:'tx',key:n,reveal:el=>{const it=el.querySelector('#itm');if(it&&m)it.classList.add('pulled');},explain:m?'מַגְנֵט מוֹשֵׁךְ בַּרְזֶל וּפְלָדָה.':'מַגְנֵט לֹא מוֹשֵׁךְ עֵץ, אֶבֶן, פְּלַסְטִיק אוֹ אֹכֶל.'};}})},
+  {id:'sci-animals',name:'מִיּוּן בַּעֲלֵי חַיִּים',icon:()=>SPR.owl,run:back=>quiz({id:'sci-animals',lesson:'sci-groups',pool:1,title:'מִיּוּן בַּעֲלֵי חַיִּים',bg:'forest',back,n:5,gen:()=>{const [n,k,c,ex,fm]=pick(ANIMALS);return {pr:`<span class="pic">${ALLSPR(k)}</span><div class="qq">${n} ${fm?'הִיא':'הוּא'}...</div>`,opts:CLASSES,ans:CLASSES.indexOf(c),cls:'tx',key:n,explain:ex||''};}})},
   {id:'sci-body',name:'גּוּף הָאָדָם',icon:()=>O.AV(),run:back=>quiz({id:'sci-body',pool:1,title:'גּוּף הָאָדָם',bg:'valley',back,n:5,gen:()=>{const [n,[x,y]]=pick(BODY);const opts=shuffle([n,...shuffle(BODY.filter(b=>b[0]!==n)).slice(0,2).map(b=>b[0])]);return {pr:`${bodyFig(x,y)}<div class="qq">מָה מְסֻמָּן בַּחֵץ?</div>`,opts,ans:opts.indexOf(n),cls:'tx',key:n};}})},
   {id:'sci-plant',name:'מָה צָרִיךְ צֶמַח?',icon:()=>SPR.flower,run:plant},
   {id:'sci-states',name:'קֶרַח, מַיִם וְאֵדִים',icon:()=>'<span style="font-size:34px">🧊</span>',run:states},
@@ -563,7 +564,7 @@ function symmetry(back){const R=5,M=8;let r=0,err=0,gems=0;O.setScreen('sTal','v
     const g=h('div','symg');g.style.setProperty('--n',M);
     for(let i=0;i<M*M;i++){const x=i%M;const c=h('button','sc'+(x<M/2?' given':'')+(x===M/2-1?' edge':''));if(x<M/2){if(tgt[i])c.style.background=PAL[colr];c.disabled=true;c.tabIndex=-1;}
       else c.onclick=()=>{cur[i]^=1;c.style.background=cur[i]?PAL[colr]:'';c.classList.remove('bad');sfx.key&&sfx.key();};c.dataset.i=i;g.appendChild(c);}
-    const row=h('div','btnrow');const chk=h('button','bigbtn',SPR.star+'<span>בְּדִיקָה</span>');row.appendChild(chk);s.append(g,row);let tries=0;
+    const row=h('div','btnrow');const chk=h('button','bigbtn',SPR.star+'<span>בְּדִיקָה</span>');row.appendChild(chk);s.append(g,row);if(window.LESSONS)s.appendChild(window.LESSONS.againBtn('art-sym',back,()=>symmetry(back)));let tries=0;
     chk.onclick=()=>{let bad=0;for(let y=0;y<M;y++)for(let x=M/2;x<M;x++){const i=y*M+x;const want=tgt[y*M+(M-1-x)];if(cur[i]!==want){bad++;g.children[i].classList.add('bad');}}
       if(!bad){sfx.ok(r);const gg=tries?1:3;gems+=gg;O.addGems(gg,chk);chk.disabled=true;g.classList.add('done');setTimeout(()=>{if(!g.isConnected)return;r++;if(r>=R){T.setKey(null);T.finishAct('art-sym',err,R,gems,back,()=>symmetry(back));}else run();},D(1100));}
       else{tries++;err++;sfx.no();setTimeout(()=>g.querySelectorAll('.bad').forEach(c=>c.classList.remove('bad')),D(1200));
@@ -601,7 +602,7 @@ building({id:'art',name:'סְטוּדְיוֹ הָאָמָּנוּת',color:'#ff
   {id:'art-draw',name:'סְטוּדְיוֹ פִּיקְסֶלִים',icon:()=>X.pencil,run:back=>editor(back)},
   {id:'art-cbn',name:'צְבִיעָה לְפִי מִסְפָּרִים',icon:()=>X.palette,run:back=>colorByNum(back)},
   {id:'art-mix',name:'מְעַרְבְּבִים צְבָעִים',icon:()=>X.flask,run:mixLab},
-  {id:'art-sym',name:'סִימֶטְרִיָּה',icon:()=>'<span style="font-size:34px">🦋</span>',run:symmetry}]});
+  {id:'art-sym',name:'סִימֶטְרִיָּה',icon:()=>'<span style="font-size:34px">🦋</span>',run:back=>window.LESSONS?window.LESSONS.first('art-sym',back,()=>symmetry(back)):symmetry(back)}]});
 })();
 
 /* ===== MINDFULNESS GROVE ===== */
@@ -699,7 +700,9 @@ const C=()=>{const s=T.S();s.code=s.code||{};return s.code;};
 /* one big button: the next level (the first one not done yet) */
 function menu(back){O.setScreen('sTal','city',back);T.hudT('רוֹבּוֹט הַקּוֹד');O.sayNow='תַּכְנְתוּ אֶת הָרוֹבּוֹט: סַדְּרוּ חִצִּים כְּדֵי שֶׁיַּגִּיעַ לַיַּהֲלוֹם.';const s=$('#sTal');s.innerHTML='';const cs=C();
   let i=LV.findIndex((_,k)=>!(cs[k]|0));if(i<0)i=NL-1;
-  const b=h('button','bigbtn lvgo',ICON.play+`<span>שָׁלָב ${i+1}</span>`);b.onclick=()=>play(i,back);s.appendChild(b);}
+  const LS=window.LESSONS,go=()=>play(i,back);
+  const b=h('button','bigbtn lvgo',ICON.play+`<span>שָׁלָב ${i+1}</span>`);b.onclick=()=>LS&&LV[i].rep?LS.first('code-rep',back,go):go();s.appendChild(b);
+  if(LS)s.appendChild(LS.againBtn(LV[i].rep?['code-prog','code-rep']:'code-prog',back,()=>menu(back)));}
 function play(li,back){const L=LV[li];const n=L.n;let prog=[],running=false;const mback=()=>menu(back);O.setScreen('sTal','city',mback);T.hudT(`רוֹבּוֹט הַקּוֹד · שָׁלָב ${li+1}`);O.sayNow='סַדֵּר חִצִּים כְּדֵי שֶׁהָרוֹבּוֹט יַגִּיעַ לַיַּהֲלוֹם, וּלְחַץ הַפְעֵל.';
   const s=$('#sTal');s.innerHTML='';const maxB=L.opt+4;
   const board=h('div','cboard');board.style.setProperty('--n',n);for(let c=0;c<n*n;c++){const d=h('i','ct'+(L.w.has(c)?' wall':''));if(L.w.has(c))d.innerHTML=X.stone;if(c===L.g)d.innerHTML=`<span class="cg bob">${SPR.gem}</span>`;board.appendChild(d);}
@@ -729,7 +732,7 @@ function solution(L){const {n,w,s,g}=L;const maxRun=L.rep?3:1;const prev=new Map
   for(const [d,[dx,dy]] of Object.entries(DIRS))for(let k=1;k<=maxRun;k++){const nx=x+dx*k,ny=y+dy*k;if(nx<0||ny<0||nx>=n||ny>=n||w.has(ny*n+nx))break;const id=ny*n+nx;if(!prev.has(id)){prev.set(id,[c,d,k]);q.push(id);}}}
   const out=[];let c=g;while(prev.get(c)){const [p,d,k]=prev.get(c);out.unshift({d,k});c=p;}return out;}
 building({id:'code',name:'מַעְבֶּדֶת הַקּוֹד',color:'#5b8def',bg:'city',icon:()=>'<span style="font-size:34px">🤖</span>',blurb:'מְתַכְנְתִים רוֹבּוֹט צַעַד אַחַר צַעַד.',acts:[
-  {id:'code-maze',name:'רוֹבּוֹט הַקּוֹד',icon:()=>'<span style="font-size:34px">🤖</span>',run:menu}]});
+  {id:'code-maze',name:'רוֹבּוֹט הַקּוֹד',icon:()=>'<span style="font-size:34px">🤖</span>',run:back=>window.LESSONS?window.LESSONS.first('code-prog',back,()=>menu(back)):menu(back)}]});
 })();
 
 /* ===== THINKING TOWER ===== */
@@ -746,7 +749,7 @@ function sudoku(back){const SYM=shuffle(['apple','ball','fish','sun','heart','ca
       if(v<0)c.onclick=()=>{if(cur[i]>=0)return;if(sol.flat()[i]===sel){cur[i]=sel;c.innerHTML=ALLSPR(SYM[sel]);c.classList.add('ok');sfx.ok(left);left--;if(!left)solved();}else{err++;tries++;c.classList.add('bad');sfx.no();setTimeout(()=>c.classList.remove('bad'),D(500));}};
       else{c.disabled=true;c.tabIndex=-1;}g.appendChild(c);});
     const pal=h('div','sudp');SYM.forEach((k,j)=>{const b=h('button','sdp'+(j===0?' on':''),ALLSPR(k));b.setAttribute('aria-label','תמונה '+(j+1));b.onclick=()=>{sel=j;pal.querySelectorAll('.sdp').forEach((x,q)=>x.classList.toggle('on',q===j));sfx.pop(2);};pal.appendChild(b);});
-    s.append(g,pal);let tries=0;
+    s.append(g,pal);if(window.LESSONS)s.appendChild(window.LESSONS.againBtn('think-sud',back,()=>sudoku(back)));let tries=0;
     T.setKey(e=>{const n=+e.key;if(n>=1&&n<=4)pal.children[n-1].click();});
     function solved(){const gg=tries?1:3;gems+=gg;O.addGems(gg);g.classList.add('done');setTimeout(()=>{if(!g.isConnected)return;r++;if(r>=R){T.setKey(null);T.finishAct('think-sudoku',Math.floor(err/2),R*3,gems,back,()=>sudoku(back));}else run();},D(1000));}
     window.__sud={solve:()=>{cur.forEach((v,i)=>{if(v<0){sel=sol.flat()[i];g.children[i].click();}});}};};
@@ -792,7 +795,7 @@ function patGen(i){const lv=Math.min(3,Math.floor(i/2));const kinds=[['AB','AAB'
   const opts=shuffle([...new Set([a,...syms.slice(0,unit.length<3?3:4)])]).slice(0,3);if(!opts.includes(a))opts[0]=a;const o2=shuffle(opts);
   return {pr:`<div class="pat">${seq.slice(0,len).map(x=>`<span>${ALLSPR(x)}</span>`).join('')}<span class="q">?</span></div><div class="qq">מָה בָּא אַחַר כָּךְ?</div>`,opts:o2.map(x=>`<span class="pic sm">${ALLSPR(x)}</span>`),ans:o2.indexOf(a),cls:'pc',key:seq.join()};}
 building({id:'think',name:'מִגְדַּל הַחֲשִׁיבָה',color:'#e8a33d',bg:'mount',icon:()=>X.puzzle,blurb:'חִידוֹת שֶׁמְּאַמְּנוֹת אֶת הַמֹּחַ.',acts:[
-  {id:'think-sudoku',name:'סוּדוֹקוּ',icon:()=>X.puzzle,run:sudoku},
+  {id:'think-sudoku',name:'סוּדוֹקוּ',icon:()=>X.puzzle,run:back=>window.LESSONS?window.LESSONS.first('think-sud',back,()=>sudoku(back)):sudoku(back)},
   {id:'think-maze',name:'מָבוֹךְ',icon:()=>'<span style="font-size:34px">🌀</span>',run:maze},
   {id:'think-mem',name:'זִכָּרוֹן',icon:()=>'<span style="font-size:34px">🃏</span>',run:memory},
   {id:'think-pat',name:'מָה בָּא אַחַר כָּךְ?',icon:()=>'<span style="font-size:34px">🔁</span>',run:back=>quiz({id:'think-pat',title:'מָה בָּא אַחַר כָּךְ?',bg:'mount',back,n:5,gen:patGen})}]});

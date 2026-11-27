@@ -91,6 +91,7 @@ let CUR=null;
 function lesson(key,qs,back){const [id,title,max]=ACTS[key];const lvl=ST()[key];let i=0,err=0,gems=0,items=0;qs.forEach(q=>{items+=q.items||1;});
   O.setScreen('sTal','final',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq m2');s.appendChild(wrap);
   if(key==='rhy'&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(rhyLessons(),back,()=>rhyRun(back)));
+  if(key==='read'&&window.LESSONS)s.appendChild(window.LESSONS.againBtn('mus-staff',back,()=>readRun(back)));
   const sk=skAt(key,lvl);if(KN)KN.begin('music',()=>wrap.isConnected&&!s.hidden);
   const show=()=>{const q=qs[i];T.hudT(title,T.progressBar(i,qs.length));wrap.innerHTML='';T.setKey(null);CUR=KIND[q.k](q,wrap,(e,first,el)=>{if(KN&&(q.rv||sk))KN.hit(q.rv||sk.id,!!first);done(e,first,el);});};
   function done(e,first,el){err+=e;const g=first?2:e>=2&&!el?0:1;if(g){gems+=g;O.addGems(g,el||wrap);O.floatText(el||wrap,'+'+g);}
@@ -218,7 +219,12 @@ if(LN){LN.add('mus-len',{title:'כַּמָּה זְמַן נִמְשָׁךְ ת�
     lenCard('q','זֶה תָּו רֶבַע: עִגּוּל מָלֵא עִם מַקֵּל. הוּא קָצָר: נִמְשָׁךְ פְּעָמָה אַחַת.')]});
   LN.add('mus-len8',{title:'תָּו חָדָשׁ: שְׁמִינִית',bg:'final',cards:[
     {art:()=>staffSVG([{i:0,d:'e'}],{one:true,minW:160}),t:'זוֹ שְׁמִינִית: עִגּוּל מָלֵא, מַקֵּל וְדֶגֶל. הִיא מְהִירָה: נִמְשֶׁכֶת חֲצִי פְּעָמָה.'},
-    {art:()=>`<div class="lcrow">${staffSVG([{i:0,d:'e',beam:'s'},{i:0,d:'e',beam:'e'}],{one:true,minW:160})}<span class="lcarr">=</span>${staffSVG([{i:0,d:'q'}],{one:true,minW:160})}</div>`,t:'שְׁתֵּי שְׁמִינִיּוֹת יַחַד נִמְשָׁכוֹת כְּמוֹ רֶבַע אֶחָד.'}]});}
+    {art:()=>`<div class="lcrow">${staffSVG([{i:0,d:'e',beam:'s'},{i:0,d:'e',beam:'e'}],{one:true,minW:160})}<span class="lcarr">=</span>${staffSVG([{i:0,d:'q'}],{one:true,minW:160})}</div>`,t:'שְׁתֵּי שְׁמִינִיּוֹת יַחַד נִמְשָׁכוֹת כְּמוֹ רֶבַע אֶחָד.'}]});
+  /* the staff before the first note-reading questions (#258): where do, re, mi sit */
+  LN.add('mus-staff',{title:'אֵיפֹה יוֹשְׁבִים הַתָּוִים?',bg:'final',cards:[
+    {art:()=>staffSVG([],{minW:240}),t:'אֵלֶּה חֲמִשָּׁה קַוִּים, וְקוֹרְאִים לָהֶם הַחֲמִשָּׁה. כָּל תָּו יוֹשֵׁב עַל קַו אוֹ בֵּין שְׁנֵי קַוִּים.'},
+    {art:()=>staffSVG([{i:0}],{minW:240}),t:'זֶה דּוֹ. הוּא יוֹשֵׁב מִתַּחַת לַחֲמִשָּׁה, עַל קַו קָטָן מִשֶּׁלּוֹ.'},
+    {art:()=>staffSVG([{i:0},{i:1},{i:2}],{minW:240}),t:'כָּל צַעַד לְמַעְלָה הוּא הַתָּו הַבָּא: דּוֹ, רֶה, מִי. מִי יוֹשֵׁב עַל הַקַּו הַתַּחְתּוֹן.'}]});}
 /* what Oren knows (#57): reading notes and rhythm, each a ladder of skills over the activity's levels (lv = [from, to]) */
 const KN=window.KNOW;
 const skAt=(key,lvl)=>KN?KN.track('music',key).find(x=>lvl>=x.lv[0]&&lvl<=x.lv[1])||null:null;
@@ -235,7 +241,8 @@ if(KN)KN.area('music',{name:'מוזיקה',skills:[
     else if(x.e==='place')m2[key]=x.yes?Math.max(m2[key],nx?nx.lv[0]:s.lv[1]):Math.min(m2[key],s.lv[0]);});O.persist();}});
 const rhyLessons=()=>['mus-len',...(RHY[ST().rhy-1].vals.includes('e')?['mus-len8']:[])];
 const rhyRun=back=>lesson('rhy',rhyQs(),back);
-const START={read:back=>lesson('read',readQs(),back),ear:back=>lesson('ear',earQs(),back),rhy:back=>LN?LN.first(rhyLessons(),back,()=>rhyRun(back)):rhyRun(back),mel:back=>lesson('mel',melQs(),back)};
+const readRun=back=>lesson('read',readQs(),back);
+const START={read:back=>LN?LN.first('mus-staff',back,()=>readRun(back)):readRun(back),ear:back=>lesson('ear',earQs(),back),rhy:back=>LN?LN.first(rhyLessons(),back,()=>rhyRun(back)):rhyRun(back),mel:back=>lesson('mel',melQs(),back)};
 
 /* ---------- registration + parent info ---------- */
 const ICONS={read:()=>staffSVG([{i:4,d:'q'}],{minW:96,cls:'mini'}),ear:()=>'<span style="font-size:34px">👂</span>',rhy:()=>staffSVG([{i:0,d:'e',beam:'s'},{i:0,d:'e',beam:'e'},{i:0,d:'q'}],{one:true,cls:'mini'}),mel:()=>staffSVG([{i:0,d:'q'},{i:2,d:'q'},{i:4,d:'q'}],{cls:'mini'})};

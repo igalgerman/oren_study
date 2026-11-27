@@ -2998,6 +2998,15 @@ body.fron #screens{padding-bottom:84px}
 .chb.lcgo svg{width:26px;height:26px}
 .chb.lcgo:disabled{opacity:.55}
 .lcagain{display:block;margin:14px auto 0;font-weight:800;font-size:19px;padding:10px 18px;background:#eef3f7;box-shadow:inset -3px -3px 0 rgba(0,0,0,.1),0 3px 0 rgba(0,0,0,.18)}
+/* #258 pictures of the lessons for more activities */
+.lcpic{display:inline-grid;place-items:center;font-size:72px;line-height:1}.lcpic svg{width:110px;height:110px}.lcpic.sm svg{width:64px;height:64px}
+.lcchips{display:flex;flex-wrap:wrap;justify-content:center;gap:6px}.lcchips span{background:#eaf6e1;border-radius:10px;padding:3px 9px;font-weight:800;font-size:17px}
+.lccode{gap:4px}.lccode i{width:52px;height:52px;display:grid;place-items:center;font-size:34px;background:#eef3f7;border-radius:8px;font-style:normal}
+.lcprog{gap:6px}.lcprog b{min-width:48px;height:48px;display:grid;place-items:center;font-size:28px;background:#5b8def;color:#fff;border-radius:10px}.lcprog b.on{outline:4px solid #f4b400}.lcprog sub{font-size:16px}
+.lcsud{width:min(240px,70vw)}.lcsud .sdc.lchl{background:#ffe9a8}
+.lcsym.lcpic{display:grid;place-items:stretch;width:min(220px,66vw)}
+.lcart .thana,.lcart .thmat{zoom:1.3}
+.lccode.lcpic{display:flex}
 
 /* ===== curriculum gaps: nikud ladder, first sound, spelling, word race, final letters, math visuals ===== */
 .gp-hi{color:#c0392b;background:#ffe9a8;padding:0 2px}
@@ -3604,13 +3613,14 @@ function finishAct(id,errors,n,gems,back,again,title){const st=errors<=Math.max(
 /* generic multiple-choice quiz: q = {pr, opts, ans, cls, ltr, play, auto, reveal(el), explain, key, bank, bkey}
    q.bank: the item comes from a finite bank — its first answer is recorded there (LEARN.seen, key q.bkey or q.key; #360).
    o.pool: the generator draws from a finite list — the quiz keeps its own bank 'tq-<id>' and lets the learning engine choose (wrong ones back on schedule).
-   o.end(err): called once after the last question, before the result. */
-function quiz(o){const qs=[],seen=new Set();let t=0;const LN=window.LEARN,pb=o.pool&&LN&&LN.pickItem?'tq-'+o.id:null;
+   o.end(err): called once after the last question, before the result.
+   o.lesson: lesson card id(s) (lessoncard.js, #258) shown before the first questions, once; a "show me again" button on the screen. */
+function quiz(o){if(o.lesson&&window.LESSONS&&!o._ls){o._ls=1;return window.LESSONS.first(o.lesson,o.back,()=>quiz(o));}const qs=[],seen=new Set();let t=0;const LN=window.LEARN,pb=o.pool&&LN&&LN.pickItem?'tq-'+o.id:null;
   const gen=()=>{const q=o.gen(qs.length);if(!pb||q.bank||q.key==null)return q;const c=[q];for(let j=0;j<24;j++){const x=o.gen(qs.length);if(x.key!=null&&!c.some(y=>y.key===x.key))c.push(x);}
     try{const r=LN.pickItem(pb,c.filter(x=>!seen.has(x.key)).map(x=>({k:x.key})));const x=r&&c.find(y=>y.key===r.item.k);if(x)return Object.assign(x,{bank:pb});}catch(e){}return q;};
   while(qs.length<o.n&&t++<400){const q=gen();const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k))continue;seen.add(k);qs.push(q);}
   let i=0,err=0,gems=0,lock=false,tries=0,HB=null;O.setScreen('sTal',o.bg||'valley',o.back);
-  const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq');s.appendChild(wrap);
+  const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq');s.appendChild(wrap);if(o.lesson&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(o.lesson,o.back,()=>quiz(o)));
   const render=()=>{const q=qs[i];tries=0;lock=false;if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||spoken(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
     wrap.innerHTML='';const card=h('div','prq tqc',q.pr);if(q.play){const pb=h('button','hintbtn',ICON.say+`<span>${q.playLbl||'הַשְׁמַע'}</span>`);pb.onclick=q.play;card.appendChild(pb);}
     wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});const row=h('div','chs'+(q.ltr?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>{if(!(O.tapTooSoon&&O.tapTooSoon()))pickA(k,b);};row.appendChild(b);});wrap.appendChild(row);
@@ -3780,7 +3790,7 @@ const ISR=[['מָה הָעִיר הַבִּירָה שֶׁל יִשְׂרָאֵ�
  ['הַכִּנֶּרֶת הִיא...','אֲגַם',['הַר','מִדְבָּר']],['אֵיזֶה מִדְבָּר יֵשׁ בִּדְרוֹם יִשְׂרָאֵל?','הַנֶּגֶב',['הַגָּלִיל','הַגּוֹלָן']],['הַחֶרְמוֹן הוּא...','הַר',['יָם','עִיר']]];
 building({id:'world',name:'הָעוֹלָם וְיִשְׂרָאֵל',color:'#4fae4f',bg:'valley',icon:()=>X.globe,blurb:'דְּגָלִים, יַבָּשׁוֹת וְהָאָרֶץ שֶׁלָּנוּ.',acts:[
   {id:'world-flag',name:'דְּגָלִים',icon:()=>flag('il'),run:back=>quiz({id:'world-flag',pool:1,title:'דְּגָלִים',bg:'valley',back,n:5,gen:()=>{const ks=Object.keys(FL);const k=pick(ks);const opts=shuffle([k,...shuffle(ks.filter(x=>x!==k)).slice(0,2)]);return {pr:`${flag(k)}<div class="qq">שֶׁל אֵיזוֹ מְדִינָה הַדֶּגֶל?</div>`,opts:opts.map(x=>FL[x][0]),ans:opts.indexOf(k),cls:'tx',key:k};}})},
-  {id:'world-ani',name:'אֵיפֹה הֵם גָּרִים?',icon:()=>X.globe,run:back=>quiz({id:'world-ani',pool:1,title:'אֵיפֹה הֵם גָּרִים?',bg:'valley',back,n:5,gen:()=>{const [a,c,ds]=pick(ANI);const opts=shuffle([c,...ds]);return {pr:`<div class="bigw">${a}</div><div class="qq">בְּאֵיזוֹ יַבֶּשֶׁת חַי בַּעַל הַחַיִּים הַזֶּה בַּטֶּבַע?</div>`,opts,ans:opts.indexOf(c),cls:'tx',key:a};}})},
+  {id:'world-ani',name:'אֵיפֹה הֵם גָּרִים?',icon:()=>X.globe,run:back=>quiz({id:'world-ani',lesson:'world-cont',pool:1,title:'אֵיפֹה הֵם גָּרִים?',bg:'valley',back,n:5,gen:()=>{const [a,c,ds]=pick(ANI);const opts=shuffle([c,...ds]);return {pr:`<div class="bigw">${a}</div><div class="qq">בְּאֵיזוֹ יַבֶּשֶׁת חַי בַּעַל הַחַיִּים הַזֶּה בַּטֶּבַע?</div>`,opts,ans:opts.indexOf(c),cls:'tx',key:a};}})},
   {id:'world-il',name:'הָאָרֶץ שֶׁלָּנוּ',icon:()=>flag('il'),run:back=>quiz({id:'world-il',pool:1,title:'הָאָרֶץ שֶׁלָּנוּ',bg:'valley',back,n:5,gen:()=>{const [q,a,ds]=pick(ISR);const opts=shuffle([a,...ds]);return {pr:`<div class="sent">${q}</div>`,opts,ans:opts.indexOf(a),cls:'tx',key:q};}})}]});
 /* Bedtime stories */
 const STORIES=[
@@ -4014,8 +4024,8 @@ function dayNight(back){O.setScreen('sTal','final',back);T.hudT('יוֹם וְל
 const bodyFig=(x,y)=>`<div class="bodyf">${O.AV()}<span class="arrow" style="left:${x}%;top:${y}%"></span></div>`;
 building({id:'lab',name:'הַמַּעְבָּדָה',color:'#3cb371',bg:'mount',icon:()=>X.flask,blurb:'נִסּוּיִים קְטַנִּים: מְנַחֲשִׁים, בּוֹדְקִים וְלוֹמְדִים.',acts:[
   {id:'sci-float',name:'צָף אוֹ שׁוֹקֵעַ?',icon:()=>X.boat,run:back=>quiz({id:'sci-float',pool:1,title:'צָף אוֹ שׁוֹקֵעַ?',bg:'sea',back,n:5,gen:()=>{const [n,k,f,g]=pick(FLOAT);const fm=g==='f';return {pr:`${tank(k)}<div class="qq">${n}: ${fm?'תָּצוּף אוֹ תִּשְׁקַע?':'יָצוּף אוֹ יִשְׁקַע?'}</div>`,opts:fm?['תָּצוּף','תִּשְׁקַע']:['יָצוּף','יִשְׁקַע'],ans:f?0:1,cls:'tx',key:n,reveal:el=>{const it=el.querySelector('#itm');if(it)it.classList.add(f?'floats':'sinks');sfx.plank();},explain:`${n} ${f?(fm?'צָפָה':'צָף'):(fm?'שׁוֹקַעַת':'שׁוֹקֵעַ')}!`};}})},
-  {id:'sci-mag',name:'מַגְנֵטִים',icon:()=>X.magnet,run:back=>quiz({id:'sci-mag',pool:1,title:'מַגְנֵטִים',bg:'city',back,n:5,gen:()=>{const [n,k,m]=pick(MAG);return {pr:`<div class="magv"><span class="mg">${X.magnet}</span><span class="item" id="itm">${ALLSPR(k)}</span></div><div class="qq">הַאִם הַמַּגְנֵט יִמְשֹׁךְ אֶת ${n}?</div>`,opts:['כֵּן','לֹא'],ans:m?0:1,cls:'tx',key:n,reveal:el=>{const it=el.querySelector('#itm');if(it&&m)it.classList.add('pulled');},explain:m?'מַגְנֵט מוֹשֵׁךְ בַּרְזֶל וּפְלָדָה.':'מַגְנֵט לֹא מוֹשֵׁךְ עֵץ, אֶבֶן, פְּלַסְטִיק אוֹ אֹכֶל.'};}})},
-  {id:'sci-animals',name:'מִיּוּן בַּעֲלֵי חַיִּים',icon:()=>SPR.owl,run:back=>quiz({id:'sci-animals',pool:1,title:'מִיּוּן בַּעֲלֵי חַיִּים',bg:'forest',back,n:5,gen:()=>{const [n,k,c,ex,fm]=pick(ANIMALS);return {pr:`<span class="pic">${ALLSPR(k)}</span><div class="qq">${n} ${fm?'הִיא':'הוּא'}...</div>`,opts:CLASSES,ans:CLASSES.indexOf(c),cls:'tx',key:n,explain:ex||''};}})},
+  {id:'sci-mag',name:'מַגְנֵטִים',icon:()=>X.magnet,run:back=>quiz({id:'sci-mag',lesson:'sci-mag',pool:1,title:'מַגְנֵטִים',bg:'city',back,n:5,gen:()=>{const [n,k,m]=pick(MAG);return {pr:`<div class="magv"><span class="mg">${X.magnet}</span><span class="item" id="itm">${ALLSPR(k)}</span></div><div class="qq">הַאִם הַמַּגְנֵט יִמְשֹׁךְ אֶת ${n}?</div>`,opts:['כֵּן','לֹא'],ans:m?0:1,cls:'tx',key:n,reveal:el=>{const it=el.querySelector('#itm');if(it&&m)it.classList.add('pulled');},explain:m?'מַגְנֵט מוֹשֵׁךְ בַּרְזֶל וּפְלָדָה.':'מַגְנֵט לֹא מוֹשֵׁךְ עֵץ, אֶבֶן, פְּלַסְטִיק אוֹ אֹכֶל.'};}})},
+  {id:'sci-animals',name:'מִיּוּן בַּעֲלֵי חַיִּים',icon:()=>SPR.owl,run:back=>quiz({id:'sci-animals',lesson:'sci-groups',pool:1,title:'מִיּוּן בַּעֲלֵי חַיִּים',bg:'forest',back,n:5,gen:()=>{const [n,k,c,ex,fm]=pick(ANIMALS);return {pr:`<span class="pic">${ALLSPR(k)}</span><div class="qq">${n} ${fm?'הִיא':'הוּא'}...</div>`,opts:CLASSES,ans:CLASSES.indexOf(c),cls:'tx',key:n,explain:ex||''};}})},
   {id:'sci-body',name:'גּוּף הָאָדָם',icon:()=>O.AV(),run:back=>quiz({id:'sci-body',pool:1,title:'גּוּף הָאָדָם',bg:'valley',back,n:5,gen:()=>{const [n,[x,y]]=pick(BODY);const opts=shuffle([n,...shuffle(BODY.filter(b=>b[0]!==n)).slice(0,2).map(b=>b[0])]);return {pr:`${bodyFig(x,y)}<div class="qq">מָה מְסֻמָּן בַּחֵץ?</div>`,opts,ans:opts.indexOf(n),cls:'tx',key:n};}})},
   {id:'sci-plant',name:'מָה צָרִיךְ צֶמַח?',icon:()=>SPR.flower,run:plant},
   {id:'sci-states',name:'קֶרַח, מַיִם וְאֵדִים',icon:()=>'<span style="font-size:34px">🧊</span>',run:states},
@@ -4086,7 +4096,7 @@ function symmetry(back){const R=5,M=8;let r=0,err=0,gems=0;O.setScreen('sTal','v
     const g=h('div','symg');g.style.setProperty('--n',M);
     for(let i=0;i<M*M;i++){const x=i%M;const c=h('button','sc'+(x<M/2?' given':'')+(x===M/2-1?' edge':''));if(x<M/2){if(tgt[i])c.style.background=PAL[colr];c.disabled=true;c.tabIndex=-1;}
       else c.onclick=()=>{cur[i]^=1;c.style.background=cur[i]?PAL[colr]:'';c.classList.remove('bad');sfx.key&&sfx.key();};c.dataset.i=i;g.appendChild(c);}
-    const row=h('div','btnrow');const chk=h('button','bigbtn',SPR.star+'<span>בְּדִיקָה</span>');row.appendChild(chk);s.append(g,row);let tries=0;
+    const row=h('div','btnrow');const chk=h('button','bigbtn',SPR.star+'<span>בְּדִיקָה</span>');row.appendChild(chk);s.append(g,row);if(window.LESSONS)s.appendChild(window.LESSONS.againBtn('art-sym',back,()=>symmetry(back)));let tries=0;
     chk.onclick=()=>{let bad=0;for(let y=0;y<M;y++)for(let x=M/2;x<M;x++){const i=y*M+x;const want=tgt[y*M+(M-1-x)];if(cur[i]!==want){bad++;g.children[i].classList.add('bad');}}
       if(!bad){sfx.ok(r);const gg=tries?1:3;gems+=gg;O.addGems(gg,chk);chk.disabled=true;g.classList.add('done');setTimeout(()=>{if(!g.isConnected)return;r++;if(r>=R){T.setKey(null);T.finishAct('art-sym',err,R,gems,back,()=>symmetry(back));}else run();},D(1100));}
       else{tries++;err++;sfx.no();setTimeout(()=>g.querySelectorAll('.bad').forEach(c=>c.classList.remove('bad')),D(1200));
@@ -4124,7 +4134,7 @@ building({id:'art',name:'סְטוּדְיוֹ הָאָמָּנוּת',color:'#ff
   {id:'art-draw',name:'סְטוּדְיוֹ פִּיקְסֶלִים',icon:()=>X.pencil,run:back=>editor(back)},
   {id:'art-cbn',name:'צְבִיעָה לְפִי מִסְפָּרִים',icon:()=>X.palette,run:back=>colorByNum(back)},
   {id:'art-mix',name:'מְעַרְבְּבִים צְבָעִים',icon:()=>X.flask,run:mixLab},
-  {id:'art-sym',name:'סִימֶטְרִיָּה',icon:()=>'<span style="font-size:34px">🦋</span>',run:symmetry}]});
+  {id:'art-sym',name:'סִימֶטְרִיָּה',icon:()=>'<span style="font-size:34px">🦋</span>',run:back=>window.LESSONS?window.LESSONS.first('art-sym',back,()=>symmetry(back)):symmetry(back)}]});
 })();
 
 /* ===== MINDFULNESS GROVE ===== */
@@ -4222,7 +4232,9 @@ const C=()=>{const s=T.S();s.code=s.code||{};return s.code;};
 /* one big button: the next level (the first one not done yet) */
 function menu(back){O.setScreen('sTal','city',back);T.hudT('רוֹבּוֹט הַקּוֹד');O.sayNow='תַּכְנְתוּ אֶת הָרוֹבּוֹט: סַדְּרוּ חִצִּים כְּדֵי שֶׁיַּגִּיעַ לַיַּהֲלוֹם.';const s=$('#sTal');s.innerHTML='';const cs=C();
   let i=LV.findIndex((_,k)=>!(cs[k]|0));if(i<0)i=NL-1;
-  const b=h('button','bigbtn lvgo',ICON.play+`<span>שָׁלָב ${i+1}</span>`);b.onclick=()=>play(i,back);s.appendChild(b);}
+  const LS=window.LESSONS,go=()=>play(i,back);
+  const b=h('button','bigbtn lvgo',ICON.play+`<span>שָׁלָב ${i+1}</span>`);b.onclick=()=>LS&&LV[i].rep?LS.first('code-rep',back,go):go();s.appendChild(b);
+  if(LS)s.appendChild(LS.againBtn(LV[i].rep?['code-prog','code-rep']:'code-prog',back,()=>menu(back)));}
 function play(li,back){const L=LV[li];const n=L.n;let prog=[],running=false;const mback=()=>menu(back);O.setScreen('sTal','city',mback);T.hudT(`רוֹבּוֹט הַקּוֹד · שָׁלָב ${li+1}`);O.sayNow='סַדֵּר חִצִּים כְּדֵי שֶׁהָרוֹבּוֹט יַגִּיעַ לַיַּהֲלוֹם, וּלְחַץ הַפְעֵל.';
   const s=$('#sTal');s.innerHTML='';const maxB=L.opt+4;
   const board=h('div','cboard');board.style.setProperty('--n',n);for(let c=0;c<n*n;c++){const d=h('i','ct'+(L.w.has(c)?' wall':''));if(L.w.has(c))d.innerHTML=X.stone;if(c===L.g)d.innerHTML=`<span class="cg bob">${SPR.gem}</span>`;board.appendChild(d);}
@@ -4252,7 +4264,7 @@ function solution(L){const {n,w,s,g}=L;const maxRun=L.rep?3:1;const prev=new Map
   for(const [d,[dx,dy]] of Object.entries(DIRS))for(let k=1;k<=maxRun;k++){const nx=x+dx*k,ny=y+dy*k;if(nx<0||ny<0||nx>=n||ny>=n||w.has(ny*n+nx))break;const id=ny*n+nx;if(!prev.has(id)){prev.set(id,[c,d,k]);q.push(id);}}}
   const out=[];let c=g;while(prev.get(c)){const [p,d,k]=prev.get(c);out.unshift({d,k});c=p;}return out;}
 building({id:'code',name:'מַעְבֶּדֶת הַקּוֹד',color:'#5b8def',bg:'city',icon:()=>'<span style="font-size:34px">🤖</span>',blurb:'מְתַכְנְתִים רוֹבּוֹט צַעַד אַחַר צַעַד.',acts:[
-  {id:'code-maze',name:'רוֹבּוֹט הַקּוֹד',icon:()=>'<span style="font-size:34px">🤖</span>',run:menu}]});
+  {id:'code-maze',name:'רוֹבּוֹט הַקּוֹד',icon:()=>'<span style="font-size:34px">🤖</span>',run:back=>window.LESSONS?window.LESSONS.first('code-prog',back,()=>menu(back)):menu(back)}]});
 })();
 
 /* ===== THINKING TOWER ===== */
@@ -4269,7 +4281,7 @@ function sudoku(back){const SYM=shuffle(['apple','ball','fish','sun','heart','ca
       if(v<0)c.onclick=()=>{if(cur[i]>=0)return;if(sol.flat()[i]===sel){cur[i]=sel;c.innerHTML=ALLSPR(SYM[sel]);c.classList.add('ok');sfx.ok(left);left--;if(!left)solved();}else{err++;tries++;c.classList.add('bad');sfx.no();setTimeout(()=>c.classList.remove('bad'),D(500));}};
       else{c.disabled=true;c.tabIndex=-1;}g.appendChild(c);});
     const pal=h('div','sudp');SYM.forEach((k,j)=>{const b=h('button','sdp'+(j===0?' on':''),ALLSPR(k));b.setAttribute('aria-label','תמונה '+(j+1));b.onclick=()=>{sel=j;pal.querySelectorAll('.sdp').forEach((x,q)=>x.classList.toggle('on',q===j));sfx.pop(2);};pal.appendChild(b);});
-    s.append(g,pal);let tries=0;
+    s.append(g,pal);if(window.LESSONS)s.appendChild(window.LESSONS.againBtn('think-sud',back,()=>sudoku(back)));let tries=0;
     T.setKey(e=>{const n=+e.key;if(n>=1&&n<=4)pal.children[n-1].click();});
     function solved(){const gg=tries?1:3;gems+=gg;O.addGems(gg);g.classList.add('done');setTimeout(()=>{if(!g.isConnected)return;r++;if(r>=R){T.setKey(null);T.finishAct('think-sudoku',Math.floor(err/2),R*3,gems,back,()=>sudoku(back));}else run();},D(1000));}
     window.__sud={solve:()=>{cur.forEach((v,i)=>{if(v<0){sel=sol.flat()[i];g.children[i].click();}});}};};
@@ -4315,7 +4327,7 @@ function patGen(i){const lv=Math.min(3,Math.floor(i/2));const kinds=[['AB','AAB'
   const opts=shuffle([...new Set([a,...syms.slice(0,unit.length<3?3:4)])]).slice(0,3);if(!opts.includes(a))opts[0]=a;const o2=shuffle(opts);
   return {pr:`<div class="pat">${seq.slice(0,len).map(x=>`<span>${ALLSPR(x)}</span>`).join('')}<span class="q">?</span></div><div class="qq">מָה בָּא אַחַר כָּךְ?</div>`,opts:o2.map(x=>`<span class="pic sm">${ALLSPR(x)}</span>`),ans:o2.indexOf(a),cls:'pc',key:seq.join()};}
 building({id:'think',name:'מִגְדַּל הַחֲשִׁיבָה',color:'#e8a33d',bg:'mount',icon:()=>X.puzzle,blurb:'חִידוֹת שֶׁמְּאַמְּנוֹת אֶת הַמֹּחַ.',acts:[
-  {id:'think-sudoku',name:'סוּדוֹקוּ',icon:()=>X.puzzle,run:sudoku},
+  {id:'think-sudoku',name:'סוּדוֹקוּ',icon:()=>X.puzzle,run:back=>window.LESSONS?window.LESSONS.first('think-sud',back,()=>sudoku(back)):sudoku(back)},
   {id:'think-maze',name:'מָבוֹךְ',icon:()=>'<span style="font-size:34px">🌀</span>',run:maze},
   {id:'think-mem',name:'זִכָּרוֹן',icon:()=>'<span style="font-size:34px">🃏</span>',run:memory},
   {id:'think-pat',name:'מָה בָּא אַחַר כָּךְ?',icon:()=>'<span style="font-size:34px">🔁</span>',run:back=>quiz({id:'think-pat',title:'מָה בָּא אַחַר כָּךְ?',bg:'mount',back,n:5,gen:patGen})}]});
@@ -5671,9 +5683,46 @@ function run(ids,back,then){ids=ids.slice();if(!ids.length)return then();const i
     setTimeout(async()=>{const se=card.querySelector('.sent');if(!card.isConnected||!se)return;
       if(T.readEl)await T.readEl(se);else O.say(T.spk?T.spk(c.t):c.t);if(card.isConnected&&c.after)c.after(card);},D(400));};
   show();}
-api.first=(ids,back,then)=>run(list(ids).filter(id=>!api.seen(id)),back,then);
+/* window.__lessons === false (set by the test browsers, tests/mute.js): no lessons, straight to the activity */
+api.first=(ids,back,then)=>window.__lessons===false?then():run(list(ids).filter(id=>!api.seen(id)),back,then);
 api.show=(ids,back,then)=>run(list(ids),back,then);
 api.againBtn=(ids,back,then)=>{const b=h('button','lcagain','📖 <span>הַרְאֵה לִי שׁוּב</span>');b.onclick=()=>{sfx.pop(1);api.show(ids,back,then);};return b;};
+
+/* ---- lessons for activities of the core (#258; the packs add their own): the activity calls LESSONS.first(id,...) before its first question ---- */
+const SP=k=>`<span class="lcpic">${T.ALLSPR(k)}</span>`,X=T.X;
+api.add('sci-groups',{title:'אַרְבַּע קְבוּצוֹת שֶׁל בַּעֲלֵי חַיִּים',bg:'forest',cards:[
+  {art:()=>SP('dog'),t:'יוֹנֵק: יֵשׁ לוֹ פַּרְוָה אוֹ שֵׂעָר, וְהַגּוּרִים יוֹנְקִים חָלָב מֵאִמָּא.'},
+  {art:()=>SP('bird'),t:'עוֹף: יֵשׁ לוֹ נוֹצוֹת וּכְנָפַיִם, וְהָאֶפְרוֹחִים בּוֹקְעִים מִבֵּיצִים.'},
+  {art:()=>SP('fish'),t:'דָּג: הוּא חַי בַּמַּיִם, שׂוֹחֶה עִם סְנַפִּירִים וְנוֹשֵׁם בְּתוֹךְ הַמַּיִם.'},
+  {art:()=>SP('turtle'),t:'זוֹחֵל: הָעוֹר שֶׁלּוֹ יָבֵשׁ וּמְכֻסֶּה קַשְׂקַשִּׂים, כְּמוֹ הַצָּב וְהַנָּחָשׁ.'},
+  {art:()=>SP('whale'),t:'הַלִּוְיָתָן חַי בַּיָּם, אֲבָל הוּא יוֹנֵק: הוּא נוֹשֵׁם אֲוִיר וּמֵינִיק אֶת הַגּוּרִים.'}]});
+api.add('sci-mag',{title:'מָה מַגְנֵט מוֹשֵׁךְ?',bg:'city',cards:[
+  {art:()=>`<div class="lcrow">${SP('nail')}<span class="lcpic">${X.magnet}</span>${SP('clip')}</div>`,t:'מַגְנֵט מוֹשֵׁךְ אֵלָיו דְּבָרִים מִבַּרְזֶל, כְּמוֹ מַסְמֵר וּמְהַדֵּק. גַּם פְּלָדָה הִיא סוּג שֶׁל בַּרְזֶל.'},
+  {art:()=>`<div class="lcrow">${SP('leaf')}<span class="lcpic">${X.magnet}</span>${SP('apple')}</div>`,t:'מַגְנֵט לֹא מוֹשֵׁךְ עֵץ, אֶבֶן, פְּלַסְטִיק אוֹ אֹכֶל.'}]});
+const CONT=['אַסְיָה','אַפְרִיקָה','אֵירוֹפָּה','צְפוֹן אֲמֶרִיקָה','דְּרוֹם אֲמֶרִיקָה','אוֹסְטְרַלְיָה','אַנְטַארְקְטִיקָה'];
+api.add('world-cont',{title:'מָה זוֹ יַבֶּשֶׁת?',bg:'valley',cards:[
+  {art:()=>`<span class="lcpic">${X.globe}</span>`,t:'יַבֶּשֶׁת הִיא שֶׁטַח אֲדָמָה עֲנָקִי, וּמִסָּבִיב לָהּ יָם. בְּכָל יַבֶּשֶׁת יֵשׁ הַרְבֵּה מְדִינוֹת.'},
+  {art:()=>`<span class="lcpic sm">${X.globe}</span><div class="lcchips">${CONT.map(c=>`<span>${c}</span>`).join('')}</div>`,t:'בָּעוֹלָם יֵשׁ שֶׁבַע יַבָּשׁוֹת: אַסְיָה, אַפְרִיקָה, אֵירוֹפָּה, צְפוֹן אֲמֶרִיקָה, דְּרוֹם אֲמֶרִיקָה, אוֹסְטְרַלְיָה וְאַנְטַארְקְטִיקָה.'},
+  {art:()=>`<span class="lcpic">🦘</span>`,t:'כָּל בַּעַל חַיִּים גָּר בַּטֶּבַע בְּיַבֶּשֶׁת מְסֻיֶּמֶת. הַקֶּנְגּוּרוּ, לְמָשָׁל, גָּר בְּאוֹסְטְרַלְיָה.'}]});
+/* code: a tiny board (robot, 2 steps, the diamond) and its program */
+const BOT=`<div class="lcrow lccode lcpic"><i>🤖</i><i></i><i></i><i>💎</i></div>`;
+api.add('code-prog',{title:'מָה זֶה תָּכְנִית?',bg:'city',cards:[
+  {art:()=>`${BOT}<div class="lcrow lcprog"><b>➡</b><b>➡</b><b>➡</b></div>`,t:'תָּכְנִית הִיא רְשִׁימָה שֶׁל חִצִּים. הָרוֹבּוֹט עוֹשֶׂה אוֹתָם אֶחָד אַחֲרֵי הַשֵּׁנִי, לְפִי הַסֵּדֶר.'},
+  {art:()=>`${BOT}<div class="lcrow lcprog"><b>➡</b><b class="on">➡</b><b>➡</b></div>`,t:'כָּל חֵץ מַזִּיז אֶת הָרוֹבּוֹט מִשְׁבֶּצֶת אַחַת. כְּשֶׁהַתָּכְנִית מוּכָנָה, לוֹחֲצִים עַל הַפְעֵל.'}]});
+api.add('code-rep',{title:'בְּלוֹק חוֹזֵר',bg:'city',cards:[
+  {art:()=>`<div class="lcrow lcprog"><b>➡<sub>×3</sub></b><span class="lcarr">=</span><b>➡</b><b>➡</b><b>➡</b></div>`,t:'לְחִיצָה עַל בְּלוֹק עוֹשָׂה אוֹתוֹ פִּי 2 אוֹ פִּי 3: הָרוֹבּוֹט עוֹשֶׂה אֶת אוֹתוֹ צַעַד שׁוּב וָשׁוּב.'}]});
+/* sudoku: a solved 4x4, the row (then the column and the box) lit */
+const SUD=[[0,1,2,3],[2,3,0,1],[1,0,3,2],[3,2,1,0]],SUDK=['apple','ball','fish','sun'];
+const sudArt=on=>`<div class="sud lcsud">${SUD.flat().map((v,i)=>`<span class="sdc fix${(i%4)===1?' br':''}${((i/4)|0)===1?' bb':''}${on(i%4,(i/4)|0)?' lchl':''}">${T.ALLSPR(SUDK[v])}</span>`).join('')}</div>`;
+api.add('think-sud',{title:'סוּדוֹקוּ',bg:'mount',cards:[
+  {art:()=>sudArt((x,y)=>y===0),t:'בְּסוּדוֹקוּ יֵשׁ חֹק אֶחָד: בְּכָל שׁוּרָה, כָּל תְּמוּנָה מוֹפִיעָה פַּעַם אַחַת בִּלְבַד.'},
+  {art:()=>sudArt((x,y)=>x===0||(x<2&&y<2)),t:'גַּם בְּכָל טוּר, וְגַם בְּכָל רִבּוּעַ קָטָן שֶׁל אַרְבַּע מִשְׁבְּצוֹת: כָּל תְּמוּנָה פַּעַם אַחַת.'}]});
+/* symmetry: a butterfly on a 6x6 grid, the mirror line in the middle */
+const BFLY=['100001','110011','111111','011110','110011','100001'];
+const symArt=half=>`<div class="symg lcsym lcpic" style="--n:6">${BFLY.join('').split('').map((v,i)=>`<i class="sc${i%6===2?' edge':''}"${v==='1'&&(!half||i%6<3)?' style="background:#8e6fd1"':''}></i>`).join('')}</div>`;
+api.add('art-sym',{title:'סִימֶטְרִיָּה',bg:'valley',cards:[
+  {art:()=>symArt(false),t:'סִימֶטְרִיָּה זֶה כְּמוֹ מַרְאָה: הַצַּד הַשֵּׁנִי שֶׁל הַקַּו נִרְאֶה בְּדִיּוּק כְּמוֹ הַצַּד הָרִאשׁוֹן, רַק הָפוּךְ.'},
+  {art:()=>symArt(true),t:'מָה שֶׁצָּבוּעַ בְּצַד אֶחָד שֶׁל הַקַּו, צוֹבְעִים גַּם בַּצַּד הַשֵּׁנִי, בְּאוֹתוֹ מֶרְחָק מֵהַקַּו.'}]});
 })();
 
 /* ===== KNOW (#57): what Oren already knows — skip what he knows, step back quietly, learn over time =====
@@ -7192,6 +7241,7 @@ let CUR=null;
 function lesson(key,qs,back){const [id,title,max]=ACTS[key];const lvl=ST()[key];let i=0,err=0,gems=0,items=0;qs.forEach(q=>{items+=q.items||1;});
   O.setScreen('sTal','final',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq m2');s.appendChild(wrap);
   if(key==='rhy'&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(rhyLessons(),back,()=>rhyRun(back)));
+  if(key==='read'&&window.LESSONS)s.appendChild(window.LESSONS.againBtn('mus-staff',back,()=>readRun(back)));
   const sk=skAt(key,lvl);if(KN)KN.begin('music',()=>wrap.isConnected&&!s.hidden);
   const show=()=>{const q=qs[i];T.hudT(title,T.progressBar(i,qs.length));wrap.innerHTML='';T.setKey(null);CUR=KIND[q.k](q,wrap,(e,first,el)=>{if(KN&&(q.rv||sk))KN.hit(q.rv||sk.id,!!first);done(e,first,el);});};
   function done(e,first,el){err+=e;const g=first?2:e>=2&&!el?0:1;if(g){gems+=g;O.addGems(g,el||wrap);O.floatText(el||wrap,'+'+g);}
@@ -7319,7 +7369,12 @@ if(LN){LN.add('mus-len',{title:'כַּמָּה זְמַן נִמְשָׁךְ ת�
     lenCard('q','זֶה תָּו רֶבַע: עִגּוּל מָלֵא עִם מַקֵּל. הוּא קָצָר: נִמְשָׁךְ פְּעָמָה אַחַת.')]});
   LN.add('mus-len8',{title:'תָּו חָדָשׁ: שְׁמִינִית',bg:'final',cards:[
     {art:()=>staffSVG([{i:0,d:'e'}],{one:true,minW:160}),t:'זוֹ שְׁמִינִית: עִגּוּל מָלֵא, מַקֵּל וְדֶגֶל. הִיא מְהִירָה: נִמְשֶׁכֶת חֲצִי פְּעָמָה.'},
-    {art:()=>`<div class="lcrow">${staffSVG([{i:0,d:'e',beam:'s'},{i:0,d:'e',beam:'e'}],{one:true,minW:160})}<span class="lcarr">=</span>${staffSVG([{i:0,d:'q'}],{one:true,minW:160})}</div>`,t:'שְׁתֵּי שְׁמִינִיּוֹת יַחַד נִמְשָׁכוֹת כְּמוֹ רֶבַע אֶחָד.'}]});}
+    {art:()=>`<div class="lcrow">${staffSVG([{i:0,d:'e',beam:'s'},{i:0,d:'e',beam:'e'}],{one:true,minW:160})}<span class="lcarr">=</span>${staffSVG([{i:0,d:'q'}],{one:true,minW:160})}</div>`,t:'שְׁתֵּי שְׁמִינִיּוֹת יַחַד נִמְשָׁכוֹת כְּמוֹ רֶבַע אֶחָד.'}]});
+  /* the staff before the first note-reading questions (#258): where do, re, mi sit */
+  LN.add('mus-staff',{title:'אֵיפֹה יוֹשְׁבִים הַתָּוִים?',bg:'final',cards:[
+    {art:()=>staffSVG([],{minW:240}),t:'אֵלֶּה חֲמִשָּׁה קַוִּים, וְקוֹרְאִים לָהֶם הַחֲמִשָּׁה. כָּל תָּו יוֹשֵׁב עַל קַו אוֹ בֵּין שְׁנֵי קַוִּים.'},
+    {art:()=>staffSVG([{i:0}],{minW:240}),t:'זֶה דּוֹ. הוּא יוֹשֵׁב מִתַּחַת לַחֲמִשָּׁה, עַל קַו קָטָן מִשֶּׁלּוֹ.'},
+    {art:()=>staffSVG([{i:0},{i:1},{i:2}],{minW:240}),t:'כָּל צַעַד לְמַעְלָה הוּא הַתָּו הַבָּא: דּוֹ, רֶה, מִי. מִי יוֹשֵׁב עַל הַקַּו הַתַּחְתּוֹן.'}]});}
 /* what Oren knows (#57): reading notes and rhythm, each a ladder of skills over the activity's levels (lv = [from, to]) */
 const KN=window.KNOW;
 const skAt=(key,lvl)=>KN?KN.track('music',key).find(x=>lvl>=x.lv[0]&&lvl<=x.lv[1])||null:null;
@@ -7336,7 +7391,8 @@ if(KN)KN.area('music',{name:'מוזיקה',skills:[
     else if(x.e==='place')m2[key]=x.yes?Math.max(m2[key],nx?nx.lv[0]:s.lv[1]):Math.min(m2[key],s.lv[0]);});O.persist();}});
 const rhyLessons=()=>['mus-len',...(RHY[ST().rhy-1].vals.includes('e')?['mus-len8']:[])];
 const rhyRun=back=>lesson('rhy',rhyQs(),back);
-const START={read:back=>lesson('read',readQs(),back),ear:back=>lesson('ear',earQs(),back),rhy:back=>LN?LN.first(rhyLessons(),back,()=>rhyRun(back)):rhyRun(back),mel:back=>lesson('mel',melQs(),back)};
+const readRun=back=>lesson('read',readQs(),back);
+const START={read:back=>LN?LN.first('mus-staff',back,()=>readRun(back)):readRun(back),ear:back=>lesson('ear',earQs(),back),rhy:back=>LN?LN.first(rhyLessons(),back,()=>rhyRun(back)):rhyRun(back),mel:back=>lesson('mel',melQs(),back)};
 
 /* ---------- registration + parent info ---------- */
 const ICONS={read:()=>staffSVG([{i:4,d:'q'}],{minW:96,cls:'mini'}),ear:()=>'<span style="font-size:34px">👂</span>',rhy:()=>staffSVG([{i:0,d:'e',beam:'s'},{i:0,d:'e',beam:'e'},{i:0,d:'q'}],{one:true,cls:'mini'}),mel:()=>staffSVG([{i:0,d:'q'},{i:2,d:'q'},{i:4,d:'q'}],{cls:'mini'})};
@@ -9291,7 +9347,7 @@ function openTracks(){const s=S();if((s.set||{}).all)return ORDER.slice();const 
 
 /* the shared quiz screen: card, options, a gentle explanation after a mistake */
 function round(o){/* o: {id, sk, title, bg, back, n, next(i) → q, again} */
-  let i=0,err=0,gems=0;const qs=[];O.setScreen('sTal',o.bg||'mount',o.back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq thq');s.appendChild(wrap);
+  let i=0,err=0,gems=0;const qs=[];O.setScreen('sTal',o.bg||'mount',o.back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq thq');s.appendChild(wrap);if(o.lesson&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(o.lesson,o.back,o.again));
   const render=()=>{let q;for(let t=0;t<30;t++){C.clearLB();q=o.next(i);if(!qs.some(x=>x.key===q.key))break;}qs.push(q);let tries=0,lock=false,first=true;
     T.hudT(o.title,T.progressBar(i,o.n));O.sayNow=T.plainHe((q.say||'')+' '+(q.text||''));wrap.innerHTML='';
     const card=h('div','prq tqc',`${promptHTML(q)}${q.text?`<div class="qq">${q.text}</div>`:''}`);wrap.appendChild(card);if(T.rdQ&&q.text)T.rdQ(q,card);
@@ -9313,7 +9369,20 @@ function round(o){/* o: {id, sk, title, bg, back, n, next(i) → q, again} */
     window.__think={q,get ans(){return q.ans;},wrap,i};};
   function next(){if(!wrap.isConnected)return;i++;if(i>=o.n){T.setKey(null);T.finishAct(o.id,err,o.n,gems,o.back,o.again);}else render();}
   render();}
-function track(sk,back){round({id:SK[sk].id,sk,title:SK[sk].n,bg:'mount',back,n:6,next:()=>C.GEN[sk](C.level(TH(),sk)),again:()=>track(sk,back)});}
+/* lesson cards before the first analogy / matrix questions (#258) */
+const TLS={ana:'think-ana',mat:'think-mat'};
+function track(sk,back){const LS=window.LESSONS,l=LS&&TLS[sk];const go=()=>round({id:SK[sk].id,sk,title:SK[sk].n,bg:'mount',back,n:6,lesson:l,next:()=>C.GEN[sk](C.level(TH(),sk)),again:()=>track(sk,back)});
+  return l?LS.first(l,back,go):go();}
+if(window.LESSONS){const LS=window.LESSONS,SPI=(v,n)=>`<span class="thi">${sprHTML({v,n})}</span>`,AR='<span class="arr">←</span>',Q='<span class="thi miss"><b class="q">?</b></span>';
+  const ana=done=>`<div class="thana"><div class="thpair">${SPI('apple',1)}${AR}${SPI('apple',2)}</div><div class="thpair">${SPI('ball',1)}${AR}${done?SPI('ball',2):Q}</div></div>`;
+  LS.add('think-ana',{title:'זוּגוֹת מַתְאִימִים',bg:'mount',cards:[
+    {art:()=>ana(false),t:'זוּגוֹת מַתְאִימִים: בַּזּוּג הָרִאשׁוֹן, תַּפּוּחַ אֶחָד נִהְיָה שְׁנֵי תַּפּוּחִים. מָה יִהְיֶה הַכַּדּוּר?'},
+    {art:()=>ana(true),t:'בַּזּוּג הַשֵּׁנִי עוֹשִׂים אוֹתוֹ שִׁנּוּי: כַּדּוּר אֶחָד נִהְיָה שְׁנֵי כַּדּוּרִים.'}]});
+  const T1=tileSVG(C.tile({s:'circle',c:0})),T2=tileSVG(C.tile({s:'square',c:1}));
+  const mat=done=>`<div class="thmat n2"><span class="thi">${T1}</span><span class="thi">${T1}</span><span class="thi">${T2}</span>${done?`<span class="thi">${T2}</span>`:'<span class="thi miss"><b class="q">?</b></span>'}</div>`;
+  LS.add('think-mat',{title:'הַמִּשְׁבֶּצֶת הַחֲסֵרָה',bg:'mount',cards:[
+    {art:()=>mat(false),t:'בְּכָל שׁוּרָה יֵשׁ חֹק. לְמַעְלָה יֵשׁ שְׁנֵי עִגּוּלִים אֲדֻמִּים. לְמַטָּה יֵשׁ רִבּוּעַ כָּחֹל, וּמָה חָסֵר?'},
+    {art:()=>mat(true),t:'הַחֹק: בְּכָל שׁוּרָה שְׁתֵּי צוּרוֹת זֵהוֹת. אָז חָסֵר עוֹד רִבּוּעַ כָּחֹל. מִסְתַּכְּלִים עַל הַשּׁוּרוֹת וְגַם עַל הַטּוּרִים.'}]});}
 
 /* ---------- reading comprehension ---------- */
 function readRC(back){const th=TH();th.rcR=th.rcR||[];let lv=C.level(th,'rc');let pi=0,err=0,gems=0;const NP=lv<=2?3:2;O.setScreen('sTal','city',back);const s=$('#sTal');
@@ -9996,12 +10065,30 @@ function mathRound(back){const st=ST();
   const N=6;const order=parts.length===1?Array(N).fill(0):parts.length===2?[0,0,1,0,1,0]:[0,1,2,0,1,2];
   /* about 1 question in 10: a quick review one level easier (a level he already passed) */
   const qs=[],seen=new Set();for(let i=0;i<N;i++){const p=parts[order[i]];const lv=p.lv>1&&KN&&Math.random()<KN.core.REVIEW?p.lv-1:p.lv;let q;for(let k=0;k<30;k++){q=C.gen(p.sk,lv);if(!seen.has(q.key))break;}seen.add(q.key);q.klv=lv;qs.push(q);}
-  let i=0,err=0;O.setScreen('sTal','mount',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq lnr');s.appendChild(wrap);if(KN)KN.begin('math',()=>wrap.isConnected&&!s.hidden);
+  /* the lesson of each strategy in the round, the first time (#258) */
+  const LS=window.LESSONS,lids=[...new Set(parts.map(p=>MLS[p.sk]).filter(Boolean))];
+  let i=0,err=0,s,wrap;
+  const start=()=>{i=0;err=0;O.setScreen('sTal','mount',back);s=$('#sTal');s.innerHTML='';wrap=h('div','tq lnr');s.appendChild(wrap);if(LS&&lids.length)s.appendChild(LS.againBtn(lids,back,start));if(KN)KN.begin('math',()=>wrap.isConnected&&!s.hidden);go();};
   const ttl=()=>`${parts.length>2?title:KID[qs[i].sk]} · שָׁלָב ${qs[i].lv}`;
   const go=()=>askQ(wrap,qs[i],i,N,ttl(),(r)=>{if(r){C.record(qs[i].sk,r.ok,r.first,r.ms);if(KN)KN.hit(kid(qs[i].sk,qs[i].klv),r.ok);if(!r.ok)err++;O.persist();return;}i++;if(i<N)go();else end();});
   function end(){T.setKey(null);let msg='';parts.forEach(p=>{const r=C.done(p.sk);if(r&&r.up>=2)msg='🚀 קָפַצְתָּ שְׁנֵי שְׁלַבִּים!';else if(r&&r.up===1&&!msg)msg='🎉 עָלִיתָ שָׁלָב!';});if(KN)KN.end('math');
     T.finishAct('ln-math',err,N,0,back,()=>mathRound(back),msg||undefined);}
-  go();}
+  if(LS&&lids.length)return LS.first(lids,back,start);start();}
+/* lesson cards (lessoncard.js, #258): each mental-math strategy is taught once, with an example, before its first question */
+const MLS={'mm-ten':'math-ten','mm-dbl':'math-dbl','mm-comp':'math-comp','mm-skip':'math-skip','mm-pv':'math-pv'};
+if(window.LESSONS){const LS=window.LESSONS,LT=t=>`<span class="ltr">${t}</span>`,EX=(...ls)=>`<div class="lcpic lnx">${ls.map(LT).join('<br>')}</div>`;
+  LS.add('math-ten',{title:KID['mm-ten'],bg:'mount',cards:[
+    {art:()=>EX('8 + 5 = ?'),t:'כְּדֵי לְחַבֵּר 8 וְעוֹד 5, קֹדֶם מַשְׁלִימִים לְ-10: 8 וְעוֹד 2 זֶה 10.'},
+    {art:()=>EX('8 + 2 = 10','10 + 3 = 13'),t:'מִתּוֹךְ הַ-5 נִשְׁאַר עוֹד 3. 10 וְעוֹד 3 זֶה 13.'}]});
+  LS.add('math-dbl',{title:KID['mm-dbl'],bg:'mount',cards:[
+    {art:()=>EX('6 + 6 = 12'),t:'כָּפוּל זֶה מִסְפָּר וְעוֹד אוֹתוֹ מִסְפָּר: 6 וְעוֹד 6 זֶה 12.'},
+    {art:()=>EX('6 + 7 = ?','6 + 6 + 1 = 13'),t:'6 וְעוֹד 7 זֶה כִּמְעַט כָּפוּל: כְּמוֹ 6 וְעוֹד 6, וְעוֹד 1. זֶה 13.'}]});
+  LS.add('math-comp',{title:KID['mm-comp'],bg:'mount',cards:[
+    {art:()=>EX('24 + 9 = ?','24 + 10 = 34','34 − 1 = 33'),t:'9 קָרוֹב מְאוֹד לְ-10. כְּדֵי לְחַבֵּר 24 וְעוֹד 9, מְחַבְּרִים 10 וּמוֹרִידִים 1: 34 פָּחוֹת 1 זֶה 33.'}]});
+  LS.add('math-skip',{title:KID['mm-skip'],bg:'mount',cards:[
+    {art:()=>EX('2, 4, 6, 8, ?'),t:'בִּסְפִירָה בְּדִלּוּגִים קוֹפְצִים כָּל פַּעַם אוֹתוֹ מִסְפָּר. כָּאן קוֹפְצִים בְּ-2, אָז אַחֲרֵי 8 בָּא 10.'}]});
+  LS.add('math-pv',{title:KID['mm-pv'],bg:'mount',cards:[
+    {art:()=>`<div class="lcpic lcpv">${hundred({start:23,path:[23,33,34]},true)}</div>`,t:'בְּלוּחַ הַמֵּאָה: עוֹד 10 זֶה שׁוּרָה אַחַת לְמַטָּה, וְעוֹד 1 זֶה מִשְׁבֶּצֶת אַחַת קָדִימָה.'}]});}
 
 /* ---------- paper & pencil ---------- */
 function paper(back){const st=ST();const last=st.pp&&st.pp.k;const kind=last==='math'?'write':'math';const sk=kind==='math'?'pp-math':'pp-write';

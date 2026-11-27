@@ -2,6 +2,8 @@
 
 Lesson cards (`lessoncard.js`, `LESSONS.add` + `LESSONS.first`) teach a new idea once, before its first questions.
 They are in place for **music note lengths** (`mus2-rhythm`: whole/half/quarter, then eighths) and **English letters and sounds** (`eng-abc`).
+#258 added the ten below (lesson ids in brackets): `sci-animals` (sci-groups), `sci-mag` (sci-mag), `world-ani` (world-cont), `mus2-read` (mus-staff),
+`ln-math` (math-ten, math-dbl, math-comp, math-skip, math-pv), `think-ana`, `think-mat`, `code-maze` (code-prog, code-rep at the first level with the repeat block), `think-sudoku` (think-sud), `art-sym`.
 
 ## Already teach first (no card needed)
 - Math worlds (`sLearn` lessons with an example), chess (demo + lesson), explore2 (fact cards before each quiz),
@@ -9,7 +11,7 @@ They are in place for **music note lengths** (`mus2-rhythm`: whole/half/quarter,
   (`sci-plant`, `sci-states`, `sci-day`, `sci-circ`), typing (target key + finger colours).
 - No new idea: arcade games, free art, mindfulness, free piano, songs, mazes, memory.
 
-## Need a lesson card (most important first) — follow-up #258
+## Needed a lesson card — done in #258
 | activity | idea to teach |
 |---|---|
 | `sci-animals` | animal groups: mammal / bird / fish / reptile (a whale is a mammal) |

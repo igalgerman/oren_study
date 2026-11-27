@@ -507,12 +507,30 @@ function mathRound(back){const st=ST();
   const N=6;const order=parts.length===1?Array(N).fill(0):parts.length===2?[0,0,1,0,1,0]:[0,1,2,0,1,2];
   /* about 1 question in 10: a quick review one level easier (a level he already passed) */
   const qs=[],seen=new Set();for(let i=0;i<N;i++){const p=parts[order[i]];const lv=p.lv>1&&KN&&Math.random()<KN.core.REVIEW?p.lv-1:p.lv;let q;for(let k=0;k<30;k++){q=C.gen(p.sk,lv);if(!seen.has(q.key))break;}seen.add(q.key);q.klv=lv;qs.push(q);}
-  let i=0,err=0;O.setScreen('sTal','mount',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq lnr');s.appendChild(wrap);if(KN)KN.begin('math',()=>wrap.isConnected&&!s.hidden);
+  /* the lesson of each strategy in the round, the first time (#258) */
+  const LS=window.LESSONS,lids=[...new Set(parts.map(p=>MLS[p.sk]).filter(Boolean))];
+  let i=0,err=0,s,wrap;
+  const start=()=>{i=0;err=0;O.setScreen('sTal','mount',back);s=$('#sTal');s.innerHTML='';wrap=h('div','tq lnr');s.appendChild(wrap);if(LS&&lids.length)s.appendChild(LS.againBtn(lids,back,start));if(KN)KN.begin('math',()=>wrap.isConnected&&!s.hidden);go();};
   const ttl=()=>`${parts.length>2?title:KID[qs[i].sk]} · שָׁלָב ${qs[i].lv}`;
   const go=()=>askQ(wrap,qs[i],i,N,ttl(),(r)=>{if(r){C.record(qs[i].sk,r.ok,r.first,r.ms);if(KN)KN.hit(kid(qs[i].sk,qs[i].klv),r.ok);if(!r.ok)err++;O.persist();return;}i++;if(i<N)go();else end();});
   function end(){T.setKey(null);let msg='';parts.forEach(p=>{const r=C.done(p.sk);if(r&&r.up>=2)msg='🚀 קָפַצְתָּ שְׁנֵי שְׁלַבִּים!';else if(r&&r.up===1&&!msg)msg='🎉 עָלִיתָ שָׁלָב!';});if(KN)KN.end('math');
     T.finishAct('ln-math',err,N,0,back,()=>mathRound(back),msg||undefined);}
-  go();}
+  if(LS&&lids.length)return LS.first(lids,back,start);start();}
+/* lesson cards (lessoncard.js, #258): each mental-math strategy is taught once, with an example, before its first question */
+const MLS={'mm-ten':'math-ten','mm-dbl':'math-dbl','mm-comp':'math-comp','mm-skip':'math-skip','mm-pv':'math-pv'};
+if(window.LESSONS){const LS=window.LESSONS,LT=t=>`<span class="ltr">${t}</span>`,EX=(...ls)=>`<div class="lcpic lnx">${ls.map(LT).join('<br>')}</div>`;
+  LS.add('math-ten',{title:KID['mm-ten'],bg:'mount',cards:[
+    {art:()=>EX('8 + 5 = ?'),t:'כְּדֵי לְחַבֵּר 8 וְעוֹד 5, קֹדֶם מַשְׁלִימִים לְ-10: 8 וְעוֹד 2 זֶה 10.'},
+    {art:()=>EX('8 + 2 = 10','10 + 3 = 13'),t:'מִתּוֹךְ הַ-5 נִשְׁאַר עוֹד 3. 10 וְעוֹד 3 זֶה 13.'}]});
+  LS.add('math-dbl',{title:KID['mm-dbl'],bg:'mount',cards:[
+    {art:()=>EX('6 + 6 = 12'),t:'כָּפוּל זֶה מִסְפָּר וְעוֹד אוֹתוֹ מִסְפָּר: 6 וְעוֹד 6 זֶה 12.'},
+    {art:()=>EX('6 + 7 = ?','6 + 6 + 1 = 13'),t:'6 וְעוֹד 7 זֶה כִּמְעַט כָּפוּל: כְּמוֹ 6 וְעוֹד 6, וְעוֹד 1. זֶה 13.'}]});
+  LS.add('math-comp',{title:KID['mm-comp'],bg:'mount',cards:[
+    {art:()=>EX('24 + 9 = ?','24 + 10 = 34','34 − 1 = 33'),t:'9 קָרוֹב מְאוֹד לְ-10. כְּדֵי לְחַבֵּר 24 וְעוֹד 9, מְחַבְּרִים 10 וּמוֹרִידִים 1: 34 פָּחוֹת 1 זֶה 33.'}]});
+  LS.add('math-skip',{title:KID['mm-skip'],bg:'mount',cards:[
+    {art:()=>EX('2, 4, 6, 8, ?'),t:'בִּסְפִירָה בְּדִלּוּגִים קוֹפְצִים כָּל פַּעַם אוֹתוֹ מִסְפָּר. כָּאן קוֹפְצִים בְּ-2, אָז אַחֲרֵי 8 בָּא 10.'}]});
+  LS.add('math-pv',{title:KID['mm-pv'],bg:'mount',cards:[
+    {art:()=>`<div class="lcpic lcpv">${hundred({start:23,path:[23,33,34]},true)}</div>`,t:'בְּלוּחַ הַמֵּאָה: עוֹד 10 זֶה שׁוּרָה אַחַת לְמַטָּה, וְעוֹד 1 זֶה מִשְׁבֶּצֶת אַחַת קָדִימָה.'}]});}
 
 /* ---------- paper & pencil ---------- */
 function paper(back){const st=ST();const last=st.pp&&st.pp.k;const kind=last==='math'?'write':'math';const sk=kind==='math'?'pp-math':'pp-write';
