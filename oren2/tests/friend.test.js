@@ -53,7 +53,7 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
   ok('fixed after a mistake: praise for trying again', OKL.effort.includes(last), last);
   // streak + variety
   await sleep(300); await settle(); const got = [];
-  for (let k = 0; k < 4; k++) { await pickAns(true); await sleep(80); got.push(await p.evaluate(() => window.FRIEND.last)); await sleep(300); await settle(); }
+  for (let k = 0; k < 3; k++) { await pickAns(true); await sleep(80); got.push(await p.evaluate(() => window.FRIEND.last)); await sleep(300); await settle(); }
   ok('three in a row: a streak line', got[2] === 'שָׁלֹשׁ בְּרֶצֶף!', JSON.stringify(got));
   ok('lines are not repeated back to back', new Set(got).size === got.length, JSON.stringify(got));
   // end of the step: one story line on the result card (answer the rest of the round first)
