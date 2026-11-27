@@ -381,6 +381,7 @@ return {core,
   pickItem:(bank,items,o)=>{const hd=held(bank);const r=pickItem(S(),bank,items,Object.assign({},o,{held:new Set([...hd.keys(),...((o&&o.held)||[])])}));if(r)hd.set(r.item.k,nowFn());return r;},hash,
   merge,zone,eff,acc,isDue,placeStart,placeStep,placeDone,placeResult,
   MM,MM_IDS,DRILL_IDS,PW,WT,WT_BY_LV,wordQ,solve,CH,CH_BY_LV,chalQ,PM,PW,paperQ,gen,count,NOUN,NAMES_M,NAMES_F,lp,vav,MATH_LADDER,KID,PAR,IV,QUICK,maxLv,dayNum,
+  setMax:(sk,n)=>{MAXLV[sk]=Math.max(1,n|0);},/* #395 a mission's own top level */
   setRandom:f=>{rnd=f||Math.random;},setNow:f=>{nowFn=f||(()=>Date.now());}};})();
 
 /* ======================= part 2: the game ======================= */

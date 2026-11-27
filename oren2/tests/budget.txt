@@ -42,3 +42,4 @@ listen-phone 60           # same file on the phone viewport
 day-path-desktop 60        # #388 3-mission path walk + time-limit stop, #391 ship checks (finale piece, gem choice, reload) + #392 tap a piece / story door (~1 s): ~31 s together
 day-path-phone 60          # same file on the phone viewport
 worker 60                 # cf worker bundle + fake KV/D1, #570 voicecheck once-a-day/reserve rules (pure, < 1 ms): ~3 s
+learn 120                 # skill model sims + the screens on desktop and phone + #395 plays 8 adaptive mission rounds per viewport: ~54 s alone
