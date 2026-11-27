@@ -24,7 +24,7 @@ Every minute it checks, deterministically:
   5d. #330 canary.py: every 6 h (and after a merge into tools/runner or tools/mods; #538: at most once per canary_minutes) ONE rolling canary issue runs the whole flow;
       a step past its deadline -> alarm to the orchestrator + inspector, NEEDS-ATTENTION on panel/dashboard; side paths hourly
   5f. #293 pcload.py, every 2 min: CPU / free RAM / heavy process counts; an overload -> alarm with the top 3 processes by RAM and who
-      started them, to the orchestrator + inspector (once per 30 min per cause); .runs/pc.json for the panel/dashboard. Never kills.
+      started them, to the orchestrator + inspector (once per 60 min per cause, sooner only when worse, #567); .runs/pc.json for the panel/dashboard. Never kills.
   5e. #187 once a week: tools/test_garden.py (test trim proposal: ONE issue 'Test trim proposal (week N)'; it never deletes a test)
   6. every sync_minutes: git pull --ff-only of the main checkout when clean (logs when it can't), so runner/watchdog/panel never run old code
   6b. #326 mainsync.py: behind 10+ min or skipped twice in a row -> alarm (orchestrator + inspector, names the dirty files);
