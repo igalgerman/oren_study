@@ -41,8 +41,8 @@ const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + 
   await p.evaluate(() => { window.OREN.save.set.autoRead = 0; });
   s = await said(() => p.evaluate(() => window.OREN.kingdom()), 800, true);
   ok('parent setting off: nothing read', s.length === 0, JSON.stringify(s));
-  await p.evaluate(() => { delete window.OREN.save.set.autoRead; window.TAL.parentPanel('voice'); }); await sleep(300);
-  ok('parent voice section has the auto-read switch (on)', await p.evaluate(() => [...document.querySelectorAll('#sPar .pchip')].some(x => /הקראה אוטומטית/.test(x.textContent) && x.classList.contains('on'))));
+  await p.evaluate(() => { delete window.OREN.save.set.autoRead; window.TAL.parentPanel('read'); }); await sleep(300);
+  ok('#613 the auto-read switch is in "reading help" (on = כן)', await p.evaluate(() => { const r = document.querySelector('#sPar .rhmore .popt[data-k="auto"]'); return !!r && /להקריא אוטומטית/.test(r.textContent) && /^כן$/.test(r.querySelector('.pchip.on').textContent.trim()); }));
   s = await said(() => p.evaluate(() => { window.OREN.sayNow = 'בדיקה בלוח הורים'; }), 800, true);
   ok('parent screen: nothing read', s.length === 0, JSON.stringify(s));
   ok('no page errors', !errs.length, errs.join(' | '));

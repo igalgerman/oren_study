@@ -342,6 +342,7 @@ def nightly_tick():
     nightly.retro_if_due(tell, log)
     nightly.batch_tick(lambda t: R.hc("send", "inbox", t, timeout=30)[0], log)
     nightly.prune_if_due(log)   # #304
+    nightly.playlog_if_due(log)   # #641: yesterday's play events -> ~/.oren/playlog/<day>.json (private)
     nightly.worktrees_if_due(log)   # #326: helper worktrees whose branch is pushed and merged/closed
     nightly.night_report_if_due(tell, log)   # #282
 
@@ -913,7 +914,7 @@ def orch_idle_tick(now=None, ts=None):
         if not _orch["first"]: _orch["first"] = now
         _orch["nudged"] = now
         tell(f"WATCHDOG (#225): you are idle while PRs wait for review: #{', #'.join(map(str, waiting))}. Review them now "
-             f"(gh pr merge N --auto --squash after a PASS). Owner questions never stop your work.")
+             f"(python tools/runner/merge.py N after a PASS, never gh pr merge, #636). Owner questions never stop your work.")
     elif act == "escalate":
         _orch["escalated"] = now
         try: R.run([R.HERDR_APP, "do", "terminal.pin", json.dumps({"terminal": d.get("address"), "pinned": True})], timeout=30)
