@@ -3,7 +3,8 @@
    1. collect: runs the built game (oren2/index.html) in a headless browser with a fake Audio and records every
       text the game sends to /api/tts, while driving all screens and activities; plus a static pass over the finite
       data (worlds, intro, quests, words, sentences, stories), each through the page's own fullSpell, so the texts
-      are exactly what the client sends. Random math questions are skipped (made on demand, then cached).
+      are exactly what the client sends. Random math questions are skipped (made on demand, then cached),
+      except the math sentence set (#402: every question of the small math units).
    2. upload: POST /api/tts/pregen on the site, 15 texts per call, at most 15 new sentences a minute (Google quota),
       stops after 400 new sentences a day (Cloudflare KV free tier: 1000 writes/day, shared with family saves and the
       site's own queue of up to 300 a day) and hands the rest to the site's queue (/api/tts/queue).
@@ -47,7 +48,7 @@ async function collect() {
   const page = path.join(os.tmpdir(), 'oren-pregen-page.html');
   fs.writeFileSync(page, '<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>' + fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8') + '</body></html>');
   const DATA = { SENT: literal('talents.js', 'SENT'), STORIES: literal('talents.js', 'STORIES'), INTRO: literal('index.html', 'INTRO') };
-  const SAID = new Map(); const b = await chromium.launch();
+  const SAID = new Map(), MATHS = new Map(); const b = await chromium.launch();
   for (const vp of [{ viewport: { width: 1366, height: 768 } }, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }]) {
     const ctx = await b.newContext(vp);
     await ctx.addInitScript(() => { window.__noFamily = true; try { localStorage.clear(); } catch (e) {} window.__said = [];
@@ -124,10 +125,13 @@ async function collect() {
       tryf(() => W.ENGLISH2.speakList().forEach(t => { t = sp(t); if (/[א-ת]/.test(t)) add(t); else if (t) window.__ttsParts(t).forEach(t => out.push({ t, v: 'en-US-Chirp3-HD-Despina', r: 0.85 }, { t, v: 'en-US-Chirp3-HD-Despina', r: 0.7 })); }));   /* r 0.7: the slow replay, a second tap on the speaker (#425) */
       return out; }, DATA);
     (await p.evaluate(() => window.__said)).concat(stat).forEach(x => { const c = norm(x); if (c) SAID.set(idOf(c), c); });
+    /* #402 the math sentence set: every question of the small math units, through the same text path (kept past the random filter) */
+    (await p.evaluate(() => window.OREN.mathSpeechList().flatMap(s => window.__ttsParts(window.__fullSpell(s))))).forEach(x => { const c = norm(x); if (c) MATHS.set(idOf(c), c); });
     console.log('collected', SAID.size, 'so far (' + (vp.isMobile ? 'phone' : 'desktop') + ')'); await ctx.close(); }
   /* random math questions (new numbers every time) are skipped: made on first use, then cached */
   const RANDOM = /שווה כמה|כמה שווה|ועוד כמה|כמה כפול|פותרים במאונך|^מה השעה\?|קטן, שווה, גדול$|^\d+ \? \d+|בבוקר, ועוד \d+|(התשובה|זריקה|לשחות)\. \d|חילק \d+|^‎?\d+ : \?/;
-  await b.close(); const L = [...SAID.values()].filter(x => !RANDOM.test(txt(x))); fs.writeFileSync(LIST, JSON.stringify(L));
+  await b.close(); const MATH = [...MATHS.values()].filter(x => !SAID.has(idOf(x)) || RANDOM.test(txt(x)));
+  const L = [...SAID.values()].filter(x => !RANDOM.test(txt(x))).concat(MATH); fs.writeFileSync(LIST, JSON.stringify(L));
   console.log('sentences', L.length, 'chars', L.reduce((a, x) => a + txt(x).length, 0), '→', LIST); return L;
 }
 
