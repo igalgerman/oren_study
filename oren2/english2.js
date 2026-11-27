@@ -186,7 +186,7 @@ function sentTeach(save,keys){const T=taught(save);return uniq(keys.filter(k=>/^
   .map(w=>WORD[w].th?'v:'+w:CVCW.includes(w)?'r:'+w:null).filter(Boolean);}
 
 /* ---------- a round: teach cards for new groups, then about 5 questions (#59) ---------- */
-const ROUND=5;
+const ROUND=5,MAXS=6;
 function plan(save,lv,d){const L=LEVELS[lv];if(d==null)d=day();const E=st(save);
   const cur=curUnit(save,lv);let fresh=[],learn=[];
   if(cur){const gs=groupsOf(cur);const lg=gs.filter(g=>groupItems(cur,g).some(k=>seen(save,k))&&groupItems(cur,g).some(k=>!known(save,k)));
@@ -207,7 +207,10 @@ function plan(save,lv,d){const L=LEVELS[lv];if(d==null)d=day();const E=st(save);
   /* new and still-learning items come back once more (the other way round) while there is room */
   const again=[...freshItems,...learn].filter(k=>!/^[ncs]:|^x:/.test(k));for(let i=0;qs.length<ROUND&&i<again.length;i++)add(again[i],1);
   const rest=shuf(old.filter(k=>!qs.some(q=>q.k===k)));while(qs.length<ROUND&&rest.length)add(rest.pop(),0);
-  const ord=spread(shuf(qs));return {lv,unit:cur,teach:[...(lv===2?sentTeach(save,ord.map(q=>q.k)):[]),...fresh.filter(teaches)],qs:ord};}
+  /* #555: teach cards count in the round's progress too: cards + questions at most MAXS (2 new letters = 2 cards + 4 questions) */
+  const tch=fresh.filter(teaches),room=Math.max(1,MAXS-tch.length),rv=new Set(review);
+  const pick=qs.length>room?[...qs.filter(q=>rv.has(q.k)),...shuf(qs.filter(q=>!rv.has(q.k)))].slice(0,room):qs;   /* review first: a forgotten item still comes back */
+  const ord=spread(shuf(pick));return {lv,unit:cur,teach:[...(lv===2?sentTeach(save,ord.map(q=>q.k)):[]),...tch],qs:ord};}
 /* no item twice in a row */
 function spread(a){const left=a.slice(),out=[];while(left.length){const last=out.length?out[out.length-1].k:null;
   const cnt=k=>left.filter(x=>x.k===k).length;const ok=left.filter(x=>x.k!==last);const pool=ok.length?ok:left;const top=Math.max(...pool.map(x=>cnt(x.k)));

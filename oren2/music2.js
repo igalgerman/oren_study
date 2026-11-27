@@ -59,9 +59,9 @@ const READ=[
   {pool:[2,3,4,5,6,7],opts:3,names:0},           /* עַד דּוֹ הַגָּבוֹהַּ */
   {pool:[0,1,2,3,4,5,6,7],opts:4,names:0},       /* כָּל הָאוֹקְטָבָה */
   {pool:[-7,-6,-5,-4,-3,-2,-1,0],opts:4,names:1,clef:'bass'}];
-const QN=5;   /* #59: a round is about 5 questions */
+const QN=5;   /* #59: a round is about 5 questions (rhythm too: nq note questions + drum taps = QN, #555) */
 const EAR=['hl-big','same','hl-small','which2','which3'];
-const RHY=[{vals:['w','h','q'],nq:6,pats:[['q','q','q','q'],['h','h'],['q','q','h']]},
+const RHY=[{vals:['w','h','q'],nq:4,pats:[['q','q','q','q'],['h','h'],['q','q','h']]},
   {vals:['w','h','q'],nq:3,pats:[['q','q','h'],['h','q','q'],['q','h','q'],['w'],['h','h'],['q','q','q','q']]},
   {vals:['h','q','e'],nq:3,pats:[['q','e','e','q','q'],['e','e','q','h'],['q','q','e','e','q'],['e','e','e','e','h']]},
   {vals:['w','h','q','e'],nq:2,pats:[['e','e','q','e','e','q'],['h','e','e','q'],['q','e','e','h'],['e','e','e','e','q','q'],['q','q','e','e','q'],['e','e','q','q','q']]}];
@@ -203,7 +203,7 @@ function earQs(){const kind=EAR[ST().ear-1];const qs=[];
 function rhyQs(){const L0=RHY[ST().rhy-1];const qs=[];
   for(let n=0;n<L0.nq;n++){const rv=rev('rhy'),L=rv?RHY[rv.lv[1]-1]:L0;const v=L.vals[n%L.vals.length];const byBeats=n>=L.vals.length;const opts=shuffle(L.vals.map(x=>byBeats?VALB[x]:VALN[x]));const right=byBeats?VALB[v]:VALN[v];
     qs.push({k:'choice',pr:`${staffSVG([{i:0,d:v}],{one:true,minW:160})}<div class="qq">${byBeats?'כַּמָּה פְּעָמוֹת נִמְשָׁךְ הַתָּו הַזֶּה?':'אֵיזֶה תָּו זֶה?'}</div>`,opts,ans:opts.indexOf(right),explain:HM[v],cls:byBeats?'m2num':'',key:'v'+n,rv:rv&&rv.id});}
-  shuffle(L0.pats.slice()).slice(0,8-L0.nq).forEach(p=>qs.push({k:'tap',pat:p}));
+  shuffle(L0.pats.slice()).slice(0,Math.max(0,QN-L0.nq)).forEach(p=>qs.push({k:'tap',pat:p}));
   return qs;}
 function melQs(){const L=MEL[ST().mel-1];return L.songs.map(song=>({k:'melody',song,names:L.names,items:parseMel(song).length}));}
 /* lesson cards before the first rhythm questions (#56): note lengths; eighths get their own lesson when they first appear */

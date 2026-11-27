@@ -125,20 +125,44 @@ const { chromium } = require('playwright');
     const screen = () => p.evaluate(() => { const s = [...document.querySelectorAll('.screen')].find(x => !x.hidden); return s ? s.id : ''; });
     const atHub = () => p.evaluate(() => !document.querySelector('#sTal').hidden && !!document.querySelector('#sTal .gdoors') && document.querySelector('#dlg').hidden);
     const ids = await p.evaluate(() => Object.keys(window.TAL.ACT));
-    const noBack = [], wrong = [], long = [], MAXQ = 6;   // #59: a round opened from a building is about 5 questions (at most 6)
+    const noBack = [], wrong = [], long = [], recount = [], MAXQ = 6;   // #59: a round opened from a building is about 5 questions (at most 6)
+    const countQ = () => p.evaluate(() => { const pr = document.querySelector('#hud .progress'); return pr ? pr.children.length : 0; });
     for (const id of ids) {
       await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.TAL.openHub(); });
       await p.evaluate(id => { const T = window.TAL; T.ACT[id].run(() => T.openHub()); }, id); await L.sleep(120);
       await p.evaluate(() => { const ov = document.querySelector('#ov'); if (!ov.hidden) ov.hidden = true; });   // a first-time popup (placement, lesson pick) is not this test
       if (await atHub()) continue;                // not open yet for Oren (e.g. the champions' test): the activity went straight back
-      const nq = await p.evaluate(() => { const pr = document.querySelector('#hud .progress'); return pr ? pr.children.length : 0; }); if (nq > MAXQ && id !== 'mind-scan') long.push(id + ':' + nq);   // mind-scan: 8 calm-down steps, no questions (~2 min)
+      const lesson = await p.evaluate(() => !!document.querySelector('#sTal .lccard'));
+      const nq = lesson ? 0 : await countQ(); if (nq > MAXQ && id !== 'mind-scan') long.push(id + ':' + nq); if (lesson) recount.push(id);   // mind-scan: 8 calm-down steps, no questions (~2 min)
       const at = await backAt(); if (!at) { noBack.push(id); continue; }
       await p.mouse.click(at.x, at.y); await L.sleep(120);
       if (!(await atHub())) wrong.push(id + '→' + (await screen()));
     }
     ok('every activity (' + ids.length + ') shows the back control in the top bar', noBack.length === 0, noBack.join(', '));
     ok('a tap on it lands on the screen Oren came from (the hub)', wrong.length === 0, wrong.join(', '));
-    ok('#59 no activity round is longer than ' + MAXQ + ' questions', long.length === 0, long.join(', '));
+    // #555: a lesson card in front (its own progress bar of cards) hides the round from the count; those activities are counted again with lesson cards off (as in every other suite)
+    await p.evaluate(() => { window.__lessons = false; });
+    for (const id of recount) {
+      await p.evaluate(id => { document.querySelector('#ov').hidden = true; const T = window.TAL; T.openHub(); T.ACT[id].run(() => T.openHub()); }, id); await L.sleep(120);
+      await p.evaluate(() => { const ov = document.querySelector('#ov'); if (!ov.hidden) ov.hidden = true; });
+      if (await atHub()) continue;
+      const nq = await countQ(); if (nq > MAXQ && id !== 'mind-scan') long.push(id + ':' + nq);
+    }
+    ok('#59 no activity round is longer than ' + MAXQ + ' questions (lesson cards off too)', long.length === 0 && recount.includes('mus2-rhythm') && recount.includes('eng-abc'), long.join(', ') + ' recounted: ' + recount.length);
+    // #555: the rhythm and letters rounds still end normally: end screen, stars recorded, progress saved
+    for (const id of ['mus2-rhythm', 'eng-abc']) {
+      await p.evaluate(id => { document.querySelector('#ov').hidden = true; const T = window.TAL; T.openHub(); T.ACT[id].run(() => T.openHub()); }, id); await L.sleep(150);
+      let end = false;
+      for (let k = 0; k < 60 && !end; k++) {
+        end = await p.evaluate(id => { if (!document.querySelector('#ov').hidden) return true; const M = window.MUSIC2;
+          if (id === 'mus2-rhythm' && M.cur && M.cur.pat) { M.cur.solve(); return false; }
+          const q = window.__quiz; const c = q && q.wrap.isConnected && q.wrap.querySelector('.chs'); if (c && c.children[q.ans] && !c.children[q.ans].disabled) c.children[q.ans].click(); return false; }, id);
+        await L.sleep(120);
+      }
+      const sv = await p.evaluate(id => ({ s: (window.TAL.S().tl[id] || {}).s | 0, m2: (window.TAL.S().m2 || {}).rhy, en: window.OREN.save.en2 ? Object.keys(window.OREN.save.en2.i || {}).length : 0 }), id);
+      ok('#555 a ' + id + ' round ends on the end screen, stars and progress saved', end && sv.s > 0 && (id === 'eng-abc' ? sv.en > 0 : sv.m2 >= 1), JSON.stringify(Object.assign({ end }, sv)));
+    }
+    await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.__lessons = true; });
     // #59: journey levels are short too; the place-value split (num-pv2, 42 = 40 + 2) is 5 questions a level, not 5 + 6 + 8
     const jl = await p.evaluate(() => { const lv = window.OREN.WORLDS.flatMap(w => w.levels); const pv = lv.filter(l => l.u.id === 'num-pv2');
       return { n: lv.length, long: lv.filter(l => l.n > (l.type === 'boss' ? 10 : 5)).map(l => l.id + ':' + l.n), pv: pv.map(l => l.n) }; });
