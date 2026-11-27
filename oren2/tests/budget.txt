@@ -7,7 +7,7 @@ explore2-phone 90         # same file on the phone viewport: ~70 s
 edge-cases 90             # real-speed level transitions and timers: ~68 s
 help-desktop 90           # every generated question's explainer: ~68 s
 help-phone 90             # same file on the phone viewport: ~67 s
-helpbtn-desktop 90        # #54 walks all ~114 activities twice (help button: clue, answer, offered after 2 wrong) + the math kinds: ~35 s
+helpbtn-desktop 90        # #54 walks all ~114 activities twice (help button: clue, answer, offered after 2 wrong) + the math kinds: ~35 s + #622 a read-sent picture answer: tap 2 says no emoji (< 2 s)
 helpbtn-phone 90          # same file on the phone viewport
 regressions 115           # #356 walks all ~114 activities, taps back on each + #59 counts each round's questions (#555: again with lessons off for the ~12 behind a lesson card, and plays rhythm + letters rounds to the end) + #394 walks every path mission and counts it: ~75 s under load
 playthrough-desktop 300   # FULL=1 only: plays every world level by level
