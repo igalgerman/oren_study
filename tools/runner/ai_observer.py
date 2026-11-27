@@ -102,9 +102,25 @@ def fresh(findings, sent, now):
         sent[k] = now; new.append(f)
     return new, sent
 
+OWNER_DOER = re.compile(r"^\s*(?:the\s+)?(?:owner|הבעלים)\b|(?:\bowner|הבעלים)\s*:", re.I)
+
 def for_owner(finding):
-    """The fix part (after ->) says the owner does it."""
-    return bool(re.search(r"\bowner\b|הבעלים", finding.split("->", 1)[-1], re.I))
+    """#603: the fix part (after ->) names the owner as the DOER: it starts with 'owner' or has 'owner:'. A fix for the
+    orchestrator that only mentions the owner ('orchestrator: ... or ask the owner') is no owner question."""
+    return "->" in finding and bool(OWNER_DOER.search(finding.split("->", 1)[1]))
+
+def close_wrong_owner_q(gh=None):
+    """#603, once: open owner_q questions from window ai-observer whose fix has no owner doer -> marked answered (closed).
+    -> number closed, None when gh failed (tried again at the next relay)."""
+    import owner_q as OQ
+    if load_state().get("owner_q_cleaned"): return 0
+    qs = OQ.open_list(gh)
+    if qs is None: return None
+    wrong = [q for q in qs if q.get("source") == "ai-observer" and not for_owner(q.get("text", ""))]
+    for q in wrong:
+        if not OQ.mark_answered(q["key"], "closed by the runner: not an owner question, it is for the orchestrator (#603)", gh): return None
+    st = load_state(); st["owner_q_cleaned"] = True; save_state(st)
+    return len(wrong)
 
 def owner_issue():
     """Number of the open 'Questions for the owner' issue, 0 when it does not exist (never created here)."""
@@ -195,6 +211,8 @@ def relay(tell, log, now, gh=None, api=None):
              "Check the scheduled task (docs/agents/cloud-tasks.md).")
         log("ai observer (cloud): silent")
     owner_note(now); fallback(now, log)                             # #525 (after the state writes above)
+    if close_wrong_owner_q():                                     # #603 (once)
+        log("ai observer: closed the old owner questions that were for the orchestrator (#603)")
     return last
 
 # ---------- #525: the triggers never ran (no ai-observer issue at all on 27 Nov) ----------
