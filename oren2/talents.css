@@ -543,3 +543,6 @@ body:has(#dlg:not([hidden])) .toast{top:74px;bottom:auto}
   .dcard b,.dcard.cont b{font-size:16px}.doors2 .door>b{font-size:16px}
   .pxpal{grid-template-columns:repeat(4,44px)}.pxpal .sw{width:44px;height:44px}.tbtn small{font-size:16px}
   .dmore{min-height:44px}.hbub2 .rdb::after{inset:-9px}}
+/* #435 the answer being read aloud is lit (the reading helper's word light) */
+.chs .chb.rdlit{background:#ffd23f;outline:4px solid #e8a400;box-shadow:0 0 0 8px rgba(255,210,63,.55),0 6px 0 rgba(0,0,0,.28);transform:scale(1.08);transition:none}
+@media (prefers-reduced-motion:reduce){.chs .chb.rdlit{transform:none}}
