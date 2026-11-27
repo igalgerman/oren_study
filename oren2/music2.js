@@ -116,7 +116,7 @@ const flash=(k,c)=>{k.classList.remove('ok','bad');void k.offsetWidth;k.classLis
 
 /* ---------- one runner for all four activities ---------- */
 let CUR=null;
-function lesson(key,qs,back){qs=qs.slice(0,T.pathN(qs.length));/* #394 short on the daily path */const [id,title,max]=ALL[key];const lvl=ST()[key];let i=0,err=0,gems=0,items=0;qs.forEach(q=>{items+=q.items||1;});
+function lesson(key,qs,back){const [id,title,max]=ALL[key];const lvl=ST()[key];let i=0,err=0,gems=0,items=0;qs.forEach(q=>{items+=q.items||1;});
   O.setScreen('sTal','final',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq m2');s.appendChild(wrap);
   if(key==='rhy'&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(rhyLessons(),back,()=>rhyRun(back)));
   if(key==='read'&&window.LESSONS)s.appendChild(window.LESSONS.againBtn('mus-staff',back,()=>readRun(back)));

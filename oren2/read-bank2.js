@@ -966,9 +966,11 @@ function tiles(s,o,done){let k=0,err=0,miss=0,HB=null;s.innerHTML='';if(o.tip)O.
   const row=h('div','chs');const fb=h('div','lcap','');const unit=o.unit||'let';const nt=o.tiles.length;if(unit!=='word'){row.classList.add('rbt');row.style.setProperty('--c',nt<=3?nt:Math.ceil(nt/2));if(nt>=7)row.classList.add('c4');}
   shuffle(o.tiles.map((x,i)=>[x,i])).forEach(([x])=>{const b=h('button','chb tx'+(o.big?' big2':''),x);b.dataset.t=x;b.onclick=()=>tap(b);row.appendChild(b);});
   s.appendChild(row);s.appendChild(fb);
+  /* #634 the event log counts this as a question (the owner's summary showed read-build with 0 questions) */
+  if(O.evQ)O.evQ(o.whole||o.need.join(' '),{m:o.m||''});
   const nextT=()=>k<o.need.length?[...row.children].find(y=>!y.disabled&&y.dataset.t===o.need[k]):null;
   const fill=(j,x)=>{const sl=card.querySelectorAll('.slot2')[j];sl.textContent=x;sl.classList.add('on');};
-  const complete=g=>{sfx.ok(1);card.querySelector('.slots').classList.add('flash');if(g){O.addGems(g,card);O.floatText(card,'+'+g);}if(o.end)o.end(card);setTimeout(()=>{if(card.isConnected)done(err,g);},D(g?1400:4200));};
+  const complete=g=>{if(O.evAns)O.evAns(!err,{m:o.m||'',x:err});sfx.ok(1);card.querySelector('.slots').classList.add('flash');if(g){O.addGems(g,card);O.floatText(card,'+'+g);}if(o.end)o.end(card);setTimeout(()=>{if(card.isConnected)done(err,g);},D(g?1400:4200));};
   function tap(b){if(b.disabled||k>=o.need.length)return;const x=b.dataset.t;
     if(x===o.need[k]){fill(k,x);b.disabled=true;b.classList.add('ok');k++;miss=0;sfx.pop(k);fb.textContent='';row.querySelectorAll('.show').forEach(y=>y.classList.remove('show'));
       if(k===o.need.length)complete(HB&&HB.step?1:2);}
@@ -983,10 +985,10 @@ function tiles(s,o,done){let k=0,err=0,miss=0,HB=null;s.innerHTML='';if(o.tip)O.
       return `<div>${HELP.BT.ans}: <b class="hq-a">${o.whole||o.need.join(unit==='word'?' ':'')}</b></div><div class="hq-x">${UI['hBy'+unit]} ${o.need.join(' · ')}${fin}</div>`;}});
     HB.wrong=()=>wrong(null);}
   window.__rb2={get need(){return o.need;},get k(){return k;},row};}
-function build(back){const L=level('word');const pool=[],nW=T.pathN(6);for(let t=0;pool.length<nW&&t<200;t++){const w=lvPick(W,L,x=>x.syl.length>1,'rb-word',wk);if(!pool.includes(w))pool.push(w);}
+function build(back){const L=level('word');const pool=[],nW=6;for(let t=0;pool.length<nW&&t<200;t++){const w=lvPick(W,L,x=>x.syl.length>1,'rb-word',wk);if(!pool.includes(w))pool.push(w);}
   let i=0,err=0,gems=0;O.setScreen('sTal','city',back);const s=$('#sTal');
   const run=()=>{const w=pool[i];T.hudT('בּוֹנִים מִלָּה',T.progressBar(i,pool.length));O.sayNow=T.spk(w.w);
-    tiles(s,{need:w.syl,tiles:w.syl,unit:'syl',whole:w.w,head:w.pic?pic(w.pic,1):'',play:()=>say(w.w),tip:UI.build,end:()=>say(w.w)},(e,g)=>{err+=e;gems+=g|0;if(window.LEARN)try{LEARN.seen('rb-word',w.w,!e,false);}catch(x){}i++;if(i<pool.length)run();else T.finishAct('rb2-build-'+L,err,pool.length,gems,back,()=>build(back));});
+    tiles(s,{m:'rb2-build-'+L,need:w.syl,tiles:w.syl,unit:'syl',whole:w.w,head:w.pic?pic(w.pic,1):'',play:()=>say(w.w),tip:UI.build,end:()=>say(w.w)},(e,g)=>{err+=e;gems+=g|0;if(window.LEARN)try{LEARN.seen('rb-word',w.w,!e,false);}catch(x){}i++;if(i<pool.length)run();else T.finishAct('rb2-build-'+L,err,pool.length,gems,back,()=>build(back));});
     if(!w.pic)setTimeout(()=>say(w.w),D(300));};run();}
 function sent(back){const L=level('sent');T.quiz({id:'rb2-sent-'+L,title:'קוֹרְאִים מִשְׁפָּט',bg:'city',back,n:5,gen:()=>{const q=lvPick(R.sentences,L,null,'rb-sent',x=>x.t);const opts=shuffle([q.a,...q.ds]);
   return {pr:`<div class="sent">${nk(q.t,q.p)}</div><div class="qq">${nk(q.q,q.qp,1)}</div>`,opts:opts.map(ansHTML),ans:opts.indexOf(q.a),cls:q.a[0]==='@'?'picb':'tx',say:T.spk(q.q),key:q.t,bank:'rb-sent'};}});}
@@ -1010,7 +1012,7 @@ function mixPlan(L){const ws=R.writing;const P=[];const add=(kind,arr)=>{const i
 const DIST='בגדזלמנרתפסקשצ'.split('');
 function extraLetters(need,n){const out=[];const last=need[need.length-1];if(R.FINAL[last]&&!need.includes(R.FINAL[last]))out.push(R.FINAL[last]);
   for(const c of shuffle(DIST)){if(out.length>=n)break;if(!need.some(x=>R.sameSound(x,c))&&!out.some(x=>R.sameSound(x,c)))out.push(c);}return out;}
-function mix(back){const L=level('mix');const plan=mixPlan(L);plan.length=Math.min(plan.length,T.pathN(plan.length));/* #394 short on the daily path */let i=0,err=0,gems=0;O.setScreen('sTal','meadow',back);const s=$('#sTal');
+function mix(back){const L=level('mix');const plan=mixPlan(L);let i=0,err=0,gems=0;O.setScreen('sTal','meadow',back);const s=$('#sTal');
   const next=(e,g)=>{gems+=g|0;const [kind,it]=plan[i];if(kind!=='order'&&window.LEARN)try{LEARN.seen('rb-write',mixKey(kind,it),!e,false);}catch(x){}err+=e;i++;if(i<plan.length)run();else{T.setKey(null);T.finishAct('rb2-mix-'+L,err,plan.length*2,gems,back,()=>mix(back));}};
   const run=()=>{const [kind,it]=plan[i];T.hudT('כּוֹתְבִים',T.progressBar(i,plan.length));
     if(kind==='copy'){O.sayNow=T.spk(it.w);tiles(s,{need:it.letters,whole:it.w,tiles:[...it.letters,...extraLetters(it.letters,L<3?1:2)],head:`${pic(it.pic)}<div class="bigw">${it.w}</div>`,tip:UI.copy,big:1,fin:1,end:()=>say(it.w)},next);}

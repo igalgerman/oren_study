@@ -105,7 +105,7 @@ const INIT = () => {
       if (!(await p.waitForFunction(n => window.__clips.length > n, c1, { timeout: 4000 }).then(() => 1, () => 0))) silent.push(id); }   // up to 4 s: slow under load
     // reading practice (TAL.READ_ACT) at a level where Oren reads first may wait silent (auto-read suite): it still needs its 🔊, checked above
   }
-  // #610 the explore bank on the daily path (#394): the space question the owner met silent (castle/night scene) is read, question then
+  // #610 the explore bank on the daily path: the space question the owner met silent (castle/night scene) is read, question then
   // each answer, its 🔊 reads it again, and the sound button is there
   const path610 = {};
   if (HALF === 2) {
@@ -115,7 +115,7 @@ const INIT = () => {
     let c0 = 0; for (let k = 0; k < 12 && !(await inQuiz()); k++) { c0 = await p.evaluate(() => window.__clips.length); await ev(`window.EXPLORE2.step()`, 300); }
     await sleep(900);   // auto-read after the screen settles
     const T = l => l.map(c => N(new URLSearchParams(c.url.split('?')[1]).get('t')).replace(/^או /, ''));
-    Object.assign(path610, await p.evaluate(() => { const w = window.__quiz && window.__quiz.wrap; return { onPath: window.TAL.onPath, quiz: !!(w && w.isConnected),
+    Object.assign(path610, await p.evaluate(() => { const w = window.__quiz && window.__quiz.wrap; return { onPath: !!document.querySelector('#frPath'), quiz: !!(w && w.isConnected),
       q: w ? w.querySelector('.qq').textContent.replace('🔊', '').trim() : '', opts: w ? [...w.querySelectorAll('.chs > *')].map(b => b.textContent.trim()) : [], card: !!(w && w.querySelector('.qq .rdb')) }; }));
     path610.btn = await btns(); path610.want = await p.evaluate(L => L.map(x => window.__fullSpell(x).replace(/\s+/g, ' ').trim()), [path610.q, ...path610.opts]);
     path610.auto = T(await p.evaluate(n => window.__clips.slice(n), c0));

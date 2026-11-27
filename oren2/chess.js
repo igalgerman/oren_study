@@ -100,7 +100,7 @@ const stars=id=>((T.S().tl[id]||{}).s|0);
 
 /* ---------- a short lesson = a few tasks; each task calls done(errors) once ---------- */
 let CUR=null;
-function lesson(id,title,tasks,back,opts={}){tasks=tasks.slice(0,T.pathN(tasks.length));/* #394 short on the daily path */let i=0,err=0,gems=0;O.setScreen('sTal','valley',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq cz');s.appendChild(wrap);
+function lesson(id,title,tasks,back,opts={}){let i=0,err=0,gems=0;O.setScreen('sTal','valley',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq cz');s.appendChild(wrap);
   const show=()=>{T.hudT(title,T.progressBar(i,tasks.length));wrap.innerHTML='';CUR=tasks[i](wrap,done);};
   function done(e,el){err+=e;const g=e?(e>=2?0:1):2;if(g){gems+=g;O.addGems(g,el||wrap);O.floatText(el||wrap,'+'+g);}
     setTimeout(()=>{if(!wrap.isConnected)return;i++;if(i<tasks.length)show();else finish();},D(e>=2?2200:1400));}

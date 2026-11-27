@@ -516,7 +516,7 @@ function mathRound(back){const st=ST();
   if(due.length>=2){parts=due.slice(0,3).map(c=>({sk:c.skill,lv:(st.k[c.skill]||{}).l||1}));title=KID.mix;}
   else{const a=K.pick(st,dc,{t});const b=K.pick(st,dc,{t,exclude:new Set([a.skill]),review:due.length?true:undefined});parts=[{sk:a.skill,lv:a.lv}];if(b)parts.push({sk:b.skill,lv:b.lv});title=KID[a.skill];}
   parts.forEach(p=>{p.lv=K.start(st,p.sk,p.lv);});
-  const N=T.pathN(6);/* #394 short on the daily path */const order=parts.length===1?Array(N).fill(0):parts.length===2?[0,0,1,0,1,0]:[0,1,2,0,1,2];
+  const N=6;const order=parts.length===1?Array(N).fill(0):parts.length===2?[0,0,1,0,1,0]:[0,1,2,0,1,2];
   /* about 1 question in 10: a quick review one level easier (a level he already passed) */
   const qs=[],seen=new Set();for(let i=0;i<N;i++){const p=parts[order[i]];const lv=p.lv>1&&KN&&Math.random()<KN.core.REVIEW?p.lv-1:p.lv;let q;for(let k=0;k<30;k++){q=C.gen(p.sk,lv);if(!seen.has(q.key))break;}seen.add(q.key);q.klv=lv;qs.push(q);}
   /* the lesson of each strategy in the round, the first time (#258) */

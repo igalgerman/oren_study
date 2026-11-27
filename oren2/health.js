@@ -33,7 +33,7 @@ const enabled=dm=>dm==='math'?true:dm==='arcade'?!!window.TAL_arcade:T.dailyPool
 
 /* ---------- settings & the day's record ---------- */
 const MEALS=[['b','אֲרוּחַת בֹּקֶר','בוקר','07:30'],['l','אֲרוּחַת צָהֳרַיִם','צהריים','13:00'],['d','אֲרוּחַת עֶרֶב','ערב','18:30']];
-H.MEAL_WIN=60;H.MEAL_MIN=10;H.ACTS=4;
+H.MEAL_WIN=60;H.MEAL_MIN=10;
 /* read with defaults; nothing is written until a parent changes something (so Oren's device never makes the family settings look newer) */
 function cfg(){const c=T.S().set.hl||{};const m={};MEALS.forEach(([k,,,t])=>{m[k]=/^\d\d:\d\d$/.test((c.meals||{})[k]||'')?c.meals[k]:t;});
   return {off:Object.assign({},c.off||{}),meals:m,brk:[15,20,30].includes(c.brk)?c.brk:20,thr:[10,15,20].includes(c.thr)?c.thr:15};}
@@ -81,7 +81,7 @@ const enKinds=()=>{const c=cfg();return KINDS.filter(k=>!c.off[k]);};
 const mealAt=(k,t)=>{const [hh,mm]=cfg().meals[k].split(':').map(Number);const d=new Date(t);d.setHours(hh,mm,0,0);return +d;};
 function mealDue(){if(cfg().off.meal)return null;const t=now(),r=day();const m=MEALS.find(([k])=>!r.meals[k]&&t>=mealAt(k,t)&&t<mealAt(k,t)+H.MEAL_WIN*60000);return m?m[0]:null;}
 function breakDue(){if(!enKinds().length)return 0;const r=day(),iv=cfg().brk*60,since=r.on-r.ba;return since>=iv?since-iv+1:0;}
-function topicDue(dm){const d=DOM(dm);if(!d||d.free)return false;const r=day();if(r.ov[dm])return false;if(r.rest[dm])return true;return (r.dom[dm]|0)>=cfg().thr*60||(r.act[dm]|0)>=H.ACTS;}
+function topicDue(dm){const d=DOM(dm);if(!d||d.free)return false;const r=day();if(r.ov[dm])return false;if(r.rest[dm])return true;return (r.dom[dm]|0)>=cfg().thr*60;}   /* #634 only the minutes: the old 4-activities count closed a domain after ~5 min of short scenes */
 const vis=id=>{const e=$(id);return e&&!e.hidden;};
 const safeBase=()=>!vis('#ov')&&!vis('#dlg')&&vis('#hud')&&!vis('#sPar')&&!document.querySelector('.tlock,.tour');
 H.blocking=()=>!!document.querySelector('.hlock');
@@ -178,11 +178,13 @@ function remPanel(box,sec,re){const m=(T.S().set||{}).rem;
   const g2=h('div','hmsgtype');g2.append(i,sb);f.appendChild(g2);s.appendChild(f);}
 
 /* two big cards of other domains Oren did least today */
-function cards(ex){const r=day();return DOMS.filter(d=>d.id!==ex&&!H.resting(d.id)&&enabled(d.id)).map(d=>[d,(r.dom[d.id]|0)+Math.random()]).sort((a,b)=>a[1]-b[1]).slice(0,2).map(x=>x[0]);}
+const fresh=dm=>{if(dm==='math'||dm==='arcade')return true;const dt=((T.S().daily||{}).t)||[];return T.dailyPool().some(id=>H.domOf(id)===dm&&!dt.includes(id));};   /* #634 a domain with a mission he has not played today */
+function cards(ex){const r=day();return DOMS.filter(d=>d.id!==ex&&!H.resting(d.id)&&enabled(d.id)&&fresh(d.id)).map(d=>[d,(r.dom[d.id]|0)+Math.random()]).sort((a,b)=>a[1]-b[1]).slice(0,2).map(x=>x[0]);}
 function goDom(dm){close();sfx.pop&&sfx.pop(3);
   if(dm==='math'){const lv=T.nextLevel&&T.nextLevel();if(lv){if(!O.save.story[lv.w.id+'-in'])O.showWorld(lv.w);else O.startLevel(lv);}else O.showJourney();return;}
   if(dm==='arcade'){window.TAL_arcade(O.showMap);return;}
-  const tl=T.S().tl,pool=T.dailyPool().filter(id=>H.domOf(id)===dm).sort((a,b)=>((tl[a]||{}).n|0)-((tl[b]||{}).n|0));
+  const tl=T.S().tl,dt=((T.S().daily||{}).t)||[];let pool=T.dailyPool().filter(id=>H.domOf(id)===dm).sort((a,b)=>((tl[a]||{}).n|0)-((tl[b]||{}).n|0));
+  const nw=pool.filter(id=>!dt.includes(id));if(nw.length)pool=nw;   /* #634 not a mission he already played today */
   const id=pool.length?O.pick(pool.slice(0,3)):null;if(id)T.ACT[id].run(O.showMap);else O.showMap();}
 H.goDom=goDom;
 function chooser(cls,dm,head,sub,oneMore){const r=day();const el=lock('htopic '+cls,`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">🌙</span></div><h2>${head}</h2><div class="sub">${sub}</div>`);
@@ -220,7 +222,7 @@ H.panel=(box,sec,re,part)=>{const c=cfg(),r=day();if(part!=='set')remPanel(box,s
   const iv=h('div','popt','<span>הפסקה כל:</span>');[15,20,30].forEach(v=>{const b=h('button','pchip'+(c.brk===v?' on':''),v+' דק׳');b.onclick=()=>{H.setCfg('brk',v);re&&re();};iv.appendChild(b);});s1.appendChild(iv);
   const ml=h('div','popt','<span>ארוחות:</span>');MEALS.forEach(([k,,n])=>{const l=h('label','hml',n+' ');const i=document.createElement('input');i.type='time';i.className='pgin sm';i.value=c.meals[k];i.setAttribute('aria-label','ארוחת '+n);
     i.onkeydown=e=>e.stopPropagation();i.onchange=()=>{if(/^\d\d:\d\d$/.test(i.value))H.setCfg('meals',{[k]:i.value});};l.appendChild(i);ml.appendChild(l);});s1.appendChild(ml);
-  const th=h('div','popt','<span>החלפת נושא אחרי:</span>');[10,15,20].forEach(v=>{const b=h('button','pchip'+(c.thr===v?' on':''),v+' דק׳');b.onclick=()=>{H.setCfg('thr',v);re&&re();};th.appendChild(b);});th.appendChild(h('small','hnote','(או '+H.ACTS+' פעילויות באותו תחום ביום)'));s1.appendChild(th);}
+  const th=h('div','popt','<span>החלפת נושא אחרי:</span>');[10,15,20].forEach(v=>{const b=h('button','pchip'+(c.thr===v?' on':''),v+' דק׳');b.onclick=()=>{H.setCfg('thr',v);re&&re();};th.appendChild(b);});s1.appendChild(th);}
   if(part==='set')return s1;
   /* today's log */
   const BI={water:'💧',toilet:'🚽',move:'🤸',eyes:'👀'};

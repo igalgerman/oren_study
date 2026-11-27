@@ -19,7 +19,7 @@ const { chromium } = require('playwright');
     for (let r = 0; r < 12 && T.dailyEnsure().t.length < n; r++) {
       const d = T.dailyEnsure(); const dm = doms[r % doms.length];
       if (dm === 'cont') T.chooseDay('readg', 'story-3'); else T.chooseDay(dm);
-      d.done = d.t.map(() => 1); d.bs = d.t.length; d.ch = null; d.free = 0;   /* path done → "another small path" (FR.bonus) */
+      d.done = d.t.map(() => 1); d.bs = d.t.length; d.ch = null;   /* path done → the next path (#634) */
     }
     return T.dailyEnsure().t.slice();
   }, { doms, n, setup });
