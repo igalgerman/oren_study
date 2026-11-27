@@ -3509,6 +3509,7 @@ svg.tl{width:60px;height:60px;display:block}
 .pdback{margin:0 0 10px}
 .pdskip{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35)}
 .pdskip .card{max-width:420px;text-align:center}
+.pdsugi .pchip{flex:none;margin:0 6px 0 0}
 
 /* AGAIN (#39): the home button and the list of big tiles by day */
 .againbtn{display:flex;align-items:center;gap:10px;font-size:22px;font-weight:900;padding:10px 22px;background:#fff;border-bottom:6px solid #3a8fc4;box-shadow:0 5px 0 rgba(0,0,0,.2)}
@@ -10899,6 +10900,25 @@ function strongSec(box,d,sec){const [y,m,dd]=d.split('-').map(Number);const days
     const r=t&&t.n?t.ok/t.n:null;const how=r==null?'אין תשובות השבוע':t.n<5?`מעט תשובות (${t.ok}/${t.n})`:r>=.8?`מצליח · ${Math.round(r*100)}%`:r<.6?`קשה לו · ${Math.round(r*100)}%`:`בתרגול · ${Math.round(r*100)}%`;
     const hard=t?Object.entries(t.it).filter(([,x])=>x.n>=3&&x.ok/x.n<.8).sort((a,b)=>a[1].ok/a[1].n-b[1].ok/b[1].n).slice(0,3).map(([id,x])=>`${DL.nameOf(id)} (${Math.round(x.ok/x.n*100)}%)`):[];
     s.appendChild(h('div','prow pdtop'+(r!=null&&t.n>=5?r>=.8?' ok':r<.6?' hard':'':''),`<span class="pn"><b>${TOP[tp]}</b>${L?` <small>רמה ${L}</small>`:''}${hard.length?`<br><small>הכי קשה: ${hard.join(' · ')}</small>`:''}</span><span class="pc">${how}</span>`));});}
+/* #61 suggestions from the last 7 days: a topic too hard / too easy / not played — 1-3 plain lines, one button where the action is obvious.
+   days = [day rows], tops = the topics that have missions. Pure (the tests call it with sample rows). */
+const EASY=.9,HARD=.6;
+P.suggest=(days,tops)=>{const by={};let any=0;
+  (days||[]).forEach(rs=>(rs||[]).forEach(e=>{if(!e||'pxs'.includes(e[6]))return;const tp=topOf(e[1]);if(!tp)return;any=1;const t=by[tp]=by[tp]||{ok:0,n:0};t.ok+=e[3]|0;t.n+=e[4]|0;}));
+  if(!any)return [];const r=tp=>by[tp].ok/by[tp].n;const has=tops.filter(tp=>by[tp]&&by[tp].n);
+  const hard=has.filter(tp=>by[tp].n>=5&&r(tp)<HARD).sort((a,b)=>r(a)-r(b)).map(tp=>({k:'hard',tp,r:r(tp)}));
+  const easy=has.filter(tp=>by[tp].n>=10&&r(tp)>=EASY).sort((a,b)=>r(b)-r(a)).map(tp=>({k:'easy',tp,r:r(tp)}));
+  return hard.concat(easy,tops.filter(tp=>!by[tp]).map(tp=>({k:'miss',tp}))).slice(0,3);};
+const SUG={hard:'קשה לו השבוע',easy:'קל לו מדי',miss:'לא שיחק השבוע'};
+function sugSec(box,sec){const days=[...Array(7)].map((_,i)=>DL.rows(dayAt(i)));const pool=T.dailyPool();
+  const tops=Object.keys(TOP).filter(tp=>tp==='math'?!!(T.nextLevel&&T.nextLevel()):pool.some(id=>topOf(id)===tp));
+  const L=P.suggest(days,tops);if(!L.length)return;const d=planView();const s=sec(box,'הצעות','');s.classList.add('pdsug');
+  const openOf=tp=>d?d.t.find((id,n)=>!d.done[n]&&stepTop(id)===tp):null;
+  L.forEach(x=>{const r=h('div','prow pdsugi',`<span class="pn"><b>${TOP[x.tp]}</b> — ${SUG[x.k]}${x.r!=null?` · ${Math.round(x.r*100)}% נכון`:''}</span>`);
+    const bt=(l,f)=>{const b=h('button','pchip',l);b.onclick=()=>{f();P.refresh();};r.appendChild(b);};
+    if(x.k==='easy'){const id=openOf(x.tp);if(id&&(id==='math'||T.ACT[id])&&!cmds().some(c=>c.k==='know'&&c.a===id))bt('הוא כבר יודע',()=>P.send('know',id));}
+    if(x.k==='miss'&&d&&!openOf(x.tp)){const id=pickOf(x.tp,d);if(id)bt('+ להוסיף להיום',()=>P.send('add',id));}
+    s.appendChild(r);});}
 /* the whole day view; opts = {sec, nowTop(el), more()} */
 P.view=(box,opts)=>{const d=P.vd&&P.vd<=today()&&P.vd>=dayAt(13)?P.vd:today();P.vd=d;last={box,opts};box.innerHTML='';const sec=opts.sec;
   const nav=h('div','pdnav');const prev=h('button','pchip pdprev','›');prev.setAttribute('aria-label','יום קודם');prev.disabled=d<=dayAt(13);
@@ -10907,7 +10927,7 @@ P.view=(box,opts)=>{const d=P.vd&&P.vd<=today()&&P.vd>=dayAt(13)?P.vd:today();P.
   nav.append(prev,h('b','pdday',dayName(d)),next);box.appendChild(nav);
   if(d===today()){const nb=h('div','pnow');box.appendChild(nb);opts.nowTop&&opts.nowTop(nb);}
   const sec0=((T.S().time||{})[d]|0);box.appendChild(h('div','pdtot',`⏱️ ${d===today()?'היום':'ביום הזה'}: <b>${Math.floor(sec0/60)} דק׳</b> משחק`));
-  didSec(box,d,sec);if(d===today())planSec(box,sec);strongSec(box,d,sec);};
+  didSec(box,d,sec);if(d===today()){planSec(box,sec);sugSec(box,sec);}strongSec(box,d,sec);};
 P.refresh=()=>{if(last&&last.box.isConnected)P.view(last.box,last.opts);};
 })();
 

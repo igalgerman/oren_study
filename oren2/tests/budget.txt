@@ -28,3 +28,5 @@ english2-phone 60         # same file on the phone viewport: ~38 s
 reading 60                # 42 checks: reading mode + #355 stories + #420 story words (card, tap, next-day practice, pregen): ~27 s under load
 gaps-desktop 90           # #419 adds the rhymes checks (400 generated questions, voice timing ~5 s, a round of 5): ~38 s alone
 gaps-phone 90             # same file on the phone viewport
+parent-desktop 60          # #61 suggestions block (sample skills data per kind) added: ~19 s
+parent-phone 60            # same file on the phone viewport: ~18 s
