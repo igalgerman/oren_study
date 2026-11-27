@@ -238,6 +238,16 @@ body:has(#dlg:not([hidden])) .hud{z-index:8}/* #356: back/home stay visible abov
 .prq svg.clock.set{touch-action:none;cursor:grab}.prq svg.pz{width:200px;height:200px;cursor:pointer;touch-action:manipulation}.pz .sl{transition:opacity .25s}.pz .sl.eat{opacity:.1}
 .mbh .one,.mbh .rod{cursor:pointer}.mbh .one.gst{background:transparent;box-shadow:inset 0 0 0 2px var(--c)}.mbh .nxt{animation:pulse 1s infinite}.mbw .mbc{margin-top:8px}
 .arr.tap,.arr.tapa{cursor:pointer;touch-action:manipulation}.arr .r.nw{animation:pop .5s}.arr .ga{height:var(--s,18px);margin-left:25px;border:2px dashed #b9c4cc;animation:pulse 1.2s infinite}
+/* #417 ten-frame board (tap to complete ten, then the rest) and "fill the ten"; #418 coins */
+.tfh{background:#fff;padding:12px 16px;box-shadow:0 6px 0 rgba(0,0,0,.18)}.tfh .tf{gap:18px}.tfh .frame{grid-template-columns:repeat(5,38px)}.tfh .frame i{width:38px;height:38px;cursor:pointer;touch-action:manipulation}.tfh .frame i.x::after{top:17px}
+.tfh .frame.on{box-shadow:inset 0 0 0 3px #3a8fc4}.tfh .frame i.nxt{animation:pulse 1s infinite}.tfh .frame i.nxt:not(.b){box-shadow:inset 0 0 0 3px #e8873a}
+.tfh .tfs{direction:ltr;font-weight:900;font-size:24px;min-height:34px;margin-top:8px;text-align:center}.tfw .tfc{margin-top:8px}.tff i.e{cursor:pointer;touch-action:manipulation}.tff i{transition:background .2s}
+.coins{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:6px}
+.ctray{min-height:70px;min-width:260px;max-width:min(92vw,520px);display:flex;flex-wrap:wrap;gap:4px;align-items:center;justify-content:center;background:#fff;padding:6px 12px;box-shadow:inset 0 0 0 3px #c9b98f;direction:ltr}
+.csum{font-weight:900;font-size:30px;direction:ltr}.cbank{display:flex;gap:14px;direction:ltr;align-items:center}
+.coins .coinb{background:none;border:0;padding:0;box-shadow:none;min-width:0;height:auto;cursor:pointer;touch-action:manipulation}.coinb:active{transform:scale(.9)}
+.cn{width:60px;height:60px;display:block}[data-v="10"]>.cn{width:70px;height:70px}.tc{cursor:pointer;animation:pop .3s}.tc .cn{width:44px;height:44px}.tc[data-v="10"]>.cn{width:50px;height:50px}
+.cpile{display:flex;gap:6px;justify-content:center;direction:ltr;margin-top:8px}.cpile .cn{width:54px;height:54px}
 .chs{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
 .chs.ltr{direction:ltr}
 .chb{min-width:96px;height:78px;padding:0 18px;display:grid;place-items:center;font-weight:900;font-size:32px;background:var(--birch);box-shadow:inset -5px -5px 0 rgba(0,0,0,.16),inset 5px 5px 0 rgba(255,255,255,.6),0 6px 0 rgba(0,0,0,.28)}
@@ -489,7 +499,7 @@ body.act #gemc,body.act #btnMusic,body.act #btnHome,body.act .hud-mid .chip,body
   .giant svg{width:62px}.hp i{width:10px;height:14px}
   .scn{height:76px}.mb{width:32px;height:32px}.mb::after{left:6px;top:8px;width:6px;height:5px;box-shadow:11px 8px 0 #3cc8bb}.chest svg{width:44px}.plank{width:26px;height:12px}.bank{width:26px}.scn.build{padding-top:30px}
   .eqcard{font-size:40px;padding:8px 16px;gap:8px}
-  .prq .qq{font-size:22px}.prq .big{font-size:52px}.prq svg.clock{width:150px;height:150px}.prq svg.frac{width:130px;height:130px}.prq svg.pz{width:160px;height:160px}
+  .prq .qq{font-size:22px}.prq .big{font-size:52px}.prq svg.clock{width:150px;height:150px}.prq svg.frac{width:130px;height:130px}.prq svg.pz{width:160px;height:160px}.tfh .frame{grid-template-columns:repeat(5,28px)}.tfh .frame i{width:28px;height:28px}.tfh .frame i.x::after{top:12px}.tfh .tf{gap:10px}.cn{width:50px;height:50px}[data-v="10"]>.cn{width:58px;height:58px}.cbank{gap:10px}
   .chb{min-width:72px;height:60px;font-size:24px}.chb.tx{font-size:21px}.chb.sym{font-size:34px}
   .bubb{width:74px;height:74px;font-size:24px}
   .wcard{font-size:22px;padding:12px 16px}.wans{font-size:21px}.wans .ans{font-size:32px}
@@ -810,6 +820,39 @@ function clockQ(mins){const hr=rand(1,12),mn=pick(mins);const right=tstr(hr,mn);
   const o=shuffle([...opts]);
   const h2=clockH2(hr,mn);
   return Object.assign(CH(`<div class="qq">מָה הַשָּׁעָה?</div>${clockSVG(hr,mn)}`,o,o.indexOf(right),'הַמָּחוֹג הַקָּצָר ← שָׁעוֹת · הַמָּחוֹג הָאָרֹךְ ← דַּקּוֹת',h2,true),{chk:{t:'clock',h:hr,m:mn}});}
+/* #417 ten-frame: two frames of 10. Add (8 + 5): tap the empty cells to complete ten (8 + 2 = 10), then add the rest (10 + 3 = 13).
+   Subtract (13 − 5): tap the dots away down to ten (13 − 3 = 10), then the rest (10 − 2 = 8). t = taps so far; f = dots in each frame. */
+const TF={start:(op,l)=>op==='+'?[l,0]:[10,l-10],
+  need:(op,l,r)=>op==='+'?[10-l,r-(10-l)]:[l-10,r-(l-10)],
+  at:(op,l,r,t)=>{const s=TF.start(op,l),n=TF.need(op,l,r),t1=Math.min(t,n[0]),t2=Math.min(Math.max(t-n[0],0),n[1]);
+    return {f:op==='+'?[s[0]+t1,t2]:[10-t2,s[1]-t1],step:t<n[0]?1:t<n[0]+n[1]?2:3};},
+  lines:(op,l,r)=>{const n=TF.need(op,l,r);return op==='+'?[`${l} + ${n[0]} = 10`,`10 + ${n[1]} = ${l+r}`]:[`${l} − ${n[0]} = 10`,`10 − ${n[1]} = ${l-r}`];},
+  ok:q=>!!q&&q.k==='bin'&&q.miss==='res'&&(q.op==='+'?Math.max(q.l,q.r)<10&&q.l+q.r>10:q.op==='−'&&q.l>10&&q.l<20&&q.r<10&&q.l-q.r<10)};
+const TFC={add1:'הַקֵּשׁ עַל הַמִּשְׁבְּצוֹת הָרֵיקוֹת, וְהַשְׁלֵם לְ-10',add2:'יֵשׁ 10! עַכְשָׁו הוֹסֵף אֶת מַה שֶּׁנִּשְׁאַר',
+  sub1:'הַקֵּשׁ עַל הַנְּקֻדּוֹת, וְהוֹרֵד קֹדֶם עַד 10',sub2:'יֵשׁ 10! עַכְשָׁו הוֹרֵד אֶת מַה שֶּׁנִּשְׁאַר',done:'כָּל הַכָּבוֹד! עַכְשָׁו בְּחַר אֶת הַתְּשׁוּבָה'};
+/* "fill the ten": n dots in one frame; Oren taps the empty cells, then says how many he added */
+function tfFillQ(n){n=n||rand(3,9);const k=10-n;const opts=shuffle([k,...shuffle([k-1,k+1,k+2].filter(x=>x>=1&&x<=9)).slice(0,2)]);
+  return Object.assign(CH(`<div class="qq">הַקֵּשׁ וּמַלֵּא אֶת הָעֶשֶׂר. כַּמָּה הוֹסַפְתָּ?</div><div class="tf tff"><div class="frame">${'<i class="b"></i>'.repeat(n)}${'<i class="e"></i>'.repeat(k)}</div></div>`,
+    opts,opts.indexOf(k),'הַקֵּשׁ עַל הַמִּשְׁבְּצוֹת הָרֵיקוֹת, וּסְפֹר כַּמָּה הוֹסַפְתָּ',L_(`${n} + ${k} = 10`),true,'num'),{chk:{t:'tfill',n}});}
+/* #418 coins of 1, 2, 5 and 10 shekels (original art). Pay a price exactly (tap coins onto the tray, tap one there to take it back, "check"),
+   then simple change: the price and the coin that was given, Oren gives the change. */
+const COIN={vals:[1,2,5,10],make:n=>{const o=[];for(const v of [10,5,2,1])while(n>=v){o.push(v);n-=v;}return o;},sum:a=>a.reduce((s,v)=>s+(+v),0)};
+function coinSVG(v){const g=v===10;return `<svg class="cn" viewBox="0 0 60 60" aria-hidden="true"><circle cx="30" cy="30" r="27" fill="${g?'#f2c84b':'#d5dbe0'}" stroke="${g?'#a8811c':'#7f8a94'}" stroke-width="4"/>`+
+  `<circle cx="30" cy="30" r="20" fill="none" stroke="${g?'#c99a2a':'#a9b2ba'}" stroke-width="2"/><text x="30" y="39" text-anchor="middle" font-family="Noto Sans Hebrew,Arial" font-weight="900" font-size="${g?22:26}" fill="#23303b">${v}</text></svg>`;}
+const coinBoard=want=>`<div class="coins" data-want="${want}"><div class="ctray"></div><div class="csum">0 ₪</div><div class="cbank">${COIN.vals.map(v=>`<button class="coinb" data-v="${v}">${coinSVG(v)}</button>`).join('')}</div></div>`;
+const coinPile=cs=>`<div class="cpile">${cs.map(v=>`<span data-v="${v}">${coinSVG(v)}</span>`).join('')}</div>`;
+const numOpts=a=>{const o=shuffle([a,...shuffle([a-1,a+1,a+2,a-2].filter(x=>x>=1)).slice(0,2)]);return {o,i:o.indexOf(a)};};
+const GC={
+  pay:p=>{p=p||rand(3,20);const sol=COIN.make(p).join(' + ');
+    return Object.assign(CH(`<div class="qq">שַׁלֵּם ${L_(p)} שְׁקָלִים</div>${coinBoard(p)}`,['בְּדֹק'],0,'מַתְחִילִים מֵהַמַּטְבֵּעַ הַגָּדוֹל, וּמוֹסִיפִים קְטַנִּים',L_(`${sol} = ${p}`),false,'tx'),
+      {chk:{t:'coins',want:p},hand:{t:'coins',want:p,ans:sol}});},
+  sum:()=>{let cs;do{cs=Array.from({length:rand(2,4)},()=>pick(COIN.vals)).sort((a,b)=>b-a);}while(COIN.sum(cs)<3||COIN.sum(cs)>20);const a=COIN.sum(cs),{o,i}=numOpts(a);
+    return Object.assign(CH(`<div class="qq">כַּמָּה שְׁקָלִים יֵשׁ כָּאן?</div>${coinPile(cs)}`,o,i,'סוֹפְרִים: קֹדֶם הַמַּטְבֵּעַ הַגָּדוֹל',L_(`${cs.join(' + ')} = ${a}`),true,'num'),{chk:{t:'coinsum',coins:cs}});},
+  change:(price,paid)=>{paid=paid||pick([5,10,10]);price=price||rand(2,paid-1);const w=paid-price,sol=COIN.make(w).join(' + ');
+    return Object.assign(CH(`<div class="qq">הַמְּחִיר ${L_(price)} שְׁקָלִים. קִבַּלְתָּ ${L_(paid)} שְׁקָלִים. תֵּן עֹדֶף</div>${coinPile([paid])}${coinBoard(w)}`,['בְּדֹק'],0,`סוֹפְרִים מִ-${L_(price)} עַד ${L_(paid)}`,L_(`${paid} − ${price} = ${w}`),false,'tx'),
+      {chk:{t:'change',price,paid},hand:{t:'coins',want:w,ans:sol}});},
+  chg:()=>{const paid=pick([5,10,10]),price=rand(2,paid-1),w=paid-price,{o,i}=numOpts(w);
+    return Object.assign(CH(`<div class="qq">הַמְּחִיר ${L_(price)} שְׁקָלִים. שִׁלַּמְתָּ ${L_(paid)} שְׁקָלִים. כַּמָּה עֹדֶף תְּקַבֵּל?</div>${coinPile([paid])}`,o,i,`סוֹפְרִים מִ-${L_(price)} עַד ${L_(paid)}`,L_(`${paid} − ${price} = ${w}`),true,'num'),{chk:{t:'chg',price,paid}});}};
 const GT={
   h:()=>(mm(.4)?clockSetQ:clockQ)([0]),half:()=>(mm(.4)?clockSetQ:clockQ)(mm(.7)?[30]:[0]),q:()=>(mm(.4)?clockSetQ:clockQ)(mm(.7)?[15,45]:[0,30]),
   set:clockSetQ,pz:pizzaQ,
@@ -1060,7 +1103,7 @@ const WORLDS=[
   intro:['הוּ-הוּ! אֲנִי חָכָם הַיַּנְשׁוּף. הַמְּבַלְבֵּל גָּנַב אֶת הַפֵּרוֹת מֵהָעֵצִים.','כָּל חִבּוּר נָכוֹן מַחְזִיר פְּרִי לָעֵץ!'],outro:['הַיַּעַר פּוֹרֵחַ שׁוּב! תּוֹדָה, אוֹרֶן!'],units:[
   {id:'add-0',lbl:'4+5',name:'חִבּוּר עַד 10',lesson:'מְחַבְּרִים שְׁתֵּי קְבוּצוֹת וְסוֹפְרִים אֶת כֻּלָּן.',gen:GA.to10},
   {id:'add-1',lbl:'6+6',name:'כְּפוּלִים',lesson:'כָּפוּל זֶה מִסְפָּר וְעוֹד אוֹתוֹ מִסְפָּר. כְּדַאי לִזְכֹּר אוֹתָם בְּעַל פֶּה!',gen:GA.dbl},
-  {id:'add-2',lbl:'8+5',name:'מַשְׁלִימִים לְ-10',lesson:'קֹדֶם מַשְׁלִימִים לְ-10, וְאַחַר כָּךְ מוֹסִיפִים אֶת מַה שֶּׁנִּשְׁאַר.',gen:GA.make10},
+  {id:'add-2',lbl:'8+5',name:'מַשְׁלִימִים לְ-10',lesson:'קֹדֶם מַשְׁלִימִים לְ-10, וְאַחַר כָּךְ מוֹסִיפִים אֶת מַה שֶּׁנִּשְׁאַר.',gen:()=>mm(.3)?tfFillQ():GA.make10()},
   {id:'add-3',lbl:'9+?=15',name:'חִבּוּר עַד 20',lesson:'אֶפְשָׁר לִמְצֹא גַּם מִסְפָּר חָסֵר: כַּמָּה צָרִיךְ לְהוֹסִיף?',gen:GA.to20},
   {id:'add-4',lbl:'4+6+3',name:'שְׁלוֹשָׁה מְחֻבָּרִים',lesson:'מְחַפְּשִׂים שְׁנֵי מִסְפָּרִים שֶׁבְּיַחַד הֵם 10, וּמַתְחִילִים מֵהֶם.',gen:GA.three},
   {id:'add-5',lbl:'30+40',name:'עֲשָׂרוֹת',lesson:'3 עֲשָׂרוֹת וְעוֹד 4 עֲשָׂרוֹת הֵן 7 עֲשָׂרוֹת: ‎30 + 40 = 70.',gen:GA.tens},
@@ -1124,6 +1167,8 @@ const WORLDS=[
   {id:'word-4',lbl:'?',name:'מֶה חָסֵר בַּסִּפּוּר?',lesson:'לִפְעָמִים לֹא יוֹדְעִים מֶה הָיָה בַּהַתְחָלָה. חוֹשְׁבִים מַה קָּרָה, וְהוֹלְכִים אָחוֹרָה.',gen:WP.unk(10,60)},
   {id:'word-5',lbl:'×',name:'סִפּוּרֵי כֶּפֶל',lesson:'כְּשֶׁיֵּשׁ כַּמָּה קְבוּצוֹת שָׁווֹת, מְשַׁתְּמְשִׁים בְּכֶפֶל.',gen:WP.mul},
   {id:'word-6',lbl:':',name:'סִפּוּרֵי חִלּוּק',lesson:'מְחַלְּקִים שָׁוֶה בְּשָׁוֶה, אוֹ מְסַדְּרִים בִּקְבוּצוֹת: זֶה חִלּוּק.',gen:WP.div},
+  {id:'word-c1',lbl:'1 2 5 10',name:'מְשַׁלְּמִים בְּמַטְבְּעוֹת',lesson:'יֵשׁ מַטְבְּעוֹת שֶׁל 1, 2, 5 וְ-10 שְׁקָלִים. סוֹפְרִים קֹדֶם אֶת הַמַּטְבֵּעַ הַגָּדוֹל, וְאַחַר כָּךְ אֶת הַקְּטַנִּים.',gen:()=>mm(.7)?GC.pay():GC.sum()},   /* #418 exact payments */
+  {id:'word-c2',lbl:'10−7',name:'עֹדֶף בְּמַטְבְּעוֹת',lesson:'עֹדֶף = מַה שֶּׁשִּׁלַּמְתָּ פָּחוֹת הַמְּחִיר. סוֹפְרִים מֵהַמְּחִיר וּמַעְלָה, עַד הַמַּטְבֵּעַ שֶׁנָּתְנוּ.',gen:()=>mm(.7)?GC.change():GC.chg()},   /* #418 then simple change */
   {id:'word-7',lbl:'₪',name:'כֶּסֶף וְעֹדֶף',lesson:'עֹדֶף = מַה שֶּׁשִּׁלַּמְתָּ פָּחוֹת הַמְּחִיר.',gen:WP.money},
   {id:'word-8',lbl:'1→2',name:'בְּעָיוֹת דּוּ-שְׁלַבִּיּוֹת',lesson:'פּוֹתְרִים בִּשְׁנֵי שְׁלָבִים: קֹדֶם שְׁאֵלָה אַחַת, וְאַחַר כָּךְ הַשְּׁנִיָּה.',gen:WP.two},
   {id:'word-9',lbl:'?!',name:'הַכֹּל מְעֻרְבָּב',lesson:'קוֹרְאִים, חוֹשְׁבִים, וּבוֹחֲרִים תַּרְגִּיל.',gen:mix([WP.join(20,99),WP.take(20,99),WP.cmp(20,99),WP.unk(20,99),WP.mul,WP.div,WP.money,WP.two])},
@@ -1902,7 +1947,10 @@ function hintData(q){
   if(t==='d21'){const big=res,t0=tens(big),u=big%10;return {v:cap(`מְפָרְקִים אֶת ${L_(l)}`)+`<div class="bt">${baseTen(l,'#e8873a')}</div>`,s:u?[`${t0*r} : ${r} = ${t0}`,`${u*r} : ${r} = ${u}`,`${t0} + ${u} = ?`]:[`${l/10} : ${r} = ${res/10}`,`${res/10} × 10 = ?`]};}
   return {v:cap(`${L_(r+' × ? = '+l)}<br>קְפִיצוֹת שֶׁל ${L_(r)} עַד ${L_(l)}. כַּמָּה קְפִיצוֹת?`)+skipS(r,res,false),s:[]};
 }
-function hintHTML(q,level){
+/* #415 the clue after a known mistake starts with that mistake */
+function hintHTML(q,level){const s=hintHTML0(q,level);return level===1&&play&&play.mk&&play.qs&&play.qs[play.i]===q?cap(MK[play.mk])+s:s;}
+function hintHTML0(q,level){
+  if(level===1&&tfHint(q))return tfHands(q);
   if(level===1&&mbHint(q))return mbHands(q);
   if(q.h1!=null){const c1=cap(q.h1);if(level===1)return c1;if(q.st&&q.st.length)return c1+steps(q.st);return q.h2?cap(q.h2):c1;}
   const d=hintData(q);if(level===1)return d.v;if(d.s.length)return steps(d.s);
@@ -1971,6 +2019,7 @@ function manip(u){
   if(u.id==='num-pv2'){const t=rand(2,9);let o=rand(1,9);if(o===t)o=o===9?1:o+1;const n=t*10+o;
     const q=W('כַּמָּה זֶה?',n,'',`סוֹפְרִים אֶת הַמַּקְלוֹת: ${L_(Array.from({length:t},(_,i)=>(i+1)*10).join(' '))}, וְאַחַר כָּךְ אֶת הַקֻּבִּיּוֹת`,[`${t*10} + ${o} = ?`]);q.lq=1;
     return {q,opts:shuffle([n,o*10+t,t+o]),cap:'כָּל מַקֵּל = 10 · כָּל קֻבִּיָּה = 1',html:mbBoard(Array(t).fill(MB_A),Array(o).fill(MB_A))};}
+  if(TF_U.includes(u.id)){let q=null;for(let k=0;k<60&&!q;k++){const x=u.gen(5);if(TF.ok(x))q=x;}return q?{q,html:tfHands(q),hands:true}:null;}   /* #417 */
   const add=MB_ADD.includes(u.id),sub=MB_SUB.includes(u.id);if(!add&&!sub)return null;
   let q=null;for(let k=0;k<40&&!q;k++){const x=u.gen(5);if(x.k==='bin'&&x.miss==='res'&&x.op===(add?'+':'−')&&x.l<100&&x.r<100&&x.res<100)q=x;}if(!q)return null;
   const {l,r}=q,st=hintData(q).s;
@@ -2010,6 +2059,32 @@ function mbTap(bd,el){if(bd.classList.contains('done')||el.classList.contains('t
     else if(needO>0&&solid>=needO){el.classList.add('take');sfx.pop(1);}else return no();}
   mbState(bd);}
 addEventListener('click',e=>{const el=e.target&&e.target.closest&&e.target.closest('.mbh .one, .mbh .rod');if(!el)return;mbTap(el.closest('.mbh'),el);});
+/* #417 the ten-frame board (TF): in the lesson of add-2 / sub-2 and as the hint of their practice questions. One tap = one dot, in the
+   active frame (blue outline; the next cell pulses); a tap on the other frame does nothing. Done → 'mbdone' (the lesson shows the answers). */
+const TF_U=['add-2','sub-2'];
+const tfHint=q=>!!(play&&play.qs&&play.qs.includes(q)&&play.u&&TF_U.includes(play.u.id)&&TF.ok(q));
+function tfHands(q){const add=q.op==='+',l=add?Math.max(q.l,q.r):q.l,r=add?Math.min(q.l,q.r):q.r;const d=document.createElement('div');
+  d.innerHTML=`<div class="tfw"><div class="tfh" data-op="${add?'+':'−'}" data-l="${l}" data-r="${r}" data-t="0"><div class="tf"><div class="frame"></div><div class="frame"></div></div><div class="tfs"></div></div><div class="lcap tfc"></div></div>`;
+  tfDraw(d.querySelector('.tfh'));return d.innerHTML;}
+function tfDraw(bd){const op=bd.dataset.op,add=op==='+',l=+bd.dataset.l,r=+bd.dataset.r,st=TF.at(op,l,r,+bd.dataset.t),s0=TF.start(op,l),fr=bd.querySelectorAll('.frame');
+  fr.forEach((f,k)=>{let c='';for(let i=0;i<10;i++)c+=`<i class="${add?(i<s0[k]?'b':i<st.f[k]?'a':''):(i<st.f[k]?'b':i<s0[k]?'x':'')}"></i>`;f.innerHTML=c;});
+  const act=st.step===3?-1:add?st.step-1:2-st.step;fr.forEach((f,k)=>f.classList.toggle('on',k===act));
+  if(act>=0){const c=fr[act].children[add?st.f[act]:st.f[act]-1];if(c)c.classList.add('nxt');}
+  bd.querySelector('.tfs').innerHTML=TF.lines(op,l,r).slice(0,st.step-1).map(x=>`<div>${x}</div>`).join('');
+  const t=st.step===3?TFC.done:TFC[(add?'add':'sub')+st.step],cp=bd.parentNode&&bd.parentNode.querySelector('.tfc');if(cp)cp.innerHTML=t;
+  if(st.step===3&&!bd.classList.contains('done')){bd.classList.add('done');bd.dispatchEvent(new CustomEvent('mbdone',{bubbles:true}));}
+  return {step:st.step,t};}
+addEventListener('click',e=>{const c=e.target&&e.target.closest&&e.target.closest('.tfh .frame i');if(!c)return;const bd=c.closest('.tfh');if(bd.classList.contains('done'))return;
+  if(!c.parentNode.classList.contains('on')){c.classList.remove('shake');void c.offsetWidth;c.classList.add('shake');sfx.no();return;}
+  const s0=TF.at(bd.dataset.op,+bd.dataset.l,+bd.dataset.r,+bd.dataset.t).step;bd.dataset.t=+bd.dataset.t+1;sfx.pop(2);const n=tfDraw(bd);if(n.step!==s0){sayNow=n.t;AUTO.gen++;}});
+addEventListener('click',e=>{const c=e.target&&e.target.closest&&e.target.closest('.tff i.e');if(!c)return;c.className='a';sfx.pop(2);});
+/* #418 coins: a coin from the bank goes onto the tray (at most 12), a coin on the tray goes back; the sum shows under the tray */
+const coinSum=c=>COIN.sum([...c.querySelectorAll('.ctray .tc')].map(x=>x.dataset.v));
+const coinPut=(c,vs)=>{c.querySelector('.ctray').innerHTML=vs.map(v=>`<span class="tc" data-v="${v}">${coinSVG(v)}</span>`).join('');c.querySelector('.csum').textContent=coinSum(c)+' ₪';};
+addEventListener('click',e=>{const t=e.target&&e.target.closest&&e.target.closest('.coins .coinb, .coins .tc');if(!t)return;const c=t.closest('.coins');if(c.dataset.lock)return;
+  const vs=[...c.querySelectorAll('.ctray .tc')].map(x=>+x.dataset.v);
+  if(t.classList.contains('coinb')){if(vs.length>=12){sfx.no();return;}vs.push(+t.dataset.v);sfx.pop(2);}else{vs.splice([...c.querySelectorAll('.ctray .tc')].indexOf(t),1);sfx.pop(1);}
+  coinPut(c,vs);});
 /* three big answers for the lesson example */
 function lessonOpts(q,m){
   if(q.k==='ch')return {opts:q.opts,ans:q.ans,cls:q.cls,ltr:q.ltr};
@@ -2068,7 +2143,7 @@ function questionHTML(q,isStatic,solved){
 const answersOf=q=>q.k==='rem'?[q.qq,q.r]:[q.ans];
 function qSpeech(q){
   if(q.k==='word')return q.tx;
-  if(q.k==='ch'&&q.hand)return plain(q.pr.replace(/<svg[\s\S]*?<\/svg>/g,''));
+  if(q.k==='ch'&&q.hand)return plain(q.pr.replace(/<div class="coins"[\s\S]*$/,'').replace(/<svg[\s\S]*?<\/svg>/g,''));
   if(q.k==='ch')return plain(q.pr.replace(/<svg[\s\S]*?<\/svg>/g,''))+' '+q.opts.map(o=>({'<':'קטן','>':'גדול','=':'שווה'}[o]||o)).join(', ');
   if(q.k==='eq')return q.toks.map(t=>t==='?'?'כמה':typeof t==='number'?nw(t):OPW[t]||t).join(' ');
   if(q.k==='add3')return `${nw(q.a)} ועוד ${nw(q.b)} ועוד ${nw(q.c)}, שווה כמה?`;
@@ -2129,7 +2204,7 @@ function hudPlay(){const p=play;if(!p)return;const nm=p.lv.type==='train'?'אִ�
   $('#hudMid').innerHTML=`<div class="chip">${nm}</div><div class="progress">${p.qs.map((_,k)=>`<i class="pb${k<p.i?' on':k===p.i?' cur':''}"></i>`).join('')}</div>${p.streak>=2?`<div class="streak">${SPR.flame}${p.streak}</div>`:''}`;}
 function setBubble(t){const b=$('#bText');if(b)b.innerHTML=t;}
 function showQ(){hush();/* #398: the next question: nothing of the last one (praise, its reading) goes on */
-  const p=play;const q=p.qs[p.i];evQ(qkey(q),{ty:q.k});p.tries=0;p.hint=0;p.lock=false;p.col=null;p.choice=null;p.revealed=false;
+  const p=play;const q=p.qs[p.i];evQ(qkey(q),{ty:q.k});p.mk=null;p.tries=0;p.hint=0;p.lock=false;p.col=null;p.choice=null;p.revealed=false;
   const qa=$('#qa');const pad=$('#pad');
   if(q.k==='col'){qa.innerHTML=`<div class="colwrap" id="colw"></div>`;p.col=colInit(q);pad.hidden=false;}
   else if(q.k==='ch'||(p.mode==='bubbles'&&['bin','add3','eq','word'].includes(q.k))){
@@ -2143,7 +2218,7 @@ function showQ(){hush();/* #398: the next question: nothing of the last one (pra
   qa.style.animation='none';void qa.offsetWidth;qa.style.animation='fadein .35s';
   $('#hint').hidden=true;$('#hint').innerHTML='';helpStart(q);helpBtn(q);
   if(q.k==='col')colPrep(q,p.col);
-  setBubble(q.k==='word'?'קְרָא וְחַשֵּׁב':q.k==='col'?'מַתְחִילִים מִיָּמִין':q.k==='rem'?'כַּמָּה, וּמָה הַשְּׁאֵרִית?':q.k==='ch'?(q.hand?(q.hand.t==='clock'?'גְּרֹר אֶת הַמְּחוֹגִים':'הַקֵּשׁ עַל הַפְּרוּסוֹת'):'בְּחַר תְּשׁוּבָה'):'כַּמָּה זֶה?');
+  setBubble(q.k==='word'?'קְרָא וְחַשֵּׁב':q.k==='col'?'מַתְחִילִים מִיָּמִין':q.k==='rem'?'כַּמָּה, וּמָה הַשְּׁאֵרִית?':q.k==='ch'?(q.hand?(q.hand.t==='clock'?'גְּרֹר אֶת הַמְּחוֹגִים':q.hand.t==='coins'?'הַקֵּשׁ עַל הַמַּטְבְּעוֹת':'הַקֵּשׁ עַל הַפְּרוּסוֹת'):'בְּחַר תְּשׁוּבָה'):'כַּמָּה זֶה?');
   sayNow=qSpeech(q);hudPlay();if(p.qs[p.i+1])ttsPrefetch(qSpeech(p.qs[p.i+1]));/* #402 */
   if(p.mode!=='speed'){let qj=null;try{qj=JSON.parse(JSON.stringify(p.qs));if(JSON.stringify(qj).length>60000)qj=null;}catch(e){qj=null;}
     hereProg(p.lv.type==='train'?'train':'lv:'+p.lv.id,{i:p.i,errors:p.errors,hints:p.hints,streak:p.streak,hp:p.hp,N:p.N,done:p.done,gemsEarned:p.gemsEarned,rq:[...p.requeued],qs:qj});}}
@@ -2227,9 +2302,9 @@ function revealAndNext(showFn,ms){const p=play,q=p.qs[p.i];p.lock=true;p.reveale
     if(p.hint<2&&q.k!=='col'){if(HB&&HB.el.isConnected)HB.answer();else showHintForce(2);}
     setTimeout(()=>{if(play!==p)return;p.i++;if(p.i>=p.qs.length)finishLevel();else showQ();},D(ms||3200));},D(500));}
 /* #18/#19 hands-on questions: the drawing holds the answer (clock time, eaten slices); "check" reads it */
-const handEl=()=>$('#qa svg.clock.set, #qa svg.pz');
-function handOk(q){const s=handEl();if(!s)return false;return q.hand.t==='clock'?+s.dataset.t===q.hand.T:s.querySelectorAll('.sl.eat').length===q.hand.eat;}
-function handShow(q){const s=handEl();if(!s)return;s.dataset.lock=1;if(q.hand.t==='clock')clockSetT(s,q.hand.T);else s.querySelectorAll('.sl').forEach((x,i)=>x.classList.toggle('eat',i<q.hand.eat));}
+const handEl=()=>$('#qa svg.clock.set, #qa svg.pz, #qa .coins');
+function handOk(q){const s=handEl();if(!s)return false;if(q.hand.t==='coins')return coinSum(s)===q.hand.want;return q.hand.t==='clock'?+s.dataset.t===q.hand.T:s.querySelectorAll('.sl.eat').length===q.hand.eat;}
+function handShow(q){const s=handEl();if(!s)return;s.dataset.lock=1;if(q.hand.t==='coins')return coinPut(s,COIN.make(q.hand.want));if(q.hand.t==='clock')clockSetT(s,q.hand.T);else s.querySelectorAll('.sl').forEach((x,i)=>x.classList.toggle('eat',i<q.hand.eat));}
 addEventListener('click',e=>{const sl=e.target&&e.target.closest&&e.target.closest('svg.pz .sl');if(!sl||sl.closest('svg').dataset.lock)return;sl.classList.toggle('eat');sfx.pop(sl.classList.contains('eat')?2:1);});
 function choose(i,btn){const p=play;if(!p||p.lock||!p.choice||btn.disabled||(window.FRIEND&&FRIEND.held&&FRIEND.held(btn)))return;const ch=p.choice;const q=p.qs[p.i];
   if(q.hand){if(handOk(q)){btn.classList.add('ok');const s=handEl();if(s)s.dataset.lock=1;return onCorrect();}
@@ -2242,12 +2317,25 @@ function choose(i,btn){const p=play;if(!p||p.lock||!p.choice||btn.disabled||(win
     return onCorrect();}
   btn.classList.add('bad');btn.disabled=true;onWrong(btn);
   if(p.mode==='speed'||(p.tries>=3&&!p.help)){return revealAndNext(()=>{const b=ch.row.children[ch.ans];if(b)b.classList.add(ch.bub?'pop':'show');setBubble('הַתְּשׁוּבָה: '+ch.opts[ch.ans]);});}
+  if(ch.opts.every(o=>/^\d+$/.test(String(o))))mistakeNote(q,ch.opts[i],ch.opts[ch.ans]);
   if(!window.FRIEND)setBubble('כִּמְעַט! נַסֵּה שׁוּב');if(!p.help)helpAuto();}
+/* #415 a wrong number answer: which mistake? op = added instead of subtracted, swap = the two digits swapped, ten = off by ten, one = off by one.
+   A known mistake: its own line in the hint box (said aloud), and the clue of the help button starts with it. Unknown → the usual hints. */
+const MK={one:'כִּמְעַט! טָעִיתָ רַק בְּאֶחָד. סְפֹר שׁוּב לְאַט.',ten:'הָאֲחָדוֹת נְכוֹנוֹת! בְּדֹק שׁוּב אֶת הָעֲשָׂרוֹת.',
+  swap:'הַסְּפָרוֹת הִתְהַפְּכוּ! קֹדֶם הָעֲשָׂרוֹת, וְאַחֲרֵיהֶן הָאֲחָדוֹת.',op:'חִבַּרְתָּ, אֲבָל זֶה תַּרְגִּיל חִסּוּר: צָרִיךְ לְהוֹרִיד.'};
+window.HELP_TEXTS=(window.HELP_TEXTS||[]).concat(Object.values(MK),Object.values(TFC));   /* pregen says them in advance */
+function mistakeKind(q,g,a){g=+g;a=a==null?q&&q.ans:+a;if(!Number.isInteger(g)||!Number.isInteger(a)||g===a)return null;
+  if(q&&q.k==='bin'&&q.op==='−'&&q.miss==='res'&&g===q.l+q.r)return 'op';
+  if(a>=10&&a<=99&&a%10&&a%10!==(a/10|0)&&g===(a%10)*10+(a/10|0))return 'swap';
+  if(Math.abs(g-a)===10)return 'ten';if(Math.abs(g-a)===1)return 'one';return null;}
+function mistakeNote(q,g,a){const p=play;p.mk=null;if(p.mode==='speed'||p.lock)return;const k=mistakeKind(q,g,a);if(!k)return;p.mk=k;
+  const hb=$('#hint');hb.hidden=false;hb.innerHTML=cap(MK[k]);say(MK[k]);}
 function submit(){const p=play;let allOk=true;
   p.boxes.forEach(b=>{if(b.done)return;if(parseInt(b.val,10)===b.ans){b.done=true;b.el.className='ans ok';b.el.textContent=b.ans;}else allOk=false;});
   if(allOk)return onCorrect();
   p.boxes.forEach(b=>{if(!b.done)b.el.className='ans bad';});onWrong($('#qa').querySelector('.eqcard,.wans'));
   if(p.mode==='speed'||(p.tries>=3&&!p.help)){return revealAndNext(()=>{p.boxes.forEach(b=>{if(!b.done){b.el.className='ans show';b.el.textContent=b.ans;}});});}
+  {const q=p.qs[p.i],bx=p.boxes.filter(b=>!b.done);if(p.boxes.length===1&&bx.length===1)mistakeNote(q,parseInt(bx[0].val,10),bx[0].ans);}
   setTimeout(()=>{if(play!==p)return;p.boxes.forEach(b=>{if(!b.done)b.val='';});p.bi=p.boxes.findIndex(b=>!b.done);renderBoxes();},D(600));
   if(!window.FRIEND)setBubble('כִּמְעַט! נַסֵּה שׁוּב');if(!p.help)helpAuto();}
 function showHintForce(level){const p=play,q=p.qs[p.i];const hb=$('#hint');hb.hidden=false;hb.innerHTML=hintHTML(q,level);p.hint=level;}
@@ -2402,7 +2490,7 @@ updateGems();cloudInit();
 const BUS={};function emit(e,...a){(BUS[e]||[]).forEach(f=>{try{f(...a);}catch(x){console.error(x);}});}
 window.OREN={mathSpeechList,hatsBack,get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
   set sayNow(v){sayNow=v;AUTO.gen++;},get sayNow(){return sayNow;},hud:html=>{$('#hudMid').innerHTML=html;document.body.classList.toggle('act',!document.body.classList.contains('inpar')&&/class="chip"/.test(html));},resetAll:keep=>{const snd=save.snd;save=blank();save.snd=snd;Object.assign(save,keep||{});persist();renderStart();},on:(e,f)=>{(BUS[e]=BUS[e]||[]).push(f);},emit,blank};
-window.__oren4={qSpeech,GT,HANDS,renderAudio,THEMES,RAW,setTheme,get mus(){return mus;},WORLDS,ALLLV,ALLU,hintHTML,hintData,uniq,colInit,colNeedBorrow,digs,qkey,bubbleOpts,storyFor,teachCheck,HEROES,get play(){return play;},get save(){return save;},startLevel,finishLevel,playLevel,showMap,showWorld,kingdom,studio,teacher,playSpeed,setFast:v=>{window.__fast=v;},mergeIn,migrateOld,lp};
+window.__oren4={MK,mistakeKind,TF,TFC,tfFillQ,COIN,GC,qSpeech,GT,HANDS,renderAudio,THEMES,RAW,setTheme,get mus(){return mus;},WORLDS,ALLLV,ALLU,hintHTML,hintData,uniq,colInit,colNeedBorrow,digs,qkey,bubbleOpts,storyFor,teachCheck,HEROES,get play(){return play;},get save(){return save;},startLevel,finishLevel,playLevel,showMap,showWorld,kingdom,studio,teacher,playSpeed,setFast:v=>{window.__fast=v;},mergeIn,migrateOld,lp};
 /* #44 a finished task is not reopened */
 window.OREN.on('tlDone',()=>herePut(null));window.OREN.on('levelDone',()=>herePut(null));
 })();

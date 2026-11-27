@@ -34,5 +34,5 @@ module.exports.noCoach = async page => { await page.waitForFunction(() => window
 // a lesson: answer the example (any answer; after two wrong ones the right one lights up), then "now it's your turn"
 // (#267: a hands-on board is tapped first, one marked step at a time)
 module.exports.doLesson = async page => { for (let k = 0; k < 40; k++) { if (await page.locator('#sLearn').isHidden()) return;
-  const n = page.locator('#sLearn .mbh .nxt'); if (await n.count()) { await n.first().click(); await sleep(60); continue; }
+  const n = page.locator('#sLearn .mbh .nxt, #sLearn .tfh .nxt'); if (await n.count()) { await n.first().click(); await sleep(60); continue; }
   const b = page.locator('#sLearn .btnrow .bigbtn'); if (await b.count()) await b.click(); else await page.locator('#sLearn .lch .chb:not([disabled])').first().click(); await sleep(200); } };
