@@ -1620,16 +1620,31 @@ const ttsUrl=(x,en,slow,voice)=>'/api/tts?t='+encodeURIComponent(x)+'&v='+(en?GE
 const PF=new Set();
 function ttsPrefetch(t,lang){if(!t||window.__fast)return;lang=lang||'he';if(GV.pending){GV.wait.then(()=>ttsPrefetch(t,lang));return;}if(!useGoogle(lang))return;const en=lang==='en';
   for(const x of ttsParts(en?plain(t):fullSpell(t))){const u=ttsUrl(x,en,false);if(PF.has(u))continue;if(PF.size>200)PF.clear();PF.add(u);try{fetch(u).catch(()=>{});}catch(e){}}}
-function googleSay(t,lang,again,part,slow,done){done=done||(()=>{});const en=lang==='en';part=part|0;if(!part){try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}try{speechSynthesis.cancel();}catch(e){}}
+/* #635 audio URLs still missing after their one retry (url -> when); a tap on a 🔊 (any speaker button) forgets them, so it always tries */
+const MISS=new Map();MISS.ms=60000;window.__miss=MISS;
+addEventListener('pointerdown',e=>{const b=e.target&&e.target.closest&&e.target.closest('button');
+  if(b&&(b.id==='btnSay'||b.getAttribute('aria-label')==='הקראה'||b.querySelector('path[d^="M4 9v6h4l5 4V5"]')))MISS.clear();},true);
+function googleSay(t,lang,again,part,slow,done){if(MISS.size>300)MISS.clear();done=done||(()=>{});const en=lang==='en';part=part|0;if(!part){try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}try{speechSynthesis.cancel();}catch(e){}}
   const parts=ttsParts(en?plain(t):fullSpell(t)),last=part>=parts.length-1,raw=ttsParts(t),rp=raw.length===parts.length?raw[part]:t;
   const url=ttsUrl(parts[part],en,slow,done.it&&done.it.voice);/* #53 a friend line carries the friend's own voice (friend.js), else the game voice */
-  const a=new Audio(url);GV.audio=a;let go=false;const t0=Date.now(),sn=evHash(rp);/* #641 sentence id = hash of its text */if(!en&&readHelp().slow){try{a.defaultPlaybackRate=a.playbackRate=.8;}catch(e){}}/* #613 slow: the same recording, played at 0.8 */
-  const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;if(sqOld(done))return drop();track('au',{ev:'fail',src:'google',why,sn,ms:Date.now()-t0});try{a.pause();}catch(e){}GV.audio=null;
-    if(!again&&why!=='blocked'){logIssue('voice',why+' (retry)');track('retry',{what:'voice',why});googleSay(t,lang,1,part,slow,done);return;}
-    /* #404 one rule: the browser voice only when the whole session is offline; online the text lights up with a 🔊 that tries again */
+  const sn=evHash(rp);/* #641 sentence id = hash of its text */
+  const miss=(why,o)=>{/* #404 one rule: the browser voice only when the whole session is offline; online the text lights up with a 🔊 that tries again */
     if(navigator.onLine===false){browserSay(t,en?'en':'he',why,slow,done);if(why!=='blocked')logIssue('voice',why);return;}
-    if(why!=='blocked')logIssue('voice',why+' (missing)');track('au',{ev:'missing',src:'google',why,sn});if(why!=='timeout'&&why!=='blocked')try{fetch(url).then(r=>track('au',{ev:'http',src:'google',st:r.status,sn}),()=>track('au',{ev:'http',src:'google',st:0,sn}));}catch(e){}/* #641 the HTTP status of the missing sentence */vmMark(rp,lang,slow);
+    if(why!=='blocked'){logIssue('voice',why+' (missing)');MISS.set(url,Date.now());}track('au',Object.assign({ev:'missing',src:'google',why,sn},o));vmMark(rp,lang,slow);
     if(!last){googleSay(t,lang,0,part+1,slow,done);return;}done();};
+  /* #635 a line still missing a minute ago is not asked for again by itself (it was 2 failed requests on every re-say): it lights up at once; a 🔊 tap tries again */
+  if(!again&&MISS.has(url)&&Date.now()-MISS.get(url)<MISS.ms){track('au',{ev:'missing',src:'google',why:'known',sn});vmMark(rp,lang,slow);if(!last){googleSay(t,lang,0,part+1,slow,done);return;}done();return;}
+  const a=new Audio(url);GV.audio=a;let go=false;const t0=Date.now();if(!en&&readHelp().slow){try{a.defaultPlaybackRate=a.playbackRate=.8;}catch(e){}}/* #613 slow: the same recording, played at 0.8 */
+  const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;if(sqOld(done))return drop();track('au',{ev:'fail',src:'google',why,sn,ms:Date.now()-t0});try{a.pause();}catch(e){}GV.audio=null;
+    /* #635 the one retry is a fetch that also reads why the server had no audio (status + its reason: 404 not made, 429 budget, 502 Google),
+       so the log tells a missing line from a slow one (#641 'http' event = its status). A timeout is not retried: a second 8 s wait was
+       16 s of silence. Then the 🔊. */
+    if(again||why==='blocked'||why==='timeout')return miss(why,{});
+    logIssue('voice',why+' (retry)');track('retry',{what:'voice',why});const tok={pause(){}};GV.audio=tok;const t1=Date.now();
+    const back=(st,sv)=>{if(st!==200)track('au',{ev:'http',src:'google',st:typeof st==='number'?st:200,sn});if(GV.audio!==tok)return;GV.audio=null;if(sqOld(done))return done();
+      if(st===200){googleSay(t,lang,1,part,slow,done);return;}miss(why,{st,sv:String(sv||'').slice(0,40),ms:Date.now()-t1});};
+    fetch(url).then(r=>{const ty=r.headers.get('content-type')||'';if(r.ok&&/audio/.test(ty))return back(200);
+      return r.text().then(x=>{let sv=x;try{const j=JSON.parse(x);sv=j.why||j.error||'';}catch(e){}back(r.ok?'type':r.status,r.ok?ty:sv);},()=>back(r.status,''));},()=>back(0,'network'));};
   const tm=setTimeout(()=>{if(!go)fall('timeout');},GV.ms);/* the browser voice only after a retry and a long wait (#36) */
   /* #399 a slow fetch that arrives after the screen changed (or after hush) is not played: the line belongs to an old screen */
   const stale=()=>GV.audio!==a||sqOld(done);const drop=()=>{clearTimeout(tm);try{a.pause();}catch(e){}if(GV.audio===a)GV.audio=null;done();};
