@@ -257,12 +257,26 @@ const { chromium } = require('playwright');
   ok('#426 old save: a bought hat is refunded once (crown 60 + helmet 20), the hero still draws', r.a === 85 && r.b === 85 && !r.hat && r.svg, JSON.stringify(r));
   await p.evaluate(() => window.OREN.showMap());
   ok('no page errors', !errs.length, errs.join(' | '));
-  // #610: the sound choice made on an activity screen is kept after a reload (own page: the save is cleared only once)
-  { const c2 = await b.newContext(L.VIEWPORT); await c2.addInitScript(() => { window.__fast = true; }); const q = await c2.newPage(); await q.goto(L.URL); await L.noCoach(q);
-    await q.evaluate(() => { const O = window.OREN; O.save.story.intro = 1; O.showMap(); O.setScreen('sTal', 'city', () => {}); window.TAL.hudT('בְּדִיקָה', ''); });
-    await q.click('#btnMusic'); await q.click('#btnMusic'); const want = await q.evaluate(() => window.OREN.save.snd);
-    await q.reload(); await L.noCoach(q); const got = await q.evaluate(() => [window.OREN.save.snd, document.querySelector('#btnMusic').title]);
-    ok('#610 the sound choice is kept after a reload', want === 0 && got[0] === 0 && got[1] === 'שֶׁקֶט', want + ' ' + JSON.stringify(got)); await c2.close(); }
+  // #610 music is OFF by default (owner, 27 Nov): a fresh save is 'effects only' (snd 1); an old save with music (snd 2) moves to 1 once
+  // (flag in the save); after that his own choice is kept after a reload. A reload = a new page that starts from the stored save
+  // (a file:// page in a test browser sometimes loses its storage on q.reload(), so the stored text is carried over by hand).
+  { const page = async stored => { const c = await b.newContext(L.VIEWPORT);
+      await c.addInitScript(s => { window.__fast = true; try { localStorage.clear(); if (s) localStorage.setItem('oren4-v1', s); } catch (e) {} }, stored || null);
+      const q = await c.newPage(); await q.goto(L.URL); await L.noCoach(q); return { c, q }; };
+    const st = q => q.evaluate(() => [window.OREN.save.snd, window.OREN.save.sndMig610, document.querySelector('#btnMusic').title]);
+    const reload = async x => { const s = await x.q.evaluate(() => localStorage.getItem('oren4-v1')); await x.c.close(); return page(s); };
+    const tap = async (q, n) => { await q.evaluate(() => { const O = window.OREN; O.showMap(); O.setScreen('sTal', 'city', () => {}); window.TAL.hudT('בְּדִיקָה', ''); });
+      for (let k = 0; k < n; k++) await q.click('#btnMusic'); return q.evaluate(() => window.OREN.save.snd); };
+    let x = await page(); const fresh = await st(x.q);
+    ok('#610 a fresh save starts with no music: effects only (snd 1)', fresh[0] === 1 && fresh[2] === 'רַק צְלִילִים', JSON.stringify(fresh));
+    x = await reload(x); const fresh2 = await st(x.q); ok('#610 a fresh save stays without music after a reload', fresh2[0] === 1, JSON.stringify(fresh2)); await x.c.close();
+    x = await page(JSON.stringify({ v: 4, snd: 2, t: 1, gems: 7, story: { intro: 1 } })); const old = await st(x.q);
+    ok('#610 an old save with music (snd 2) gives effects only (1) after the one-time migration', old[0] === 1 && !!old[1] && (await x.q.evaluate(() => window.OREN.save.gems)) === 7, JSON.stringify(old));
+    const want = await tap(x.q, 2);   // 1 -> 0 -> 2
+    x = await reload(x); const got = await st(x.q);
+    ok('#610 after the migration his own choice (music, 2) is kept after a reload', want === 2 && got[0] === 2 && got[2] === 'מוּזִיקָה וּצְלִילִים', want + ' ' + JSON.stringify(got));
+    const w0 = await tap(x.q, 2); x = await reload(x); const g0 = await st(x.q);   // 2 -> 1 -> 0
+    ok('#610 the sound choice made on an activity screen is kept after a reload (quiet, 0)', w0 === 0 && g0[0] === 0 && g0[2] === 'שֶׁקֶט', JSON.stringify([w0, g0])); await x.c.close(); }
   await b.close();
   L.finish('simplicity', res);
 })();
