@@ -5224,7 +5224,9 @@ function home(){const S0=T.S();
   const pr=S0.prof||{};const st=S0.set;const d=st.noDaily?null:T.dailyEnsure();const q=quest();const nx=d?d.done.findIndex(x=>!x):-1;const pickDay=d&&nx<0&&!d.ch;
   /* Oren, his friend, and one sentence */
   const dayDone=!!(d&&nx<0&&d.claimed&&d.ch&&window.FRIEND);
-  const say=!d?`${T.hello()}, אוֹרֶן! בְּמָה נְשַׂחֵק?`:dayDone?window.FRIEND.homeSay(d):pickDay?'שָׁלוֹם אוֹרֶן! מָה בָּא לְךָ הַיּוֹם?':nx>=0?`${q.e} ${q.a}`:d.claimed?'כָּל הַכָּבוֹד! עַכְשָׁו זְמַן חוֹפְשִׁי 🎈':'סִיַּמְתָּ אֶת הַשְּׁבִיל! בּוֹא נִרְאֶה אֵיךְ נִגְמַר הַסִּפּוּר.';
+  /* #407 the start of the day (no step done yet): the friend remembers yesterday and tells what comes today ('' = no history) */
+  const mem=d&&!d.done.some(Boolean)&&window.STORYMIX&&window.STORYMIX.dayStart?window.STORYMIX.dayStart():'';
+  const say=!d?`${T.hello()}, אוֹרֶן! בְּמָה נְשַׂחֵק?`:dayDone?window.FRIEND.homeSay(d):mem?mem:pickDay?'שָׁלוֹם אוֹרֶן! מָה בָּא לְךָ הַיּוֹם?':nx>=0?`${q.e} ${q.a}`:d.claimed?'כָּל הַכָּבוֹד! עַכְשָׁו זְמַן חוֹפְשִׁי 🎈':'סִיַּמְתָּ אֶת הַשְּׁבִיל! בּוֹא נִרְאֶה אֵיךְ נִגְמַר הַסִּפּוּר.';
   const tl='';
   s.appendChild(h('div','hstage',`${say?`<div class="hbub2" style="--fc:${pr.col||'#4fae4f'}">${say}${tl}</div>`:''}<div class="hrow"><div class="hpair" role="button" aria-label="מָה אֶפְשָׁר לַעֲשׂוֹת כָּאן?"><span class="hav bob">${O.AV()}</span><span class="hpet2 bob" style="animation-delay:-.7s">${T.friend()}</span></div>${window.SHIP?window.SHIP.el():''}</div>`));
   s.querySelector('.hpair').onclick=()=>{sfx.pop(2);if(dayDone&&d.free)window.FRIEND.bonus();else if(window.TOPIC)window.TOPIC.open();else tour();};
@@ -5885,7 +5887,7 @@ const NC=SCRIPT.length,NS=5;
 const STAY=['מָחָר נַמְשִׁיךְ לְסַדֵּר אֶת הַנָּמָל!','מָחָר נַמְשִׁיךְ לְתַקֵּן שְׁעוֹנִים בָּאִי!','מָחָר נַמְשִׁיךְ לְסַדֵּר אוֹתִיּוֹת בָּאִי!','מָחָר נַמְשִׁיךְ לְסַדֵּר פֵּרוֹת בָּאִי!',
  'מָחָר נַמְשִׁיךְ לְדַבֵּר אַנְגְּלִית בָּאִי!','מָחָר נִפְתֹּר עוֹד חִידוֹת בַּמְּעָרָה!','מָחָר נַמְשִׁיךְ לַעֲזֹר לָאוֹפָה!','מָחָר נַמְשִׁיךְ לְהָאִיר אֶת הַלַּיְלָה!',
  'מָחָר נַמְשִׁיךְ לְסַדֵּר אֶת הַסְּפָרִים!','מָחָר נַמְשִׁיךְ לָשׁוּט בָּעֲרָפֶל!','מָחָר נַמְשִׁיךְ לִתְפֹּס אֶת הַמְּבַלְבֵּל!','מָחָר נַמְשִׁיךְ אֶת הַמְּסִבָּה!'];
-const SAIL=c=>c===1?'הַסְּפִינָה שְׁלֵמָה! מָחָר מַתְחִילִים מַסָּע חָדָשׁ.':c===NC?'מָחָר יֵשׁ מְסִבָּה עַל הַסְּפִינָה!':'מָחָר מַפְלִיגִים אֶל '+SCRIPT[c-1].n+'!';
+const SAIL=c=>c===1?'הַסְּפִינָה שְׁלֵמָה, וּמָחָר מַתְחִילִים מַסָּע חָדָשׁ!':c===NC?'מָחָר יֵשׁ מְסִבָּה עַל הַסְּפִינָה!':'מָחָר מַפְלִיגִים אֶל '+SCRIPT[c-1].n+'!';
 const ok=p=>p&&Number.isInteger(p.c)&&Number.isInteger(p.s)&&p.c>=1&&p.c<=NC&&p.s>=1&&p.s<=NS;
 const M={SCRIPT};
 M.pos=()=>{const sv=O.save;if(!ok(sv.mix))sv.mix={c:1,s:1};return sv.mix;};
@@ -5899,9 +5901,35 @@ M.idx=p=>ok(p)?(p.c-1)*NS+p.s:0;
 M.merge=(a,b)=>M.idx(b)>M.idx(a)?{c:b.c,s:b.s}:a;
 /* the day's quest (home, path strip, result card, end of the day) is the ship; a = the home line while the path is on, z = the end of the day */
 const HOME='בּוֹא נַמְשִׁיךְ בַּמַּרְדָּף אַחֲרֵי הַמְּבַלְבֵּל!';
-T.quest=()=>({e:'⛵',k:'⛵',a:HOME,z:M.hint()});
+/* #407 the friend remembers, from the day log (daylog.js save.alog; only missions he finished, 'c'): at the start of the day
+   "Oren, yesterday we <a> and <b>." + what comes today; at the end of the day "Today we <a> and <b>." + the hint for tomorrow.
+   Every line is made of fixed parts (one clip each, U+2063 between them), so the pregen list holds them all. No history -> ''. */
+const SEP='⁣';
+const DID={math:['פָּתַרְנוּ תַּרְגִּילִים בְּחֶשְׁבּוֹן','וּפָתַרְנוּ תַּרְגִּילִים בְּחֶשְׁבּוֹן'],read:['תִּרְגַּלְנוּ קְרִיאָה','וְתִרְגַּלְנוּ קְרִיאָה'],
+ write:['כָּתַבְנוּ מִלִּים','וְכָתַבְנוּ מִלִּים'],stories:['קָרָאנוּ סִפּוּר','וְקָרָאנוּ סִפּוּר'],eng:['לָמַדְנוּ אַנְגְּלִית','וְלָמַדְנוּ אַנְגְּלִית'],
+ think:['פָּתַרְנוּ חִידוֹת','וּפָתַרְנוּ חִידוֹת'],lab:['חָקַרְנוּ בַּמַּעְבָּדָה','וְחָקַרְנוּ בַּמַּעְבָּדָה'],world:['לָמַדְנוּ עַל הָעוֹלָם','וְלָמַדְנוּ עַל הָעוֹלָם'],
+ code:['תִּכְנַתְנוּ בְּמַעְבֶּדֶת הַקּוֹד','וְתִכְנַתְנוּ בְּמַעְבֶּדֶת הַקּוֹד'],art:['צִיַּרְנוּ','וְצִיַּרְנוּ'],music:['נִגַּנּוּ מוּזִיקָה','וְנִגַּנּוּ מוּזִיקָה'],
+ type:['הִקְלַדְנוּ בַּמִּקְלֶדֶת','וְהִקְלַדְנוּ בַּמִּקְלֶדֶת'],mind:['נָשַׁמְנוּ לְאַט','וְנָשַׁמְנוּ לְאַט']};
+const ORD=Object.keys(DID);
+const PLACE=['בַּנָּמָל','בְּאִי הַשְּׁעוֹנִים','בְּאִי הָאוֹתִיּוֹת','בְּאִי הַפֵּרוֹת','בְּאִי הַמִּלִּים בְּאַנְגְּלִית','בִּמְעָרַת הַחִידוֹת','בְּאִי הַמַּאֲפִיָּה',
+ 'בְּאִי הַלַּיְלָה','בְּאִי הַסְּפָרִים','בְּיַם הָעֲרָפֶל','בָּאִי שֶׁלּוֹ'];
+const TODAY=c=>c===NC?'הַיּוֹם חוֹגְגִים עִם הַמְּבַלְבֵּל עַל הַסְּפִינָה!':'הַיּוֹם נְחַפֵּשׂ אֶת הַמְּבַלְבֵּל '+PLACE[c-1]+'!';
+M.DID=DID;M.TODAY=TODAY;
+M.topicOf=id=>{id=String(id);if(id==='math'||/^lv:/.test(id))return 'math';const a=(T.ACT||{})[id];return a&&a.b&&DID[a.b.id]?a.b.id:null;};
+M.byTopic=k=>Object.keys(T.ACT||{}).find(id=>M.topicOf(id)===k);
+M.dayKey=n=>{const d=new Date();d.setDate(d.getDate()+n);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+/* the two topics he did most that day (first done wins a tie), in the fixed order of DID */
+M.did=day=>{const e=(((O.save.alog||{})[day]||{}).e)||[],n={},at={};
+  e.forEach(x=>{if(!Array.isArray(x)||x[6]!=='c')return;const k=M.topicOf(x[1]);if(!k)return;n[k]=(n[k]|0)+1;if(at[k]==null)at[k]=+x[0]||0;});
+  return Object.keys(n).sort((a,b)=>n[b]-n[a]||at[a]-at[b]).slice(0,2).sort((a,b)=>ORD.indexOf(a)-ORD.indexOf(b));};
+const two=ks=>ks.length>1?DID[ks[0]][0]+' '+DID[ks[1]][1]:DID[ks[0]][0];
+M.dayStart=()=>{const k=M.did(M.dayKey(-1));return k.length?'אוֹרֶן, אֶתְמוֹל '+two(k)+'. '+SEP+TODAY(M.pos().c):'';};
+M.dayEnd=()=>{const k=M.did(O.today());return (k.length?'הַיּוֹם '+two(k)+'. '+SEP:'')+M.hint();};
+const memList=()=>{const s=[];ORD.forEach((a,i)=>{s.push([a]);ORD.slice(i+1).forEach(b=>s.push([a,b]));});
+  return [...s.flatMap(k=>['אוֹרֶן, אֶתְמוֹל '+two(k)+'.','הַיּוֹם '+two(k)+'.']),...SCRIPT.map((_,i)=>TODAY(i+1))];};
+T.quest=()=>({e:'⛵',k:'⛵',a:HOME,z:M.dayEnd()});
 T.addSay&&T.addSay(['⛵ '+HOME]);   /* the home screen's clip (#266) */
-M.speakList=()=>[...SCRIPT.flatMap(ch=>ch.sc.flatMap(x=>[x[0],x[1]])),...STAY,...SCRIPT.map((_,i)=>SAIL(i+1)),HOME,'⛵ '+HOME];
+M.speakList=()=>[...SCRIPT.flatMap(ch=>ch.sc.flatMap(x=>[x[0],x[1]])),...STAY,...SCRIPT.map((_,i)=>SAIL(i+1)),HOME,'⛵ '+HOME,...memList()];
 window.STORYMIX=M;
 })();
 
