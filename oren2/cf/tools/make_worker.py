@@ -409,12 +409,14 @@ const AH={'content-type':'audio/mpeg','cache-control':'public, max-age=31536000,
 let verV=null,verAt=0;async function ttsVer(env,fresh){if(fresh||verV==null||Date.now()-verAt>FX_TTL){verV=+(await kvGet(env,'ttsver'))||1;verAt=Date.now();}return verV;}
 const monthKey=()=>'ttsuse:'+new Date().toISOString().slice(0,7);
 /* Daily KV write budget (Workers KV free tier: ~1000 writes a day, shared with the family save). Voice (TTS) writes stop at
-   TTS_DAY_BUDGET (env, default 600 new sentences a day); the family save (api) never looks at it. State: one KV key 'ttsday:YYYY-MM-DD',
+   TTS_DAY_BUDGET (env, default 600 new sentences a day; 5000 with D1, #610); the family save (api) never looks at it. State: one KV key 'ttsday:YYYY-MM-DD',
    written once per batch (pregen, queue) and at most every 5th single sentence. When it is used up /api/tts answers 429
    and the game plays the browser voice for audio that is not made yet. */
-const dayBudget=env=>+env.TTS_DAY_BUDGET||600;
-const GAME_SHARE=100;/* #36: the background (queue, pregen) stops this many before the budget, so a sentence the game meets is still made */
-const bgBudget=env=>dayBudget(env)-GAME_SHARE;
+/* #610 with D1 bound (#71: 100k writes a day) the KV limit is gone: 5000 a day, so the backlog of new sentences is made in a day or two
+   (600 left most sentences unmade for weeks: the game got 429 and stayed silent) */
+const dayBudget=env=>+env.TTS_DAY_BUDGET||(env.DB?5000:600);
+/* #36: the background (queue, pregen) stops this many before the budget, so a sentence the game meets is still made (a tenth, at least 100) */
+const bgBudget=env=>{const b=dayBudget(env);return b-Math.max(100,Math.round(b/10));};
 const dayKey=()=>'ttsday:'+new Date().toISOString().slice(0,10);
 const dayUsed=async env=>+(await kvGet(env,dayKey()))||0;
 const dayPut=(env,n)=>kvPut(env,dayKey(),String(n),{expirationTtl:172800});

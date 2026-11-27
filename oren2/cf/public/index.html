@@ -321,8 +321,8 @@ body:has(#dlg:not([hidden])) .hud{z-index:8}/* #356: back/home stay visible abov
 .wend{display:flex;justify-content:center;margin:6px 0 18px}
 .wcard2.next{box-shadow:0 0 0 5px var(--gold),0 8px 0 rgba(0,0,0,.25);animation:pulse 2s infinite}
 body.inpar #gemc,body.inpar #btnMusic{display:none}
-/* G1: kid activity screens show only back + repeat (title is spoken) */
-body.act #gemc,body.act #btnMusic,body.act #btnHome,body.act .hud-mid .chip,body.act .tpill{display:none!important}
+/* G1: kid activity screens show back + repeat + the music/sound button (title is spoken); #610 owner rule: a way to turn the music off on every screen */
+body.act #gemc,body.act #btnHome,body.act .hud-mid .chip,body.act .tpill{display:none!important}
 @media (max-width:760px){.lch .chb{min-width:84px;height:70px;font-size:28px}.mbo{grid-template-columns:repeat(5,14px)}.mbo .one{width:14px;height:14px}.mbt .rod i{width:13px;height:6px}}
 .flat{display:grid;grid-template-columns:repeat(10,5px);gap:1px;padding:1px;background:rgba(0,0,0,.18)}
 .flat i{width:5px;height:5px;background:var(--c)}
@@ -1197,7 +1197,7 @@ const GUARD={turtle:SPR.turtle,owl:SPR.owl,dwarf:SPR.dwarf,eagle:SPR.eagle,whale
 
 /* ---------- storage: browser + private cloud copy ---------- */
 const KEY='oren4-v1';
-const blank=()=>({v:4,snd:2,t:0,s:{},m:{},seen:{},story:{},rq:[],days:[],ans:0,ok:0,trains:0,music:true,gems:0,av:{hair:'lightbrown',skin:'light',shirt:'black',pants:'olive',pet:'cat'},owned:{},k:{},tc:[],sp:{},made:{}});
+const blank=()=>({v:4,snd:1,sndMig610:1,t:0,s:{},m:{},seen:{},story:{},rq:[],days:[],ans:0,ok:0,trains:0,music:true,gems:0,av:{hair:'lightbrown',skin:'light',shirt:'black',pants:'olive',pet:'cat'},owned:{},k:{},tc:[],sp:{},made:{}});
 let save=blank();
 function migrateOld(o){if(!o||!o.s)return;const mapB={'add-16':'add-boss','sub-15':'sub-boss','mul-15':'mul-boss','div-13':'div-boss','word-10':'word-boss','fin-0':'fin-boss'};
   for(const [k,v] of Object.entries(o.s)){if(mapB[k]){save.s[mapB[k]]=Math.max(save.s[mapB[k]]|0,v|0);continue;}if(ALLU.find(u=>u.id===k&&!u.boss))for(const j of [0,1,2])save.s[k+'-'+j]=Math.max(save.s[k+'-'+j]|0,v|0);}
@@ -1206,7 +1206,7 @@ function migrateOld(o){if(!o||!o.s)return;const mapB={'add-16':'add-boss','sub-1
   if(Object.keys(o.s).length)save.story.intro=1;}
 /* #432 an old or damaged save: a missing field or one of the wrong type (null, a string for a list...) gets its blank value */
 const kindOf=x=>Array.isArray(x)?'a':x===null?'n':typeof x;
-function fixSave(v){const b=blank();if(kindOf(v.snd)!=='number')v.snd=v.music===false?1:2;for(const k in b)if(kindOf(v[k])!==kindOf(b[k]))v[k]=b[k];return v;}
+function fixSave(v){const b=blank();if(kindOf(v.snd)!=='number')v.snd=1;/* #610 music is off by default: effects only; an old save with music moves to effects only once, then his own choice is kept */if(!v.sndMig610){if(v.snd===2)v.snd=1;v.sndMig610=1;}for(const k in b)if(kindOf(v[k])!==kindOf(b[k]))v[k]=b[k];return v;}
 try{const v=JSON.parse(localStorage.getItem(KEY)||'null');if(v&&typeof v==='object'&&v.v===4)save=fixSave(v);else{migrateOld(JSON.parse(localStorage.getItem('oren3-v1')||'null'));const o2=JSON.parse(localStorage.getItem('oren2-v1')||'null');if(o2&&o2.m)for(const [k,v2] of Object.entries(o2.m))save.m[k]=(save.m[k]|0)|(v2|0);}}catch(e){}
 let cloud={ref:null,busy:false,dirty:false,timer:0};
 function mergeIn(o){if(!o||typeof o!=='object')return;
@@ -1337,7 +1337,7 @@ function skipLevel(){const p=play;if(!p||!p.lv)return false;const lv=p.lv;save.s
    event log at once, so the server can tell the parent's panel "no update from the game since HH:MM" (#612) */
 function cloudSave(){if(!cloud.ref)return;cloud.dirty=true;if(Date.now()<(cloud.next||0))return;clearTimeout(cloud.timer);cloud.timer=setTimeout(cloudFlush,1500);}
 async function cloudFlush(){if(!cloud.ref||cloud.busy||!cloud.dirty)return;if(Date.now()<(cloud.next||0))return;cloud.busy=true;cloud.dirty=false;
-  try{const body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;if(JSON.stringify(body).length>200000){save.rq=save.rq.slice(-15);body.rq=save.rq;}if(await cloud.ref.set(body)!=='later'){cloud.fail=0;cloud.next=0;clearTimeout(cloud.rt);}}catch(e){if(FAM.on){const f=cloud.fail|0;track('sync',Object.assign({why:String(e&&e.why||''),n:f,kid:kidHere()?1:0},evSnap()));evFlush('sync');if(!f)logIssue('sync',e&&e.why);if(e&&e.code!=='invalid_argument'){if(f>=4)diagSend();const d=(window.__famRetry!=null?window.__famRetry:5000)*Math.min(12,Math.pow(3,f));cloud.fail=f+1;track('retry',{what:'save',n:f+1,ms:d});cloud.next=Date.now()+d;clearTimeout(cloud.rt);cloud.rt=setTimeout(()=>{cloud.next=0;cloud.dirty=true;FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},d);}}if(e&&e.code==='invalid_argument'){if(!cloud.retried&&save.rq.length>10){cloud.retried=1;save.rq=save.rq.slice(-10);cloud.dirty=true;}else cloud.ref=null;}}
+  try{const body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;delete body.sndMig610;if(JSON.stringify(body).length>200000){save.rq=save.rq.slice(-15);body.rq=save.rq;}if(await cloud.ref.set(body)!=='later'){cloud.fail=0;cloud.next=0;clearTimeout(cloud.rt);}}catch(e){if(FAM.on){const f=cloud.fail|0;track('sync',Object.assign({why:String(e&&e.why||''),n:f,kid:kidHere()?1:0},evSnap()));evFlush('sync');if(!f)logIssue('sync',e&&e.why);if(e&&e.code!=='invalid_argument'){if(f>=4)diagSend();const d=(window.__famRetry!=null?window.__famRetry:5000)*Math.min(12,Math.pow(3,f));cloud.fail=f+1;track('retry',{what:'save',n:f+1,ms:d});cloud.next=Date.now()+d;clearTimeout(cloud.rt);cloud.rt=setTimeout(()=>{cloud.next=0;cloud.dirty=true;FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},d);}}if(e&&e.code==='invalid_argument'){if(!cloud.retried&&save.rq.length>10){cloud.retried=1;save.rq=save.rq.slice(-10);cloud.dirty=true;}else cloud.ref=null;}}
   cloud.busy=false;if(cloud.dirty)cloudSave();updateSaveNote();}
 /* ---------- own-website mode: one private family save at /api/save (no codes or links: every device sees the same progress) ---------- */
 const FAM={id:null,on:false,last:0,sf:0,upT:0,hide:false};
@@ -1352,7 +1352,7 @@ function oldFamId(){let o=null;try{o=localStorage.getItem('oren4-family');}catch
 function famRef(id){const url='/api/save/'+id;return {
   get:async()=>{const r=await famFetch(url,{cache:'no-store'});if(r.status===404)return {exists:false};if(!r.ok)throw new Error('http '+r.status);const sf=+r.headers.get('x-sync-fail')||0;const d=await r.json();return {exists:true,data:()=>d,sf};},
   set:async body=>{const GAP=window.__famGap!=null?window.__famGap:25000;if(Date.now()-FAM.last<GAP&&!FAM.force){cloud.dirty=true;clearTimeout(FAM.tm);FAM.tm=setTimeout(()=>{FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},GAP-(Date.now()-FAM.last));return 'later';}
-    let upT=FAM.upT;try{const cur=await famFetch(url,{cache:'no-store'});if(cur.ok){const cj=await cur.json();upT=+(cj&&cj.upT)||0;mergeIn(cj);body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;}}catch(e){}
+    let upT=FAM.upT;try{const cur=await famFetch(url,{cache:'no-store'});if(cur.ok){const cj=await cur.json();upT=+(cj&&cj.upT)||0;mergeIn(cj);body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;delete body.sndMig610;}}catch(e){}
     /* upT: when Oren's device last uploaded (the panel compares it with the newest failure); another device (the parent's phone) keeps
        the server's value, so its own saves never hide the "no update since" line (#612 review); keepalive only while the page hides (#612: the
        browser allows 64 KB of keepalive requests at once, shared with the event log, so an everyday save could fail at random) */
@@ -1752,7 +1752,7 @@ function setScreen(id,w,back){SQ.scr++;hush();AUTO.scr=Date.now();if(window.HELP
 $('#btnSay').innerHTML=ICON.say;$('#btnMusic').innerHTML=ICON.music;$('#icoStart').innerHTML=ICON.play;
 if(!save.avOren){save.av=Object.assign({},save.av,OREN_LOOK);save.avOren=1;try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}}
 if(hatsBack())try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}
-if(save.snd==null)save.snd=save.music===false?1:2;
+if(save.snd==null)save.snd=1;
 const syncMusic=()=>{const b=$('#btnMusic');b.innerHTML=save.snd===2?ICON.music:save.snd===1?ICON.musicOff:ICON.mute;b.classList.toggle('off',save.snd===0);b.title=['שֶׁקֶט','רַק צְלִילִים','מוּזִיקָה וּצְלִילִים'][save.snd];b.setAttribute('aria-label',b.title);};syncMusic();
 $('#btnMusic').onclick=()=>{save.snd=((save.snd|0)+2)%3;persist();syncMusic();if(save.snd===2)musicStart();else musicStop();sfx.pop(2);};
 $('#btnSay').onclick=()=>VM.say?VM.say():say(sayNow);/* #404 lit: retry the missing line */
