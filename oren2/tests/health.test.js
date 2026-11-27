@@ -202,7 +202,7 @@ const SH = process.env.HSHOTS; if (SH) fs.mkdirSync(SH, { recursive: true });
     await ms().locator('.hmsgsend').click(); await sleep(300);
     const sm = await p.evaluate(() => ({ r: window.TAL.S().set.rem, now: window.HEALTH.clock() }));
     ok('#353 parent sends the text "now", same delivery path as the reminders', sm.r && sm.r.k === 'msg' && sm.r.x === 'אורן, יש לך 2 דקות ואז לאכול <b>' && sm.r.at === sm.now && !sm.r.ok, JSON.stringify(sm));
-    ok('#353 the panel says it waits for the end of the activity', /ממתינה לסוף הפעילות/.test(await ms().textContent()));
+    ok('#353 #617 the panel says it was sent ("נשלח…") until his device shows it', /נשלח…/.test(await ms().textContent()));
     await p.evaluate(() => { window.__msg = window.TAL.S().set.rem; window.TAL.S().set.rem = null; window.OREN.showMap(); }); await sleep(200);
   } else await p.evaluate(x => { window.__msg = { k: 'msg', x }; }, TXT);
   // "now" during an activity: delivered at the next safe point (the end of the activity)
@@ -223,7 +223,7 @@ const SH = process.env.HSHOTS; if (SH) fs.mkdirSync(SH, { recursive: true });
   ok('#413 the face Oren tapped is stored as his answer', await p.evaluate(f => window.TAL.S().set.rem.f === f, face), face);
   if (BUILT) { await p.evaluate(() => window.TAL.parentPanel('rem')); await sleep(300);
     const pt = await p.locator('#sPar .psec', { hasText: 'תזכורת לאורן' }).textContent();
-    ok('#353 the parent sees "said"; #413 and Oren\'s face answer', /נאמרה/.test(pt) && pt.includes('אורן ענה') && pt.includes(face), pt.slice(0, 200));
+    ok('#353 #617 the parent sees "אורן שמע ✓"; #413 and Oren\'s face answer', /אורן שמע ✓/.test(pt) && pt.includes('אורן ענה') && pt.includes(face), pt.slice(0, 200));
     await p.evaluate(() => window.OREN.showMap()); await sleep(300); }
   // ---------- #413: 6 ready one-tap messages, pre-generated audio ----------
   const rd = await p.evaluate(() => { const R = window.HEALTH.readyMsgs(), L = new Set(window.TAL.choiceList()), sp = window.TAL.spk; return { R, nik: R.every(x => /[ְ-ּ]/.test(x)), pre: R.filter(x => !L.has(sp(x))) }; });
