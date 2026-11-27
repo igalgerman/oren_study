@@ -3763,6 +3763,13 @@ svg.tl{width:60px;height:60px;display:block}
 .pdskip{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35)}
 .pdskip .card{max-width:420px;text-align:center}
 .pdsugi .pchip{flex:none;margin:0 6px 0 0}
+/* #429 learned today · #431 the week picture · #430 the question */
+.pdlearn ul{margin:4px 0 0;padding-inline-start:20px}.pdlearn li{margin:2px 0;font-size:15px}
+.pdbars{height:90px;padding-top:4px}
+.pdsplit{display:flex;height:12px;border-radius:6px;overflow:hidden;margin:10px 0 6px;direction:rtl;background:#eee}
+.pdsplit i{display:block;height:100%}
+.pdshs{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px}
+.pdask{font-size:16px;font-weight:700}
 
 /* AGAIN (#39): the home button and the list of big tiles by day */
 .againbtn{display:flex;align-items:center;gap:10px;font-size:22px;font-weight:900;padding:10px 22px;background:#fff;border-bottom:6px solid #3a8fc4;box-shadow:0 5px 0 rgba(0,0,0,.2)}
@@ -11414,6 +11421,20 @@ G.learned=day=>{const e=(((O.realSave||O.save).alog||{})[day]||{}).e||[],out=[];
 /* the friend says it once a day per mission, when the mission starts (daylog.js emits dlBegin) */
 O.on('dlBegin',id=>{const k=G.key(id),F=window.FRIEND;if(!k||!F||!F.goal||O.isParentPlay)return;
   const s=O.save,d=O.today();if(!s.gls||s.gls.d!==d)s.gls={d,i:[]};if(s.gls.i.includes(k))return;s.gls.i.push(k);F.goal(G.line(id));});
+/* #430 one end-of-day question for the parent to ask Oren: a fixed list per topic of the goal table (parent text, no nikud).
+   askOf(day, [[id, o], ...]) picks, for that day, one topic of his finished missions (o 'c' with a goal) and one question of it. */
+G.Q={math:['איזה תרגיל פתרת היום? תראה לי איך','איך אתה בודק שהתשובה נכונה?','מה היה התרגיל הכי קשה היום?'],
+ readg:['איזו מילה קראת היום? תקרא לי אותה','איזו אות למדת היום? איזו מילה מתחילה בה?','תכתוב לי מילה אחת שלמדת היום'],
+ story:['מה למדת מהסיפור? מה קרה בו?','מה היית עושה במקום הגיבור?'],
+ eng:['איזו מילה באנגלית למדת היום?','איך אומרים באנגלית משהו שלמדת היום?'],
+ explore:['מה גילית היום שלא ידעת?','איך פתרת את החידה של היום?'],
+ create:['מה יצרת היום? תספר לי עליו','מה היה הכי כיף ליצור היום?'],
+ calm:['איך הרגשת אחרי התרגיל של השקט?','תראה לי איך נושמים לאט']};
+const qTop=k=>{if(k==='math'||/^(w:|ln-)/.test(k))return 'math';if(/^story-/.test(k))return 'story';if(/^(en|eng)-/.test(k))return 'eng';
+  const P=window.PDAY,t=P&&P.topOf?P.topOf(k):null;return G.Q[t]?t:null;};
+G.askOf=(day,list)=>{const tops=[];(list||[]).forEach(([id,o])=>{const k=o==='c'&&G.key(id);const t=k&&qTop(k);if(t&&!tops.includes(t))tops.push(t);});
+  if(!tops.length)return '';const n=parseInt(String(day).replace(/\D/g,''),10)||0;const q=G.Q[tops[n%tops.length]];return q[Math.floor(n/tops.length)%q.length];};
+G.ask=day=>G.askOf(day,((((O.realSave||O.save).alog||{})[day]||{}).e||[]).filter(x=>x&&x[7]&&x[7].lg).map(x=>[x[1],x[6]]));
 window.GOALS=G;
 })();
 
@@ -11693,6 +11714,24 @@ function sugSec(box,sec){const days=[...Array(7)].map((_,i)=>DL.rows(dayAt(i)));
     if(x.k==='easy'){const id=openOf(x.tp);if(id&&(id==='math'||T.ACT[id])&&!cmds().some(c=>c.k==='know'&&c.a===id))bt('הוא כבר יודע',()=>P.send('know',id));}
     if(x.k==='miss'&&d&&!openOf(x.tp)){const id=pickOf(x.tp,d);if(id)bt('+ להוסיף להיום',()=>P.send('add',id));}
     s.appendChild(r);});}
+/* #429 what he learned on day d: up to 3 lines from the goal table (goals.js, x.lg on his finished lines); none -> hidden */
+function learnSec(box,d,sec){const G=window.GOALS;const L=G&&G.learned?G.learned(d).slice(0,3):[];if(!L.length)return;
+  const s=sec(box,'מה למד היום',`<ul>${L.map(x=>`<li>${x}</li>`).join('')}</ul>`);s.classList.add('pdlearn');}
+/* #431 the week up to day d: 7 bars of play minutes (oldest left, d right) + the shares of math / reading / English from the day log.
+   Pure data (the tests call it): {m: [7 minutes], sh: {math, readg, eng} in % or null}; an empty week -> null. */
+const W3={math:'🧮 חשבון',readg:'📖 קריאה',eng:'🔤 אנגלית'};
+const top3=id=>{id=String(id||'');if(/^(en|eng)-/.test(id))return 'eng';const t=topOf(id);return t==='math'||t==='readg'?t:null;};
+P.week=d=>{const [y,m,dd]=d.split('-').map(Number);const ks=[...Array(7)].map((_,i)=>dayKey(new Date(y,m-1,dd-6+i)));
+  const tm=T.S().time||{};const mins=ks.map(k=>Math.round((tm[k]|0)/60));const c={math:0,readg:0,eng:0};let n=0;
+  ks.forEach(k=>DL.rows(k).forEach(e=>{if('pxsf'.includes(e[6]))return;const t=top3(e[1]);if(t){c[t]++;n++;}}));
+  if(!n&&!mins.some(x=>x))return null;const sh=n?{math:c.math/n*100,readg:c.readg/n*100,eng:c.eng/n*100}:null;return {k:ks,m:mins,sh};};
+const WCOL={math:'#3a8fc4',readg:'#c0392b',eng:'#8e44ad'};
+function weekSec(box,d,sec){const w=P.week(d);if(!w)return;const mx=Math.max(1,...w.m);
+  const bars=w.k.map((k,i)=>{const [y,m,dd]=k.split('-').map(Number);return `<div class="pcol pdwk"><i style="height:${w.m[i]/mx*100}%"></i><small>${'אבגדהוש'[new Date(y,m-1,dd).getDay()]}</small></div>`;}).join('');
+  const sh=w.sh?`<div class="pdsplit">${Object.keys(W3).map(t=>`<i style="width:${w.sh[t]}%;background:${WCOL[t]}"></i>`).join('')}</div><div class="pdshs">${Object.keys(W3).map(t=>`<span class="pdsh"><b style="color:${WCOL[t]}">●</b> ${W3[t]} ${Math.round(w.sh[t])}%</span>`).join('')}</div>`:'';
+  const s=sec(box,'השבוע',`<div class="pchart pdbars">${bars}</div>${sh}`);s.classList.add('pdweek');}
+/* #430 one question to ask him about what he learned that day (goals.js), at the end of the day view; none -> hidden */
+function askSec(box,d){const G=window.GOALS;const q=G&&G.ask?G.ask(d):'';if(q)box.appendChild(h('section','psec pdask',`תשאל אותו: ${q}`));}
 /* the whole day view; opts = {sec, nowTop(el), more()} */
 P.view=(box,opts)=>{const d=P.vd&&P.vd<=today()&&P.vd>=dayAt(13)?P.vd:today();P.vd=d;last={box,opts};box.innerHTML='';const sec=opts.sec;
   const nav=h('div','pdnav');const prev=h('button','pchip pdprev','›');prev.setAttribute('aria-label','יום קודם');prev.disabled=d<=dayAt(13);
@@ -11701,7 +11740,7 @@ P.view=(box,opts)=>{const d=P.vd&&P.vd<=today()&&P.vd>=dayAt(13)?P.vd:today();P.
   nav.append(prev,h('b','pdday',dayName(d)),next);box.appendChild(nav);
   if(d===today()){const nb=h('div','pnow');box.appendChild(nb);opts.nowTop&&opts.nowTop(nb);}
   const sec0=((T.S().time||{})[d]|0);box.appendChild(h('div','pdtot',`⏱️ ${d===today()?'היום':'ביום הזה'}: <b>${Math.floor(sec0/60)} דק׳</b> משחק`));
-  didSec(box,d,sec);if(d===today()){planSec(box,sec);sugSec(box,sec);}strongSec(box,d,sec);};
+  learnSec(box,d,sec);didSec(box,d,sec);if(d===today()){planSec(box,sec);sugSec(box,sec);}strongSec(box,d,sec);weekSec(box,d,sec);askSec(box,d);};
 P.refresh=()=>{if(last&&last.box.isConnected)P.view(last.box,last.opts);};
 })();
 
