@@ -103,6 +103,7 @@ print("ok cloud lanes")
 # ---------- #289: the AI observer runs as a cloud scheduled task; the PC only relays its comment (no claude -p here) ----------
 A.STATE = tmp / "ai_observer.cloud.json"
 A.LAUNCH = lambda *a, **kw: {"ok": True}; A.OWNER_POST = lambda w, q: "url"   # #525: never a real cloud start / owner post here
+OQ.GH = lambda *a, **kw: (0, json.dumps({"comments": []}) if a[:2] == ("issue", "view") else "[]")   # #603: the once-cleanup reads #193
 claude = FakeClaude(out="OBSERVER: never used")
 A.RUN = claude
 # round 2 of #485: gh has no `lastComment` JSON field (rc=1 on every call) and `--json comments` stops at 100. The fakes return
@@ -222,3 +223,43 @@ A.relay(told.append, lambda s: None, t0, gh=NOISSUE, api=API([]))
 A.LAUNCH = LAUNCH(); A.relay(told.append, lambda s: None, t0 + A.RELAY_MIN * 60, gh=NOISSUE, api=API([]))
 assert len(starts) == 2, starts
 print("ok #525 silent -> owner note + hourly cloud fallback")
+
+# ---------- #603: only a line whose fix names 'owner' as the DOER is an owner question; the rest go only to the orchestrator ----------
+REAL = [  # real 27 Nov lines from the ai-observer issue (#528)
+    ("OBSERVER: PRs #557 (#64) and #553 (#53) are still `dirty` -> orchestrator: schedule a rebase on main, or ask the owner the pending question so #53 can move.", False),
+    ("OBSERVER: #53 has no owner reply -> orchestrator: relay the question to the owner channel and drop `ready-for-agent` until he picks.", False),
+    ("OBSERVER: #557 RED -> orchestrator: drop `ready-for-agent` on both; owner: write \"design approved\" on #63/#64 (his decision), then merge #557.", True),
+    ("OBSERVER: PR #531 waits -> owner: merge #531 (or orchestrator: say why it waits).", True),
+    ("OBSERVER: #12 x -> worker: fix it; #53 also waits for the owner's voice answer, so the owner should answer it.", False),
+    ("OBSERVER: #9 x -> owner merges #9", True)]
+for line, want in REAL: assert A.for_owner(line) is want, (line, want)
+assert not A.for_owner("x -> orchestrator: y") and A.for_owner("x -> owner: merge #531")
+A.STATE = tmp / "ai_observer.603.json"; OQ.STATE = tmp / "owner_q.603.json"
+posted = []
+def gh603(*a, **kw):
+    if a[:2] == ("issue", "list"): return 0, json.dumps([{"number": 205, "title": OQ.TITLE}])
+    if a[:2] == ("issue", "view"): return 0, json.dumps({"comments": []})
+    if a[:2] == ("issue", "comment"): posted.append(a[-1]); return 0, "https://github.com/x/y/issues/205#c9\n"
+    return 0, ""
+OQ.GH = gh603; told = []
+A.report(True, "OBSERVER: #1 dirty -> orchestrator: y\nOBSERVER: #531 green -> owner: merge #531", told.append, lambda s: None, 10**7)
+assert len(told) == 1 and "#1 dirty" in told[0] and "#531" in told[0]                     # the orchestrator hears both
+assert len(posted) == 1 and "merge #531" in posted[0] and "#1 dirty" not in posted[0], posted   # one owner question
+# the old wrong ones (window ai-observer, no owner doer) are closed once; owner-doer ones and other windows stay open
+def qc(key, window, text): return {"body": OQ.body(key, window, "QUESTION: " + text), "url": f"u/{key}", "reactionGroups": []}
+OLD = [qc("a" * 12, "ai-observer", "#557 dirty -> orchestrator: rebase, or ask the owner"),
+       qc("b" * 12, "ai-observer", "PR #531 -> owner: merge #531"),
+       qc("c" * 12, "issue-53", "voice -> orchestrator: x"),
+       qc("d" * 12, "ai-observer-1700000000", "QUESTION: cloud AI observer silent since 01:00 - log in again")]
+marks = []
+def gh_old(*a, **kw):
+    if a[:2] == ("issue", "list"): return 0, json.dumps([{"number": 205, "title": OQ.TITLE}])
+    if a[:2] == ("issue", "view"): return 0, json.dumps({"comments": OLD})
+    if a[:2] == ("issue", "comment"): marks.append(a[-1]); return 0, "ok"
+    return 0, ""
+assert A.close_wrong_owner_q(gh_old) == 1
+assert len(marks) == 1 and marks[0].startswith("ANSWERED owner-q:" + "a" * 12) and "#603" in marks[0], marks
+assert A.close_wrong_owner_q(gh_old) == 0 and len(marks) == 1                             # once only
+A.STATE = tmp / "ai_observer.603b.json"
+assert A.close_wrong_owner_q(lambda *a, **kw: (1, "boom")) is None and not A.load_state().get("owner_q_cleaned")   # gh error: retried later
+print("ok #603 owner questions only when the owner is the doer")
