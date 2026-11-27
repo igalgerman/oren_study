@@ -70,6 +70,10 @@ def status(pr, run=remote.sh, since=None):
     line, body = result_from(comments)
     return {"state": "done" if line else "working", "line": line, "body": body}
 
+def fail_red(line, body="", level=""):
+    """A `TEST: FAIL <repro>` -> the red text the #303 FIX loop takes (like a reviewer's VERDICT: FIX)."""
+    return f"VERDICT: FIX tester{f' ({level})' if level else ''} found: {parse_result(line)[1]}\n\n{(body or '')[-3000:]}"
+
 def gate(review, run_tester):
     """Pure order after a review PASS: T0 -> merge; T1+ -> run_tester(level) -> (body, line); PASS -> merge,
     FAIL -> fix (the red text for the #303 loop), no line -> blocked. -> (step, level, text)."""
@@ -78,7 +82,7 @@ def gate(review, run_tester):
     body, line = run_tester(level)
     kind, repro = parse_result(line)
     if kind == "pass": return ("merge", level, line)
-    if kind == "fail": return ("fix", level, f"VERDICT: FIX tester ({level}) found: {repro}\n\n{(body or '')[-3000:]}")
+    if kind == "fail": return ("fix", level, fail_red(line, body, level))
     return ("blocked", level, body or "tester gave no TEST line")
 
 OWNER = re.compile(r"!\[[^\]]*\]\(|<img\b|\bOwner\b")

@@ -842,10 +842,21 @@ def head_verdict(comments, head_time):
     return remote.verdict_from([c.get("body", "") for c in comments if c.get("createdAt", "") >= (head_time or "")])[0]
 
 def pr_resume_info(pj):
-    """Pure: `gh pr view --json number,mergeable,headRefOid,commits,comments` -> {pr, mergeable, verdict, sha}."""
+    """Pure: `gh pr view --json number,mergeable,headRefOid,commits,comments` -> {pr, mergeable, verdict, sha, review, test}.
+    review = the body of the head's VERDICT comment (its TEST level line, #618); test = the head's last `TEST: PASS|FAIL` line."""
     head = max((c.get("committedDate", "") for c in pj.get("commits") or []), default="")
-    return {"pr": pj.get("number"), "mergeable": pj.get("mergeable", ""), "verdict": head_verdict(pj.get("comments") or [], head),
-            "sha": pj.get("headRefOid", "")}
+    since = [c.get("body", "") for c in pj.get("comments") or [] if c.get("createdAt", "") >= head]
+    line, body = remote.verdict_from(since)
+    return {"pr": pj.get("number"), "mergeable": pj.get("mergeable", ""), "verdict": line,
+            "sha": pj.get("headRefOid", ""), "review": body, "test": tester.result_from(since)[0]}
+
+def resume_of(info):
+    """#618: resume_step + the tester: a reviewed head whose tester said `TEST: FAIL` resumes at fix with the repro as the red
+    verdict, never at merge (the merge step itself runs the tester gate when the head has no TEST: PASS). -> (step, stored verdict)."""
+    step = resume_step(info.get("mergeable", ""), info.get("verdict", ""))
+    t = info.get("test", "")
+    if step == "merge" and tester.parse_result(t)[0] == "fail": return "fix", tester.fail_red(t)
+    return step, info.get("verdict", "")
 
 def _resume_file(n, name):
     return RUNS / str(n) / name
@@ -885,7 +896,7 @@ def auto_resume(issues, lookup, set_labels, comment, tell):
         if "blocked" not in L or {"ready-for-human", "manual", "in-progress"} & set(L): continue
         info = lookup(n)
         if not info or not info.get("pr"): continue
-        step = resume_step(info.get("mergeable", ""), info.get("verdict", ""))
+        step, red = resume_of(info)
         if not step: continue
         k = _count(n, "resumes")
         if k >= AUTO_RESUMES:
@@ -894,7 +905,7 @@ def auto_resume(issues, lookup, set_labels, comment, tell):
                 comment(n, f"Runner: auto-resumed {k} times, still blocked; stays blocked + needs-orchestrator (PR #{info['pr']}).")
                 tell(f"#{n} still blocked after {k} auto-resumes (PR #{info['pr']}, next step {step}) - decide: fix by hand, split or close")
             continue
-        set_resume(n, step, info.get("verdict", ""))
+        set_resume(n, step, red)
         _resume_file(n, "resumes").write_text(str(k + 1))
         set_labels(n, add=["ready-for-agent"], remove=["blocked", "needs-orchestrator"])
         comment(n, f"Runner: auto-resume {k + 1}/{AUTO_RESUMES} at {step} (PR #{info['pr']} is open).")
@@ -932,9 +943,9 @@ def open_pr_resumes(chosen, lookup):
         if _resume_file(n, "resume").exists() or pending_answer(n): out.append(c); continue
         info = lookup(n)
         if info and info.get("pr"):
-            step = resume_step(info.get("mergeable", ""), info.get("verdict", ""))
+            step, red = resume_of(info)
             if not step: continue
-            set_resume(n, step, info.get("verdict", ""))
+            set_resume(n, step, red)
         out.append(c)
     return out
 
@@ -1984,6 +1995,15 @@ def process_locked(issue, where="local"):
             pr = find_pr(n)
             if not pr: raise Blocked(f"auto-resume: no open PR for #{n}")
             reviewed["sha"] = gh("pr", "view", str(pr), "--json", "headRefOid", "-q", ".headRefOid")[1].strip()
+            try: hi = pr_resume_info(json.loads(gh("pr", "view", str(pr), "--json", "number,mergeable,headRefOid,commits,comments")[1]))
+            except (ValueError, TypeError, AttributeError): hi = {}
+            if tester.parse_result(hi.get("test", ""))[0] != "pass":   # #618: never merge a T1+ head without a TEST: PASS (auto-resume, #295)
+                since = utc()
+                go, level, ttext = fresh_tester().gate(hi.get("review") or red0 or "", lambda lv: remote_tester(
+                    n, pr, lv, remote.start, lambda: fresh_tester().status(pr, since=since), poll_sleep, time.time, 5400, 60, ended=over))
+                if go == "blocked": raise Blocked(f"tester ({level}): {ttext[:300]}")
+                stat(n, lane, "test_pass" if go == "merge" and level != "T0" else "test_skip" if go == "merge" else "test_fail", level=level)
+                if go == "fix": step, red0 = "fix", ttext                # the #303 FIX loop below, round 1 = this fail
         reviews = []
         for rnd in range(1, FIX_ROUNDS + 2):
             if step in ("resolve", "merge"): break
