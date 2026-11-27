@@ -161,7 +161,8 @@ body:has(#dlg:not([hidden])) .hud{z-index:8}/* #356: back/home stay visible abov
 .dbox .ctl{position:absolute;bottom:-26px;inset-inline-end:20px;display:flex;gap:8px}
 
 /* PLAY */
-.play{width:min(1140px,100%);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:22px;align-items:center}
+.play{width:min(1140px,100%);display:grid;grid-template-columns:minmax(0,1fr);gap:14px;justify-items:center}
+@media (min-width:761px){.play .pad{grid-template-columns:repeat(6,74px)}}/* #8: keypad under the answer slot on desktop and tablet too */
 .play.nopad{grid-template-columns:1fr}
 .left{display:flex;flex-direction:column;align-items:center;gap:12px;min-width:0}
 .talk{display:flex;align-items:center;gap:12px;min-height:56px}
@@ -498,7 +499,7 @@ body.act #gemc,body.act #btnMusic,body.act #btnHome,body.act .hud-mid .chip,body
   .card{padding:14px 16px}.card h2{font-size:25px}.card .stars span svg{width:48px}.card .cs svg{width:200px}
   .kgrid{grid-template-columns:repeat(12,28px);grid-template-rows:repeat(4,28px);background:repeating-linear-gradient(90deg,#7cc35f 0 28px,#74b957 28px 56px)}.kcell{width:28px;height:28px}.kcell svg{max-width:24px;max-height:24px}
   .shop{grid-template-columns:repeat(4,72px)}.opt{font-size:12px}
-  .studio .pv .a svg{width:80px}.studio .pv .p svg{width:60px}.orow h4{width:auto;font-size:17px}.sw{width:34px;height:34px}.hatb{width:46px;height:44px}.hatb svg{width:30px}
+  .studio .pv .a svg{width:80px}.studio .pv .p svg{width:60px}.orow h4{width:auto;font-size:17px}.sw{width:44px;height:44px}.hatb{width:46px;height:44px}.hatb svg{width:30px}
   .optrow button{font-size:17px}.optrow button.big{font-size:26px}
   .final{padding:16px 20px 12px}.final .rl{font-size:20px}.final .cs svg{width:200px}
 }
@@ -1636,7 +1637,7 @@ function addGems(n,fromEl){save.gems=(save.gems|0)+n;
 const app=$('#app');let backTo=null,curWorld=null;
 const wipeEl=$('#wipe');wipeEl.innerHTML='<i></i>'.repeat(70);
 function wipe(){if(window.__fast||RM())return;sfx.whoosh();wipeEl.hidden=false;[...wipeEl.children].forEach((c,i)=>{const r=i/10|0,col=i%10;c.style.animation='none';void c.offsetWidth;c.style.animation='';c.style.animationDelay=((r+col)*22)+'ms';});clearTimeout(wipe.t);wipe.t=setTimeout(()=>wipeEl.hidden=true,720);}
-function setScreen(id,w,back){hush();if(window.HELP)HELP.stop();document.body.classList.toggle('inpar',id==='sPar');document.body.classList.remove('act');window.__noAuto=0;/* leaving a screen stops any reading aloud; the new screen may speak right after */['sStart','sHome','sMap','sWorld','sLearn','sPlay','sKing','sStudio','sTeach','sTable','sFinal','sTal','sPar'].forEach(s=>$('#'+s).hidden=s!==id);$('#hud').hidden=id==='sStart';$('#ov').hidden=true;{const dl=$('#dlg');if(!dl.hidden){dl.hidden=true;dl.innerHTML='';}}/* #356: a story dialog belongs to the screen it was opened on */
+function setScreen(id,w,back){hush();if(window.HELP)HELP.stop();document.body.classList.toggle('inpar',id==='sPar');document.body.classList.remove('act');window.__noAuto=0;/* leaving a screen stops any reading aloud; the new screen may speak right after */['sStart','sHome','sMap','sWorld','sLearn','sPlay','sKing','sStudio','sTeach','sTable','sFinal','sTal','sPar'].forEach(s=>$('#'+s).hidden=s!==id);$('#hud').hidden=id==='sStart';$('#hudMid').innerHTML='';/* #8: no stale label from the last screen */$('#ov').hidden=true;{const dl=$('#dlg');if(!dl.hidden){dl.hidden=true;dl.innerHTML='';}}/* #356: a story dialog belongs to the screen it was opened on */
   if(app.dataset.w!==(w||'meadow')){app.dataset.w=w||'meadow';bgW=app.dataset.w;paintBG(performance.now());}setTheme(THEME_OF[app.dataset.w]||'map');
   pauseOff();if(!ACTIVE_S.includes(id)&&id!=='sStart'&&id!=='sPar')herePut(null);backTo=back||null;$('#btnBack').style.visibility=back?'visible':'hidden';$('#btnBack').innerHTML=back===showMap?ICON.home:ICON.back;$('#screens').scrollTop=0;play=null;stopSpeed();updateGems();wipe();evScreen(id);emit('screen',id,back);pzSync();}
 $('#btnSay').innerHTML=ICON.say;$('#btnMusic').innerHTML=ICON.music;$('#icoStart').innerHTML=ICON.play;
@@ -1683,13 +1684,13 @@ function studio(first,back){setScreen('sStudio','meadow',first?null:(back||showM
     const pv=h('div','pv',`<div class="a bob">${AV()}</div><div class="p bob" style="animation-delay:-1s">${PET().s()}</div>`);
     const rows=h('div','orows');
     const sw=(title,map,key)=>{const r=h('div','orow',`<h4>${title}</h4>`);for(const [k,c] of Object.entries(map)){const b=h('button','sw'+(save.av[key]===k?' sel':''));b.style.background=c;b.setAttribute('aria-label',k);b.onclick=()=>{save.av[key]=k;sfx.pop(2);persist();render();};r.appendChild(b);}return r;};
-    rows.append(sw('שֵׂעָר',HAIR,'hair'),sw('צֶבַע עוֹר',SKIN,'skin'),sw('חֻלְצָה',SHIRT,'shirt'),sw('מִכְנָסַיִם',PANTS,'pants'));
+    rows.append(sw('שֵׂעָר',HAIR,'hair'));if(first)rows.append(sw('צֶבַע עוֹר',SKIN,'skin'));rows.append(sw('חֻלְצָה',SHIRT,'shirt'));/* #8: four rows only (pants dropped; skin on the first visit, hats after it) */
     const hr=h('div','orow','<h4>כּוֹבַע</h4>');
     for(const [k,hat] of Object.entries(HATS)){const own=save.owned[k]||hat.price===0;const b=h('button','hatb'+(save.av.hat===k?' sel':''),sprite(hat.rows.concat(['..HHHHHH..','.HHHHHHHH.','HHSSSSSSHH']),Object.assign({H:HAIR[save.av.hair],S:SKIN[save.av.skin]},hat.pal))+(own?'':`<span class="pr">${SPR.gem}${hat.price}</span>`));
-      b.title=plain(hat.n);b.onclick=()=>{if(!own){if((save.gems|0)<hat.price){b.classList.remove('shake');void b.offsetWidth;b.classList.add('shake');sfx.no();return;}save.gems-=hat.price;save.owned[k]=1;sfx.buy();updateGems(true);}save.av.hat=k;persist();render();};hr.appendChild(b);}
+      b.title=plain(hat.n);b.onclick=()=>{if(!own){if((save.gems|0)<hat.price){b.classList.remove('shake');void b.offsetWidth;b.classList.add('shake');sfx.no();{const n=hat.price-(save.gems|0);say(n===1?'צָרִיךְ עוֹד יַהֲלוֹם אֶחָד':`צָרִיךְ עוֹד ${n} יַהֲלוֹמִים`);}return;}save.gems-=hat.price;save.owned[k]=1;sfx.buy();updateGems(true);}save.av.hat=k;persist();render();};hr.appendChild(b);}
     const pr=h('div','orow','<h4>חָבֵר לַמַּסָּע</h4>');
     for(const [k,p] of Object.entries(PETS)){const b=h('button','hatb'+(save.av.pet===k?' sel':''),p.s());b.title=plain(p.n);b.onclick=()=>{save.av.pet=k;sfx.pop(3);persist();render();};pr.appendChild(b);}
-    rows.append(hr,pr);
+    rows.append(...(first?[pr]:[hr,pr]));
     const nm=h('div','lcap',`הֶחָבֵר שֶׁלְּךָ: ${PET().n}`);
     const go=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=()=>back?back():showMap(first);
     const col=h('div','');col.style.cssText='display:flex;flex-direction:column;align-items:center;gap:10px';col.append(pv,nm);wrap.append(col,rows);s.append(wrap,go);};
@@ -2220,7 +2221,7 @@ function stopSpeed(){clearInterval(speedTimer);speedTimer=0;}
 function speedPool(Wd){const us=Wd.units.filter(u=>!u.boss&&!u.col&&stars(u.id+'-0'));return us.length?us:[Wd.units[0]];}
 function playSpeed(Wd){const pool=speedPool(Wd);const lv={id:'speed-'+Wd.id,type:'speed',u:{name:'אֶתְגָּר מָהִיר',w:Wd},w:Wd,gen:mix(pool.map(u=>u.gen)),n:1};
   playLevel(lv,[lv.gen(0)]);const p=play;p.mode='speed';p.score=0;p.end=Date.now()+60000;if(window.HELP)HELP.stop();$('.hintrow .lsn')&&$('.hintrow .lsn').remove();
-  const top=$('#sPlay .talk');if(top)top.outerHTML=`<div class="btnrow"><div class="timer"><i id="tbar" style="width:100%"></i></div><div class="score" id="score">★ 0</div></div>`;
+  const top=$('#sPlay .talk');if(top)top.outerHTML=`<div class="btnrow"><div class="timer"><i id="tbar" style="width:100%"></i></div></div>`;
   speedHud();stopSpeed();let tl=Date.now();speedTimer=setInterval(()=>{if(play!==p){stopSpeed();return;}const tn=Date.now();if(paused())p.end+=tn-tl;tl=tn;if(paused())return;/* #44 paused: the clock waits */const left=Math.max(0,p.end-Date.now());const b=$('#tbar');if(b)b.style.width=(left/600)+'%';if(left<=0){stopSpeed();finishSpeed();}},250);}
 function speedHud(){const p=play;const s=$('#score');if(s)s.textContent='★ '+(p.score|0);$('#hudMid').innerHTML=`<div class="chip">אֶתְגָּר מָהִיר</div>`;}
 function nextSpeedQ(){const p=play;if(Date.now()>=p.end)return finishSpeed();let q,t=0;do{q=p.lv.gen(0);}while(t++<20&&p.qs.slice(-5).some(x=>qkey(x)===qkey(q)));p.qs.push(q);showQ();speedHud();}
@@ -2640,6 +2641,7 @@ window.OREN.on('tlDone',()=>herePut(null));window.OREN.on('levelDone',()=>herePu
 .tlock{position:fixed;inset:0;z-index:90;display:grid;place-items:center;background:rgba(20,30,50,.72);backdrop-filter:blur(3px);padding:16px}
 .tlock .card{display:flex;flex-direction:column;align-items:center;gap:12px;background:var(--paper);padding:22px 28px;max-width:520px;text-align:center;box-shadow:0 0 0 6px var(--ink),0 14px 0 6px rgba(0,0,0,.3)}
 .tlock h2{margin:0;font-size:32px}.tlock .sub{font-family:var(--read);font-size:22px;line-height:1.6}
+.tlock .bigbtn.tpb{font-size:15px;min-height:44px;padding:6px 12px;background:none;box-shadow:none;outline:0;color:var(--ink-soft);opacity:.8}/* #8: parent button, quiet */
 .tleft{font-size:17px;background:#eef6fb;padding:2px 8px}
 .psel{font-family:var(--font);font-size:15px;padding:4px 6px;max-width:min(420px,70vw)}
 .tdrow{flex-wrap:wrap}.tdrow .pn{width:auto;flex:1;min-width:180px}
@@ -2797,7 +2799,7 @@ button:focus:not(:focus-visible){outline:none}
 .trng::-webkit-slider-thumb{width:40px;height:40px}
 .arrow{border:14px solid transparent;border-left:26px solid #e4572e;border-right:0;transform:translate(-100%,-50%)}
 .cbn{width:min(560px,94vw,calc(100vh - 250px))}
-@media (max-width:760px){#ov .bigbtn.emo{font-size:24px;padding:4px 9px}.orow .sw{width:30px;height:30px}}
+@media (max-width:760px){#ov .bigbtn.emo{font-size:24px;padding:4px 9px}.orow .sw{width:44px;height:44px}}
 /* locked lessons: solid card with a lock, clearly not pressable yet */
 .actc.locked{opacity:1;filter:none;background:#ddd6c6;color:#7b7466;position:relative;box-shadow:inset 0 0 0 3px #c9bfa8}
 .actc.locked::after{content:"🔒";position:absolute;top:6px;inset-inline-start:8px;font-size:18px}
@@ -2953,7 +2955,7 @@ body:has(#dlg:not([hidden])) .toast{top:74px;bottom:auto}
 .frogp{z-index:2}.frogp.hop{animation:hop .35s}@keyframes hop{50%{bottom:46px}}
 .jumps{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;direction:ltr}
 .jb{min-width:84px;height:70px;font-size:30px;font-weight:900;color:#1a0b3d;background:#3cf07a;box-shadow:0 0 14px rgba(60,240,122,.6),0 6px 0 #1b7a3d}
-.jb.back{background:#ffd23f;box-shadow:0 0 14px rgba(255,210,63,.6),0 6px 0 #a07a00}.jb:active{transform:translateY(4px)}
+.jb.back{background:#b9c6d6;box-shadow:0 6px 0 #5f7187}/* #8: '−1' quieter than the forward jumps */.jb:active{transform:translateY(4px)}
 .jinfo{font-weight:800;font-size:19px}.jinfo .over{color:#ffd23f}
 /* sports shared */
 .kmsg{position:absolute;top:10px;left:0;right:0;text-align:center;font-weight:900;font-size:26px;color:#fff;text-shadow:0 0 10px #000;z-index:6}.kmsg.win{color:#ffd23f;font-size:40px;text-shadow:0 0 14px #ffb000}
@@ -3014,7 +3016,7 @@ body:has(#dlg:not([hidden])) .toast{top:74px;bottom:auto}
 .arc.game{min-height:calc(100dvh - 190px)}
 .arc.game{display:flex;flex-direction:column}.arc.game .field{flex:1 1 auto;height:auto;min-height:min(56vh,440px)}
 /* hall */
-.cab small{font-size:15px;opacity:1;color:#efe6ff}.cab .hs.new{color:#ffd23f}
+.cab small{font-size:15px;opacity:1;color:#efe6ff}
 /* mole: more room between rows so labels never touch the hole above */
 .holes{gap:46px 22px}.hole{height:110px}
 .mole .tag{font-size:20px;padding:1px 7px}
@@ -3076,7 +3078,7 @@ body.hlocked #ov{position:fixed;z-index:100}
 @keyframes hstretch{0%,100%{transform:scaleY(1)}50%{transform:scaleY(1.22) scaleX(.92)}}
 .hcards{display:flex;gap:16px;justify-content:center;width:100%}
 .hcards .dcard{width:200px;min-height:160px}
-.hone{background:none;font-size:18px;font-weight:800;text-decoration:underline;color:var(--ink-soft);padding:6px 10px}
+.hone{display:inline-flex;align-items:center;gap:6px;min-height:44px;background:#fff;font-size:18px;font-weight:800;color:var(--ink);padding:6px 14px;box-shadow:inset -3px -3px 0 rgba(0,0,0,.12),0 3px 0 rgba(0,0,0,.2)}
 .hpar{background:none;font-size:13px;color:var(--ink-soft);opacity:.75;padding:4px 8px}
 .hrest{position:relative}.hrest>*:not(.hmoon){filter:saturate(.3);opacity:.75}
 .hmoon{position:absolute;top:6px;left:6px;background:#2d3a5a;color:#fff1a8;font-size:13px;font-weight:800;padding:2px 8px;border-radius:12px;white-space:nowrap;pointer-events:none}
@@ -3821,10 +3823,12 @@ function openGroup(g){KEY=null;O.setScreen('sTal','valley',openHub);O.hud('');O.
 /* the activities a building shows: the ones already tried + new ones up to 4 (at least one new), so the rest open gradually; the parent's "all open" shows them all */
 function menuActs(b){const list=b.acts.filter(a=>(!a.avail||a.avail())&&!actOff(a.id)&&!a.noMenu);if(S().set.all)return list;
   const tried=a=>!!(S().tl[a.id]||{}).n;let k=Math.max(1,4-list.filter(tried).length);return list.filter(a=>tried(a)||k-->0);}
-function openBuilding(b){KEY=null;const gg=groupOf(b);O.setScreen('sTal',b.bg,visB(gg).length>1?()=>openGroup(gg):openHub);O.hud('');const say=spk(b.name+(b.blurb?'. '+b.blurb:''));O.sayNow=say;const s=$('#sTal');s.innerHTML='';
+function openBuilding(b){KEY=null;const gg=groupOf(b);const up=visB(gg).length>1?()=>openGroup(gg):openHub;const ma=menuActs(b);
+  if(ma.length===1){ma[0].run(up);return;}/* #8: a building with one activity opens it straight away (no extra tap) */
+  O.setScreen('sTal',b.bg,up);O.hud('');const say=spk(b.name+(b.blurb?'. '+b.blurb:''));O.sayNow=say;const s=$('#sTal');s.innerHTML='';
   s.appendChild(h('div','whead',`<span class="gd">${b.icon()}</span><h1>${b.name}</h1>`));
   const grid=h('div','acts');
-  menuActs(b).forEach(a=>{const st=actStars(a.id);const c=h('button','actc',`<span class="ai">${a.icon()}</span><span class="an">${a.name}</span><span class="st">${[0,1,2].map(k=>k<st?SPR.star:SPR.starOff).join('')}</span>`);
+  ma.forEach(a=>{const st=actStars(a.id);const c=h('button','actc',`<span class="ai">${a.icon()}</span><span class="an">${a.name}</span><span class="st">${[0,1,2].map(k=>k<st?SPR.star:SPR.starOff).join('')}</span>`);
     c.onclick=()=>{sfx.pop(2);a.run(()=>openBuilding(b));};grid.appendChild(c);});
   s.appendChild(grid);if(b.blurb)setTimeout(()=>{if(grid.isConnected)O.say(say);},D(400));}
 
@@ -4836,7 +4840,7 @@ function unlock(happy){if(lockEl){lockEl.remove();lockEl=null;}document.body.cla
 function timeUp(kind){if(lockEl&&lockEl.isConnected)return;endGrace();O.hush&&O.hush();O.musicStop();const n=doneN();lockKind=kind;const pr=T.S().prof||{};
   const head=kind==='bed'?'זְמַן לָנוּחַ':kind==='done'?'סִיַּמְתָּ אֶת הַמְּשִׂימוֹת שֶׁל הַיּוֹם!':'הַזְּמַן שֶׁל הַיּוֹם נִגְמַר';
   lockEl=h('div','tlock',`<div class="card"><div class="callp bob">${T.friend()}</div><h2>${head}</h2><div class="sub">כָּל הַכָּבוֹד הַיּוֹם, אוֹרֶן!${n?` סִיַּמְתָּ ${n===1?'מְשִׂימָה אַחַת':`${n} מְשִׂימוֹת`}.`:''}<br>הַמֹּחַ וְהַגּוּף צְרִיכִים גַּם לָנוּחַ וּלְשַׂחֵק בַּחוּץ.<br>הַכֹּל שָׁמוּר. נִתְרָאֶה מָחָר 👋</div></div>`);
-  const row=h('div','btnrow');const pb=h('button','bigbtn plain sm','🔒 <span>הוֹרֶה: עוֹד זְמַן</span>');pb.onclick=()=>login(()=>{const ov=$('#ov');ov.hidden=false;ov.innerHTML=kind==='done'?'<div class="card"><h2>להמשיך לשחק היום?</h2></div>':'<div class="card"><h2>כמה להוסיף להיום?</h2></div>';const r=h('div','btnrow');
+  const row=h('div','btnrow');const pb=h('button','bigbtn plain sm tpb','🔒 <span>להורים</span>');/* #8: a small parent button, not a kid button */pb.onclick=()=>login(()=>{const ov=$('#ov');ov.hidden=false;ov.innerHTML=kind==='done'?'<div class="card"><h2>להמשיך לשחק היום?</h2></div>':'<div class="card"><h2>כמה להוסיף להיום?</h2></div>';const r=h('div','btnrow');
       const give=f=>{f();if(kind==='bed')LIM().bedOff=O.today();if(kind==='done')LIM().doneOff=O.today();pnow();ov.hidden=true;parentOn=false;unlock(false);};
       if(kind==='done'){const b=h('button','bigbtn sm','<span>להמשיך לשחק היום</span>');b.onclick=()=>give(()=>{});r.appendChild(b);}
       else[[10,'+10 דק׳'],[20,'+20 דק׳'],[30,'+30 דק׳']].forEach(([v,n2])=>{const b=h('button','bigbtn sm','<span>'+n2+'</span>');b.onclick=()=>give(()=>grant(v));r.appendChild(b);});
@@ -4990,11 +4994,11 @@ const TOG=[
  {k:'hide',e:'🧸',n:'חַם אוֹ קַר',kid:'אַבָּא אוֹ אִמָּא מַחְבִּיאִים צַעֲצוּעַ, וְאַתָּה מְחַפֵּשׂ. הֵם אוֹמְרִים "חַם" אוֹ "קַר". אַחַר כָּךְ אַתָּה מַחְבִּיא!',par:'מחביאים צעצוע ואורן מחפש לפי "חם / קר". אחר כך הוא מחביא ואתם מחפשים.'}];
 /* ---------- real-world missions: one when a math world or a city building is finished ---------- */
 const RW={
- num:{e:'🔟',t:'אֱסֹף דְּבָרִים קְטַנִּים, וְסַדֵּר אוֹתָם בַּעֲרֵמוֹת שֶׁל עֶשֶׂר. כַּמָּה עֲרֵמוֹת יָצְאוּ?'},
- add:{e:'🍴',t:'סְפֹר כַּמָּה כַּפּוֹת וְכַמָּה מַזְלְגוֹת יֵשׁ בַּמְּגֵרָה. כַּמָּה יֵשׁ בְּיַחַד?'},
- sub:{e:'🧸',t:'שִׂים 10 צַעֲצוּעִים עַל הַשָּׁטִיחַ, וְהַחְבֵּא 3. כַּמָּה נִשְׁאֲרוּ?'},
+ num:{e:'🔟',t:'אֱסֹף דְּבָרִים קְטַנִּים, וְסַדֵּר אוֹתָם בַּעֲרֵמוֹת שֶׁל עֶשֶׂר. כַּמָּה עֲרֵמוֹת יָצְאוּ? סַפֵּר לְאַבָּא אוֹ לְאִמָּא!'},
+ add:{e:'🍴',t:'סְפֹר כַּמָּה כַּפּוֹת וְכַמָּה מַזְלְגוֹת יֵשׁ בַּמְּגֵרָה. כַּמָּה יֵשׁ בְּיַחַד? סַפֵּר לְאַבָּא אוֹ לְאִמָּא!'},
+ sub:{e:'🧸',t:'שִׂים 10 צַעֲצוּעִים עַל הַשָּׁטִיחַ, וְהַחְבֵּא 3. כַּמָּה נִשְׁאֲרוּ? סַפֵּר לְאַבָּא אוֹ לְאִמָּא!'},
  mul:{e:'🪑',t:'סְפֹר אֶת הָרַגְלַיִם שֶׁל הַכִּסְאוֹת בַּמִּטְבָּח. לְכָל כִּסֵּא יֵשׁ 4!'},
- div:{e:'✏️',t:'חַלֵּק 12 עֶפְרוֹנוֹת שָׁוֶה בְּשָׁוֶה לְ-3 עֲרֵמוֹת. כַּמָּה יֵשׁ בְּכָל עֲרֵמָה?'},
+ div:{e:'✏️',t:'חַלֵּק 12 עֶפְרוֹנוֹת שָׁוֶה בְּשָׁוֶה לְ-3 עֲרֵמוֹת. כַּמָּה יֵשׁ בְּכָל עֲרֵמָה? סַפֵּר לְאַבָּא אוֹ לְאִמָּא!'},
  word:{e:'💬',t:'הַמְצֵא תַּרְגִּיל-סִפּוּר עַל הַבַּיִת שֶׁלְּךָ, וּשְׁאַל אֶת אַבָּא אוֹ אִמָּא!'},
  time:{e:'🕰️',t:'מְצָא שָׁעוֹן בַּבַּיִת. מָה הַשָּׁעָה עַכְשָׁו?'},
  fin:{e:'🏰',t:'סַפֵּר לְמִישֶׁהוּ בַּבַּיִת אֵיךְ נִצַּחְתָּ בַּטִּירָה!'},
@@ -5211,7 +5215,7 @@ function openArcade(back){if(back)back0=back;back0=back0||O.showMap;T.setKey(nul
   const s=$('#sTal');s.innerHTML='';const hall=h('div','arc');
   hall.appendChild(h('div','arch',`<span class="neon">🕹️ הָאַרְקֵייד</span>`));
   const g=h('div','cabs');
-  GAMES.forEach((gm,i)=>{const best=a.best[gm.id]|0;const played=!!(T.S().tl['arc-'+gm.id]||{}).n;const tag=best?`<span class="hs">🏆 שִׂיא: ${best}</span>`:played?'':'<span class="hs new">✨ חָדָשׁ</span>';const c=h('button','cab',`<span class="scr"><span class="ce">${gm.e}</span></span><b>${gm.n}</b><small>${gm.d}</small>${tag}`);
+  GAMES.forEach((gm,i)=>{const best=a.best[gm.id]|0;const tag=best?`<span class="hs">🏆 שִׂיא: ${best}</span>`:'';/* #8: no "✨ new" on every cabinet */const c=h('button','cab',`<span class="scr"><span class="ce">${gm.e}</span></span><b>${gm.n}</b><small>${gm.d}</small>${tag}`);
     c.style.setProperty('--nc',gm.c);c.style.animationDelay=(i*.08)+'s';c.onclick=()=>{sfx.pop(3);start(gm.id);};g.appendChild(c);});
   hall.appendChild(g);
   s.appendChild(hall);later(()=>{const c=g.querySelector('.cab');if(c&&T.intro)T.intro('i-arc',c,'זֶה הָאַרְקֵייד! מִשְׂחָקִים קְצָרִים וּמְהִירִים, סְתָם בִּשְׁבִיל הַכֵּיף. בְּחַר אֶחָד!');});}
@@ -5622,7 +5626,7 @@ function goDom(dm){close();sfx.pop&&sfx.pop(3);
 H.goDom=goDom;
 function chooser(cls,dm,head,sub,oneMore){const r=day();const el=lock('htopic '+cls,`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">🌙</span></div><h2>${head}</h2><div class="sub">${sub}</div>`);
   const row=h('div','hcards');cards(dm).forEach(d=>{const b=h('button','dcard',`<span class="dic"><span>${d.e}</span></span><b>${d.n}</b>`);b.style.setProperty('--dc',d.c);b.onclick=()=>goDom(d.id);row.appendChild(b);});el.firstChild.appendChild(row);
-  if(!r.one[dm]){const o=h('button','hone','<span>עוֹד אֶחָד קָטָן</span>');o.onclick=()=>{r.one[dm]=1;O.persist();sfx.pop&&sfx.pop(1);close();oneMore&&oneMore();};el.firstChild.appendChild(o);}
+  if(!r.one[dm]){const o=h('button','hone','<span aria-hidden="true">⏭️</span><span>עוֹד אֶחָד קָטָן</span>');o.onclick=()=>{r.one[dm]=1;O.persist();sfx.pop&&sfx.pop(1);close();oneMore&&oneMore();};el.firstChild.appendChild(o);}
   sfx.star&&sfx.star(0);say(head+' '+sub);return el;}
 function showTopic(dm){const r=day(),d=DOM(dm);if(!r.rest[dm]){r.rest[dm]=r.lt[dm]||dm;O.persist();}
   const head=dm==='arcade'?'שִׂחַקְנוּ הַמּוֹן בָּאַרְקֵייד הַיּוֹם!':`עָשִׂינוּ הַמּוֹן ${d.w} הַיּוֹם!`;
@@ -6313,7 +6317,7 @@ const W_RAW={
 כַּד|כד|home|🏺|jug
 אָח|אח|family|-|brother
 הַר|הר|nature|mount|mountain
-תָּו|תו|music|note|note
+תָּו|תו|music|-|note
 נַ-עַל|נעל|clothes|shoe|shoe
 שַׁ-עַר|שער|sport|🥅|goal
 אַ-בָּא|אבא|family|👨|dad

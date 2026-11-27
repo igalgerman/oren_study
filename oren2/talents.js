@@ -135,10 +135,12 @@ function openGroup(g){KEY=null;O.setScreen('sTal','valley',openHub);O.hud('');O.
 /* the activities a building shows: the ones already tried + new ones up to 4 (at least one new), so the rest open gradually; the parent's "all open" shows them all */
 function menuActs(b){const list=b.acts.filter(a=>(!a.avail||a.avail())&&!actOff(a.id)&&!a.noMenu);if(S().set.all)return list;
   const tried=a=>!!(S().tl[a.id]||{}).n;let k=Math.max(1,4-list.filter(tried).length);return list.filter(a=>tried(a)||k-->0);}
-function openBuilding(b){KEY=null;const gg=groupOf(b);O.setScreen('sTal',b.bg,visB(gg).length>1?()=>openGroup(gg):openHub);O.hud('');const say=spk(b.name+(b.blurb?'. '+b.blurb:''));O.sayNow=say;const s=$('#sTal');s.innerHTML='';
+function openBuilding(b){KEY=null;const gg=groupOf(b);const up=visB(gg).length>1?()=>openGroup(gg):openHub;const ma=menuActs(b);
+  if(ma.length===1){ma[0].run(up);return;}/* #8: a building with one activity opens it straight away (no extra tap) */
+  O.setScreen('sTal',b.bg,up);O.hud('');const say=spk(b.name+(b.blurb?'. '+b.blurb:''));O.sayNow=say;const s=$('#sTal');s.innerHTML='';
   s.appendChild(h('div','whead',`<span class="gd">${b.icon()}</span><h1>${b.name}</h1>`));
   const grid=h('div','acts');
-  menuActs(b).forEach(a=>{const st=actStars(a.id);const c=h('button','actc',`<span class="ai">${a.icon()}</span><span class="an">${a.name}</span><span class="st">${[0,1,2].map(k=>k<st?SPR.star:SPR.starOff).join('')}</span>`);
+  ma.forEach(a=>{const st=actStars(a.id);const c=h('button','actc',`<span class="ai">${a.icon()}</span><span class="an">${a.name}</span><span class="st">${[0,1,2].map(k=>k<st?SPR.star:SPR.starOff).join('')}</span>`);
     c.onclick=()=>{sfx.pop(2);a.run(()=>openBuilding(b));};grid.appendChild(c);});
   s.appendChild(grid);if(b.blurb)setTimeout(()=>{if(grid.isConnected)O.say(say);},D(400));}
 
@@ -1150,7 +1152,7 @@ function unlock(happy){if(lockEl){lockEl.remove();lockEl=null;}document.body.cla
 function timeUp(kind){if(lockEl&&lockEl.isConnected)return;endGrace();O.hush&&O.hush();O.musicStop();const n=doneN();lockKind=kind;const pr=T.S().prof||{};
   const head=kind==='bed'?'זְמַן לָנוּחַ':kind==='done'?'סִיַּמְתָּ אֶת הַמְּשִׂימוֹת שֶׁל הַיּוֹם!':'הַזְּמַן שֶׁל הַיּוֹם נִגְמַר';
   lockEl=h('div','tlock',`<div class="card"><div class="callp bob">${T.friend()}</div><h2>${head}</h2><div class="sub">כָּל הַכָּבוֹד הַיּוֹם, אוֹרֶן!${n?` סִיַּמְתָּ ${n===1?'מְשִׂימָה אַחַת':`${n} מְשִׂימוֹת`}.`:''}<br>הַמֹּחַ וְהַגּוּף צְרִיכִים גַּם לָנוּחַ וּלְשַׂחֵק בַּחוּץ.<br>הַכֹּל שָׁמוּר. נִתְרָאֶה מָחָר 👋</div></div>`);
-  const row=h('div','btnrow');const pb=h('button','bigbtn plain sm','🔒 <span>הוֹרֶה: עוֹד זְמַן</span>');pb.onclick=()=>login(()=>{const ov=$('#ov');ov.hidden=false;ov.innerHTML=kind==='done'?'<div class="card"><h2>להמשיך לשחק היום?</h2></div>':'<div class="card"><h2>כמה להוסיף להיום?</h2></div>';const r=h('div','btnrow');
+  const row=h('div','btnrow');const pb=h('button','bigbtn plain sm tpb','🔒 <span>להורים</span>');/* #8: a small parent button, not a kid button */pb.onclick=()=>login(()=>{const ov=$('#ov');ov.hidden=false;ov.innerHTML=kind==='done'?'<div class="card"><h2>להמשיך לשחק היום?</h2></div>':'<div class="card"><h2>כמה להוסיף להיום?</h2></div>';const r=h('div','btnrow');
       const give=f=>{f();if(kind==='bed')LIM().bedOff=O.today();if(kind==='done')LIM().doneOff=O.today();pnow();ov.hidden=true;parentOn=false;unlock(false);};
       if(kind==='done'){const b=h('button','bigbtn sm','<span>להמשיך לשחק היום</span>');b.onclick=()=>give(()=>{});r.appendChild(b);}
       else[[10,'+10 דק׳'],[20,'+20 דק׳'],[30,'+30 דק׳']].forEach(([v,n2])=>{const b=h('button','bigbtn sm','<span>'+n2+'</span>');b.onclick=()=>give(()=>grant(v));r.appendChild(b);});
@@ -1304,11 +1306,11 @@ const TOG=[
  {k:'hide',e:'🧸',n:'חַם אוֹ קַר',kid:'אַבָּא אוֹ אִמָּא מַחְבִּיאִים צַעֲצוּעַ, וְאַתָּה מְחַפֵּשׂ. הֵם אוֹמְרִים "חַם" אוֹ "קַר". אַחַר כָּךְ אַתָּה מַחְבִּיא!',par:'מחביאים צעצוע ואורן מחפש לפי "חם / קר". אחר כך הוא מחביא ואתם מחפשים.'}];
 /* ---------- real-world missions: one when a math world or a city building is finished ---------- */
 const RW={
- num:{e:'🔟',t:'אֱסֹף דְּבָרִים קְטַנִּים, וְסַדֵּר אוֹתָם בַּעֲרֵמוֹת שֶׁל עֶשֶׂר. כַּמָּה עֲרֵמוֹת יָצְאוּ?'},
- add:{e:'🍴',t:'סְפֹר כַּמָּה כַּפּוֹת וְכַמָּה מַזְלְגוֹת יֵשׁ בַּמְּגֵרָה. כַּמָּה יֵשׁ בְּיַחַד?'},
- sub:{e:'🧸',t:'שִׂים 10 צַעֲצוּעִים עַל הַשָּׁטִיחַ, וְהַחְבֵּא 3. כַּמָּה נִשְׁאֲרוּ?'},
+ num:{e:'🔟',t:'אֱסֹף דְּבָרִים קְטַנִּים, וְסַדֵּר אוֹתָם בַּעֲרֵמוֹת שֶׁל עֶשֶׂר. כַּמָּה עֲרֵמוֹת יָצְאוּ? סַפֵּר לְאַבָּא אוֹ לְאִמָּא!'},
+ add:{e:'🍴',t:'סְפֹר כַּמָּה כַּפּוֹת וְכַמָּה מַזְלְגוֹת יֵשׁ בַּמְּגֵרָה. כַּמָּה יֵשׁ בְּיַחַד? סַפֵּר לְאַבָּא אוֹ לְאִמָּא!'},
+ sub:{e:'🧸',t:'שִׂים 10 צַעֲצוּעִים עַל הַשָּׁטִיחַ, וְהַחְבֵּא 3. כַּמָּה נִשְׁאֲרוּ? סַפֵּר לְאַבָּא אוֹ לְאִמָּא!'},
  mul:{e:'🪑',t:'סְפֹר אֶת הָרַגְלַיִם שֶׁל הַכִּסְאוֹת בַּמִּטְבָּח. לְכָל כִּסֵּא יֵשׁ 4!'},
- div:{e:'✏️',t:'חַלֵּק 12 עֶפְרוֹנוֹת שָׁוֶה בְּשָׁוֶה לְ-3 עֲרֵמוֹת. כַּמָּה יֵשׁ בְּכָל עֲרֵמָה?'},
+ div:{e:'✏️',t:'חַלֵּק 12 עֶפְרוֹנוֹת שָׁוֶה בְּשָׁוֶה לְ-3 עֲרֵמוֹת. כַּמָּה יֵשׁ בְּכָל עֲרֵמָה? סַפֵּר לְאַבָּא אוֹ לְאִמָּא!'},
  word:{e:'💬',t:'הַמְצֵא תַּרְגִּיל-סִפּוּר עַל הַבַּיִת שֶׁלְּךָ, וּשְׁאַל אֶת אַבָּא אוֹ אִמָּא!'},
  time:{e:'🕰️',t:'מְצָא שָׁעוֹן בַּבַּיִת. מָה הַשָּׁעָה עַכְשָׁו?'},
  fin:{e:'🏰',t:'סַפֵּר לְמִישֶׁהוּ בַּבַּיִת אֵיךְ נִצַּחְתָּ בַּטִּירָה!'},
