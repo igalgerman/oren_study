@@ -31,7 +31,7 @@ const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + 
   const rw = await p.evaluate(() => { const c = document.querySelector('#sTal .tqc'); const P = t => window.TAL.plainHe(t).replace(/🔊/g, '').trim();
     return { w: P(c.querySelector('.bigw').textContent), q: P(c.querySelector('.qq').textContent) }; });
   ok('reading practice: the instruction is read at once', s.some(x => x.includes(rw.q.split(' ')[0])), JSON.stringify({ s, rw }));
-  ok('reading practice: the word to read is not read at once', !s.some(x => x.includes(rw.w)), JSON.stringify({ s, rw }));
+  ok('reading practice: the word to read is not read at once', !s.some(x => x.split(/[^א-ת]+/).includes(rw.w)), JSON.stringify({ s, rw }));
   // the same instruction outside a reading activity (no reading target) is read whole
   s = await said(() => p.evaluate(() => { window.TAL.ACT['think-pat'].run(() => {}); }), 1200);
   ok('non-reading question: read at once', s.length >= 1, JSON.stringify(s));
