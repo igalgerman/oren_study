@@ -5,7 +5,7 @@
    gives a short hint about tomorrow. A save without mix (or a broken one) starts at chapter 1, scene 1.
      STORYMIX.pos()       {c, s} where the story is now (the scene still to play)
      STORYMIX.scene()     {c, s, n: chapter name, open, close, topic, item}
-     STORYMIX.advance()   one scene on (after 12.5 the story starts again at 1.1)
+     STORYMIX.advance()   one scene on (after 12.5 the story starts again at 1.1); the end of a chapter: O.bigCelebration() (#427)
      STORYMIX.hint()      the line for tomorrow (said at the end of the day)
      STORYMIX.speakList() every line of the script (for the voice pregen) */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;
@@ -94,7 +94,8 @@ const M={SCRIPT};
 M.pos=()=>{const sv=O.save;if(!ok(sv.mix))sv.mix={c:1,s:1};return sv.mix;};
 M.scene=(p)=>{p=p||M.pos();const ch=SCRIPT[p.c-1],x=ch.sc[p.s-1];return {c:p.c,s:p.s,n:ch.n,open:x[0],close:x[1],topic:x[2],item:x[3]};};
 M.next=p=>{p=p||M.pos();return p.s<NS?{c:p.c,s:p.s+1}:{c:p.c<NC?p.c+1:1,s:1};};
-M.advance=()=>{O.save.mix=M.next();O.persist();return O.save.mix;};
+/* #427 the last scene of a chapter ends with the big celebration (confetti + music); every other mission has the calm one */
+M.advance=()=>{const p=M.pos();O.save.mix=M.next(p);O.persist();if(p.s===NS&&O.bigCelebration)O.bigCelebration();return O.save.mix;};
 /* said at the end of the day: the story is already at the scene of tomorrow */
 M.hint=()=>{const p=M.pos();return p.s===1?SAIL(p.c):STAY[p.c-1];};
 /* the family save: the device that is further on in the story wins */
@@ -128,8 +129,23 @@ M.dayStart=()=>{const k=M.did(M.dayKey(-1));return k.length?'אוֹרֶן, אֶ�
 M.dayEnd=()=>{const k=M.did(O.today());return (k.length?'הַיּוֹם '+two(k)+'. '+SEP:'')+M.hint();};
 const memList=()=>{const s=[];ORD.forEach((a,i)=>{s.push([a]);ORD.slice(i+1).forEach(b=>s.push([a,b]));});
   return [...s.flatMap(k=>['אוֹרֶן, אֶתְמוֹל '+two(k)+'.','הַיּוֹם '+two(k)+'.']),...SCRIPT.map((_,i)=>TODAY(i+1))];};
+/* #423 one English word per scene: the next word of the English program (english2.js, the word themes in their order) that he
+   has not met yet. It stays the scene's word (save.mixs = {i: the scene's index, w}) until the scene ends. Teaching it puts it into the English skill model
+   (save.en2, box 0, due tomorrow); save.mixw = {word: the day the story taught it}. When such a word is due again (en2), it comes
+   back in a later scene ("remember? ...") and its next day moves by en2's own intervals (INT by box), so it is spaced. */
+const E2=()=>window.ENGLISH2;
+M.WORDS=()=>E2()?E2().LEVELS[0].units.flatMap(u=>u.items).map(k=>k.slice(2)):[];
+M.wordSay=w=>w+' זֶה '+E2().WORD[w].he+'.';
+M.backSay=w=>'זוֹכֵר? '+M.wordSay(w);
+M.word=()=>{const i=M.idx(M.pos()),E=E2(),sv=O.save;if(!E)return null;const k=sv.mixs;if(k&&k.i===i&&E.WORD[k.w])return k.w;
+  const w=M.WORDS().find(x=>!E.seen(sv,'v:'+x))||null;if(w){sv.mixs={i,w};O.persist();}return w;};
+M.lead=()=>{const sc=M.scene(),E=E2(),out=[sc.open];if(!E)return sc.open;const sv=O.save,d=E.day(),i=E.st(sv).i,mw=sv.mixw=sv.mixw||{};
+  const w=M.word();if(w){if(!i['v:'+w])i['v:'+w]=[0,d+1];if(mw[w]==null)mw[w]=d;out.push(M.wordSay(w));}
+  const back=Object.keys(mw).filter(x=>x!==w&&mw[x]<d&&i['v:'+x]&&i['v:'+x][1]<=d).sort((a,b)=>i['v:'+a][1]-i['v:'+b][1])[0];
+  if(back){const r=i['v:'+back];r[1]=d+E.INT[Math.max(1,r[0]|0)];out.push(M.backSay(back));}
+  O.persist();return out.join(' '+SEP);};
 T.quest=()=>({e:'⛵',k:'⛵',a:HOME,z:M.dayEnd()});
 T.addSay&&T.addSay(['⛵ '+HOME]);   /* the home screen's clip (#266) */
-M.speakList=()=>[...SCRIPT.flatMap(ch=>ch.sc.flatMap(x=>[x[0],x[1]])),...STAY,...SCRIPT.map((_,i)=>SAIL(i+1)),HOME,'⛵ '+HOME,...memList()];
+M.speakList=()=>[...SCRIPT.flatMap(ch=>ch.sc.flatMap(x=>[x[0],x[1]])),...STAY,...SCRIPT.map((_,i)=>SAIL(i+1)),HOME,'⛵ '+HOME,...memList(),...M.WORDS().flatMap(w=>[M.wordSay(w),M.backSay(w)])];
 window.STORYMIX=M;
 })();

@@ -448,6 +448,9 @@ body.act #gemc,body.act #btnMusic,body.act #btnHome,body.act .hud-mid .chip,body
 @keyframes flash{25%{box-shadow:0 0 0 6px #ffcf4d,0 0 34px 8px #ffcf4d,0 8px 0 rgba(0,0,0,.28);transform:scale(1.04)}}
 .quake{animation:quake .35s}
 @keyframes quake{20%{transform:translate(-6px,3px)}40%{transform:translate(5px,-4px)}60%{transform:translate(-4px,2px)}80%{transform:translate(3px,-1px)}}
+/* #427 the end of a mission: one fixed 2 s celebration (a soft golden glow), always the same */
+.card.celeb{animation:celeb 2s ease-in-out 1}
+@keyframes celeb{0%{box-shadow:0 0 0 0 rgba(255,209,102,0)}25%{box-shadow:0 0 0 10px rgba(255,209,102,.75);transform:scale(1.03)}60%{box-shadow:0 0 0 16px rgba(255,209,102,.35);transform:scale(1)}100%{box-shadow:0 0 0 0 rgba(255,209,102,0)}}
 .ftxt{position:absolute;z-index:9;transform:translate(-50%,0);font-weight:900;font-size:34px;color:#7ff0e4;direction:ltr;pointer-events:none;
   text-shadow:3px 3px 0 #1d2631,-2px -2px 0 #1d2631,2px -2px 0 #1d2631,-2px 2px 0 #1d2631;animation:ftxt 1.2s ease-out forwards}
 @keyframes ftxt{0%{opacity:0;transform:translate(-50%,10px) scale(.5)}20%{opacity:1;transform:translate(-50%,-8px) scale(1.2)}100%{opacity:0;transform:translate(-50%,-70px) scale(1)}}
@@ -1420,6 +1423,7 @@ const RAW={
   no(){const t=now();tone(NT(55),t,.12,{type:'triangle',vol:.2,lp:900});tone(NT(51),t+.12,.2,{type:'triangle',vol:.17,lp:700});noise(t,.08,{ft:'lowpass',f:500,vol:.08});},
   gem(){const t=now();[88,93,96,100].forEach((n,k)=>tone(NT(n),t+k*.04,.1,{type:'sine',vol:.07}));},
   hit(){const t=now();noise(t,.3,{ft:'lowpass',f:1200,f2:200,vol:.4});tone(150,t,.25,{type:'sine',vol:.35,slide:40});tone(NT(40),t+.02,.15,{type:'square',vol:.05,lp:600});},
+  calm(){const t=now();[[76,0],[79,.14],[84,.28]].forEach(([n,d])=>{tone(NT(n),t+d,.22,{type:'sine',vol:.07,vib:1});tone(NT(n-12),t+d,.22,{type:'triangle',vol:.03});});},
   win(){const t=now();const mel=[[72,0,.11],[76,.12,.11],[79,.24,.11],[84,.36,.4],[83,.8,.11],[84,.92,.75]];
     mel.forEach(([n,d,l])=>{tone(NT(n),t+d,l,{vol:.055,lp:4000,vib:l>.3});tone(NT(n-5),t+d,l,{type:'triangle',vol:.04});tone(NT(n-24),t+d,l,{type:'triangle',vol:.07});});
     [60,64,67,72,76].forEach(n=>tone(NT(n),t+.92,1,{type:'triangle',vol:.025,at:.05}));noise(t+.92,.9,{ft:'highpass',f:7000,vol:.05});noise(t,.12,{ft:'lowpass',f:300,vol:.15});},
@@ -1601,10 +1605,10 @@ function googleSay(t,lang,again,part,slow,done){done=done||(()=>{});const en=lan
   const tm=setTimeout(()=>{if(!go)fall('timeout');},GV.ms);/* the browser voice only after a retry and a long wait (#36) */
   /* #399 a slow fetch that arrives after the screen changed (or after hush) is not played: the line belongs to an old screen */
   const stale=()=>GV.audio!==a||sqOld(done);const drop=()=>{clearTimeout(tm);try{a.pause();}catch(e){}if(GV.audio===a)GV.audio=null;done();};
-  a.onplaying=()=>{if(stale())return drop();auHint(false);if(!go){vmOff(rp);try{emit('vpart',rp);}catch(e){}if(!part)voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});sayGuard(parts[part],done);}go=true;clearTimeout(tm);};a.onplay=()=>{if(stale())return drop();duck(true);vo(1,a);};a.onended=()=>{if(GV.audio===a&&!last){googleSay(t,lang,0,part+1,slow,done);return;}duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a){GV.audio=null;vo(0,a);}done();};/* the next part; stopped (hush) or replaced: the rest is not spoken */
+  a.onplaying=()=>{if(stale())return drop();auHint(false);if(!go){vmOff(rp);try{emit('vpart',rp,a);}catch(e){}if(!part)voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});sayGuard(parts[part],done);}go=true;clearTimeout(tm);};a.onplay=()=>{if(stale())return drop();duck(true);vo(1,a);};a.onended=()=>{if(GV.audio===a&&!last){googleSay(t,lang,0,part+1,slow,done);return;}duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a){GV.audio=null;vo(0,a);}done();};/* the next part; stopped (hush) or replaced: the rest is not spoken */
   a.onerror=()=>fall(a.error&&a.error.code===4?'no-audio':'audio-error');/* 4: not audio, e.g. the server answered 429/502 (not made yet) */
   a.play().catch(e=>{if(e&&e.name==='NotAllowedError')auHint(true);fall(e&&e.name==='NotAllowedError'?'blocked':e&&e.name==='NotSupportedError'?'no-audio':'audio-error');});}
-/* #435 emit('vpart',text) when each clip (part) of a Google sentence starts, with its text as given to say(); emit('vpart','') on hush().
+/* #435 emit('vpart',text,audio) when each clip (part) of a Google sentence starts, with its text as given to say() (the audio tells the clip's length, #421); emit('vpart','') on hush().
    The answers lit one by one as they are read listen to it (talents.js). */
 /* #404 a recording still missing after its one retry (online): the text on the screen lights up with a 🔊 that tries again.
    The text is found as one element on the screen (one that has its own 🔊 keeps it, no second one); on a button, or not found, the
@@ -1708,7 +1712,13 @@ const cv=$('#fx'),cx=cv.getContext('2d');let parts=[],raf=0;
 function fit(){cv.width=cv.clientWidth*devicePixelRatio;cv.height=cv.clientHeight*devicePixelRatio;}addEventListener('resize',fit);fit();
 const PC=['#ffcf4d','#4fbf63','#3cc8bb','#ff7eb6','#e4572e','#8ccbea','#ffffff'];
 function burst(x,y,n=24,sp=1,cols=PC){if(RM()||window.__fast)return;for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,s=(2+Math.random()*6)*sp;parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-4,sz:6+Math.random()*8,c:cols[i%cols.length],life:70+Math.random()*40,r:Math.random()*6,sp:i%4===0});}if(!raf)raf=requestAnimationFrame(tick);}
-function rain(){const w=cv.clientWidth;for(let i=0;i<5;i++)setTimeout(()=>burst(Math.random()*w,cv.clientHeight*.35,36,1.4),i*220);}
+function rain(){CELEB.rain++;const w=cv.clientWidth;for(let i=0;i<5;i++)setTimeout(()=>burst(Math.random()*w,cv.clientHeight*.35,36,1.4),i*220);}
+/* #427 the end of a mission: one fixed 2 s celebration, always the same (the card glows, one short chime, the music steps back);
+   the big one (confetti + the win music) is bigCelebration(), only at the end of a story chapter (story.js calls it) */
+const CELEB={MS:2000,calm:0,big:0,rain:0};window.__celeb=CELEB;
+function celebrate(card){CELEB.calm++;duck(true);setTimeout(()=>duck(false),D(CELEB.MS));sfx.calm();
+  if(card){card.classList.remove('celeb');void card.offsetWidth;card.classList.add('celeb');clearTimeout(card._celT);card._celT=setTimeout(()=>card.classList.remove('celeb'),CELEB.MS);}}
+function bigCelebration(){CELEB.big++;sfx.win();rain();}
 function tick(){const d=devicePixelRatio;cx.clearRect(0,0,cv.width,cv.height);parts=parts.filter(p=>p.life>0);parts.forEach(p=>{p.vy+=.25;p.vx*=.99;p.x+=p.vx;p.y+=p.vy;p.life--;p.r+=.1;cx.save();cx.translate(p.x*d,p.y*d);cx.rotate(p.r);cx.globalAlpha=Math.min(1,p.life/30);cx.fillStyle=p.c;if(p.sp){const u=p.sz*d/3;cx.rotate(-p.r);cx.fillRect(-u/2,-u*1.5,u,u*3);cx.fillRect(-u*1.5,-u/2,u*3,u);}else cx.fillRect(-p.sz*d/2,-p.sz*d/2,p.sz*d,p.sz*d);cx.restore();});raf=parts.length?requestAnimationFrame(tick):0;}
 function floatText(el,text,cls){if(RM()||window.__fast||!el)return;const a=app.getBoundingClientRect(),r=el.getBoundingClientRect();const f=h('div','ftxt '+(cls||''),text);f.style.left=(r.left+Math.min(r.width-24,r.width*.88)-a.left)+'px';f.style.top=(r.top-a.top+r.height*.35)+'px';app.appendChild(f);setTimeout(()=>f.remove(),1200);}
 const center=el=>{const r=el.getBoundingClientRect(),c=cv.getBoundingClientRect();return [r.left+r.width/2-c.left,r.top+r.height/2-c.top];};
@@ -2332,7 +2342,7 @@ function colType(d){const p=play,q=p.qs[p.i],st=p.col;if(st.c>=st.R.length)retur
 function finishLevel(){const p=play;if(!p||p.finished)return;p.finished=true;p.lock=true;const lv=p.lv,u=p.u;
   if(lv.type==='train'){herePut(null);save.trains++;addGems(10);persist();setTimeout(()=>{if(play!==p)return;const ov=$('#ov');ov.hidden=false;
       ov.innerHTML=`<div class="card"><h2>סִיַּמְתָּ אֶת הָאִמּוּן!</h2><div class="gain">+${p.gemsEarned+10} ${SPR.gem}</div><div class="sub">טָעֻיּוֹת שֶׁעוֹד מְחַכּוֹת: <span class="ltr">${save.rq.length}</span></div></div>`;
-      const row=h('div','btnrow');const a=h('button','bigbtn plain sm',ICON.redo+'<span>עוֹד אִמּוּן</span>');a.onclick=startTraining;const m=h('button','bigbtn',ICON.homeW+'<span>לַמַּפָּה</span>');m.onclick=()=>showJourney();row.append(a,m);ov.firstChild.appendChild(row);sfx.win();rain();},D(300));return;}
+      const row=h('div','btnrow');const a=h('button','bigbtn plain sm',ICON.redo+'<span>עוֹד אִמּוּן</span>');a.onclick=startTraining;const m=h('button','bigbtn',ICON.homeW+'<span>לַמַּפָּה</span>');m.onclick=()=>showJourney();row.append(a,m);ov.firstChild.appendChild(row);celebrate(ov.firstChild);},D(300));return;}
   const miss=p.errors+p.hints;const lim=p.N<=6?[0,2]:[1,4];const st=miss<=lim[0]?3:miss<=lim[1]?2:1;
   const before=pts();if(st>stars(lv.id)){save.s[lv.id]=st;}const after=pts();
   const bonus=5+st*3+(lv.type==='boss'?20:0);addGems(bonus);persist();emit('levelDone',lv,st);
@@ -2350,7 +2360,7 @@ function finishLevel(){const p=play;if(!p||p.finished)return;p.finished=true;p.l
     const pathCont=()=>{walkFrom=lv.i;if(lv.type==='boss'&&!save.story[lv.w.id+'-out']){story(lv.w.outro.map(t=>[lv.w.gd,t]),()=>{save.story[lv.w.id+'-out']=1;persist();TAL.nextStep();});return;}TAL.nextStep();};
     const n=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');n.onclick=viaPath?pathCont:nextLv?()=>{walkFrom=lv.i;startLevel(nextLv);}:cont;
     row.appendChild(n);card.appendChild(row);
-    duck(true);setTimeout(()=>duck(false),D(2200));sfx.win();rain();for(let k=0;k<st;k++)setTimeout(()=>sfx.star(k),D(300+k*350));if(r1>r0)setTimeout(()=>sfx.build(),D(1300));
+    celebrate(card);
     setTimeout(()=>{const b=row.lastChild;b&&b.focus();},300);},D(lv.type==='boss'?900:300));}
 
 /* ---------- SPEED challenge ---------- */
@@ -2366,7 +2376,7 @@ function nextSpeedQ(){const p=play;if(Date.now()>=p.end)return finishSpeed();let
 function finishSpeed(){const p=play;if(!p||p.lock&&p.finished)return;p.lock=true;p.finished=true;const Wd=p.lv.w;/* #426: no record line */
   const ov=$('#ov');ov.hidden=false;ov.innerHTML=`<div class="card"><h2>נִגְמַר הַזְּמַן!</h2><div class="gain">★ ${p.score}</div></div>`;
   const row=h('div','btnrow');const a=h('button','bigbtn purple sm',ICON.redo+'<span>עוֹד פַּעַם</span>');a.onclick=()=>playSpeed(Wd);const m=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');m.onclick=()=>showWorld(Wd);row.append(a,m);ov.firstChild.appendChild(row);
-  sfx.win();}
+  celebrate(ov.firstChild);}
 
 /* ---------- KINGDOM (Oren builds) ---------- */
 /* the kingdom = the building world (#64, build.js): the scene is drawn by BW.render, then the screen's extras (my hero, badges, picture) */
@@ -2456,7 +2466,7 @@ function showFinal(){setScreen('sFinal','final',showMap);$('#hudMid').innerHTML=
 
 updateGems();cloudInit();
 const BUS={};function emit(e,...a){(BUS[e]||[]).forEach(f=>{try{f(...a);}catch(x){console.error(x);}});}
-window.OREN={mathSpeechList,hatsBack,get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
+window.OREN={mathSpeechList,hatsBack,get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,celebrate,bigCelebration,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
   set sayNow(v){sayNow=v;AUTO.gen++;},get sayNow(){return sayNow;},hud:html=>{$('#hudMid').innerHTML=html;document.body.classList.toggle('act',!document.body.classList.contains('inpar')&&/class="chip"/.test(html));},resetAll:keep=>{const snd=save.snd;save=blank();save.snd=snd;Object.assign(save,keep||{});persist();renderStart();},on:(e,f)=>{(BUS[e]=BUS[e]||[]).push(f);},emit,blank};
 window.__oren4={MK,mistakeKind,TF,TFC,tfFillQ,COIN,GC,qSpeech,GT,HANDS,renderAudio,THEMES,RAW,setTheme,get mus(){return mus;},WORLDS,ALLLV,ALLU,hintHTML,hintData,uniq,colInit,colNeedBorrow,digs,qkey,bubbleOpts,storyFor,teachCheck,HEROES,get play(){return play;},get save(){return save;},startLevel,finishLevel,playLevel,showMap,showWorld,kingdom,studio,teacher,playSpeed,setFast:v=>{window.__fast=v;},mergeIn,migrateOld,lp};
 /* #44 a finished task is not reopened */
@@ -3230,12 +3240,15 @@ body.fron #screens{padding-bottom:84px}
 @keyframes frpop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
 /* the path strip in the top bar */
 .frpath{display:flex;align-items:center;gap:4px;background:rgba(255,253,245,.92);border:2px solid #2b2b3a;border-radius:999px;padding:2px 8px;flex:none}
-.frpath .fpq,.frpath .fpg{font-size:16px;line-height:1}
-.frpath .fpg{opacity:.45}.frpath .fpg.won{opacity:1}
-.frpath i{width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid #8d939a;box-sizing:border-box}
-.frpath i.on{background:#4fae4f;border-color:#2f7a2f}
-.frpath i.cur{background:#ffd166;border-color:#c98a00;animation:frcur 1.2s ease-in-out infinite}
-@keyframes frcur{50%{transform:scale(1.3)}}
+.frpath .fpq{font-size:16px;line-height:1}
+/* #393 the hero chases the Mixer: the track is as wide as the old dots (14 px a mission + the gift), the hero moves one step per finished mission */
+.frpath .fpt{position:relative;display:block;height:16px;width:calc(var(--n,1)*14px + 16px);min-width:38px}
+.frpath .fph,.frpath .fpm{position:absolute;top:0;height:16px;display:block}
+.frpath .fph{width:14px;inset-inline-start:calc((100% - 24px)*var(--k,0)/var(--n,1));transition:inset-inline-start .6s ease-out;z-index:1}
+.frpath .fpm{width:16px;inset-inline-end:0}
+.frpath .fph svg,.frpath .fpm svg{width:100%;height:100%;display:block}
+.frpath .fpt.caught .fpm{animation:frcaught .5s ease-in-out 3}
+@keyframes frcaught{50%{transform:rotate(-14deg) translateY(-2px)}}
 /* one story line on the result card */
 .frstory{display:flex;align-items:center;justify-content:center;gap:8px;margin:8px auto 4px;font-size:19px;font-weight:700;background:#fff6d6;border-radius:12px;padding:6px 12px}
 .frstory .frq{font-size:24px}
@@ -3250,10 +3263,11 @@ body.fron #screens{padding-bottom:84px}
   body.fron #screens{padding-bottom:66px}
   .frpath{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:-2px;padding:1px 6px;gap:3px;z-index:4}
   body.frpon #screens{padding-top:16px}
-  .frpath i{width:8px;height:8px}
-  .frpath .fpq,.frpath .fpg{font-size:13px}
+  .frpath .fpq{font-size:13px}
+  .frpath .fpt{height:13px;width:calc(var(--n,1)*11px + 13px);min-width:30px}
+  .frpath .fph,.frpath .fpm{height:13px}.frpath .fph{width:12px;inset-inline-start:calc((100% - 20px)*var(--k,0)/var(--n,1))}.frpath .fpm{width:13px}
 }
-@media (prefers-reduced-motion:reduce){.frc .frs,.frpath i.cur{animation:none}}
+@media (prefers-reduced-motion:reduce){.frc .frs,.frpath .fpt.caught .fpm{animation:none}.frpath .fph{transition:none}}
 #sHome .frdone .bigbtn.huge{animation:none}
 /* #389 listen first: the answers rest (softly faded, no timer) until the question was heard */
 .chs.lsn .chb{opacity:.55;transition:opacity .3s}
@@ -4014,7 +4028,7 @@ function result(o){const ov=$('#ov');ov.hidden=false;
   ov.innerHTML=`<div class="card"><h2>${o.title||'כָּל הַכָּבוֹד!'}</h2>${o.sub?`<div class="sub">${o.sub}</div>`:''}${o.stars!=null?starsHTML(o.stars):''}${o.gems?`<div class="gain">+${o.gems} ${SPR.gem}</div>`:''}${o.extra||''}</div>`;
   const row=h('div','btnrow');if(o.again){const a=h('button','bigbtn plain sm',ICON.redo+'<span>שׁוּב</span>');a.onclick=()=>{ov.hidden=true;o.again();};row.appendChild(a);}
   const b=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');b.onclick=()=>{ov.hidden=true;o.back();};row.appendChild(b);ov.firstChild.appendChild(row);
-  O.duck(true);setTimeout(()=>O.duck(false),D(2000));sfx.win();if(window.FRIEND)setTimeout(()=>window.FRIEND.stepCheck(),0);if(o.stars!=null)for(let k=0;k<o.stars;k++)setTimeout(()=>sfx.star(k),D(300+k*350));O.rain();setTimeout(()=>b.focus(),300);}
+  O.celebrate(ov.firstChild);/* #427 one fixed 2 s celebration; the big one only at a chapter end (story.js) */if(window.FRIEND)setTimeout(()=>window.FRIEND.stepCheck(),0);setTimeout(()=>b.focus(),300);}
 function finishAct(id,errors,n,gems,back,again,title){const st=errors<=Math.max(1,n*.1)?3:errors<=Math.max(3,n*.3)?2:1;const bonus=5+st*2;O.addGems(bonus);record(id,st);result({title,stars:st,gems:gems+bonus,back,again});}
 /* generic multiple-choice quiz: q = {pr, opts, ans, cls, ltr, play, auto, reveal(el), explain, key, bank, bkey}
    q.bank: the item comes from a finite bank — its first answer is recorded there (LEARN.seen, key q.bkey or q.key; #360).
@@ -5302,7 +5316,7 @@ function special(i,id){const [kind,k]=id.split(':');const isT=kind==='tog';const
   const L=learned(),kid=isT?(typeof a.kid==='function'?a.kid(L):a.kid):a.t,par=isT?(typeof a.par==='function'?a.par(L):a.par):'';
   O.setScreen('sTal','meadow',O.showMap);T.hudT(isT?'🤝 זְמַן בְּיַחַד':'🏠 מְשִׂימָה בַּבַּיִת');const s=$('#sTal');s.innerHTML='';
   const box=h('div','tspec'+(isT?' tog':''),`<div class="tse bob">${a.e}</div><h1>${isT?a.n:'מְשִׂימָה בַּבַּיִת'}</h1><div class="lsent">${kid}</div>${isT?`<div class="tpar">להורה: ${par}</div>`:''}`);
-  const row=h('div','btnrow');const b=h('button','bigbtn huge',`<span>${isT?'סִיַּמְנוּ':'סִיַּמְתִּי'} ✓</span>`);b.onclick=()=>{fin();sfx.win();O.rain();O.showMap();};row.appendChild(b);box.appendChild(row);s.appendChild(box);
+  const row=h('div','btnrow');const b=h('button','bigbtn huge',`<span>${isT?'סִיַּמְנוּ':'סִיַּמְתִּי'} ✓</span>`);b.onclick=()=>{fin();O.celebrate();O.showMap();};row.appendChild(b);box.appendChild(row);s.appendChild(box);
   O.sayNow=T.spk(kid);setTimeout(()=>{if(box.isConnected)O.say(T.spk(kid));},D(400));}
 function runStep(i){const d=T.dailyEnsure();const id=d.t[i];if(window.FRIEND)window.FRIEND.stepStart(i);if(/:/.test(id)){special(i,id);return;}
   if(id==='math'){const lv=(window.FRIEND&&window.FRIEND.ezRep&&window.FRIEND.ezRep())||nextLevel();/* #411 'hard' -> that level again */if(!lv){O.showJourney();return;}if(O.pathLevel)O.pathLevel(lv.id);
@@ -5337,7 +5351,7 @@ T.stepName=id=>{const P=T.plainHe;if(id==='math')return '🧮 שלב בחשבו�
 function finale(d,q){d.claimed=1;const SH=window.SHIP,pc=SH?SH.award():null;/* #391 the day's ship piece */O.persist();q=quest();/* #386: the day ends with a short hint about tomorrow */const ov=$('#ov');ov.hidden=false;ov.innerHTML=`<div class="card qwin"><div class="qbig">${q.e}</div><h2>${q.z}</h2>${SH?SH.cardHTML(pc):''}</div>`;
   const after=()=>{if(!d.sg&&!d.t.some(x=>/^tog:/.test(x))){d.sg=1;O.persist();suggestTog();}else home();};
   const r=h('div','btnrow');const ok=h('button','bigbtn',ICON.play+'<span>יֶשׁ!</span>');ok.onclick=()=>{ov.hidden=true;if(SH)SH.offer(after);else after();};
-  r.appendChild(ok);ov.firstChild.appendChild(r);sfx.win();O.rain();O.say(T.spk(q.z)+(pc?'\u2063'+T.spk(SH.newSay(pc)):''));}
+  r.appendChild(ok);ov.firstChild.appendChild(r);O.celebrate(ov.firstChild);O.say(T.spk(q.z)+(pc?'\u2063'+T.spk(SH.newSay(pc)):''));}
 function suggestTog(){const pr=T.S().prof||{};const ov=$('#ov');ov.hidden=false;
   ov.innerHTML=`<div class="card"><div class="callp bob">${T.friend()}</div><h2>רוֹצֶה לְשַׂחֵק עִם אַבָּא אוֹ אִמָּא?</h2><div class="sub">לֵךְ לִשְׁאֹל אִם יֵשׁ לָהֶם זְמַן!</div></div>`;
   const r=h('div','btnrow');const no=h('button','bigbtn plain sm','<span>אַחַר כָּךְ</span>');no.onclick=()=>{ov.hidden=true;home();};
@@ -5622,7 +5636,8 @@ const TARGETS='#sTal .tqc .qq:not(.tqi),#sTal .tqc .sent,#sTal .lsent:not(.blab)
 
 /* ---- words: wrap each word once, keep the element's own markup ---- */
 function words(el){if(el._rw&&el._rw.length&&el._rw.every(w=>w.isConnected))return el._rw;const out=[];
-  const tw=document.createTreeWalker(el,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.parentElement&&n.parentElement.closest('.rdb,.rdcue,.tleft,svg,button')?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT});
+  const skip=n=>{const p=n.parentElement;if(!p||p.closest('.rdb,.rdcue,.tleft,svg'))return true;const b=p.closest('button');return !!(b&&el.contains(b));};/* a button inside the text (🔊); a text inside a button (the math bubble) is fine */
+  const tw=document.createTreeWalker(el,NodeFilter.SHOW_TEXT,{acceptNode:n=>skip(n)?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT});
   const nodes=[];while(tw.nextNode())nodes.push(tw.currentNode);
   for(const n of nodes){if(!n.nodeValue.trim())continue;const f=document.createDocumentFragment();
     for(const p of n.nodeValue.split(/(\s+)/)){if(!p)continue;if(/^\s+$/.test(p)){f.appendChild(document.createTextNode(p));continue;}const sp=document.createElement('span');sp.className='rw';sp.textContent=p;f.appendChild(sp);out.push(sp);}
@@ -5634,9 +5649,12 @@ let cur=null;
 function stop(){if(!cur)return;const r=cur;cur=null;r.timers.forEach(clearTimeout);r.words.forEach(w=>w.classList.remove('on'));r.el.classList.remove('reading');r.resolve();}
 const light=(r,k)=>r.words.forEach((w,j)=>w.classList.toggle('on',j===k));
 const rate=()=>.9;                             /* the game voice speaks at 0.9 */
-function estimate(r,from){r.timers.forEach(clearTimeout);r.timers=[];let t=0;
-  for(let k=from;k<r.words.length;k++){const len=(r.words[k].textContent.match(/[א-תA-Za-z0-9]/g)||[]).length;r.timers.push(setTimeout(()=>{if(cur===r)light(r,k);},t));t+=(170+70*len)/rate();}
-  r.timers.push(setTimeout(()=>{if(cur===r)stop();},t+250));}
+const wms=w=>(170+70*(String(w).match(/[א-תA-Za-z0-9]/g)||[]).length)/rate();   /* how long a word takes to say */
+/* light r.words one after the other from word `from`: each word wms(word) * scale after the one before, starting at t0; then end() */
+function plan(r,from,live,end,t0,scale){r.timers.forEach(clearTimeout);r.timers=[];let t=t0||0;scale=scale||1;
+  for(let k=from;k<r.words.length;k++){r.timers.push(setTimeout(()=>{if(live())light(r,k);},t));t+=wms(r.words[k].textContent)*scale;}
+  r.timers.push(setTimeout(()=>{if(live())end();},t+250));}
+function estimate(r,from){plan(r,from,()=>cur===r,stop);}
 /* watch the browser voice of OUR reading for word boundaries (the voice engine itself is untouched) */
 function attach(u,r){const starts=[];String(u.text||'').replace(/\S+/g,(m,o)=>{starts.push(o);return m;});const n=r.words.length;
   const idx=ci=>{let k=0;for(let j=0;j<starts.length;j++){if(starts[j]<=ci)k=j;else break;}return starts.length===n?k:Math.min(n-1,Math.round(k*n/Math.max(1,starts.length)));};
@@ -5644,13 +5662,36 @@ function attach(u,r){const starts=[];String(u.text||'').replace(/\S+/g,(m,o)=>{s
   u.addEventListener('boundary',e=>{if(cur!==r||(e.name&&e.name!=='word'))return;r.gotB=true;r.timers.forEach(clearTimeout);r.timers=[];light(r,idx(e.charIndex|0));});
   const end=()=>{if(cur===r)stop();};u.addEventListener('end',end);u.addEventListener('error',end);}
 (()=>{try{const ss=window.speechSynthesis;if(!ss)return;const orig=ss.speak.bind(ss);ss.speak=u=>{if(cur&&!cur.u&&u&&u.lang!=='en-US'){cur.u=u;attach(u,cur);}return orig(u);};}catch(e){}})();
-function readEl(el){stop();const ws=words(el);if(!ws.length)return Promise.resolve();heard(el);
+function readEl(el){stop();folStop();const ws=words(el);if(!ws.length)return Promise.resolve();heard(el);
   const cue=el.parentNode&&el.parentNode.querySelector('.rdcue');if(cue)cue.remove();
   return new Promise(res=>{const r={el,words:ws,timers:[],resolve:res};cur=r;el.classList.add('reading');
     O.say(ws.map(w=>w.textContent).join(' '));
     r.timers.push(setTimeout(()=>{if(cur===r&&!r.started&&!r.gotB)estimate(r,0);},700));});}
 let seqTok=0;
 async function readSeq(els,mark){const tok=++seqTok;for(let i=0;i<els.length;i++){if(tok!==seqTok||!els[i].isConnected)return;if(mark)mark(i);await readEl(els[i]);if(tok!==seqTok)return;}}
+/* ---- #421 the instruction lights up while the voice reads it (the same word light, no button) ----
+   At each clip of the game voice (the core's 'vpart', with its audio) the instruction on the screen that the clip says is found;
+   its words light one by one over the clip's length, timed like the stories (wms per word). The clip may also hold a story line or
+   the goal before it: their words come first. Timing unknown (no clip length, or the words do not match one to one): the whole line
+   is lit while the clip plays. The light goes out at the clip's end, the next clip, hush() and a new screen. */
+const FOLLOW='.qq:not(.tqi),.sent,.lsent,.hbub2,#bText,.wcard,.e2q';
+const fs=s=>{try{return window.__fullSpell?window.__fullSpell(String(s).replace(/\d/g,d=>String.fromCharCode(0xE000+ +d))).replace(/[\uE000-\uE009]/g,c=>c.charCodeAt(0)-0xE000):String(s);}catch(e){return String(s);}};/* compare as the voice says it (full spelling, #405) */
+const nw=s=>fs(String(s).replace(/🔊/g,' ')).replace(/[\u0591-\u05C7]/g,'').replace(/[^\p{L}\p{N}]+/gu,' ').trim().split(' ').filter(Boolean);
+const at=(a,b)=>{if(!b.length||b.length>a.length)return -1;for(let i=0;i+b.length<=a.length;i++)if(b.every((x,j)=>a[i+j]===x))return i;return -1;};
+let fol=null;
+function folStop(){if(!fol)return;const r=fol;fol=null;r.timers.forEach(clearTimeout);r.words.forEach(w=>w.classList.remove('on'));}
+const shown=e=>!!e.offsetParent&&!e.closest('[hidden]');
+function follow(t,a){folStop();if(cur||!t)return;const cw=nw(t);if(!cw.length)return;
+  for(const el of document.querySelectorAll('#screens '+FOLLOW.split(',').join(',#screens '))){if(!shown(el))continue;
+    const ew=nw(el.textContent);if(!ew.length)continue;let i=at(cw,ew),from=0,to=ew.length;
+    if(i<0){const j=at(ew,cw);if(j<0)continue;i=0;from=j;to=j+cw.length;}           /* the clip is a part of the line */
+    const ws=words(el).filter(w=>nw(w.textContent).length),one=ws.length===ew.length&&ws.every(w=>nw(w.textContent).length===1),dur=a&&isFinite(a.duration)&&a.duration>0?a.duration*1000:0;
+    const r={el,words:one?ws.slice(from,to):ws,timers:[]};fol=r;const live=()=>fol===r;
+    if(!one||!dur){r.words.forEach(w=>w.classList.add('on'));if(dur)r.timers.push(setTimeout(()=>{if(live())folStop();},dur+250));return;}
+    const all=cw.reduce((s,w)=>s+wms(w),0),sc=dur/all,t0=cw.slice(0,i).reduce((s,w)=>s+wms(w),0)*sc;
+    plan(r,0,live,folStop,t0,sc);return;}}
+O.on('vpart',(t,a)=>follow(t,a));O.on('voice',on=>{if(!on)folStop();});
+T.readFollow=follow;
 T.rdWords=words;T.readEl=el=>{seqTok++;return readEl(el);};T.readSeq=readSeq;T.readStop=()=>{seqTok++;stop();};
 
 /* ---- the 🔊 button on every readable text ---- */
@@ -5679,7 +5720,7 @@ T.rdA=(q,tries,b)=>{if(!Q||Q.q!==q||!Q.target)return;clearQ();if(tries||Q.heard)
   if(mode()==='auto'&&UP[r.lvl]&&r.solo>=UP[r.lvl]){r.lvl++;O.floatText(Q.card,'🎉 עָלִיתָ שָׁלָב בִּקְרִיאָה!');}
   else if(r.solo%4===1)O.floatText(Q.card,'קָרָאתָ לְבַד! ⭐');
   O.persist();};
-O.on('screen',()=>{clearQ();Q=null;seqTok++;stop();});
+O.on('screen',()=>{clearQ();Q=null;seqTok++;stop();folStop();});
 
 /* ---- parent: one setting ---- */
 T.rdSettings=(body,sec,refresh)=>{const r=RD(),m=mode();
@@ -5939,7 +5980,7 @@ H.merge=(dst,src)=>{if(!src||typeof src!=='object')return dst;dst=dst||{};
    gives a short hint about tomorrow. A save without mix (or a broken one) starts at chapter 1, scene 1.
      STORYMIX.pos()       {c, s} where the story is now (the scene still to play)
      STORYMIX.scene()     {c, s, n: chapter name, open, close, topic, item}
-     STORYMIX.advance()   one scene on (after 12.5 the story starts again at 1.1)
+     STORYMIX.advance()   one scene on (after 12.5 the story starts again at 1.1); the end of a chapter: O.bigCelebration() (#427)
      STORYMIX.hint()      the line for tomorrow (said at the end of the day)
      STORYMIX.speakList() every line of the script (for the voice pregen) */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;
@@ -6028,7 +6069,8 @@ const M={SCRIPT};
 M.pos=()=>{const sv=O.save;if(!ok(sv.mix))sv.mix={c:1,s:1};return sv.mix;};
 M.scene=(p)=>{p=p||M.pos();const ch=SCRIPT[p.c-1],x=ch.sc[p.s-1];return {c:p.c,s:p.s,n:ch.n,open:x[0],close:x[1],topic:x[2],item:x[3]};};
 M.next=p=>{p=p||M.pos();return p.s<NS?{c:p.c,s:p.s+1}:{c:p.c<NC?p.c+1:1,s:1};};
-M.advance=()=>{O.save.mix=M.next();O.persist();return O.save.mix;};
+/* #427 the last scene of a chapter ends with the big celebration (confetti + music); every other mission has the calm one */
+M.advance=()=>{const p=M.pos();O.save.mix=M.next(p);O.persist();if(p.s===NS&&O.bigCelebration)O.bigCelebration();return O.save.mix;};
 /* said at the end of the day: the story is already at the scene of tomorrow */
 M.hint=()=>{const p=M.pos();return p.s===1?SAIL(p.c):STAY[p.c-1];};
 /* the family save: the device that is further on in the story wins */
@@ -6062,9 +6104,24 @@ M.dayStart=()=>{const k=M.did(M.dayKey(-1));return k.length?'אוֹרֶן, אֶ�
 M.dayEnd=()=>{const k=M.did(O.today());return (k.length?'הַיּוֹם '+two(k)+'. '+SEP:'')+M.hint();};
 const memList=()=>{const s=[];ORD.forEach((a,i)=>{s.push([a]);ORD.slice(i+1).forEach(b=>s.push([a,b]));});
   return [...s.flatMap(k=>['אוֹרֶן, אֶתְמוֹל '+two(k)+'.','הַיּוֹם '+two(k)+'.']),...SCRIPT.map((_,i)=>TODAY(i+1))];};
+/* #423 one English word per scene: the next word of the English program (english2.js, the word themes in their order) that he
+   has not met yet. It stays the scene's word (save.mixs = {i: the scene's index, w}) until the scene ends. Teaching it puts it into the English skill model
+   (save.en2, box 0, due tomorrow); save.mixw = {word: the day the story taught it}. When such a word is due again (en2), it comes
+   back in a later scene ("remember? ...") and its next day moves by en2's own intervals (INT by box), so it is spaced. */
+const E2=()=>window.ENGLISH2;
+M.WORDS=()=>E2()?E2().LEVELS[0].units.flatMap(u=>u.items).map(k=>k.slice(2)):[];
+M.wordSay=w=>w+' זֶה '+E2().WORD[w].he+'.';
+M.backSay=w=>'זוֹכֵר? '+M.wordSay(w);
+M.word=()=>{const i=M.idx(M.pos()),E=E2(),sv=O.save;if(!E)return null;const k=sv.mixs;if(k&&k.i===i&&E.WORD[k.w])return k.w;
+  const w=M.WORDS().find(x=>!E.seen(sv,'v:'+x))||null;if(w){sv.mixs={i,w};O.persist();}return w;};
+M.lead=()=>{const sc=M.scene(),E=E2(),out=[sc.open];if(!E)return sc.open;const sv=O.save,d=E.day(),i=E.st(sv).i,mw=sv.mixw=sv.mixw||{};
+  const w=M.word();if(w){if(!i['v:'+w])i['v:'+w]=[0,d+1];if(mw[w]==null)mw[w]=d;out.push(M.wordSay(w));}
+  const back=Object.keys(mw).filter(x=>x!==w&&mw[x]<d&&i['v:'+x]&&i['v:'+x][1]<=d).sort((a,b)=>i['v:'+a][1]-i['v:'+b][1])[0];
+  if(back){const r=i['v:'+back];r[1]=d+E.INT[Math.max(1,r[0]|0)];out.push(M.backSay(back));}
+  O.persist();return out.join(' '+SEP);};
 T.quest=()=>({e:'⛵',k:'⛵',a:HOME,z:M.dayEnd()});
 T.addSay&&T.addSay(['⛵ '+HOME]);   /* the home screen's clip (#266) */
-M.speakList=()=>[...SCRIPT.flatMap(ch=>ch.sc.flatMap(x=>[x[0],x[1]])),...STAY,...SCRIPT.map((_,i)=>SAIL(i+1)),HOME,'⛵ '+HOME,...memList()];
+M.speakList=()=>[...SCRIPT.flatMap(ch=>ch.sc.flatMap(x=>[x[0],x[1]])),...STAY,...SCRIPT.map((_,i)=>SAIL(i+1)),HOME,'⛵ '+HOME,...memList(),...M.WORDS().flatMap(w=>[M.wordSay(w),M.backSay(w)])];
 window.STORYMIX=M;
 })();
 
@@ -6077,7 +6134,7 @@ window.STORYMIX=M;
    While Oren is inside a step of the day's path:
      FRIEND.stepStart(i)    the friend says the opening line of the story's scene (story.js, #386; said before the screen's instruction)
      FRIEND.stepCheck()     after a step is done: the scene's closing line on the result card, and the story moves one scene on
-     PATHBAR.render()       a thin strip in the top bar: today's quest + one dot per step
+     PATHBAR.render()       a thin strip in the top bar: today's quest + the hero chasing the Mixer, one step per finished mission (#393)
    FRIEND.speakList() lists every line the friend may say (for the voice pregen). */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;const {h,$}=O;const D=O.D||(x=>x);
 
@@ -6163,7 +6220,7 @@ FR.stepStart=i=>{const d=daily();if(!d||i==null||i<0||i>=d.t.length){cur=null;re
   const dn=d.done.slice(d.bs|0),left=dn.filter(x=>!x).length,first=!dn.some(Boolean);
   /* #412 the latest piece he collected comes along: its own clip before the scene's opening line */
   const it=window.SHIP&&SHIP.latest&&SHIP.latest(),carry=it?SHIP.carrySay(it.i)+GSEP:'';
-  lead=SM()&&isScene(cur.id)?carry+(first?FIRST+' ':left<=1?LAST+' ':'')+SM().scene().open:'';PATHBAR.render();};
+  lead=SM()&&isScene(cur.id)?carry+(first?FIRST+' ':left<=1?LAST+' ':'')+(SM().lead?SM().lead():SM().scene().open):'';PATHBAR.render();};
 FR.stepCheck=()=>{if(!cur)return;const d=daily();if(!d||d.d!==cur.d||d.t[cur.i]!==cur.id||!d.done[cur.i]||cur.done)return;cur.done=1;PATHBAR.render();
   if(!SM()||!isScene(cur.id))return;const sc=SM().scene(),close=sc.close;SM().advance();
   const t=d.done.slice(d.bs|0).every(Boolean)?close+' '+ALL:close;
@@ -6254,7 +6311,9 @@ const PATHBAR={render(){let b=$('#frPath');const d=cur&&daily();
   const mid=$('#hudMid');if(!mid)return;if(!b){b=h('div','frpath');b.id='frPath';b.setAttribute('role','img');}if(b.parentNode!==mid)mid.appendChild(b);
   const q=quest();const o=d.bs|0,t=d.t.slice(o),dn=d.done.slice(o),n=t.length,k=dn.filter(Boolean).length;
   b.setAttribute('aria-label',`${k}/${n}`);
-  b.innerHTML=`<span class="fpq">${q.e}</span>`+t.map((_,j)=>`<i class="${dn[j]?'on':j+o===cur.i?'cur':''}"></i>`).join('')+`<span class="fpg${k>=n?' won':''}">🎁</span>`;}};
+  /* #393 the hero chases the Mixer: one step closer per finished mission, the last one catches him (same size as the old dots) */
+  const sp=b.querySelector('.fpt');if(!sp){b.innerHTML=`<span class="fpq">${q.e}</span><span class="fpt"><span class="fph">${O.AV()}</span><span class="fpm">${O.SPR.mixer}</span></span>`;}
+  const tr=b.querySelector('.fpt');tr.style.setProperty('--n',n);tr.style.setProperty('--k',Math.min(k,n));tr.dataset.k=Math.min(k,n);tr.classList.toggle('caught',k>=n);}};
 
 /* the top bar is rewritten by every screen: keep the strip in it while inside a step */
 (()=>{const mid=$('#hudMid');if(mid)new MutationObserver(()=>{const b=$('#frPath');if(cur&&(!b||b.parentNode!==mid))PATHBAR.render();}).observe(mid,{childList:true});})();
