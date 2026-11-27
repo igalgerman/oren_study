@@ -1,4 +1,4 @@
-// Users, parent password, permissions, parts on/off, gradual unlock, skip/reset, messages, badges, plan, reset.
+// Users, parent password, permissions, parts on/off, gradual unlock, skip/reset, messages, plan, reset.
 const L = require('./lib');
 const {chromium}=require('playwright');const URL=L.URL;const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const VP=process.argv[2]==='phone'?{viewport:{width:390,height:844},isMobile:true,hasTouch:true}:{viewport:{width:1366,height:720}};
@@ -62,9 +62,6 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  ok('#413 one message entry in the panel (old message tab gone)',m1.old.length===1&&/תזכורת/.test(m1.old[0])&&m1.chk==='undefined',JSON.stringify(m1));
  await p.evaluate(()=>{window.TAL.S().set.msg={text:'old',t:Date.now(),seen:0};});await p.locator('#sPar .bigbtn',{hasText:'יציאה'}).click();await sleep(1200);
  ok('#413 an old-style message is not shown a second way',await p.evaluate(()=>!document.querySelector('.pmsg')));
- // badges
- await p.evaluate(()=>{window.TAL.S().tl['read-pw']={s:2,n:1};window.OREN.showMap();});await sleep(4600);ok('badge earned quietly',await p.evaluate(()=>!!window.TAL.S().bdg.star1));
- await p.evaluate(()=>window.TAL.badges(()=>{}));await sleep(200);ok('badge wall',await p.locator('.bdg.got').count()>=1);await shot('badges');
  // daily swap
  ok('kid home has no swap buttons (simple)',await p.evaluate(()=>{window.OREN.showMap();return document.querySelectorAll('#sHome .dsw,#sHome .merow').length===0;}));
  // call parents when permission is not granted

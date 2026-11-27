@@ -189,6 +189,51 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
   ok('#387 one tap skips the picture (and does not press the card\'s button)', skip.gone && skip.tapped === 0, JSON.stringify(skip));
   ok('#387 no new spoken sentences outside the voice list', await p.evaluate(() => { const all = window.FRIEND.speakList(); return window.STORYMIX.SCRIPT.every(ch => ch.sc.every(x => all.includes(x[1]))); }));
   ok('#387 no page errors', !errs.length, errs.join(' | '));
+  // --- #411 end of a scene, at most every third scene: 'easy or hard?' with two big faces, one tap; the answer moves the level and is stored ---
+  const card = () => { const ov = document.querySelector('#ov'); ov.innerHTML = '<div class="card"><h2>x</h2><div class="btnrow"><button class="bigbtn">ok</button></div></div>'; ov.hidden = false; return ov; };
+  const asks = await p.evaluate(card => { card = eval(card); const O = window.OREN, T = window.TAL, F = window.FRIEND; O.save.ez = {}; const out = [];
+    for (let k = 0; k < 7; k++) { O.save.mix = { c: 1, s: 1 }; const d = T.dailyEnsure(); d.t = ['read-first', 'world-flag']; d.done = [0, 0]; d.bs = 0; O.persist();
+      F.stepStart(1); d.done[1] = 1; const ov = card(); F.stepCheck(); const q = ov.querySelector('.frez');
+      out.push(q ? { f: q.querySelectorAll('button.frezf').length, h: Math.min(...[...q.querySelectorAll('button.frezf')].map(x => x.getBoundingClientRect().height)) } : 0);
+      ov.hidden = true; ov.innerHTML = ''; }
+    F._lead(''); return out; }, card.toString());
+  ok('#411 asked on every third scene only (scenes 3 and 6 of 7)', asks.map(x => x ? 1 : 0).join('') === '0010010', JSON.stringify(asks));
+  ok('#411 two big faces (64 px or more)', asks[2] && asks[2].f === 2 && asks[2].h >= 64, JSON.stringify(asks[2]));
+  ok('#411 the question is in the voice list, with nikud', await p.evaluate(() => { const q = window.FRIEND.EZ; return !!q && /[ְ-ׇּׁׂ]/.test(q.q) && window.FRIEND.speakList().includes(q.q) && q.q.includes('קַל') && q.q.includes('קָשֶׁה'); }));
+  const tapEz = (id, l, a) => p.evaluate(([card, id, l, a]) => { card = eval(card); const O = window.OREN, T = window.TAL, F = window.FRIEND, LN = window.LEARN, sk = 'a:' + id;
+    O.save.ez = { n: 2 }; LN.start(sk, 1); LN.state().k[sk].l = l; LN.state().k[sk].lk = 0; O.save.mix = { c: 1, s: 1 };
+    const d = T.dailyEnsure(); d.t = ['read-first', id]; d.done = [0, 0]; d.bs = 0; O.persist(); F.stepStart(1); d.done[1] = 1; const ov = card(); F.stepCheck();
+    const bs = [...ov.querySelectorAll('.frez button.frezf')]; const pic = ov.querySelector('.frsp'); if (pic) pic.click(); const bt = bs.find(x => x.dataset.a === a); bt.click(); bt.click(); bs.forEach(x => x.click());
+    const lv = LN.state().k[sk].l, dis = bs.every(x => x.disabled), row = (O.save.alog[O.today()].e || []).filter(e => e[1] === id && e[6] === 'f').pop();
+    ov.hidden = true; ov.innerHTML = ''; F._lead(''); return { lv, dis, row: row && row[7] && row[7].ez, rows: (O.save.alog[O.today()].e || []).filter(e => e[1] === id && e[6] === 'f').length }; }, [card.toString(), id, l, a]);
+  const hard = await tapEz('world-flag', 2, 'h');
+  ok('#411 "hard": the next round of that mission is one level easier, one tap only', hard.lv === 1 && hard.dis && hard.row === 'h' && hard.rows === 1, JSON.stringify(hard));
+  const easy = await tapEz('sci-animals', 2, 'e');
+  ok('#411 "easy": one level up', easy.lv === 3 && easy.row === 'e', JSON.stringify(easy));
+  const lock = await p.evaluate(card => { card = eval(card); const O = window.OREN, T = window.TAL, F = window.FRIEND, LN = window.LEARN, sk = 'a:world-ani';
+    O.save.ez = { n: 2 }; LN.start(sk, 1); LN.state().k[sk].l = 2; LN.state().k[sk].lk = 1; const d = T.dailyEnsure(); d.t = ['read-first', 'world-ani']; d.done = [0, 0]; d.bs = 0;
+    F.stepStart(1); d.done[1] = 1; const ov = card(); F.stepCheck(); ov.querySelector('.frez button.frezf[data-a="h"]').click(); const l = LN.state().k[sk].l; LN.state().k[sk].lk = 0; ov.hidden = true; ov.innerHTML = ''; F._lead(''); return l; }, card.toString());
+  ok('#411 a level the parent locked stays', lock === 2, String(lock));
+  // math: "hard" after a level -> the next path math mission plays that level again (no new one yet)
+  const mth = await p.evaluate(card => { card = eval(card); const O = window.OREN, T = window.TAL, F = window.FRIEND; O.save.ez = { n: 2 };
+    const lv = T.nextLevel(); const d = T.dailyEnsure(); d.t = ['math', 'math']; d.done = [0, 0]; d.bs = 0; O.persist(); F.stepStart(0);
+    O.emit('levelDone', lv, 2); d.done[0] = 1; const ov = card(); F.stepCheck(); ov.querySelector('.frez button.frezf[data-a="h"]').click(); ov.hidden = true; ov.innerHTML = '';
+    const had = O.save.s[lv.id]; O.save.s[lv.id] = 2; const nx = T.nextLevel(); let went = null; const pl = O.pathLevel; O.pathLevel = id => { went = id; }; const sl = O.startLevel, sw = O.showWorld; O.startLevel = () => {}; O.showWorld = () => {};
+    window.TAL_step(1); O.pathLevel = pl; O.startLevel = sl; O.showWorld = sw; const again = O.save.ez.rep; let went2 = null; O.pathLevel = id => { went2 = id; }; O.startLevel = () => {}; O.showWorld = () => {}; window.TAL_step(1); O.pathLevel = pl; O.startLevel = sl; O.showWorld = sw;
+    if (had == null) delete O.save.s[lv.id]; else O.save.s[lv.id] = had; F._lead(''); O.showMap();
+    return { lv: lv.id, nx: nx && nx.id, went, went2, again: again || null, row: (O.save.alog[O.today()].e || []).some(e => e[1] === 'lv:' + lv.id && e[6] === 'f' && e[7].ez === 'h') }; }, card.toString());
+  ok('#411 math "hard": the next path math mission repeats that level, once', mth.nx !== mth.lv && mth.went === mth.lv && mth.went2 === mth.nx && !mth.again && mth.row, JSON.stringify(mth));
+  await p.evaluate(() => window.TAL.parentPanel('day')); await sleep(300);
+  const pv = await p.evaluate(() => (document.querySelector('#sPar') || document.body).innerText);
+  ok('#411 the parent day view shows the answers', pv.includes('אמר: היה קשה') && pv.includes('אמר: היה קל'), pv.replace(/\s+/g, ' ').slice(0, 300));
+  await p.evaluate(() => window.OREN.showMap()); await sleep(200);
+  const shot = await p.evaluate(card => { card = eval(card); const O = window.OREN, T = window.TAL, F = window.FRIEND; O.save.ez = { n: 2 }; O.save.mix = { c: 1, s: 3 };
+    const d = T.dailyEnsure(); d.t = ['read-first', 'world-il']; d.done = [1, 0]; d.bs = 0; O.persist(); F.stepStart(1); d.done[1] = 1; const ov = card(); F.stepCheck(); const pic = ov.querySelector('.frsp'); if (pic) pic.click(); return !!ov.querySelector('.frez'); }, card.toString());
+  if (process.env.SHOTS) await sleep(900);
+  await L.shot(p, { path: L.SHOTDIR + '/easy-hard-' + L.variant + '.png' });
+  await p.evaluate(() => { const ov = document.querySelector('#ov'); ov.hidden = true; ov.innerHTML = ''; window.FRIEND._lead(''); });
+  ok('#411 screenshot of the question on the result card', shot);
+  ok('#411 no page errors', !errs.length, errs.join(' | '));
   // --- #407 the friend remembers: at the start of the day yesterday + today, at the end two things he did + a hint ---
   const SEP = '⁣', nSent = t => (t.match(/[^.!?]+[.!?]+/g) || [t]).filter(x => /[א-ת]/.test(x)).length;
   const R = await p.evaluate(() => { const M = window.STORYMIX, T = window.TAL, O = window.OREN;
@@ -231,5 +276,37 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
   await L.shot(p, { path: L.SHOTDIR + '/memory-end-' + L.variant + '.png' });
   await p.evaluate(() => { document.querySelector('#ov').hidden = true; });
   ok('#407 no page errors', !errs.length, errs.join(' | '));
+  // --- #414 every mission has one short learning goal: the friend says it once at the start, the day log keeps it when finished ---
+  const gt = await p.evaluate(() => { const G = window.GOALS, T = window.TAL, O = window.OREN; if (!G) return { none: 1 };
+    const ids = [...Object.keys(T.ACT), 'math', ...O.ALLLV.map(l => 'lv:' + l.id)];
+    return { miss: ids.filter(id => !G.of(id)), extra: Object.keys(G.T).filter(k => !/^w:/.test(k) && k !== 'math' && !T.ACT[k]),
+      lines: G.speakList(), fl: window.FRIEND.speakList(), n: ids.length }; });
+  ok('#414 every activity + math level has a goal in the one table (none missing, none left over)', !gt.none && !gt.miss.length && !gt.extra.length, JSON.stringify({ miss: gt.miss, extra: gt.extra }));
+  const gbad = (gt.lines || []).filter(t => t.replace(/[^א-ת֑-ׇ ]/g, '').split(' ').some(w => w.length > 1 && !NIK.test(w)) || t.length > 70);
+  ok('#414 goal lines: short, kid text with nikud on every word', gt.lines && gt.lines.length >= 100 && !gbad.length, gbad.join(' | '));
+  ok('#414 every goal line is in the friend\'s pregen list', gt.lines && gt.lines.every(t => gt.fl.includes(t)));
+  // free play: an activity opens -> its goal is said before the instruction, once a day
+  const goalRun = async id => { let o; const s = await said(async () => { o = await p.evaluate(id => { const O = window.OREN, T = window.TAL; O.showMap(); T.ACT[id].run(O.showMap); return { line: window.GOALS.line(id) }; }, id); }, 900);
+    o.bub = await p.evaluate(() => [...document.querySelectorAll('.frb, #bText')].map(e => e.textContent).join(' ')); o.s = s; return o; };
+  await p.evaluate(() => { const O = window.OREN; O.save.gls = null; O.save.alog = {}; const d = window.TAL.dailyEnsure(); d.t = []; d.done = []; O.persist(); });
+  let g1 = await goalRun('sci-float');
+  ok('#414 quiz activity: the friend says the goal at the start (voice + bubble)', await voiced(g1.s, g1.line) && g1.bub.includes(g1.line), JSON.stringify(g1));
+  const g2 = await goalRun('sci-plant');
+  ok('#414 hands-on activity (no quiz): the goal is said too', await voiced(g2.s, g2.line), JSON.stringify(g2));
+  g1 = await goalRun('sci-float');
+  ok('#414 the same mission again today: the goal is not said again', !await voiced(g1.s, g1.line), JSON.stringify(g1.s));
+  // the path: the story line first, then the goal
+  await p.evaluate(() => { const O = window.OREN, T = window.TAL; O.save.gls = null; O.showMap(); const d = T.dailyEnsure(); d.t = ['math', 'read-wp', 'read-pw']; d.done = [1, 0, 0]; O.persist(); });
+  s = await said(() => p.evaluate(() => window.TAL_step(1)), 900);
+  const gp = await p.evaluate(() => window.GOALS.line('read-wp'));
+  ok('#414 path mission: the goal is said at its start, after the story line', (await voiced(s, gp) || s.some(x => x.replace(/[\u0591-\u05C7]/g, '').includes(gp.replace(/[\u0591-\u05C7]/g, '')))) && s.some(x => /^[^⁣]+ ⁣היום נלמד/.test(x.replace(/[\u0591-\u05C7]/g, ''))), JSON.stringify({ gp, s }));
+  // finished -> the goal goes into the day log line (parent text, no nikud); left in the middle -> not learned
+  const grec = await p.evaluate(() => { const O = window.OREN, T = window.TAL, G = window.GOALS; O.emit('tlDone', 'read-wp', 2);
+    T.ACT['sci-mag'].run(O.showMap); O.showMap();
+    const e = (O.save.alog[O.today()] || {}).e || [], row = id => e.filter(x => x[1] === id).pop();
+    return { done: row('read-wp'), left: row('sci-mag'), want: G.plain('read-wp'), learned: G.learned(O.today()) }; });
+  ok('#414 finished: the goal is recorded on its day log line (no nikud)', grec.done && grec.done[6] === 'c' && grec.done[7] && grec.done[7].lg === grec.want && !NIK.test(grec.want), JSON.stringify(grec));
+  ok('#414 left in the middle: no goal recorded; the day\'s learned list has the finished one', grec.left && !(grec.left[7] && grec.left[7].lg) && grec.learned.includes(grec.want) && grec.learned.length === 1, JSON.stringify(grec));
+  ok('#414 no page errors', !errs.length, errs.join(' | '));
   await b.close(); L.finish('friend', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT friend 0 1'); process.exitCode = 1; });

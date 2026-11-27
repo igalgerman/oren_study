@@ -23,8 +23,8 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  await p.evaluate(()=>{const d=window.TAL.S().daily;d.o=['explore','math','readg','create','calm'];});await home();await sleep(200);
  await p.locator('#sHome .dcard:not(.cont)').first().click();await sleep(300);
  const d1=await p.evaluate(()=>{const T=window.TAL,d=T.S().daily;const off=new Set(['lab','art']);return {t:d.t,ch:d.ch,bad:d.t.filter(id=>T.ACT[id]&&(off.has(T.ACT[id].b.id)||id==='read-pw')).length,inDom:d.t.filter(id=>T.ACT[id]&&T.GROUPS.find(g=>g.id==='explore').ids.includes(T.ACT[id].b.id)).length,dom:T.S().dom,path:document.querySelectorAll('#sHome .tpath .tstep2').length,go:!!document.querySelector('#sHome .bigbtn.huge')};});
- ok('choice builds 3 steps in the domain + 1 surprise, only enabled parts',d1.ch==='explore'&&d1.t.length===4&&d1.inDom>=3&&d1.bad===0,JSON.stringify(d1));
- ok('then the usual path with one big button',d1.path===4&&d1.go);ok('balancing remembers the chosen domain',d1.dom&&d1.dom.explore>0);
+ ok('choice builds 3 steps in the domain + 1 surprise + the English scene (#424), only enabled parts',d1.ch==='explore'&&d1.t.length===5&&d1.t.includes('en-day')&&d1.inDom>=3&&d1.bad===0,JSON.stringify(d1));
+ ok('then the usual path with one big button',d1.path===5&&d1.go);ok('balancing remembers the chosen domain',d1.dom&&d1.dom.explore>0);
  // continue card + no math when all worlds are off
  await p.evaluate(()=>{const T=window.TAL,O=window.OREN;delete T.S().daily;O.WORLDS.forEach(w=>T.S().set.offW[w.id]=1);});await home();await sleep(200);
  await p.locator('#sHome .dcard.cont').click();await sleep(200);
@@ -37,7 +37,7 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  ok('something else: math, the doors with something in them + together (no building list)',o.names.length===exp&&o.names.length<=6&&!o.names.some(n=>/מַעְבָּדָה|אָמָּנוּת/.test(n))&&o.names.some(n=>n.includes('אַבָּא')),JSON.stringify(o.names));
  await p.locator('#sTal .dall .dcard',{hasText:'אַבָּא'}).click();await sleep(300);
  const d3=await p.evaluate(()=>{const d=window.TAL.S().daily;return {t:d.t,ch:d.ch,lead:window.TAL.TOG.find(a=>'tog:'+a.k===d.t[0]).lead};});
- ok('"together" from something else: an Oren-led together step + 2 surprises',d3.ch==='tog'&&/^tog:/.test(d3.t[0])&&d3.lead===1&&d3.t.length===3,JSON.stringify(d3));
+ ok('"together" from something else: an Oren-led together step + 2 surprises + the English scene (#424)',d3.ch==='tog'&&/^tog:/.test(d3.t[0])&&d3.lead===1&&d3.t.length===4&&d3.t[3]==='en-day',JSON.stringify(d3));
  // --- together screen ---
  await p.locator('#sHome .bigbtn.huge').click({force:true});await sleep(300);
  const ts=await p.evaluate(()=>({kid:document.querySelector('#sTal .tspec .lsent').textContent,par:document.querySelector('#sTal .tpar').textContent,btn:[...document.querySelectorAll('#sTal .tspec .bigbtn')].map(b=>b.textContent)}));
@@ -81,9 +81,34 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
    const w=O.WORLDS.find(x=>x.id==='sub');w.levels.forEach(l=>O.save.s[l.id]=2);O.emit('levelDone',w.levels[0],2);const wait=d.t.length===0&&d.cr.includes('rw:sub');T.chooseDay('math');return wait&&T.S().daily.t.includes('rw:sub');}));
  // --- fewer rewards ---
  await p.evaluate(()=>{window.__toasts=0;new MutationObserver(m=>m.forEach(r=>r.addedNodes.forEach(n=>{if(n.classList&&n.classList.contains('toast'))window.__toasts++;}))).observe(document.body,{childList:true});window.OREN.showMap();});await sleep(4800);
- ok('badges are earned quietly (no toast)',await p.evaluate(()=>window.__toasts===0&&Object.keys(window.TAL.S().bdg||{}).length>0));
+ ok('#426 no badges earned, no toast',await p.evaluate(()=>window.__toasts===0&&!Object.keys(window.TAL.S().bdg||{}).length));
  await p.evaluate(()=>window.TAL_arcade(window.OREN.showMap));await sleep(200);
  ok('arcade has no tickets or prize shop',await p.locator('.prize,.tkbig').count()===0&&await p.evaluate(()=>window.__arc.state().tickets===undefined));
+ // --- #424 one short English scene per daily path (5 cards, letters and sounds first), at most one a day unless Oren picks English himself ---
+ {const en=await p.evaluate(()=>{const T=window.TAL,O=window.OREN,isEn=x=>T.ACT[x]&&T.ACT[x].b.id==='eng',r={};document.querySelector('#ov').hidden=true;delete T.S().set.plan;
+    const day=dm=>{delete T.S().daily;T.chooseDay(dm);return T.S().daily.t.slice();};
+    for(const dm of ['math','explore','readg','create']){const t=day(dm);r[dm]={sc:t.filter(x=>x==='en-day').length,en:t.filter(isEn).length};}
+    const t1=T.S().daily.t.slice();T.chooseDay('math');const t2=T.S().daily.t;r.again={sc:t2.filter(x=>x==='en-day').length,en:t2.filter(isEn).length};
+    T.dailyEnsure();r.kept=T.S().daily.t.includes('en-day');
+    const own=day('b:eng');r.own={sc:own.filter(x=>x==='en-day').length,en:own.filter(isEn).length};
+    T.S().set.hide.eng=1;const off=day('math');r.off=off.filter(isEn).length;delete T.S().set.hide.eng;
+    r.name=T.ACT['en-day']&&T.ACT['en-day'].name;r.inBuilding=T.BUILD.find(b=>b.id==='eng').acts.some(a=>a.id==='en-day');r.inPool=T.dailyPool().includes('en-day');
+    r.pregen=new Set(T.choiceList()).has(T.spk(r.name||''));return r;});
+  const dms=['math','explore','readg','create'];
+  ok('#424 every daily path has exactly one English step: the short English scene',dms.every(k=>en[k].sc===1&&en[k].en===1),JSON.stringify(en));
+  ok('#424 a second path the same day adds no second English',en.again.sc===1&&en.again.en===1&&en.kept,JSON.stringify(en.again));
+  ok('#424 when Oren picks English himself, his choice is the English (no extra scene)',en.own.sc===0&&en.own.en>=1,JSON.stringify(en.own));
+  ok('#424 English off for the kid: no English scene',en.off===0,String(en.off));
+  ok('#424 the scene is not a card in the English building, not a random pick; name with nikud, in pregen',!en.inBuilding&&!en.inPool&&/[ְ-ּ]/.test(en.name||'')&&en.pregen,JSON.stringify(en));
+  // play the scene from the path: 5 cards, letters and sounds before words, then the step is done
+  await p.evaluate(()=>{const T=window.TAL,O=window.OREN,E=window.ENGLISH2,s=O.save,d=E.day();s.en2={};E.LEVELS[1].units[0].items.forEach(k=>{E.st(s).i[k]=[2,d+3];});s.coach=Object.assign({},s.coach);
+    if(window.LESSONS)window.LESSONS.mark('eng-abc',1);delete T.S().daily;T.chooseDay('math');O.showMap();window.TAL_step(T.S().daily.t.indexOf('en-day'));});await sleep(300);
+  if(!(await p.locator('#sLearn').isHidden().catch(()=>true)))await L.doLesson(p);
+  const sc=await p.evaluate(()=>{const st=window.__e2&&window.__e2.steps||[];const isL=x=>x.t==='teach'?x.c.kind==='letter':/^[ncs]:/.test(x.s.k);const k=st.map(isL);return {n:st.length,k,f:k.indexOf(false)};});
+  ok('#424 the scene: 5 cards, letters and sounds first, then words',sc.n===5&&sc.k[0]===true&&(sc.f<0||sc.k.slice(sc.f).every(x=>!x))&&sc.f>0,JSON.stringify(sc));
+  for(let k=0;k<40&&await p.evaluate(()=>document.querySelector('#ov').hidden);k++){await p.evaluate(()=>{const q=window.__quiz,c=q&&q.wrap.querySelector('.chs');const b=c&&c.children[window.__e2.step.t==='q'?q.ans:0];if(b&&!b.disabled)b.click();});await sleep(120);}
+  ok('#424 finishing the scene marks the path step done',await p.evaluate(()=>{const d=window.TAL.S().daily;return d.done[d.t.indexOf('en-day')]===1&&((window.TAL.S().tl['en-day']||{}).n|0)>0;}));
+  await p.evaluate(()=>{document.querySelector('#ov').hidden=true;window.OREN.showMap();});}
  // --- template and "no missions" still work ---
  ok('parent template skips the choice',await p.evaluate(()=>{const T=window.TAL;T.S().set.plan=['math','any'];delete T.S().daily;window.OREN.showMap();const r=!document.querySelector('#sHome .dchoice')&&T.S().daily.ch==='plan'&&T.S().daily.t.length===2;delete T.S().set.plan;return r;}));
  ok('"no daily missions" shows neither choice nor path',await p.evaluate(()=>{const T=window.TAL;T.S().set.noDaily=1;window.OREN.showMap();const r=!document.querySelector('#sHome .dchoice')&&!document.querySelector('#sHome .tpath');T.S().set.noDaily=0;return r;}));

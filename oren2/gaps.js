@@ -146,14 +146,13 @@ let dict=null,dictTried=false;
 async function getDict(){if(dictTried)return dict;dictTried=true;try{for(let i=0;i<20&&!(window.claude&&window.claude.use);i++)await new Promise(r=>setTimeout(r,100));
   if(window.claude&&window.claude.use)dict=await window.claude.use('dictation');}catch(e){dict=null;}return dict;}
 const SECS=45;
-function race(back){O.setScreen('sTal','city',back);T.hudT('מֵרוֹץ מִלִּים');O.sayNow='כמה מילים תקרא בארבעים וחמש שניות?';const s=$('#sTal');s.innerHTML='';const best=TL('read-flu').b|0;
+function race(back){O.setScreen('sTal','city',back);T.hudT('מֵרוֹץ מִלִּים');O.sayNow='כמה מילים תקרא בארבעים וחמש שניות?';const s=$('#sTal');s.innerHTML='';
   s.appendChild(h('div','whead',`<span class="gd gp-gd">⏱️</span><h1>כַּמָּה מִלִּים בְּ-45 שְׁנִיּוֹת?</h1>`));
   const tip=h('div','lsent','קוֹרְאִים בְּקוֹל כָּל מִלָּה, וְלוֹחֲצִים "קָרָאתִי".');s.appendChild(tip);
-  if(best)s.appendChild(h('div','gp-best',`הַשִּׂיא שֶׁלְּךָ: <b>${best}</b> מִלִּים`));
   const br=h('div','btnrow');const go=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');br.appendChild(go);s.appendChild(br);
   let mic=false;getDict().then(d=>{if(d&&tip.isConnected){mic=true;tip.textContent='קוֹרְאִים בְּקוֹל כָּל מִלָּה. הַמִּיקְרוֹפוֹן מַקְשִׁיב.';}});
-  go.onclick=()=>{if(mic&&T.needPerm)T.needPerm('dictation','כְּדֵי לִקְרֹא בְּקוֹל צָרִיךְ אִשּׁוּר שֶׁל הוֹרֶה לַמִּיקְרוֹפוֹן.');raceRun(back,mic?dict:null,best);};}
-function raceRun(back,d,best){O.setScreen('sTal','city',back);const s=$('#sTal');s.innerHTML='';O.hush();
+  go.onclick=()=>{if(mic&&T.needPerm)T.needPerm('dictation','כְּדֵי לִקְרֹא בְּקוֹל צָרִיךְ אִשּׁוּר שֶׁל הוֹרֶה לַמִּיקְרוֹפוֹן.');raceRun(back,mic?dict:null);};}
+function raceRun(back,d){/* #426: no record line, the stars are the reward (the best count stays in tl['read-flu'].b for the parent) */O.setScreen('sTal','city',back);const s=$('#sTal');s.innerHTML='';O.hush();
   const R=Math.max(1,level('nik',RUNG.length)-1);let pool=[];const nextW=()=>{if(!pool.length)pool=shuffle(WD.filter(w=>w.r<=R));return pool.pop();};
   let w=nextW(),count=0,shown=Date.now(),live=true;const t0=Date.now();
   const bar=h('div','gp-time','<i></i>');const card=h('div','prq tqc gp-race',`<div class="bigw" id="gpW">${w.w}</div><div class="gp-cnt">✓ <b id="gpN">0</b></div>${d?'<div class="heard" id="gpH">מַקְשִׁיב...</div>':''}`);
@@ -173,7 +172,7 @@ function raceRun(back,d,best){O.setScreen('sTal','city',back);const s=$('#sTal')
   const tick=setInterval(()=>{if(!card.isConnected){stop();return;}const left=SECS-(Date.now()-t0)/1000;bar.firstChild.style.width=Math.max(0,left/SECS*100)+'%';hud();if(left<=0)end();},200);
   function stop(){if(!live)return;live=false;clearInterval(tick);T.setKey(null);if(d)try{d.stop();}catch(e){}}
   function end(){stop();const st=count>=18?3:count>=10?2:1;const g=3+st*2;O.addGems(g);T.record('read-flu',st,{b:count});
-    T.result({title:count>best?'שִׂיא חָדָשׁ!':'כָּל הַכָּבוֹד!',sub:`קָרָאתָ ${count} מִלִּים בְּ-45 שְׁנִיּוֹת`+(best&&count<=best?` · הַשִּׂיא: ${best}`:''),stars:st,gems:g,back,again:()=>raceRun(back,d,Math.max(best,count))});}
+    T.result({title:'כָּל הַכָּבוֹד!',sub:`קָרָאתָ ${count} מִלִּים בְּ-45 שְׁנִיּוֹת`,stars:st,gems:g,back,again:()=>raceRun(back,d)});}
   window.__race={get w(){return w;},get count(){return count;},end,ok};}
 
 /* ===================== 1. FINAL LETTERS (for the writing house) ===================== */

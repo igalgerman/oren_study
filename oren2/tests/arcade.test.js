@@ -15,8 +15,8 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
    for(let k=0;k<200;k++){if(await p.evaluate(()=>!document.querySelector('#ov').hidden))break;await p.evaluate(()=>window.__arc.hit());await sleep(id==='swim'||id==='basket'?120:60);
      if(k===40&&['balloon','mole'].includes(id))await p.evaluate(()=>window.__arc.finish());}
    if(!(await p.evaluate(()=>!document.querySelector('#ov').hidden)))await p.evaluate(()=>window.__arc.finish());await sleep(300);
-   const r=await p.evaluate(id=>({ov:!document.querySelector('#ov').hidden,t:window.__arc.state().tickets,tk:/🎟/.test(document.querySelector('#ov').textContent),best:window.__arc.state().best[id]|0,rec:(window.TAL.S().tl['arc-'+id]||{}).s|0}),id);
-   ok(`${id}: finished, record saved, no tickets`,r.ov&&r.t==null&&!r.tk&&r.best>0&&r.rec>0,JSON.stringify(r)+' errs '+(errs.length-e0));
+   const r=await p.evaluate(id=>({ov:!document.querySelector('#ov').hidden,t:window.__arc.state().tickets,tk:/🎟/.test(document.querySelector('#ov').textContent),rc:/שִׂיא/.test(document.querySelector('#ov').textContent),best:window.__arc.state().best[id]|0,rec:(window.TAL.S().tl['arc-'+id]||{}).s|0}),id);
+   ok(`${id}: finished, stars saved, no tickets, no record (#426)`,r.ov&&r.t==null&&!r.tk&&!r.rc&&r.best===0&&r.rec>0,JSON.stringify(r)+' errs '+(errs.length-e0));
    if(id==='soccer')await L.shot(p,{path:L.SHOTDIR+`/arc-${tag}-result.png`});
    await p.evaluate(()=>{document.querySelector('#ov').hidden=true;window.TAL_arcade();});await sleep(200);}
  // real interaction: pop a balloon by clicking

@@ -69,6 +69,13 @@ FR.question=(q,card)=>{FR.mount();missed=false;const w=q&&q.word?T.spk(q.word):'
 function takeLead(){const t=lead;lead='';if(t)bubble(t,3500);return t;}
 /* other screens of a step: put the story line before whatever the screen says */
 function leadOnScreen(){if(!lead)return;if(window.__noAuto){O.say(takeLead());return;}const t=takeLead();O.sayNow=t+' '+(O.sayNow||'');}
+/* #414 the mission's learning goal (goals.js): its own clip, after the path's story line and before the screen's instruction.
+   A quiz takes it with its first question; any other screen gets it once the mission's screen is drawn. */
+const GSEP='\u2063';
+let goalT='';
+/* a question read again (listen first, #389) is the question alone: the goal was said once */
+FR.noGoal=x=>goalT?String(x||'').split(goalT+GSEP).join('').trim():String(x||'');
+FR.goal=t=>{if(!t)return;goalT=t;lead=(lead?lead+' '+GSEP:'')+t+GSEP;setTimeout(()=>{if(lead.includes(t))leadOnScreen();},0);};
 
 /* ---------- the day's path ---------- */
 let cur=null;                                  /* {i, d: the day, done: announced} while inside a path step */
@@ -84,8 +91,27 @@ FR.stepCheck=()=>{if(!cur)return;const d=daily();if(!d||d.d!==cur.d||d.t[cur.i]!
   const t=d.done.slice(d.bs|0).every(Boolean)?close+' '+ALL:close;
   const card=$('#ov:not([hidden]) .card');if(card&&!card.querySelector('.frstory')){const s=h('div','frstory',`<span class="frq">${quest().k}</span><span>${t}</span>`);
     const row=card.querySelector('.btnrow');if(row)card.insertBefore(s,row);else card.appendChild(s);setTimeout(()=>{if(s.isConnected){last=t;O.say(T.spk(t));}},D(1200));
-    storyPic(card,sc);}
+    storyPic(card,sc);ezAsk(card,cur.id,t);}
   else talk(t,{ms:3500});};
+/* #411 at the end of a scene, at most every third scene (save.ez.n counts the scenes since the last question): 'easy or hard?'
+   with two big faces, one tap. The answer moves that mission's level one step (hard = one easier, easy = one harder; a level the
+   parent locked stays); a math journey level said 'hard' is played again on the next path math mission (save.ez.rep).
+   The answer is a day-log line ('f', x.ez 'e'|'h') that the parent's day view shows. */
+const EZ={q:'הָיָה קַל אוֹ קָשֶׁה?',e:'קַל',h:'קָשֶׁה',EVERY:3};FR.EZ=EZ;T.addChoices&&T.addChoices([EZ.e,EZ.h]);
+let lastLv=null;O.on('levelDone',lv=>{lastLv=lv&&lv.type!=='train'?lv:null;});
+function ezAsk(card,id,t){const S=O.save;if(!S)return;const z=S.ez=S.ez||{};z.n=(z.n|0)+1;if(z.n<EZ.EVERY||card.querySelector('.frez'))return;z.n=0;O.persist();
+  const lv=id==='math'?lastLv:null,box=h('div','frez',`<div class="frezq">${EZ.q}</div>`),row=h('div','frezr');
+  [['e','😀'],['h','😣']].forEach(([a,f])=>{const b=h('button','frezf',`<span class="frezi">${f}</span><span>${EZ[a]}</span>`);b.dataset.a=a;
+    b.onclick=ev=>{ev.stopPropagation();if(box._a)return;box._a=a;row.querySelectorAll('button').forEach(x=>{x.disabled=true;});b.classList.add('on');O.sfx.pop&&O.sfx.pop(2);ezSet(id,lv,a);};row.appendChild(b);});
+  box.appendChild(row);const r=card.querySelector('.btnrow');if(r)card.insertBefore(box,r);else card.appendChild(box);
+  setTimeout(()=>{if(box.isConnected&&!box._a)O.say(T.spk(EZ.q));},D(1300));}
+function ezSet(id,lv,a){const S=O.save,LN=window.LEARN,DL=window.DAYLOG;
+  if(id==='math'){if(lv&&a==='h')S.ez.rep=lv.id;}
+  else if(LN&&LN.state)try{const st=LN.state(),sk=id==='ln-math'?(st.rc||[]).find(x=>(LN.DRILL_IDS||[]).includes(x)):'a:'+id,k=sk&&st.k[sk];
+    if(k&&!k.lk){const l=Math.max(1,Math.min(LN.maxLv(sk),(k.l|0||1)+(a==='h'?-1:1)));if(l!==k.l)LN.setLevel(sk,l);}}catch(e){}
+  if(DL&&DL.add){const d=new Date();DL.add(O.today(),[d.getHours()*60+d.getMinutes(),lv?'lv:'+lv.id:id,0,0,0,0,'f',{ez:a}]);}O.persist();}
+/* the next path math mission after a 'hard' answer: that level again, once */
+FR.ezRep=()=>{const S=O.save,z=S&&S.ez;if(!z||!z.rep)return null;const id=z.rep;z.rep=null;O.persist();return (O.ALLLV||[]).find(l=>l.id===id)||null;};
 /* #387: the end of a scene, a 2 s picture of what changed in the story: the ship as the story has it, the scene's new piece
    blinking (the ship's own drawing). It lies over the result card; one tap (anywhere on it) skips, it never waits for him. */
 const PICMS=2000;
@@ -127,7 +153,7 @@ O.on('levelDone',()=>setTimeout(FR.stepCheck,D(600)));
 /* #433: an error in the middle of a mission sent Oren home (core error handler): the friend says it on the home screen */
 const OOPS='אוֹי, חוֹזְרִים לַמַּסָּע';
 FR.oops=()=>{FR.mount();anim('sad');return talk(OOPS,{ms:3000});};
-FR.speakList=()=>[LISTEN,RXL.hint,RXL.yday,RXL.back,OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
+FR.speakList=()=>[EZ.q,...(window.GOALS?window.GOALS.speakList():[]),LISTEN,RXL.hint,RXL.yday,RXL.back,OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
   ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([a,b])=>[a,FIRST+' '+a,LAST+' '+a,b,b+' '+ALL])):[]),...(SM()?SM().speakList():[])];
 /* ---------- #389 listen first ----------
    A new row of answer buttons (.chs .chb) rests until the spoken question has ended, 4 s at most; with no voice (offline,
@@ -168,7 +194,7 @@ const P4=()=>(window.__oren4||{}).play;
 const speedy=r=>{const p=P4();return !!(p&&p.mode==='speed'&&r.closest('#sPlay'));};
 const done=r=>!!r.querySelector('.ok,.show,.pop');
 const rest=(r,ms)=>{r.classList.add('lsn');r._ls.until=Date.now()+ms;};
-const reread=s=>{if(!s.re)return;s.re=0;if(O.sayNow)O.say(O.sayNow);};
+const reread=s=>{if(!s.re)return;s.re=0;if(O.sayNow)O.say(FR.noGoal(O.sayNow));};
 function free(r){r.classList.remove('lsn');const s=r._ls;s.until=0;s.wait=0;reread(s);}
 function gate(r){if(r._ls)return r._ls;const s=r._ls={t0:Date.now(),w:0,until:0,wait:0,re:0};
   if(!lsOff()&&!noVoice()&&!speedy(r)){s.wait=1;rest(r,LS.MAX);}return s;}

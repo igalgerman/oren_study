@@ -392,8 +392,6 @@ body.act #gemc,body.act #btnMusic,body.act #btnHome,body.act .hud-mid .chip,body
 .sw.sel,.hatb.sel{outline:4px solid var(--ink);outline-offset:2px}
 .hatb{position:relative;width:58px;height:54px;display:grid;place-items:center;background:var(--paper);box-shadow:inset -3px -3px 0 rgba(0,0,0,.12),0 3px 0 rgba(0,0,0,.2)}
 .hatb svg{width:40px}
-.hatb .pr{position:absolute;bottom:-10px;font-size:12px;font-weight:900;background:var(--ink);color:#fff;padding:0 5px;direction:ltr;display:flex;gap:2px;align-items:center}
-.hatb .pr svg{width:10px}
 /* TEACHER */
 .tch{display:flex;flex-direction:column;align-items:center;gap:14px;width:min(900px,100%)}
 .tabs{display:flex;gap:8px}
@@ -622,15 +620,12 @@ const SKIN={light:'#f6d2a8',tan:'#e0a878',brown:'#9a6440'};
 const SHIRT={black:'#26292f',navy:'#1f2e4d',red:'#e4572e',blue:'#3a8fc4',green:'#4fae4f',purple:'#8e6fd1',orange:'#f28c28'};
 const PANTS={olive:'#5f6b3c',jeans:'#2f5d8a',khaki:'#b59b6b',black:'#2a2d33'};
 const OREN_LOOK={hair:'lightbrown',skin:'light',shirt:'black',pants:'olive'};
-const HATS={none:{rows:['..........','..........','..........'],pal:{},price:0,n:'בְּלִי'},
-  cap:{rows:['..........','..CCCCCC..','.CCCCCCCCC'],pal:{C:'#2f5d8a'},price:0,n:'כּוֹבַע'},
-  helmet:{rows:['..........','..SSSSSS..','.SsSSSSSS.'],pal:{S:'#8d939a',s:'#c7ccd1'},price:20,n:'קַסְדָּה'},
-  crown:{rows:['.G..GG..G.','.GGGGGGGG.','.GRGGBGRG.'],pal:{G:'#ffcf4d',R:'#e4572e',B:'#3a8fc4'},price:60,n:'כֶּתֶר'},
-  wizard:{rows:['....WW....','...WWYW...','..WWWWWW..'],pal:{W:'#6c4fc1',Y:'#ffd166'},price:120,n:'כּוֹבַע קוֹסֵם'}};
+/* #426: no hats (rewards are only stars + gems; gems build the kingdom). The hero keeps 3 empty rows on top so its size stays the same. */
+const HAT0=['..........','..........','..........'];
 const PETS={cat:{n:'פִּיקְסֶל',s:()=>SPR.cat},dog:{n:'בְּלוֹקִי',s:()=>SPR.dog},dragon:{n:'נִיצוֹץ',s:()=>SPR.dragon},owl:{n:'נוֹצִי',s:()=>SPR.owl},turtle:{n:'אִטִּי',s:()=>SPR.turtle}};
 const HERO=['..HhHhHH..','.HHHhHHHH.','.HHHHHHHHH','HSSSSSSSSH','SSSSSSSSSS','SSWESSWESS','SSWESSWESS','SQSSSSSSQS','.SSSMMSSS.','..SSSSSS..','.TTTTTTTT.','TTTTTTTTTU','STTTLLTTUS','STTLLLLTUS','.TTTTTTTU.','.PPPBBPPP.','.PPP..PPP.','.FFF..FFF.'];
-function avatarSVG(av){av=av||{};const hat=HATS[av.hat]||HATS.none;const H=HAIR[av.hair]||HAIR.lightbrown,S2=SKIN[av.skin]||SKIN.light,T=SHIRT[av.shirt]||SHIRT.black,P=PANTS[av.pants]||PANTS.jeans;const dark=av.shirt==='black'||av.shirt==='navy';
-  return sprite([...hat.rows,...HERO],Object.assign({H,h:shade(H,.16),S:S2,W:'#ffffff',E:'#5a3a22',K:'#1d2631',Q:'#f2a7a0',M:'#b35d4c',T,U:dark?shade(T,.18):shade(T,-.25),L:dark?'#f1f1f1':'#fffaf0',P,B:shade(P,-.3),F:'#2b2f36'},hat.pal));}
+function avatarSVG(av){av=av||{};const H=HAIR[av.hair]||HAIR.lightbrown,S2=SKIN[av.skin]||SKIN.light,T=SHIRT[av.shirt]||SHIRT.black,P=PANTS[av.pants]||PANTS.jeans;const dark=av.shirt==='black'||av.shirt==='navy';
+  return sprite([...HAT0,...HERO],Object.assign({H,h:shade(H,.16),S:S2,W:'#ffffff',E:'#5a3a22',K:'#1d2631',Q:'#f2a7a0',M:'#b35d4c',T,U:dark?shade(T,.18):shade(T,-.25),L:dark?'#f1f1f1':'#fffaf0',P,B:shade(P,-.3),F:'#2b2f36'}));}
 const AV=()=>avatarSVG(save.av);
 const PET=()=>(PETS[save.av.pet]||PETS.cat);
 
@@ -1172,14 +1167,17 @@ const SHOP=[['flower','פֶּרַח',5],['tree','עֵץ',10],['flag','דֶּגֶ
 
 /* ---------- storage: browser + private cloud copy ---------- */
 const KEY='oren4-v1';
-const blank=()=>({v:4,snd:2,t:0,s:{},m:{},seen:{},story:{},rq:[],days:[],ans:0,ok:0,trains:0,music:true,gems:0,av:{hair:'lightbrown',skin:'light',shirt:'black',pants:'olive',hat:'none',pet:'cat'},owned:{none:1,cap:1},k:{},tc:[],sp:{},made:{}});
+const blank=()=>({v:4,snd:2,t:0,s:{},m:{},seen:{},story:{},rq:[],days:[],ans:0,ok:0,trains:0,music:true,gems:0,av:{hair:'lightbrown',skin:'light',shirt:'black',pants:'olive',pet:'cat'},owned:{},k:{},tc:[],sp:{},made:{}});
 let save=blank();
 function migrateOld(o){if(!o||!o.s)return;const mapB={'add-16':'add-boss','sub-15':'sub-boss','mul-15':'mul-boss','div-13':'div-boss','word-10':'word-boss','fin-0':'fin-boss'};
   for(const [k,v] of Object.entries(o.s)){if(mapB[k]){save.s[mapB[k]]=Math.max(save.s[mapB[k]]|0,v|0);continue;}if(ALLU.find(u=>u.id===k&&!u.boss))for(const j of [0,1,2])save.s[k+'-'+j]=Math.max(save.s[k+'-'+j]|0,v|0);}
   for(const [k,v] of Object.entries(o.m||{}))save.m[k]=(save.m[k]|0)|(v|0);
   save.days=[...new Set([...save.days,...(o.days||[])])];save.ans=Math.max(save.ans,o.ans|0);save.ok=Math.max(save.ok,o.ok|0);save.gems=Math.max(save.gems,(o.ok|0));
   if(Object.keys(o.s).length)save.story.intro=1;}
-try{const v=JSON.parse(localStorage.getItem(KEY)||'null');if(v&&v.v===4)save=Object.assign(blank(),v);else{migrateOld(JSON.parse(localStorage.getItem('oren3-v1')||'null'));const o2=JSON.parse(localStorage.getItem('oren2-v1')||'null');if(o2&&o2.m)for(const [k,v2] of Object.entries(o2.m))save.m[k]=(save.m[k]|0)|(v2|0);}}catch(e){}
+/* #432 an old or damaged save: a missing field or one of the wrong type (null, a string for a list...) gets its blank value */
+const kindOf=x=>Array.isArray(x)?'a':x===null?'n':typeof x;
+function fixSave(v){const b=blank();if(kindOf(v.snd)!=='number')v.snd=v.music===false?1:2;for(const k in b)if(kindOf(v[k])!==kindOf(b[k]))v[k]=b[k];return v;}
+try{const v=JSON.parse(localStorage.getItem(KEY)||'null');if(v&&typeof v==='object'&&v.v===4)save=fixSave(v);else{migrateOld(JSON.parse(localStorage.getItem('oren3-v1')||'null'));const o2=JSON.parse(localStorage.getItem('oren2-v1')||'null');if(o2&&o2.m)for(const [k,v2] of Object.entries(o2.m))save.m[k]=(save.m[k]|0)|(v2|0);}}catch(e){}
 let cloud={ref:null,busy:false,dirty:false,timer:0};
 function mergeIn(o){if(!o||typeof o!=='object')return;
   for(const [k,v] of Object.entries(o.s||{}))if((v|0)>(save.s[k]|0))save.s[k]=v|0;
@@ -1199,14 +1197,17 @@ function mergeIn(o){if(!o||typeof o!=='object')return;
   for(const [k,v] of Object.entries(o.st||{})){save.st=save.st||{};const c=save.st[k]||{a:0,o:0};save.st[k]={a:Math.max(c.a|0,v.a|0),o:Math.max(c.o|0,v.o|0)};}
   if(o.set&&(+o.setT||0)>(+save.setT||0)){save.set=o.set;save.setT=o.setT;lastSetJ=JSON.stringify(save.set);}
   for(const x of (o.iss||[])){if(!x||!x.d||!x.k)continue;save.iss=save.iss||[];const e=save.iss.find(y=>y.d===x.d&&y.k===x.k);if(e)e.n=Math.max(e.n|0,x.n|0);else save.iss.push(x);}if(save.iss)save.iss=save.iss.sort((a,b)=>a.d<b.d?-1:1).slice(-30);
-  for(const k of ['prof','bdg','last'])if(o[k]&&!save[k])save[k]=o[k];
-  for(const m of ['dom','rw','coach','cnt','tg','pcA','pcU','pk','pkx'])for(const [k,v] of Object.entries(o[m]||{})){save[m]=save[m]||{};save[m][k]=Math.max(+save[m][k]||0,+v||0);}
+  for(const k of ['prof','last'])if(o[k]&&!save[k])save[k]=o[k];
+  for(const m of ['dom','rw','coach','cnt','tg','pcA','pcU','pk','pkx','hb'])for(const [k,v] of Object.entries(o[m]||{})){save[m]=save[m]||{};save[m][k]=Math.max(+save[m][k]||0,+v||0);}
   if(o.lrn&&window.LEARN&&window.LEARN.core)save.lrn=window.LEARN.core.merge(save.lrn,o.lrn);
   if(o.kn&&window.KNOW)save.kn=window.KNOW.core.merge(save.kn,o.kn);
   if(o.help&&typeof o.help==='object'){const hp=save.help=save.help||{items:{},tb:[],t:0};hp.items=hp.items||{};for(const [k,v] of Object.entries(o.help.items||{})){const c=hp.items[k];if(!c||(v.n|0)>(c.n|0)||((v.n|0)===(c.n|0)&&String(v.last||'')>String(c.last||'')))hp.items[k]=v;}
     if((o.help.tb||[]).length>(hp.tb||[]).length)hp.tb=o.help.tb;hp.t=Math.max(hp.t|0,o.help.t|0);}
   if(o.health&&window.HEALTH)save.health=window.HEALTH.merge(save.health||{},o.health);else if(o.health&&!save.health)save.health=o.health;
-  if((+o.t||0)>(+save.t||0)){for(const k of ['gems','av','k','tc','made','art','daily','typ','kpic','jar','mood','prof','bdg','arc','togL','ship'])if(o[k]!=null)save[k]=o[k];if(o.set&&!(+o.setT||0)&&!(+save.setT||0))save.set=o.set;save.t=o.t;}}
+  if((+o.t||0)>(+save.t||0)){for(const k of ['gems','av','k','tc','made','art','daily','typ','kpic','jar','mood','prof','arc','togL','ship'])if(o[k]!=null)save[k]=o[k];if(o.set&&!(+o.setT||0)&&!(+save.setT||0))save.set=o.set;save.t=o.t;}hatsBack();}
+/* #426: hats are gone; a hat bought earlier gives its gems back, once per hat (save.hb, synced like the other max-merged maps) */
+function hatsBack(){const P={helmet:20,crown:60,wizard:120};let g=0;for(const [k,v] of Object.entries(P))if(save.owned&&save.owned[k]&&!(save.hb&&save.hb[k])){save.hb=save.hb||{};save.hb[k]=1;g+=v;}
+  if(g)save.gems=(save.gems|0)+g;if(save.av&&save.av.hat)delete save.av.hat;return g;}
 var lastSetJ='';
 /* problem log for the parent panel: one entry per kind per day with a count (synced with the family) */
 function logIssue(k,m){try{if(kidSave||window.__fast)return;const d=today();save.iss=save.iss||[];let e=save.iss.find(x=>x.d===d&&x.k===k);if(!e){e={d,k,n:0};save.iss.push(e);save.iss=save.iss.slice(-30);}e.n++;if(m)e.m=String(m).slice(0,200);try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}}catch(e){}}/* local only: goes to the family save with the next normal save (no retry loops) */
@@ -1295,7 +1296,7 @@ function evDevice(){const n=navigator,ua=n.userAgent||'',w=Math.min(screen.width
   addEventListener('pagehide',()=>{track('se',{dur:Math.round((Date.now()-EV.t0)/1000),n:EV.n,drop:EV.drop},true);evFlush('hide');});})();
 const COACH_DONE={tour:1,home:99,hub:99,group:99,map:99,'i-city':1,'i-map':1,'i-king':1,'i-arc':1};
 function parentSandbox(){const b=blank();b.coach=Object.assign({},kidSave&&kidSave.coach,COACH_DONE);b.story={intro:1};b.gems=500;b.set={all:1,brk:0,hide:{},lim:{daily:0,bed:0}};b.prof=kidSave&&kidSave.prof;b.daily=null;return b;}
-function parentPlay(on,fresh){if(on&&!kidSave){kidSave=save;let ps=null;if(!fresh)try{ps=JSON.parse(localStorage.getItem(KEY+'-parent'));}catch(e){}save=ps&&ps.v?ps:parentSandbox();if(!save.prof&&kidSave.prof)save.prof=kidSave.prof;save.coach=Object.assign({},kidSave.coach,save.coach,COACH_DONE);window.__parentPlay=true;document.body.classList.add('pplay');}
+function parentPlay(on,fresh){if(on&&!kidSave){kidSave=save;let ps=null;if(!fresh)try{ps=JSON.parse(localStorage.getItem(KEY+'-parent'));}catch(e){}save=ps&&typeof ps==='object'&&ps.v?fixSave(ps):parentSandbox();if(!save.prof&&kidSave.prof)save.prof=kidSave.prof;save.coach=Object.assign({},kidSave.coach,save.coach,COACH_DONE);window.__parentPlay=true;document.body.classList.add('pplay');}
   else if(!on&&kidSave){save=kidSave;kidSave=null;window.__parentPlay=false;document.body.classList.remove('pplay');}
   else if(on&&fresh){save=parentSandbox();}
   updateGems();emit('mode',!!kidSave);}
@@ -1575,9 +1576,11 @@ function googleSay(t,lang,again,part,slow,done){done=done||(()=>{});const en=lan
   const tm=setTimeout(()=>{if(!go)fall('timeout');},GV.ms);/* the browser voice only after a retry and a long wait (#36) */
   /* #399 a slow fetch that arrives after the screen changed (or after hush) is not played: the line belongs to an old screen */
   const stale=()=>GV.audio!==a||sqOld(done);const drop=()=>{clearTimeout(tm);try{a.pause();}catch(e){}if(GV.audio===a)GV.audio=null;done();};
-  a.onplaying=()=>{if(stale())return drop();auHint(false);if(!go){vmOff(rp);if(!part)voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});sayGuard(parts[part],done);}go=true;clearTimeout(tm);};a.onplay=()=>{if(stale())return drop();duck(true);vo(1,a);};a.onended=()=>{if(GV.audio===a&&!last){googleSay(t,lang,0,part+1,slow,done);return;}duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a){GV.audio=null;vo(0,a);}done();};/* the next part; stopped (hush) or replaced: the rest is not spoken */
+  a.onplaying=()=>{if(stale())return drop();auHint(false);if(!go){vmOff(rp);try{emit('vpart',rp);}catch(e){}if(!part)voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});sayGuard(parts[part],done);}go=true;clearTimeout(tm);};a.onplay=()=>{if(stale())return drop();duck(true);vo(1,a);};a.onended=()=>{if(GV.audio===a&&!last){googleSay(t,lang,0,part+1,slow,done);return;}duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a){GV.audio=null;vo(0,a);}done();};/* the next part; stopped (hush) or replaced: the rest is not spoken */
   a.onerror=()=>fall(a.error&&a.error.code===4?'no-audio':'audio-error');/* 4: not audio, e.g. the server answered 429/502 (not made yet) */
   a.play().catch(e=>{if(e&&e.name==='NotAllowedError')auHint(true);fall(e&&e.name==='NotAllowedError'?'blocked':e&&e.name==='NotSupportedError'?'no-audio':'audio-error');});}
+/* #435 emit('vpart',text) when each clip (part) of a Google sentence starts, with its text as given to say(); emit('vpart','') on hush().
+   The answers lit one by one as they are read listen to it (talents.js). */
 /* #404 a recording still missing after its one retry (online): the text on the screen lights up with a 🔊 that tries again.
    The text is found as one element on the screen (one that has its own 🔊 keeps it, no second one); on a button, or not found, the
    top-bar 🔊 lights up and retries it. The light goes off when that line plays, and on hush(). */
@@ -1622,7 +1625,7 @@ setInterval(()=>{if(sayNow!==AUTO.cur||AUTO.gen!==AUTO.seen){AUTO.cur=sayNow;AUT
   if(!AUTO.wait||Date.now()-AUTO.at<300)return;AUTO.wait=false;
   if(window.__fast||window.__noAuto||(window.__autoSaid||0)>=AUTO.at||(save.set&&save.set.autoRead===0)||!$('#sPar').hidden||$('#hud').hidden)return;
   hush();say(sayNow);},100);
-const hush=()=>{vmClear();const it=SQ.cur;SQ.list=[];SQ.cur=null;if(it)clearTimeout(it.wd);try{speechSynthesis.cancel();}catch(e){}try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}if(TTS.ns&&!TTS.blocked)TTS.ns.stop().catch(()=>{});};
+const hush=()=>{vmClear();try{emit('vpart','');}catch(e){}const it=SQ.cur;SQ.list=[];SQ.cur=null;if(it)clearTimeout(it.wd);try{speechSynthesis.cancel();}catch(e){}try{if(GV.audio){GV.audio.pause();GV.audio=null;}}catch(e){}if(TTS.ns&&!TTS.blocked)TTS.ns.stop().catch(()=>{});};
 
 /* ---------- animated pixel background: cached static layer + live elements ---------- */
 const bg=$('#bg');let bx=bg.getContext('2d');let BW=192,BH=108,bgW='meadow',bgTimer=0,bgCache={key:'',cv:null};
@@ -1701,6 +1704,7 @@ function setScreen(id,w,back){SQ.scr++;hush();AUTO.scr=Date.now();if(window.HELP
   pauseOff();if(!ACTIVE_S.includes(id)&&id!=='sStart'&&id!=='sPar')herePut(null);backTo=back||null;$('#btnBack').style.visibility=back?'visible':'hidden';$('#btnBack').innerHTML=back===showMap||(back&&back.home)?ICON.home:ICON.back;$('#screens').scrollTop=0;play=null;stopSpeed();updateGems();wipe();evScreen(id);emit('screen',id,back);pzSync();}
 $('#btnSay').innerHTML=ICON.say;$('#btnMusic').innerHTML=ICON.music;$('#icoStart').innerHTML=ICON.play;
 if(!save.avOren){save.av=Object.assign({},save.av,OREN_LOOK);save.avOren=1;try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}}
+if(hatsBack())try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}
 if(save.snd==null)save.snd=save.music===false?1:2;
 const syncMusic=()=>{const b=$('#btnMusic');b.innerHTML=save.snd===2?ICON.music:save.snd===1?ICON.musicOff:ICON.mute;b.classList.toggle('off',save.snd===0);b.title=['שֶׁקֶט','רַק צְלִילִים','מוּזִיקָה וּצְלִילִים'][save.snd];b.setAttribute('aria-label',b.title);};syncMusic();
 $('#btnMusic').onclick=()=>{save.snd=((save.snd|0)+2)%3;persist();syncMusic();if(save.snd===2)musicStart();else musicStop();sfx.pop(2);};
@@ -1743,13 +1747,10 @@ function studio(first,back){setScreen('sStudio','meadow',first?null:(back||showM
     const pv=h('div','pv',`<div class="a bob">${AV()}</div><div class="p bob" style="animation-delay:-1s">${PET().s()}</div>`);
     const rows=h('div','orows');
     const sw=(title,map,key)=>{const r=h('div','orow',`<h4>${title}</h4>`);for(const [k,c] of Object.entries(map)){const b=h('button','sw'+(save.av[key]===k?' sel':''));b.style.background=c;b.setAttribute('aria-label',k);b.onclick=()=>{save.av[key]=k;sfx.pop(2);persist();render();};r.appendChild(b);}return r;};
-    rows.append(sw('שֵׂעָר',HAIR,'hair'));if(first)rows.append(sw('צֶבַע עוֹר',SKIN,'skin'));rows.append(sw('חֻלְצָה',SHIRT,'shirt'));/* #8: four rows only (pants dropped; skin on the first visit, hats after it) */
-    const hr=h('div','orow','<h4>כּוֹבַע</h4>');
-    for(const [k,hat] of Object.entries(HATS)){const own=save.owned[k]||hat.price===0;const b=h('button','hatb'+(save.av.hat===k?' sel':''),sprite(hat.rows.concat(['..HHHHHH..','.HHHHHHHH.','HHSSSSSSHH']),Object.assign({H:HAIR[save.av.hair],S:SKIN[save.av.skin]},hat.pal))+(own?'':`<span class="pr">${SPR.gem}${hat.price}</span>`));
-      b.title=plain(hat.n);b.onclick=()=>{if(!own){if((save.gems|0)<hat.price){b.classList.remove('shake');void b.offsetWidth;b.classList.add('shake');sfx.no();{const n=hat.price-(save.gems|0);say(n===1?'צָרִיךְ עוֹד יַהֲלוֹם אֶחָד':`צָרִיךְ עוֹד ${n} יַהֲלוֹמִים`);}return;}save.gems-=hat.price;save.owned[k]=1;sfx.buy();updateGems(true);}save.av.hat=k;persist();render();};hr.appendChild(b);}
+    rows.append(sw('שֵׂעָר',HAIR,'hair'));if(first)rows.append(sw('צֶבַע עוֹר',SKIN,'skin'));rows.append(sw('חֻלְצָה',SHIRT,'shirt'));/* #8: few rows (pants dropped; skin on the first visit); #426: no hats */
     const pr=h('div','orow','<h4>חָבֵר לַמַּסָּע</h4>');
     for(const [k,p] of Object.entries(PETS)){const b=h('button','hatb'+(save.av.pet===k?' sel':''),p.s());b.title=plain(p.n);b.onclick=()=>{save.av.pet=k;sfx.pop(3);persist();render();};pr.appendChild(b);}
-    rows.append(...(first?[pr]:[hr,pr]));
+    rows.append(pr);
     const nm=h('div','lcap',`הֶחָבֵר שֶׁלְּךָ: ${PET().n}`);
     const go=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=()=>back?back():showMap(first);
     const col=h('div','');col.style.cssText='display:flex;flex-direction:column;align-items:center;gap:10px';col.append(pv,nm);wrap.append(col,rows);s.append(wrap,go);};
@@ -2079,8 +2080,9 @@ function qSpeech(q){
 /* #402 the math sentence set for pregen: every question of each small math unit (its sentences run out within 150), said exactly
    as the game says it (numbers as words, #122). Bigger units are made on first use and fetched one question ahead. */
 function mathSpeechList(){const S=new Set();for(const u of ALLU){if(u.boss)continue;const s=new Set();let miss=0,t=0;
-    while(miss<300&&t<5000){t++;let x;try{x=qSpeech(u.gen(t%10));}catch(e){break;}if(s.has(x))miss++;else{s.add(x);miss=0;}}
-    if(miss>=300&&s.size<=150)s.forEach(x=>S.add(x));}
+    /* a unit is done after 3000 draws in a row with no new sentence (300 missed the last one ~1 time in 8, #414 CI); big units stop early */
+    while(miss<3000&&t<60000&&s.size<=150){t++;let x;try{x=qSpeech(u.gen(t%10));}catch(e){break;}if(s.has(x))miss++;else{s.add(x);miss=0;}}
+    if(miss>=3000&&s.size<=150)s.forEach(x=>S.add(x));}
   return [...S];}
 function bubbleOpts(q){const a=q.ans;const c=new Set([a]);const cand=[a+1,a-1,a+2,a-2,a+10,a-10];if(q.k==='bin'&&q.op==='×'&&q.miss==='res'){cand.unshift(q.l*(q.r+1),q.l*(q.r-1),(q.l+1)*q.r);}
   if(a>=10){const s=String(a);if(s.length===2&&s[0]!==s[1])cand.unshift(+(s[1]+s[0]));}
@@ -2293,10 +2295,10 @@ function playSpeed(Wd){const pool=speedPool(Wd);const lv={id:'speed-'+Wd.id,type
   speedHud();stopSpeed();let tl=Date.now();speedTimer=setInterval(()=>{if(play!==p){stopSpeed();return;}const tn=Date.now();if(paused())p.end+=tn-tl;tl=tn;if(paused())return;/* #44 paused: the clock waits */const left=Math.max(0,p.end-Date.now());const b=$('#tbar');if(b)b.style.width=(left/600)+'%';if(left<=0){stopSpeed();finishSpeed();}},250);}
 function speedHud(){const p=play;const s=$('#score');if(s)s.textContent='★ '+(p.score|0);$('#hudMid').innerHTML=`<div class="chip">אֶתְגָּר מָהִיר</div>`;}
 function nextSpeedQ(){const p=play;if(Date.now()>=p.end)return finishSpeed();let q,t=0;do{q=p.lv.gen(0);}while(t++<20&&p.qs.slice(-5).some(x=>qkey(x)===qkey(q)));p.qs.push(q);showQ();speedHud();}
-function finishSpeed(){const p=play;if(!p||p.lock&&p.finished)return;p.lock=true;p.finished=true;const Wd=p.lv.w;const best=save.sp[Wd.id]|0;const rec=p.score>best;if(rec)save.sp[Wd.id]=p.score;persist();
-  const ov=$('#ov');ov.hidden=false;ov.innerHTML=`<div class="card"><h2>${rec?'שִׂיא חָדָשׁ!':'נִגְמַר הַזְּמַן!'}</h2><div class="gain">★ ${p.score}</div><div class="sub">הַשִּׂיא שֶׁלְּךָ: <span class="ltr">${Math.max(best,p.score)}</span></div></div>`;
+function finishSpeed(){const p=play;if(!p||p.lock&&p.finished)return;p.lock=true;p.finished=true;const Wd=p.lv.w;/* #426: no record line */
+  const ov=$('#ov');ov.hidden=false;ov.innerHTML=`<div class="card"><h2>נִגְמַר הַזְּמַן!</h2><div class="gain">★ ${p.score}</div></div>`;
   const row=h('div','btnrow');const a=h('button','bigbtn purple sm',ICON.redo+'<span>עוֹד פַּעַם</span>');a.onclick=()=>playSpeed(Wd);const m=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');m.onclick=()=>showWorld(Wd);row.append(a,m);ov.firstChild.appendChild(row);
-  sfx.win();if(rec)rain();}
+  sfx.win();}
 
 /* ---------- KINGDOM (Oren builds) ---------- */
 let kSel='flower';
@@ -2400,7 +2402,7 @@ function showFinal(){setScreen('sFinal','final',showMap);$('#hudMid').innerHTML=
 
 updateGems();cloudInit();
 const BUS={};function emit(e,...a){(BUS[e]||[]).forEach(f=>{try{f(...a);}catch(x){console.error(x);}});}
-window.OREN={mathSpeechList,get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
+window.OREN={mathSpeechList,hatsBack,get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
   set sayNow(v){sayNow=v;AUTO.gen++;},get sayNow(){return sayNow;},hud:html=>{$('#hudMid').innerHTML=html;document.body.classList.toggle('act',!document.body.classList.contains('inpar')&&/class="chip"/.test(html));},resetAll:keep=>{const snd=save.snd;save=blank();save.snd=snd;Object.assign(save,keep||{});persist();renderStart();},on:(e,f)=>{(BUS[e]=BUS[e]||[]).push(f);},emit,blank};
 window.__oren4={qSpeech,GT,HANDS,renderAudio,THEMES,RAW,setTheme,get mus(){return mus;},WORLDS,ALLLV,ALLU,hintHTML,hintData,uniq,colInit,colNeedBorrow,digs,qkey,bubbleOpts,storyFor,teachCheck,HEROES,get play(){return play;},get save(){return save;},startLevel,finishLevel,playLevel,showMap,showWorld,kingdom,studio,teacher,playSpeed,setFast:v=>{window.__fast=v;},mergeIn,migrateOld,lp};
 /* #44 a finished task is not reopened */
@@ -2656,10 +2658,6 @@ window.OREN.on('tlDone',()=>herePut(null));window.OREN.on('levelDone',()=>herePu
 .pfb.on{outline:4px solid var(--ink)}.pfb .ae{font-size:44px}.swc.big{width:56px;height:56px}
 .pcard{display:flex;flex-direction:column;align-items:center;gap:10px;background:#fff;padding:18px 30px;box-shadow:inset 0 0 0 6px var(--fc,#4fae4f),0 8px 0 rgba(0,0,0,.2)}
 .pcard h2{margin:0;font-size:32px}.pcav{position:relative}.pcav>svg{width:110px;height:auto}.pcpet{position:absolute;bottom:0;inset-inline-start:-60px}.pcpet svg{width:64px;height:64px}
-.bdgg{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;width:min(860px,100%)}
-.bdg{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 6px;background:rgba(255,255,255,.6);text-align:center;filter:grayscale(1);opacity:.7}
-.bdg.got{background:#fff;filter:none;opacity:1;box-shadow:inset 0 0 0 4px var(--gold),0 5px 0 rgba(0,0,0,.2)}
-.bdg .bi{font-size:40px}.bdg b{font-size:17px}.bdg small{font-size:13px;color:var(--ink-soft);font-family:var(--read)}
 .ptabs{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;width:min(900px,100%)}
 .ptab{padding:8px 14px;background:rgba(255,255,255,.75);font-weight:800;font-size:15px;box-shadow:0 4px 0 rgba(0,0,0,.18)}.ptab.on{background:#fff;box-shadow:inset 0 -5px 0 var(--blue),0 4px 0 rgba(0,0,0,.18)}
 .pbody{display:flex;flex-direction:column;gap:14px;align-items:center;width:100%}
@@ -2842,9 +2840,6 @@ body.pplay .dlg,body.pplay .overlay{padding-bottom:78px}
 .hub.gsub{display:flex;flex-wrap:wrap;justify-content:center}.hub.gsub>.bld{width:220px}
 /* no focus ring on mouse/touch clicks */
 button:focus:not(:focus-visible){outline:none}
-/* readable locked-badge hints */
-.bdg small{font-size:14px;color:#4a5a66}.bdg{opacity:.85}
-.bdg.next{filter:none;opacity:1;background:rgba(255,255,255,.75);box-shadow:inset 0 0 0 3px var(--gold);outline:3px dashed var(--gold);outline-offset:4px}.bdg.next .bi{opacity:.55}
 /* notices at the bottom, never over titles */
 .toast{top:auto;bottom:24px}
 /* break: Oren's friend */
@@ -2961,6 +2956,9 @@ body:has(#dlg:not([hidden])) .toast{top:74px;bottom:auto}
   .dcard b,.dcard.cont b{font-size:16px}.doors2 .door>b{font-size:16px}
   .pxpal{grid-template-columns:repeat(4,44px)}.pxpal .sw{width:44px;height:44px}.tbtn small{font-size:16px}
   .dmore{min-height:44px}.hbub2 .rdb::after{inset:-9px}}
+/* #435 the answer being read aloud is lit (the reading helper's word light) */
+.chs .chb.rdlit{background:#ffd23f;outline:4px solid #e8a400;box-shadow:0 0 0 8px rgba(255,210,63,.55),0 6px 0 rgba(0,0,0,.28);transform:scale(1.08);transition:none}
+@media (prefers-reduced-motion:reduce){.chs .chb.rdlit{transform:none}}
 
 /* ===== 🕹️ arcade ===== */
 .arc{width:min(980px,100%);box-sizing:border-box;display:flex;flex-direction:column;align-items:center;gap:16px;padding:18px 16px 22px;color:#fff;
@@ -2976,7 +2974,6 @@ body:has(#dlg:not([hidden])) .toast{top:74px;bottom:auto}
 .cab .scr{width:100%;height:92px;display:grid;place-items:center;background:radial-gradient(circle,color-mix(in srgb,var(--nc) 45%,#000) 0%,#05030d 75%);box-shadow:inset 0 0 0 3px rgba(255,255,255,.12),inset 0 0 22px rgba(0,0,0,.8)}
 .cab .ce{font-size:56px;line-height:1;filter:drop-shadow(0 0 10px var(--nc));animation:bob 2.4s ease-in-out infinite}
 .cab b{font-size:21px;font-weight:900;text-shadow:0 0 8px var(--nc)}.cab small{font-size:14px;opacity:.85;font-family:var(--read)}
-.cab .hs{font-size:13px;font-weight:800;background:rgba(255,255,255,.12);padding:2px 10px}
 @media (hover:hover){.cab:hover{transform:translateY(-4px);box-shadow:0 0 22px var(--nc),inset 0 0 18px rgba(0,0,0,.5),0 10px 0 rgba(0,0,0,.45)}}
 .cab:active{transform:translateY(3px)}
 .bigbtn.huge2{font-size:26px;padding:14px 30px}.bigbtn.huge2 svg{width:30px;height:30px}
@@ -3206,6 +3203,14 @@ body.fron #screens{padding-bottom:84px}
 #sHome .frdone .bigbtn.huge{animation:none}
 /* #389 listen first: the answers rest (softly faded, no timer) until the question was heard */
 .chs.lsn .chb{opacity:.55;transition:opacity .3s}
+/* #411 'easy or hard?' at the end of a scene: two big faces, one tap */
+.frez{margin:8px auto 4px;text-align:center}
+.frezq{font-size:20px;font-weight:800;margin-bottom:6px}
+.frezr{display:flex;gap:16px;justify-content:center}
+.frezf{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:92px;min-height:92px;border-radius:20px;border:3px solid #e0d3a8;background:#fffaf0;font-size:18px;font-weight:700;cursor:pointer;padding:6px 10px}
+.frezf .frezi{font-size:46px;line-height:1}
+.frezf.on{border-color:#4fae4f;background:#e6f6e6;transform:scale(1.06)}
+.frezf:disabled:not(.on){opacity:.45}
 
 /* #391 the ship on home: next to Oren and his friend; #392 a tap on a built piece, the friend says what it is */
 .hrow{display:flex;align-items:flex-end;justify-content:center;gap:10px}
@@ -3270,7 +3275,6 @@ body.fron #screens{padding-bottom:84px}
 .chs.gp-tiles{display:grid;gap:10px;justify-content:center;max-width:620px}
 .gp-tiles .chb{min-width:70px}
 .gp-done{color:var(--ok-d)}
-.gp-best{font-family:var(--read);font-size:24px;background:#fff3c4;padding:6px 16px}
 .gp-time{width:min(560px,92%);height:16px;background:#e7dcc4;box-shadow:inset 0 0 0 3px #1d2631}
 .gp-time i{display:block;height:100%;width:100%;background:var(--ok);transition:width .2s linear}
 .gp-race{min-width:min(420px,92%)}
@@ -3764,6 +3768,13 @@ svg.tl{width:60px;height:60px;display:block}
 .pdskip{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35)}
 .pdskip .card{max-width:420px;text-align:center}
 .pdsugi .pchip{flex:none;margin:0 6px 0 0}
+/* #429 learned today · #431 the week picture · #430 the question */
+.pdlearn ul{margin:4px 0 0;padding-inline-start:20px}.pdlearn li{margin:2px 0;font-size:15px}
+.pdbars{height:90px;padding-top:4px}
+.pdsplit{display:flex;height:12px;border-radius:6px;overflow:hidden;margin:10px 0 6px;direction:rtl;background:#eee}
+.pdsplit i{display:block;height:100%}
+.pdshs{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px}
+.pdask{font-size:16px;font-weight:700}
 
 /* AGAIN (#39): the home button and the list of big tiles by day */
 .againbtn{display:flex;align-items:center;gap:10px;font-size:22px;font-weight:900;padding:10px 22px;background:#fff;border-bottom:6px solid #3a8fc4;box-shadow:0 5px 0 rgba(0,0,0,.2)}
@@ -3781,7 +3792,9 @@ svg.tl{width:60px;height:60px;display:block}
 const O=window.OREN;if(!O)return;
 const {h,$,pick,shuffle,ICON,SPR,sprite}=O;
 const sfx=O.sfx;const D=O.D;
-const S=()=>{const s=O.save;s.tl=s.tl||{};s.mood=s.mood||[];s.jar=s.jar||[];s.art=s.art||[];s.set=s.set||{hide:{}};s.set.hide=s.set.hide||{};s.time=s.time||{};s.typ=s.typ||{best:{},wpm:0};return s;};
+/* #432 a missing field or one of the wrong type (an old or damaged save) gets its blank value */
+const isObj=x=>!!x&&typeof x==='object'&&!Array.isArray(x);
+const S=()=>{const s=O.save;for(const k of ['tl','time'])if(!isObj(s[k]))s[k]={};for(const k of ['mood','jar','art'])if(!Array.isArray(s[k]))s[k]=[];if(!isObj(s.set))s.set={hide:{}};if(!isObj(s.set.hide))s.set.hide={};if(!isObj(s.typ))s.typ={best:{},wpm:0};return s;};
 const today=O.today;
 /* #394 the daily path: a mission started from the path is a short scene (at most PATH_Q questions, ~60-90 s);
    the same activity opened from its building keeps its full length. PATH is on from the path step until home or the city hub. */
@@ -3804,6 +3817,17 @@ const orList=a=>{a=[...new Set(a.map(lab).filter(Boolean))];if(a.length>1)a[a.le
 const choiceList=()=>{addChoices(BUILD.map(b=>b.name).concat(Object.values(ACT).map(a=>a.name),GROUPS.map(g=>g.n)));
   addSay(GROUPS.map(g=>g.n+'.').concat(BUILD.map(b=>b.name+(b.blurb?'. '+b.blurb:''))));return [...CHOICES];};
 const choiceSay=(root,sel)=>root?orList([...root.querySelectorAll(sel)].filter(x=>!x.closest('[hidden]')).map(x=>x.textContent)):'';
+/* #435 a question that does not test reading (a flag per activity: T.quiz o.readAns, default: not a reading id): after the question the
+   voice reads the answers one by one ("א, ב, אוֹ ג", each its own clip, as on the choice screens), the answer being said is lit (.rdlit).
+   ansSay(row,labels) marks the row (data-ra) and returns the clips to put after the question; '' when an answer has no word or number
+   (a picture): then nothing is read or lit. The light follows the voice (the core's 'vpart' at each clip) and goes out when it ends or is hushed. */
+const READ_ACT=/^(read-|story-|rb2-|nik-|snd-|eng-)/;
+const raN=s=>spk(s).replace(/[\u0591-\u05C7]/g,'').replace(/^או\s+/,'').replace(/[^\p{L}\p{N}]+/gu,'');
+const ansSay=(row,a)=>{a=(a||[]).map(lab);if(!row||a.length<2||!a.every(x=>/[א-ת0-9]/.test(x)))return '';row.dataset.ra=1;return orList(a);};
+const unlit=()=>document.querySelectorAll('.chb.rdlit').forEach(b=>b.classList.remove('rdlit'));
+O.on('vpart',t=>{const k=raN(t);if(!k)return unlit();document.querySelectorAll('.chs[data-ra] .chb').forEach(b=>b.classList.toggle('rdlit',raN(b.textContent)===k));});
+O.on('voice',on=>{if(!on)unlit();});
+addChoices([...Array(101).keys()].map(String));   /* number answers (word math, number series): every clip in pregen */
 
 /* ---------- extra pixel sprites ---------- */
 const P=(rows,pal)=>sprite(rows,pal);
@@ -3892,12 +3916,13 @@ function quiz(o){if(o.lesson&&window.LESSONS&&!o._ls){o._ls=1;return window.LESS
   const gen=()=>{const q=o.gen(qs.length);if(!pb||q.bank||q.key==null)return q;const c=[q];for(let j=0;j<24;j++){const x=o.gen(qs.length);if(x.key!=null&&!c.some(y=>y.key===x.key))c.push(x);}
     try{const r=LN.pickItem(pb,c.filter(x=>!seen.has(x.key)).map(x=>({k:x.key})));const x=r&&c.find(y=>y.key===r.item.k);if(x)return Object.assign(x,{bank:pb});}catch(e){}return q;};
   const nQ=pathN(o.n);while(qs.length<nQ&&t++<400){const q=gen();const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k))continue;seen.add(k);qs.push(fit(q));}
-  let i=0,err=0,gems=0,lock=false,tries=0,HB=null;O.setScreen('sTal',o.bg||'valley',o.back);
+  let i=0,err=0,gems=0,lock=false,tries=0,HB=null;const RA=o.readAns!=null?!!o.readAns:!READ_ACT.test(o.id);O.setScreen('sTal',o.bg||'valley',o.back);
   const bk=O.hereTake&&O.hereTake('tq:'+o.id);if(bk){i=Math.min(Math.max(0,bk.i|0),qs.length-1);err=bk.err|0;gems=bk.gems|0;}/* #44: reopened mid-quiz = the same place */
   const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq');s.appendChild(wrap);if(o.lesson&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(o.lesson,o.back,()=>quiz(o)));
-  const render=()=>{const q=qs[i];q._t=Date.now();tries=0;lock=false;if(O.hereProg)O.hereProg('tq:'+o.id,{i,err,gems});if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||spoken(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
+  const render=()=>{const q=qs[i];q._t=Date.now();tries=0;lock=false;if(O.hereProg)O.hereProg('tq:'+o.id,{i,err,gems});if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));const row=h('div','chs'+(q.ltr?' ltr':''));const ra=RA?ansSay(row,q.opts):'';
+    O.sayNow=(q.say||spoken(q.pr))+(ra||(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):''));
     wrap.innerHTML='';const card=h('div','prq tqc',q.pr);if(q.play){const pb=h('button','hintbtn',ICON.say+`<span>${q.playLbl||'הַשְׁמַע'}</span>`);pb.onclick=q.play;card.appendChild(pb);}
-    wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});const row=h('div','chs'+(q.ltr?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>{if(!(O.tapTooSoon&&O.tapTooSoon()))pickA(k,b);};row.appendChild(b);});wrap.appendChild(row);
+    wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>{if(!(O.tapTooSoon&&O.tapTooSoon()))pickA(k,b);};row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');
     /* #54 one help button: clue, then the answer with its explanation (the question ends like after two mistakes) */
     HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,clue:q.clue,explain:q.explain,before:ex,reveal:()=>{if(lock)return;lock=true;err++;note(qs[i],false);if(window.FRIEND)window.FRIEND.onWrong({final:true,m:o.id});if(q.reveal)q.reveal(wrap.querySelector('.tqc'));setTimeout(next,D(4200));}}):null;if(o.side){const sb=h('button','bigbtn plain sm qside',o.side.lbl);sb.onclick=()=>o.side.open(wrap);wrap.appendChild(sb);}if(q.auto&&q.play)setTimeout(()=>{if(qs[i]===q)q.play();},D(350));};
@@ -3969,7 +3994,7 @@ const fitPick=(seq,pool)=>{const f=pool.filter(x=>fits(seq,x));return pick(f.len
 const dailyPool=()=>Object.keys(ACT).filter(id=>bState(ACT[id].b)==='on'&&!actOff(id)&&!ACT[id].noDaily&&!ACT[id].long&&(!ACT[id].avail||ACT[id].avail()));
 /* the day's path: t = steps ('math', an activity id, 'tog:<k>' together, 'rw:<k>' real-world), ch = how it was formed (a domain Oren chose, or 'plan').
    No path until Oren answers "what do you feel like today?" (or the parent's template builds it). cr = real-world missions waiting for the path. */
-function dailyEnsure(){const s=S();if(s.daily&&s.daily.d===today()){const d=s.daily,pool=dailyPool();d.cr=d.cr||[];for(let i=0;i<d.t.length;i++)if(d.t[i]!=='math'&&!/:/.test(d.t[i])&&!d.done[i]&&!pool.includes(d.t[i])){const alt=pool.filter(x=>!d.t.includes(x));if(alt.length)d.t[i]=fitPick(d.t.slice(0,i),alt);}return d;}
+function dailyEnsure(){const s=S();if(s.daily&&s.daily.d===today()){const d=s.daily,pool=dailyPool();d.cr=d.cr||[];for(let i=0;i<d.t.length;i++)if(d.t[i]!=='math'&&!/:/.test(d.t[i])&&!d.done[i]&&!pool.includes(d.t[i])&&!(ACT[d.t[i]]&&ACT[d.t[i]].inPath&&ACT[d.t[i]].inPath())){const alt=pool.filter(x=>!d.t.includes(x));if(alt.length)d.t[i]=fitPick(d.t.slice(0,i),alt);}return d;}
   const prev=s.daily;const cr=prev?[...(prev.cr||[]),...prev.t.filter((x,i)=>/^rw:/.test(x)&&!prev.done[i]),...(prev.tm||[]).filter(x=>x==='math'||ACT[x])]:[];   /* #359: tm = missions of a topic the parent put off to tomorrow */
   const plan=S().set.plan;let t=[];
   if(plan&&plan.length){const used=new Set();t=plan.map(sp=>{if(sp==='math')return 'math';if(String(sp).startsWith('act:')){const aid=sp.slice(4);if(ACT[aid]&&dailyPool().includes(aid)&&!used.has(aid)){used.add(aid);return aid;}sp='any';}const pool=dailyPool().filter(id=>!used.has(id)&&(sp==='any'||ACT[id].b.id===sp));const id=pool.length?fitPick([...used],pool):pick(dailyPool().filter(x=>!used.has(x)));used.add(id);return id||'math';}).concat(cr);}
@@ -3978,7 +4003,7 @@ function dailyMark(id){const d=dailyEnsure();const i=d.t.indexOf(id);if(i>=0&&!d
 O.on('levelDone',(lv)=>{if(!lv||lv.type==='train')return;S().last={id:'math',d:today()};const d=dailyEnsure();const i=d.t.findIndex((x,k)=>x==='math'&&!d.done[k]);if(i>=0){d.done[i]=1;O.persist();}});
 /* ---------- map integration ---------- */
 O.on('map',m=>{const rs=m.querySelector('.reset');if(rs)rs.remove();if(window.TAL_noHome)return;m.querySelectorAll('.hello,.statline').forEach(e=>e.remove());m.querySelectorAll('.topbar .tool').forEach(t=>{if(/הַמַּמְלָכָה|הַגִּבּוֹר שֶׁלִּי/.test(t.textContent))t.remove();});});
-O.on('kingdomScene',sc=>{if(!window.TAL_noHome&&!sc.querySelector('.kmine')){const r=h('div','kmine');const a=h('button','tool',`<span class="ti">${O.AV()}</span><span>הַגִּבּוֹר שֶׁלִּי</span>`);a.onclick=()=>O.studio(false,O.kingdom);const b=h('button','tool',`<span class="ti">🏅</span><span>הַתַּגִּים שֶׁלִּי</span>`);b.onclick=()=>window.TAL.badges(O.kingdom);r.append(a,b);sc.prepend(r);}const s=S();if(s.kpic!=null&&s.art[s.kpic]){const f=h('div','kpic',artSVG(s.art[s.kpic]));sc.querySelector('.ktop').appendChild(f);}});
+O.on('kingdomScene',sc=>{if(!window.TAL_noHome&&!sc.querySelector('.kmine')){const r=h('div','kmine');const a=h('button','tool',`<span class="ti">${O.AV()}</span><span>הַגִּבּוֹר שֶׁלִּי</span>`);a.onclick=()=>O.studio(false,O.kingdom);r.append(a);sc.prepend(r);}const s=S();if(s.kpic!=null&&s.art[s.kpic]){const f=h('div','kpic',artSVG(s.art[s.kpic]));sc.querySelector('.ktop').appendChild(f);}});
 
 /* ---------- time tracking (body breaks, meals and topic switching live in health.js) ---------- */
 let lastAct=Date.now(),session=0;
@@ -3989,7 +4014,7 @@ O.timeTick=timeTick;setInterval(timeTick,15000);
 const breakTime=()=>window.HEALTH&&window.HEALTH.breakNow();
 
 /* exports for other chunks */
-window.TAL={ADAPT,pathN,pathOn:()=>{PATH=1;},get onPath(){return !!PATH;},fits,vary,spk,orList,choiceSay,choiceList,addChoices,addSay,openGroup,GROUPS,bState,dailyPool,S,X,ALLSPR,FACES,quiz,result,record,finishAct,building,ACT,BUILD,openHub,openBuilding,hudT,progressBar,starsHTML,plainHe,L_,nb,dailyEnsure,setKey:f=>{KEY=f;},get key(){return KEY;},breakTime,artSVG:(...a)=>artSVG(...a)};
+window.TAL={ADAPT,ansSay,READ_ACT,pathN,pathOn:()=>{PATH=1;},get onPath(){return !!PATH;},fits,vary,spk,orList,choiceSay,choiceList,addChoices,addSay,openGroup,GROUPS,bState,dailyPool,S,X,ALLSPR,FACES,quiz,result,record,finishAct,building,ACT,BUILD,openHub,openBuilding,hudT,progressBar,starsHTML,plainHe,L_,nb,dailyEnsure,setKey:f=>{KEY=f;},get key(){return KEY;},breakTime,artSVG:(...a)=>artSVG(...a)};
 function artSVG(str){return window.TAL_artSVG?window.TAL_artSVG(str):'';}
 
 })();
@@ -4745,42 +4770,8 @@ T.addSay(['עִיר הַכִּשְׁרוֹנוֹת. מָה נְשַׂחֵק?','�
 O.on('group',s=>{const pr=prof();if(!pr)return;s.querySelectorAll('.bld').forEach(c=>{const b=BUILD.find(x=>x.name===c.querySelector('.nm').textContent);if(b&&b.id===pr.love){c.classList.add('fav');c.appendChild(h('span','favh','❤️'));}});});
 /* remember the last activity */
 Object.values(ACT).forEach(a=>{const r=a.run;a.run=back=>{const s=T.S();s.last={id:a.id,d:O.today()};return r(back);};});
-/* ---------- badges ---------- */
-const tl=id=>T.S().tl[id]||{};const actsOf=bid=>(BUILD.find(b=>b.id===bid)||{acts:[]}).acts;
-/* each test gives how far along (1 = earned) so the wall can show the next one */
-const part=(a,b)=>b?Math.min(1,a/b):1;
-const BADGES=[
- ['star1','כּוֹכָב רִאשׁוֹן','⭐','לְסַיֵּם פְּעִילּוּת בָּעִיר',s=>Object.values(s.tl).some(c=>c.s>0)?1:0],
- ['explore','סַקְרָן','🧭','לְבַקֵּר בְּ-6 בִּנְיָנִים',s=>part(BUILD.filter(b=>b.acts.some(a=>tl(a.id).n)).length,6)],
- ['painter','צַיָּר','🎨','לְצַיֵּר 3 צִיּוּרִים',s=>part((s.art||[]).length,3)],
- ['reader','תּוֹלַעַת סְפָרִים','📚','לִקְרֹא 3 סִפּוּרִים',s=>part([0,1,2,3,4,5].filter(k=>tl('story-'+k).s).length,3)],
- ['typist','אֶצְבָּעוֹת זְרִיזוֹת','⌨️','לְסַיֵּם 5 שִׁעוּרֵי הַקְלָדָה',s=>part(Object.keys((s.typ||{}).best||{}).length,5)],
- ['coder','מְתַכְנֵת','🤖','לְסַיֵּם 10 שְׁלַבֵּי קוֹד',s=>part(Object.values(s.code||{}).filter(v=>v>0).length,10)],
- ['music','מוּזִיקַאי','🎵','לְנַגֵּן שִׁיר וּלְתוֹפֵף בַּקֶּצֶב',s=>part((tl('mus-piano').s?1:0)+(tl('mus-rhythm').s?1:0),2)],
- ['science','מַדְעָן','🧪','6 נִסּוּיִים בַּמַּעְבָּדָה',s=>part(actsOf('lab').filter(a=>tl(a.id).s).length,6)],
- ['calm','שַׁלְוָה','🫧','לִנְשֹׁם עִם הַבּוּעָה 5 פְּעָמִים',s=>part(tl('mind-breath').n|0,5)],
- ['heart','לֵב טוֹב','💛','15 דְּבָרִים טוֹבִים בַּצִּנְצֶנֶת',s=>part((s.jar||[]).reduce((a,j)=>a+(j.i?j.i.length:0),0),15)],
- ['writer','כּוֹתֵב אַלּוּף','✏️','לִכְתֹּב אֶת כָּל הָאוֹתִיּוֹת',s=>part(Object.keys(s.wr||{}).length,22)],
- ['thinker','רֹאשׁ גָּדוֹל','🧩','כָּל הַחִידוֹת בְּמִגְדַּל הַחֲשִׁיבָה',s=>{const a=actsOf('think');return part(a.filter(x=>tl(x.id).s).length,a.length);}],
- ['world','מְטַיֵּל','🌍','3 כּוֹכָבִים בְּכָל הָעוֹלָם',s=>{const a=actsOf('world');return part(a.filter(x=>tl(x.id).s>=3).length,a.length);}],
- ['streak3','שְׁלוֹשָׁה יָמִים בָּרֶצֶף','🔥','לְשַׂחֵק 3 יָמִים בָּרֶצֶף',s=>part(O.dayStreak(),3)],
- ['streak7','שָׁבוּעַ שָׁלֵם','🏆','לְשַׂחֵק 7 יָמִים בָּרֶצֶף',s=>part(O.dayStreak(),7)],
- ['times','אַלּוּף הַכֶּפֶל','✖️','50 תַּרְגִּילִים בְּלוּחַ הַכֶּפֶל',s=>part(O.masteredCount(),50)],
- ['math','כּוֹכַב הַחֶשְׁבּוֹן','🌟','100 כּוֹכָבִים בַּמַּסָּע',s=>part(O.totalStars(),100)],
- ['daily','מְשִׂימָה מֻשְׁלֶמֶת','✅','לְסַיֵּם אֶת כָּל הַשְּׁבִיל שֶׁל הַיּוֹם',s=>s.daily&&s.daily.claimed?1:0]];
-function earned(){const s=T.S();s.bdg=s.bdg||{};return s.bdg;}
-const howFar=f=>{try{return +f(T.S())||0;}catch(x){return 0;}};
-/* badges are a quiet collection: earned silently, seen in the kingdom */
-function checkBadges(){const e=earned();let got=0;for(const [id,,,,f] of BADGES){if(e[id])continue;if(howFar(f)>=1){e[id]=Date.now();got=1;}}if(got)O.persist();}
+/* #426: no badges any more (only stars + gems); an old save keeps its s.bdg, nothing reads it */
 function toast(html){if(parentOn||!$('#sPar').hidden)return;document.querySelectorAll('.toast').forEach(x=>x.remove());const t=h('div','toast',html);document.body.appendChild(t);sfx.star(1);setTimeout(()=>t.classList.add('out'),D(2400));setTimeout(()=>t.remove(),D(2900));}
-setInterval(()=>{if(!$('#ov').hidden||$('#hud').hidden||!$('#sPlay').hidden)return;checkBadges();},4000);
-/* the wall: the earned badges + one "next badge" (the closest one to earn) */
-function badges(back){O.setScreen('sTal','valley',back);const e=earned();T.hudT('הַתַּגִּים שֶׁלִּי');O.sayNow='הַתַּגִּים שֶׁלִּי';const s=$('#sTal');s.innerHTML='';
-  s.appendChild(h('div','whead',`<span class="gd">🏅</span><h1>הַתַּגִּים שֶׁלִּי</h1>`));const g=h('div','bdgg');
-  BADGES.filter(b=>e[b[0]]).forEach(([id,n,ic])=>g.appendChild(h('div','bdg got',`<span class="bi">${ic}</span><b>${n}</b>`)));
-  let nx=null,best=-1;BADGES.forEach(b=>{if(e[b[0]])return;const f=howFar(b[4]);if(f>best){best=f;nx=b;}});
-  if(nx)g.appendChild(h('div','bdg next',`<span class="bi">${nx[2]}</span><b>${nx[1]}</b><small>${nx[3]}</small>`));s.appendChild(g);}
-T.badges=badges;
 /* ---------- message from the parents ---------- */
 O.on('map',m=>{const st=SET();
   /* hide math worlds the parent switched off */
@@ -4862,7 +4853,7 @@ function fullTab(box){const s0=T.S(),sv=O.save;
     <div><b>${new Set([...(sv.days||[]),...Object.keys(s0.time).filter(k=>(s0.time[k]|0)>=60)]).size}</b><span>ימי משחק</span></div><div><b>${O.dayStreak()}</b><span>רצף ימים</span></div>
     <div><b>${acc}%</b><span>דיוק בחשבון (${sv.ans|0} שאלות)</span></div><div><b>${O.totalStars()}</b><span>כוכבים במסע</span></div>
     <div><b>${O.masteredCount()}/100</b><span>עובדות בלוח הכפל</span></div><div><b>${fmtMin(totT)}</b><span>זמן כולל</span></div>
-    <div><b>${talSt}</b><span>כוכבים בעיר הכשרונות</span></div><div><b>${Object.keys(s0.bdg||{}).length}/${BADGES.length}</b><span>תגים</span></div></div>`);
+    <div><b>${talSt}</b><span>כוכבים בעיר הכשרונות</span></div></div>`);
   const days=lastDays(14);const mx=Math.max(600,...days.map(([k])=>s0.time[k]|0));
   sec(box,'זמן משחק — 14 ימים אחרונים',`<div class="pchart">${days.map(([k,x])=>{const v=s0.time[k]|0;return `<div class="pcol" title="${k}: ${fmtMin(v)}"><span class="pv">${v?Math.round(v/60):''}</span><i style="height:${v/mx*100}%"></i><small>${'אבגדהוש'[x.getDay()]}</small></div>`;}).join('')}</div><div class="pnote">בדקות, היום מימין. נספר רק זמן פעיל.</div>`);
   if(T.thinkSkills)T.thinkSkills(box,sec,BAR);
@@ -5159,11 +5150,16 @@ function wpick(arr,n){const a=arr.slice(),out=[];while(out.length<n&&a.length){l
 function choose(dm,first){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.bs|0)>0;let st=dm==='tog'?[togStep(true)]:first?[first]:[];
   if(dm!=='tog')st=st.concat(stepsOf(dm,(bonus?2:3)-st.length,new Set([...d.t,...st])));
   wpick(doms().filter(x=>x.id!==gid(dm)),bonus?(dm==='tog'?1:0):(dm==='tog'?2:1)).forEach(o=>{st=st.concat(stepsOf(o.id,1,new Set([...d.t,...st])));});
+  /* #424 at most one English a day: English the path picks by itself goes (the English scene comes instead, below); English Oren picked himself (the building, "continue") stays */
+  const isEn=x=>!!(ACT[x]&&ACT[x].b&&ACT[x].b.id==='eng'),noEn=a=>dm==='b:eng'?a:a.filter(x=>!isEn(x)||x===first);st=noEn(st);
   if(!st.length)st=['math'];
   /* a domain that rested yesterday: the path starts with it, where Oren stopped (once a day) */
-  if(!bonus&&!d.rv&&window.HEALTH){d.rv=1;const rv=window.HEALTH.review().find(x=>!d.t.includes(x)&&!st.includes(x));if(rv)st=[rv].concat(st);}
+  if(!bonus&&!d.rv&&window.HEALTH){d.rv=1;const rv=window.HEALTH.review().find(x=>!d.t.includes(x)&&!st.includes(x));if(rv&&!isEn(rv))st=[rv].concat(st);}
   /* #358 variety: a mission that would repeat the kind is swapped for the engine's next pick in this domain, then in the others */
-  st=T.vary(d.t,st,()=>{let ex=[];[dm,...wpick(doms().filter(x=>x.id!==gid(dm)),9).map(o=>o.id)].forEach(id=>{if(id!=='tog')ex=ex.concat(stepsOf(id,3,new Set([...d.t,...st,...ex])).filter(x=>!ex.includes(x)));});return ex;});
+  st=T.vary(d.t,st,()=>{let ex=[];[dm,...wpick(doms().filter(x=>x.id!==gid(dm)),9).map(o=>o.id)].forEach(id=>{if(id!=='tog')ex=ex.concat(noEn(stepsOf(id,3,new Set([...d.t,...st,...ex]))).filter(x=>!ex.includes(x)));});return ex;});
+  /* #424 one short English scene per path, once a day, while English is on for him */
+  const sc=ACT['en-day'];st=noEn(st);
+  if(!d.en&&!st.some(isEn)&&sc&&sc.inPath())st.push('en-day');if(st.some(isEn))d.en=1;
   if(!bonus){st=st.concat(d.cr||[]);d.cr=[];}st.forEach(x=>{d.t.push(x);d.done.push(0);});d.ch=dm;if(window.PDAY)window.PDAY.mark();
   if(dm!=='tog'){S0.dom=S0.dom||{};S0.dom[gid(dm)]=dayNum();}O.persist();sfx.ok(2);home();}
 function lastStep(){const l=T.S().last;if(!l)return null;if(l.id==='math')return nextLevel()?'math':null;return T.dailyPool().includes(l.id)?l.id:null;}
@@ -5187,7 +5183,7 @@ function special(i,id){const [kind,k]=id.split(':');const isT=kind==='tog';const
   const row=h('div','btnrow');const b=h('button','bigbtn huge',`<span>${isT?'סִיַּמְנוּ':'סִיַּמְתִּי'} ✓</span>`);b.onclick=()=>{fin();sfx.win();O.rain();O.showMap();};row.appendChild(b);box.appendChild(row);s.appendChild(box);
   O.sayNow=T.spk(kid);setTimeout(()=>{if(box.isConnected)O.say(T.spk(kid));},D(400));}
 function runStep(i){const d=T.dailyEnsure();const id=d.t[i];if(window.FRIEND)window.FRIEND.stepStart(i);if(/:/.test(id)){special(i,id);return;}
-  if(id==='math'){const lv=nextLevel();if(!lv){O.showJourney();return;}if(O.pathLevel)O.pathLevel(lv.id);
+  if(id==='math'){const lv=(window.FRIEND&&window.FRIEND.ezRep&&window.FRIEND.ezRep())||nextLevel();/* #411 'hard' -> that level again */if(!lv){O.showJourney();return;}if(O.pathLevel)O.pathLevel(lv.id);
     if(!O.save.story[lv.w.id+'-in'])O.showWorld(lv.w);else O.startLevel(lv);return;}
   /* #388: the result card's "continue" goes on to the next path mission; leaving before it is done goes home */
   const a=ACT[id];if(!a)return;const nDone=()=>T.dailyEnsure().done.filter(Boolean).length,n0=nDone();
@@ -5318,7 +5314,7 @@ O.on('synced',()=>{if(!$('#sHome').hidden&&$('#ov').hidden&&!document.querySelec
   O.on('screen',(id,back)=>{hb.hidden=id==='sStart'||id==='sHome'||back===O.showMap;});})();
 })();
 
-/* ===== 🕹️ THE ARCADE: short, bright mini-games, just for fun (records only, no currency) ===== */
+/* ===== 🕹️ THE ARCADE: short, bright mini-games, just for fun (stars only, no currency or records, #426) ===== */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;const {h,$,rand,pick,shuffle,SPR}=O;const sfx=O.sfx,D=O.D;
 const A=()=>{const s=T.S();s.arc=s.arc||{best:{},plays:0};s.arc.best=s.arc.best||{};delete s.arc.tickets;return s.arc;};
 let back0=null;
@@ -5337,7 +5333,7 @@ function openArcade(back){if(back)back0=back;back0=back0||O.showMap;T.setKey(nul
   const s=$('#sTal');s.innerHTML='';const hall=h('div','arc');
   hall.appendChild(h('div','arch',`<span class="neon">🕹️ הָאַרְקֵייד</span>`));
   const g=h('div','cabs');
-  GAMES.forEach((gm,i)=>{const best=a.best[gm.id]|0;const tag=best?`<span class="hs">🏆 שִׂיא: ${best}</span>`:'';/* #8: no "✨ new" on every cabinet */const c=h('button','cab',`<span class="scr"><span class="ce">${gm.e}</span></span><b>${gm.n}</b><small>${gm.d}</small>${tag}`);
+  GAMES.forEach((gm,i)=>{/* #8: no "✨ new" on every cabinet; #426: no record tag */const c=h('button','cab',`<span class="scr"><span class="ce">${gm.e}</span></span><b>${gm.n}</b><small>${gm.d}</small>`);
     c.style.setProperty('--nc',gm.c);c.style.animationDelay=(i*.08)+'s';c.onclick=()=>{sfx.pop(3);start(gm.id);};g.appendChild(c);});
   hall.appendChild(g);O.sayNow='הָאַרְקֵייד. בְּחַר מִשְׂחָק.'+T.choiceSay(g,'.cab b');
   s.appendChild(hall);later(()=>{const c=g.querySelector('.cab');if(c&&T.intro)T.intro('i-arc',c,'זֶה הָאַרְקֵייד! מִשְׂחָקִים קְצָרִים וּמְהִירִים, סְתָם בִּשְׁבִיל הַכֵּיף. בְּחַר אֶחָד!');});}
@@ -5352,9 +5348,9 @@ function frame(id,title){const gm=G(id);O.setScreen('sTal','final',()=>{if(cur)c
     score:v=>{top.querySelector('.sc b').textContent=v;},time:t=>{top.querySelector('.tm').textContent=t;}};}
 function countdown(F,go){const c=h('div','cdown');F.field.appendChild(c);let n=3;const tick=()=>{if(!c.isConnected)return;if(n>0){c.textContent=n;c.classList.remove('pop');void c.offsetWidth;c.classList.add('pop');sfx.blip?sfx.blip():sfx.pop(1);n--;setTimeout(tick,D(650));}
   else{c.textContent='קָדִימָה!';c.classList.remove('pop');void c.offsetWidth;c.classList.add('pop');sfx.ok(2);setTimeout(()=>{c.remove();go();},D(550));}};tick();}
-function finish(id,score,stars,extra){if(cur){cur.stop();cur=null;}T.setKey(null);const a=A();const best=a.best[id]|0;const rec=score>best;if(rec)a.best[id]=score;adapt(id,stars);
+function finish(id,score,stars,extra){if(cur){cur.stop();cur=null;}T.setKey(null);const a=A();adapt(id,stars);/* #426: no records, the stars are the reward */
   a.plays=(a.plays|0)+1;T.record('arc-'+id,stars,{b:score});
-  T.result({title:rec&&best?'שִׂיא חָדָשׁ! 🏆':'כָּל הַכָּבוֹד!',sub:`נְקֻדּוֹת: ${score}${extra||''}`,stars,gems:0,back:()=>openArcade(),again:()=>start(id)});}
+  T.result({title:'כָּל הַכָּבוֹד!',sub:`נְקֻדּוֹת: ${score}${extra||''}`,stars,gems:0,back:()=>openArcade(),again:()=>start(id)});}
 /* #351 difficulty: a level 0..CAP per game (not the record). 3 stars -> one step up, 1 star -> one step down; wider numbers (1-20) only after 3 good rounds in a row */
 const CAP=4;
 const tune=id=>{const a=A(),l=Math.max(0,Math.min(CAP,(a.lv||{})[id]|0)),w=((a.gr||{})[id]|0)>=3;
@@ -6015,6 +6011,13 @@ FR.question=(q,card)=>{FR.mount();missed=false;const w=q&&q.word?T.spk(q.word):'
 function takeLead(){const t=lead;lead='';if(t)bubble(t,3500);return t;}
 /* other screens of a step: put the story line before whatever the screen says */
 function leadOnScreen(){if(!lead)return;if(window.__noAuto){O.say(takeLead());return;}const t=takeLead();O.sayNow=t+' '+(O.sayNow||'');}
+/* #414 the mission's learning goal (goals.js): its own clip, after the path's story line and before the screen's instruction.
+   A quiz takes it with its first question; any other screen gets it once the mission's screen is drawn. */
+const GSEP='\u2063';
+let goalT='';
+/* a question read again (listen first, #389) is the question alone: the goal was said once */
+FR.noGoal=x=>goalT?String(x||'').split(goalT+GSEP).join('').trim():String(x||'');
+FR.goal=t=>{if(!t)return;goalT=t;lead=(lead?lead+' '+GSEP:'')+t+GSEP;setTimeout(()=>{if(lead.includes(t))leadOnScreen();},0);};
 
 /* ---------- the day's path ---------- */
 let cur=null;                                  /* {i, d: the day, done: announced} while inside a path step */
@@ -6030,8 +6033,27 @@ FR.stepCheck=()=>{if(!cur)return;const d=daily();if(!d||d.d!==cur.d||d.t[cur.i]!
   const t=d.done.slice(d.bs|0).every(Boolean)?close+' '+ALL:close;
   const card=$('#ov:not([hidden]) .card');if(card&&!card.querySelector('.frstory')){const s=h('div','frstory',`<span class="frq">${quest().k}</span><span>${t}</span>`);
     const row=card.querySelector('.btnrow');if(row)card.insertBefore(s,row);else card.appendChild(s);setTimeout(()=>{if(s.isConnected){last=t;O.say(T.spk(t));}},D(1200));
-    storyPic(card,sc);}
+    storyPic(card,sc);ezAsk(card,cur.id,t);}
   else talk(t,{ms:3500});};
+/* #411 at the end of a scene, at most every third scene (save.ez.n counts the scenes since the last question): 'easy or hard?'
+   with two big faces, one tap. The answer moves that mission's level one step (hard = one easier, easy = one harder; a level the
+   parent locked stays); a math journey level said 'hard' is played again on the next path math mission (save.ez.rep).
+   The answer is a day-log line ('f', x.ez 'e'|'h') that the parent's day view shows. */
+const EZ={q:'הָיָה קַל אוֹ קָשֶׁה?',e:'קַל',h:'קָשֶׁה',EVERY:3};FR.EZ=EZ;T.addChoices&&T.addChoices([EZ.e,EZ.h]);
+let lastLv=null;O.on('levelDone',lv=>{lastLv=lv&&lv.type!=='train'?lv:null;});
+function ezAsk(card,id,t){const S=O.save;if(!S)return;const z=S.ez=S.ez||{};z.n=(z.n|0)+1;if(z.n<EZ.EVERY||card.querySelector('.frez'))return;z.n=0;O.persist();
+  const lv=id==='math'?lastLv:null,box=h('div','frez',`<div class="frezq">${EZ.q}</div>`),row=h('div','frezr');
+  [['e','😀'],['h','😣']].forEach(([a,f])=>{const b=h('button','frezf',`<span class="frezi">${f}</span><span>${EZ[a]}</span>`);b.dataset.a=a;
+    b.onclick=ev=>{ev.stopPropagation();if(box._a)return;box._a=a;row.querySelectorAll('button').forEach(x=>{x.disabled=true;});b.classList.add('on');O.sfx.pop&&O.sfx.pop(2);ezSet(id,lv,a);};row.appendChild(b);});
+  box.appendChild(row);const r=card.querySelector('.btnrow');if(r)card.insertBefore(box,r);else card.appendChild(box);
+  setTimeout(()=>{if(box.isConnected&&!box._a)O.say(T.spk(EZ.q));},D(1300));}
+function ezSet(id,lv,a){const S=O.save,LN=window.LEARN,DL=window.DAYLOG;
+  if(id==='math'){if(lv&&a==='h')S.ez.rep=lv.id;}
+  else if(LN&&LN.state)try{const st=LN.state(),sk=id==='ln-math'?(st.rc||[]).find(x=>(LN.DRILL_IDS||[]).includes(x)):'a:'+id,k=sk&&st.k[sk];
+    if(k&&!k.lk){const l=Math.max(1,Math.min(LN.maxLv(sk),(k.l|0||1)+(a==='h'?-1:1)));if(l!==k.l)LN.setLevel(sk,l);}}catch(e){}
+  if(DL&&DL.add){const d=new Date();DL.add(O.today(),[d.getHours()*60+d.getMinutes(),lv?'lv:'+lv.id:id,0,0,0,0,'f',{ez:a}]);}O.persist();}
+/* the next path math mission after a 'hard' answer: that level again, once */
+FR.ezRep=()=>{const S=O.save,z=S&&S.ez;if(!z||!z.rep)return null;const id=z.rep;z.rep=null;O.persist();return (O.ALLLV||[]).find(l=>l.id===id)||null;};
 /* #387: the end of a scene, a 2 s picture of what changed in the story: the ship as the story has it, the scene's new piece
    blinking (the ship's own drawing). It lies over the result card; one tap (anywhere on it) skips, it never waits for him. */
 const PICMS=2000;
@@ -6073,7 +6095,7 @@ O.on('levelDone',()=>setTimeout(FR.stepCheck,D(600)));
 /* #433: an error in the middle of a mission sent Oren home (core error handler): the friend says it on the home screen */
 const OOPS='אוֹי, חוֹזְרִים לַמַּסָּע';
 FR.oops=()=>{FR.mount();anim('sad');return talk(OOPS,{ms:3000});};
-FR.speakList=()=>[LISTEN,RXL.hint,RXL.yday,RXL.back,OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
+FR.speakList=()=>[EZ.q,...(window.GOALS?window.GOALS.speakList():[]),LISTEN,RXL.hint,RXL.yday,RXL.back,OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
   ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([a,b])=>[a,FIRST+' '+a,LAST+' '+a,b,b+' '+ALL])):[]),...(SM()?SM().speakList():[])];
 /* ---------- #389 listen first ----------
    A new row of answer buttons (.chs .chb) rests until the spoken question has ended, 4 s at most; with no voice (offline,
@@ -6114,7 +6136,7 @@ const P4=()=>(window.__oren4||{}).play;
 const speedy=r=>{const p=P4();return !!(p&&p.mode==='speed'&&r.closest('#sPlay'));};
 const done=r=>!!r.querySelector('.ok,.show,.pop');
 const rest=(r,ms)=>{r.classList.add('lsn');r._ls.until=Date.now()+ms;};
-const reread=s=>{if(!s.re)return;s.re=0;if(O.sayNow)O.say(O.sayNow);};
+const reread=s=>{if(!s.re)return;s.re=0;if(O.sayNow)O.say(FR.noGoal(O.sayNow));};
 function free(r){r.classList.remove('lsn');const s=r._ls;s.until=0;s.wait=0;reread(s);}
 function gate(r){if(r._ls)return r._ls;const s=r._ls={t0:Date.now(),w:0,until:0,wait:0,re:0};
   if(!lsOff()&&!noVoice()&&!speedy(r)){s.wait=1;rest(r,LS.MAX);}return s;}
@@ -6536,14 +6558,13 @@ let dict=null,dictTried=false;
 async function getDict(){if(dictTried)return dict;dictTried=true;try{for(let i=0;i<20&&!(window.claude&&window.claude.use);i++)await new Promise(r=>setTimeout(r,100));
   if(window.claude&&window.claude.use)dict=await window.claude.use('dictation');}catch(e){dict=null;}return dict;}
 const SECS=45;
-function race(back){O.setScreen('sTal','city',back);T.hudT('מֵרוֹץ מִלִּים');O.sayNow='כמה מילים תקרא בארבעים וחמש שניות?';const s=$('#sTal');s.innerHTML='';const best=TL('read-flu').b|0;
+function race(back){O.setScreen('sTal','city',back);T.hudT('מֵרוֹץ מִלִּים');O.sayNow='כמה מילים תקרא בארבעים וחמש שניות?';const s=$('#sTal');s.innerHTML='';
   s.appendChild(h('div','whead',`<span class="gd gp-gd">⏱️</span><h1>כַּמָּה מִלִּים בְּ-45 שְׁנִיּוֹת?</h1>`));
   const tip=h('div','lsent','קוֹרְאִים בְּקוֹל כָּל מִלָּה, וְלוֹחֲצִים "קָרָאתִי".');s.appendChild(tip);
-  if(best)s.appendChild(h('div','gp-best',`הַשִּׂיא שֶׁלְּךָ: <b>${best}</b> מִלִּים`));
   const br=h('div','btnrow');const go=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');br.appendChild(go);s.appendChild(br);
   let mic=false;getDict().then(d=>{if(d&&tip.isConnected){mic=true;tip.textContent='קוֹרְאִים בְּקוֹל כָּל מִלָּה. הַמִּיקְרוֹפוֹן מַקְשִׁיב.';}});
-  go.onclick=()=>{if(mic&&T.needPerm)T.needPerm('dictation','כְּדֵי לִקְרֹא בְּקוֹל צָרִיךְ אִשּׁוּר שֶׁל הוֹרֶה לַמִּיקְרוֹפוֹן.');raceRun(back,mic?dict:null,best);};}
-function raceRun(back,d,best){O.setScreen('sTal','city',back);const s=$('#sTal');s.innerHTML='';O.hush();
+  go.onclick=()=>{if(mic&&T.needPerm)T.needPerm('dictation','כְּדֵי לִקְרֹא בְּקוֹל צָרִיךְ אִשּׁוּר שֶׁל הוֹרֶה לַמִּיקְרוֹפוֹן.');raceRun(back,mic?dict:null);};}
+function raceRun(back,d){/* #426: no record line, the stars are the reward (the best count stays in tl['read-flu'].b for the parent) */O.setScreen('sTal','city',back);const s=$('#sTal');s.innerHTML='';O.hush();
   const R=Math.max(1,level('nik',RUNG.length)-1);let pool=[];const nextW=()=>{if(!pool.length)pool=shuffle(WD.filter(w=>w.r<=R));return pool.pop();};
   let w=nextW(),count=0,shown=Date.now(),live=true;const t0=Date.now();
   const bar=h('div','gp-time','<i></i>');const card=h('div','prq tqc gp-race',`<div class="bigw" id="gpW">${w.w}</div><div class="gp-cnt">✓ <b id="gpN">0</b></div>${d?'<div class="heard" id="gpH">מַקְשִׁיב...</div>':''}`);
@@ -6563,7 +6584,7 @@ function raceRun(back,d,best){O.setScreen('sTal','city',back);const s=$('#sTal')
   const tick=setInterval(()=>{if(!card.isConnected){stop();return;}const left=SECS-(Date.now()-t0)/1000;bar.firstChild.style.width=Math.max(0,left/SECS*100)+'%';hud();if(left<=0)end();},200);
   function stop(){if(!live)return;live=false;clearInterval(tick);T.setKey(null);if(d)try{d.stop();}catch(e){}}
   function end(){stop();const st=count>=18?3:count>=10?2:1;const g=3+st*2;O.addGems(g);T.record('read-flu',st,{b:count});
-    T.result({title:count>best?'שִׂיא חָדָשׁ!':'כָּל הַכָּבוֹד!',sub:`קָרָאתָ ${count} מִלִּים בְּ-45 שְׁנִיּוֹת`+(best&&count<=best?` · הַשִּׂיא: ${best}`:''),stars:st,gems:g,back,again:()=>raceRun(back,d,Math.max(best,count))});}
+    T.result({title:'כָּל הַכָּבוֹד!',sub:`קָרָאתָ ${count} מִלִּים בְּ-45 שְׁנִיּוֹת`,stars:st,gems:g,back,again:()=>raceRun(back,d)});}
   window.__race={get w(){return w;},get count(){return count;},end,ok};}
 
 /* ===================== 1. FINAL LETTERS (for the writing house) ===================== */
@@ -9092,6 +9113,13 @@ function teachCard(g){if(g.startsWith('L:')){const L=g.slice(2),x=LET[L];return 
   if(c==='w'){const s=SIGHT.find(x=>x[0]===v);return {g,kind:'sight',w:v,ex:s[1],exHe:s[2],say:s[1]===v?v:v+'. '+s[1],items:[g]};}
   return {g,kind:'phrase',p:v,say:v,items:[g]};}
 
+/* #424 the English scene of the daily path: SCENE cards, letters and sounds first, then words (once words are open).
+   [{lv,g}] = a teach card, [{lv,q}] = a question; a question is only about an item seen before or taught on a card of this scene */
+const SCENE=5;
+function scenePart(save,lv,d,n){if(n<=0)return [];const P=plan(save,lv,d);const tch=P.teach.slice(0,Math.max(0,n-1));const tt=new Set(tch.flatMap(g=>teachCard(g).items));
+  const qs=P.qs.filter(q=>seen(save,q.k)||tt.has(q.k)).slice(0,n-tch.length);return [...tch.map(g=>({lv,g})),...qs.map(q=>({lv,q}))];}
+function dayScene(save,d){if(d==null)d=day();const w=levelOpen(save,0)?scenePart(save,0,d,2):[];return [...scenePart(save,1,d,SCENE-w.length),...w];}
+
 /* ---------- everything the game speaks in English (to make the voice in advance) ---------- */
 function speakList(){const out=[];const add=s=>out.push(s);
   THEMES.forEach(t=>t.w.forEach(w=>add(w[0])));
@@ -9117,7 +9145,7 @@ function merge(save,o){if(!o||!o.en2)return;const E=st(save),F=o.en2;
 
 let UI=null,SAVE=null;      /* the game sets the live save (Part 2); tests pass one */
 const api={THEMES,WORD,EXTRA,CLASH,clash,LETTERS,LET,AZ,LGROUPS,SOUNDMATE,LOOK,CVC,CVCW,SIGHT,SENT,PHRASES,PH,PCLASH,PUNITS,SONGS,SONG,LEVELS,UNIT,ITEM_UNIT,OPEN,SKILLS,INT,
-  day,st,box,seen,known,taught,words,touch,mark,unitDone,doneUnits,levelOpen,songOpen,openSongs,curUnit,plan,gen,teachCard,groupOf,groupsOf,okey,sayIsFor,speakList,levelOf,levelText,report,merge,
+  day,st,box,seen,known,taught,words,touch,mark,unitDone,doneUnits,levelOpen,songOpen,openSongs,curUnit,plan,gen,dayScene,teachCard,groupOf,groupsOf,okey,sayIsFor,speakList,levelOf,levelText,report,merge,
   setRng:f=>{rnd=f||Math.random;},set save(s){SAVE=s;},get save(){return SAVE;},set ui(u){UI=u;},
   register:()=>{if(UI)UI.register();}};
 return api;
@@ -9208,18 +9236,22 @@ function clueOf(q){if(CLUE[q.type])return CLUE[q.type];
 
 /* ---------- one round of a level ---------- */
 const NAMES=['eng-voc','eng-abc','eng-read','eng-talk','eng-song'];
-const ACTN={'eng-voc':'מִלִּים','eng-abc':'אוֹתִיּוֹת וּצְלִילִים','eng-read':'קוֹרְאִים','eng-talk':'מְדַבְּרִים','eng-song':'שִׁירִים'};
+const SCENE_ID='en-day';
+const ACTN={'en-day':'רֶגַע שֶׁל אַנְגְּלִית','eng-voc':'מִלִּים','eng-abc':'אוֹתִיּוֹת וּצְלִילִים','eng-read':'קוֹרְאִים','eng-talk':'מְדַבְּרִים','eng-song':'שִׁירִים'};
 const snapshot=()=>({open:NAMES.map((_,lv)=>E2.levelOpen(O.save,lv)),units:E2.LEVELS.map(L=>L.units.filter(u=>E2.unitDone(O.save,u)).map(u=>u.id)),songs:E2.openSongs(O.save).length});
 function doneTitle(a,b){const nl=NAMES.findIndex((_,lv)=>b.open[lv]&&!a.open[lv]);if(nl>0)return `נִפְתַּח מִשְׂחָק חָדָשׁ: ${ACTN[NAMES[nl]]}! 🎉`;
   if(b.songs>a.songs)return 'נִפְתַּח שִׁיר חָדָשׁ! 🎵';
   for(let lv=0;lv<4;lv++){const nu=b.units[lv].find(id=>!a.units[lv].includes(id));if(nu)return `סִיַּמְתָּ: ${E2.UNIT[nu].he}! 🎉`;}return undefined;}
-function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save,lv,d);/* #394 on the daily path: at most 4 steps (the new words' cards + at least 1 question) */P.qs=P.qs.slice(0,Math.max(1,T.pathN(P.teach.length+P.qs.length)-P.teach.length));const id=NAMES[lv];const before=snapshot();
-  const steps=[...P.teach.map(g=>({t:'teach',c:E2.teachCard(g)})),...P.qs.map(s=>({t:'q',s}))];
-  const b0={};P.qs.forEach(s=>{if(!(s.k in b0))b0[s.k]=E2.box(save,s.k);});P.teach.forEach(g=>E2.teachCard(g).items.forEach(k=>{b0[k]=0;}));
+/* sc: the daily path's English scene (#424): its own 5 cards from E2.dayScene, recorded as SCENE_ID */
+function round(lv,back,sc){hush();const save=O.save,d=E2.day();let P,steps,id;const before=snapshot();
+  if(sc){P={unit:null,he:ACTN[SCENE_ID]};id=SCENE_ID;steps=E2.dayScene(save,d).map(x=>x.g?{t:'teach',c:E2.teachCard(x.g),lv:x.lv}:{t:'q',s:x.q,lv:x.lv});}
+  else{P=E2.plan(save,lv,d);/* #394 on the daily path: at most 4 steps (the new words' cards + at least 1 question) */P.qs=P.qs.slice(0,Math.max(1,T.pathN(P.teach.length+P.qs.length)-P.teach.length));id=NAMES[lv];
+    steps=[...P.teach.map(g=>({t:'teach',c:E2.teachCard(g)})),...P.qs.map(s=>({t:'q',s}))];}
+  const b0={};steps.forEach(x=>{if(x.t==='q'&&!(x.s.k in b0))b0[x.s.k]=E2.box(save,x.s.k);});steps.forEach(x=>{if(x.t==='teach')x.c.items.forEach(k=>{b0[k]=0;});});
   const res={};const asked=new Set();
   let i=0,err=0,gems=0,nq=0;O.setScreen('sTal','sea',back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq e2');s.appendChild(wrap);
-  if(lv===1&&window.LESSONS)s.appendChild(window.LESSONS.againBtn('eng-abc',back,()=>round(1,back)));
-  const title=()=>P.unit?P.unit.he:'חֲזָרָה';
+  if(lv===1&&!sc&&window.LESSONS)s.appendChild(window.LESSONS.againBtn('eng-abc',back,()=>round(1,back)));
+  const title=()=>P.he||(P.unit?P.unit.he:'חֲזָרָה');
   let cur=null;
   function render(){const st=steps[i];hush();T.hudT(title(),T.progressBar(i,steps.length));wrap.innerHTML='';
     if(st.t==='teach')return renderTeach(st.c);renderQ(st.s);}
@@ -9254,13 +9286,14 @@ function round(lv,back){hush();const save=O.save,d=E2.day();const P=E2.plan(save
     const HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,before:ex,explain:v.explain?`<div class="e2ex">${v.explain}</div>`:'',
       clue:()=>{hinted=true;if(v.hint){if(v.karaoke){const tok=++TOK;karaoke(card.querySelector('.e2sent'),v.hint,tok);}else talk([['en',v.hint]]);}else playIt();return clueOf(q);},
       reveal:()=>{if(lock)return;lock=true;hush();if(!fin)err++;settle('bad');nq++;sayAfter();setTimeout(next,D(4200));}}):null;
+    const sk=NAMES[steps[i].lv!=null?steps[i].lv:lv];
     function pick(k,b){if(lock||b.disabled)return;
       if(k===q.ans){lock=true;hush();b.classList.add('ok');sfx.ok(i);const g=tries||hinted?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);
-        if(!tries&&T.skHit)T.skHit(NAMES[lv],!hinted);if(!tries&&KN)KN.hit(NAMES[lv],!hinted);settle(tries?'bad':hinted?'hint':'ok');nq++;reveal();setTimeout(next,D(v.after||v.afterK?2600:1700));return;}
-      if(!tries&&T.skHit)T.skHit(NAMES[lv],false);if(!tries&&KN)KN.hit(NAMES[lv],false);tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();
+        if(!tries&&T.skHit)T.skHit(sk,!hinted);if(!tries&&KN)KN.hit(sk,!hinted);settle(tries?'bad':hinted?'hint':'ok');nq++;reveal();setTimeout(next,D(v.after||v.afterK?2600:1700));return;}
+      if(!tries&&T.skHit)T.skHit(sk,false);if(!tries&&KN)KN.hit(sk,false);tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();
       if(tries>=2){if(HB&&HB.el.isConnected){fin=true;HB.answer();return;}lock=true;hush();settle('bad');nq++;row.children[q.ans].classList.add('show');reveal();setTimeout(next,D(3000));}}
     }
-  function next(){if(!wrap.isConnected)return;i++;if(i>=steps.length){T.setKey(null);const t=doneTitle(before,snapshot());T.finishAct(id,err,Math.max(1,nq),gems,back,()=>round(lv,back),t);}else render();}
+  function next(){if(!wrap.isConnected)return;i++;if(i>=steps.length){T.setKey(null);const t=doneTitle(before,snapshot());T.finishAct(id,err,Math.max(1,nq),gems,back,()=>round(lv,back,sc),t);}else render();}
   T.setKey(e=>{if(/^[1-9]$/.test(e.key)){const r=wrap.querySelector('.chs');const b=r&&r.children[+e.key-1];if(b)b.click();}});
   window.__quiz={get ans(){return cur&&cur.ans;},get i(){return i;},get wrap(){return wrap;}};
   window.__e2={get step(){return steps[i];},steps,P};
@@ -9297,8 +9330,10 @@ if(KN)KN.area('english',{name:'אנגלית',skills:NAMES.slice(0,4).map(id=>({i
   asks:[{id:'eng-voc',q:'מכיר מילים בסיסיות באנגלית',skills:['eng-voc']},{id:'eng-abc',q:'מכיר את האותיות באנגלית והצלילים שלהן',skills:['eng-abc']},{id:'eng-read',q:'קורא מילים קצרות באנגלית',skills:['eng-read']}]});
 const runLv=(lv,back)=>(lv>=2&&lv<=3&&KN&&KN.stepped(NAMES[lv]))?runLv(lv-1,back):lv===4?songs(back):lv===1&&LN?LN.first('eng-abc',back,()=>ABC(back)):round(lv,back);
 const ACTS=NAMES.map((id,lv)=>({id,name:ACTN[id],icon:ICONS[id],avail:()=>lv===4?E2.openSongs(O.save).length>0:E2.levelOpen(O.save,lv),run:back=>runLv(lv,back)}));
+/* #424 the daily path's English scene: not a building card, not a random pick (noDaily); talents' choose() adds it once a day while English is on (inPath) */
+const SCENE={id:SCENE_ID,name:ACTN[SCENE_ID],icon:ICONS['eng-abc'],noDaily:true,inPath:()=>T.dailyPool().includes('eng-abc'),run:back=>LN?LN.first('eng-abc',back,()=>round(1,back,1)):round(1,back,1)};
 function register(){const b=T.BUILD.find(x=>x.id==='eng');if(!b||b._e2)return;b._e2=1;
-  b.acts.forEach(a=>{if(T.ACT[a.id]===a)delete T.ACT[a.id];});b.acts=[ACTS[1],ACTS[0],...ACTS.slice(2)];   /* letters and sounds first (#58) */ACTS.forEach(a=>{a.b=b;T.ACT[a.id]=a;});
+  b.acts.forEach(a=>{if(T.ACT[a.id]===a)delete T.ACT[a.id];});b.acts=[ACTS[1],ACTS[0],...ACTS.slice(2)];   /* letters and sounds first (#58) */ACTS.forEach(a=>{a.b=b;T.ACT[a.id]=a;});SCENE.b=b;T.ACT[SCENE_ID]=SCENE;
   b.blurb='לוֹמְדִים אַנְגְּלִית צַעַד אַחַר צַעַד. לוֹחֲצִים עַל הָרַמְקוֹל כְּדֵי לִשְׁמֹעַ.';}
 E2.ui={register};
 E2.screens={round,songs,sing,pic,ACTS};
@@ -9936,9 +9971,11 @@ function openTracks(){const s=S();if((s.set||{}).all)return ORDER.slice();const 
 function round(o){/* o: {id, sk, title, bg, back, n, next(i) → q, again} */o=Object.assign({},o,{n:T.pathN(o.n)});/* #394 short on the daily path */
   let i=0,err=0,gems=0;const qs=[];O.setScreen('sTal',o.bg||'mount',o.back);const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq thq');s.appendChild(wrap);if(o.lesson&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(o.lesson,o.back,o.again));
   const render=()=>{let q;for(let t=0;t<30;t++){C.clearLB();q=o.next(i);if(!qs.some(x=>x.key===q.key))break;}qs.push(q);let tries=0,lock=false,first=true;
-    T.hudT(o.title,T.progressBar(i,o.n));O.sayNow=T.plainHe((q.say||'')+' '+(q.text||''));wrap.innerHTML='';
+    T.hudT(o.title,T.progressBar(i,o.n));const row=h('div','chs n'+q.opts.length+(q.opts[0].t==='num'?' ltr':''));/* #435 the answers are read one by one (not in reading comprehension) */
+    const ra=T.ansSay&&!T.READ_ACT.test(o.id)?T.ansSay(row,q.opts.map(op=>op.t==='num'||op.t==='tx'?String(op.v):'')):'';
+    O.sayNow=T.plainHe((q.say||'')+' '+(q.text||''))+ra;wrap.innerHTML='';
     const card=h('div','prq tqc',`${promptHTML(q)}${q.text?`<div class="qq">${q.text}</div>`:''}`);wrap.appendChild(card);if(T.rdQ&&q.text)T.rdQ(q,card);
-    const row=h('div','chs n'+q.opts.length+(q.opts[0].t==='num'?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+optCls(op),optHTML(op));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
+    q.opts.forEach((op,k)=>{const b=h('button','chb '+optCls(op),optHTML(op));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');
     const done=(ok)=>{if(!first)return;first=false;if(q.bank&&window.LEARN)try{window.LEARN.seen(q.bank,q.bkey,ok,false);}catch(e){}const ch=C.answer(TH(),o.sk,ok);hit(o.sk,ok);O.persist();if(ch===1)O.floatText(card,'🎉 עָלִיתָ שָׁלָב!');};
     const ruleHTML=()=>`<div>${sprTok(q.rule)}</div>${q.ruleItems?`<div class="thser sm">${q.ruleItems.map(x=>`<span class="thi">${optHTML(x)}</span>`).join('')}</div>`:''}`;
@@ -10615,8 +10652,8 @@ const hundred=(chart,show)=>{let s='<div class="lnhc" dir="ltr">';for(let i=1;i<
 /* one question card: one instruction line, multiple choice; the strategy (q.tip) only behind the help button (#216); a short explanation after a mistake */
 function askQ(wrap,q,i,n,title,onAns){T.hudT(title,T.progressBar(i,n));wrap.innerHTML='';const t0=Date.now();
   const card=h('div','prq tqc lnq',`${q.html||''}${q.chart?hundred(q.chart,false):''}${q.text?`<div class="qq">${q.text}</div>`:''}`);wrap.appendChild(card);if(T.rdQ&&q.text)T.rdQ(q,card);
-  O.sayNow=plain((q.text?'':(q.html||'')).replace(/<span class="lnbox"><\/span>/g,' מה ')+' '+(q.text||''));
-  const row=h('div','chs ltr');let tries=0,lock=false;
+  const row=h('div','chs ltr');/* #435 math is not a reading test: the answers are read one by one, each lit */
+  O.sayNow=plain((q.text?'':(q.html||'')).replace(/<span class="lnbox"><\/span>/g,' מה ')+' '+(q.text||''))+(T.ansSay?T.ansSay(row,q.opts.map(String)):'');let tries=0,lock=false;
   q.opts.forEach((v,k)=>{const b=h('button','chb num',String(v));b.onclick=()=>pickA(k,b);row.appendChild(b);});wrap.appendChild(row);
   const exb=h('div','hintbox');exb.hidden=true;wrap.appendChild(exb);card.classList.add('flashin');
   /* only: the help box already shows the answer with the explanation, so the explanation box holds just 'continue' */
@@ -11328,11 +11365,104 @@ function grid(){const ts=TP.available();const head=GRIDH;const c=card(`<h2>${hea
 TP.grid=grid;TP.nudge=nudge;
 })();
 
+/* ===== #414 ONE LEARNING GOAL PER MISSION (injected into index.html by build) =====
+   T = the one table: every Talents City activity id + 'math' (+ one per math world, 'w:<world id>', for the lv:<id> levels) ->
+   a short kid phrase (full nikud) that follows "הַיּוֹם נִלְמַד". The friend says it once a day per mission at the start
+   (FRIEND.goal: after the path's story line, before the screen's instruction; save.gls = {d: day, i: [said keys]}).
+   When a mission is finished, daylog.js puts the parent text (no nikud) on its day log line: x.lg (GOALS.plain).
+   GOALS.learned(day) = that day's finished goals, once each (for the parent view). GOALS.speakList() = every line (pregen). */
+(()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;
+const PRE='הַיּוֹם נִלְמַד ';
+const G={T:{
+ 'math':'לִפְתֹּר תַּרְגִּילִים בְּחֶשְׁבּוֹן',
+ 'w:num':'עַל מִסְפָּרִים: עֲשָׂרוֹת וַאֲחָדוֹת','w:add':'לְחַבֵּר מִסְפָּרִים','w:sub':'לְחַסֵּר מִסְפָּרִים','w:mul':'לְהַכְפִּיל מִסְפָּרִים',
+ 'w:div':'לְחַלֵּק שָׁוֶה בְּשָׁוֶה','w:word':'לִפְתֹּר סִפּוּרֵי חֶשְׁבּוֹן','w:time':'עַל שָׁעוֹן, צוּרוֹת וּמְדִידָה','w:fin':'לְהִשְׁתַּמֵּשׁ בְּכָל מַה שֶּׁלָּמַדְנוּ',
+ /* reading and writing */
+ 'read-first':'לִמְצֹא אֶת הָאוֹת הָרִאשׁוֹנָה בַּמִּלָּה','read-pw':'לִקְרֹא מִלָּה וְלִמְצֹא אֶת הַתְּמוּנָה שֶׁלָּהּ',
+ 'read-wp':'לִרְאוֹת תְּמוּנָה וְלִמְצֹא אֶת הַמִּלָּה שֶׁלָּהּ','read-build':'לִבְנוֹת מִלָּה מֵאוֹתִיּוֹת','read-sent':'לִקְרֹא מִשְׁפָּט שָׁלֵם',
+ 'read-voice':'לִקְרֹא מִלִּים בְּקוֹל רָם','read-rc':'לִקְרֹא וּלְהָבִין מָה קָרָה','read-nik':'לִקְרֹא אוֹתִיּוֹת עִם נִקּוּד',
+ 'read-sound':'לִשְׁמֹעַ אֶת הַצְּלִיל הָרִאשׁוֹן בַּמִּלָּה','read-flu':'לִקְרֹא מִלִּים מַהֵר וְנָכוֹן','read-rhyme':'אֵילוּ מִלִּים מִתְחָרְזוֹת',
+ 'write-trace':'לִכְתֹּב אוֹתִיּוֹת בַּדֶּרֶךְ הַנְּכוֹנָה','write-mix':'לִכְתֹּב מִלִּים וּמִשְׁפָּטִים','write-paper':'לִכְתֹּב עַל דַּף אֲמִתִּי',
+ 'write-spell':'לִכְתֹּב מִלִּים בְּלִי טָעֻיּוֹת',
+ /* bedtime stories (the story's own lesson, #355) */
+ 'story-0':'שֶׁכְּדֵי לִרְאוֹת צָרִיךְ אוֹר','story-1':'שֶׁצֶּמַח צָרִיךְ מַיִם וְאוֹר','story-2':'לָמָּה רוֹאִים כּוֹכָבִים רַק בַּלַּיְלָה',
+ 'story-3':'לִסְפֹּר בַּעֲשָׂרוֹת','story-4':'שֶׁנְּיָר סוֹפֵג מַיִם, וְעֵץ צָף','story-5':'שֶׁעֲשָׂרָה וְעוֹד חֲמִשָּׁה הֵם חֲמִשָּׁה עָשָׂר',
+ 'story-6':'שֶׁגֶּשֶׁם יוֹרֵד מֵהָעֲנָנִים וּמַשְׁקֶה צְמָחִים','story-7':'שֶׁכְּלָבִים שׁוֹמְעִים טוֹב מֵאִתָּנוּ',
+ 'story-8':'לְהֵרָגַע וּלְנַסּוֹת שׁוּב כְּשֶׁמַּשֶּׁהוּ נֶהֱרַס','story-9':'שֶׁגַּם כְּשֶׁמְּפַחֲדִים, אֶפְשָׁר לְנַסּוֹת','story-10':'אֵיךְ נוֹצָר צֵל',
+ 'story-11':'אֵיךְ דָּג נוֹשֵׁם בַּמַּיִם','story-12':'שֶׁמִּטָּעֻיּוֹת לוֹמְדִים','story-13':'לִסְפֹּר כְּדֵי לָדַעַת מָה חָסֵר',
+ 'story-14':'שֶׁלְּשַׁתֵּף זֶה כֵּיף יוֹתֵר','story-15':'שֶׁשֶּׁלֶג הוּא מַיִם קְפוּאִים','story-16':'אֵיךְ נוֹצֶרֶת קֶשֶׁת בַּשָּׁמַיִם',
+ 'story-17':'מִלָּה חֲדָשָׁה: גָּבִישׁ','story-18':'לַעֲזֹר לְמִי שֶׁמִּתְקַשֶּׁה','story-19':'שֶׁמִּי שֶׁלֹּא מְוַתֵּר, מַגִּיעַ',
+ 'story-new':'לִקְרֹא סִפּוּר וְלִלְמֹד מִמֶּנּוּ דָּבָר חָדָשׁ',
+ /* the world, maps and holidays */
+ 'world-flag':'לְזַהוֹת דְּגָלִים שֶׁל אֲרָצוֹת','world-ani':'אֵיפֹה גָּרוֹת חַיּוֹת בָּעוֹלָם','world-il':'עַל מְקוֹמוֹת בָּאָרֶץ שֶׁלָּנוּ',
+ 'map-read':'לִקְרֹא מַפָּה','map-il':'לִמְצֹא מְקוֹמוֹת עַל מַפַּת יִשְׂרָאֵל','map-world':'עַל הַיַּבָּשׁוֹת וְהָאוֹקְיָנוֹסִים',
+ 'map-flags':'לִמְצֹא אֲרָצוֹת עַל הַמַּפָּה לְפִי הַדֶּגֶל','his-then':'מָה הָיָה פַּעַם וּמָה יֵשׁ הַיּוֹם',
+ 'his-inv':'מָה הִמְצִיאוּ קֹדֶם וּמָה אַחַר כָּךְ','his-old':'אֵיךְ אֲנָשִׁים חָיוּ בִּימֵי קֶדֶם','yr-hol':'עַל הַחַגִּים שֶׁלָּנוּ',
+ 'yr-order':'אֶת הַסֵּדֶר שֶׁל הַחַגִּים בַּשָּׁנָה','yr-sport':'עַל סוּגֵי סְפּוֹרְט','yr-gk':'דְּבָרִים חֲדָשִׁים עַל הָעוֹלָם',
+ /* lab, nature and sky */
+ 'sci-float':'מָה צָף וּמָה שׁוֹקֵעַ','sci-mag':'מָה מַגְנֵט מוֹשֵׁךְ','sci-animals':'לְמַיֵּן בַּעֲלֵי חַיִּים לִקְבוּצוֹת',
+ 'sci-body':'עַל הַחֲלָקִים שֶׁל הַגּוּף','sci-plant':'מָה צֶמַח צָרִיךְ כְּדֵי לִגְדֹּל','sci-states':'אֵיךְ מַיִם נִהְיִים קֶרַח וְאֵדִים',
+ 'sci-day':'לָמָּה יֵשׁ יוֹם וְלַיְלָה','sci-circ':'אֵיךְ נוּרָה נִדְלֶקֶת בְּמַעְגָּל חַשְׁמַלִּי',
+ 'nat-home':'אֵיפֹה חַיּוֹת גָּרוֹת וּמָה הֵן אוֹכְלוֹת','nat-groups':'לְמַיֵּן חַיּוֹת לְמִשְׁפָּחוֹת','nat-cycle':'אֵיךְ בַּעֲלֵי חַיִּים גְּדֵלִים',
+ 'nat-il':'עַל הַטֶּבַע בְּיִשְׂרָאֵל','sky-sun':'עַל הַשֶּׁמֶשׁ וְעַל הַיָּרֵחַ','sky-planets':'עַל כּוֹכְבֵי הַלֶּכֶת',
+ 'sky-order':'אֶת הַסֵּדֶר שֶׁל כּוֹכְבֵי הַלֶּכֶת מֵהַשֶּׁמֶשׁ','sky-astro':'אֵיךְ חַיִּים אַסְטְרוֹנָאוּטִים בֶּחָלָל',
+ /* thinking, code and chess */
+ 'code-maze':'לְתַכְנֵת רוֹבּוֹט צַעַד אַחַר צַעַד','think-sudoku':'לְסַדֵּר כָּל תְּמוּנָה פַּעַם אַחַת בְּכָל שׁוּרָה',
+ 'think-maze':'לְתַכְנֵן דֶּרֶךְ בְּמָבוֹךְ','think-mem':'לִזְכֹּר אֵיפֹה כָּל תְּמוּנָה','think-pat':'מָה בָּא אַחַר כָּךְ בְּסִדְרָה',
+ 'think-ana':'לִמְצֹא אֶת הַקֶּשֶׁר בֵּין שְׁנֵי זוּגוֹת','think-ser':'אֵיךְ סִדְרַת מִסְפָּרִים מַמְשִׁיכָה','think-rel':'לִמְצֹא מָה הַקֶּשֶׁר בֵּין דְּבָרִים',
+ 'think-mat':'לִמְצֹא מָה חָסֵר בַּלּוּחַ','think-sen':'לִבְחֹר מִלָּה שֶׁמַּשְׁלִימָה מִשְׁפָּט','think-test':'לַחְשֹׁב לְאַט עַל שְׁאֵלוֹת קָשׁוֹת',
+ 'ln-math':'לִפְתֹּר תַּרְגִּילִים בְּרֹאשׁ','ln-paper':'לִפְתֹּר תַּרְגִּילִים עַל דַּף',
+ 'chess-board':'עַל הַלּוּחַ וְהַכֵּלִים שֶׁל שַׁחְמָט','chess-moves':'אֵיךְ כָּל כְּלִי זָז','chess-capture':'מָתַי כְּלִי יָכוֹל לֶאֱכֹל כְּלִי אַחֵר',
+ 'chess-check':'מָה זֶה שַׁח','chess-mate':'לָתֵת מַט בְּמַהֲלָךְ אֶחָד','chess-play':'לַחְשֹׁב לִפְנֵי כָּל מַהֲלָךְ',
+ /* building */
+ 'blk-plan':'לִבְנוֹת לְפִי תָּכְנִית','blk-count':'לִסְפֹּר קֻבִּיּוֹת, גַּם כָּאֵלֶּה שֶׁלֹּא רוֹאִים','blk-mirror':'לִבְנוֹת כְּמוֹ בְּמַרְאָה',
+ 'blk-view':'אֵיךְ דָּבָר נִרְאֶה מִלְמַעְלָה וּמִקָּדִימָה','blk-free':'לְתַכְנֵן וְלִבְנוֹת בְּעַצְמְךָ',
+ /* English */
+ 'en-day':'אוֹתִיּוֹת וּמִלִּים בְּאַנְגְּלִית','eng-voc':'מִלִּים חֲדָשׁוֹת בְּאַנְגְּלִית','eng-abc':'אוֹתִיּוֹת וּצְלִילִים בְּאַנְגְּלִית','eng-read':'לִקְרֹא מִלִּים בְּאַנְגְּלִית',
+ 'eng-talk':'לְדַבֵּר בְּאַנְגְּלִית','eng-song':'לָשִׁיר בְּאַנְגְּלִית',
+ /* music, art, typing, calm */
+ 'mus-notes':'אֶת הַשֵּׁמוֹת שֶׁל הַתָּוִים','mus-dur':'שֶׁיֵּשׁ תָּוִים אֲרֻכִּים וְתָוִים קְצָרִים','mus-ear':'לִשְׁמֹעַ אִם צְלִיל גָּבוֹהַּ אוֹ נָמוּךְ',
+ 'mus-rhythm':'לְהַקִּישׁ בַּקֶּצֶב','mus-piano':'לְנַגֵּן שִׁיר עַל פְּסַנְתֵּר','mus2-read':'לִקְרֹא תָּוִים','mus2-ear':'לְהַקְשִׁיב וּלְזַהוֹת צְלִילִים',
+ 'mus2-rhythm':'לִקְרֹא קֶצֶב מֵהַתָּוִים','mus2-melody':'לְנַגֵּן מַנְגִּינָה מֵהַתָּוִים',
+ 'art-draw':'לְצַיֵּר בְּרִבּוּעִים קְטַנִּים','art-cbn':'לִפְתֹּר תַּרְגִּיל וְלִצְבֹּעַ לְפִי הַתְּשׁוּבָה',
+ 'art-mix':'אֵיזֶה צֶבַע יוֹצֵא מִשְּׁנֵי צְבָעִים','art-sym':'מָה זֶה סִימֶטְרִיָּה, כְּמוֹ בְּמַרְאָה',
+ 'type-lessons':'אֵיפֹה הָאוֹתִיּוֹת עַל הַמִּקְלֶדֶת','type-rain':'לִמְצֹא אוֹתִיּוֹת מַהֵר בַּמִּקְלֶדֶת',
+ 'mind-breath':'לִנְשֹׁם לְאַט כְּדֵי לְהֵרָגַע','mind-feel':'לָתֵת שֵׁם לָרְגָשׁוֹת שֶׁלָּנוּ','mind-jar':'לִמְצֹא דְּבָרִים טוֹבִים לְהוֹדוֹת עֲלֵיהֶם',
+ 'mind-sounds':'לְהַקְשִׁיב בְּשֶׁקֶט','mind-scan':'לְהַרְגִּישׁ כָּל חֵלֶק בַּגּוּף'}};
+/* the table key of a mission: a math level -> its world (else 'math') */
+G.key=id=>{id=String(id||'');if(/^lv:/.test(id)){const lv=(O.ALLLV||[]).find(l=>l.id===id.slice(3));const k=lv&&lv.w?'w:'+lv.w.id:'math';return G.T[k]?k:'math';}return G.T[id]?id:null;};
+G.of=id=>{const k=G.key(id);return k?G.T[k]:'';};
+G.line=id=>{const g=G.of(id);return g?PRE+g+'.':'';};
+G.plain=id=>T.plainHe(G.of(id));
+G.speakList=()=>Object.values(G.T).map(g=>PRE+g+'.');
+G.learned=day=>{const e=(((O.realSave||O.save).alog||{})[day]||{}).e||[],out=[];
+  e.forEach(x=>{const lg=x&&x[6]==='c'&&x[7]&&x[7].lg;if(lg&&!out.includes(lg))out.push(lg);});return out;};
+/* the friend says it once a day per mission, when the mission starts (daylog.js emits dlBegin) */
+O.on('dlBegin',id=>{const k=G.key(id),F=window.FRIEND;if(!k||!F||!F.goal||O.isParentPlay)return;
+  const s=O.save,d=O.today();if(!s.gls||s.gls.d!==d)s.gls={d,i:[]};if(s.gls.i.includes(k))return;s.gls.i.push(k);F.goal(G.line(id));});
+/* #430 one end-of-day question for the parent to ask Oren: a fixed list per topic of the goal table (parent text, no nikud).
+   askOf(day, [[id, o], ...]) picks, for that day, one topic of his finished missions (o 'c' with a goal) and one question of it. */
+G.Q={math:['איזה תרגיל פתרת היום? תראה לי איך','איך אתה בודק שהתשובה נכונה?','מה היה התרגיל הכי קשה היום?'],
+ readg:['איזו מילה קראת היום? תקרא לי אותה','איזו אות למדת היום? איזו מילה מתחילה בה?','תכתוב לי מילה אחת שלמדת היום'],
+ story:['מה למדת מהסיפור? מה קרה בו?','מה היית עושה במקום הגיבור?'],
+ eng:['איזו מילה באנגלית למדת היום?','איך אומרים באנגלית משהו שלמדת היום?'],
+ explore:['מה גילית היום שלא ידעת?','איך פתרת את החידה של היום?'],
+ create:['מה יצרת היום? תספר לי עליו','מה היה הכי כיף ליצור היום?'],
+ calm:['איך הרגשת אחרי התרגיל של השקט?','תראה לי איך נושמים לאט']};
+const qTop=k=>{if(k==='math'||/^(w:|ln-)/.test(k))return 'math';if(/^story-/.test(k))return 'story';if(/^(en|eng)-/.test(k))return 'eng';
+  const P=window.PDAY,t=P&&P.topOf?P.topOf(k):null;return G.Q[t]?t:null;};
+G.askOf=(day,list)=>{const tops=[];(list||[]).forEach(([id,o])=>{const k=o==='c'&&G.key(id);const t=k&&qTop(k);if(t&&!tops.includes(t))tops.push(t);});
+  if(!tops.length)return '';const n=parseInt(String(day).replace(/\D/g,''),10)||0;const q=G.Q[tops[n%tops.length]];return q[Math.floor(n/tops.length)%q.length];};
+G.ask=day=>G.askOf(day,((((O.realSave||O.save).alog||{})[day]||{}).e||[]).filter(x=>x&&x[7]&&x[7].lg).map(x=>[x[1],x[6]]));
+window.GOALS=G;
+})();
+
 /* ===== DAY LOG: everything Oren did, for the parent (also from another house, in real time through the family save) =====
    save.alog[day].e = [[min, id, stars, ok, n, helped, o], ...]   min = minutes after midnight when it started,
      ok/n = right on the first try / questions, o: 'c' done · 'q' left in the middle · 'x' opened and closed at once (only for Oren's "again" list) · 's' a path step he did not reach · 'b' stopped for a break
+     · 'f' his answer to 'easy or hard?' at the end of a scene (#411, x.ez 'e' easy · 'h' hard)
      · 'p' skipped by the parent (#359, x.pc = the command id; hidden when that command was undone: save.pcU[id])
-   x (optional object): a story's {t, g, lv, r} (#355); any activity: lv = his level when it started (learning engine), ra = taps on read-aloud (#359)
+   x (optional object): a story's {t, g, lv, r} (#355); lg = what he learned, on a finished line (#414, goals.js); any activity: lv = his level when it started (learning engine), ra = taps on read-aloud (#359)
    save.now = {id, t, s}  the activity being played, the last moment something happened (ms; also each active play tick, the heartbeat) and when this play
      session started (s; a new session after 3+ min without a heartbeat) — "playing now · N min (from HH:MM)" for the parent (#352).
    Detailed entries are kept for 14 days (think.js keeps the day counts for 35). Parent text has no nikud. */
@@ -11360,14 +11490,16 @@ DL.beat=()=>{const par=document.querySelector('#sPar');if(par&&!par.hidden)retur
 const lvOf=id=>{const k=((O.save.lrn||{}).k||{})['a:'+id];return k&&k.n?k.l|0:0;};
 function begin(id){if(O.isParentPlay)return;if(O.hereBegin)O.hereBegin(id);/* #44 the place Oren is in */if(cur&&!cur.end)end(cur.brk?'b':'q');cur={id,t:Date.now(),d:day(),ok:0,n:0,help:0,ra:0,lv:lvOf(id)};now();O.emit('dlBegin',id);}
 function end(o,st){const c=cur;if(!c||c.end)return;c.end=1;if(o!=='c'&&o!=='p'&&!c.n&&Date.now()-c.t<15000)o='x';   /* opened and closed at once: 'x' — kept for Oren's "again" list, not shown to the parent */
-  const x=Object.assign({},c.x||{});if(c.lv&&x.lv==null)x.lv=c.lv;if(c.ra)x.ra=c.ra;
+  const x=Object.assign({},c.x||{});if(c.lv&&x.lv==null)x.lv=c.lv;if(c.ra)x.ra=c.ra;if(o==='c'){const g=lgOf(c.id,x);if(g)x.lg=g;}
   add(c.d,[minOf(c.t),c.id,st|0,c.ok,c.n,c.help,o].concat(Object.keys(x).length?[x]:[]));now();cur=null;O.persist();}
+/* #414 a finished mission keeps what he learned (parent text): a story's own goal, else the mission's goal (goals.js) */
+function lgOf(id,x){const G=window.GOALS;return (x&&x.g)||(G?G.plain(id):'');}
 DL.begin=begin;DL.end=end;DL.cur=()=>cur;
 /* a story adds its details to its line (#355): x = {t: title, g: goal, lv: story level, r: 'a' read alone · 'l' listened}; the object is filled in while he plays */
 DL.note=(id,x)=>{if(O.isParentPlay)return;if(!cur||cur.end||cur.id!==id||cur.x)begin(id);cur.x=x;};
 /* a round that ends again and again ("again"): each finish is its own line */
 function done(id,st){if(O.isParentPlay)return;if(cur&&cur.id===id&&!cur.end){end('c',st);return;}if(cur&&!cur.end)end('q');
-  const t=Date.now();add(day(),[minOf(t),id,st|0,0,0,0,'c']);mark(null);O.persist();}
+  const t=Date.now(),g=lgOf(id);add(day(),[minOf(t),id,st|0,0,0,0,'c'].concat(g?[{lg:g}]:[]));mark(null);O.persist();}
 O.on('tlDone',(id,st)=>done(id,st!=null?st:((T.S().tl[id]||{}).s|0)));
 O.on('levelDone',(lv,st)=>{if(lv&&lv.id)done('lv:'+lv.id,st);});
 O.on('tq',(id,ok)=>{if(cur&&!cur.end){cur.n++;if(ok)cur.ok++;now();}});
@@ -11396,13 +11528,13 @@ DL.nameOf=id=>{if(id==='math')return 'מסע החשבון';
   if(/^lv:/.test(id)){const lv=O.ALLLV.find(l=>l.id===id.slice(3));return lv?`${plain(lv.u.name)} (${plain(lv.w.name)})`:'חשבון';}
   const a=T.ACT[id];return a?plain(a.name):id;};
 DL.domOf=id=>{if(id==='math'||/^lv:/.test(id))return 'חשבון';const a=T.ACT[id];if(!a||!a.b)return '';const g=(T.GROUPS||[]).find(x=>x.ids.includes(a.b.id));return g?GN()[g.id]:plain(a.b.name);};
-const ICO={c:'✓',q:'✗',s:'⏭',b:'⏸',p:'⏭'},WHY={c:'',q:'יצא באמצע',s:'לא הגיע',b:'הפסקה',p:'דילג (הורה)'};
+const ICO={c:'✓',q:'✗',s:'⏭',b:'⏸',p:'⏭',f:'💬'},WHY={c:'',q:'יצא באמצע',s:'לא הגיע',b:'הפסקה',p:'דילג (הורה)',f:''};
 /* a bank story's own quiz line (rb2-st-N) repeats its 'story-new' line: not shown */
 const undone=e=>e[6]==='p'&&e[7]&&(O.realSave.pcU||{})[e[7].pc];
 DL.rows=d=>{const L=((O.realSave.alog||{})[d]||{}).e||[];return L.filter(e=>e[6]!=='x'&&!/^rb2-st-/.test(e[1])&&!undone(e)).sort((a,b)=>a[0]-b[0]);};
 DL.rowHTML=e=>{const [m,id,st,ok,n,hp,o,x]=e;const sx=x&&typeof x==='object'?x:null;
   const story=sx&&sx.t;
-  const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`✓ ${ok} · ✗ ${n-ok}`:'',sx&&sx.lv?'רמה '+(sx.lv|0):'',hp?`עזרה ×${hp}`:'',story?(sx.r==='l'?'האזין להקראה':'קרא לבד'):'',sx&&sx.ra?`הקראה ×${sx.ra}`:'',WHY[o]].filter(Boolean).join(' · ');
+  const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`✓ ${ok} · ✗ ${n-ok}`:'',sx&&sx.lv?'רמה '+(sx.lv|0):'',hp?`עזרה ×${hp}`:'',story?(sx.r==='l'?'האזין להקראה':'קרא לבד'):'',sx&&sx.ra?`הקראה ×${sx.ra}`:'',sx&&sx.ez?(sx.ez==='h'?'אמר: היה קשה 😣':'אמר: היה קל 😀'):'',WHY[o]].filter(Boolean).join(' · ');
   const name=story?`${plain(sx.t)}${sx.g?` <span class="dlgoal">🎯 ${plain(sx.g)}</span>`:''}`:DL.nameOf(id);
   return `<div class="prow dlrow dl-${o}"><span class="pn"><b class="dli">${ICO[o]||''}</b> ${o==='s'?'':hhmm(m)+' · '}${name} <small>${DL.domOf(id)}</small></span><span class="pc">${res}</span></div>`;};
 /* the top line of the summary: playing now / last played */
@@ -11601,6 +11733,24 @@ function sugSec(box,sec){const days=[...Array(7)].map((_,i)=>DL.rows(dayAt(i)));
     if(x.k==='easy'){const id=openOf(x.tp);if(id&&(id==='math'||T.ACT[id])&&!cmds().some(c=>c.k==='know'&&c.a===id))bt('הוא כבר יודע',()=>P.send('know',id));}
     if(x.k==='miss'&&d&&!openOf(x.tp)){const id=pickOf(x.tp,d);if(id)bt('+ להוסיף להיום',()=>P.send('add',id));}
     s.appendChild(r);});}
+/* #429 what he learned on day d: up to 3 lines from the goal table (goals.js, x.lg on his finished lines); none -> hidden */
+function learnSec(box,d,sec){const G=window.GOALS;const L=G&&G.learned?G.learned(d).slice(0,3):[];if(!L.length)return;
+  const s=sec(box,'מה למד היום',`<ul>${L.map(x=>`<li>${x}</li>`).join('')}</ul>`);s.classList.add('pdlearn');}
+/* #431 the week up to day d: 7 bars of play minutes (oldest left, d right) + the shares of math / reading / English from the day log.
+   Pure data (the tests call it): {m: [7 minutes], sh: {math, readg, eng} in % or null}; an empty week -> null. */
+const W3={math:'🧮 חשבון',readg:'📖 קריאה',eng:'🔤 אנגלית'};
+const top3=id=>{id=String(id||'');if(/^(en|eng)-/.test(id))return 'eng';const t=topOf(id);return t==='math'||t==='readg'?t:null;};
+P.week=d=>{const [y,m,dd]=d.split('-').map(Number);const ks=[...Array(7)].map((_,i)=>dayKey(new Date(y,m-1,dd-6+i)));
+  const tm=T.S().time||{};const mins=ks.map(k=>Math.round((tm[k]|0)/60));const c={math:0,readg:0,eng:0};let n=0;
+  ks.forEach(k=>DL.rows(k).forEach(e=>{if('pxsf'.includes(e[6]))return;const t=top3(e[1]);if(t){c[t]++;n++;}}));
+  if(!n&&!mins.some(x=>x))return null;const sh=n?{math:c.math/n*100,readg:c.readg/n*100,eng:c.eng/n*100}:null;return {k:ks,m:mins,sh};};
+const WCOL={math:'#3a8fc4',readg:'#c0392b',eng:'#8e44ad'};
+function weekSec(box,d,sec){const w=P.week(d);if(!w)return;const mx=Math.max(1,...w.m);
+  const bars=w.k.map((k,i)=>{const [y,m,dd]=k.split('-').map(Number);return `<div class="pcol pdwk"><i style="height:${w.m[i]/mx*100}%"></i><small>${'אבגדהוש'[new Date(y,m-1,dd).getDay()]}</small></div>`;}).join('');
+  const sh=w.sh?`<div class="pdsplit">${Object.keys(W3).map(t=>`<i style="width:${w.sh[t]}%;background:${WCOL[t]}"></i>`).join('')}</div><div class="pdshs">${Object.keys(W3).map(t=>`<span class="pdsh"><b style="color:${WCOL[t]}">●</b> ${W3[t]} ${Math.round(w.sh[t])}%</span>`).join('')}</div>`:'';
+  const s=sec(box,'השבוע',`<div class="pchart pdbars">${bars}</div>${sh}`);s.classList.add('pdweek');}
+/* #430 one question to ask him about what he learned that day (goals.js), at the end of the day view; none -> hidden */
+function askSec(box,d){const G=window.GOALS;const q=G&&G.ask?G.ask(d):'';if(q)box.appendChild(h('section','psec pdask',`תשאל אותו: ${q}`));}
 /* the whole day view; opts = {sec, nowTop(el), more()} */
 P.view=(box,opts)=>{const d=P.vd&&P.vd<=today()&&P.vd>=dayAt(13)?P.vd:today();P.vd=d;last={box,opts};box.innerHTML='';const sec=opts.sec;
   const nav=h('div','pdnav');const prev=h('button','pchip pdprev','›');prev.setAttribute('aria-label','יום קודם');prev.disabled=d<=dayAt(13);
@@ -11609,7 +11759,7 @@ P.view=(box,opts)=>{const d=P.vd&&P.vd<=today()&&P.vd>=dayAt(13)?P.vd:today();P.
   nav.append(prev,h('b','pdday',dayName(d)),next);box.appendChild(nav);
   if(d===today()){const nb=h('div','pnow');box.appendChild(nb);opts.nowTop&&opts.nowTop(nb);}
   const sec0=((T.S().time||{})[d]|0);box.appendChild(h('div','pdtot',`⏱️ ${d===today()?'היום':'ביום הזה'}: <b>${Math.floor(sec0/60)} דק׳</b> משחק`));
-  didSec(box,d,sec);if(d===today()){planSec(box,sec);sugSec(box,sec);}strongSec(box,d,sec);};
+  learnSec(box,d,sec);didSec(box,d,sec);if(d===today()){planSec(box,sec);sugSec(box,sec);}strongSec(box,d,sec);weekSec(box,d,sec);askSec(box,d);};
 P.refresh=()=>{if(last&&last.box.isConnected)P.view(last.box,last.opts);};
 })();
 

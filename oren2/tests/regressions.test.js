@@ -1,23 +1,19 @@
-// Regression tests for specific bugs: kingdom badges button, avatar default + one-time migration, cap hat rendering.
+// Regression tests for specific bugs: kingdom opens without the old badges button (#426), avatar default + one-time migration, cap hat rendering.
 const L = require('./lib');
 const { chromium } = require('playwright');
 (async () => {
   const res = []; const ok = (n, c, i = '') => res.push((c ? 'PASS ' : 'FAIL ') + n + (i ? ' — ' + i : ''));
   const b = await chromium.launch();
-  // 1. kingdom → "my badges" button must open the badges wall without errors
+  // 1. #426: the kingdom opens with only "my hero" (the badges button and wall are gone), no errors
   {
     const ctx = await b.newContext(L.VIEWPORT);
     await ctx.addInitScript(() => { try { localStorage.clear(); } catch (e) {} window.__fast = true; });
     const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
     await p.goto(L.URL); await L.noCoach(p);
     await p.evaluate(() => { const O = window.OREN, T = window.TAL; O.save.story.intro = 1; T.S().prof = { an: 'cat', col: '#3a8fc4', love: 'art' }; O.kingdom(); });
-    const btn = p.locator('.kmine .tool', { hasText: 'הַתַּגִּים' });
-    await btn.waitFor({ timeout: 5000 }).catch(() => {});
-    ok('kingdom has the badges button', await btn.count() === 1);
-    if (await btn.count()) await btn.click();
-    await p.waitForSelector('#sTal .bdgg', { timeout: 5000 }).catch(() => {});
-    ok('badges wall opens from the kingdom', await p.locator('#sTal .bdgg').count() === 1);
-    ok('no page errors (kingdom badges)', !errs.length, errs.join(' | '));
+    await p.locator('.kmine .tool').first().waitFor({ timeout: 5000 }).catch(() => {});
+    ok('#426 kingdom: "my hero" only, no badges button', await p.locator('.kmine .tool').count() === 1 && await p.locator('.kmine .tool', { hasText: 'הַתַּגִּים' }).count() === 0);
+    ok('no page errors (kingdom)', !errs.length, errs.join(' | '));
     await ctx.close();
   }
   // 2. avatar default look + one-time migration that keeps Oren's later choices
