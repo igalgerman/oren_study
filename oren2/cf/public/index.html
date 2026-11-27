@@ -9512,7 +9512,8 @@ function round(lv,back,sc){hush();const save=O.save,d=E2.day();let P,steps,id;co
       if(!tries&&T.skHit)T.skHit(sk,false);if(!tries&&KN)KN.hit(sk,false);tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();
       if(tries>=2){if(HB&&HB.el.isConnected){fin=true;HB.answer();return;}lock=true;hush();settle('bad');nq++;row.children[q.ans].classList.add('show');reveal();setTimeout(next,D(3000));}}
     }
-  function next(){if(!wrap.isConnected)return;i++;if(i>=steps.length){T.setKey(null);const t=doneTitle(before,snapshot());T.finishAct(id,err,Math.max(1,nq),gems,back,()=>round(lv,back,sc),t);}else render();}
+  /* #592 the round's screen is gone (home, another screen): a pending step/finish timer does nothing */
+  function next(){if(!wrap.isConnected||$('#sTal').hidden)return;i++;if(i>=steps.length){T.setKey(null);const t=doneTitle(before,snapshot());T.finishAct(id,err,Math.max(1,nq),gems,back,()=>round(lv,back,sc),t);}else render();}
   T.setKey(e=>{if(/^[1-9]$/.test(e.key)){const r=wrap.querySelector('.chs');const b=r&&r.children[+e.key-1];if(b)b.click();}});
   window.__quiz={get ans(){return cur&&cur.ans;},get i(){return i;},get wrap(){return wrap;}};
   window.__e2={get step(){return steps[i];},steps,P};
