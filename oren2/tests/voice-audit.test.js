@@ -117,7 +117,7 @@ const INIT = () => {
     const T = l => l.map(c => N(new URLSearchParams(c.url.split('?')[1]).get('t')).replace(/^או /, ''));
     Object.assign(path610, await p.evaluate(() => { const w = window.__quiz && window.__quiz.wrap; return { onPath: window.TAL.onPath, quiz: !!(w && w.isConnected),
       q: w ? w.querySelector('.qq').textContent.replace('🔊', '').trim() : '', opts: w ? [...w.querySelectorAll('.chs > *')].map(b => b.textContent.trim()) : [], card: !!(w && w.querySelector('.qq .rdb')) }; }));
-    path610.btn = await btns(); path610.want = await p.evaluate(L => L.map(x => window.__fullSpell(x).replace(/\s+/g, ' ').trim()), [path610.q, ...path610.opts]);
+    path610.btn = await btns(); path610.want = await p.evaluate(L => L.map(x => window.__ttsParts(window.__fullSpell(x)).join(' ').replace(/\s+/g, ' ').trim()), [path610.q, ...path610.opts]);   // as the clips are sent (TTS spelling: בְּאוֹפַנַּיִם -> באופנים)
     path610.auto = T(await p.evaluate(n => window.__clips.slice(n), c0));
     let c1 = await p.evaluate(() => window.__clips.length); await p.evaluate(() => { window.OREN.hush(); document.querySelector('#sTal .qq .rdb').click(); }).catch(() => {}); await sleep(600);
     path610.card1 = T(await p.evaluate(n => window.__clips.slice(n), c1));
@@ -158,9 +158,10 @@ const INIT = () => {
       if (j === i) { vars++; i++; } else { runs++; fixed += w.slice(i, j).join(' ').length; i = j; } }
     return runs <= 4 && vars <= 3 && fixed >= 4; };
   // the help's last step (help.js BT.ans): 'הַתְּשׁוּבָה הִיא: <answer>' + the explanation, e.g. the completed sentence (#608): the answer (1-3 words) + a 'word' line
-  const ANS = NN('הַתְּשׁוּבָה הִיא') + ':';
-  const helpAns = l => { const t = NN(l); if (!t.startsWith(ANS)) return false; const w = t.slice(ANS.length).trim().split(' ');
-    for (let k = 1; k <= 3 && k < w.length; k++) if (word(w.slice(k).join(' '))) return true; return false; };
+  // a picture answer (#622, BT.here): 'הִנֵּה הַתְּשׁוּבָה:' + the explanation (the picture is not spoken), so no answer words before it
+  const ANS = NN('הַתְּשׁוּבָה הִיא') + ':', HERE = NN('הִנֵּה הַתְּשׁוּבָה') + ':';
+  const helpAns = l => { const t = NN(l), pre = t.startsWith(ANS) ? ANS : t.startsWith(HERE) ? HERE : ''; if (!pre) return false; const w = t.slice(pre.length).trim().split(' ');
+    for (let k = pre === HERE ? 0 : 1; k <= 3 && k < w.length; k++) if (word(w.slice(k).join(' '))) return true; return false; };
   const NUMW = /(^|\s)ו?(אחת|אחד|שתיים|שתים|שנים|שניים|שני|שתי|שלוש|שלושה|ארבע|ארבעה|חמש|חמישה|שש|שישה|שבע|שבעה|שמונה|תשע|תשעה|עשר|עשרה|עשרים|שלושים|ארבעים|חמישים|שישים|שבעים|שמונים|תשעים|מאה)(?=[\s.,?!]|$)/g;
   const numbers = c => /\d/.test(c.piece) || (c.t.match(NUMW) || []).length >= 2;
   const why = c => PLAY.has(c.t) || SRCN.includes(NN(c.piece)) ? 'play' : PG.RANDOM.test(c.t) ? 'random' : numbers(c) ? 'numbers' : choices(c.t) ? 'choices' : word(c.piece) || helpAns(c.piece) ? 'word' : '';
@@ -193,7 +194,8 @@ const INIT = () => {
     check({ ...c0, t: t1, line: t1, piece: t1, parts: [t1] }, REC); const R2 = new Map(REC); R2.set(k0, c0.t + ' אחר'); check(c0, R2); check({ ...c0, t: c0.t + ' אחר' }, REC);
     ok('self-check: a line without audio, audio of another text and a clip of another line all fail', missing.length === before[0] + 1 && badHash.length === before[1] + 1 && wrongLine.length === w0 + 1);
     missing.length = before[0]; badHash.length = before[1]; wrongLine.length = w0;
-    ok('self-check: the help answer of a sentence completion is a put-together line (#608)', helpAns('הַתְּשׁוּבָה הִיא: יְשֵׁנִים בַּלַּיְלָה אֲנַחְנוּ יְשֵׁנִים בַּמִּטָּה.') && !helpAns('הַתְּשׁוּבָה הִיא: ' + t1)); }
+    ok('self-check: the help answer of a sentence completion is a put-together line (#608)', helpAns('הַתְּשׁוּבָה הִיא: יְשֵׁנִים בַּלַּיְלָה אֲנַחְנוּ יְשֵׁנִים בַּמִּטָּה.') && !helpAns('הַתְּשׁוּבָה הִיא: ' + t1));
+    ok('self-check: the help answer of a picture choice (#622) is a put-together line', helpAns('הִנֵּה הַתְּשׁוּבָה: מִקָּטָן נִהְיָה גָּדוֹל. אוֹתוֹ דָּבָר בַּזּוּג הַשֵּׁנִי.') && helpAns('הִנֵּה הַתְּשׁוּבָה: מֵאֶחָד נִהְיוּ שְׁלוֹשָׁה. אוֹתוֹ דָּבָר בַּזּוּג הַשֵּׁנִי.') && !helpAns('הִנֵּה הַתְּשׁוּבָה: ' + t1)); }
   // #602: a word problem with the number words שני/שתי is 'numbers' every run (not only when the random walk meets it)
   { const n = 'רון נגן שני שירים בבקר, ועוד שני שירים בערב. כמה שירים הוא נגן היום?', x = 'רון נגן שירים בבקר, ועוד שירים בערב. כמה שירים הוא נגן היום?';
     const wn = why({ t: n, piece: n }), wx = numbers({ t: x, piece: x });
