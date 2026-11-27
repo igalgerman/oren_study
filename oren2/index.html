@@ -1302,7 +1302,7 @@ function tapTooSoon(){return !!EV.qT&&Date.now()-EV.qT<D(400);}
 function evAns(ok,d){track('ans',Object.assign({q:EV.q,ok:ok?1:0,ms:EV.qT?Date.now()-EV.qT:-1},d));}
 function evKeep(){try{if(EV.buf.length)localStorage.setItem(EV.k,JSON.stringify({sid:EV.sid,ev:EV.buf}));else localStorage.removeItem(EV.k);}catch(x){}}
 function evFlush(why){try{if(!FAM.on||kidSave||!EV.buf.length)return;const hide=why==='hide';
-  if(!hide&&(EV.busy||Date.now()-EV.last<(window.__logGap!=null?window.__logGap:60000)))return;
+  if(!hide&&(EV.busy||(why!=='sync'&&Date.now()-EV.last<(window.__logGap!=null?window.__logGap:60000))))return;
   EV.last=Date.now();const ev=EV.buf.splice(0,200),o={fam:FAM.id,sid:EV.sid,tz:new Date().getTimezoneOffset(),ev};
   /* #462: the waiting screenshots ride in this batch (on page hide only what fits the 64 KB beacon) */
   const sh=window.SHOTS?SHOTS.take(hide?6e4-JSON.stringify(o).length-500:45e4):[];if(sh.length)o.sh=sh;const body=JSON.stringify(o);
@@ -1331,22 +1331,32 @@ function parentPlay(on,fresh){if(on&&!kidSave){kidSave=save;let ps=null;if(!fres
   else if(on&&fresh){save=parentSandbox();}
   updateGems();emit('mode',!!kidSave);}
 function skipLevel(){const p=play;if(!p||!p.lv)return false;const lv=p.lv;save.s[lv.id]=Math.max(stars(lv.id),3);persist();showWorld(lv.w);return true;}
-/* #349: a failed save is ONE problem until a save works again: the parent log counts it once, the retries wait 5 s, 15 s, 45 s ... up to
-   about 20 min (cloud.next) and carry the newest data; new moves meanwhile only mark the save dirty (no write per move, no retry loop) */
+/* #349: a failed save is ONE problem until a save works again: the parent log counts it once, the retries wait 5 s, 15 s, 45 s, then
+   every 1 min (cloud.next; #612: was up to 20 min, so the parent's live view stopped while he played on) and carry the newest data;
+   new moves meanwhile only mark the save dirty (no write per move, no retry loop). Each failure on Oren's device (kid: 1) goes to the
+   event log at once, so the server can tell the parent's panel "no update from the game since HH:MM" (#612) */
 function cloudSave(){if(!cloud.ref)return;cloud.dirty=true;if(Date.now()<(cloud.next||0))return;clearTimeout(cloud.timer);cloud.timer=setTimeout(cloudFlush,1500);}
 async function cloudFlush(){if(!cloud.ref||cloud.busy||!cloud.dirty)return;if(Date.now()<(cloud.next||0))return;cloud.busy=true;cloud.dirty=false;
-  try{const body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;delete body.sndMig610;if(JSON.stringify(body).length>200000){save.rq=save.rq.slice(-15);body.rq=save.rq;}if(await cloud.ref.set(body)!=='later'){cloud.fail=0;cloud.next=0;clearTimeout(cloud.rt);}}catch(e){if(FAM.on){const f=cloud.fail|0;track('sync',Object.assign({why:String(e&&e.why||''),n:f},evSnap()));if(!f)logIssue('sync',e&&e.why);if(e&&e.code!=='invalid_argument'){if(f>=4)diagSend();const d=(window.__famRetry!=null?window.__famRetry:5000)*Math.pow(3,Math.min(f,5));cloud.fail=f+1;track('retry',{what:'save',n:f+1,ms:d});cloud.next=Date.now()+d;clearTimeout(cloud.rt);cloud.rt=setTimeout(()=>{cloud.next=0;cloud.dirty=true;FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},d);}}if(e&&e.code==='invalid_argument'){if(!cloud.retried&&save.rq.length>10){cloud.retried=1;save.rq=save.rq.slice(-10);cloud.dirty=true;}else cloud.ref=null;}}
+  try{const body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;delete body.sndMig610;if(JSON.stringify(body).length>200000){save.rq=save.rq.slice(-15);body.rq=save.rq;}if(await cloud.ref.set(body)!=='later'){cloud.fail=0;cloud.next=0;clearTimeout(cloud.rt);}}catch(e){if(FAM.on){const f=cloud.fail|0;track('sync',Object.assign({why:String(e&&e.why||''),n:f,kid:kidHere()?1:0},evSnap()));evFlush('sync');if(!f)logIssue('sync',e&&e.why);if(e&&e.code!=='invalid_argument'){if(f>=4)diagSend();const d=(window.__famRetry!=null?window.__famRetry:5000)*Math.min(12,Math.pow(3,f));cloud.fail=f+1;track('retry',{what:'save',n:f+1,ms:d});cloud.next=Date.now()+d;clearTimeout(cloud.rt);cloud.rt=setTimeout(()=>{cloud.next=0;cloud.dirty=true;FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},d);}}if(e&&e.code==='invalid_argument'){if(!cloud.retried&&save.rq.length>10){cloud.retried=1;save.rq=save.rq.slice(-10);cloud.dirty=true;}else cloud.ref=null;}}
   cloud.busy=false;if(cloud.dirty)cloudSave();updateSaveNote();}
 /* ---------- own-website mode: one private family save at /api/save (no codes or links: every device sees the same progress) ---------- */
-const FAM={id:null,on:false,last:0};
+const FAM={id:null,on:false,last:0,sf:0,upT:0,hide:false};
+/* Oren's own device today (pday.js sets the flag when he plays here; the parent's phone never has it) */
+const kidHere=()=>{try{return localStorage.getItem('oren4-played')===today();}catch(e){return false;}};
+/* #612: a save request never hangs (a stuck request kept cloud.busy and stopped every later save) */
+function famFetch(url,o){const c=typeof AbortController==='function'?new AbortController():null;const tm=c?setTimeout(()=>c.abort(),window.__famTimeout||20000):0;
+  return fetch(url,Object.assign({},o,c?{signal:c.signal}:{})).finally(()=>clearTimeout(tm));}
 const FAMILY='a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0';
 /* an older version gave each device family its own random id; that save is merged in once */
 function oldFamId(){let o=null;try{o=localStorage.getItem('oren4-family');}catch(e){}return o&&o!==FAMILY&&/^[a-f0-9]{32}$/.test(o)?o:null;}
 function famRef(id){const url='/api/save/'+id;return {
-  get:async()=>{const r=await fetch(url,{cache:'no-store'});if(r.status===404)return {exists:false};if(!r.ok)throw new Error('http '+r.status);const d=await r.json();return {exists:true,data:()=>d};},
+  get:async()=>{const r=await famFetch(url,{cache:'no-store'});if(r.status===404)return {exists:false};if(!r.ok)throw new Error('http '+r.status);const sf=+r.headers.get('x-sync-fail')||0;const d=await r.json();return {exists:true,data:()=>d,sf};},
   set:async body=>{const GAP=window.__famGap!=null?window.__famGap:25000;if(Date.now()-FAM.last<GAP&&!FAM.force){cloud.dirty=true;clearTimeout(FAM.tm);FAM.tm=setTimeout(()=>{FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});},GAP-(Date.now()-FAM.last));return 'later';}
-    try{const cur=await fetch(url,{cache:'no-store'});if(cur.ok){mergeIn(await cur.json());body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;delete body.sndMig610;}}catch(e){}
-    FAM.last=Date.now();let r;try{r=await fetch(url,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(body),keepalive:JSON.stringify(body).length<60000});}catch(e){const x=new Error(e&&e.message||'network');x.why=syncWhy(0);diagLog('PUT /api/save',0,x.message);throw x;}
+    let upT=FAM.upT;try{const cur=await famFetch(url,{cache:'no-store'});if(cur.ok){const cj=await cur.json();upT=+(cj&&cj.upT)||0;mergeIn(cj);body=JSON.parse(JSON.stringify(save));delete body.music;delete body.snd;delete body.sndMig610;}}catch(e){}
+    /* upT: when Oren's device last uploaded (the panel compares it with the newest failure); another device (the parent's phone) keeps
+       the server's value, so its own saves never hide the "no update since" line (#612 review); keepalive only while the page hides (#612: the
+       browser allows 64 KB of keepalive requests at once, shared with the event log, so an everyday save could fail at random) */
+    FAM.last=Date.now();body.upT=kidHere()?FAM.last:upT;if(!body.upT)delete body.upT;const bs=JSON.stringify(body);let r;try{r=await famFetch(url,{method:'PUT',headers:{'content-type':'application/json'},body:bs,keepalive:FAM.hide&&bs.length<60000});}catch(e){const x=new Error(e&&e.message||'network');x.why=syncWhy(0);diagLog('PUT /api/save',0,x.message);throw x;}
     if(!r.ok){let j=null;try{j=await r.json();}catch(e){}const x=new Error('http '+r.status+(j&&j.error?' '+j.error:''));x.why=syncWhy(r.status,j);diagLog('PUT /api/save',r.status,x.message+(j&&j.why?': '+j.why:''));throw x;}diagLog('PUT /api/save',r.status,'');}};}
 /* sync diagnostics (#129): a short rolling log of save attempts on this device (time, endpoint, status, retry, error);
    when all retries fail it is sent once (with a snapshot of the visible screen) to /api/diag for the orchestrator */
@@ -1363,15 +1373,15 @@ async function diagSend(retry){if(DIAG.sent||!FAM.on||kidSave)return;DIAG.sent=1
     const e=(save.iss||[]).find(x=>x.d===today()&&x.k==='sync');if(e){e.r=1;try{localStorage.setItem(KEY,JSON.stringify(save));}catch(x){}}}catch(e){if(!retry)setTimeout(()=>{DIAG.sent=0;diagSend(1);},60000);}}
 /* the parent changed the time limit: send it now, not after the 25 s save delay (#34) */
 async function famNow(){if(!FAM.on||kidSave)return;cloud.dirty=true;cloud.next=0;FAM.force=true;try{await cloudFlush();}finally{FAM.force=false;}}
-async function famPull(){if(!FAM.on||kidSave)return;try{const snap=await cloud.ref.get();if(snap.exists){const before=JSON.stringify([save.set,save.gems,save.time]);mergeIn(snap.data());updateGems();if(before!==JSON.stringify([save.set,save.gems,save.time]))emit('synced');}}catch(e){}}
+async function famPull(){if(!FAM.on||kidSave)return;try{const snap=await cloud.ref.get();if(snap.exists){FAM.sf=snap.sf||0;FAM.upT=+snap.data().upT||0;const before=JSON.stringify([save.set,save.gems,save.time]);mergeIn(snap.data());updateGems();if(before!==JSON.stringify([save.set,save.gems,save.time]))emit('synced');}}catch(e){}}
 async function cloudInit(){
   try{for(let i=0;i<40&&!window.__site&&!(window.claude&&window.claude.use);i++)await new Promise(r=>setTimeout(r,100));
     if(!window.claude||!window.claude.use){if(!/^https?:$/.test(location.protocol)||window.__noFamily)return;
-      FAM.id=FAMILY;const ref=famRef(FAMILY);try{const snap=await ref.get();if(snap.exists)mergeIn(snap.data());}catch(e){addEventListener('online',()=>cloudInit(),{once:true});return;}
+      FAM.id=FAMILY;const ref=famRef(FAMILY);try{const snap=await ref.get();if(snap.exists){FAM.sf=snap.sf||0;FAM.upT=+snap.data().upT||0;mergeIn(snap.data());}}catch(e){addEventListener('online',()=>cloudInit(),{once:true});return;}
       const old=oldFamId();let moved=!old;if(old)try{const os=await famRef(old).get();if(os.exists)mergeIn(os.data());moved=true;}catch(e){}
       cloud.ref=ref;FAM.on=true;try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}cloud.dirty=true;FAM.force=true;await cloudFlush();FAM.force=false;
       if(moved&&!cloud.dirty)try{localStorage.setItem('oren4-family',FAMILY);}catch(e){}
-      setInterval(famPull,60000);addEventListener('online',()=>{cloud.next=0;cloud.dirty=true;cloudSave();});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')famPull();else if(cloud.dirty){FAM.force=true;cloudFlush().finally(()=>{FAM.force=false;});}});
+      setInterval(famPull,60000);addEventListener('online',()=>{cloud.next=0;cloud.dirty=true;cloudSave();});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')famPull();else if(cloud.dirty){FAM.force=true;FAM.hide=true;cloud.next=0;cloudFlush().finally(()=>{FAM.force=false;FAM.hide=false;});}});
       updateGems();emit('synced');return;}const db=await window.claude.use('db');const user=await window.claude.use('user');if(!db||!user)return;
     const id=await user.id();if(!id)return;const base='data/users/'+id+'/';const ref=db.doc(base+'progress4');
     const snap=await ref.get();if(snap.exists)mergeIn(snap.data());else{const old=await db.doc(base+'progress').get();if(old.exists)migrateOld(old.data());}
@@ -2468,7 +2478,7 @@ function showFinal(){setScreen('sFinal','final',showMap);$('#hudMid').innerHTML=
 
 updateGems();cloudInit();
 const BUS={};function emit(e,...a){(BUS[e]||[]).forEach(f=>{try{f(...a);}catch(x){console.error(x);}});}
-window.OREN={mathSpeechList,hatsBack,get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,celebrate,bigCelebration,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
+window.OREN={mathSpeechList,hatsBack,get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,famStale:()=>FAM.sf&&FAM.sf>FAM.upT?FAM.upT||((save.now||{}).t|0)||FAM.sf:0,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,celebrate,bigCelebration,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
   set sayNow(v){sayNow=v;AUTO.gen++;},get sayNow(){return sayNow;},hud:html=>{$('#hudMid').innerHTML=html;document.body.classList.toggle('act',!document.body.classList.contains('inpar')&&/class="chip"/.test(html));},resetAll:keep=>{const snd=save.snd;save=blank();save.snd=snd;Object.assign(save,keep||{});persist();renderStart();},on:(e,f)=>{(BUS[e]=BUS[e]||[]).push(f);},emit,blank};
 window.__oren4={MK,mistakeKind,TF,TFC,tfFillQ,COIN,GC,qSpeech,GT,HANDS,renderAudio,THEMES,RAW,setTheme,get mus(){return mus;},WORLDS,ALLLV,ALLU,hintHTML,hintData,uniq,colInit,colNeedBorrow,digs,qkey,bubbleOpts,storyFor,teachCheck,HEROES,get play(){return play;},get save(){return save;},startLevel,finishLevel,playLevel,showMap,showWorld,kingdom,studio,teacher,playSpeed,setFast:v=>{window.__fast=v;},mergeIn,migrateOld,lp};
 /* #44 a finished task is not reopened */
@@ -3889,6 +3899,7 @@ svg.tl{width:60px;height:60px;display:block}
 
 .dlnow{margin:4px 0 8px;padding:8px 12px;border-radius:12px;background:#f1f3f5;font-size:15px}
 .dlnow.on{background:#e3f6e3;font-weight:700}
+.dlnow.pdstale{background:#fdecea;color:#a33;font-weight:700}
 .dlrow .dli{display:inline-block;width:1.2em;text-align:center}
 .dlrow.dl-q,.dlrow.dl-s{opacity:.75}
 .pnow .dlnow{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.pnow .dlnow .pchip{margin:0}
@@ -4969,15 +4980,20 @@ function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(
   if(openSec&&curTab==='more')setTimeout(()=>{const o=s.querySelector('details[open]');if(o&&tab===openSec)o.scrollIntoView({block:'start'});else $('#screens').scrollTop=sy;},0);}
 T.parentPanel=t=>{parentOn=true;panel(t);};
 /* #352: the top line of the day: "playing now · N min (from HH:MM)" + stop, and (#359) "skip now", or "last played" */
-function nowTop(el){const DL=window.DAYLOG,PD=window.PDAY;el.innerHTML=DL?DL.nowLine():'';const left=T.limLeft();if(!DL||!DL.playing()||(left&&left.min<=0))return;
-  const row=el.firstChild||el;const pc=PD&&PD.cmds().find(c=>c.k==='now'&&!(O.realSave.pcA||{})[c.i]);
+function nowTop(el){const DL=window.DAYLOG,PD=window.PDAY;el.innerHTML=DL?DL.nowLine():'';
+  /* #612: Oren's device cannot upload (the server got its save failures): say so, instead of looking up to date */
+  const st=O.famStale&&O.famStale();if(st){const d=new Date(st);el.appendChild(h('div','dlnow pdstale',`אין עדכון מהמשחק מאז ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`));}
+  const left=T.limLeft();if(!DL||!DL.playing()||(left&&left.min<=0))return;
+  const row=el.querySelector('.dlnow:not(.pdstale)')||el;const pc=PD&&PD.cmds().find(c=>c.k==='now'&&!(O.realSave.pcA||{})[c.i]);
   if(PD&&(O.realSave.now||{}).id){if(pc){const b=h('button','pchip','⏭ ממתין… בטל');b.onclick=()=>{PD.undo(pc.i);nowTop(el);};row.appendChild(b);}
     else{const b=h('button','pchip pdskipnow','⏭ דלג עכשיו');b.onclick=()=>{PD.send('now');sfx.ok&&sfx.ok(1);nowTop(el);};row.appendChild(b);}}
   const b=h('button','pchip bad','⏹ לעצור עכשיו');b.onclick=()=>{stopNow();sfx.ok&&sfx.ok(1);nowTop(el);};row.appendChild(b);}
-/* while the parent panel is open: pull the family save every 30 s so the day view follows Oren live, also from another house */
+/* while the parent panel is open: pull the family save every 30 s so the day view follows Oren live, also from another house;
+   #612: and at once when the phone screen is opened again (a locked phone runs no timers) */
 let parLive=0;
-function parLiveOn(){if(parLive)return;parLive=setInterval(()=>{if(!parentOn||$('#sPar').hidden){clearInterval(parLive);parLive=0;return;}
-  Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(window.PDAY&&curTab==='day')window.PDAY.refresh();});},window.__parPull||30000);}
+const parPull=()=>Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(window.PDAY&&curTab==='day'&&parentOn&&!$('#sPar').hidden)window.PDAY.refresh();});
+function parLiveOn(){if(parLive)return;parLive=setInterval(()=>{if(!parentOn||$('#sPar').hidden){clearInterval(parLive);parLive=0;return;}parPull();},window.__parPull||30000);}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&parentOn&&!$('#sPar').hidden){parPull();parLiveOn();}});
 const sec=(box,t,html)=>{const d=h('section','psec',`<h3>${t}</h3>`);if(html)d.insertAdjacentHTML('beforeend',html);box.appendChild(d);return d;};
 /* --- summary --- */
 /* problems in the last 14 days: one short line, details only on tap */
@@ -11947,7 +11963,7 @@ window.GOALS=G;
      ok/n = right on the first try / questions, o: 'c' done · 'q' left in the middle · 'x' opened and closed at once (only for Oren's "again" list) · 's' a path step he did not reach · 'b' stopped for a break
      · 'f' his answer to 'easy or hard?' at the end of a scene (#411, x.ez 'e' easy · 'h' hard)
      · 'p' skipped by the parent (#359, x.pc = the command id; hidden when that command was undone: save.pcU[id])
-   x (optional object): a story's {t, g, lv, r} (#355); lg = what he learned, on a finished line (#414, goals.js); any activity: lv = his level when it started (learning engine), ra = taps on read-aloud (#359)
+   x (optional object): a story's {t, g, lv, r} (#355); lg = what he learned, on a finished line (#414, goals.js); any activity: lv = his level when it started (learning engine), ra = taps on read-aloud (#359; shown "9 הקראות", #612)
    save.now = {id, t, s}  the activity being played, the last moment something happened (ms; also each active play tick, the heartbeat) and when this play
      session started (s; a new session after 3+ min without a heartbeat) — "playing now · N min (from HH:MM)" for the parent (#352).
    Detailed entries are kept for 14 days (think.js keeps the day counts for 35). Parent text has no nikud. */
@@ -12019,7 +12035,7 @@ const undone=e=>e[6]==='p'&&e[7]&&(O.realSave.pcU||{})[e[7].pc];
 DL.rows=d=>{const L=((O.realSave.alog||{})[d]||{}).e||[];return L.filter(e=>e[6]!=='x'&&!/^rb2-st-/.test(e[1])&&!undone(e)).sort((a,b)=>a[0]-b[0]);};
 DL.rowHTML=e=>{const [m,id,st,ok,n,hp,o,x]=e;const sx=x&&typeof x==='object'?x:null;
   const story=sx&&sx.t;
-  const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`✓ ${ok} · ✗ ${n-ok}`:'',sx&&sx.lv?'רמה '+(sx.lv|0):'',hp?`עזרה ×${hp}`:'',story?(sx.r==='l'?'האזין להקראה':'קרא לבד'):'',sx&&sx.ra?`הקראה ×${sx.ra}`:'',sx&&sx.ez?(sx.ez==='h'?'אמר: היה קשה 😣':'אמר: היה קל 😀'):'',WHY[o]].filter(Boolean).join(' · ');
+  const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`✓ ${ok} · ✗ ${n-ok}`:'',sx&&sx.lv?'רמה '+(sx.lv|0):'',hp?`עזרה ×${hp}`:'',story?(sx.r==='l'?'האזין להקראה':'קרא לבד'):'',sx&&sx.ra?(sx.ra===1?'הקראה אחת':`${sx.ra} הקראות`):'',sx&&sx.ez?(sx.ez==='h'?'אמר: היה קשה 😣':'אמר: היה קל 😀'):'',WHY[o]].filter(Boolean).join(' · ');
   const name=story?`${plain(sx.t)}${sx.g?` <span class="dlgoal">🎯 ${plain(sx.g)}</span>`:''}`:DL.nameOf(id);
   return `<div class="prow dlrow dl-${o}"><span class="pn"><b class="dli">${ICO[o]||''}</b> ${o==='s'?'':hhmm(m)+' · '}${name} <small>${DL.domOf(id)}</small></span><span class="pc">${res}</span></div>`;};
 /* the top line of the summary: playing now / last played */
