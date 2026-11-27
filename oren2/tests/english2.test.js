@@ -151,7 +151,7 @@ ok([...SL].every(s => !HEB.test(s)), 'speakList is English only');
       P.qs.forEach(q => { n++; const r1 = wrongEvery && n % wrongEvery === 0 ? 'bad' : 'ok'; res[q.k] = res[q.k] === 'bad' || r1 === 'bad' ? 'bad' : 'ok'; E.mark(save, q.k, res[q.k], b0[q.k], d); });
       if (r % 2) d++; } };
   const pl = E.plan(save, 1, d);
-  ok(pl.teach.length === 2 && pl.teach.every(g => /^L:[SATPIN]$/.test(g)) && pl.qs.length >= 6 && pl.qs.every(q => /^[ncs]:[SATPIN]$/.test(q.k)), 'first letter round: 2 letters of s a t p i n, their name/case/sound', JSON.stringify(pl));
+  ok(pl.teach.length === 2 && pl.teach.every(g => /^L:[SATPIN]$/.test(g)) && pl.qs.length >= 4 && pl.teach.length + pl.qs.length <= 6 && pl.qs.every(q => /^[ncs]:[SATPIN]$/.test(q.k)), 'first letter round: 2 letters of s a t p i n, their name/case/sound; 2 cards + 4 questions, at most 6 (#555)', JSON.stringify(pl));
   const lcB = E.teachCard('L:B');
   ok(lcB.w === 'ball' && lcB.say === 'B is for ball.' && lcB.he === 'בּ' && lcB.mean === 'כַּדּוּר', 'letter card: the voice reads the word, its Hebrew meaning is shown', JSON.stringify(lcB));
   let r0 = 0; while (E.doneUnits(save, 1) < 1 && r0 < 40) { play(1, 1); r0++; }

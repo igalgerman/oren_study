@@ -7365,9 +7365,9 @@ const READ=[
   {pool:[2,3,4,5,6,7],opts:3,names:0},           /* עַד דּוֹ הַגָּבוֹהַּ */
   {pool:[0,1,2,3,4,5,6,7],opts:4,names:0},       /* כָּל הָאוֹקְטָבָה */
   {pool:[-7,-6,-5,-4,-3,-2,-1,0],opts:4,names:1,clef:'bass'}];
-const QN=5;   /* #59: a round is about 5 questions */
+const QN=5;   /* #59: a round is about 5 questions (rhythm too: nq note questions + drum taps = QN, #555) */
 const EAR=['hl-big','same','hl-small','which2','which3'];
-const RHY=[{vals:['w','h','q'],nq:6,pats:[['q','q','q','q'],['h','h'],['q','q','h']]},
+const RHY=[{vals:['w','h','q'],nq:4,pats:[['q','q','q','q'],['h','h'],['q','q','h']]},
   {vals:['w','h','q'],nq:3,pats:[['q','q','h'],['h','q','q'],['q','h','q'],['w'],['h','h'],['q','q','q','q']]},
   {vals:['h','q','e'],nq:3,pats:[['q','e','e','q','q'],['e','e','q','h'],['q','q','e','e','q'],['e','e','e','e','h']]},
   {vals:['w','h','q','e'],nq:2,pats:[['e','e','q','e','e','q'],['h','e','e','q'],['q','e','e','h'],['e','e','e','e','q','q'],['q','q','e','e','q'],['e','e','q','q','q']]}];
@@ -7509,7 +7509,7 @@ function earQs(){const kind=EAR[ST().ear-1];const qs=[];
 function rhyQs(){const L0=RHY[ST().rhy-1];const qs=[];
   for(let n=0;n<L0.nq;n++){const rv=rev('rhy'),L=rv?RHY[rv.lv[1]-1]:L0;const v=L.vals[n%L.vals.length];const byBeats=n>=L.vals.length;const opts=shuffle(L.vals.map(x=>byBeats?VALB[x]:VALN[x]));const right=byBeats?VALB[v]:VALN[v];
     qs.push({k:'choice',pr:`${staffSVG([{i:0,d:v}],{one:true,minW:160})}<div class="qq">${byBeats?'כַּמָּה פְּעָמוֹת נִמְשָׁךְ הַתָּו הַזֶּה?':'אֵיזֶה תָּו זֶה?'}</div>`,opts,ans:opts.indexOf(right),explain:HM[v],cls:byBeats?'m2num':'',key:'v'+n,rv:rv&&rv.id});}
-  shuffle(L0.pats.slice()).slice(0,8-L0.nq).forEach(p=>qs.push({k:'tap',pat:p}));
+  shuffle(L0.pats.slice()).slice(0,Math.max(0,QN-L0.nq)).forEach(p=>qs.push({k:'tap',pat:p}));
   return qs;}
 function melQs(){const L=MEL[ST().mel-1];return L.songs.map(song=>({k:'melody',song,names:L.names,items:parseMel(song).length}));}
 /* lesson cards before the first rhythm questions (#56): note lengths; eighths get their own lesson when they first appear */
@@ -8576,7 +8576,7 @@ function sentTeach(save,keys){const T=taught(save);return uniq(keys.filter(k=>/^
   .map(w=>WORD[w].th?'v:'+w:CVCW.includes(w)?'r:'+w:null).filter(Boolean);}
 
 /* ---------- a round: teach cards for new groups, then about 5 questions (#59) ---------- */
-const ROUND=5;
+const ROUND=5,MAXS=6;
 function plan(save,lv,d){const L=LEVELS[lv];if(d==null)d=day();const E=st(save);
   const cur=curUnit(save,lv);let fresh=[],learn=[];
   if(cur){const gs=groupsOf(cur);const lg=gs.filter(g=>groupItems(cur,g).some(k=>seen(save,k))&&groupItems(cur,g).some(k=>!known(save,k)));
@@ -8597,7 +8597,10 @@ function plan(save,lv,d){const L=LEVELS[lv];if(d==null)d=day();const E=st(save);
   /* new and still-learning items come back once more (the other way round) while there is room */
   const again=[...freshItems,...learn].filter(k=>!/^[ncs]:|^x:/.test(k));for(let i=0;qs.length<ROUND&&i<again.length;i++)add(again[i],1);
   const rest=shuf(old.filter(k=>!qs.some(q=>q.k===k)));while(qs.length<ROUND&&rest.length)add(rest.pop(),0);
-  const ord=spread(shuf(qs));return {lv,unit:cur,teach:[...(lv===2?sentTeach(save,ord.map(q=>q.k)):[]),...fresh.filter(teaches)],qs:ord};}
+  /* #555: teach cards count in the round's progress too: cards + questions at most MAXS (2 new letters = 2 cards + 4 questions) */
+  const tch=fresh.filter(teaches),room=Math.max(1,MAXS-tch.length),rv=new Set(review);
+  const pick=qs.length>room?[...qs.filter(q=>rv.has(q.k)),...shuf(qs.filter(q=>!rv.has(q.k)))].slice(0,room):qs;   /* review first: a forgotten item still comes back */
+  const ord=spread(shuf(pick));return {lv,unit:cur,teach:[...(lv===2?sentTeach(save,ord.map(q=>q.k)):[]),...tch],qs:ord};}
 /* no item twice in a row */
 function spread(a){const left=a.slice(),out=[];while(left.length){const last=out.length?out[out.length-1].k:null;
   const cnt=k=>left.filter(x=>x.k===k).length;const ok=left.filter(x=>x.k!==last);const pool=ok.length?ok:left;const top=Math.max(...pool.map(x=>cnt(x.k)));

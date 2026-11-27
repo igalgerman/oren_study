@@ -9,7 +9,7 @@ help-desktop 90           # every generated question's explainer: ~68 s
 help-phone 90             # same file on the phone viewport: ~67 s
 helpbtn-desktop 90        # #54 walks all ~114 activities twice (help button: clue, answer, offered after 2 wrong) + the math kinds: ~35 s
 helpbtn-phone 90          # same file on the phone viewport
-regressions 75            # #356 walks all ~114 activities, taps back on each + #59 counts each round's questions: ~53 s under load
+regressions 85            # #356 walks all ~114 activities, taps back on each + #59 counts each round's questions (#555: again with lessons off for the ~12 behind a lesson card, and plays rhythm + letters rounds to the end): ~60 s under load
 playthrough-desktop 300   # FULL=1 only: plays every world level by level
 playthrough-phone 300     # FULL=1 only: same on the phone viewport
 voice-stop 60             # #401 adds a 1200-char text spoken in parts: ~10 s
