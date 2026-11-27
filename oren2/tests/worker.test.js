@@ -319,6 +319,7 @@ const path = require('path');
     ok('voicecheck #570: the sweep may call while above the reserve', vc.mayCall(st2, D, M, true, 20, 5));
     ok('voicecheck #570: the count starts again on a new day', vc.mayCall(st, '2026-11-28', M, true, 20, 5));
     vc.countCall(st, '2026-11-28', M); ok('voicecheck #570: counting on a new day drops yesterday', st.used.day === '2026-11-28' && st.used[M] === 1, JSON.stringify(st));
+    ok('voicecheck #570: the quota day is the Pacific date (Gemini resets at 08:00Z): 23:00Z and 01:00Z next day are one day', vc.qday(new Date('2026-11-27T23:00:00Z')) === vc.qday(new Date('2026-11-28T01:00:00Z')) && vc.qday(new Date('2026-11-28T01:00:00Z')) === '2026-11-27' && vc.qday(new Date('2026-11-28T09:00:00Z')) === '2026-11-28');
     ok('voicecheck #570: the summary line says why the sweep stopped', vc.sweepNote('ran') === 'sweep skipped: ran today' && vc.sweepNote('reserve', 5) === 'reserve kept: 5 calls per model'); }
   // #405 voicecheck over ALL kid sentences: every sentence of the pregen list is queued until it was checked (not only
   // risky/new ones), a static pass lists the findings for every sentence, and the CI pregen job runs it (no PC cost)

@@ -38,6 +38,7 @@ const PRE = path.join(os.homedir(), '.cache', 'oren-pregen');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const arg = a => process.argv.includes(a);
 const today = () => new Date().toISOString().slice(0, 10);
+const qday = (d = new Date()) => d.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });   // #570 Gemini's quota day: resets at midnight Pacific
 const log = m => { const l = new Date().toISOString().slice(11, 19) + ' ' + m; console.log(l); fs.appendFileSync(LOG, l + '\n'); };
 let S = { items: {}, nik: {}, applied: {}, queue: [], day: '', writes: 0 };
 try { S = { ...S, ...JSON.parse(fs.readFileSync(STATE, 'utf8')) }; } catch (e) {}
@@ -107,21 +108,21 @@ function countCall(st, day, m) { if (!st.used || st.used.day !== day) st.used = 
 const sweepNote = (why, n) => why === 'ran' ? 'sweep skipped: ran today' : `reserve kept: ${n} calls per model`;
 let SWEEP = false;
 async function gemini(p, body) {      // paced; another model when one is busy or at its daily limit (free tier: ~20 a day each)
-  const live = () => MODELS.filter(m => (S.gone || {})[m] !== today() && mayCall(S, today(), m, SWEEP));
+  const live = () => MODELS.filter(m => (S.gone || {})[m] !== qday() && mayCall(S, qday(), m, SWEEP));
   if (SWEEP && !live().length) throw new Stop(sweepNote('reserve', RESERVE));
   const next = () => { const L = live(); if (!L.length) return false; mi = (L.indexOf(MODELS[mi]) + 1) % L.length; mi = MODELS.indexOf(L[mi]); return true; };
   if (!live().includes(MODELS[mi]) && !next()) throw new Stop('every Gemini model is at its daily limit');
   for (let i = 0, busy = 0; i < 12; i++) {
     const w = lastG + 60000 / PER_MIN - Date.now(); if (w > 0) await sleep(w); lastG = Date.now();
-    countCall(S, today(), MODELS[mi]); const { status, j, tx } = await call(p, { ...body, m: MODELS[mi] });
+    countCall(S, qday(), MODELS[mi]); const { status, j, tx } = await call(p, { ...body, m: MODELS[mi] });
     if (j && j.res) { gStreak = 0; return j.res; }
     const why = String((j && (j.err || j.why || j.raw)) || tx);
     if (j && j.status === 429 && /per ?day|PerDay|daily|requests per day/i.test(why)) {
-      S.gone = S.gone || {}; S.gone[MODELS[mi]] = today(); save(); log(`  ${MODELS[mi]}: daily limit reached`);
+      S.gone = S.gone || {}; S.gone[MODELS[mi]] = qday(); save(); log(`  ${MODELS[mi]}: daily limit reached`);
       if (!next()) throw new Stop('every Gemini model is at its daily limit'); continue; }
     if (j && (j.status === 429 || j.status === 503 || j.status === 404)) {
       if (++gStreak > 40) throw new Stop('Gemini keeps refusing: ' + why.slice(0, 200));
-      if (j.status === 404) { S.gone = S.gone || {}; S.gone[MODELS[mi]] = today(); if (!next()) throw new Stop('no Gemini model'); continue; }
+      if (j.status === 404) { S.gone = S.gone || {}; S.gone[MODELS[mi]] = qday(); if (!next()) throw new Stop('no Gemini model'); continue; }
       if (++busy % 2 === 0 && next()) { log(`  gemini busy, trying ${MODELS[mi]}`); continue; }
       log(`  gemini ${j.status} (${MODELS[mi]}), waiting… ${why.slice(0, 80)}`); await sleep(20000 * Math.min(4, busy)); continue;
     }
@@ -304,7 +305,7 @@ function report(said, items, ng) {
   if (bad.length) { L.push(`### heard wrong (${bad.length})`); for (const x of bad) L.push(`- ${x.t.slice(0, 90)} — ${(items[id(x)] || {}).note || ''}`); L.push(''); }
   return L.join('\n');
 }
-if (!MAIN) module.exports = { voteScope, variants, diff, todo, lint, report, sweepDue, mayCall, countCall, sweepNote };
+if (!MAIN) module.exports = { voteScope, variants, diff, todo, lint, report, sweepDue, mayCall, countCall, sweepNote, qday };
 else (async () => {
   try { SAID = JSON.parse(fs.readFileSync(path.join(PRE, 'said.json'), 'utf8')).map(item).filter(x => x.t); } catch (e) { log('no said.json — run pregen.js --collect first'); return; }
   const rep = () => { const r = report(SAID, S.items, readNG()); console.log(r); if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, '## Voice check\n\n' + r + '\n'); };
@@ -315,8 +316,8 @@ else (async () => {
   await pages(votes, marks);
   if (arg('--pages')) return review();
   const note = m => { log(m); if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, m + '\n\n'); };
-  if (!sweepDue(S, today()) && !arg('--again')) { note(sweepNote('ran')); await review(); return rep(); }   // #570 once a day
-  S.swept = today(); save(); SWEEP = true;
+  if (!sweepDue(S, qday()) && !arg('--again')) { note(sweepNote('ran')); await review(); return rep(); }   // #570 once a day
+  S.swept = qday(); save(); SWEEP = true;
   // 0. make again the sentences made before synth() learned numbers in words and dropping emoji (one write each)
   const RG = S.regen || {}, REGEN = 'num2', R = SAID.filter(x => x.v.startsWith('he-') && made[x.t] && (((/\d/.test(x.t) || /\p{Extended_Pictographic}/u.test(x.t)) && !RG[x.t]) || (/[\u2190-\u21FF]/.test(x.t) && RG[x.t] !== 'num2')));   // num2: arrows → a pause
   S.regen = S.regen || {}; let rn = 0;
