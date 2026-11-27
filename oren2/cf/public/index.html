@@ -45,6 +45,12 @@ svg.px{shape-rendering:crispEdges;display:block}
 .hud-mid{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;min-width:0}
 .ibtn{width:48px;height:48px;display:grid;place-items:center;background:var(--birch);box-shadow:inset -4px -4px 0 rgba(0,0,0,.18),inset 4px 4px 0 rgba(255,255,255,.6),0 4px 0 rgba(0,0,0,.25)}
 .ibtn svg{width:26px;height:26px}
+/* #44 pause: one big continue button over the game */
+#btnPause{margin-inline-start:8px}#btnPause[hidden]{display:none}
+@media (max-width:440px){body.pzon .hud-mid .chip{display:none}}/* a phone has no room for the title next to the pause button (activities hide it anyway) */
+.pzov{position:fixed;inset:0;z-index:95;display:grid;place-items:center;background:rgba(20,40,60,.74);backdrop-filter:blur(3px);padding:16px}
+.pzov .card{display:flex;flex-direction:column;align-items:center;gap:14px;background:var(--paper);padding:24px 32px;max-width:420px;width:100%;box-sizing:border-box;text-align:center;box-shadow:0 0 0 6px var(--ink),0 14px 0 6px rgba(0,0,0,.3);animation:pop .35s ease-out both}
+.pzov .pzi svg{width:90px;height:90px}.pzov h2{margin:0;font-size:32px;line-height:1.35}.pzov .bigbtn svg{width:30px;height:30px}
 .ibtn.off{opacity:.5}
 .chip{font-weight:800;font-size:19px;background:rgba(255,255,255,.9);padding:6px 12px;box-shadow:0 4px 0 rgba(0,0,0,.18);white-space:nowrap}
 .gemc{display:flex;align-items:center;gap:6px;font-weight:900;font-size:21px;background:rgba(255,255,255,.92);padding:4px 12px;box-shadow:0 4px 0 rgba(0,0,0,.18);direction:ltr}
@@ -500,7 +506,7 @@ body.act #gemc,body.act #btnMusic,body.act #btnHome,body.act .hud-mid .chip,body
 <div id="app" data-w="meadow">
   <canvas id="bg" aria-hidden="true"></canvas>
   <header class="hud" id="hud" hidden>
-    <div class="hud-side"><button class="ibtn" id="btnBack" aria-label="חזרה"></button></div>
+    <div class="hud-side"><button class="ibtn" id="btnBack" aria-label="חזרה"></button><button class="ibtn" id="btnPause" aria-label="עֲצִירָה" hidden></button></div>
     <div class="hud-mid" id="hudMid"></div>
     <div class="hud-side end"><div class="gemc" id="gemc"></div><button class="ibtn" id="btnSay" aria-label="הקראה"></button><button class="ibtn" id="btnMusic" aria-label="מוזיקה"></button></div>
   </header>
@@ -626,6 +632,7 @@ const ICON={
   music:'<svg viewBox="0 0 24 24" fill="#23303b" aria-hidden="true"><path d="M9 4v11.3A3.5 3.5 0 1 0 11 18V8h7V4H9z"/></svg>',
   musicOff:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4v11.3A3.5 3.5 0 1 0 11 18V8h7V4H9z" fill="#23303b" opacity=".45"/><path d="M4 4l16 16" stroke="#e4572e" stroke-width="3" stroke-linecap="round"/></svg>',
   play:'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 4v16L4 12z"/></svg>',
+  pause:'<svg viewBox="0 0 24 24" fill="#23303b" aria-hidden="true"><rect x="5" y="4" width="5" height="16" rx="1"/><rect x="14" y="4" width="5" height="16" rx="1"/></svg>',
   mute:'<svg viewBox="0 0 24 24" fill="none" stroke="#23303b" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="#23303b"/><path d="M16 9l5 6M21 9l-5 6"/></svg>',
   check:'<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5 9.5 18 20 6"/></svg>',
   del:'<svg viewBox="0 0 24 24" fill="none" stroke="#23303b" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5h12v14H8l-6-7z"/><path d="M12 9l5 6M17 9l-5 6"/></svg>',
@@ -1163,6 +1170,34 @@ function oopsHome(){try{if(!['sTal','sPlay','sLearn'].some(id=>{const x=$('#'+id
 function persist(keepT){if(!keepT)save.t=Date.now();if(!kidSave){const j=JSON.stringify(save.set||{});if(j!==lastSetJ){if(lastSetJ)save.setT=Date.now();lastSetJ=j;}}if(kidSave){try{localStorage.setItem(KEY+'-parent',JSON.stringify(save));}catch(e){}return;}try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}cloudSave();evFlush('save');}
 /* parent play: a separate sandbox user with everything open; never touches Oren's save or the cloud */
 let kidSave=null;
+/* #44 autosave of the place + pause. HERE = the task Oren is in, on THIS device only (localStorage 'oren4-here', never in the family save: no extra
+   cloud/D1 writes): {id: activity id | 'lv:<level>' | 'train', p: how far (math levels, quizzes: question index, counters), pz: 1 paused, t}.
+   Written when a task starts and at every question; forgotten when he finishes it, taps back, or goes home. Reopening the game: his card on
+   the start screen opens that task again at the same question (paused if it was). Parent play never writes it. */
+const HERE={k:'oren4-here',boot:null,want:null},ACTIVE_S=['sTal','sPlay','sLearn'];
+function hereGet(){try{return JSON.parse(localStorage.getItem(HERE.k)||'null');}catch(e){return null;}}
+function herePut(r){if(kidSave)return;try{if(r){r.t=Date.now();localStorage.setItem(HERE.k,JSON.stringify(r));}else localStorage.removeItem(HERE.k);}catch(e){}pzSync();}
+HERE.boot=hereGet();
+/* a task starts (the same task again, e.g. the day log after a resume, keeps its place) */
+function hereBegin(id){if(kidSave||!id)return;const r=hereGet();if(r&&r.id===id)return pzSync();herePut({id});}
+function hereProg(q,p){if(kidSave)return;const r=hereGet();if(!r)return;r.p=Object.assign({q},p);herePut(r);}
+/* the saved place for this level / quiz, once (only right after a reopen) */
+function hereTake(q){const w=HERE.want;if(!w||!w.p||w.p.q!==q)return null;HERE.want=null;return w.p;}
+function hereOpen(id){const T=window.TAL;
+  if(id==='train'){startTraining();return true;}
+  if(/^lv:/.test(id)){const lv=ALLLV.find(l=>l.id===id.slice(3));if(!lv)return false;startLevel(lv);return true;}
+  if(/^arc:/.test(id)){if(!window.__arc)return false;window.__arc.start(id.slice(4));return !$('#sTal').hidden;}/* an arcade round starts again (a short timed round) */
+  const a=T&&T.ACT&&T.ACT[id];if(!a)return false;a.run(showMap);return true;}
+function hereResume(){const r=HERE.boot;HERE.boot=null;if(!r||!r.id||kidSave)return false;HERE.want=r;let done=false;try{done=hereOpen(r.id);}catch(e){done=false;}
+  HERE.want=null;if(!done){herePut(null);return false;}if(r.pz)pauseOn();return true;}
+/* the pause button: one big "continue" button over the game; play time does not count; a reload comes back paused */
+const paused=()=>document.body.classList.contains('paused');
+function pauseOn(){if(paused())return;hush();document.body.classList.add('paused');const o=h('div','pzov',`<div class="card"><div class="pzi">${ICON.pause}</div><h2>עָצַרְנוּ לְרֶגַע</h2></div>`);
+  const b=h('button','bigbtn',ICON.play+'<span>מַמְשִׁיכִים</span>');b.onclick=()=>{sfx.pop(2);pauseOff();};o.firstChild.appendChild(b);document.body.appendChild(o);
+  const r=hereGet();if(r){r.pz=1;herePut(r);}setTimeout(()=>b.focus(),50);}
+function pauseOff(){document.querySelectorAll('.pzov').forEach(e=>e.remove());document.body.classList.remove('paused');const r=hereGet();if(r&&r.pz){delete r.pz;herePut(r);}}
+function pzSync(){const b=$('#btnPause');if(!b)return;b.hidden=!(hereGet()&&ACTIVE_S.some(id=>{const x=$('#'+id);return x&&!x.hidden;}));document.body.classList.toggle('pzon',!b.hidden);}
+addEventListener('keydown',e=>{if(!paused())return;e.stopImmediatePropagation();if(e.key!=='Enter'&&e.key!==' ')e.preventDefault();},true);/* only the focused continue button gets Enter / Space */
 /* #348 event log: track(kind,data) records what Oren does as short events (ids and numbers, never text the kid typed). They wait in a
    buffer on this device and go to /api/log in batches (one D1 row each): on save and on a 60 s tick (at most once a minute), and when the
    page hides. A failed send puts the batch back (the newest EV.max are kept on the device, oldest dropped) until the next send: no retry loop.
@@ -1557,14 +1592,15 @@ const wipeEl=$('#wipe');wipeEl.innerHTML='<i></i>'.repeat(70);
 function wipe(){if(window.__fast||RM())return;sfx.whoosh();wipeEl.hidden=false;[...wipeEl.children].forEach((c,i)=>{const r=i/10|0,col=i%10;c.style.animation='none';void c.offsetWidth;c.style.animation='';c.style.animationDelay=((r+col)*22)+'ms';});clearTimeout(wipe.t);wipe.t=setTimeout(()=>wipeEl.hidden=true,720);}
 function setScreen(id,w,back){hush();if(window.HELP)HELP.stop();document.body.classList.toggle('inpar',id==='sPar');document.body.classList.remove('act');window.__noAuto=0;/* leaving a screen stops any reading aloud; the new screen may speak right after */['sStart','sHome','sMap','sWorld','sLearn','sPlay','sKing','sStudio','sTeach','sTable','sFinal','sTal','sPar'].forEach(s=>$('#'+s).hidden=s!==id);$('#hud').hidden=id==='sStart';$('#ov').hidden=true;{const dl=$('#dlg');if(!dl.hidden){dl.hidden=true;dl.innerHTML='';}}/* #356: a story dialog belongs to the screen it was opened on */
   if(app.dataset.w!==(w||'meadow')){app.dataset.w=w||'meadow';bgW=app.dataset.w;paintBG(performance.now());}setTheme(THEME_OF[app.dataset.w]||'map');
-  backTo=back||null;$('#btnBack').style.visibility=back?'visible':'hidden';$('#btnBack').innerHTML=back===showMap?ICON.home:ICON.back;$('#screens').scrollTop=0;play=null;stopSpeed();updateGems();wipe();evScreen(id);emit('screen',id,back);}
+  pauseOff();if(!ACTIVE_S.includes(id)&&id!=='sStart'&&id!=='sPar')herePut(null);backTo=back||null;$('#btnBack').style.visibility=back?'visible':'hidden';$('#btnBack').innerHTML=back===showMap?ICON.home:ICON.back;$('#screens').scrollTop=0;play=null;stopSpeed();updateGems();wipe();evScreen(id);emit('screen',id,back);pzSync();}
 $('#btnSay').innerHTML=ICON.say;$('#btnMusic').innerHTML=ICON.music;$('#icoStart').innerHTML=ICON.play;
 if(!save.avOren){save.av=Object.assign({},save.av,OREN_LOOK);save.avOren=1;try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}}
 if(save.snd==null)save.snd=save.music===false?1:2;
 const syncMusic=()=>{const b=$('#btnMusic');b.innerHTML=save.snd===2?ICON.music:save.snd===1?ICON.musicOff:ICON.mute;b.classList.toggle('off',save.snd===0);b.title=['שֶׁקֶט','רַק צְלִילִים','מוּזִיקָה וּצְלִילִים'][save.snd];b.setAttribute('aria-label',b.title);};syncMusic();
 $('#btnMusic').onclick=()=>{save.snd=((save.snd|0)+2)%3;persist();syncMusic();if(save.snd===2)musicStart();else musicStop();sfx.pop(2);};
 $('#btnSay').onclick=()=>say(sayNow);
-$('#btnBack').onclick=()=>{hush();backTo&&backTo();};
+$('#btnBack').onclick=()=>{hush();herePut(null);backTo&&backTo();};
+$('#btnPause').innerHTML=ICON.pause;$('#btnPause').onclick=()=>{sfx.pop(1);pauseOn();};
 /* the phone's back gesture / the browser's back button do what ‹ does (one guard entry, re-armed each time; at home nothing happens, so the game is never left by accident) */
 (()=>{let armed=false;const arm=()=>{if(armed)return;try{history.pushState({oren:1},'');armed=true;}catch(e){}};/* browsers skip entries added without a tap, so (re)arm on taps */
   arm();addEventListener('pointerdown',()=>{if(!armed||!(history.state&&history.state.oren))armed=false,arm();},true);addEventListener('keydown',arm,true);
@@ -1576,7 +1612,7 @@ $('#ov').addEventListener('click',e=>{if(e.target.closest&&e.target.closest('but
 function animTitle(){const t=$('.title');if(!t||t.dataset.a)return;t.dataset.a=1;const gs=graphemes(t.textContent);t.innerHTML=gs.map((g,i)=>g===' '?'<span class="tl sp"> </span>':`<span class="tl" style="animation-delay:${i*55}ms,${900+i*90}ms">${g}</span>`).join('');}
 function renderStart(){$('#startScene').innerHTML=`<div class="s-av bob">${AV()}</div><div class="s-castle">${castle(revealedFor(pts()))}</div><div class="s-mix bob" style="animation-delay:-.8s">${SPR.mixer}</div><div class="s-pet bob" style="animation-delay:-1.4s">${PET().s()}</div>`;}
 renderStart();animTitle();
-$('#btnStart').onclick=()=>{audio();musicStart();if(!save.story.intro){story(INTRO,()=>{save.story.intro=1;persist();studio(true);});}else showMap(true);};
+$('#btnStart').onclick=()=>{audio();musicStart();if(save.story.intro&&hereResume())return;if(!save.story.intro){story(INTRO,()=>{save.story.intro=1;persist();studio(true);});}else showMap(true);};
 
 /* ---------- STORY dialogs ---------- */
 const SPK={mixer:()=>[SPR.mixer,'הַמְּבַלְבֵּל'],pet:()=>[PET().s(),PET().n],nar:()=>[SPR.book,'הַמְּסַפֵּר']};
@@ -1912,9 +1948,11 @@ function startTraining(){const u={id:'train',name:'אִמּוּן יוֹמִי',
 function playLevel(lv,preset){
   hush();const u=lv.u;const train=lv.type==='train';
   setScreen('sPlay',lv.w.bg,train?showMap:()=>showWorld(lv.w));evMission(u&&u.id||lv.id,lv.id);
-  const qs=preset||uniq(lv.gen,lv.n);const mode=lv.type==='game'?lv.mode:lv.type==='boss'?'boss':'classic';
+  const hk=train?'train':'lv:'+lv.id;hereBegin(hk);const back4=hereTake(hk);/* #44: reopened mid-level = the same questions, the same place */
+  const qs=(back4&&Array.isArray(back4.qs)&&back4.qs.length?back4.qs:null)||preset||uniq(lv.gen,lv.n);const mode=lv.type==='game'?lv.mode:lv.type==='boss'?'boss':'classic';
   if(lv.type==='boss')setTheme('boss');
   play={lv,u,qs,i:0,errors:0,hints:0,streak:0,tries:0,hint:0,lock:false,requeued:new Set(),hp:qs.length,boxes:[],bi:0,col:null,mode,N:qs.length,done:0,gemsEarned:0};
+  if(back4&&back4.qs===qs){for(const k of ['i','errors','hints','streak','hp','N','done','gemsEarned'])if(typeof back4[k]==='number')play[k]=back4[k];play.requeued=new Set(back4.rq||[]);play.i=Math.min(play.i,qs.length-1);}
   const s=$('#sPlay');s.innerHTML='';const wrap=h('div','play');const left=h('div','left');
   let top;
   if(mode==='boss')top=h('div','bossrow',`<div class="giant" id="giant">${u.final?SPR.mixer:SPR.giant}</div><div class="hp" id="hp">${'<i></i>'.repeat(play.hp)}</div>`);
@@ -1932,6 +1970,8 @@ function playLevel(lv,preset){
   wrap.append(left,pad);s.appendChild(wrap);
   const bub=$('#bubble');if(bub)bub.onclick=()=>say(sayNow);
   if(mode==='boss'){sayNow=u.final?'המבלבל! הקרב האחרון.':'ענק הבלוקים! כל תשובה נכונה מורידה לו בלוק.';}
+  if(play.done)for(let k=0;k<play.done;k++){const m=$('#mb'+k),o=$('#ob'+k),pl=$('#pl'+k);if(m)m.classList.add('br');if(o)o.classList.add('done');if(pl)pl.classList.add('on');}
+  if(play.done&&mode==='run'){const r=$('#runner');if(r)r.style.right=(8+play.done*(84/play.N))+'%';}
   showQ();}
 function hudPlay(){const p=play;if(!p)return;const nm=p.lv.type==='train'?'אִמּוּן יוֹמִי':p.lv.type==='boss'?p.u.name:p.u.name;
   $('#hudMid').innerHTML=`<div class="chip">${nm}</div><div class="progress">${p.qs.map((_,k)=>`<i class="pb${k<p.i?' on':k===p.i?' cur':''}"></i>`).join('')}</div>${p.streak>=2?`<div class="streak">${SPR.flame}${p.streak}</div>`:''}`;}
@@ -1952,7 +1992,9 @@ function showQ(){
   $('#hint').hidden=true;$('#hint').innerHTML='';helpStart(q);helpBtn(q);
   if(q.k==='col')colPrep(q,p.col);
   setBubble(q.k==='word'?'קְרָא וְחַשֵּׁב':q.k==='col'?'מַתְחִילִים מִיָּמִין':q.k==='rem'?'כַּמָּה, וּמָה הַשְּׁאֵרִית?':q.k==='ch'?'בְּחַר תְּשׁוּבָה':'כַּמָּה זֶה?');
-  sayNow=qSpeech(q);hudPlay();}
+  sayNow=qSpeech(q);hudPlay();
+  if(p.mode!=='speed'){let qj=null;try{qj=JSON.parse(JSON.stringify(p.qs));if(JSON.stringify(qj).length>60000)qj=null;}catch(e){qj=null;}
+    hereProg(p.lv.type==='train'?'train':'lv:'+p.lv.id,{i:p.i,errors:p.errors,hints:p.hints,streak:p.streak,hp:p.hp,N:p.N,done:p.done,gemsEarned:p.gemsEarned,rq:[...p.requeued],qs:qj});}}
 function renderBoxes(){const p=play;p.boxes.forEach((b,i)=>{if(b.done)return;b.el.className='ans'+(b.val?'':' empty')+(i===p.bi&&p.boxes.length>1?' foc':'');b.el.textContent=b.val||'?';});}
 function press(k){const p=play;if(!p||p.lock)return;
   const kb=document.querySelector(`.key[data-k="${k}"]`);if(kb){kb.classList.add('press');setTimeout(()=>kb.classList.remove('press'),120);}
@@ -2057,7 +2099,7 @@ function colType(d){const p=play,q=p.qs[p.i],st=p.col;if(st.c>=st.R.length)retur
     setTimeout(()=>{if(play!==p||p.qs[p.i]!==q||p.col!==st)return;if(st.c>=st.R.length){requeue();questionDone(false);p.i++;if(p.i>=p.qs.length)finishLevel();else showQ();}else{p.lock=false;colPrep(q,st);}},D(900));}
   else setBubble('כִּמְעַט! הִסְתַּכֵּל עַל הָרֶמֶז');}
 function finishLevel(){const p=play;if(!p||p.finished)return;p.finished=true;p.lock=true;const lv=p.lv,u=p.u;
-  if(lv.type==='train'){save.trains++;addGems(10);persist();setTimeout(()=>{if(play!==p)return;const ov=$('#ov');ov.hidden=false;
+  if(lv.type==='train'){herePut(null);save.trains++;addGems(10);persist();setTimeout(()=>{if(play!==p)return;const ov=$('#ov');ov.hidden=false;
       ov.innerHTML=`<div class="card"><h2>סִיַּמְתָּ אֶת הָאִמּוּן!</h2><div class="gain">+${p.gemsEarned+10} ${SPR.gem}</div><div class="sub">טָעֻיּוֹת שֶׁעוֹד מְחַכּוֹת: <span class="ltr">${save.rq.length}</span></div></div>`;
       const row=h('div','btnrow');const a=h('button','bigbtn plain sm',ICON.redo+'<span>עוֹד אִמּוּן</span>');a.onclick=startTraining;const m=h('button','bigbtn',ICON.homeW+'<span>לַמַּפָּה</span>');m.onclick=()=>showJourney();row.append(a,m);ov.firstChild.appendChild(row);sfx.win();rain();},D(300));return;}
   const miss=p.errors+p.hints;const lim=p.N<=6?[0,2]:[1,4];const st=miss<=lim[0]?3:miss<=lim[1]?2:1;
@@ -2085,7 +2127,7 @@ function speedPool(Wd){const us=Wd.units.filter(u=>!u.boss&&!u.col&&stars(u.id+'
 function playSpeed(Wd){const pool=speedPool(Wd);const lv={id:'speed-'+Wd.id,type:'speed',u:{name:'אֶתְגָּר מָהִיר',w:Wd},w:Wd,gen:mix(pool.map(u=>u.gen)),n:1};
   playLevel(lv,[lv.gen(0)]);const p=play;p.mode='speed';p.score=0;p.end=Date.now()+60000;if(window.HELP)HELP.stop();$('.hintrow .lsn')&&$('.hintrow .lsn').remove();
   const top=$('#sPlay .talk');if(top)top.outerHTML=`<div class="btnrow"><div class="timer"><i id="tbar" style="width:100%"></i></div><div class="score" id="score">★ 0</div></div>`;
-  speedHud();stopSpeed();speedTimer=setInterval(()=>{if(play!==p){stopSpeed();return;}const left=Math.max(0,p.end-Date.now());const b=$('#tbar');if(b)b.style.width=(left/600)+'%';if(left<=0){stopSpeed();finishSpeed();}},250);}
+  speedHud();stopSpeed();let tl=Date.now();speedTimer=setInterval(()=>{if(play!==p){stopSpeed();return;}const tn=Date.now();if(paused())p.end+=tn-tl;tl=tn;if(paused())return;/* #44 paused: the clock waits */const left=Math.max(0,p.end-Date.now());const b=$('#tbar');if(b)b.style.width=(left/600)+'%';if(left<=0){stopSpeed();finishSpeed();}},250);}
 function speedHud(){const p=play;const s=$('#score');if(s)s.textContent='★ '+(p.score|0);$('#hudMid').innerHTML=`<div class="chip">אֶתְגָּר מָהִיר</div>`;}
 function nextSpeedQ(){const p=play;if(Date.now()>=p.end)return finishSpeed();let q,t=0;do{q=p.lv.gen(0);}while(t++<20&&p.qs.slice(-5).some(x=>qkey(x)===qkey(q)));p.qs.push(q);showQ();speedHud();}
 function finishSpeed(){const p=play;if(!p||p.lock&&p.finished)return;p.lock=true;p.finished=true;const Wd=p.lv.w;const best=save.sp[Wd.id]|0;const rec=p.score>best;if(rec)save.sp[Wd.id]=p.score;persist();
@@ -2195,9 +2237,11 @@ function showFinal(){setScreen('sFinal','final',showMap);$('#hudMid').innerHTML=
 
 updateGems();cloudInit();
 const BUS={};function emit(e,...a){(BUS[e]||[]).forEach(f=>{try{f(...a);}catch(x){console.error(x);}});}
-window.OREN={get save(){return save;},persist,known,track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
+window.OREN={get save(){return save;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
   set sayNow(v){sayNow=v;AUTO.gen++;},get sayNow(){return sayNow;},hud:html=>{$('#hudMid').innerHTML=html;document.body.classList.toggle('act',!document.body.classList.contains('inpar')&&/class="chip"/.test(html));},resetAll:keep=>{const snd=save.snd;save=blank();save.snd=snd;Object.assign(save,keep||{});persist();renderStart();},on:(e,f)=>{(BUS[e]=BUS[e]||[]).push(f);},emit,blank};
 window.__oren4={renderAudio,THEMES,RAW,setTheme,get mus(){return mus;},WORLDS,ALLLV,ALLU,hintHTML,hintData,uniq,colInit,colNeedBorrow,digs,qkey,bubbleOpts,storyFor,teachCheck,HEROES,get play(){return play;},get save(){return save;},startLevel,playLevel,showMap,showWorld,kingdom,studio,teacher,playSpeed,setFast:v=>{window.__fast=v;},mergeIn,migrateOld,lp};
+/* #44 a finished task is not reopened */
+window.OREN.on('tlDone',()=>herePut(null));window.OREN.on('levelDone',()=>herePut(null));
 })();
 </script>
 <!--TALENTS-->
@@ -3610,8 +3654,9 @@ function quiz(o){const qs=[],seen=new Set();let t=0;const LN=window.LEARN,pb=o.p
     try{const r=LN.pickItem(pb,c.filter(x=>!seen.has(x.key)).map(x=>({k:x.key})));const x=r&&c.find(y=>y.key===r.item.k);if(x)return Object.assign(x,{bank:pb});}catch(e){}return q;};
   while(qs.length<o.n&&t++<400){const q=gen();const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k))continue;seen.add(k);qs.push(q);}
   let i=0,err=0,gems=0,lock=false,tries=0,HB=null;O.setScreen('sTal',o.bg||'valley',o.back);
+  const bk=O.hereTake&&O.hereTake('tq:'+o.id);if(bk){i=Math.min(Math.max(0,bk.i|0),qs.length-1);err=bk.err|0;gems=bk.gems|0;}/* #44: reopened mid-quiz = the same place */
   const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq');s.appendChild(wrap);
-  const render=()=>{const q=qs[i];tries=0;lock=false;if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||spoken(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
+  const render=()=>{const q=qs[i];tries=0;lock=false;if(O.hereProg)O.hereProg('tq:'+o.id,{i,err,gems});if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));O.sayNow=(q.say||spoken(q.pr))+(!q.say&&tOps.length===q.opts.length?'. '+tOps.join(', '):'');
     wrap.innerHTML='';const card=h('div','prq tqc',q.pr);if(q.play){const pb=h('button','hintbtn',ICON.say+`<span>${q.playLbl||'הַשְׁמַע'}</span>`);pb.onclick=q.play;card.appendChild(pb);}
     wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card);if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});const row=h('div','chs'+(q.ltr?' ltr':''));q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>{if(!(O.tapTooSoon&&O.tapTooSoon()))pickA(k,b);};row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');
@@ -3697,7 +3742,7 @@ O.on('kingdomScene',sc=>{if(!window.TAL_noHome&&!sc.querySelector('.kmine')){con
 let lastAct=Date.now(),session=0;
 ['pointerdown','keydown'].forEach(ev=>addEventListener(ev,()=>{lastAct=Date.now();},true));
 /* every tick is saved (and so sent to the family save): the phone shows the full play time (#41) */
-function timeTick(){if(document.hidden||Date.now()-lastAct>60000||$('#hud').hidden)return;const s=S();const d=today();s.time[d]=(s.time[d]|0)+15;session+=15;if(window.DAYLOG&&window.DAYLOG.beat)window.DAYLOG.beat();O.persist();}
+function timeTick(){if(O.paused||document.hidden||Date.now()-lastAct>60000||$('#hud').hidden)return;const s=S();const d=today();s.time[d]=(s.time[d]|0)+15;session+=15;if(window.DAYLOG&&window.DAYLOG.beat)window.DAYLOG.beat();O.persist();}
 O.timeTick=timeTick;setInterval(timeTick,15000);
 const breakTime=()=>window.HEALTH&&window.HEALTH.breakNow();
 
@@ -3886,7 +3931,7 @@ function rainGame(back){const ty=T.S().typ;let top=0;Object.keys(ty.best).forEac
   O.setScreen('sTal','city',back);T.hudT('גֶּשֶׁם אוֹתִיּוֹת');O.sayNow='לְחַץ בַּמִּקְלֶדֶת עַל הָאוֹת שֶׁנּוֹפֶלֶת, לִפְנֵי שֶׁהִיא נוֹגַעַת בַּדֶּשֶׁא!';const s=$('#sTal');s.innerHTML='';const field=h('div','rainf');const sc=h('div','score','⭐ 0');s.append(h('div','lsent','לְחַץ בַּמִּקְלֶדֶת עַל הָאוֹת שֶׁנּוֹפֶלֶת, לִפְנֵי שֶׁהִיא נוֹגַעַת בַּדֶּשֶׁא!'),sc,field);
   let score=0,blocks=[],t0=performance.now(),last=t0,spawn=0,alive=true,end=t0+60000;const H=()=>field.clientHeight;
   const mk=()=>{const ch=pick(al);const b=h('div','rb',ch);b.style.left=rand(4,90)+'%';field.appendChild(b);blocks.push({b,ch,y:-40});};
-  const loop=now=>{if(!alive||$('#sTal').hidden||!field.isConnected){alive=false;return;}const dt=now-last;last=now;const sp=(28+score*1.2)/1000;spawn-=dt;if(spawn<=0){mk();spawn=Math.max(500,1500-score*25);}
+  const loop=now=>{if(!alive||$('#sTal').hidden||!field.isConnected){alive=false;return;}if(O.paused){end+=now-last;last=now;requestAnimationFrame(loop);return;}/* #44 paused: the clock and the letters stand still */const dt=now-last;last=now;const sp=(28+score*1.2)/1000;spawn-=dt;if(spawn<=0){mk();spawn=Math.max(500,1500-score*25);}
     blocks.forEach(o=>{o.y+=sp*dt;o.b.style.top=o.y+'px';});const fallen=blocks.filter(o=>o.y>H()-30);fallen.forEach(o=>{o.b.remove();sfx.no();});blocks=blocks.filter(o=>o.y<=H()-30);
     if(now>=end){alive=false;T.setKey(null);const st=score>=40?3:score>=20?2:1;const g=Math.min(25,Math.floor(score/2));O.addGems(g);T.record('type-rain',st,{b:score});T.result({title:'נִגְמַר הַזְּמַן!',sub:`פּוֹצַצְתָּ ${score} אוֹתִיּוֹת`,stars:st,gems:g,back,again:()=>rainGame(back)});return;}
     sc.textContent=`⭐ ${score}   ⏱️ ${Math.ceil((end-now)/1000)}`;requestAnimationFrame(loop);};
@@ -5051,7 +5096,7 @@ function openArcade(back){if(back)back0=back;back0=back0||O.showMap;T.setKey(nul
 const later=f=>setTimeout(f,D(700));
 /* ---------- shared game frame ---------- */
 let cur=null;
-function frame(id,title){const gm=G(id);O.setScreen('sTal','final',()=>{if(cur)cur.stop();openArcade();});T.hudT(gm.n);
+function frame(id,title){const gm=G(id);O.setScreen('sTal','final',()=>{if(cur)cur.stop();openArcade();});T.hudT(gm.n);if(O.hereBegin)O.hereBegin('arc:'+id);/* #44 the place + the pause button */
   const s=$('#sTal');s.innerHTML='';const box=h('div','arc game');box.style.setProperty('--nc',gm.c);
   const top=h('div','gtop',`<div class="rule">${title||''}</div><div class="gstat"><span class="sc">⭐ <b>0</b></span><span class="tm"></span></div>`);
   const field=h('div','field');box.append(top,field);s.appendChild(box);
@@ -5081,7 +5126,7 @@ function balloon(){const F=frame('balloon','פּוֹצֵץ כַּמָּה שֶׁ
   function hit(o){if(!alive||o.dead)return;o.dead=true;o.el.classList.add('boom');setTimeout(()=>o.el.remove(),D(260));list=list.filter(x=>x!==o);
     if(good(o)){score++;pops++;F.score(score);sfx.pop(score%8);O.floatText(o.el,'+1');if(phase===0&&pops>=8){phase=1;pops=0;rule();}else if(phase===1&&pops>=6&&t.wide){phase=2;pops=0;rule();}}
     else{sfx.no();o.el.classList.add('bad');}}
-  const loop=now=>{if(!alive||!F.field.isConnected){alive=false;return;}const dt=Math.min(50,now-last);last=now;spawn-=dt;if(spawn<=0){mk();spawn=D(t.spawn);}
+  const loop=now=>{if(!alive||!F.field.isConnected){alive=false;return;}if(O.paused){end+=now-last;last=now;requestAnimationFrame(loop);return;}/* #44 paused: frozen */const dt=Math.min(50,now-last);last=now;spawn-=dt;if(spawn<=0){mk();spawn=D(t.spawn);}
     list.forEach(o=>{o.y-=o.sp*dt;o.el.style.top=o.y+'px';});list.filter(o=>o.y<-90).forEach(o=>{o.el.remove();});list=list.filter(o=>o.y>=-90);
     const left=Math.max(0,Math.ceil((end-now)/1000));F.time('⏱️ '+left);if(now>=end){done();return;}requestAnimationFrame(loop);};
   function done(){if(!alive)return;alive=false;const st=score>=20?3:score>=12?2:1;finish('balloon',score,st);}
@@ -5098,12 +5143,12 @@ function mole(){const F=frame('mole');let score=0,alive=true,end=0,tmr=0;const t
     const m=hl.querySelector('.mole');m.onpointerdown=e=>{e.preventDefault();whack(i);};}
   F.field.appendChild(g);F.field.classList.add('mf');
   const state=Array(9).fill(null);
-  function pop(){if(!alive||!g.isConnected)return;const free=[...Array(9).keys()].filter(i=>!state[i]);if(free.length){const i=pick(free);const ex=mkEx(Math.random()<.6);state[i]=ex;holes[i].querySelector('.tag').textContent=ex.t;holes[i].classList.add('up');
-      const stay=D(t.stay);setTimeout(()=>{if(state[i]===ex){state[i]=null;holes[i].classList.remove('up');}},stay);}
+  function pop(){if(!alive||!g.isConnected)return;if(O.paused){tmr=setTimeout(pop,250);return;}/* #44 */const free=[...Array(9).keys()].filter(i=>!state[i]);if(free.length){const i=pick(free);const ex=mkEx(Math.random()<.6);state[i]=ex;holes[i].querySelector('.tag').textContent=ex.t;holes[i].classList.add('up');
+      const stay=D(t.stay);const hide=()=>{if(O.paused)return setTimeout(hide,250);if(state[i]===ex){state[i]=null;holes[i].classList.remove('up');}};setTimeout(hide,stay);}
     tmr=setTimeout(pop,D(t.gap));}
   function whack(i){const ex=state[i];if(!alive||!ex)return;state[i]=null;const hl=holes[i];hl.classList.remove('up');
     if(ex.ok){score++;F.score(score);sfx.hit?sfx.hit():sfx.pop(4);hl.classList.add('bonk');setTimeout(()=>hl.classList.remove('bonk'),D(300));O.floatText(hl,'+1');}else{sfx.no();hl.classList.add('wrong');setTimeout(()=>hl.classList.remove('wrong'),D(500));}}
-  const tick=()=>{if(!alive||!g.isConnected){alive=false;return;}const left=Math.max(0,Math.ceil((end-performance.now())/1000));F.time('⏱️ '+left);if(left<=0)return done();setTimeout(tick,250);};
+  let tl=0;const tick=()=>{if(!alive||!g.isConnected){alive=false;return;}const tn=performance.now();if(O.paused&&tl)end+=tn-tl;tl=tn;if(O.paused){setTimeout(tick,250);return;}/* #44 paused: the clock waits */const left=Math.max(0,Math.ceil((end-performance.now())/1000));F.time('⏱️ '+left);if(left<=0)return done();setTimeout(tick,250);};
   function done(){if(!alive)return;alive=false;clearTimeout(tmr);const st=score>=12?3:score>=7?2:1;finish('mole',score,st);}
   T.setKey(e=>{const n=+e.key;if(n>=1&&n<=9)whack([6,7,8,3,4,5,0,1,2][n-1]);});
   cur={stop:()=>{alive=false;clearTimeout(tmr);},finish:(sc)=>{if(sc!=null)score=sc;done();},hit:()=>{const i=state.findIndex(x=>x&&x.ok);if(i>=0)whack(i);else{score++;F.score(score);}},get score(){return score;}};
@@ -5163,7 +5208,7 @@ function basket(){const F=frame('basket');const cfg=tune('basket');const N=8;let
     area.appendChild(answers(q,(ok,b,row)=>{if(phase!=='q')return;if(ok){b.classList.add('ok');sfx.ok(k);setTimeout(()=>{if(alive)aim();},D(350));}else{b.classList.add('bad');b.disabled=true;sfx.no();phase='x';
       setTimeout(()=>{row.querySelectorAll('.ab').forEach(x=>{if(+x.textContent===q.ans)x.classList.add('ok');});msg.textContent='הַתְּשׁוּבָה: '+q.ans;setTimeout(next,D(1300));},D(300));}}));};
   const aim=()=>{phase='aim';area.innerHTML='';area.append(bar,shoot);F.rule('👆 לְחַץ "זְרֹק!" כְּשֶׁהַפַּס בַּיָּרֹק!','לְחַץ זְרֹק כְּשֶׁהַפַּס בַּיָּרֹק');meter=0;dir=1;last=performance.now();T.setKey(e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();throwIt();}});requestAnimationFrame(swing);};
-  const swing=now=>{if(!alive||phase!=='aim'||!bar.isConnected)return;const dt=now-last;last=now;meter+=dir*dt*cfg.meter;if(meter>=100){meter=100;dir=-1;}if(meter<=0){meter=0;dir=1;}bar.querySelector('.cur').style.left=meter+'%';requestAnimationFrame(swing);};
+  const swing=now=>{if(!alive||phase!=='aim'||!bar.isConnected)return;if(O.paused){last=now;requestAnimationFrame(swing);return;}const dt=now-last;last=now;meter+=dir*dt*cfg.meter;if(meter>=100){meter=100;dir=-1;}if(meter<=0){meter=0;dir=1;}bar.querySelector('.cur').style.left=meter+'%';requestAnimationFrame(swing);};
   shoot.onclick=()=>throwIt();
   function throwIt(force){if(phase!=='aim')return;phase='fly';const ok=force||Math.abs(meter-50)<=zone/2;ball.className='bball '+(ok?'swish':'miss');sfx.whoosh?sfx.whoosh():sfx.pop(2);
     setTimeout(()=>{if(!hoop.isConnected)return;if(ok){made++;F.score(made);msg.textContent='סַל! 🎉';msg.className='kmsg win';hoop.classList.add('shake');sfx.win();setTimeout(()=>hoop.classList.remove('shake'),D(500));}else{msg.textContent='כִּמְעַט! 💪';msg.className='kmsg';sfx.no();}setTimeout(next,D(1000));},D(650));}
@@ -5180,7 +5225,7 @@ function swim(){const F=frame('swim');const cfg=tune('swim');const N=10;let you=
   const ask=()=>{q=qGen(cfg);area.innerHTML='';F.rule(`🏊 עֲנֵה מַהֵר כְּדֵי לִשְׂחוֹת: <span class="big ltr">${q.txt} = ?</span>`,'עֲנֵה מַהֵר כְּדֵי לִשְׂחוֹת. '+sayQ(q.txt));
     area.appendChild(answers(q,(good,b)=>{if(!alive)return;if(good){you++;ok++;F.score(ok);b.classList.add('ok');me.classList.remove('stroke');void me.offsetWidth;me.classList.add('stroke');sfx.pop(4);put();if(you>=N)return end(true);setTimeout(()=>{if(alive)ask();},D(250));}
       else{b.classList.add('bad');b.disabled=true;sfx.no();}}));};
-  const loop=now=>{if(!alive||!lanes.isConnected){alive=false;return;}const dt=Math.min(50,now-last);last=now;rival=Math.min(1,rival+dt/D(rivalT));put();F.time(rival>you/N?'🐬 מוֹבִיל':'🏊 מוֹבִיל');if(rival>=1)return end(false);requestAnimationFrame(loop);};
+  const loop=now=>{if(!alive||!lanes.isConnected){alive=false;return;}if(O.paused){last=now;requestAnimationFrame(loop);return;}/* #44 the dolphin waits too */const dt=Math.min(50,now-last);last=now;rival=Math.min(1,rival+dt/D(rivalT));put();F.time(rival>you/N?'🐬 מוֹבִיל':'🏊 מוֹבִיל');if(rival>=1)return end(false);requestAnimationFrame(loop);};
   function end(win){if(!alive)return;alive=false;const st=win?(rival<.75?3:2):1;finish('swim',ok,st,win?' · נִצַּחְתָּ! 🏆':' · הַדּוֹלְפִין נִצֵּחַ הַפַּעַם');}
   cur={stop:()=>{alive=false;},finish:sc=>{if(sc!=null)ok=sc;end(ok>=N);},hit:()=>{const b=[...area.querySelectorAll('.ab')].find(x=>+x.textContent===q.ans);if(b)b.click();},get score(){return ok;}};
   put();ask();countdown(F,()=>{last=performance.now();requestAnimationFrame(loop);});}
@@ -10675,7 +10720,7 @@ const now=()=>mark(cur?cur.id:null);
 /* the heartbeat: every active play tick (talents.js timeTick, which saves anyway) — never from the parent panel */
 DL.beat=()=>{const par=document.querySelector('#sPar');if(par&&!par.hidden)return;mark(cur&&!cur.end?cur.id:null);};
 const lvOf=id=>{const k=((O.save.lrn||{}).k||{})['a:'+id];return k&&k.n?k.l|0:0;};
-function begin(id){if(O.isParentPlay)return;if(cur&&!cur.end)end(cur.brk?'b':'q');cur={id,t:Date.now(),d:day(),ok:0,n:0,help:0,ra:0,lv:lvOf(id)};now();O.emit('dlBegin',id);}
+function begin(id){if(O.isParentPlay)return;if(O.hereBegin)O.hereBegin(id);/* #44 the place Oren is in */if(cur&&!cur.end)end(cur.brk?'b':'q');cur={id,t:Date.now(),d:day(),ok:0,n:0,help:0,ra:0,lv:lvOf(id)};now();O.emit('dlBegin',id);}
 function end(o,st){const c=cur;if(!c||c.end)return;c.end=1;if(o!=='c'&&o!=='p'&&!c.n&&Date.now()-c.t<15000)o='x';   /* opened and closed at once: 'x' — kept for Oren's "again" list, not shown to the parent */
   const x=Object.assign({},c.x||{});if(c.lv&&x.lv==null)x.lv=c.lv;if(c.ra)x.ra=c.ra;
   add(c.d,[minOf(c.t),c.id,st|0,c.ok,c.n,c.help,o].concat(Object.keys(x).length?[x]:[]));now();cur=null;O.persist();}
