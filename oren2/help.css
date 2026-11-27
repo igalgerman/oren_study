@@ -69,6 +69,10 @@
 .helpbtn:disabled{opacity:.5;cursor:default}
 .helpbtn .hq-i{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:#fff;color:#8e6fd1;font-size:28px;font-weight:900}
 .helpq.offer .helpbtn{animation:hlpPulseB 1s ease-in-out 3}
+/* #616 Oren's skip: small and quiet under help (secondary, never competing with the answers) */
+.skipbtn{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:4px 16px;border:2px solid #c9d3dc;border-radius:999px;background:rgba(255,255,255,.85);color:#5a6a78;font:inherit;font-weight:800;font-size:17px;cursor:pointer}
+.skipbtn:active{transform:translateY(2px)}
+.skipbtn:disabled{opacity:.5;cursor:default}
 @keyframes hlpPulseB{50%{transform:scale(1.08);box-shadow:0 5px 0 #c99a1d,0 0 0 8px rgba(255,207,77,.45)}}
 .helpbox{width:100%;font-weight:800;font-size:22px;line-height:1.5;text-align:center;background:#fff8dc;padding:10px 14px;box-shadow:0 4px 0 rgba(0,0,0,.12),inset 0 0 0 3px #ffcf4d}
 .helpbox.in{animation:hlpIn .35s ease-out}
