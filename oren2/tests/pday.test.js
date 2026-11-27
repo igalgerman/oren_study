@@ -64,12 +64,12 @@ const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout:
   /* the parent's view follows his device (his save goes up ~1.5 s after a change) */
   const syncB = () => until(B, () => !window.PDAY.cmds().some(c => !(window.OREN.save.pcA || {})[c.i]), null, 6000).then(() => sleep(200));
   await B.locator('#sPar .pdplan', { hasText: await B.evaluate(id => window.TAL.stepName(id), ids.r) }).locator('.tdx').click(); await sleep(300);
-  { const v = await view(); ok('✕ on a mission: it leaves the plan at once, "דילג (הורה) · ממתין" with בטל', v.plan.length === 3 && v.did.some(x => /דילג \(הורה\).*ממתין/.test(x)), JSON.stringify(v)); }
+  { const v = await view(); ok('✕ on a mission: it leaves the plan at once, "דילג (הורה) · נשלח…" with בטל', v.plan.length === 3 && v.did.some(x => /דילג \(הורה\).*נשלח…/.test(x)), JSON.stringify(v)); }
   await pull();
   { const k = await kidPlan(); const row = await A.evaluate(id => (window.OREN.save.alog[window.OREN.today()].e || []).find(e => e[6] === 'p' && e[1] === id), ids.r);
     ok('Oren\'s device takes it on the next sync: the mission is off today, a "p" line in the log', !k.includes(ids.r) && k.length === 3 && !!row, JSON.stringify(k)); }
-  await until(B, () => [...document.querySelectorAll('#sPar .dllog .dl-p')].some(r => !/ממתין/.test(r.textContent)), null, 6000);
-  { const v = await view(); ok('the parent sees "דילג (הורה)" from his device, with בטל', v.did.some(x => /דילג \(הורה\)/.test(x) && !/ממתין/.test(x)) && await B.locator('#sPar .dllog .dl-p button', { hasText: 'בטל' }).count() === 1, JSON.stringify(v.did)); }
+  await until(B, () => [...document.querySelectorAll('#sPar .dllog .dl-p')].some(r => !/נשלח…/.test(r.textContent)), null, 6000);
+  { const v = await view(); ok('the parent sees "דילג (הורה)" from his device, with בטל', v.did.some(x => /דילג \(הורה\)/.test(x) && !/נשלח…/.test(x)) && await B.locator('#sPar .dllog .dl-p button', { hasText: 'בטל' }).count() === 1, JSON.stringify(v.did)); }
   await B.locator('#sPar .dllog .dl-p button', { hasText: 'בטל' }).click(); await sleep(300); await pull();
   { const k = await kidPlan(); ok('undo: the mission is back on his device, in its place', k.length === 4 && k[1] === ids.r, JSON.stringify(k)); }
   await until(B, () => !document.querySelector('#sPar .dllog .dl-p'), null, 6000);

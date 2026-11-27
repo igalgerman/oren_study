@@ -29,7 +29,8 @@ const cmds=()=>(((O.realSave.set||{}).pc)||[]).filter(c=>c&&c.d===today());
 const isDone=c=>!!(O.realSave.pcA||{})[c.i];
 const isUndone=i=>!!(O.realSave.pcU||{})[i];
 P.cmds=cmds;
-P.send=(k,a)=>{const st=SETS();const c={i:Date.now().toString(36)+Math.random().toString(36).slice(2,6),k,d:today(),t:Date.now()};if(a!=null)c.a=a;
+/* #617: a command is for Oren's play device (to) and never taken on the device that sent it (by) */
+P.send=(k,a)=>{const st=SETS();const c={i:Date.now().toString(36)+Math.random().toString(36).slice(2,6),k,d:today(),t:Date.now(),to:'kid',by:O.dev};if(a!=null)c.a=a;
   st.pc=[...(st.pc||[]).filter(x=>x&&x.d===today()),c].slice(-40);O.persist(1);if(O.famNow)O.famNow();apply();return c;};
 /* undo: the command is taken back (if Oren's device did not take it yet) and an 'undo' follows it (if it did meanwhile) */
 P.undo=i=>{const c=cmds().find(x=>x.i===i);if(c&&!isDone(c)){const st=SETS();st.pc=(st.pc||[]).filter(x=>x.i!==i);}P.send('undo',i);};
@@ -53,10 +54,11 @@ P.planOp=planOp;
 const FLAG='oren4-played';
 const playedHere=()=>{try{return localStorage.getItem(FLAG)===today();}catch(e){return false;}};
 /* this device is Oren's today once he chose his path or started a mission here (the parent's own phone never is) */
-P.mark=()=>{if(O.isParentPlay)return;try{localStorage.setItem(FLAG,today());}catch(e){}};
+P.mark=()=>{if(O.isParentPlay||(O.parBusy&&O.parBusy()))return;try{localStorage.setItem(FLAG,today());}catch(e){}};
 O.on('dlBegin',()=>{P.mark();if(O.isParentPlay)return;lastBegin=Date.now();setTimeout(apply,0);});
 let lastBegin=0;
-const here=()=>!O.isParentPlay&&playedHere();   /* the parent may use Oren's own device too: then a change applies at once */
+/* #617: Oren's play device (O.kidDev: not the parent panel's device, the latest heartbeat); without the family save, the one device */
+const here=c=>O.kidDev?O.kidDev(c):!O.isParentPlay&&playedHere();
 const minNow=()=>{const x=new Date();return x.getHours()*60+x.getMinutes();};
 const logP=(c,id,x)=>DL.add(today(),[minNow(),id,0,0,0,0,'p',Object.assign({pc:c.i,ts:Date.now()},x)]);
 const todayLog=()=>(((O.save.alog||{})[today()]||{}).e)||[];
@@ -75,7 +77,7 @@ function run(c){const s=O.save;
   const d=T.dailyEnsure();
   if(c.k==='reset'){/* the skipped missions come back, so their skip lines go */s.pcU=s.pcU||{};cmds().forEach(x=>{if((x.k==='drop'||x.k==='off')&&isDone(x))s.pcU[x.i]=Date.now();});}
   planOp(d,c,(id,x)=>logP(c,id,x));}
-function apply(){if(!here())return;const s=O.save;s.pcA=s.pcA||{};const L=cmds().filter(c=>!s.pcA[c.i]);if(!L.length)return;
+function apply(){if(!here())return;const s=O.save;s.pcA=s.pcA||{};const L=cmds().filter(c=>!s.pcA[c.i]&&here(c));if(!L.length)return;
   L.forEach(c=>{s.pcA[c.i]=Date.now();try{run(c);}catch(e){}});
   const ks=Object.keys(s.pcA);if(ks.length>80)ks.sort((a,b)=>s.pcA[a]-s.pcA[b]).slice(0,ks.length-80).forEach(k=>delete s.pcA[k]);
   O.persist();const hm=document.querySelector('#sHome');if(hm&&!hm.hidden&&!pend)O.showMap();}
@@ -112,13 +114,14 @@ function planView(){const d0=T.S().daily;if(!d0||d0.d!==today())return null;cons
 const stepTop=id=>/:/.test(id)?null:topOf(id);
 const stepLv=id=>{if(id==='math'){const lv=T.nextLevel&&T.nextLevel();return lv?plain(lv.u.name):'';}const l=lvOf(id);return l?'רמה '+l:'';};
 function pendRowHTML(c){const id=c.k==='off'?null:c.a;const nm=c.k==='now'?'מה שהוא משחק עכשיו':c.k==='off'?TOP[c.a]||c.a:T.stepName(id);
-  return `<span class="pn"><b class="dli">⏭</b> ${nm}</span><span class="pc">דילג (הורה)${KIND[c.k]?' · '+KIND[c.k]:''} · ממתין למכשיר של אורן</span>`;}
+  return `<span class="pn"><b class="dli">⏭</b> ${nm}</span><span class="pc">דילג (הורה)${KIND[c.k]?' · '+KIND[c.k]:''} · נשלח…</span>`;}
 /* what he did on day d: his log lines, a "בטל" on a skip until the next mission starts, and the skips still on their way */
 function didSec(box,d,sec){const rows=DL.rows(d);const pend=d===today()?cmds().filter(c=>!isDone(c)&&['now','drop','off','know'].includes(c.k)):[];
   if(!rows.length&&!pend.length){box.appendChild(h('div','pnote pdnone',d===today()?'עוד לא שיחק היום':'לא שיחק ביום הזה'));return;}
   const s=sec(box,'מה הוא עשה','');const L=h('div','dllog');L.dataset.d=d;s.appendChild(L);
   const lastReal=Math.max(-1,...rows.filter(e=>e[6]!=='p').map(e=>e[0]));
   rows.forEach(e=>{const w=h('div','',DL.rowHTML(e));const r=w.firstChild;L.appendChild(r);const x=e[7]||{};
+    if(d===today()&&e[6]==='p'&&x.pc&&x.k==='now')r.querySelector('.pc').insertAdjacentHTML('beforeend',' · <b class="pdheard">אורן שמע ✓</b>');   /* #617 */
     if(d===today()&&e[6]==='p'&&x.pc&&x.k!=='now'&&e[0]>=lastReal&&!cmds().some(c=>c.k==='undo'&&c.a===x.pc)){const b=h('button','pchip','בטל');b.onclick=()=>{P.undo(x.pc);P.refresh();};r.appendChild(b);}});
   pend.forEach(c=>{const r=h('div','prow dlrow dl-p pdpend',pendRowHTML(c));const b=h('button','pchip','בטל');b.onclick=()=>{P.undo(c.i);P.refresh();};r.appendChild(b);L.appendChild(r);});}
 /* the plan ahead: the missions still open today, in order; per row one ✕, a tap on the row shows the rest */

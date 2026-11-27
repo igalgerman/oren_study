@@ -917,7 +917,7 @@ function forgot(then){const ov=$('#ov');ov.innerHTML=`<div class="card plog"><h2
 window.TAL_parentGate=()=>login(()=>parentChoice());
 /* the password check alone (e.g. to end a meal pause early); the panel stays closed */
 T.login=then=>login(()=>{parentOn=false;then&&then();});
-O.on('screen',id=>{if(id!=='sPar'&&!O.isParentPlay&&$('#ov').hidden)parentOn=false;});
+O.on('screen',id=>{if(parentOn&&O.parMark)O.parMark();/* #617 */if(id!=='sPar'&&!O.isParentPlay&&$('#ov').hidden)parentOn=false;});
 /* ---------- permissions ---------- */
 let permP=null;
 function getPerm(){if(!permP)permP=(async()=>{for(let i=0;i<30&&!(window.claude&&window.claude.use);i++)await new Promise(r=>setTimeout(r,100));try{return window.claude&&window.claude.use?await window.claude.use('permissions'):null;}catch(e){return null;}})();return permP;}
@@ -1043,13 +1043,13 @@ function nowTop(el){const DL=window.DAYLOG,PD=window.PDAY;el.innerHTML=DL?DL.now
   const st=O.famStale&&O.famStale();if(st){const d=new Date(st);el.appendChild(h('div','dlnow pdstale',`אין עדכון מהמשחק מאז ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`));}
   const left=T.limLeft();if(!DL||!DL.playing()||(left&&left.min<=0))return;
   const row=el.querySelector('.dlnow:not(.pdstale)')||el;const pc=PD&&PD.cmds().find(c=>c.k==='now'&&!(O.realSave.pcA||{})[c.i]);
-  if(PD&&(O.realSave.now||{}).id){if(pc){const b=h('button','pchip','⏭ ממתין… בטל');b.onclick=()=>{PD.undo(pc.i);nowTop(el);};row.appendChild(b);}
+  if(PD&&(O.realSave.now||{}).id){if(pc){const b=h('button','pchip','⏭ נשלח… בטל');b.onclick=()=>{PD.undo(pc.i);nowTop(el);};row.appendChild(b);}
     else{const b=h('button','pchip pdskipnow','⏭ דלג עכשיו');b.onclick=()=>{PD.send('now');sfx.ok&&sfx.ok(1);nowTop(el);};row.appendChild(b);}}
   const b=h('button','pchip bad','⏹ לעצור עכשיו');b.onclick=()=>{stopNow();sfx.ok&&sfx.ok(1);nowTop(el);};row.appendChild(b);}
 /* while the parent panel is open: pull the family save every 30 s so the day view follows Oren live, also from another house;
    #612: and at once when the phone screen is opened again (a locked phone runs no timers) */
 let parLive=0;
-const parPull=()=>Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(window.PDAY&&curTab==='day'&&parentOn&&!$('#sPar').hidden)window.PDAY.refresh();});
+const parPull=()=>{O.parMark&&O.parMark();return Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(!parentOn||$('#sPar').hidden)return;if(window.PDAY&&curTab==='day')window.PDAY.refresh();if(window.HEALTH&&window.HEALTH.remRefresh)window.HEALTH.remRefresh();});};
 function parLiveOn(){if(parLive)return;parLive=setInterval(()=>{if(!parentOn||$('#sPar').hidden){clearInterval(parLive);parLive=0;return;}parPull();},window.__parPull||30000);}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&parentOn&&!$('#sPar').hidden){parPull();parLiveOn();}});
 const sec=(box,t,html)=>{const d=h('section','psec',`<h3>${t}</h3>`);if(html)d.insertAdjacentHTML('beforeend',html);box.appendChild(d);return d;};
@@ -1125,7 +1125,7 @@ function limNow(){const t=todayL(),l=LIM();if(t){if(t.none)return null;if(t.min!
    The giving device notes nothing (its count is u); it remembers its own grants on this device only. */
 const GAVE='oren4-gave',gave=()=>{try{return JSON.parse(localStorage.getItem(GAVE))||[];}catch(e){return [];}};
 function effMin(t){if(t.add==null||!t.at)return t.min|0;const s=T.S(),g=s.tg=s.tg||{},sp=$('#sPar');
-  if(g[t.at]==null&&!parentOn&&!O.isParentPlay&&(!sp||sp.hidden)&&!gave().includes(t.at)){g[t.at]=usedMin();const ks=Object.keys(g).sort();ks.slice(0,Math.max(0,ks.length-10)).forEach(k=>delete g[k]);O.persist();}
+  if(g[t.at]==null&&!parentOn&&!O.isParentPlay&&(!sp||sp.hidden)&&!gave().includes(t.at)&&(!O.kidDev||O.kidDev())){g[t.at]=usedMin();const ks=Object.keys(g).sort();ks.slice(0,Math.max(0,ks.length-10)).forEach(k=>delete g[k]);O.persist();}
   return (t.min|0)+Math.max(0,(g[t.at]!=null?g[t.at]|0:t.u|0)-(t.u|0));}
 /* a grant of v minutes counted from u played minutes */
 function giveT(u,v){const at=Date.now();try{localStorage.setItem(GAVE,JSON.stringify(gave().concat(at).slice(-10)));}catch(e){}return {d:O.today(),min:u+v,add:v,u,at};}
