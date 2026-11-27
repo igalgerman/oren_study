@@ -1547,22 +1547,26 @@ function googleSay(t,lang,again,part,slow,done){done=done||(()=>{});const en=lan
   const parts=ttsParts(en?plain(t):fullSpell(t)),last=part>=parts.length-1;
   const url='/api/tts?t='+encodeURIComponent(parts[part])+'&v='+(en?GEN.v:GVOICE)+'&r='+(en?(slow?GEN.slow:GEN.r):GRATE)+'&k='+GV.ver;
   const a=new Audio(url);GV.audio=a;let go=false;const t0=Date.now();
-  const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;track('au',{ev:'fail',src:'google',why,ms:Date.now()-t0});try{a.pause();}catch(e){}GV.audio=null;
+  const fall=why=>{clearTimeout(tm);duck(false);if(GV.audio!==a)return;if(sqOld(done))return drop();track('au',{ev:'fail',src:'google',why,ms:Date.now()-t0});try{a.pause();}catch(e){}GV.audio=null;
     if(!again&&why!=='no-audio'&&why!=='blocked'){logIssue('voice',why+' (retry)');track('retry',{what:'voice',why});googleSay(t,lang,1,part,slow,done);return;}browserSay(t,en?'en':'he',why,slow,done);if(why!=='blocked')logIssue('voice',why);};
   const tm=setTimeout(()=>{if(!go)fall('timeout');},GV.ms);/* the browser voice only after a retry and a long wait (#36) */
-  a.onplaying=()=>{if(!go){if(!part)voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});sayGuard(parts[part],done);}go=true;clearTimeout(tm);};a.onplay=()=>{duck(true);vo(1,a);};a.onended=()=>{if(GV.audio===a&&!last){googleSay(t,lang,0,part+1,slow,done);return;}duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a){GV.audio=null;vo(0,a);}done();};/* the next part; stopped (hush) or replaced: the rest is not spoken */
+  /* #399 a slow fetch that arrives after the screen changed (or after hush) is not played: the line belongs to an old screen */
+  const stale=()=>GV.audio!==a||sqOld(done);const drop=()=>{clearTimeout(tm);try{a.pause();}catch(e){}if(GV.audio===a)GV.audio=null;done();};
+  a.onplaying=()=>{if(stale())return drop();if(!go){if(!part)voiceLog('google','',t,lang);track('au',{ev:'play',src:'google',ms:Date.now()-t0});sayGuard(parts[part],done);}go=true;clearTimeout(tm);};a.onplay=()=>{if(stale())return drop();duck(true);vo(1,a);};a.onended=()=>{if(GV.audio===a&&!last){googleSay(t,lang,0,part+1,slow,done);return;}duck(false);track('au',{ev:'end',src:'google',ms:Date.now()-t0});if(GV.audio===a){GV.audio=null;vo(0,a);}done();};/* the next part; stopped (hush) or replaced: the rest is not spoken */
   a.onerror=()=>fall(a.error&&a.error.code===4?'no-audio':'audio-error');/* 4: not audio, e.g. the server answered 429/502 (not made yet) */
   a.play().catch(e=>fall(e&&e.name==='NotAllowedError'?'blocked':e&&e.name==='NotSupportedError'?'no-audio':'audio-error'));}
 /* #397 one speech queue for the whole game: say() puts the sentence in line; one sentence at a time, the next starts when the one
    before has ended (never two voices together, never cut in the middle). hush() empties the line and stops the voice (screen change,
    back, pause, a new question). The same sentence twice in a row is said once; at most 3 wait (older waiting ones are dropped). */
-const SQ={list:[],cur:null,max:3};window.__sq=SQ;
+const SQ={list:[],cur:null,max:3,scr:0};window.__sq=SQ;
+/* #399 each line carries the screen id (SQ.scr, +1 on every setScreen): a line of an older screen is dropped, never spoken on a newer one */
+const sqOld=done=>!!(done&&done.it&&done.it.scr!==SQ.scr);
 function say(t,lang,slow){if(!t||window.__fast)return;window.__autoSaid=Date.now();lang=lang||'he';slow=!!slow;
   const last=SQ.list.length?SQ.list[SQ.list.length-1]:SQ.cur;if(last&&last.t===t&&last.lang===lang&&last.slow===slow)return;
-  SQ.list.push({t,lang,slow});if(SQ.list.length>SQ.max)SQ.list.shift();if(!SQ.cur)sayNext();}
-function sayNext(){const it=SQ.cur=SQ.list.shift()||null;if(!it)return;let over=false;
-  const done=()=>{if(over)return;over=true;clearTimeout(it.wd);if(SQ.cur===it){SQ.cur=null;sayNext();}};it.done=done;
-  if(GV.pending){GV.wait.then(()=>{if(SQ.cur===it)sayOne(it,done);});return;}sayOne(it,done);}
+  SQ.list.push({t,lang,slow,scr:SQ.scr});if(SQ.list.length>SQ.max)SQ.list.shift();if(!SQ.cur)sayNext();}
+function sayNext(){while(SQ.list.length&&SQ.list[0].scr!==SQ.scr)SQ.list.shift();const it=SQ.cur=SQ.list.shift()||null;if(!it)return;let over=false;
+  const done=()=>{if(over)return;over=true;clearTimeout(it.wd);if(SQ.cur===it){SQ.cur=null;sayNext();}};it.done=done;done.it=it;
+  if(GV.pending){GV.wait.then(()=>{if(SQ.cur!==it)return;if(sqOld(done))return done();sayOne(it,done);});return;}sayOne(it,done);}
 /* a voice that never reports its end (a browser bug) must not hold the line for ever: move on after about twice its length */
 function sayGuard(t,done){const it=SQ.cur;if(!it||it.done!==done)return;clearTimeout(it.wd);it.wd=setTimeout(done,3000+150*String(t).length);}
 function sayOne(it,done){const {t,lang,slow}=it;
@@ -1656,7 +1660,7 @@ function addGems(n,fromEl){save.gems=(save.gems|0)+n;
 const app=$('#app');let backTo=null,curWorld=null;
 const wipeEl=$('#wipe');wipeEl.innerHTML='<i></i>'.repeat(70);
 function wipe(){if(window.__fast||RM())return;sfx.whoosh();wipeEl.hidden=false;[...wipeEl.children].forEach((c,i)=>{const r=i/10|0,col=i%10;c.style.animation='none';void c.offsetWidth;c.style.animation='';c.style.animationDelay=((r+col)*22)+'ms';});clearTimeout(wipe.t);wipe.t=setTimeout(()=>wipeEl.hidden=true,720);}
-function setScreen(id,w,back){hush();AUTO.scr=Date.now();if(window.HELP)HELP.stop();document.body.classList.toggle('inpar',id==='sPar');document.body.classList.remove('act');window.__noAuto=0;/* leaving a screen stops any reading aloud; the new screen may speak right after */['sStart','sHome','sMap','sWorld','sLearn','sPlay','sKing','sStudio','sTeach','sTable','sFinal','sTal','sPar'].forEach(s=>$('#'+s).hidden=s!==id);$('#hud').hidden=id==='sStart';$('#hudMid').innerHTML='';/* #8: no stale label from the last screen */$('#ov').hidden=true;{const dl=$('#dlg');if(!dl.hidden){dl.hidden=true;dl.innerHTML='';}}/* #356: a story dialog belongs to the screen it was opened on */
+function setScreen(id,w,back){SQ.scr++;hush();AUTO.scr=Date.now();if(window.HELP)HELP.stop();document.body.classList.toggle('inpar',id==='sPar');document.body.classList.remove('act');window.__noAuto=0;/* leaving a screen stops any reading aloud; the new screen may speak right after */['sStart','sHome','sMap','sWorld','sLearn','sPlay','sKing','sStudio','sTeach','sTable','sFinal','sTal','sPar'].forEach(s=>$('#'+s).hidden=s!==id);$('#hud').hidden=id==='sStart';$('#hudMid').innerHTML='';/* #8: no stale label from the last screen */$('#ov').hidden=true;{const dl=$('#dlg');if(!dl.hidden){dl.hidden=true;dl.innerHTML='';}}/* #356: a story dialog belongs to the screen it was opened on */
   if(app.dataset.w!==(w||'meadow')){app.dataset.w=w||'meadow';bgW=app.dataset.w;paintBG(performance.now());}setTheme(THEME_OF[app.dataset.w]||'map');
   pauseOff();if(!ACTIVE_S.includes(id)&&id!=='sStart'&&id!=='sPar')herePut(null);backTo=back||null;$('#btnBack').style.visibility=back?'visible':'hidden';$('#btnBack').innerHTML=back===showMap||(back&&back.home)?ICON.home:ICON.back;$('#screens').scrollTop=0;play=null;stopSpeed();updateGems();wipe();evScreen(id);emit('screen',id,back);pzSync();}
 $('#btnSay').innerHTML=ICON.say;$('#btnMusic').innerHTML=ICON.music;$('#icoStart').innerHTML=ICON.play;

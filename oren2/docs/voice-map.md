@@ -11,6 +11,8 @@ Every spoken sentence goes through `say()`. Since #397 (audit 2/11) `say()` only
 (`SQ`, `sayNext`, `sayOne` next to `say` in `index.html`): one sentence at a time, the next starts when the one before ends
 (never two voices together, never cut in the middle). `hush()` empties the queue and stops the voice. The same sentence twice
 in a row is said once; at most 3 wait. A voice that never reports its end is let go after about twice its length (`sayGuard`).
+Since #399 (audit 4/11) each queued line carries its screen id (`SQ.scr`, +1 on every `setScreen`): a line with an old id is
+dropped (when it would start, after the voice check, or when its slow Google audio arrives late), so it is never spoken on a newer screen.
 Only the queue (`sayOne`) starts a voice; `voice-stats` (#397 lines, `voicescan.js` `bypass`) fails on any other call.
 For each sentence the queue picks ONE voice, in this order:
 
