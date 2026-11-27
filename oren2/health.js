@@ -181,13 +181,16 @@ H.goDom=goDom;
 function chooser(cls,dm,head,sub,oneMore){const r=day();const el=lock('htopic '+cls,`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">🌙</span></div><h2>${head}</h2><div class="sub">${sub}</div>`);
   const row=h('div','hcards');cards(dm).forEach(d=>{const b=h('button','dcard',`<span class="dic"><span>${d.e}</span></span><b>${d.n}</b>`);b.style.setProperty('--dc',d.c);b.onclick=()=>goDom(d.id);row.appendChild(b);});el.firstChild.appendChild(row);
   if(!r.one[dm]){const o=h('button','hone','<span>עוֹד אֶחָד קָטָן</span>');o.onclick=()=>{r.one[dm]=1;O.persist();sfx.pop&&sfx.pop(1);close();oneMore&&oneMore();};el.firstChild.appendChild(o);}
-  sfx.star&&sfx.star(0);say(head+' '+sub+' '+T.choiceSay(el,'.hcards b,.hone span'));return el;}
+  sfx.star&&sfx.star(0);say(head+' '+sub+T.choiceSay(el,'.hcards b,.hone span'));return el;}
 function showTopic(dm){const r=day(),d=DOM(dm);if(!r.rest[dm]){r.rest[dm]=r.lt[dm]||dm;O.persist();}
-  const head=dm==='arcade'?'שִׂחַקְנוּ הַמּוֹן בָּאַרְקֵייד הַיּוֹם!':`עָשִׂינוּ הַמּוֹן ${d.w} הַיּוֹם!`;
-  return chooser('',dm,head,'נַמְשִׁיךְ מָחָר. מָה בָּא לְךָ עַכְשָׁו?',after);}
+  return chooser('',dm,topicHead(d),TOPSUB,after);}
+const TOPSUB='נַמְשִׁיךְ מָחָר. מָה בָּא לְךָ עַכְשָׁו?',RESTH='זֶה נָח עַד מָחָר 🌙',RESTSUB='מָחָר נַמְשִׁיךְ מֵאֵיפֹה שֶׁעָצַרְנוּ. מָה בָּא לְךָ עַכְשָׁו?';
+function topicHead(d){return d.id==='arcade'?'שִׂחַקְנוּ הַמּוֹן בָּאַרְקֵייד הַיּוֹם!':`עָשִׂינוּ הַמּוֹן ${d.w} הַיּוֹם!`;}
+/* #266 the chooser's fixed clips, for pregen */
+T.addChoices&&T.addChoices(DOMS.map(d=>d.n).concat(['עוֹד אֶחָד קָטָן']));T.addSay&&T.addSay(DOMS.map(d=>topicHead(d)+' '+TOPSUB).concat([RESTH+' '+RESTSUB]));
 H.showTopic=showTopic;
 /* a resting door was tapped: the friend gently suggests something else ("one more" opens it anyway, once a day) */
-function showRest(dm,el){return chooser('hrestc',dm,'זֶה נָח עַד מָחָר 🌙','מָחָר נַמְשִׁיךְ מֵאֵיפֹה שֶׁעָצַרְנוּ. מָה בָּא לְךָ עַכְשָׁו?',()=>{bypass=1;try{el.click();}finally{bypass=0;}});}
+function showRest(dm,el){return chooser('hrestc',dm,RESTH,RESTSUB,()=>{bypass=1;try{el.click();}finally{bypass=0;}});}
 H.showRest=showRest;
 
 /* ---------- resting doors: a small moon, and a gentle suggestion when tapped ---------- */

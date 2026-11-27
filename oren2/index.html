@@ -1465,7 +1465,7 @@ function voiceFlush(){clearTimeout(VS.tm);VS.tm=0;const days=VS.n,ev=VS.ev;if(!O
   try{if(navigator.sendBeacon&&navigator.sendBeacon(url,body))return;}catch(e){}try{fetch(url,{method:'POST',body,mode:'no-cors',keepalive:true}).catch(()=>{});}catch(e){}}
 window.__vs=VS;window.__voiceFlush=voiceFlush;
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')voiceFlush();});addEventListener('pagehide',voiceFlush);
-function browserSay(t,lang,why,slow){if(!('speechSynthesis' in window))return;voiceLog('browser',why||voiceWhy(),t,lang);speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(lang==='en'?plain(t):fullSpell(t));u.lang=lang==='en'?'en-US':'he-IL';const v=lang==='en'?enVoice:heVoice;if(v)u.voice=v;u.rate=lang==='en'?(slow?.65:.85):.92;u.pitch=1.05;u.onstart=()=>{duck(true);track('au',{ev:'play',src:'browser'});};u.onend=()=>{duck(false);track('au',{ev:'end',src:'browser'});};u.onerror=e=>{duck(false);track('au',{ev:'fail',src:'browser',why:String(e&&e.error||'')});};VS.own=u;speechSynthesis.speak(u);}
+function browserSay(t,lang,why,slow){if(!('speechSynthesis' in window))return;t=String(t).replace(/\u2063/g,' ');voiceLog('browser',why||voiceWhy(),t,lang);speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(lang==='en'?plain(t):fullSpell(t));u.lang=lang==='en'?'en-US':'he-IL';const v=lang==='en'?enVoice:heVoice;if(v)u.voice=v;u.rate=lang==='en'?(slow?.65:.85):.92;u.pitch=1.05;u.onstart=()=>{duck(true);track('au',{ev:'play',src:'browser'});};u.onend=()=>{duck(false);track('au',{ev:'end',src:'browser'});};u.onerror=e=>{duck(false);track('au',{ev:'fail',src:'browser',why:String(e&&e.error||'')});};VS.own=u;speechSynthesis.speak(u);}
 /* Google voice on the family website: one fixed voice on every device (chosen by the parents in blind tests),
    each sentence made in advance by cf/tools/pregen.js and cached by the server */
 const GVOICE='he-IL-Chirp3-HD-Kore',GRATE=0.9;
@@ -1481,7 +1481,9 @@ const GEN={v:'en-US-Chirp3-HD-Despina',r:0.85,slow:0.7};/* English: one fixed Go
 const useGoogle=lang=>(lang==='he'||lang==='en')&&GV.ok;
 /* #401: the server speaks at most 400 chars a request. A longer text is cut at sentence ends (else at a word) into parts
    of at most 400, spoken one after the other. pregen.js uses this same function, so every part's audio exists in advance. */
-function ttsParts(s,max=400){s=String(s).replace(/\s+/g,' ').trim();if(s.length<=max)return [s];
+/* #266 U+2063 (invisible separator) marks separate clips: an opening and then each choice, every one a fixed text that pregen makes in advance */
+function ttsParts(s,max=400){s=String(s);if(s.includes('\u2063'))return s.split('\u2063').map(x=>x.replace(/\s+/g,' ').trim()).filter(Boolean).flatMap(x=>ttsParts(x,max));
+  s=s.replace(/\s+/g,' ').trim();if(s.length<=max)return [s];
   const out=[];let cur='';const put=x=>{if(!cur)cur=x;else if(cur.length+1+x.length<=max)cur+=' '+x;else{out.push(cur);cur=x;}};
   for(const sen of s.match(/[^.!?]+(?:[.!?]+|$)/g).map(x=>x.trim()).filter(Boolean)){
     if(sen.length<=max){put(sen);continue;}
@@ -1502,7 +1504,7 @@ function say(t,lang,slow){if(!t||window.__fast)return;const stamp=window.__autoS
   if(GV.pending){const g=GV.wait;g.then(()=>{if(window.__autoSaid===stamp)say(t,lang,slow);});return;}
   if(!GV.ok&&GV.site&&Date.now()-GV.at>=GV.again)GV.wait=GV.check(1);/* the status failed earlier: check again in the background, the next sentences get Google back */
   if(useGoogle(lang)){googleSay(t,lang,0,0,slow);return;}
-  if(useClaude(lang)){try{speechSynthesis.cancel();}catch(e){}const txt=(lang==='he'?withNikud(t):plain(t)).slice(0,1900);
+  if(useClaude(lang)){try{speechSynthesis.cancel();}catch(e){}const t1=String(t).replace(/\u2063/g,' '),txt=(lang==='he'?withNikud(t1):plain(t1)).slice(0,1900);
     TTS.ns.speak(txt,{language:lang,rate:lang==='en'?(slow?.7:.9):.95}).then(()=>voiceLog('claude','',t,lang)).catch(e=>{const c=e&&(e.code||e.reason);if(c==='not_granted'||c==='unavailable'){TTS.blocked=true;return;}if(c==='stopped')return;browserSay(t,lang,'',slow);});return;}
   browserSay(t,lang,'',slow);}
 window.__tts=TTS;
@@ -3609,7 +3611,14 @@ const spoken=s=>window.__fullSpell?window.__fullSpell(String(s).replace(/\d/g,d=
 /* text for the voice: keep the nikud (the voice layer turns it into full spelling) */
 const spk=s=>String(s).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
 /* #266 on a screen where Oren chooses, the voice names the choices: "א, ב, אוֹ ג." (the labels as shown, with nikud) */
-const orList=a=>{a=[...new Set(a.map(x=>spk(x).replace(/[.!?…:]+$/,'')).filter(Boolean))];return !a.length?'':a.length<2?a[0]+'.':a.slice(0,-1).join(', ')+' אוֹ '+a[a.length-1]+'.';};
+/* The opening and every choice are separate clips (SEP, split by the core's ttsParts), each a fixed text,
+   so pregen makes them all in advance: T.choiceList() is every such clip (talents' own + what each module registers). */
+const SEP='\u2063',CHOICES=new Set(),lab=x=>spk(x).replace(/[.!?…:]+$/,'');
+const addChoices=a=>a.forEach(x=>{x=lab(x);if(x){CHOICES.add(x);CHOICES.add('אוֹ '+x);}});
+const addSay=a=>a.forEach(x=>{x=spk(x);if(x)CHOICES.add(x);});
+const orList=a=>{a=[...new Set(a.map(lab).filter(Boolean))];if(a.length>1)a[a.length-1]='אוֹ '+a[a.length-1];return a.length?SEP+a.join(SEP):'';};
+const choiceList=()=>{addChoices(BUILD.map(b=>b.name).concat(Object.values(ACT).map(a=>a.name),GROUPS.map(g=>g.n)));
+  addSay(GROUPS.map(g=>g.n+'.').concat(BUILD.map(b=>b.name+(b.blurb?'. '+b.blurb:''))));return [...CHOICES];};
 const choiceSay=(root,sel)=>root?orList([...root.querySelectorAll(sel)].filter(x=>!x.closest('[hidden]')).map(x=>x.textContent)):'';
 
 /* ---------- extra pixel sprites ---------- */
@@ -3727,10 +3736,10 @@ function openHub(){KEY=null;O.setScreen('sTal','valley',O.showMap);O.hud(`<div c
   GROUPS.forEach(g=>{const bs=visB(g);if(!bs.length)return;const anyNew=bs.some(b=>bState(b)==='on');
     const c=h('button','gdoor'+(anyNew?'':' lockb'),`<span class="gem2">${g.e}</span><b>${g.n}</b>`);
     c.style.setProperty('--gc',g.c);c.onclick=()=>{sfx.pop(3);const on=bs.filter(b=>bState(b)==='on');if(bs.length===1&&on.length===1)openBuilding(bs[0]);else openGroup(g);};g4.appendChild(c);});
-  s.appendChild(g4);O.sayNow='עִיר הַכִּשְׁרוֹנוֹת. מָה נְשַׂחֵק? '+choiceSay(g4,'.gdoor b');O.emit('hub',s);}
+  s.appendChild(g4);O.sayNow='עִיר הַכִּשְׁרוֹנוֹת. מָה נְשַׂחֵק?'+choiceSay(g4,'.gdoor b');O.emit('hub',s);}
 /* level 2: just the buildings of one door */
 function openGroup(g){KEY=null;O.setScreen('sTal','valley',openHub);O.hud('');const s=$('#sTal');s.innerHTML='';
-  s.appendChild(h('div','whead',`<span class="gd">${g.e}</span><h1>${g.n}</h1>`));const grid=h('div','hub gsub');visB(g).forEach(b=>grid.appendChild(bldCard(b)));s.appendChild(grid);O.sayNow=spk(g.n)+'. '+choiceSay(grid,'.nm');O.emit('group',s,g);}
+  s.appendChild(h('div','whead',`<span class="gd">${g.e}</span><h1>${g.n}</h1>`));const grid=h('div','hub gsub');visB(g).forEach(b=>grid.appendChild(bldCard(b)));s.appendChild(grid);O.sayNow=spk(g.n)+'.'+choiceSay(grid,'.nm');O.emit('group',s,g);}
 /* the activities a building shows: the ones already tried + new ones up to 4 (at least one new), so the rest open gradually; the parent's "all open" shows them all */
 function menuActs(b){const list=b.acts.filter(a=>(!a.avail||a.avail())&&!actOff(a.id)&&!a.noMenu);if(S().set.all)return list;
   const tried=a=>!!(S().tl[a.id]||{}).n;let k=Math.max(1,4-list.filter(tried).length);return list.filter(a=>tried(a)||k-->0);}
@@ -3739,7 +3748,7 @@ function openBuilding(b){KEY=null;const gg=groupOf(b);O.setScreen('sTal',b.bg,vi
   const grid=h('div','acts');
   menuActs(b).forEach(a=>{const st=actStars(a.id);const c=h('button','actc',`<span class="ai">${a.icon()}</span><span class="an">${a.name}</span><span class="st">${[0,1,2].map(k=>k<st?SPR.star:SPR.starOff).join('')}</span>`);
     c.onclick=()=>{sfx.pop(2);a.run(()=>openBuilding(b));};grid.appendChild(c);});
-  s.appendChild(grid);const say=spk(b.name+(b.blurb?'. '+b.blurb:''))+' '+choiceSay(grid,'.an');O.sayNow=say;if(b.blurb)setTimeout(()=>{if(grid.isConnected)O.say(say);},D(400));}
+  s.appendChild(grid);const say=spk(b.name+(b.blurb?'. '+b.blurb:''))+choiceSay(grid,'.an');O.sayNow=say;if(b.blurb)setTimeout(()=>{if(grid.isConnected)O.say(say);},D(400));}
 
 /* ---------- daily missions ---------- */
 /* #358 variety: all stories are one activity; the topic is the building (the journey and the math drills are 'math', together/home missions their kind) */
@@ -3780,7 +3789,7 @@ O.timeTick=timeTick;setInterval(timeTick,15000);
 const breakTime=()=>window.HEALTH&&window.HEALTH.breakNow();
 
 /* exports for other chunks */
-window.TAL={fits,vary,spk,orList,choiceSay,openGroup,GROUPS,bState,dailyPool,S,X,ALLSPR,FACES,quiz,result,record,finishAct,building,ACT,BUILD,openHub,openBuilding,hudT,progressBar,starsHTML,plainHe,L_,nb,dailyEnsure,setKey:f=>{KEY=f;},get key(){return KEY;},breakTime,artSVG:(...a)=>artSVG(...a)};
+window.TAL={fits,vary,spk,orList,choiceSay,choiceList,addChoices,addSay,openGroup,GROUPS,bState,dailyPool,S,X,ALLSPR,FACES,quiz,result,record,finishAct,building,ACT,BUILD,openHub,openBuilding,hudT,progressBar,starsHTML,plainHe,L_,nb,dailyEnsure,setKey:f=>{KEY=f;},get key(){return KEY;},breakTime,artSVG:(...a)=>artSVG(...a)};
 function artSVG(str){return window.TAL_artSVG?window.TAL_artSVG(str):'';}
 
 })();
@@ -4503,6 +4512,7 @@ window.TAL_locked=b=>{const ov=$('#ov');ov.hidden=false;ov.innerHTML=`<div class
 /* ---------- personal profile ---------- */
 const P_COL=[['#e63946','אָדֹם'],['#3a8fc4','כָּחֹל'],['#4fae4f','יָרֹק'],['#ffd166','צָהֹב'],['#8e6fd1','סָגֹל'],['#ff8a3d','כָּתֹם']];
 const P_LOVE=[['art','לְצַיֵּר','🎨'],['music','לְנַגֵּן','🎵'],['code','לִבְנוֹת רוֹבּוֹטִים','🤖'],['read','לִקְרֹא','📚'],['lab','לַחְקֹר','🧪'],['think','לִפְתֹּר חִידוֹת','🧩']];
+T.addChoices(P_COL.map(x=>x[1]).concat(P_LOVE.map(x=>x[1])));T.addSay(['מָה הַצֶּבַע הָאָהוּב עָלֶיךָ?','מָה הֲכִי כֵּיף לְךָ?']);
 const prof=()=>T.S().prof;
 /* one companion everywhere: the friend chosen in the studio. An older save chose an animal in the profile — that one wins once. */
 O.PETS.fish=O.PETS.fish||{n:'בּוּעִי',s:()=>T.X.fish};
@@ -4512,7 +4522,7 @@ function profile(back){const pr=Object.assign({},prof()||{});let step=0;O.setScr
     ['מָה הֲכִי כֵּיף לְךָ?','',P_LOVE.map(([k,n,e])=>[k,`<span class="ae">${e}</span><span>${n}</span>`]),'love']];
   const run=()=>{const [q,sub,opts,key]=Q[step];T.hudT('הַכַּרְטִיס שֶׁלִּי',T.progressBar(step,Q.length));s.innerHTML='';
     s.appendChild(h('div','whead',`<span class="gd bob">${O.AV()}</span><h1>${q}</h1>`));if(sub)s.appendChild(h('div','lsent',sub));
-    const g=h('div','profg');opts.forEach(([v,html])=>{const b=h('button','pfb'+(pr[key]===v?' on':''),html);b.onclick=()=>{pr[key]=v;sfx.pop(step+2);step++;if(step<Q.length)run();else done();};g.appendChild(b);});s.appendChild(g);O.sayNow=T.spk(q)+' '+T.choiceSay(g,'.pfb>span:last-child');};
+    const g=h('div','profg');opts.forEach(([v,html])=>{const b=h('button','pfb'+(pr[key]===v?' on':''),html);b.onclick=()=>{pr[key]=v;sfx.pop(step+2);step++;if(step<Q.length)run();else done();};g.appendChild(b);});s.appendChild(g);O.sayNow=T.spk(q)+T.choiceSay(g,'.pfb>span:last-child');};
   const done=()=>{const S0=T.S();S0.prof=pr;S0.profT=Date.now();O.persist();sfx.win();s.innerHTML='';T.hudT('הַכַּרְטִיס שֶׁלִּי');
     s.appendChild(h('div','pcard',`<div class="pcav">${O.AV()}<span class="pcpet bob">${T.friend()}</span></div><h2>נָעִים לְהַכִּיר, אוֹרֶן!</h2><div class="lsent">${O.PET().n} יְלַוֶּה אוֹתְךָ 😊</div>`));
     s.querySelector('.pcard').style.setProperty('--fc',pr.col);const row=h('div','btnrow');const b=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');b.onclick=back;row.appendChild(b);s.appendChild(row);O.say('נעים להכיר, אורן!');};
@@ -4530,7 +4540,8 @@ function suggestion(){const s=T.S(),pr=prof()||{};const on=BUILD.filter(b=>T.bSt
   return {t:'אַתָּה כְּבָר מַכִּיר אֶת כָּל הָעִיר! אֵיזֶה אַלּוּף!'};}
 O.on('hub',s=>{const pr=prof();if(!pr){setTimeout(()=>profile(T.openHub),0);return;}
   const fg=T.GROUPS.findIndex(g=>g.ids.includes(pr.love));s.querySelectorAll('.gdoor').forEach(c=>{if(c.querySelector('b').textContent===(T.GROUPS[fg]||{}).n){c.classList.add('fav');c.appendChild(h('span','favh','❤️'));}});
-  const sg=suggestion();if(sg.b)setTimeout(()=>toast(sg.t),D(300));O.sayNow=(sg.b?T.spk(sg.t):'עִיר הַכִּשְׁרוֹנוֹת. בְּחַר דֶּלֶת.')+' '+T.choiceSay(s,'.gdoor b');});
+  const sg=suggestion();if(sg.b)setTimeout(()=>toast(sg.t),D(300));O.sayNow=(sg.b?T.spk(sg.t):'עִיר הַכִּשְׁרוֹנוֹת. בְּחַר דֶּלֶת.')+T.choiceSay(s,'.gdoor b');});
+T.addSay(['עִיר הַכִּשְׁרוֹנוֹת. מָה נְשַׂחֵק?','עִיר הַכִּשְׁרוֹנוֹת. בְּחַר דֶּלֶת.']);
 O.on('group',s=>{const pr=prof();if(!pr)return;s.querySelectorAll('.bld').forEach(c=>{const b=BUILD.find(x=>x.name===c.querySelector('.nm').textContent);if(b&&b.id===pr.love){c.classList.add('fav');c.appendChild(h('span','favh','❤️'));}});});
 /* remember the last activity */
 Object.values(ACT).forEach(a=>{const r=a.run;a.run=back=>{const s=T.S();s.last={id:a.id,d:O.today()};return r(back);};});
@@ -4976,7 +4987,7 @@ function other(gr){O.setScreen('sTal','meadow',gr?()=>other():O.showMap);O.hud('
   else{if(nextLevel())add(`<span>${MATH.e}</span>`,MATH.n,MATH.c,()=>choose('math'));
     T.GROUPS.forEach(x=>{const bs=blds(x);if(bs.length)add(`<span>${x.e}</span>`,x.n,x.c,()=>bs.length>1?other(x):choose('b:'+bs[0].id));});
     add('<span>🤝</span>','מְשַׂחֲקִים עִם אַבָּא אוֹ אִמָּא','#e0794a',()=>choose('tog'));}
-  s.appendChild(g);if(!gr)s.appendChild(doorsEl());O.sayNow=T.spk(say)+' '+T.choiceSay(s,'.dcard b,.door b');O.emit('other',s);}
+  s.appendChild(g);if(!gr)s.appendChild(doorsEl());O.sayNow=T.spk(say)+T.choiceSay(s,'.dcard b,.door b');O.emit('other',s);}
 /* ---------- path steps ---------- */
 function special(i,id){const [kind,k]=id.split(':');const isT=kind==='tog';const a=isT?TOG.find(x=>x.k===k):RW[k];
   const fin=()=>{const d=T.dailyEnsure();const j=i>=0&&d.t[i]===id?i:d.t.findIndex((x,n)=>x===id&&!d.done[n]);if(j>=0)d.done[j]=1;O.persist();};
@@ -5002,6 +5013,9 @@ const QUESTS=[
  {e:'🗝️',t:'הַמְּעָרָה הַסּוֹדִית',k:'🔑',a:'חָבֵר נִתְקַע בַּמְּעָרָה. כָּל מְשִׂימָה פּוֹתַחַת מַנְעוּל אֶחָד!',z:'פָּתַחְתָּ אֶת כָּל הַמַּנְעוּלִים, וְהֶחָבֵר יָצָא!'},
  {e:'🚀',t:'הַחֲלָלִית',k:'⭐',a:'הַחֲלָלִית צְרִיכָה כּוֹכָבִים כְּדֵי לָטוּס. כָּל מְשִׂימָה נוֹתֶנֶת כּוֹכָב!',z:'הַחֲלָלִית מְלֵאָה כּוֹכָבִים — וְהִיא טָסָה לַיָּרֵחַ!'}];
 const quest=()=>QUESTS[dayNum()%QUESTS.length];
+/* #266 the fixed clips of home and "something else" (for pregen) */
+T.addChoices([MATH.n,'מַסָּע','עִיר','מַמְלָכָה','אַרְקֵייד','מְשַׂחֲקִים עִם אַבָּא אוֹ אִמָּא','לְהַמְשִׁיךְ מֵאֵיפֹה שֶׁעָצַרְתִּי','מַשֶּׁהוּ אַחֵר','עוֹד פַּעַם','הַמְשֵׁךְ','סוֹף הַסִּפּוּר']);
+T.addSay(['בֹּקֶר טוֹב','צָהֳרַיִם טוֹבִים','עֶרֶב טוֹב'].map(x=>x+', אוֹרֶן! בְּמָה נְשַׂחֵק?').concat(QUESTS.map(q=>q.e+' '+q.a),['שָׁלוֹם אוֹרֶן! מָה בָּא לְךָ הַיּוֹם?','כָּל הַכָּבוֹד! עַכְשָׁו זְמַן חוֹפְשִׁי 🎈','סִיַּמְתָּ אֶת הַשְּׁבִיל! בּוֹא נִרְאֶה אֵיךְ נִגְמַר הַסִּפּוּר.','מָה בָּא לְךָ? בְּחַר מָה שֶׁתִּרְצֶה.']));
 const stepInfo=id=>{if(id==='math')return {n:'שָׁלָב בְּחֶשְׁבּוֹן',ic:SPR.tree,c:'#d99a2b'};const [k,v]=String(id).split(':');
   if(k==='tog'){const a=TOG.find(x=>x.k===v)||{n:''};return {n:'🤝 '+a.n,ic:'<span>🤝</span>',c:'#e0794a'};}
   if(k==='rw')return {n:'מְשִׂימָה בַּבַּיִת',ic:`<span>${(RW[v]||{}).e||'🏠'}</span>`,c:'#2a9d8f'};
@@ -5053,7 +5067,7 @@ function home(){const S0=T.S();
   /* the round doors live inside "something else"; on home only when there is no daily path */
   if(!d)s.appendChild(doorsEl());
   if(window.AGAIN)window.AGAIN.button(s);
-  O.sayNow=say?T.spk(say)+' '+T.choiceSay(s,'.dcard b,.dmore span,.door b,.bigbtn span,.againbtn b'):'';
+  O.sayNow=say?T.spk(say)+T.choiceSay(s,'.dcard b,.dmore span,.door b,.bigbtn span,.againbtn b'):'';
   const pb=h('button','parbtn','🔒');pb.title='כניסת הורים';pb.setAttribute('aria-label','כניסת הורים');pb.onclick=()=>window.TAL_parentGate();s.appendChild(pb);
   T.checkMsg&&T.checkMsg();}
 function doorsEl(){const doors=h('div','doors2');
@@ -5118,6 +5132,7 @@ const GAMES=[
  {id:'mole',n:'הַכֵּה בַּחֲפַרְפֶּרֶת',e:'🔨',c:'#ffd23f',d:'מְהִירוּת וְחֶשְׁבּוֹן'},
  {id:'frog',n:'קְפִיצַת צְפַרְדֵּעַ',e:'🐸',c:'#b48cff',d:'קַו הַמִּסְפָּרִים'}];
 const G=id=>GAMES.find(g=>g.id===id);
+T.addChoices&&T.addChoices(GAMES.map(g=>g.n));T.addSay&&T.addSay(['הָאַרְקֵייד. בְּחַר מִשְׂחָק.']);   /* #266 for pregen */
 /* ---------- the hall ---------- */
 function openArcade(back){if(back)back0=back;back0=back0||O.showMap;T.setKey(null);O.setScreen('sTal','final',back0);O.musicStart&&0;
   const a=A();T.hudT('הָאַרְקֵייד');
@@ -5126,7 +5141,7 @@ function openArcade(back){if(back)back0=back;back0=back0||O.showMap;T.setKey(nul
   const g=h('div','cabs');
   GAMES.forEach((gm,i)=>{const best=a.best[gm.id]|0;const played=!!(T.S().tl['arc-'+gm.id]||{}).n;const tag=best?`<span class="hs">🏆 שִׂיא: ${best}</span>`:played?'':'<span class="hs new">✨ חָדָשׁ</span>';const c=h('button','cab',`<span class="scr"><span class="ce">${gm.e}</span></span><b>${gm.n}</b><small>${gm.d}</small>${tag}`);
     c.style.setProperty('--nc',gm.c);c.style.animationDelay=(i*.08)+'s';c.onclick=()=>{sfx.pop(3);start(gm.id);};g.appendChild(c);});
-  hall.appendChild(g);O.sayNow='הָאַרְקֵייד. בְּחַר מִשְׂחָק: '+T.choiceSay(g,'.cab b');
+  hall.appendChild(g);O.sayNow='הָאַרְקֵייד. בְּחַר מִשְׂחָק.'+T.choiceSay(g,'.cab b');
   s.appendChild(hall);later(()=>{const c=g.querySelector('.cab');if(c&&T.intro)T.intro('i-arc',c,'זֶה הָאַרְקֵייד! מִשְׂחָקִים קְצָרִים וּמְהִירִים, סְתָם בִּשְׁבִיל הַכֵּיף. בְּחַר אֶחָד!');});}
 const later=f=>setTimeout(f,D(700));
 /* ---------- shared game frame ---------- */
@@ -5536,13 +5551,16 @@ H.goDom=goDom;
 function chooser(cls,dm,head,sub,oneMore){const r=day();const el=lock('htopic '+cls,`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">🌙</span></div><h2>${head}</h2><div class="sub">${sub}</div>`);
   const row=h('div','hcards');cards(dm).forEach(d=>{const b=h('button','dcard',`<span class="dic"><span>${d.e}</span></span><b>${d.n}</b>`);b.style.setProperty('--dc',d.c);b.onclick=()=>goDom(d.id);row.appendChild(b);});el.firstChild.appendChild(row);
   if(!r.one[dm]){const o=h('button','hone','<span>עוֹד אֶחָד קָטָן</span>');o.onclick=()=>{r.one[dm]=1;O.persist();sfx.pop&&sfx.pop(1);close();oneMore&&oneMore();};el.firstChild.appendChild(o);}
-  sfx.star&&sfx.star(0);say(head+' '+sub+' '+T.choiceSay(el,'.hcards b,.hone span'));return el;}
+  sfx.star&&sfx.star(0);say(head+' '+sub+T.choiceSay(el,'.hcards b,.hone span'));return el;}
 function showTopic(dm){const r=day(),d=DOM(dm);if(!r.rest[dm]){r.rest[dm]=r.lt[dm]||dm;O.persist();}
-  const head=dm==='arcade'?'שִׂחַקְנוּ הַמּוֹן בָּאַרְקֵייד הַיּוֹם!':`עָשִׂינוּ הַמּוֹן ${d.w} הַיּוֹם!`;
-  return chooser('',dm,head,'נַמְשִׁיךְ מָחָר. מָה בָּא לְךָ עַכְשָׁו?',after);}
+  return chooser('',dm,topicHead(d),TOPSUB,after);}
+const TOPSUB='נַמְשִׁיךְ מָחָר. מָה בָּא לְךָ עַכְשָׁו?',RESTH='זֶה נָח עַד מָחָר 🌙',RESTSUB='מָחָר נַמְשִׁיךְ מֵאֵיפֹה שֶׁעָצַרְנוּ. מָה בָּא לְךָ עַכְשָׁו?';
+function topicHead(d){return d.id==='arcade'?'שִׂחַקְנוּ הַמּוֹן בָּאַרְקֵייד הַיּוֹם!':`עָשִׂינוּ הַמּוֹן ${d.w} הַיּוֹם!`;}
+/* #266 the chooser's fixed clips, for pregen */
+T.addChoices&&T.addChoices(DOMS.map(d=>d.n).concat(['עוֹד אֶחָד קָטָן']));T.addSay&&T.addSay(DOMS.map(d=>topicHead(d)+' '+TOPSUB).concat([RESTH+' '+RESTSUB]));
 H.showTopic=showTopic;
 /* a resting door was tapped: the friend gently suggests something else ("one more" opens it anyway, once a day) */
-function showRest(dm,el){return chooser('hrestc',dm,'זֶה נָח עַד מָחָר 🌙','מָחָר נַמְשִׁיךְ מֵאֵיפֹה שֶׁעָצַרְנוּ. מָה בָּא לְךָ עַכְשָׁו?',()=>{bypass=1;try{el.click();}finally{bypass=0;}});}
+function showRest(dm,el){return chooser('hrestc',dm,RESTH,RESTSUB,()=>{bypass=1;try{el.click();}finally{bypass=0;}});}
 H.showRest=showRest;
 
 /* ---------- resting doors: a small moon, and a gentle suggestion when tapped ---------- */
@@ -5687,6 +5705,7 @@ FR.free=()=>{const d=daily();if(!d)return;d.free=1;O.persist();T.home();};
 FR.homeSay=d=>{if(!d.free){if(d.dsaid)return '';d.dsaid=1;O.persist();return DONE;}d.fv=(d.fv|0)+1;if(d.fv>=2&&!d.rem){d.rem=1;O.persist();return FREE+' '+MORE;}O.persist();return FREE;};
 FR.doneEl=()=>{const row=h('div','btnrow frdone');const a=h('button','bigbtn huge','➕ <span>'+BONUS+'</span>');a.onclick=()=>{O.sfx.pop(3);FR.bonus();};
   const b=h('button','bigbtn huge blue','🎈 <span>'+FREEB+'</span>');b.onclick=()=>{O.sfx.pop(3);FR.free();};row.append(a,b);return row;};
+T.addChoices&&T.addChoices([BONUS,FREEB]);T.addSay&&T.addSay([DONE,FREE,FREE+' '+MORE]);
 FR.badgeEl=()=>h('div','frbadge','✓ '+BADGE);
 FR.inStep=()=>!!cur;FR.lead=t=>{lead=t;};
 
@@ -10790,18 +10809,25 @@ function pathLeft(){try{const d=T.dailyEnsure();if(!d||!d.t||!d.t.length)return 
 TP.open=()=>{sfx.pop(2);const c=card(`<div class="tpf bob">${friend()}</div>`);const row=h('div','tpch');
   const a=h('button','bigbtn','<span>מָה אֶפְשָׁר לַעֲשׂוֹת פֹּה?</span>');a.onclick=()=>{close();if(T.tour)T.tour();else if(window.TAL_tour)window.TAL_tour();};
   const b=h('button','bigbtn blue','<span>אֲנִי רוֹצֶה לְתַרְגֵּל…</span>');b.onclick=()=>{sfx.pop(2);nudge();};
-  row.append(a,b);c.appendChild(row);c.appendChild(closeBtn());say(T.choiceSay(row,'span'));};
+  row.append(a,b);c.appendChild(row);c.appendChild(closeBtn());say(T.choiceSay(row,'span').slice(1));};
 const closeBtn=()=>{const x=h('button','tpx','✕');x.setAttribute('aria-label','סגור');x.onclick=()=>{sfx.pop(1);close();};return x;};
+/* how many steps are left, in words (no digits in speech, #122) */
+const NUMW=['','אֶחָד','שְׁנֵי','שְׁלוֹשָׁה','אַרְבָּעָה','חֲמִשָּׁה','שִׁשָּׁה','שִׁבְעָה','שְׁמוֹנָה','תִּשְׁעָה','עֲשָׂרָה'];
+const nudgeT=left=>left===1?'אוּלַי נְסַיֵּם קֹדֶם אֶת הַמַּסְלוּל? נִשְׁאַר רַק עוֹד צַעַד!':left<NUMW.length?`אוּלַי נְסַיֵּם קֹדֶם אֶת הַמַּסְלוּל? נִשְׁאֲרוּ עוֹד ${NUMW[left]} צְעָדִים!`:'אוּלַי נְסַיֵּם קֹדֶם אֶת הַמַּסְלוּל? נִשְׁאֲרוּ עוֹד הַרְבֵּה צְעָדִים!';
+const GRIDH='מָה בָּא לְךָ לְתַרְגֵּל?';
+/* #266 the fixed clips of these screens, for pregen */
+T.addChoices&&T.addChoices(TOPICS.map(t=>t.n).concat(['מָה אֶפְשָׁר לַעֲשׂוֹת פֹּה?','אֲנִי רוֹצֶה לְתַרְגֵּל…','בּוֹא נַמְשִׁיךְ','בְּכָל זֹאת לְתַרְגֵּל']));
+T.addSay&&T.addSay([GRIDH,...NUMW.map((x,i)=>nudgeT(i+1)),nudgeT(99)]);
 function nudge(){const left=pathLeft();if(!left)return grid();
-  const t=left===1?'אוּלַי נְסַיֵּם קֹדֶם אֶת הַמַּסְלוּל? נִשְׁאַר רַק עוֹד צַעַד!':`אוּלַי נְסַיֵּם קֹדֶם אֶת הַמַּסְלוּל? נִשְׁאֲרוּ עוֹד ${left} צְעָדִים!`;
+  const t=nudgeT(left);
   const c=card(`<div class="tpf bob">${friend()}</div><h2>${t}</h2>`);
   const go=h('button','bigbtn huge','<span>בּוֹא נַמְשִׁיךְ</span>');go.onclick=()=>{close();if(T.nextStep)T.nextStep();else O.showMap();};
   const anyway=h('button','tpany','בְּכָל זֹאת לְתַרְגֵּל');anyway.onclick=()=>{sfx.pop(1);grid();};
-  const r=h('div','btnrow');r.appendChild(go);c.appendChild(r);c.appendChild(anyway);c.appendChild(closeBtn());say(t+' '+T.choiceSay(c,'.bigbtn span,.tpany'));}
-function grid(){const ts=TP.available();const head='מָה בָּא לְךָ לְתַרְגֵּל?';const c=card(`<h2>${head}</h2>`);
+  const r=h('div','btnrow');r.appendChild(go);c.appendChild(r);c.appendChild(anyway);c.appendChild(closeBtn());say(t+T.choiceSay(c,'.bigbtn span,.tpany'));}
+function grid(){const ts=TP.available();const head=GRIDH;const c=card(`<h2>${head}</h2>`);
   const g=h('div','tpg');ts.forEach(t=>{const b=h('button','tpt',`<span class="tpe">${t.e}</span><b>${t.n}</b>`);b.dataset.id=t.id;
     b.onclick=()=>{sfx.pop(3);say(t.n);close();TP.practice(t.id);};g.appendChild(b);});
-  c.appendChild(g);c.appendChild(closeBtn());say(head+' '+T.choiceSay(g,'b'));}
+  c.appendChild(g);c.appendChild(closeBtn());say(head+T.choiceSay(g,'b'));}
 TP.grid=grid;TP.nudge=nudge;
 })();
 

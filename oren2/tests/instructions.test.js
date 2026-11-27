@@ -39,6 +39,8 @@ const {chromium}=require('playwright');
   ['my card (profile)',()=>window.TAL.profile(()=>window.OREN.showMap()),'#sTal','.pfb>span:last-child'],
   ['friend: two choices',()=>window.TOPIC.open(),'#ov','.tpch span'],
   ['friend: practice topics',()=>window.TOPIC.grid(),'#ov','.tpt b'],
+  ['friend: finish the path first?',()=>{const T=window.TAL;T.S().set.noDaily=0;const d=T.dailyEnsure();d.t=['math','math','math'];d.done=[1,0,0];d.ch='math';window.TOPIC.nudge();},'#ov','.bigbtn span,.tpany'],
+  ['home: day done, free time (doors)',()=>{const T=window.TAL;const d=T.dailyEnsure();d.t=['math'];d.done=[1];d.ch='math';d.claimed=1;d.free=1;window.OREN.showMap();},'#sHome','.door b,.againbtn b'],
   ['rest: something else now',()=>window.HEALTH.showTopic('read'),'.hlock','.hcards b,.hone span'],
  ];
  for(const [name,go,root,sel] of CH){
@@ -46,8 +48,11 @@ const {chromium}=require('playwright');
    await p.evaluate(go);await L.sleep(700);
    const labels=await p.evaluate(([root,sel])=>[...document.querySelectorAll(root+' :is('+sel+')')].filter(x=>x.offsetParent).map(x=>window.TAL.spk(x.textContent).replace(/[.!?…:]+$/,'')).filter(Boolean),[root,sel]);
    const t=await spoken();const lack=labels.filter(x=>!t.includes(x));
+   // the opening and each choice are separate fixed clips, all in TAL.choiceList() (what pregen makes in advance)
+   const notPre=await p.evaluate(()=>{const T=window.TAL,L=new Set(T.choiceList());return [window.OREN.sayNow,...window.__said].flatMap(x=>String(x||'').split('\u2063')).map(x=>T.spk(x)).filter(x=>x&&!L.has(x));});
    if(!labels.length){lines.push(`FAIL choices ${name}: no choices found on screen`);miss.push(name);}
    else if(lack.length){lines.push(`FAIL choices ${name}: not spoken: ${lack.join(' | ')} (said: ${t.slice(0,120)})`);miss.push(name);}
+   else if(notPre.length){lines.push(`FAIL choices ${name}: clips not in TAL.choiceList() (no pregen): ${notPre.join(' | ')}`);miss.push(name);}
    else if(/\d/.test(t.replace(/<[^>]*>/g,''))){lines.push(`FAIL choices ${name}: digits in the spoken line (#122): ${t}`);miss.push(name);}
    else lines.push(`PASS choices ${name}: ${labels.length} named`);
  }

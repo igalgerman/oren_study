@@ -10,6 +10,7 @@ const GAMES=[
  {id:'mole',n:'הַכֵּה בַּחֲפַרְפֶּרֶת',e:'🔨',c:'#ffd23f',d:'מְהִירוּת וְחֶשְׁבּוֹן'},
  {id:'frog',n:'קְפִיצַת צְפַרְדֵּעַ',e:'🐸',c:'#b48cff',d:'קַו הַמִּסְפָּרִים'}];
 const G=id=>GAMES.find(g=>g.id===id);
+T.addChoices&&T.addChoices(GAMES.map(g=>g.n));T.addSay&&T.addSay(['הָאַרְקֵייד. בְּחַר מִשְׂחָק.']);   /* #266 for pregen */
 /* ---------- the hall ---------- */
 function openArcade(back){if(back)back0=back;back0=back0||O.showMap;T.setKey(null);O.setScreen('sTal','final',back0);O.musicStart&&0;
   const a=A();T.hudT('הָאַרְקֵייד');
@@ -18,7 +19,7 @@ function openArcade(back){if(back)back0=back;back0=back0||O.showMap;T.setKey(nul
   const g=h('div','cabs');
   GAMES.forEach((gm,i)=>{const best=a.best[gm.id]|0;const played=!!(T.S().tl['arc-'+gm.id]||{}).n;const tag=best?`<span class="hs">🏆 שִׂיא: ${best}</span>`:played?'':'<span class="hs new">✨ חָדָשׁ</span>';const c=h('button','cab',`<span class="scr"><span class="ce">${gm.e}</span></span><b>${gm.n}</b><small>${gm.d}</small>${tag}`);
     c.style.setProperty('--nc',gm.c);c.style.animationDelay=(i*.08)+'s';c.onclick=()=>{sfx.pop(3);start(gm.id);};g.appendChild(c);});
-  hall.appendChild(g);O.sayNow='הָאַרְקֵייד. בְּחַר מִשְׂחָק: '+T.choiceSay(g,'.cab b');
+  hall.appendChild(g);O.sayNow='הָאַרְקֵייד. בְּחַר מִשְׂחָק.'+T.choiceSay(g,'.cab b');
   s.appendChild(hall);later(()=>{const c=g.querySelector('.cab');if(c&&T.intro)T.intro('i-arc',c,'זֶה הָאַרְקֵייד! מִשְׂחָקִים קְצָרִים וּמְהִירִים, סְתָם בִּשְׁבִיל הַכֵּיף. בְּחַר אֶחָד!');});}
 const later=f=>setTimeout(f,D(700));
 /* ---------- shared game frame ---------- */
