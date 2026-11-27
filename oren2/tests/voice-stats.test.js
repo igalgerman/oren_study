@@ -13,21 +13,27 @@ const HTML = fs.readFileSync(L.PAGE, 'utf8');
 const INIT = () => {
   try { localStorage.clear(); } catch (e) {}
   window.__vsTest = true;
-  const fake = { log: [], speaking: false, speak(u) { this.log.push(u.text); }, cancel() {}, getVoices() { return []; }, onvoiceschanged: null, addEventListener() {} };
+  // #397 __aev: every voice start / natural end / cut (stopped while speaking), browser voice and Google audio alike
+  window.__aev = [];
+  const fake = { log: [], speaking: false, cur: null, getVoices() { return []; }, onvoiceschanged: null, addEventListener() {},
+    speak(u) { this.log.push(u.text); this.cur = u; window.__aev.push(['start', u.text]);
+      setTimeout(() => { if (this.cur !== u) return; this.cur = null; window.__aev.push(['end', u.text]); u.onend && u.onend(); }, 40); },
+    cancel() { const u = this.cur; if (!u) return; this.cur = null; window.__aev.push(['cut', u.text]); u.onerror && u.onerror({ error: 'interrupted' }); } };
   Object.defineProperty(window, 'speechSynthesis', { value: fake, configurable: true });
   window.__played = [];
   window.Audio = function (url) {
     const a = this; a.src = url; a.paused = true; a.ended = false; a.error = null;
     const t = decodeURIComponent((/[?&]t=([^&]*)/.exec(url) || [])[1] || '');
-    a.pause = () => { a.paused = true; };
+    a.pause = () => { if (!a.paused && !a.ended) window.__aev.push(['cut', t]); a.paused = true; a.stop = true; };
     a.play = () => {
       if (/BLOCK/.test(t)) return Promise.reject(Object.assign(new Error('no gesture'), { name: 'NotAllowedError' }));
       setTimeout(() => {
+        if (a.stop) return;
         if (/MISSING/.test(t)) { a.error = { code: 4 }; a.onerror && a.onerror(); return; }
         if (/NET/.test(t)) { a.error = { code: 2 }; a.onerror && a.onerror(); return; }
         if (/SLOW/.test(t)) return;
-        a.paused = false; window.__played.push(t); a.onplay && a.onplay(); a.onplaying && a.onplaying();
-        setTimeout(() => { a.paused = true; a.ended = true; a.onended && a.onended(); }, 40);
+        a.paused = false; window.__played.push(t); window.__aev.push(['start', t]); a.onplay && a.onplay(); a.onplaying && a.onplaying();
+        setTimeout(() => { if (a.paused) return; a.paused = true; a.ended = true; window.__aev.push(['end', t]); a.onended && a.onended(); }, 40);
       }, 20);
       return Promise.resolve();
     };
@@ -121,6 +127,21 @@ const INIT = () => {
     ok('artifact host: the batch goes to the family site', posts.length === 1 && posts[0].origin === 'https://oren-game.pages.dev', JSON.stringify(posts.map(x => x.origin)));
     await ctx.close(); }
 
+  // #397 one speech queue: two say() calls in a row play one after the other (no overlap, the first is not cut), on the
+  // Google voice (family site) and on the browser voice (artifact host without the Claude voice); hush() empties the queue
+  for (const [name, host] of [['Google', 'https://oren.test'], ['browser', 'https://abc.claudeusercontent.com']]) {
+    const { ctx, p, errs } = await open(host);
+    if (name === 'Google') await p.waitForFunction(() => window.__gv && window.__gv.ok, null, { timeout: 8000 }); else await sleep(500);
+    const two = async (a, b, then) => { await p.evaluate(([a, b, then]) => { window.__fast = false; window.__noAuto = true; window.OREN.hush(); window.__aev.length = 0;
+      window.OREN.say(a); window.OREN.say(b); if (then) window.OREN.hush(); }, [a, b, then]); await sleep(700); return p.evaluate(() => window.__aev.slice()); };
+    const ev = (await two('אֶחָד', 'שְׁתַּיִם')).map(e => [e[0], e[1].replace(/[\u0591-\u05C7]/g, '')]);
+    ok('#397 ' + name + ': two say() in a row play one after the other, none cut, never two at once',
+      ev.map(e => e[0] + ' ' + e[1]).join() === 'start אחד,end אחד,start שתים,end שתים' || ev.map(e => e[0] + ' ' + e[1]).join() === 'start אחד,end אחד,start שתיים,end שתיים', JSON.stringify(ev));
+    const ev2 = (await two('שָׁלוֹשׁ', 'אַרְבַּע', true)).map(e => [e[0], e[1].replace(/[\u0591-\u05C7]/g, '')]);
+    ok('#397 ' + name + ': hush() stops the voice and empties the queue (nothing waits to be said)', !ev2.some(e => e[1] === 'ארבע') && !ev2.some(e => e[0] === 'end'), JSON.stringify(ev2));
+    ok('#397 ' + name + ': no page errors', !errs.length, errs.join('|'));
+    await ctx.close(); }
+
   // 6. source check: no screen makes its own browser utterance (only browserSay does), so one screen never mixes two voices
   { const src = fs.readFileSync(require('path').join(L.ROOT, 'index.html'), 'utf8');
     const n = (src.match(/new SpeechSynthesisUtterance/g) || []).length;
@@ -164,6 +185,11 @@ const INIT = () => {
   ok('#396 checker: a planted call in the core of index.html fails', core2.hits.length === 1, core2.hits.join(' | '));
   const fine = VS.scan({ 'y.js': 'speechSynthesis.cancel();speechSynthesis.getVoices();const s=speechSynthesis.speaking;const o=ss.speak.bind(ss);TTS.ns.speak(t,{});' });
   ok('#396 checker: cancel / getVoices / speaking / .speak.bind / the Claude voice are allowed', fine.hits.length === 0, fine.hits.join(' | '));
+  // #397 all speech goes through the queue: nothing outside it starts a voice (Google audio, browser voice, Claude voice)
+  const by = VS.bypass(src);
+  ok('#397 every voice is started by the speech queue only (no screen calls googleSay / browserSay / TTS.ns.speak)', by.length === 0, by.join(' | '));
+  const by2 = VS.bypass({ ...src, 'z.js': 'O.say(t);\nbrowserSay(t,"he");' });
+  ok('#397 checker: a planted call that skips the queue fails', by2.length === 1 && by2[0].startsWith('z.js:2'), by2.join(' | '));
   // voice-map.md names every file that speaks or stops the voice
   const map = fs.readFileSync(require('path').join(__dirname, '..', 'docs', 'voice-map.md'), 'utf8');
   const speakers = Object.entries(src).filter(([f, t]) => f !== 'gaps-math.js' && /speechSynthesis|new Audio\(|\/api\/tts|\bsay\(|\.say\(|sayNow/.test(f === 'index.html' ? VS.core(t) : t)).map(([f]) => f);
