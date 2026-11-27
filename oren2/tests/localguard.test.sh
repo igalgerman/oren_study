@@ -16,4 +16,8 @@ grep -qF "$MSG" <<<"$out" || fail "lib.js did not say why: $out"
 for ok in CI=true ALLOW_LOCAL_TESTS=1 CLAUDE_CODE_REMOTE=true; do
   pc env "$ok" node -e "require('./tests/lib.js')" || fail "lib.js refused with $ok"
 done
+# #406 the voice audit runs in GitHub Actions only (or a cloud session): it refuses on the PC even with ALLOW_LOCAL_TESTS=1
+out=$(pc env -u GITHUB_ACTIONS ALLOW_LOCAL_TESTS=1 node tests/voice-audit.test.js 1 2>&1); rc=$?
+[ "$rc" = 3 ] || fail "voice-audit ran on the PC (rc $rc)"
+grep -qF 'voice audit runs in GitHub Actions only (#406)' <<<"$out" || fail "voice-audit did not say why: $out"
 echo "PASS localguard"

@@ -45,3 +45,5 @@ worker 60                 # cf worker bundle + fake KV/D1, #570 voicecheck once-
 learn 120                 # skill model sims + the screens on desktop and phone + #395 plays 8 adaptive mission rounds per viewport: ~54 s alone
 unlock-desktop 60         # #403 first tap unlocks audio (Chrome policy mimicked) + blocked-audio hint: ~5 s
 unlock-tablet 60          # same on the Android tablet profile (Galaxy Tab S4, touch)
+voice-audit-1 150          # #406 voice audit, first half: home, every world and level start, arcade + every 2nd activity (each read, 5 answers) in a fake player: ~80 s with 2 suites at once
+voice-audit-2 150          # #406 the other half of the activities: ~65 s with 2 suites at once

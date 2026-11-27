@@ -13,14 +13,14 @@
            node oren2/cf/tools/pregen.js --collect    collect only (prints count)      --upload  upload last list only
            SITE=https://... node oren2/cf/tools/pregen.js                                                           */
 const path = require('path'), fs = require('fs'), os = require('os');
-if (process.env.HTTPS_PROXY && !process.env.NODE_USE_ENV_PROXY) {   // Node's fetch reads the proxy only with this flag
+if (require.main === module && process.env.HTTPS_PROXY && !process.env.NODE_USE_ENV_PROXY) {   // Node's fetch reads the proxy only with this flag
   const c = require('child_process').spawn(process.execPath, process.argv.slice(1), { stdio: 'inherit', env: { ...process.env, NODE_USE_ENV_PROXY: '1' } });
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => c.kill(sig));
   c.on('exit', code => process.exit(code == null ? 1 : code)); return;
 }
 const ROOT = path.resolve(__dirname, '..', '..');                  // oren2/
 const SITE = (process.env.SITE || 'https://oren-game.pages.dev').replace(/\/$/, '');
-const DIR = path.join(os.homedir(), '.cache', 'oren-pregen'); fs.mkdirSync(DIR, { recursive: true });
+const DIR = path.join(os.homedir(), '.cache', 'oren-pregen'); if (require.main === module) fs.mkdirSync(DIR, { recursive: true });
 const LIST = path.join(DIR, 'said.json'), STATE = path.join(DIR, 'state.json');
 const DAY_MAX = 400, PER_MIN = 15, BATCH = 15;
 /* a sentence: plain text = game voice (Kore 0.9), else {t,v,r} (e.g. English: Despina 0.85) */
@@ -42,6 +42,36 @@ function literal(file, name) {
       try { return new Function('return ' + s.slice(j, k + 1))(); } catch (e) { console.log('skip', name, e.message); return []; } } }
   return [];
 }
+
+/* random math questions (new numbers every time) are skipped: made on first use, then cached */
+const RANDOM = /שווה כמה|כמה שווה|ועוד כמה|כמה כפול|פותרים במאונך|^מה השעה\?|קטן, שווה, גדול$|^\d+ \? \d+|בבוקר, ועוד \d+|(התשובה|זריקה|לשחות)\. \d|חילק \d+|^‎?\d+ : \?/;
+/* static pass: finite data through the client's own text path (fullSpell, then the same 400-char parts, #401); runs in the page.
+   D = { SENT, STORIES, INTRO } (literal() of talents.js / index.html). Also used by tests/voice-audit.test.js (#406). */
+const STATIC = D => { const O = window.OREN, T = window.TAL, out = [], sp = s => String(s).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const add = s => { if (s && /[א-ת]/.test(s)) out.push(...window.__ttsParts(window.__fullSpell(s))); };   // #401: the same parts the game asks for
+  (D.INTRO || []).forEach(x => add(x[1])); add('אוֹרֶן, אַתָּה אַלּוּף הַחֶשְׁבּוֹן שֶׁל אֶרֶץ הַבְּלוֹקִים!');
+  O.WORLDS.forEach(w => { (w.intro || []).forEach(add); (w.outro || []).forEach(add); add(w.say); });
+  (T.TOG || []).forEach(a => add(sp(typeof a.kid === 'function' ? a.kid('') : a.kid))); Object.values(T.RW || {}).forEach(r => add(sp(r.t)));
+  (T.WORDS || []).forEach(w => add(sp(w.w)));
+  /* English words and letters (eng-word, eng-listen, eng-letter) in the English game voice */
+  (T.WORDS || []).filter(w => w.en).forEach(w => [w.en, w.en[0].toUpperCase() + '. ' + w.en].forEach(t => window.__ttsParts(sp(t)).forEach(t => out.push({ t, v: 'en-US-Chirp3-HD-Despina', r: 0.85 }))));
+  ['זמן לנוח. כל הכבוד היום, אורן! נתראה מחר.', 'הזמן של היום נגמר. כל הכבוד היום, אורן! נתראה מחר.', 'עוד דקה אחת לסיום היום', ...[2, 3, 4, 5].map(n => `עוד ${n} דקות לסיום היום`)].forEach(add);
+  (D.SENT || []).forEach(s => { add(s[0]); add(s[1]); });
+  (D.STORIES || []).forEach(st => { add(st.t); st.s.forEach(add); st.q.forEach(q => add(q[0])); });
+  /* the content packs: their own lists of what they say */
+  const W = window, tryf = f => { try { f(); } catch (e) {} };
+  tryf(() => (T.STORIES || []).forEach(st => { add(st.t); st.s.forEach(add); st.q.forEach(q => add(q[0])); }));
+  tryf(() => W.READBANK2.speakList().forEach(add));
+  tryf(() => T.storyWordList().forEach(add));   /* #420: a word tapped in a story is said alone; the "words we will meet" card */
+  tryf(() => W.GAPS.speakList().forEach(add));   /* rhymes (#419) */
+  tryf(() => W.EXPLORE2.kidTexts().forEach(s => add(sp(s))));
+  tryf(() => W.FRIEND.speakList().forEach(s => add(sp(s))));
+  tryf(() => W.HELP.allTexts().forEach(s => add(sp(s))));
+  tryf(() => W.LESSONS.speakList().forEach(s => add(sp(s))));
+  tryf(() => W.HEALTH.remTexts().forEach(add));
+  tryf(() => T.choiceList().forEach(add));   /* #266 choice screens: each opening and each choice is its own clip */
+  tryf(() => W.ENGLISH2.speakList().forEach(t => { t = sp(t); if (/[א-ת]/.test(t)) add(t); else if (t) window.__ttsParts(t).forEach(t => out.push({ t, v: 'en-US-Chirp3-HD-Despina', r: 0.85 }, { t, v: 'en-US-Chirp3-HD-Despina', r: 0.7 })); }));   /* r 0.7: the slow replay, a second tap on the speaker (#425) */
+  return out; };
 
 async function collect() {
   const { chromium } = require('playwright');
@@ -98,38 +128,11 @@ async function collect() {
     for (const g of ['balloon', 'soccer', 'basket', 'swim', 'mole', 'frog']) { await ev(`(()=>{window.TAL_arcade(()=>{});window.__arc.start('${g}');})()`, 1200); await ev(`window.__arc.finish(9)`, 300); }
     await ev(`window.TAL.callParents('כְּדֵי לִקְרֹא בְּקוֹל צָרִיךְ אִשּׁוּר שֶׁל הוֹרֶה לַמִּיקְרוֹפוֹן.')`); await ev(`window.TAL.breakTime&&window.TAL.breakTime()`);
     await ev(`(()=>{window.TAL.parentPanel('voice');const b=[...document.querySelectorAll('#sPar button')].find(x=>/השמיעו|דוגמה/.test(x.textContent));b&&b.click();})()`, 300);
-    // static pass: finite data through the client's own text path (fullSpell, then the same 400-char parts, #401)
-    const stat = await p.evaluate(D => { const O = window.OREN, T = window.TAL, out = [], sp = s => String(s).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-      const add = s => { if (s && /[א-ת]/.test(s)) out.push(...window.__ttsParts(window.__fullSpell(s))); };   // #401: the same parts the game asks for
-      (D.INTRO || []).forEach(x => add(x[1])); add('אוֹרֶן, אַתָּה אַלּוּף הַחֶשְׁבּוֹן שֶׁל אֶרֶץ הַבְּלוֹקִים!');
-      O.WORLDS.forEach(w => { (w.intro || []).forEach(add); (w.outro || []).forEach(add); add(w.say); });
-      (T.TOG || []).forEach(a => add(sp(typeof a.kid === 'function' ? a.kid('') : a.kid))); Object.values(T.RW || {}).forEach(r => add(sp(r.t)));
-      (T.WORDS || []).forEach(w => add(sp(w.w)));
-      /* English words and letters (eng-word, eng-listen, eng-letter) in the English game voice */
-      (T.WORDS || []).filter(w => w.en).forEach(w => [w.en, w.en[0].toUpperCase() + '. ' + w.en].forEach(t => window.__ttsParts(sp(t)).forEach(t => out.push({ t, v: 'en-US-Chirp3-HD-Despina', r: 0.85 }))));
-      ['זמן לנוח. כל הכבוד היום, אורן! נתראה מחר.', 'הזמן של היום נגמר. כל הכבוד היום, אורן! נתראה מחר.', 'עוד דקה אחת לסיום היום', ...[2, 3, 4, 5].map(n => `עוד ${n} דקות לסיום היום`)].forEach(add);
-      (D.SENT || []).forEach(s => { add(s[0]); add(s[1]); });
-      (D.STORIES || []).forEach(st => { add(st.t); st.s.forEach(add); st.q.forEach(q => add(q[0])); });
-      /* the content packs: their own lists of what they say */
-      const W = window, tryf = f => { try { f(); } catch (e) {} };
-      tryf(() => (T.STORIES || []).forEach(st => { add(st.t); st.s.forEach(add); st.q.forEach(q => add(q[0])); }));
-      tryf(() => W.READBANK2.speakList().forEach(add));
-      tryf(() => T.storyWordList().forEach(add));   /* #420: a word tapped in a story is said alone; the "words we will meet" card */
-      tryf(() => W.GAPS.speakList().forEach(add));   /* rhymes (#419) */
-      tryf(() => W.EXPLORE2.kidTexts().forEach(s => add(sp(s))));
-      tryf(() => W.FRIEND.speakList().forEach(s => add(sp(s))));
-      tryf(() => W.HELP.allTexts().forEach(s => add(sp(s))));
-      tryf(() => W.LESSONS.speakList().forEach(s => add(sp(s))));
-      tryf(() => W.HEALTH.remTexts().forEach(add));
-      tryf(() => T.choiceList().forEach(add));   /* #266 choice screens: each opening and each choice is its own clip */
-      tryf(() => W.ENGLISH2.speakList().forEach(t => { t = sp(t); if (/[א-ת]/.test(t)) add(t); else if (t) window.__ttsParts(t).forEach(t => out.push({ t, v: 'en-US-Chirp3-HD-Despina', r: 0.85 }, { t, v: 'en-US-Chirp3-HD-Despina', r: 0.7 })); }));   /* r 0.7: the slow replay, a second tap on the speaker (#425) */
-      return out; }, DATA);
+    const stat = await p.evaluate(STATIC, DATA);
     (await p.evaluate(() => window.__said)).concat(stat).forEach(x => { const c = norm(x); if (c) SAID.set(idOf(c), c); });
     /* #402 the math sentence set: every question of the small math units, through the same text path (kept past the random filter) */
     (await p.evaluate(() => window.OREN.mathSpeechList().flatMap(s => window.__ttsParts(window.__fullSpell(s))))).forEach(x => { const c = norm(x); if (c) MATHS.set(idOf(c), c); });
     console.log('collected', SAID.size, 'so far (' + (vp.isMobile ? 'phone' : 'desktop') + ')'); await ctx.close(); }
-  /* random math questions (new numbers every time) are skipped: made on first use, then cached */
-  const RANDOM = /שווה כמה|כמה שווה|ועוד כמה|כמה כפול|פותרים במאונך|^מה השעה\?|קטן, שווה, גדול$|^\d+ \? \d+|בבוקר, ועוד \d+|(התשובה|זריקה|לשחות)\. \d|חילק \d+|^‎?\d+ : \?/;
   await b.close(); const MATH = [...MATHS.values()].filter(x => !SAID.has(idOf(x)) || RANDOM.test(txt(x)));
   const L = [...SAID.values()].filter(x => !RANDOM.test(txt(x))).concat(MATH); fs.writeFileSync(LIST, JSON.stringify(L));
   console.log('sentences', L.length, 'chars', L.reduce((a, x) => a + txt(x).length, 0), '→', LIST); return L;
@@ -160,7 +163,8 @@ async function upload(L) {
   console.log(`done: all ${L.length} sentences exist. new now ${made} (${chars} chars), new today ${st.newToday}.`);
 }
 
-(async () => {
+module.exports = { STATIC, RANDOM, literal, norm, idOf, txt, GV, GR };
+if (require.main === module) (async () => {
   const L = arg('--upload') ? JSON.parse(fs.readFileSync(LIST, 'utf8')) : await collect();
   if (!arg('--collect')) await upload(L);
 })().catch(e => { console.error(e); process.exit(1); });
