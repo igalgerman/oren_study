@@ -65,7 +65,7 @@ const STATIC = D => { const O = window.OREN, T = window.TAL, out = [], sp = s =>
   tryf(() => T.storyWordList().forEach(add));   /* #420: a word tapped in a story is said alone; the "words we will meet" card */
   tryf(() => W.GAPS.speakList().forEach(add));   /* rhymes (#419) */
   tryf(() => W.EXPLORE2.kidTexts().forEach(s => add(sp(s))));
-  tryf(() => W.FRIEND.speakList().forEach(s => add(sp(s))));
+  tryf(() => { const fv = new Set(W.FRIEND.voiceList ? W.FRIEND.voiceList() : []); W.FRIEND.speakList().filter(s => !fv.has(s)).forEach(s => add(sp(s))); });   /* #53 the friend's own lines: below, in his voice */
   tryf(() => W.FRIEND.voiceList().forEach(s => { s = sp(s); if (/[א-ת]/.test(s)) window.__ttsParts(window.__fullSpell(s)).forEach(t => out.push({ t, v: W.FRIEND.VOICE, r: 0.9 })); }));   /* #53 the friend's own voice */
   tryf(() => W.BW.speakList().forEach(s => add(sp(s))));   /* the building world (#64) */
   tryf(() => W.HELP.allTexts().forEach(s => add(sp(s))));
