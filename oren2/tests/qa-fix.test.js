@@ -133,6 +133,71 @@ let b = null;
   const pl = await p.evaluate(() => { const O = window.__oren4, q = O.GT.pz('left', 3); O.playLevel(O.ALLLV.find(l => l.id === 'time-frac-1'), [q]);
     return { opts: q.opts, right: q.opts[q.ans], sl: document.querySelectorAll('#qa svg.pz .sl').length, pr: q.pr.replace(/<svg[\s\S]*<\/svg>/, '') }; });
   ok('#19 "slices left": a third eaten from 3 slices → 2 left', pl.sl === 3 && String(pl.right) === '2' && /נִשְׁאֲרוּ/.test(pl.pr), JSON.stringify(pl));
+  // --- #417 ten-frame: Oren taps to complete ten, then the rest (the lesson; the hint of a practice question; "fill the ten") ---
+  const tfs = () => p.evaluate(() => { const b = document.querySelector('#sLearn .tfh'); if (!b) return null; const f = [...b.querySelectorAll('.frame')];
+    return { op: b.dataset.op, l: +b.dataset.l, r: +b.dataset.r, f: f.map(x => x.querySelectorAll('i.a,i.b').length), on: f.findIndex(x => x.classList.contains('on')),
+      lines: [...b.querySelectorAll('.tfs div')].map(x => x.textContent), done: b.classList.contains('done'), rowHidden: document.querySelector('#sLearn .lch').hidden }; });
+  const tapTf = sel => p.evaluate(sel => { const n = document.querySelector('#sLearn .tfh ' + sel); if (n) n.dispatchEvent(new MouseEvent('click', { bubbles: true })); return !!n; }, sel);
+  for (const id of ['add-2', 'sub-2']) {
+    await p.evaluate(id => { const O = window.OREN; delete O.save.seen[id]; O.startLevel(O.ALLLV.find(l => l.id === id + '-0')); }, id); await sleep(150);
+    const t0 = await tfs();
+    ok(`#417 ${id} lesson: a ten-frame board waits for Oren, answers hidden`, t0 && t0.on === (t0.op === '+' ? 0 : 1) && t0.rowHidden && !t0.done && !t0.lines.length, JSON.stringify(t0));
+    if (!t0) continue;
+    const add = t0.op === '+', n1 = add ? 10 - t0.l : t0.l - 10, n2 = t0.r - n1;
+    await tapTf('.frame:not(.on) i'); const tw = await tfs();
+    ok(`#417 ${id}: a tap on the other frame changes nothing`, JSON.stringify(tw.f) === JSON.stringify(t0.f), JSON.stringify(tw));
+    for (let k = 0; k < n1; k++) { await tapTf('.frame.on i'); await sleep(20); }
+    const t1 = await tfs();
+    ok(`#417 ${id}: step 1 reaches exactly ten, its line shows, answers still hidden`, t1.f[0] === 10 && t1.f[1] === 0 && t1.lines.length === 1 && / = 10$/.test(t1.lines[0]) && t1.rowHidden, JSON.stringify(t1));
+    for (let k = 0; k < n2; k++) { await tapTf('.frame.on i'); await sleep(20); }
+    const t2 = await tfs();
+    ok(`#417 ${id}: step 2 ${add ? 'adds' : 'takes away'} the rest → both lines, the answers appear`, t2.done && t2.f[0] + t2.f[1] === (add ? t0.l + t0.r : t0.l - t0.r) && t2.lines.length === 2 && !t2.rowHidden, JSON.stringify(t2));
+  }
+  const th = await p.evaluate(() => { const O = window.__oren4; O.playLevel(O.ALLLV.find(l => l.id === 'add-2-1'), [{ k: 'bin', l: 5, op: '+', r: 8, res: 13, miss: 'res', ans: 13 }]);
+    const d = document.createElement('div'); d.id = 'tftest'; d.innerHTML = O.hintHTML(O.play.qs[0], 1); document.querySelector('#sPlay').appendChild(d);
+    const b = d.querySelector('.tfh'); const c = b && b.querySelector('.frame.on i'); if (c) c.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const r = b ? [...b.querySelectorAll('.frame')].map(x => x.querySelectorAll('i.a,i.b').length) : null; d.remove(); return r; });
+  ok('#417 the hint of a make-ten question (5 + 8) opens the same tappable ten-frame, bigger number first', JSON.stringify(th) === '[9,0]', JSON.stringify(th));
+  const tq = await p.evaluate(() => { const O = window.__oren4, q = O.tfFillQ(7); O.playLevel(O.ALLLV.find(l => l.id === 'add-2-1'), [q]);
+    const cells = () => document.querySelectorAll('#qa .tff i.a, #qa .tff i.b').length; const n0 = cells();
+    document.querySelectorAll('#qa .tff i.e').forEach(x => x.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    return { n0, n1: cells(), right: q.opts[q.ans] }; });
+  ok('#417 "fill the ten": tapping the empty cells fills the frame; the answer = how many were added', tq.n0 === 7 && tq.n1 === 10 && String(tq.right) === '3', JSON.stringify(tq));
+  // --- #418 coins: tap 1, 2, 5, 10 coins to pay the price; tap a paid coin to take it back; check ---
+  await p.evaluate(() => { const O = window.__oren4; O.playLevel(O.ALLLV.find(l => l.id === 'word-c1-1'), [O.GC.pay(8)]); }); await sleep(150);
+  const coin = v => p.evaluate(v => { const b = document.querySelector(`#qa .coins .cbank .coinb[data-v="${v}"]`); b.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    return { n: document.querySelectorAll('#qa .coins .ctray .tc').length, sum: document.querySelector('#qa .coins .csum').textContent.replace(/\D/g, '') }; }, v);
+  const c0 = await p.evaluate(() => ({ bank: [...document.querySelectorAll('#qa .coins .cbank .coinb')].map(x => x.dataset.v).join(','), btn: window.__oren4.play.choice.opts.length, bub: (document.querySelector('#bText') || { textContent: null }).textContent }));
+  ok('#418 pay 8: four coins (1, 2, 5, 10) and one check button', c0.bank === '1,2,5,10' && c0.btn === 1 && (c0.bub === null || /מַּטְבְּעוֹת/.test(c0.bub)), JSON.stringify(c0));
+  const c1 = await coin(5), c2 = await coin(2), c3 = await coin(2);
+  ok('#418 tapping coins puts them on the tray and adds them up', c1.sum === '5' && c2.sum === '7' && c3.sum === '9' && c3.n === 3, JSON.stringify([c1, c2, c3]));
+  const cw = await p.evaluate(() => { const P = window.__oren4.play; P.choice.row.children[0].click(); return { tries: P.tries, lock: P.lock }; }); await sleep(700);
+  ok('#418 check with 9 for a price of 8 = wrong', cw.tries === 1 && !cw.lock, JSON.stringify(cw));
+  const cbk = await p.evaluate(() => { const t = document.querySelectorAll('#qa .coins .ctray .tc'); t[t.length - 1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    return document.querySelector('#qa .coins .csum').textContent.replace(/\D/g, ''); });
+  const c4 = await coin(1);
+  const cr = await p.evaluate(() => { const P = window.__oren4.play; P.choice.row.children[0].click(); return { lock: P.lock }; });
+  ok('#418 tap a paid coin takes it back; 5 + 2 + 1 = 8 → correct', cbk === '7' && c4.sum === '8' && cr.lock, JSON.stringify({ cbk, c4, cr }));
+  const cc = await p.evaluate(() => { const O = window.__oren4, q = O.GC.change(7, 10); O.playLevel(O.ALLLV.find(l => l.id === 'word-c2-1'), [q]); return { want: q.hand.want, t: q.pr.replace(/<div class="coins"[\s\S]*$/, '').replace(/<[^>]+>/g, '') }; });
+  ok('#418 simple change: price 7, paid 10 → give 3 in coins', cc.want === 3 && /עֹדֶף/.test(cc.t), JSON.stringify(cc));
+  // --- #415 a wrong number: the hint is about that exact mistake (typed answer and a bubble choice); unknown → the usual hint ---
+  const typed = async (q, lv, keys) => { await p.evaluate(([q, lv]) => { const O = window.__oren4; O.playLevel(O.ALLLV.find(l => l.id === lv), [q]); }, [q, lv]); await sleep(150);
+    await p.keyboard.type(keys); await p.keyboard.press('Enter'); await sleep(60);
+    return p.evaluate(() => { const O = window.__oren4, h = document.querySelector('#hint'); return { mk: O.play.mk || null, hint: h.hidden ? '' : h.textContent, clue: O.hintHTML(O.play.qs[0], 1).replace(/<[^>]+>/g, ' '), tries: O.play.tries }; }); };
+  const Q = (l, op, r) => { const res = op === '+' ? l + r : l - r; return { k: 'bin', l, op, r, res, miss: 'res', ans: res }; };
+  const k1 = await typed(Q(13, '−', 5), 'sub-2-1', '18');
+  ok('#415 13 − 5, typed 18 (added): the hint and the clue say "you added, this is subtraction"', k1.tries === 1 && k1.mk === 'op' && /חִבַּרְתָּ/.test(k1.hint) && /חִבַּרְתָּ/.test(k1.clue), JSON.stringify(k1));
+  const k2 = await typed(Q(34, '+', 20), 'add-6-1', '45');
+  ok('#415 34 + 20, typed 45: swapped digits', k2.mk === 'swap' && /הִתְהַפְּכוּ/.test(k2.hint), JSON.stringify(k2));
+  const k3 = await typed(Q(34, '+', 20), 'add-6-1', '64');
+  ok('#415 34 + 20, typed 64: off by ten', k3.mk === 'ten' && /הָעֲשָׂרוֹת/.test(k3.hint), JSON.stringify(k3));
+  const k4 = await typed(Q(7, '+', 5), 'add-0-1', '20');
+  ok('#415 7 + 5, typed 20: no known mistake → the usual hint (no mistake line)', k4.tries === 1 && k4.mk === null && !/טָעִיתָ|הִתְהַפְּכוּ|חִבַּרְתָּ|הָאֲחָדוֹת נְכוֹנוֹת/.test(k4.hint + k4.clue), JSON.stringify(k4));
+  await p.evaluate(() => { const O = window.__oren4, q = { k: 'bin', l: 7, op: '+', r: 5, res: 12, miss: 'res', ans: 12 }; O.playLevel(O.ALLLV.find(l => l.id === 'add-3-1'), [q]); });
+  await sleep(150);
+  const k5b = await p.evaluate(() => { const O = window.__oren4, P = O.play; if (!P.choice) return { noChoice: true }; const i = P.choice.opts.findIndex(o => Math.abs(+o - 12) === 1); P.choice.row.children[i].click();
+    const h = document.querySelector('#hint'); return { mk: P.mk, hint: h.hidden ? '' : h.textContent, tries: P.tries }; });
+  ok('#415 a bubble choice one away from the answer: "off by one"', k5b.tries === 1 && k5b.mk === 'one' && /טָעִיתָ רַק בְּאֶחָד/.test(k5b.hint), JSON.stringify(k5b));
   // --- world: one big continue button, path from the right ---
   await p.evaluate(() => { const O = window.OREN; O.save.story['num-in'] = 1; O.save.s = {}; O.showWorld(O.WORLDS[0]); }); await sleep(200);
   const w = await p.evaluate(() => { const n = [...document.querySelectorAll('#sWorld .pnode')]; return { big: document.querySelectorAll('#sWorld .bigbtn').length, cur: n.findIndex(x => x.classList.contains('cur')),

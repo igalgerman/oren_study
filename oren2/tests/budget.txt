@@ -35,8 +35,8 @@ parent-phone 60            # same file on the phone viewport: ~18 s
 resume-desktop 60          # #44 reloads mid-level, mid-quiz and while paused + timed rounds paused 2 s: ~37 s
 resume-phone 60            # same file on the phone viewport
 instructions-desktop 90   # every activity's instruction (~50 s) + #266 the 16 choice screens (each clip in the pregen list) name their choices: ~69 s
-qa-fix-desktop 60          # #267 adds the hands-on checks (clock drag, pizza taps, carry/borrow board, times array): ~15 s
-qa-fix-phone 60            # same file on the phone viewport: ~14 s
+qa-fix-desktop 60          # #267 adds the hands-on checks (clock drag, pizza taps, carry/borrow board, times array) + #439 ten-frame lessons/hint/fill, coins, mistake hints (~4 s): ~19 s
+qa-fix-phone 60            # same file on the phone viewport: ~19 s
 listen-desktop 60         # #389 listen first: real voice timing (question end, 2 s rest, the 4 s cap) + #408 the four friend reactions: ~25 s + #435 answers read and lit (a second page, 5 activities, ~8 s): ~33 s
 listen-phone 60           # same file on the phone viewport (#435 included)
 day-path-desktop 60        # #424 English scene checks (~3 s) + #388 3-mission path walk + time-limit stop, #391 ship checks (finale piece, gem choice, reload) + #392 tap a piece / story door (~1 s): ~31 s together
@@ -50,3 +50,6 @@ simplicity-desktop 60     # #426 adds the rewards checks (no badges/hats/records
 simplicity-phone 60       # same file on the phone viewport: ~10 s
 feel-desktop 60           # batch #457: #393 the hero-chases-the-Mixer strip for 1..6 missions + #427 calm / big celebration (2 s waits, 4 cards) + #421 instruction words lit (fake voice, held clips): ~25 s
 feel-phone 60             # same file on the phone viewport
+math-logic 60             # all generated math questions + #439 mistake classifier table, ten-frame logic, coin logic and price voice (< 1 s more): ~6 s alone
+voice-audit-1 150          # #406 voice audit, first half: home, every world and level start, arcade + every 2nd activity (each read, 5 answers) in a fake player: ~80 s with 2 suites at once
+voice-audit-2 150          # #406 the other half of the activities: ~65 s with 2 suites at once
