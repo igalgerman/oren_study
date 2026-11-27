@@ -3299,6 +3299,17 @@ body.fron #screens{padding-bottom:84px}
 .frezf .frezi{font-size:46px;line-height:1}
 .frezf.on{border-color:#4fae4f;background:#e6f6e6;transform:scale(1.06)}
 .frezf:disabled:not(.on){opacity:.45}
+/* friend moments on the result card's continue: #428 a short arcade break, #410 'teach the friend' */
+.frm{text-align:center}
+.frm .frms svg{width:72px;height:72px;display:block;margin:0 auto 4px}
+.frmt{font-size:21px;font-weight:700;line-height:1.4;margin:6px auto 8px;max-width:420px}
+.frbg{font-size:56px;line-height:1;margin:4px 0 10px}
+.frtq{font-size:30px;font-weight:800;margin:4px 0}
+.frtq .frtw{color:#e4572e}
+.frtr{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:6px}
+.frtr .frto{min-width:84px;min-height:72px;font-size:30px;font-weight:800;justify-content:center}
+.frtr .frto.ok{background:#e6f6e6;border-color:#4fae4f}
+.frtr .frto.show{background:#fff6d6;border-color:#c98a00}
 
 /* #391 the ship on home: next to Oren and his friend; #392 a tap on a built piece, the friend says what it is */
 .hrow{display:flex;align-items:flex-end;justify-content:center;gap:10px}
@@ -3315,6 +3326,9 @@ body.fron #screens{padding-bottom:84px}
 .tgoal.sdoor{position:relative;cursor:pointer;opacity:1}
 .tgoal.sdoor small{position:absolute;top:100%;margin-top:4px;font-size:14px;font-weight:700;white-space:nowrap;color:#5b3a1a;background:#fff3c4;border-radius:8px;padding:1px 6px}
 .tpath.hasdoor{margin-bottom:26px}
+/* #412 the friend holds the latest piece on home */
+.hpair .hheld{align-self:flex-end;margin-inline-start:-4px;margin-bottom:4px;font-size:14px;font-weight:700;color:#5b3a1a;background:#fff3c4;border:2px solid #e0c36a;border-radius:10px;padding:1px 6px;white-space:nowrap;cursor:pointer}
+@media (min-width:761px){.hpair .hheld{font-size:16px}}
 
 /* ===== LESSON CARDS (#56) ===== */
 .lccard{width:min(640px,100%)}
@@ -5320,7 +5334,7 @@ function home(){const S0=T.S();
   const mem=d&&!d.done.some(Boolean)&&window.STORYMIX&&window.STORYMIX.dayStart?window.STORYMIX.dayStart():'';
   const say=!d?`${T.hello()}, אוֹרֶן! בְּמָה נְשַׂחֵק?`:dayDone?window.FRIEND.homeSay(d):mem?mem:pickDay?'שָׁלוֹם אוֹרֶן! מָה בָּא לְךָ הַיּוֹם?':nx>=0?`${q.e} ${q.a}`:d.claimed?'כָּל הַכָּבוֹד! עַכְשָׁו זְמַן חוֹפְשִׁי 🎈':'סִיַּמְתָּ אֶת הַשְּׁבִיל! בּוֹא נִרְאֶה אֵיךְ נִגְמַר הַסִּפּוּר.';
   const tl='';
-  s.appendChild(h('div','hstage',`${say?`<div class="hbub2" style="--fc:${pr.col||'#4fae4f'}">${say}${tl}</div>`:''}<div class="hrow"><div class="hpair" role="button" aria-label="מָה אֶפְשָׁר לַעֲשׂוֹת כָּאן?"><span class="hav bob">${O.AV()}</span><span class="hpet2 bob" style="animation-delay:-.7s">${T.friend()}</span></div>${window.SHIP?window.SHIP.el():''}</div>`));
+  s.appendChild(h('div','hstage',`${say?`<div class="hbub2" style="--fc:${pr.col||'#4fae4f'}">${say}${tl}</div>`:''}<div class="hrow"><div class="hpair" role="button" aria-label="מָה אֶפְשָׁר לַעֲשׂוֹת כָּאן?"><span class="hav bob">${O.AV()}</span><span class="hpet2 bob" style="animation-delay:-.7s">${T.friend()}</span>${window.SHIP&&window.SHIP.held?window.SHIP.held():''}</div>${window.SHIP?window.SHIP.el():''}</div>`));
   s.querySelector('.hpair').onclick=()=>{sfx.pop(2);if(dayDone&&d.free)window.FRIEND.bonus();else if(window.TOPIC)window.TOPIC.open();else tour();};
   if(pickDay){/* "what do you feel like today?": 3 big cards (one is "continue" when there is a last activity) + something else */
     const all=doms(),ln=lastStep(),lg=ln&&domOf(ln);if(!d.o||all.some(x=>!d.o.includes(x.id))){d.o=wpick(all,all.length).map(x=>x.id);O.persist();}
@@ -5428,7 +5442,7 @@ function openArcade(back){if(back)back0=back;back0=back0||O.showMap;T.setKey(nul
 const later=f=>setTimeout(f,D(700));
 /* ---------- shared game frame ---------- */
 let cur=null;
-function frame(id,title){const gm=G(id);O.setScreen('sTal','final',()=>{if(cur)cur.stop();openArcade();});T.hudT(gm.n);if(O.hereBegin)O.hereBegin('arc:'+id);/* #44 the place + the pause button */
+function frame(id,title){const gm=G(id);O.setScreen('sTal','final',()=>{if(cur)cur.stop();if(brk)return brkEnd();openArcade();});T.hudT(gm.n);if(O.hereBegin)O.hereBegin('arc:'+id);/* #44 the place + the pause button */
   const s=$('#sTal');s.innerHTML='';const box=h('div','arc game');box.style.setProperty('--nc',gm.c);
   const top=h('div','gtop',`<div class="rule">${title||''}</div><div class="gstat"><span class="sc">⭐ <b>0</b></span><span class="tm"></span></div>`);
   const field=h('div','field');box.append(top,field);s.appendChild(box);
@@ -5436,12 +5450,13 @@ function frame(id,title){const gm=G(id);O.setScreen('sTal','final',()=>{if(cur)c
     score:v=>{top.querySelector('.sc b').textContent=v;},time:t=>{top.querySelector('.tm').textContent=t;}};}
 function countdown(F,go){const c=h('div','cdown');F.field.appendChild(c);let n=3;const tick=()=>{if(!c.isConnected)return;if(n>0){c.textContent=n;c.classList.remove('pop');void c.offsetWidth;c.classList.add('pop');sfx.blip?sfx.blip():sfx.pop(1);n--;setTimeout(tick,D(650));}
   else{c.textContent='קָדִימָה!';c.classList.remove('pop');void c.offsetWidth;c.classList.add('pop');sfx.ok(2);setTimeout(()=>{c.remove();go();},D(550));}};tick();}
-function finish(id,score,stars,extra){if(cur){cur.stop();cur=null;}T.setKey(null);const a=A();adapt(id,stars);/* #426: no records, the stars are the reward */
+function finish(id,score,stars,extra){if(cur){cur.stop();cur=null;}T.setKey(null);const a=A();if(!brk)adapt(id,stars);/* #426: no records, the stars are the reward */
   a.plays=(a.plays|0)+1;T.record('arc-'+id,stars,{b:score});
+  if(brk){T.result({title:'כָּל הַכָּבוֹד!',sub:`נְקֻדּוֹת: ${score}${extra||''}`,stars,gems:0,back:brkEnd});return;}/* #428 a break: one round, then back to the story */
   T.result({title:'כָּל הַכָּבוֹד!',sub:`נְקֻדּוֹת: ${score}${extra||''}`,stars,gems:0,back:()=>openArcade(),again:()=>start(id)});}
 /* #351 difficulty: a level 0..CAP per game (not the record). 3 stars -> one step up, 1 star -> one step down; wider numbers (1-20) only after 3 good rounds in a row */
 const CAP=4;
-const tune=id=>{const a=A(),l=Math.max(0,Math.min(CAP,(a.lv||{})[id]|0)),w=((a.gr||{})[id]|0)>=3;
+const tune=id=>{const a=A(),l=brk?0:Math.max(0,Math.min(CAP,(a.lv||{})[id]|0)),w=!brk&&((a.gr||{})[id]|0)>=3;/* #428 a break round: the calm base level */
   return {lv:l,wide:w,max:w?20:10,line:w?50:l>=2?20:10,sp:[.035*(1+l*.08),.056*(1+l*.08)],spawn:950-l*40,stay:2400-l*150,gap:1100-l*60,meter:.055*(1+l*.1),zone:34-l*2,rivalT:60000-l*3500};};
 const adapt=(id,stars)=>{const a=A();a.lv=a.lv||{};a.gr=a.gr||{};const l=tune(id).lv;
   if(stars>=3){a.lv[id]=Math.min(CAP,l+1);a.gr[id]=(a.gr[id]|0)+1;}else{a.gr[id]=0;if(stars<=1)a.lv[id]=Math.max(0,l-1);}};
@@ -5564,8 +5579,13 @@ function swim(){const F=frame('swim');const cfg=tune('swim');const N=10;let you=
 /* ---------- wiring ---------- */
 const RUN={balloon,soccer,basket,swim,mole,frog};
 function start(id){T.setKey(null);RUN[id]();}
+/* #428 a short break in the day's path: ONE round of the game the friend picked, then next() (back to the story) */
+let brk=null;
+function brkEnd(){const n=brk&&brk.next;brk=null;if(n)n();}
+function breakRound(id,next){id=G(id)?id:GAMES[0].id;brk={next:next||O.showMap,id};start(id);}
+T.arcBreak=breakRound;T.arcGames=GAMES;
 window.TAL_arcade=openArcade;T.arcade=openArcade;
-window.__arc={open:openArcade,start,get cur(){return cur;},finish:sc=>cur&&cur.finish(sc),hit:()=>cur&&cur.hit(),state:()=>A(),tune,q:id=>qGen(tune(id))};
+window.__arc={open:openArcade,start,brk:breakRound,get inBreak(){return !!brk;},get brkId(){return brk?brk.id:null;},get cur(){return cur;},finish:sc=>cur&&cur.finish(sc),hit:()=>cur&&cur.hit(),state:()=>A(),tune,q:id=>qGen(tune(id))};
 })();
 
 /* ===== READING: "קוֹדֶם אַתָּה, אַחַר כָּךְ אֲנִי" =====
@@ -6075,7 +6095,8 @@ function anim(c){if(!el)return;el.classList.remove('joy','sad');void el.offsetWi
 function bubble(t,ms){if(petOnScreen()){const b=$('#bText');if(b)b.innerHTML=t;return;}if(!FR.shown())return;
   bub.innerHTML=t;bub.hidden=false;bub.classList.remove('pop');void bub.offsetWidth;bub.classList.add('pop');clearTimeout(bubT);bubT=setTimeout(()=>{if(bub)bub.hidden=true;},D(ms||2200));}
 const onAct=()=>['sTal','sPlay'].some(id=>{const e=$('#'+id);return e&&!e.hidden;});
-function talk(t,o){o=o||{};last=t;FR.log.push(t);if(FR.log.length>50)FR.log.shift();if(!FR.shown()&&onAct())FR.mount();if(!o.nobub)bubble(t,o.ms);if(!o.quiet)O.say(T.spk(t));return t;}
+let hintAt=0;   /* #409 a hint just said keeps the bubble and the voice: a reaction line right after it is skipped */
+function talk(t,o){o=o||{};if(!o.hint&&Date.now()-hintAt<1500)return t;last=t;FR.log.push(t);if(FR.log.length>50)FR.log.shift();if(!FR.shown()&&onAct())FR.mount();if(!o.nobub)bubble(t,o.ms);if(!o.quiet)O.say(T.spk(t));return t;}
 
 /* ---------- reactions ---------- */
 /* ctx: {tries} = wrong tries on this question before the right answer; {quiet} = bubble only (something else is about to speak);
@@ -6086,6 +6107,11 @@ FR.onCorrect=ctx=>{ctx=ctx||{};if(!FR.shown()&&onAct())FR.mount();const fixed=(c
   return talk(t,ctx);};
 FR.onWrong=ctx=>{ctx=ctx||{};if(!FR.shown()&&onAct())FR.mount();streak=0;const x=hk(kindOf(ctx));if(x)x.n++;missed=!ctx.final;anim('sad');if(ctx.final)missed=false;return talk(draw(ctx.final?SHOWN:WRONG),ctx);};
 FR.reset=()=>{streak=0;missed=false;};
+/* #409 the first hint of the help button (#54) is said by the friend in his bubble (no popup). The voice is the caller's.
+   false = no friend on this screen (the caller shows its own box). */
+const friendHere=()=>petOnScreen()||FR.shown();
+FR.hint=html=>{if(!friendHere()&&ACTS.some(id=>{const e=$('#'+id);return e&&!e.hidden;}))FR.mount();if(!friendHere())return false;
+  FR.hinted=html;talk(html,{quiet:1,ms:7000,hint:1});hintAt=Date.now();return true;};
 /* a story opens: try to read alone first (#355). Bubble only: the screen's own instruction (sayNow) says it */
 const READFIRST='קוֹדֶם נְנַסֶּה לִקְרֹא לְבַד!';FR.READFIRST=READFIRST;FR.readFirst=()=>talk(READFIRST,{quiet:1,ms:4000});
 
@@ -6115,13 +6141,15 @@ const quest=()=>(T.quest&&T.quest())||{e:'⭐',k:'⭐'};
 const isScene=id=>!/:/.test(String(id));
 FR.stepStart=i=>{const d=daily();if(!d||i==null||i<0||i>=d.t.length){cur=null;return;}cur={i,d:d.d,id:d.t[i]};
   const dn=d.done.slice(d.bs|0),left=dn.filter(x=>!x).length,first=!dn.some(Boolean);
-  lead=SM()&&isScene(cur.id)?(first?FIRST+' ':left<=1?LAST+' ':'')+SM().scene().open:'';PATHBAR.render();};
+  /* #412 the latest piece he collected comes along: its own clip before the scene's opening line */
+  const it=window.SHIP&&SHIP.latest&&SHIP.latest(),carry=it?SHIP.carrySay(it.i)+GSEP:'';
+  lead=SM()&&isScene(cur.id)?carry+(first?FIRST+' ':left<=1?LAST+' ':'')+SM().scene().open:'';PATHBAR.render();};
 FR.stepCheck=()=>{if(!cur)return;const d=daily();if(!d||d.d!==cur.d||d.t[cur.i]!==cur.id||!d.done[cur.i]||cur.done)return;cur.done=1;PATHBAR.render();
   if(!SM()||!isScene(cur.id))return;const sc=SM().scene(),close=sc.close;SM().advance();
   const t=d.done.slice(d.bs|0).every(Boolean)?close+' '+ALL:close;
   const card=$('#ov:not([hidden]) .card');if(card&&!card.querySelector('.frstory')){const s=h('div','frstory',`<span class="frq">${quest().k}</span><span>${t}</span>`);
     const row=card.querySelector('.btnrow');if(row)card.insertBefore(s,row);else card.appendChild(s);setTimeout(()=>{if(s.isConnected){last=t;O.say(T.spk(t));}},D(1200));
-    storyPic(card,sc);ezAsk(card,cur.id,t);}
+    storyPic(card,sc);ezAsk(card,cur.id,t);moments(card);}
   else talk(t,{ms:3500});};
 /* #411 at the end of a scene, at most every third scene (save.ez.n counts the scenes since the last question): 'easy or hard?'
    with two big faces, one tap. The answer moves that mission's level one step (hard = one easier, easy = one harder; a level the
@@ -6140,6 +6168,45 @@ function ezSet(id,lv,a){const S=O.save,LN=window.LEARN,DL=window.DAYLOG;
   else if(LN&&LN.state)try{const st=LN.state(),sk=id==='ln-math'?(st.rc||[]).find(x=>(LN.DRILL_IDS||[]).includes(x)):'a:'+id,k=sk&&st.k[sk];
     if(k&&!k.lk){const l=Math.max(1,Math.min(LN.maxLv(sk),(k.l|0||1)+(a==='h'?-1:1)));if(l!==k.l)LN.setLevel(sk,l);}}catch(e){}
   if(DL&&DL.add){const d=new Date();DL.add(O.today(),[d.getHours()*60+d.getMinutes(),lv?'lv:'+lv.id:id,0,0,0,0,'f',{ez:a}]);}O.persist();}
+/* ---------- friend moments: after 'continue' on a scene's result card, before the story goes on (one at a time) ----------
+   #428 every third scene (save.frb counts the scenes): ONE short arcade round as a break; the friend picks the game, one tap yes / skip.
+   #410 once per path (save.frtch = the path): the friend makes a funny mistake on something Oren knows (KNOW: known), one tap
+   corrects him (3 choices); he says thanks; a wrong tap is gentle (the right one lights up), no penalty, nothing recorded. */
+const BRK={EVERY:3,ask:g=>'הִגִּיעַ זְמַן לְהַפְסָקָה קְטַנָּה! בָּחַרְתִּי לָנוּ מִשְׂחָק: '+g.n+'.',yes:'כֵּן, נְשַׂחֵק!',no:'לֹא, מַמְשִׁיכִים'};FR.BRK=BRK;
+const TCH={claim:'אֲנִי חוֹשֵׁב שֶׁזֶּה',ask:'נָכוֹן? מָה הַתְּשׁוּבָה הַנְּכוֹנָה?',thanks:'תּוֹדָה! צָדַקְתָּ, אֲנִי טָעִיתִי. 😄',gentle:'לֹא נוֹרָא! הִנֵּה הַתְּשׁוּבָה הַנְּכוֹנָה. תּוֹדָה שֶׁעָזַרְתָּ לִי!'};FR.TCH=TCH;
+T.addChoices&&T.addChoices([BRK.yes,BRK.no]);
+const games=()=>T.arcGames||[];
+const pathKey=()=>{const d=daily();return d?d.d+':'+(d.bs|0):'';};
+/* a question of a math skill Oren knows (KNOW), with a number answer and 3 choices: [right, the friend's wrong one, one more] */
+function teachQ(){const K=window.KNOW,LN=window.LEARN;if(!K||!K.st||!LN||!LN.gen)return null;
+  const ks=Object.keys(K.st().k).filter(id=>K.known(id)&&(K.skillOf(id)||{}).area==='math');
+  for(const id of O.shuffle(ks)){const s=K.skillOf(id);let q;try{q=LN.gen(s.sk,s.lv);}catch(e){continue;}
+    if(!q||!Array.isArray(q.opts)||q.opts.length<3||!/\?/.test(q.html||''))continue;const r=q.opts[q.ans];const ws=O.shuffle([...new Set(q.opts.filter(x=>x!==r))]);if(ws.length<2)continue;
+    return {skill:id,html:q.html,right:r,wrong:ws[0],opts:O.shuffle([r,ws[0],ws[1]])};}
+  return null;}
+FR.teachQ=teachQ;
+function momentFor(){const S=O.save;if(!S||window.__moments===false)return null;   /* __moments=false: off (tests of the path flow) */
+  if((S.frb|0)>=BRK.EVERY&&games().length)return 'brk';
+  if(S.frtch!==pathKey()&&teachQ())return 'tch';return null;}
+function moments(card){const S=O.save;if(!S)return;S.frb=(S.frb|0)+1;O.persist();
+  const rows=card.querySelectorAll('.btnrow'),b=rows.length&&rows[rows.length-1].lastElementChild;if(!b||b._fm)return;const go=b.onclick;if(!go)return;b._fm=1;
+  b.onclick=e=>{const k=momentFor(),next=()=>{const ov=$('#ov');if(ov)ov.hidden=true;go.call(b,e);};
+    if(k==='brk')brkOffer(next);else if(k==='tch')teach(next);else go.call(b,e);};}
+function momentCard(cls,html){const ov=$('#ov');ov.hidden=false;ov.innerHTML=`<div class="card frm ${cls}"><div class="frms">${sprite()}</div>${html}</div>`;return ov.firstChild;}
+function brkOffer(next){const S=O.save;S.frb=0;O.persist();const g=O.shuffle(games().slice())[0],t=BRK.ask(g);
+  const c=momentCard('frbrk',`<div class="frmt">${t}</div><div class="frbg">${g.e}</div>`),row=h('div','btnrow');
+  const y=h('button','bigbtn','<span>'+BRK.yes+'</span>'),n=h('button','bigbtn plain','<span>'+BRK.no+'</span>');
+  y.onclick=()=>{O.sfx.pop&&O.sfx.pop(3);$('#ov').hidden=true;cur=null;lead='';T.arcBreak(g.id,next);};
+  n.onclick=()=>{O.sfx.pop&&O.sfx.pop(1);next();};row.append(y,n);c.appendChild(row);last=t;O.say(T.spk(t));return c;}
+function teach(next){const q=teachQ();if(!q)return next();O.save.frtch=pathKey();O.persist();
+  const eq=v=>q.html.replace('?',`<b class="frtw">${v}</b>`);
+  const c=momentCard('frtch',`<div class="frtq">${eq(q.wrong)}</div><div class="frmt">${TCH.claim} <b>${q.wrong}</b>! 🤪 ${TCH.ask}</div>`),row=h('div','frtr');
+  q.opts.forEach(v=>{const b=h('button','bigbtn plain frto','<span class="ltr">'+v+'</span>');b.dataset.v=v;
+    b.onclick=()=>{if(row._a)return;row._a=1;row.querySelectorAll('button').forEach(x=>{x.disabled=true;});const good=v===q.right;
+      row.querySelectorAll('button').forEach(x=>{if(+x.dataset.v===q.right)x.classList.add(good?'ok':'show');});c.querySelector('.frtq').innerHTML=eq(q.right);
+      const t=good?TCH.thanks:TCH.gentle;c.querySelector('.frmt').textContent=t;anim(good?'joy':'sad');last=t;O.sfx.pop&&O.sfx.pop(good?3:1);O.say(T.spk(t));
+      setTimeout(()=>{if(c.isConnected)next();},D(3500));};row.appendChild(b);});
+  c.appendChild(row);last=TCH.claim;O.say(T.spk(TCH.claim)+GSEP+q.wrong+GSEP+T.spk(TCH.ask));FR.teaching=q;return c;}
 /* the next path math mission after a 'hard' answer: that level again, once */
 FR.ezRep=()=>{const S=O.save,z=S&&S.ez;if(!z||!z.rep)return null;const id=z.rep;z.rep=null;O.persist();return (O.ALLLV||[]).find(l=>l.id===id)||null;};
 /* #387: the end of a scene, a 2 s picture of what changed in the story: the ship as the story has it, the scene's new piece
@@ -6183,7 +6250,7 @@ O.on('levelDone',()=>setTimeout(FR.stepCheck,D(600)));
 /* #433: an error in the middle of a mission sent Oren home (core error handler): the friend says it on the home screen */
 const OOPS='אוֹי, חוֹזְרִים לַמַּסָּע';
 FR.oops=()=>{FR.mount();anim('sad');return talk(OOPS,{ms:3000});};
-FR.speakList=()=>[EZ.q,...(window.GOALS?window.GOALS.speakList():[]),LISTEN,RXL.hint,RXL.yday,RXL.back,OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
+FR.speakList=()=>[EZ.q,...games().map(BRK.ask),TCH.claim,TCH.ask,TCH.thanks,TCH.gentle,...(window.SHIP&&SHIP.carrySay?SHIP.PIECES.map((_,i)=>SHIP.carrySay(i)):[]),...(window.GOALS?window.GOALS.speakList():[]),LISTEN,RXL.hint,RXL.yday,RXL.back,OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
   ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([a,b])=>[a,FIRST+' '+a,LAST+' '+a,b,b+' '+ALL])):[]),...(SM()?SM().speakList():[])];
 /* ---------- #389 listen first ----------
    A new row of answer buttons (.chs .chb) rests until the spoken question has ended, 4 s at most; with no voice (offline,
@@ -6291,14 +6358,19 @@ const IN=n=>n[0]==='ה'?(n[1]==='\u05B8'?'בָּ':'בַּ')+n.slice(2):(n[1]==='
 S.pieceSay=i=>{const M=window.STORYMIX,sc=M&&M.scene({c:Math.floor(i/5)+1,s:i%5+1});return NAMES[i]+'! קִבַּלְנוּ אֶת זֶה'+(sc?' '+(HOW[sc.topic]||'')+' '+IN(sc.n):'')+'.';};
 S.extraSay=id=>{const e=S.EXTRAS.find(x=>x.id===id);return e?e.n+'! קָנִינוּ אֶת זֶה בַּיַּהֲלוֹמִים שֶׁאָסַפְנוּ.':'';};
 S.doorSay=i=>'הַדֶּלֶת שֶׁל הַסִּפּוּר נִפְתַּחַת עִם '+NAMES[i]+'!';
-S.says=()=>[TITLE,...NAMES.map(NEW),...NAMES.map((_,i)=>S.pieceSay(i)),...S.EXTRAS.map(e=>S.extraSay(e.id)),...NAMES.map((_,i)=>S.doorSay(i))];
+/* #412 the friend holds the latest piece on home and mentions it when a scene opens */
+S.carrySay=i=>'נִקַּח אִתָּנוּ אֶת מָה שֶׁקִּבַּלְתָּ: '+NAMES[i]+'!';
+S.says=()=>[TITLE,...NAMES.map((_,i)=>S.carrySay(i)),...NAMES.map(NEW),...NAMES.map((_,i)=>S.pieceSay(i)),...S.EXTRAS.map(e=>S.extraSay(e.id)),...NAMES.map((_,i)=>S.doorSay(i))];
 T.addSay&&T.addSay(S.says());T.addChoices&&T.addChoices(S.EXTRAS.map(x=>x.n));
 S.get=()=>{let s=O.save.ship;if(!s||typeof s!=='object'||Array.isArray(s))s=O.save.ship={n:0,x:[]};
   s.n=Math.max(0,Math.min(NAMES.length,s.n|0));if(!Array.isArray(s.x))s.x=[];s.x=s.x.filter((id,i,a)=>S.EXTRAS.some(e=>e.id===id)&&a.indexOf(id)===i);return s;};
+S.latest=()=>{const s=S.get();return s.n?{i:s.n-1,n:NAMES[s.n-1]}:null;};
+S.held=()=>{const l=S.latest();return l?'<span class="hheld" data-i="'+l.i+'" aria-label="'+l.n+'">🎁 <b>'+l.n+'</b></span>':'';};
 S.door=()=>{const s=S.get();return s.d===O.today()||s.n>=NAMES.length?null:{n:NAMES[s.n],say:S.doorSay(s.n)};};
 /* the friend says it in the home bubble, with the voice */
 S.talk=t=>{if(!t)return;let b=$('#sHome .hbub2');const st=$('#sHome .hstage');if(!b&&st){b=h('div','hbub2');st.prepend(b);}if(b)b.textContent=t;O.say(T.spk(t));};
-document.addEventListener('click',e=>{const sh=e.target.closest&&e.target.closest('#sHome .hship');if(!sh)return;const k=e.target.closest('[data-i],[data-x]'),s=S.get();
+document.addEventListener('click',e=>{const hd=e.target.closest&&e.target.closest('#sHome .hheld');if(hd){e.stopPropagation();O.sfx&&O.sfx.pop&&O.sfx.pop(2);S.talk(S.pieceSay(+hd.dataset.i));return;}
+  const sh=e.target.closest&&e.target.closest('#sHome .hship');if(!sh)return;const k=e.target.closest('[data-i],[data-x]'),s=S.get();
   const t=k?(k.dataset.i!=null?S.pieceSay(+k.dataset.i):S.extraSay(k.dataset.x)):s.n?S.pieceSay(s.n-1):'';if(t){O.sfx&&O.sfx.pop&&O.sfx.pop(2);S.talk(t);}});
 S.award=()=>{const s=S.get(),d=O.today();if(s.d===d||s.n>=NAMES.length)return null;s.n++;s.d=d;O.persist();return S.PIECES[s.n-1];};
 /* the drawing: 12 parts (viewBox 120x92, bow on the left); a part shows from the bottom up, one fifth per piece */
@@ -11373,7 +11445,9 @@ function button(host,o){if(!host)return null;o=o||{};(host.isConnected?document:
   box.hidden=true;w.append(b,box);if(o.before&&o.before.parentNode===host)host.insertBefore(w,o.before);else host.appendChild(w);
   let n=0;const show=(html,voice)=>{box.hidden=false;box.innerHTML=html;box.classList.remove('in');void box.offsetWidth;box.classList.add('in');say(voice||html);};
   function tap(auto){if(n>=2||!w.isConnected)return;n++;track({h:'btn',n,auto:auto?1:0});
-    if(n===1){let c='';try{c=o.clue?o.clue():'';}catch(e){}const head=auto?BT.offer:BT.clue;show(`<b>${head}:</b> ${c||BT.again}`);}
+    if(n===1){let c='';try{c=o.clue?o.clue():'';}catch(e){}const head=auto?BT.offer:BT.clue,t=`<b>${head}:</b> ${c||BT.again}`;
+      /* #409 the first hint: in the friend's bubble with the voice, no box; later steps as before */
+      const F=window.FRIEND;if(F&&F.hint&&F.hint(t)){box.hidden=true;say(t);}else show(t);}
     else{let e='';try{e=o.answer?o.answer():'';}catch(x){}b.disabled=true;w.classList.remove('offer');w.classList.add('done');show(e||BT.ans);}}
   const api={el:w,box,btn:b,o,tap:()=>tap(false),offer(){if(n===0&&w.isConnected){w.classList.add('offer');tap(true);}},answer(){if(n<2&&w.isConnected){n=1;tap(true);}},get step(){return n;},get ans(){return o.ans;}};
   w._help=api;return api;}
