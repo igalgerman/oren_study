@@ -7,6 +7,7 @@ Usage:
   python tools/runner/owner_q.py open                           # open questions: key, window, text, url
   python tools/runner/owner_q.py answered <KEY> "<answer>"       # mark answered (after relaying the answer)
   python tools/runner/owner_q.py gate <#n>                      # #608: the owner's answers for issue n (exit 0 = gate open, 1 = closed)
+A PR whose issue is owner-gated (an owner question about it exists) never merges while that gate is CLOSED (#636, merge_gate).
 """
 import hashlib, json, re, sys
 from pathlib import Path
@@ -81,6 +82,23 @@ def gate(n, issue_comments, question_comments):
     for c in keys.values():
         out += [f"reaction {g.get('content', '')}" for g in c.get("reactionGroups") or [] if g.get("users", {}).get("totalCount", 1)]
     return out
+
+def merge_state(n, issue_comments, question_comments):
+    """Pure (#636): the owner gate as the merge sees it -> 'none' (no owner question about #n: not owner-gated), 'open', 'closed',
+    or 'error' (unreadable: the caller refuses). Its own reviewer's PURPLE question (window review-<n>) is no merge gate:
+    'hold' parks the issue anyway, 'merge-safe' merges by design."""
+    if issue_comments is None or question_comments is None: return "error"
+    qs = [c for c in question_comments if KEY_RE.search(c.get("body") or "") and re.search(rf"\*\*#{n}\*\*", c.get("body") or "")
+          and f"`review-{n}`" not in (c.get("body") or "")]
+    if not qs: return "none"
+    return "open" if gate(n, issue_comments, qs) else "closed"
+
+def merge_gate(n):
+    """#636: merge_state of issue n read from GitHub (the questions issue + issue n)."""
+    with ghcache.quick(QUICK_S):
+        q = find_issue(); qcs = comments(q) if q else None
+        ics = comments(n) if qcs is not None else None
+    return merge_state(n, ics, qcs)
 
 def open_questions(comments):
     """Pure: unanswered question comments, oldest first -> [{key, window, text, url}]."""

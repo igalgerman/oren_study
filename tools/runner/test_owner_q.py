@@ -172,3 +172,19 @@ out = _Out()
 with contextlib.redirect_stdout(out): rc = OQ.main(["gate", "64"])
 assert rc == 0 and "OPEN" in out.getvalue() and "כן" in out.getvalue(), out.getvalue()
 print("ok owner_q #608 owner gate only through an owner_q answer record")
+
+# #636: the merge gate. An issue is owner-gated when an owner question about it exists (any window but its own reviewer's
+# PURPLE: hold parks the issue, merge-safe merges by design). Gated + gate CLOSED -> never merge; gated + OPEN or not gated -> fine.
+qcs2 = [{"body": OQ.body(QK, "remote-64", "QUESTION: design ok?"), "reactionGroups": []},
+        {"body": OQ.body("3" * 12, "review-66", "QUESTION: blue or green?"), "reactionGroups": []}]
+assert OQ.merge_state(64, bot, qcs2) == "closed", "#557: the owner's #64 question unanswered + a bot 'design approved' -> closed"
+assert OQ.merge_state(64, bot + [{"body": OQ.answer_body(QK, "כן")}], qcs2) == "open"
+assert OQ.merge_state(65, [], qcs2) == "none", "no owner question about #65 -> not owner-gated"
+assert OQ.merge_state(66, [], qcs2) == "none", "a reviewer PURPLE question (merge-safe or hold) is not a merge gate"
+assert OQ.merge_state(64, None, qcs2) == "error" and OQ.merge_state(64, [], None) == "error"
+g4 = FakeGH(); OQ.STATE = tmp / "owner_q_merge.json"; OQ.GH = g4
+g4.issues[205] = {"title": OQ.TITLE, "comments": [dict(c) for c in qcs2]}; g4.issues[64] = {"title": "x", "comments": list(bot)}; g4.issues[65] = {"title": "y", "comments": []}
+assert OQ.merge_gate(64) == "closed" and OQ.merge_gate(65) == "none"
+g4.fail = True; OQ.STATE = tmp / "owner_q_merge2.json"
+assert OQ.merge_gate(64) == "error", "GitHub unreadable -> error (the runner refuses)"
+print("ok owner_q #636 merge gate: gated + CLOSED never merges")
