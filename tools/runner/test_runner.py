@@ -1182,12 +1182,14 @@ try:
     (r.RUNS / "8").mkdir(parents=True, exist_ok=True); (r.RUNS / "8" / "where").write_text("remote")
     (r.RUNS / "9").mkdir(parents=True, exist_ok=True); (r.RUNS / "9" / "where").write_text("remote")
     _lab.clear()
-    _list = [{"number": 8, "comments": [{"body": "QUESTION: a or b?"}, {"body": "Parked (cloud): x"}, {"body": "b"}]},
+    (r.RUNS / "11").mkdir(parents=True, exist_ok=True); (r.RUNS / "11" / "where").write_text("remote")
+    _list = [{"number": 8, "comments": [{"body": "QUESTION: a or b?"}, {"body": "Parked (cloud): x"}, {"body": _oq.answer_body("abcdef012345", "b")}]},
+             {"number": 11, "comments": [{"body": "QUESTION: a or b?"}, {"body": "HOLD (owner-merge) on PR #557; re-parked."}]},   # #608: the orchestrator's note is no owner answer
              {"number": 9, "comments": [{"body": "QUESTION: a or b?"}]},                           # no answer yet
              {"number": 10, "comments": [{"body": "QUESTION: a or b?"}, {"body": "b"}]}]           # not a cloud run: the old local flow
     r.gh = lambda *a, **k: (_gh.append(a), (0, json.dumps(_list)) if a[:2] == ("issue", "list") else (0, ""))[1]
     assert r.resume_answered() == [8]
-    assert r.take_answer(8) == "b" and r.take_answer(9) is None and r.take_answer(10) is None
+    assert r.take_answer(8) == "b" and r.take_answer(9) is None and r.take_answer(10) is None and r.take_answer(11) is None
     _la = next(a for a in _gh if a[:2] == ("issue", "list"))
     assert "blocked" in _la and "ready-for-human" in _la
     r.gh = lambda *a, **k: (1, "gh down")
@@ -1485,3 +1487,8 @@ assert "tab.settle" in _cw
 _pl = _src.split("def process_locked", 1)[1].split("def close_windows", 1)[0]
 assert _pl.count("close_windows(n)") >= 2 and "close_windows" not in _pl.split("except Parked", 1)[1].split("except", 1)[0]   # DONE + Ended settle; parked keeps tabs
 print("ok #26 ended issue tabs settled")
+
+# #608: workers and reviewers never write 'approved' for the owner; the gate is the owner_q record (owner_q.py gate), never comment text
+for _p in (r.worker_prompt(5, "pack"), r.remote_worker_prompt(5, "pack"), r.review_prompt(5, 9), r.remote_review_prompt(5, 9)):
+    assert "on the owner's behalf" in _p and "owner_q.py gate #5" in _p, _p[-800:]
+print("ok #608 prompts: no approvals on the owner's behalf; the gate is the owner_q record")
