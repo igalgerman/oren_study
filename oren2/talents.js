@@ -1388,10 +1388,21 @@ function special(i,id){const [kind,k]=id.split(':');const isT=kind==='tog';const
   const row=h('div','btnrow');const b=h('button','bigbtn huge',`<span>${isT?'סִיַּמְנוּ':'סִיַּמְתִּי'} ✓</span>`);b.onclick=()=>{fin();sfx.win();O.rain();O.showMap();};row.appendChild(b);box.appendChild(row);s.appendChild(box);
   O.sayNow=T.spk(kid);setTimeout(()=>{if(box.isConnected)O.say(T.spk(kid));},D(400));}
 function runStep(i){const d=T.dailyEnsure();const id=d.t[i];if(window.FRIEND)window.FRIEND.stepStart(i);if(/:/.test(id)){special(i,id);return;}
-  if(id==='math'){const lv=nextLevel();if(!lv){O.showJourney();return;}
+  if(id==='math'){const lv=nextLevel();if(!lv){O.showJourney();return;}if(O.pathLevel)O.pathLevel(lv.id);
     if(!O.save.story[lv.w.id+'-in'])O.showWorld(lv.w);else O.startLevel(lv);return;}
-  const a=ACT[id];if(a)a.run(O.showMap);}
+  /* #388: the result card's "continue" goes on to the next path mission; leaving before it is done goes home */
+  const a=ACT[id];if(!a)return;const nDone=()=>T.dailyEnsure().done.filter(Boolean).length,n0=nDone();
+  const back=()=>{if(nDone()>n0)nextStep();else O.showMap();};back.home=1;a.run(back);}
 window.TAL_step=runStep;
+/* #388: the next path mission, straight away. A break / meal / topic screen that is due comes first; home only at the end of
+   the path, when today's time is up (the time-up screen follows), or when he taps something else on that screen. */
+let scrN=0;O.on('screen',()=>{scrN++;});
+function nextStep(){const d=T.dailyEnsure(),left=T.limLeft?T.limLeft():null;
+  if(T.S().set.noDaily||d.done.every(Boolean)||(left&&left.min<=0)){O.showMap();return;}
+  const go=()=>{const k=T.dailyEnsure().done.findIndex(x=>!x);if(k<0)O.showMap();else runStep(k);};
+  const H=T.health;if(!H||!H.check){go();return;}H.check();if(!H.blocking()){go();return;}
+  const s0=scrN;let calm=0;const iv=setInterval(()=>{if(scrN!==s0){clearInterval(iv);return;}if(H.blocking()){calm=0;return;}if(++calm>=3){clearInterval(iv);go();}},250);}
+T.nextStep=nextStep;
 /* a small story for every day: each mission brings back one piece */
 const QUESTS=[
  {e:'🦸',t:'הַגִּבּוֹר שֶׁל הָעִיר',k:'💎',a:'אוֹי! גְּבִישֵׁי הַכֹּחַ נֶעֶלְמוּ מֵהָעִיר. כָּל מְשִׂימָה מַחְזִירָה גָּבִישׁ אֶחָד!',z:'כָּל הַגְּבִישִׁים חָזְרוּ, וְהָעִיר שׁוּב מְאִירָה. אַתָּה גִּבּוֹר אֲמִתִּי!'},

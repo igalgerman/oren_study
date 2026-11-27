@@ -36,3 +36,5 @@ resume-desktop 60          # #44 reloads mid-level, mid-quiz and while paused + 
 resume-phone 60            # same file on the phone viewport
 qa-fix-desktop 60          # #267 adds the hands-on checks (clock drag, pizza taps, carry/borrow board, times array): ~15 s
 qa-fix-phone 60            # same file on the phone viewport: ~14 s
+day-path-desktop 60        # #388 adds a 3-mission path walk (activity, math level, activity) + time-limit stop: ~27 s
+day-path-phone 60          # same file on the phone viewport: ~26 s
