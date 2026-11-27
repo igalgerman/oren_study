@@ -421,7 +421,7 @@ body.pplay .dlg,body.pplay .overlay{padding-bottom:78px}
 .hwp{font-size:40px;line-height:1.1}.hww{font-size:24px;font-weight:800}
 .story .sl .rw{cursor:pointer}.story.noline .sl .rw{cursor:default}
 /* read first, listen later (#355): the per-line 🔊 waits for its time */
-.story.noline .sl .rdb{display:none}.story.noline .sl{cursor:default}
+.story.noline .sl{cursor:default}
 .stpeek{display:flex;flex-direction:column;align-items:center;gap:10px;width:100%}
 .tq .qside{margin:14px auto 0;display:flex}
 #sTal,#sHome{padding-bottom:72px}
@@ -542,3 +542,13 @@ body:has(#dlg:not([hidden])) .toast{top:74px;bottom:auto}
 .prow .pmore{min-width:44px;min-height:36px;font-weight:900}.prow .practs{display:none;gap:6px;flex-wrap:wrap}.prow.open .practs{display:flex}.prow:has(.pmore){flex-wrap:wrap}
 .pbig{display:flex;gap:10px;flex-wrap:wrap}.pbig .bigbtn{font-size:20px;padding:10px 22px}
 .dnh{animation:pulse 1.6s infinite}
+
+/* G3 (#96): options in balanced rows, never 3+1 — four options on a phone are 2x2; letter tiles (read-bank2 tiles) use --c columns */
+@media (max-width:760px){.chs:has(> .chb:nth-child(4):last-child){display:grid;grid-template-columns:repeat(2,auto);justify-content:center}}
+.chs.rbt{display:grid;grid-template-columns:repeat(var(--c),auto);justify-content:center}
+@media (max-width:760px){.chs.rbt.c4 .chb.tx{min-width:0;width:72px;padding:0}}
+/* G7 (#100): on a phone, kid text >= 16px and tap targets >= 44px on the menus */
+@media (max-width:760px){.tool{font-size:16px}.wcard2 .nm{font-size:16px}.wban{font-size:16px}.pnode .kl,.pnode.fut .kl{font-size:16px}
+  .dcard b,.dcard.cont b{font-size:16px}.doors2 .door>b{font-size:16px}
+  .pxpal{grid-template-columns:repeat(4,44px)}.pxpal .sw{width:44px;height:44px}.tbtn small{font-size:16px}
+  .dmore{min-height:44px}.hbub2 .rdb::after{inset:-9px}}

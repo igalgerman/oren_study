@@ -1,5 +1,5 @@
 /* ===== READING: "קוֹדֶם אַתָּה, אַחַר כָּךְ אֲנִי" =====
-   Every text Oren should read gets a small 🔊. Pressing it reads the text and lights up each word as it is said.
+   Every text Oren should read gets a small 🔊 (not story lines: a tap on a line reads it, one 🔊 reads the story, G4). Pressing it reads the text and lights up each word as it is said.
    On quiz questions the game first lets him try; at level 1/2 it reads by itself after a pause.
    Levels go up by themselves when he answers correctly without hearing the question first ("solo"). */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;const {h,$}=O;const D=O.D;
@@ -8,7 +8,7 @@ const RD=()=>{const s=T.S();s.rd=s.rd||{lvl:1,solo:0};return s.rd;};
 const mode=()=>{const m=(T.S().set||{}).rdMode;return m===1||m===2||m===3?m:'auto';};
 const level=()=>{const m=mode();return m==='auto'?((RD().lvl|0)||1):m;};
 const UP={1:25,2:85};                         /* solo answers needed to move up from level 1 / level 2 */
-const TARGETS='#sTal .tqc .qq,#sTal .tqc .sent,#sTal .sl,#sTal .lsent:not(.blab),#sHome .hbub2';
+const TARGETS='#sTal .tqc .qq:not(.tqi),#sTal .tqc .sent,#sTal .lsent:not(.blab),#sHome .hbub2';
 
 /* ---- words: wrap each word once, keep the element's own markup ---- */
 function words(el){if(el._rw&&el._rw.length&&el._rw.every(w=>w.isConnected))return el._rw;const out=[];

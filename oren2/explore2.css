@@ -103,3 +103,7 @@ circle.e2hit.e2show,rect.e2hit.e2show{fill:rgba(255,209,102,.6)!important;stroke
   .e2bgrid{--bc:44px}
   .e2pc{width:44px;height:44px}.e2pal{gap:8px}
 }
+@media (max-width:760px){.e2card .sent{font-size:22px;line-height:1.4}}
+.e2art{flex-wrap:wrap}.e2art .e2leg{flex-basis:100%}
+.e2art.sm .e2svg.e2wide{width:min(400px,86vw);max-height:none}
+@media (max-width:760px){.e2world .e2lbl,.e2world .e2sea{font-size:19px}}

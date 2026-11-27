@@ -79,11 +79,11 @@ const STUB = () => {
   await p.evaluate(() => document.querySelector('.tqc .qq .rdb').click()); await L.sleep(100);
   await p.waitForFunction(() => !(window.OREN.tapTooSoon && window.OREN.tapTooSoon()), null, { polling: 50 }); await p.evaluate(() => { const q = window.__quiz; q.wrap.querySelector('.chs').children[q.ans].click(); });   /* #436: taps in the first 400 ms of a new question are ignored */
   ok('heard first → not solo', await p.evaluate(() => window.TAL.S().rd.solo === 25));
-  // 6. stories: 🔊 on every line; "read to me" reads line by line
+  // 6. stories (G4): no per-line 🔊, one 🔊 "read to me" that reads line by line
   await p.evaluate(() => window.TAL.ACT['story-0'].run(() => {}));
-  await p.waitForSelector('.sl .rdb');
-  ok('🔊 on every story line', await p.evaluate(() => document.querySelectorAll('.sl').length === document.querySelectorAll('.sl .rdb').length));
-  await p.evaluate(() => { window.__spoken = []; [...document.querySelectorAll('#sTal .bigbtn')].find(x => x.textContent.includes('הַקְרֵא')).click(); });
+  await p.waitForSelector('#sTal .sl'); await L.sleep(100);
+  ok('G4 story: no per-line 🔊', await p.evaluate(() => document.querySelectorAll('#sTal .sl').length > 0 && document.querySelectorAll('#sTal .sl .rdb').length === 0));
+  await p.evaluate(() => { window.__spoken = []; document.querySelector('#sTal .strd').click(); });
   await p.waitForFunction(() => window.__spoken.length >= 2, null, { timeout: 8000 });
   ok('"read to me" goes line by line', await p.evaluate(() => window.__spoken.length >= 2));
   // 7. home bubble has 🔊
@@ -108,7 +108,7 @@ async function stories(b) {
   /* story k of the bank at a forced story level (null = the real level) */
   const run = (p, k, lv) => p.evaluate(([k, lv]) => { const R = window.READBANK2; R.levelHook = lv ? () => lv : null; window.__rb2run.story(() => {}, k); }, [k, lv]);
   const vis = async p => { await L.sleep(150); return p.evaluate(() => { const pg = [...document.querySelectorAll('#sTal .story')].pop(); const rd = [...document.querySelectorAll('#sTal .strd')].pop();
-    const rdb = pg.querySelector('.sl .rdb'); return { line: !!rdb && rdb.offsetParent !== null, all: !!rd && !rd.hidden && rd.offsetParent !== null }; }); };
+    return { line: !!pg && !pg.classList.contains('noline'), all: !!rd && !rd.hidden && rd.offsetParent !== null }; }); };   /* line help = a tap on a line reads it */
   const toQ = p => p.evaluate(() => document.querySelector('#sTal .stgo').click());
   /* 100 ms is enough only because this part runs __fast (the 400 ms tap guard is D(400) = 27 ms); without __fast wait 450 ms */
   const wrongTap = async p => { await L.sleep(100); return p.evaluate(() => { const q = window.__quiz; const bs = [...q.wrap.querySelectorAll('.chs .chb')]; const w = bs.find((x, k) => k !== q.ans); w.click(); return bs.indexOf(w); }); };   /* #436: taps in the first 400 ms of a new question are ignored */
@@ -135,7 +135,7 @@ async function stories(b) {
   ok('question screen: one "📖 to the story" button', await p.evaluate(() => { const b = document.querySelectorAll('#sTal .qside'); return b.length === 1 && /לַסִּפּוּר/.test(b[0].textContent); }));
   await p.evaluate(() => document.querySelector('#sTal .qside').click());
   const pk = await p.evaluate(() => ({ story: !!document.querySelector('#sTal .stpeek .story .sl'), qHidden: window.__quiz.wrap.hidden, rd: !!document.querySelector('#sTal .stpeek .strd'), back: [...document.querySelectorAll('#sTal .stpeek .stback')].map(x => x.textContent.trim()) }));
-  ok('📖 opens the story (text + read to me) with one button back to the question', pk.story && pk.qHidden && pk.rd && pk.back.length === 1 && /לַשְּׁאֵלָה/.test(pk.back[0]), JSON.stringify(pk));
+  ok('📖 opens the story (text + read to me) with one button back to the question', pk.story && pk.qHidden && pk.rd && pk.back.length === 1 && /הַמְשֵׁךְ/.test(pk.back[0]), JSON.stringify(pk));
   await p.evaluate(() => document.querySelector('#sTal .stback').click());
   const q1 = await p.evaluate(wi => ({ i: window.__quiz.i, t: document.querySelector('#sTal .tqc').textContent, shown: !window.__quiz.wrap.hidden, peek: !!document.querySelector('.stpeek'),
     bad: window.__quiz.wrap.querySelectorAll('.chs .chb')[wi].classList.contains('bad') && window.__quiz.wrap.querySelectorAll('.chs .chb')[wi].disabled }), wi);
@@ -149,12 +149,12 @@ async function stories(b) {
   const say = await (async () => { await run(p, 0, 1); return p.evaluate(() => ({ now: window.OREN.sayNow, fr: window.FRIEND.last })); })();
   ok('story opens with the friend: "first we try to read alone!"', /לבד/.test((say.now || '').replace(/[֑-ׇ]/g, '')) && /קוֹדֶם נְנַסֶּה לִקְרֹא לְבַד/.test(say.fr), JSON.stringify(say));
   let r = await band(1, fast(10));
-  ok('low level: per-line 🔊 at once, "read to me" only after ~10 s', r[0].line && !r[0].all && r[1].line && r[1].all, JSON.stringify(r));
+  ok('low level: tapping a line reads it at once, "read to me" only after ~10 s', r[0].line && !r[0].all && r[1].line && r[1].all, JSON.stringify(r));
   r = await band(3, fast(25));
   ok('middle level: both hidden, both after ~25 s', !r[0].line && !r[0].all && r[1].line && r[1].all, JSON.stringify(r));
   ok('middle level: both at once after a wrong answer', r[2].line && r[2].all, JSON.stringify(r));
   r = await band(5, fast(25));
-  ok('top level: no read to me at all; the per-line 🔊 only after a wrong answer', !r[0].line && !r[0].all && !r[1].line && !r[1].all && r[2].line && !r[2].all, JSON.stringify(r));
+  ok('top level: no read to me at all; tapping a line reads it only after a wrong answer', !r[0].line && !r[0].all && !r[1].line && !r[1].all && r[2].line && !r[2].all, JSON.stringify(r));
   // 4. day log: read alone / listened, the level and the goal; only stories read alone move the level up
   const finish = () => p.evaluate(async () => { await new Promise(r => setTimeout(r, 100)); for (let k = 0; k < 3; k++) { const q = window.__quiz; q.wrap.querySelector('.chs').children[q.ans].click(); await new Promise(r => setTimeout(r, 250)); } });
   const lv1 = await p.evaluate(() => window.READBANK2.stories.filter(s => s.lv === 1).map(s => s.id));

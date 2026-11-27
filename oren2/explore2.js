@@ -38,8 +38,8 @@ const ROWX=[496,456,414,372,306,222,148,80],ROWR=[5,8,8.5,6.5,25,17,12,11.5];
 const planetRow=hi=>SV('0 0 560 110',`<rect width="560" height="110" rx="14" fill="#1d2140"/><circle cx="600" cy="55" r="70" fill="#ffcf4d"/>`+
   PLANETS.map((p,i)=>`<g opacity="${hi&&!hi.includes(p.k)?.3:1}">${pl(p.k,ROWX[i],55,ROWR[i])}</g>`).join(''),'e2wide');
 const EARTH_DN=SV('0 0 400 170',`<rect width="400" height="170" rx="14" fill="#1d2140"/><circle cx="345" cy="85" r="42" fill="#ffcf4d"/><g stroke="#ffcf4d" stroke-width="4" opacity=".55">${[-30,-15,0,15,30].map(d=>`<line x1="290" y1="${85+d}" x2="200" y2="${85+d*1.4}"/>`).join('')}</g>
-  ${pl('earth',120,85,62)}<path d="M120 23 A62 62 0 0 0 120 147 Z" fill="rgba(8,12,35,.62)"/><text x="160" y="90" class="e2lbl" font-size="15" fill="#1d2631">☀ יוֹם</text><text x="80" y="90" class="e2lbl" font-size="15" style="fill:#fff;stroke:none">לַיְלָה</text>
-  <path d="M75 15 A70 70 0 0 1 170 20" fill="none" stroke="#fff" stroke-width="3" marker-end="url(#e2ar)"/><defs><marker id="e2ar" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#fff"/></marker></defs>`);
+  ${pl('earth',120,85,62)}<path d="M120 23 A62 62 0 0 0 120 147 Z" fill="rgba(8,12,35,.62)"/><text x="160" y="90" class="e2lbl" font-size="22" fill="#1d2631">☀ יוֹם</text><text x="80" y="92" class="e2lbl" font-size="22" style="fill:#fff;stroke:none">לַיְלָה</text>
+  <path d="M75 15 A70 70 0 0 1 170 20" fill="none" stroke="#fff" stroke-width="3" marker-end="url(#e2ar)"/><defs><marker id="e2ar" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#fff"/></marker></defs>`,'e2wide');
 const ASTRO=SV('0 0 200 200',`<rect width="200" height="200" rx="16" fill="#1d2140"/>${[[20,30],[170,25],[160,150],[30,160],[100,15],[185,95]].map(([x,y])=>`<circle cx="${x}" cy="${y}" r="2" fill="#fff"/>`).join('')}
   <rect x="62" y="70" width="76" height="80" rx="22" fill="#9aa1a8"/><rect x="70" y="78" width="60" height="78" rx="20" fill="#f4f4f4" stroke="#c9ccd1" stroke-width="3"/><rect x="88" y="100" width="24" height="16" rx="3" fill="#3a8fc4"/><circle cx="94" cy="108" r="3" fill="#e4572e"/><circle cx="104" cy="108" r="3" fill="#ffd166"/>
   <rect x="44" y="88" width="30" height="16" rx="8" fill="#f4f4f4" stroke="#c9ccd1" stroke-width="3" transform="rotate(-25 59 96)"/><rect x="126" y="88" width="30" height="16" rx="8" fill="#f4f4f4" stroke="#c9ccd1" stroke-width="3" transform="rotate(25 141 96)"/>
@@ -87,13 +87,13 @@ const KIN=[[32.89,35.6],[32.85,35.64],[32.78,35.65],[32.71,35.60],[32.70,35.57],
 const JORDAN=[[33.2,35.62],[33.0,35.61],[32.89,35.6]],JORDAN2=[[32.70,35.57],[32.5,35.57],[32.2,35.55],[32.0,35.53],[31.77,35.53]];
 const CITIES={jer:['יְרוּשָׁלַיִם',[31.78,35.22],[-4,20]],ta:['תֵּל אָבִיב',[32.08,34.80],[34,-6]],hai:['חֵיפָה',[32.79,35.03],[24,5]],bs:['בְּאֵר שֶׁבַע',[31.25,34.79],[6,20]],eil:['אֵילַת',[29.56,34.95],[-28,-2]]};
 const SEAS={med:['הַיָּם הַתִּיכוֹן',[32.45,34.18]],kin:['הַכִּנֶּרֶת',[32.8,35.585],[14,-16]],dead:['יָם הַמֶּלַח',[31.42,35.49],[-4,52]],red:['יָם סוּף',[29.35,34.88],[-36,5]]};
-const REGIONS={galil:['הַגָּלִיל',[[33.1,35.11],[33.2,35.6],[32.72,35.55],[32.6,35.3],[32.75,35.12]],[32.95,35.33]],negev:['הַנֶּגֶב',[[31.35,34.25],[31.3,35.3],[30.6,35.2],[29.6,34.99],[29.55,34.9],[30.4,34.45]],[30.6,34.85]]};
+const REGIONS={galil:['הַגָּלִיל',[[33.1,35.07],[33.2,35.6],[32.72,35.55],[32.6,35.3],[32.75,35.07]],[32.95,35.33]],negev:['הַנֶּגֶב',[[31.35,34.25],[31.3,35.3],[30.6,35.2],[29.6,34.99],[29.55,34.9],[30.4,34.45]],[30.6,34.85]]};
 const cityPos=k=>ilP(CITIES[k][1]);
 function ilMap(o={}){const lab=o.labels||[],hit=o.hit||'';const L=(k,n,[x,y],off=[0,0],fs=16)=>lab.includes(k)?`<text x="${x+off[0]}" y="${y+off[1]}" class="e2lbl" font-size="${fs}">${n}</text>`:'';
   let s=`<defs><linearGradient id="e2land" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a8d08d"/><stop offset=".45" stop-color="#cfe0a0"/><stop offset=".6" stop-color="#ead39a"/><stop offset="1" stop-color="#e6c27f"/></linearGradient></defs>
   <rect x="0" y="0" width="204" height="420" fill="url(#e2land)"/>
   <polygon points="0,0 ${pts(MED)} 0,232" fill="#7cc3ea" data-k="med" class="${hit==='sea'?'e2hit':''}"/>
-  <polygon points="${pts(GULF)}" fill="#7cc3ea"/>${hit==='sea'?`<rect x="80" y="380" width="40" height="40" fill="transparent" data-k="red" class="e2hit"/><polygon points="${pts(GULF)}" fill="transparent" data-k="red" class="e2hit"/>`:''}
+  <polygon points="${pts(GULF)}" fill="#7cc3ea"/>${hit==='sea'?`<rect x="78" y="376" width="44" height="44" fill="transparent" data-k="red" class="e2hit"/><polygon points="${pts(GULF)}" fill="transparent" data-k="red" class="e2hit"/>`:''}
   <polyline points="${pts(JORDAN)}" fill="none" stroke="#5fa8d8" stroke-width="2.5"/><polyline points="${pts(JORDAN2)}" fill="none" stroke="#5fa8d8" stroke-width="2.5"/>
   <polygon points="${pts(DEAD)}" fill="#5fb0d8" stroke="#3a8fc4" stroke-width="1"/><polygon points="${pts(KIN)}" fill="#4aa3e0" stroke="#3a8fc4" stroke-width="1"/>`;
   if(hit==='sea'){const[dx,dy]=ilP([31.42,35.49]),[kx,ky]=ilP([32.8,35.585]);s+=`<circle cx="${dx}" cy="${dy}" r="24" fill="transparent" data-k="dead" class="e2hit"/><circle cx="${kx}" cy="${ky}" r="22" fill="transparent" data-k="kin" class="e2hit"/>`;}
@@ -125,7 +125,9 @@ const CONT={
  antarctica:['אַנְטַארְקְטִיקָה',[[[-90,-180],[-70,-180],[-71,-160],[-74,-140],[-73,-120],[-73,-100],[-71,-80],[-68,-68],[-64,-60],[-63,-57],[-65,-58],[-70,-60],[-73,-60],[-77,-50],[-75,-35],[-71,-15],[-70,0],[-69,20],[-69,40],[-67,55],[-67,70],[-69,75],[-66,90],[-66,110],[-67,130],[-68,150],[-71,165],[-72,170],[-70,180],[-90,180]]],[-75,10]]};
 const CONT_COL={namerica:'#f2a65a',samerica:'#e9c46a',europe:'#8e9fe0',africa:'#e88f6b',asia:'#7cc35f',australia:'#c895e0',antarctica:'#eef3f7'};
 const OCEANS={pacific:['הָאוֹקְיָנוֹס הַשָּׁקֵט',[0,-140],'הַשָּׁקֵט'],atlantic:['הָאוֹקְיָנוֹס הָאַטְלַנְטִי',[22,-42],'הָאַטְלַנְטִי'],indian:['הָאוֹקְיָנוֹס הַהֹדִּי',[-20,75],'הַהֹדִּי']};
+const PAD={antarctica:[20,121,320,44]};
 function worldMap(o={}){const lab=o.labels||[];let s=`<rect width="360" height="165" fill="#8fd0f2"/>`;
+  if(o.hit)for(const k in CONT){const [x,y]=wP(CONT[k][2]),r=PAD[k]||[x-24,y-24,48,48];s+=`<g data-k="${k}" class="e2hit"><rect x="${r[0]}" y="${r[1]}" width="${r[2]}" height="${r[3]}" fill="transparent"/></g>`;}
   for(const k in CONT){const [n,polys]=CONT[k];s+=`<g data-k="${k}" class="${o.hit?'e2hit':''}" fill="${o.plain?'#c9d6a3':CONT_COL[k]}" stroke="#5c6b73" stroke-width=".5">${polys.map(p=>`<polygon points="${wpts(p)}"/>`).join('')}</g>`;}
   s+=`<polygon points="${wpts([[63,-94],[60,-94],[57,-92.5],[55,-85],[52,-80],[55,-77],[58,-77],[61,-78],[62.5,-82],[64,-87]])}" fill="#8fd0f2"/><ellipse cx="${wP([43.2,34.5])[0]}" cy="${wP([43.2,34.5])[1]}" rx="6.5" ry="2.2" fill="#8fd0f2"/><ellipse cx="${wP([42,50.5])[0]}" cy="${wP([42,50.5])[1]}" rx="2.6" ry="5" fill="#8fd0f2"/>`;
   if(o.il){const [x,y]=wP([31.5,35]);s+=`<circle cx="${x}" cy="${y}" r="2.6" fill="#e4572e" stroke="#fff" stroke-width="1" pointer-events="none"/>`;}
@@ -177,13 +179,14 @@ const spk=T.spk;
    card = {art, t} */
 /* a card shows one short line; the whole text is spoken (the line lights up, the rest follows) */
 const HEB_PL=x=>x.replace(/[\u0591-\u05C7]/g,'');
-function splitLine(t){const re=/[.!?:,–]/g;let m;while((m=re.exec(t))){const head=t.slice(0,m.index+1),rest=t.slice(m.index+1).trim();if(!rest)break;if(HEB_PL(head).length>=12)return [head.replace(/\s*[,:–]$/,''),rest];}return [t,''];}
+function splitLine(t){const re=/[.!?:,–]/g;let m,head=t;while((m=re.exec(t))){const hd=t.slice(0,m.index+1);if(!t.slice(m.index+1).trim())break;if(HEB_PL(hd).length>=12){head=hd.replace(/\s*[,:–]$/,'');break;}}
+  if(HEB_PL(head).length<=28)return [head];const ws=head.split(' ');let out='';for(const w of ws){const nx=out?out+' '+w:w;if(HEB_PL(nx).length>26)break;out=nx;}return [out.replace(/[,:–]$/,'')+'…'];}
 function lesson(o){const cards=o.cards.filter(c=>c);if(!cards.length)return o.then();let i=0;O.setScreen('sTal',o.bg,o.back);const s=$('#sTal');
   const show=()=>{const c=cards[i];T.hudT(o.title,T.progressBar(i,cards.length));O.sayNow=spk(c.t);s.innerHTML='';
-    const [vis,rest]=splitLine(c.t);const card=h('div','prq tqc e2card',`<div class="e2art">${c.art||''}</div><div class="sent">${vis}</div>`);s.appendChild(card);card.classList.add('flashin');
+    const [vis]=splitLine(c.t);const card=h('div','prq tqc e2card',`<div class="e2art">${c.art||''}</div><div class="sent" data-rd="1">${vis}</div>`);s.appendChild(card);card.classList.add('flashin');
     const nx=h('button','bigbtn e2next',ICON.play+'<span>הַמְשֵׁךְ</span>');
     nx.onclick=()=>{T.readStop&&T.readStop();sfx.pop(2);i++;if(i<cards.length)show();else{STEP=null;o.then();}};s.appendChild(nx);
-    setTimeout(async()=>{const se=card.querySelector('.sent');if(!card.isConnected||!se)return;if(T.readEl)await T.readEl(se);else O.say(spk(vis));if(rest&&card.isConnected&&cards[i]===c)O.say(spk(rest));},D(450));setStep(()=>nx.click());};
+    setTimeout(()=>{if(card.isConnected&&cards[i]===c)O.say(O.sayNow);},D(450));setStep(()=>nx.click());};
   show();}
 /* question bank → T.quiz. q = {lv, q, a, ds, art, ex, cls} */
 const Q=(lv,q,a,ds,x)=>Object.assign({lv,q,a,ds},x||{});
