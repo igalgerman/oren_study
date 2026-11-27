@@ -59,15 +59,34 @@ assert [k for k, _ in P.causes(sample(claude=3), {}, 0, 0)] == ["claude"]   # no
 t = dict(P.causes(sample(free=10, chrome=50), {}, 0, 3))
 assert "RAM 10% free" in t["ram"] and "50 chrome-headless-shell" in t["chrome"], t
 
-# once per 30 min per cause
-send, sent = P.due(["ram", "chrome"], {}, 0)
-assert send == ["ram", "chrome"]
-send, sent = P.due(["ram", "cpu"], sent, 600)
-assert send == ["cpu"]                                                 # ram was sent 10 min ago
-send, sent = P.due(["ram"], sent, 1799)
+# #567: once per 60 min per cause; sooner only when worse (RAM down 5+ points, claude count up)
+send, sent = P.due({"ram": 12, "chrome": 6}, {}, 0)
+assert sorted(send) == ["chrome", "ram"]
+send, sent = P.due({"ram": 12, "cpu": 90}, sent, 600)
+assert send == ["cpu"]                                                 # ram was sent 10 min ago, same value
+send, sent = P.due({"ram": 8}, sent, 1200)
+assert send == []                                                      # 4 points worse: not enough
+send, sent = P.due({"ram": 7}, sent, 1500)
+assert send == ["ram"]                                                 # 5 points worse than the last SENT value
+send, sent = P.due({"ram": 7}, sent, 1500 + 3599)
 assert send == []
-send, sent = P.due(["ram"], sent, 1800)
-assert send == ["ram"]
+send, sent = P.due({"ram": 7}, sent, 1500 + 3600)
+assert send == ["ram"]                                                 # 60 min later: told again
+send, sent = P.due({"claude": 6}, {}, 0)
+assert send == ["claude"]
+send, sent = P.due({"claude": 6}, sent, 600)
+assert send == []
+send, sent = P.due({"claude": 5}, sent, 900)
+assert send == []                                                      # better: no new alarm
+send, sent = P.due({"claude": 7}, sent, 1200)
+assert send == ["claude"]                                              # one more claude: worse
+
+# #567: the claude count is sessions, not helper/child claude processes of one session
+ps = [proc(1, 0, "bash.exe"), proc(10, 1, "claude.exe"), proc(11, 10, "node.exe"), proc(12, 11, "claude.exe"),   # a helper of session 10
+      proc(13, 10, "claude.exe"),                                                                                # a direct child
+      proc(20, 1, "claude.exe"), proc(30, 999, "claude.exe")]                                                    # 2 more sessions (30: parent gone)
+assert P.counts(ps)["claude"] == 3, P.counts(ps)
+assert P.counts([proc(1, 2, "claude.exe"), proc(2, 1, "claude.exe")])["claude"] <= 2                           # a parent loop never hangs
 
 # the panel/dashboard line
 assert P.line({"cpu": 42.4, "ram_free": 31.6}) == "PC: CPU 42% · RAM 32% free"
@@ -89,17 +108,34 @@ with tempfile.TemporaryDirectory() as d:
     assert P.alarmed(d, now=1000 + 60) and not P.alarmed(d, now=1000 + P.FRESH_S + 1)   # an old file (watchdog down) is no alarm
     said.clear()
     assert run(1060, s) == []                                          # too soon: every 2 min
-    assert run(1000 + P.EVERY_S, s) == [] and said == []               # still alarmed, but sent < 30 min ago
+    assert run(1000 + P.EVERY_S, s) == [] and said == []               # still alarmed, but sent < 60 min ago
     assert P.alarmed(d, now=1000 + P.EVERY_S)
     assert run(1000 + 2 * P.EVERY_S, sample()) == []                   # calm again
     pj = json.loads((d / "pc.json").read_text(encoding="utf-8"))
     assert pj["alarm"] is False and not P.alarmed(d, now=1000 + 2 * P.EVERY_S)
-    assert run(1000 + 1800 + 3 * P.EVERY_S, s) == ["ram"]              # 30 min later: told again
+    assert run(1000 + 3600 + 3 * P.EVERY_S, s) == ["ram"]              # 60 min later: told again
     # no sample (no psutil, no powershell): nothing written, nothing said
     said.clear()
     assert P.tick([], send=lambda w, m: said.append(w), log=logged.append, now=99999, sample=None, runs=d, collect=lambda: None) == []
     assert said == []
-assert not P.alarmed(Path(tempfile.mkdtemp()))                         # no file: not alarmed
+assert not P.alarmed(Path(tempfile.mkdtemp()))
+
+# #567 (27 Nov 02:00-03:10): the same RAM alarm every 5-10 min. The watchdog reloads its modules after every main sync,
+# which wiped pcload's in-memory 'sent' times. Same values twice in 10 min -> ONE alarm, even across a reload / new state.
+with tempfile.TemporaryDirectory() as d:
+    d = Path(d); said = []
+    ts = [{"name": "orchestrator", "state": "live"}]
+    s = sample(free=14, claude=6)
+    k1 = P.tick(ts, send=lambda w, m: said.append(m), log=lambda m: None, now=5000, sample=s, runs=d, st={})
+    assert sorted(k1) == ["claude", "ram"], k1
+    n = len(said)
+    import importlib; importlib.reload(P)                                       # what the watchdog does after a sync
+    assert P.tick(ts, send=lambda w, m: said.append(m), log=lambda m: None, now=5000 + 300, sample=s, runs=d, st={}) == []
+    assert P.tick(ts, send=lambda w, m: said.append(m), log=lambda m: None, now=5000 + 600, sample=s, runs=d, st={}) == []
+    assert len(said) == n, said
+    # worse -> told again sooner
+    assert P.tick(ts, send=lambda w, m: said.append(m), log=lambda m: None, now=5000 + 900, sample=sample(free=9, claude=6), runs=d, st={}) == ["ram"]
+                         # no file: not alarmed
 
 # the runner: no cloud refusal pause from a start that failed with no output while the PC is alarmed (#293, 14:52)
 assert P.pc_not_cloud("no output", True) and P.pc_not_cloud("", True)
