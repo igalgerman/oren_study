@@ -6,7 +6,9 @@
    SHIP.el(cls)   the ship picture (the empty sea when n=0)
    SHIP.award()   the next piece for today, or null (already today / ship complete)
    SHIP.offer(next) the additions choice when there are gems, then next()
-   SHIP.says()    every kid sentence (for pregen, registered with T.addSay) */
+   SHIP.says()    every kid sentence (for pregen, registered with T.addSay)
+   #392: a tap on a built piece (or an addition) on home: the friend's bubble says what it is and how he earned it (SHIP.talk);
+   SHIP.door()    the story door at the end of today's path: the ship piece that opens it (null when today's piece is earned) */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;const {h,$}=O;
 const S=window.SHIP={};
 /* the 60 pieces, in the order of the script (one chapter = one part of the ship = 5 pieces) */
@@ -30,10 +32,22 @@ S.EXTRAS=[{id:'fish',e:'🐟',n:'דָּג',x:14,y:86},{id:'dolph',e:'🐬',n:'ד
  {id:'rainbow',e:'🌈',n:'קֶשֶׁת',x:14,y:12},{id:'octo',e:'🐙',n:'תְּמָנוּן',x:80,y:88},{id:'whale',e:'🐳',n:'לִוְיָתָן',x:112,y:80}];
 S.COST=10;
 const TITLE='מָה נוֹסִיף לַסְּפִינָה?',NEW=n=>'חֵלֶק חָדָשׁ לַסְּפִינָה: '+n+'!';
-S.says=()=>[TITLE,...NAMES.map(NEW)];
+/* #392 how each piece was earned: the scene's topic, in the chapter's place (story script #385) */
+const HOW={add:'כְּשֶׁחִבַּרְנוּ מִסְפָּרִים',sub:'כְּשֶׁחִסַּרְנוּ מִסְפָּרִים',mul:'כְּשֶׁכָּפַלְנוּ מִסְפָּרִים',div:'כְּשֶׁחִלַּקְנוּ שָׁוֶה',
+  time:'כְּשֶׁבָּדַקְנוּ בַּשָּׁעוֹן',read:'כְּשֶׁקָּרָאנוּ מִלִּים',eng:'כְּשֶׁדִּבַּרְנוּ אַנְגְּלִית',think:'כְּשֶׁפָּתַרְנוּ חִידָה'};
+const IN=n=>n[0]==='ה'?(n[1]==='\u05B8'?'בָּ':'בַּ')+n.slice(2):(n[1]==='\u05B0'?'בִּ':'בְּ')+n;
+S.pieceSay=i=>{const M=window.STORYMIX,sc=M&&M.scene({c:Math.floor(i/5)+1,s:i%5+1});return NAMES[i]+'! קִבַּלְנוּ אֶת זֶה'+(sc?' '+(HOW[sc.topic]||'')+' '+IN(sc.n):'')+'.';};
+S.extraSay=id=>{const e=S.EXTRAS.find(x=>x.id===id);return e?e.n+'! קָנִינוּ אֶת זֶה בַּיַּהֲלוֹמִים שֶׁאָסַפְנוּ.':'';};
+S.doorSay=i=>'הַדֶּלֶת שֶׁל הַסִּפּוּר נִפְתַּחַת עִם '+NAMES[i]+'!';
+S.says=()=>[TITLE,...NAMES.map(NEW),...NAMES.map((_,i)=>S.pieceSay(i)),...S.EXTRAS.map(e=>S.extraSay(e.id)),...NAMES.map((_,i)=>S.doorSay(i))];
 T.addSay&&T.addSay(S.says());T.addChoices&&T.addChoices(S.EXTRAS.map(x=>x.n));
 S.get=()=>{let s=O.save.ship;if(!s||typeof s!=='object'||Array.isArray(s))s=O.save.ship={n:0,x:[]};
   s.n=Math.max(0,Math.min(NAMES.length,s.n|0));if(!Array.isArray(s.x))s.x=[];s.x=s.x.filter((id,i,a)=>S.EXTRAS.some(e=>e.id===id)&&a.indexOf(id)===i);return s;};
+S.door=()=>{const s=S.get();return s.d===O.today()||s.n>=NAMES.length?null:{n:NAMES[s.n],say:S.doorSay(s.n)};};
+/* the friend says it in the home bubble, with the voice */
+S.talk=t=>{if(!t)return;let b=$('#sHome .hbub2');const st=$('#sHome .hstage');if(!b&&st){b=h('div','hbub2');st.prepend(b);}if(b)b.textContent=t;O.say(T.spk(t));};
+document.addEventListener('click',e=>{const sh=e.target.closest&&e.target.closest('#sHome .hship');if(!sh)return;const k=e.target.closest('[data-i],[data-x]'),s=S.get();
+  const t=k?(k.dataset.i!=null?S.pieceSay(+k.dataset.i):S.extraSay(k.dataset.x)):s.n?S.pieceSay(s.n-1):'';if(t){O.sfx&&O.sfx.pop&&O.sfx.pop(2);S.talk(t);}});
 S.award=()=>{const s=S.get(),d=O.today();if(s.d===d||s.n>=NAMES.length)return null;s.n++;s.d=d;O.persist();return S.PIECES[s.n-1];};
 /* the drawing: 12 parts (viewBox 120x92, bow on the left); a part shows from the bottom up, one fifth per piece */
 const PART=[
@@ -55,8 +69,8 @@ S.el=(cls,n)=>{const s=S.get(),id='sh'+(++uid),st=n!=null,k=st?Math.max(0,Math.m
   for(let i=0;i<k;i++){const [y0,y1,g]=PART[Math.floor(i/5)],j=i%5,bh=(y1-y0)/5,top=y1-(j+1)*bh;
     if(j===0)defs+='<g id="'+id+'p'+Math.floor(i/5)+'">'+g+'</g>';
     defs+='<clipPath id="'+id+'c'+i+'"><rect x="0" y="'+(top-.3).toFixed(1)+'" width="120" height="'+(bh+.6).toFixed(1)+'"/></clipPath>';
-    use+='<use class="shp'+(st&&i===k-1?' nw':'')+'" href="#'+id+'p'+Math.floor(i/5)+'" clip-path="url(#'+id+'c'+i+')"/>';}
-  const ex=(st?[]:s.x).map(k=>S.EXTRAS.find(e=>e.id===k)).map(e=>'<text class="shx" x="'+e.x+'" y="'+e.y+'" font-size="14" text-anchor="middle">'+e.e+'</text>').join('');
+    use+='<use class="shp'+(st&&i===k-1?' nw':'')+'"'+(st?'':' data-i="'+i+'"')+' href="#'+id+'p'+Math.floor(i/5)+'" clip-path="url(#'+id+'c'+i+')"/>';}
+  const ex=(st?[]:s.x).map(k=>S.EXTRAS.find(e=>e.id===k)).map(e=>'<text class="shx" data-x="'+e.id+'" x="'+e.x+'" y="'+e.y+'" font-size="14" text-anchor="middle">'+e.e+'</text>').join('');
   return '<div class="hship'+(cls?' '+cls:'')+'" role="img" aria-label="הַסְּפִינָה"><svg viewBox="0 0 120 92"><defs>'+defs+'</defs>'+
     '<rect x="0" y="72" width="120" height="20" rx="4" fill="#5fb3e6"/><path d="M4 76q6-3 12 0t12 0M64 80q6-3 12 0t12 0M30 86q6-3 12 0t12 0" stroke="#d6f0ff" fill="none"/>'+use+ex+'</svg></div>';};
 /* the finale card: the new piece + the ship */

@@ -3162,7 +3162,7 @@ body.fron #screens{padding-bottom:84px}
 /* #389 listen first: the answers rest (softly faded, no timer) until the question was heard */
 .chs.lsn .chb{opacity:.55;transition:opacity .3s}
 
-/* #391 the ship on home: next to Oren and his friend, a picture only (not a button) */
+/* #391 the ship on home: next to Oren and his friend; #392 a tap on a built piece, the friend says what it is */
 .hrow{display:flex;align-items:flex-end;justify-content:center;gap:10px}
 .hship svg{display:block;width:120px;height:auto}
 .hship.big svg{width:220px;margin:6px auto}
@@ -3172,6 +3172,11 @@ body.fron #screens{padding-bottom:84px}
 .shpick small{font-size:16px;display:flex;align-items:center;gap:2px}.shpick small svg{width:18px;height:auto}
 @media (min-width:761px){.hship svg{width:170px}.hship.big svg{width:260px}}
 @media (min-width:761px) and (max-height:700px){.hship svg{width:130px}}
+.hship .shp,.hship .shx{cursor:pointer}
+/* #392 the story door at the end of the path, with the piece that opens it */
+.tgoal.sdoor{position:relative;cursor:pointer;opacity:1}
+.tgoal.sdoor small{position:absolute;top:100%;margin-top:4px;font-size:14px;font-weight:700;white-space:nowrap;color:#5b3a1a;background:#fff3c4;border-radius:8px;padding:1px 6px}
+.tpath.hasdoor{margin-bottom:26px}
 
 /* ===== LESSON CARDS (#56) ===== */
 .lccard{width:min(640px,100%)}
@@ -5193,7 +5198,11 @@ function home(){const S0=T.S();
   else if(d&&d.t.length){const card=h('div','today');const path=h('div','tpath');path.style.setProperty('--n',d.t.length-(d.bs|0)+1);
     d.t.forEach((id,i)=>{if(i<(d.bs|0))return;const inf=stepInfo(id);if(i>(d.bs|0))path.appendChild(h('i','tlink'+(d.done[i-1]?' on':'')));
       const b=h('div','tstep2'+(d.done[i]?' done':i===nx?' cur':'')+(/^tog:/.test(id)?' tog':''),`<span class="ti2">${d.done[i]?`<span class="qk">${q.k}</span>`:inf.ic}</span>`);b.style.setProperty('--sc',inf.c);b.title=T.plainHe(inf.n);b.setAttribute('role','img');b.setAttribute('aria-label',T.plainHe(inf.n));path.appendChild(b);});
-    path.appendChild(h('i','tlink'+(nx<0?' on':'')));path.appendChild(h('span','tgoal'+(nx<0?' won':''),`<span>${nx<0?'🏆':q.e}</span>`));
+    path.appendChild(h('i','tlink'+(nx<0?' on':'')));
+    /* #392 the story door: the end of the path shows the ship piece that opens it; a tap, the friend says so */
+    const dk=!d.claimed&&window.SHIP&&window.SHIP.door?window.SHIP.door():null;
+    const gl=path.appendChild(h('span','tgoal'+(nx<0?' won':'')+(dk?' sdoor':''),dk?`<span>🚪</span><small>${dk.n}</small>`:`<span>${nx<0?'🏆':q.e}</span>`));
+    if(dk){path.classList.add('hasdoor');gl.setAttribute('role','button');gl.onclick=()=>{sfx.pop(2);window.SHIP.talk(dk.say);};}
     card.appendChild(path);const row=h('div','btnrow');
     if(nx>=0){const go=h('button','bigbtn huge',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=()=>{sfx.pop(3);runStep(nx);};row.appendChild(go);}
     else if(!d.claimed){const c=h('button','bigbtn gold huge',`${q.e} <span>סוֹף הַסִּפּוּר</span>`);c.onclick=()=>finale(d,q);row.appendChild(c);}
@@ -6030,7 +6039,9 @@ window.FRIEND=FR;window.PATHBAR=PATHBAR;
    SHIP.el(cls)   the ship picture (the empty sea when n=0)
    SHIP.award()   the next piece for today, or null (already today / ship complete)
    SHIP.offer(next) the additions choice when there are gems, then next()
-   SHIP.says()    every kid sentence (for pregen, registered with T.addSay) */
+   SHIP.says()    every kid sentence (for pregen, registered with T.addSay)
+   #392: a tap on a built piece (or an addition) on home: the friend's bubble says what it is and how he earned it (SHIP.talk);
+   SHIP.door()    the story door at the end of today's path: the ship piece that opens it (null when today's piece is earned) */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;const {h,$}=O;
 const S=window.SHIP={};
 /* the 60 pieces, in the order of the script (one chapter = one part of the ship = 5 pieces) */
@@ -6054,10 +6065,22 @@ S.EXTRAS=[{id:'fish',e:'🐟',n:'דָּג',x:14,y:86},{id:'dolph',e:'🐬',n:'ד
  {id:'rainbow',e:'🌈',n:'קֶשֶׁת',x:14,y:12},{id:'octo',e:'🐙',n:'תְּמָנוּן',x:80,y:88},{id:'whale',e:'🐳',n:'לִוְיָתָן',x:112,y:80}];
 S.COST=10;
 const TITLE='מָה נוֹסִיף לַסְּפִינָה?',NEW=n=>'חֵלֶק חָדָשׁ לַסְּפִינָה: '+n+'!';
-S.says=()=>[TITLE,...NAMES.map(NEW)];
+/* #392 how each piece was earned: the scene's topic, in the chapter's place (story script #385) */
+const HOW={add:'כְּשֶׁחִבַּרְנוּ מִסְפָּרִים',sub:'כְּשֶׁחִסַּרְנוּ מִסְפָּרִים',mul:'כְּשֶׁכָּפַלְנוּ מִסְפָּרִים',div:'כְּשֶׁחִלַּקְנוּ שָׁוֶה',
+  time:'כְּשֶׁבָּדַקְנוּ בַּשָּׁעוֹן',read:'כְּשֶׁקָּרָאנוּ מִלִּים',eng:'כְּשֶׁדִּבַּרְנוּ אַנְגְּלִית',think:'כְּשֶׁפָּתַרְנוּ חִידָה'};
+const IN=n=>n[0]==='ה'?(n[1]==='\u05B8'?'בָּ':'בַּ')+n.slice(2):(n[1]==='\u05B0'?'בִּ':'בְּ')+n;
+S.pieceSay=i=>{const M=window.STORYMIX,sc=M&&M.scene({c:Math.floor(i/5)+1,s:i%5+1});return NAMES[i]+'! קִבַּלְנוּ אֶת זֶה'+(sc?' '+(HOW[sc.topic]||'')+' '+IN(sc.n):'')+'.';};
+S.extraSay=id=>{const e=S.EXTRAS.find(x=>x.id===id);return e?e.n+'! קָנִינוּ אֶת זֶה בַּיַּהֲלוֹמִים שֶׁאָסַפְנוּ.':'';};
+S.doorSay=i=>'הַדֶּלֶת שֶׁל הַסִּפּוּר נִפְתַּחַת עִם '+NAMES[i]+'!';
+S.says=()=>[TITLE,...NAMES.map(NEW),...NAMES.map((_,i)=>S.pieceSay(i)),...S.EXTRAS.map(e=>S.extraSay(e.id)),...NAMES.map((_,i)=>S.doorSay(i))];
 T.addSay&&T.addSay(S.says());T.addChoices&&T.addChoices(S.EXTRAS.map(x=>x.n));
 S.get=()=>{let s=O.save.ship;if(!s||typeof s!=='object'||Array.isArray(s))s=O.save.ship={n:0,x:[]};
   s.n=Math.max(0,Math.min(NAMES.length,s.n|0));if(!Array.isArray(s.x))s.x=[];s.x=s.x.filter((id,i,a)=>S.EXTRAS.some(e=>e.id===id)&&a.indexOf(id)===i);return s;};
+S.door=()=>{const s=S.get();return s.d===O.today()||s.n>=NAMES.length?null:{n:NAMES[s.n],say:S.doorSay(s.n)};};
+/* the friend says it in the home bubble, with the voice */
+S.talk=t=>{if(!t)return;let b=$('#sHome .hbub2');const st=$('#sHome .hstage');if(!b&&st){b=h('div','hbub2');st.prepend(b);}if(b)b.textContent=t;O.say(T.spk(t));};
+document.addEventListener('click',e=>{const sh=e.target.closest&&e.target.closest('#sHome .hship');if(!sh)return;const k=e.target.closest('[data-i],[data-x]'),s=S.get();
+  const t=k?(k.dataset.i!=null?S.pieceSay(+k.dataset.i):S.extraSay(k.dataset.x)):s.n?S.pieceSay(s.n-1):'';if(t){O.sfx&&O.sfx.pop&&O.sfx.pop(2);S.talk(t);}});
 S.award=()=>{const s=S.get(),d=O.today();if(s.d===d||s.n>=NAMES.length)return null;s.n++;s.d=d;O.persist();return S.PIECES[s.n-1];};
 /* the drawing: 12 parts (viewBox 120x92, bow on the left); a part shows from the bottom up, one fifth per piece */
 const PART=[
@@ -6079,8 +6102,8 @@ S.el=(cls,n)=>{const s=S.get(),id='sh'+(++uid),st=n!=null,k=st?Math.max(0,Math.m
   for(let i=0;i<k;i++){const [y0,y1,g]=PART[Math.floor(i/5)],j=i%5,bh=(y1-y0)/5,top=y1-(j+1)*bh;
     if(j===0)defs+='<g id="'+id+'p'+Math.floor(i/5)+'">'+g+'</g>';
     defs+='<clipPath id="'+id+'c'+i+'"><rect x="0" y="'+(top-.3).toFixed(1)+'" width="120" height="'+(bh+.6).toFixed(1)+'"/></clipPath>';
-    use+='<use class="shp'+(st&&i===k-1?' nw':'')+'" href="#'+id+'p'+Math.floor(i/5)+'" clip-path="url(#'+id+'c'+i+')"/>';}
-  const ex=(st?[]:s.x).map(k=>S.EXTRAS.find(e=>e.id===k)).map(e=>'<text class="shx" x="'+e.x+'" y="'+e.y+'" font-size="14" text-anchor="middle">'+e.e+'</text>').join('');
+    use+='<use class="shp'+(st&&i===k-1?' nw':'')+'"'+(st?'':' data-i="'+i+'"')+' href="#'+id+'p'+Math.floor(i/5)+'" clip-path="url(#'+id+'c'+i+')"/>';}
+  const ex=(st?[]:s.x).map(k=>S.EXTRAS.find(e=>e.id===k)).map(e=>'<text class="shx" data-x="'+e.id+'" x="'+e.x+'" y="'+e.y+'" font-size="14" text-anchor="middle">'+e.e+'</text>').join('');
   return '<div class="hship'+(cls?' '+cls:'')+'" role="img" aria-label="הַסְּפִינָה"><svg viewBox="0 0 120 92"><defs>'+defs+'</defs>'+
     '<rect x="0" y="72" width="120" height="20" rx="4" fill="#5fb3e6"/><path d="M4 76q6-3 12 0t12 0M64 80q6-3 12 0t12 0M30 86q6-3 12 0t12 0" stroke="#d6f0ff" fill="none"/>'+use+ex+'</svg></div>';};
 /* the finale card: the new piece + the ship */

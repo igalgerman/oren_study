@@ -132,6 +132,27 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
   ok('ship: saved and restored on reload',rs.s.n===2&&rs.s.x.length===1&&rs.shp===2&&rs.shx===1,JSON.stringify(rs));await ctx2.close();
   const mg=await p.evaluate(()=>{const O=window.OREN;O.mergeIn({v:4,t:(+O.save.t||0)+1e6,ship:{n:5,x:['fish'],d:'2000-01-02'}});return window.SHIP.get().n;});
   ok('ship: family merge takes the newest save',mg===5,String(mg));}
+ // --- #392 tap a built piece on home: the friend says what it is and how he earned it; a story door shows the item that opens it ---
+ {await p.evaluate(()=>{const O=window.OREN;O.save.ship={n:5,x:['fish'],d:'2000-01-02'};window.__said=[];const sy=O.say;O.say=(t,...a)=>{window.__said.push(String(t||''));return sy.call(O,t,...a);};document.querySelector('#ov').hidden=true;O.showMap();});await sleep(200);
+  const ln=await p.evaluate(()=>{const S=window.SHIP,L=new Set(window.TAL.choiceList()),sp=window.TAL.spk,NK=/[ְ-ּ]/;
+    const pc=S.PIECES.map((_,i)=>S.pieceSay(i)),ex=S.EXTRAS.map(e=>S.extraSay(e.id)),dr=S.PIECES.map((_,i)=>S.doorSay(i)),all=[...pc,...ex,...dr];
+    return {n:all.length,what:S.PIECES.every((x,i)=>pc[i].includes(x.n)&&dr[i].includes(x.n))&&S.EXTRAS.every((e,i)=>ex[i].includes(e.n)),
+      how:pc.every(x=>/כְּשֶׁ/.test(x))&&ex.every(x=>x.replace(/[\u0591-\u05C7]/g,"").includes("יהלומים")),miss:all.filter(x=>!L.has(sp(x))),nonik:all.filter(x=>!NK.test(x))};});
+  ok('#392 every piece type (60 ship pieces + 9 additions) has a friend line: what it is + how he earned it; nikud; all in the pregen list',ln.n===129&&ln.what&&ln.how&&!ln.miss.length&&!ln.nonik.length,JSON.stringify(ln).slice(0,300));
+  const tp=await p.evaluate(()=>{const S=window.SHIP,r=[];const els=[...document.querySelectorAll('#sHome .hship .shp,#sHome .hship .shx')];
+    for(const el of els){window.__said=[];el.dispatchEvent(new MouseEvent('click',{bubbles:true}));const i=el.dataset.i,x=el.dataset.x,want=i!=null?S.pieceSay(+i):S.extraSay(x);
+      const bub=document.querySelector('#sHome .hbub2');r.push({k:i!=null?'p'+i:x,bub:!!bub&&bub.textContent.includes(want),spoke:window.__said.some(t=>t.includes(window.TAL.spk(want)))});}return r;});
+  ok('#392 tapping each built piece on home: the friend\'s bubble says its line, with audio',tp.length===6&&tp.every(x=>x.bub&&x.spoke),JSON.stringify(tp));
+  // a real tap on the ship drawing always gets a line (the piece under the finger, or the newest one)
+  await p.evaluate(()=>{window.__said=[];});await p.locator('#sHome .hship svg').click();await sleep(100);
+  ok('#392 a real tap on the ship says a piece line',await p.evaluate(()=>{const S=window.SHIP,b=document.querySelector('#sHome .hbub2').textContent;return window.__said.length>0&&S.PIECES.some((_,i)=>i<5&&b.includes(S.pieceSay(i)))||['fish'].some(x=>b.includes(S.extraSay(x)));}));
+  // the story door: the end of today's path shows the ship piece that opens it; tapping it says so
+  await p.evaluate(()=>{const T=window.TAL,O=window.OREN;delete T.S().daily;T.chooseDay('math');document.querySelector('#ov').hidden=true;O.showMap();});await sleep(150);
+  const dr=await p.evaluate(()=>{const S=window.SHIP,g=document.querySelector('#sHome .tgoal.sdoor');if(!g)return {g:0};window.__said=[];g.click();
+    return {g:1,item:g.textContent.includes(S.PIECES[5].n),bub:document.querySelector('#sHome .hbub2').textContent.includes(S.doorSay(5)),spoke:window.__said.some(t=>t.includes(window.TAL.spk(S.doorSay(5))))};});
+  ok('#392 a story door at the end of the path shows the item that opens it; a tap says it',dr.g&&dr.item&&dr.bub&&dr.spoke,JSON.stringify(dr));
+  const nd=await p.evaluate(()=>{const O=window.OREN;O.save.ship.d=O.today();O.showMap();const a=!document.querySelector('#sHome .tgoal.sdoor')&&!!document.querySelector('#sHome .tgoal');O.save.ship.d='2000-01-02';return a;});
+  ok('#392 no door when today\'s piece is already earned (the path goal as before)',nd);}
  // --- #388: inside the path, "continue" on the result card starts the next mission (no home in between) ---
  const W=await p.evaluate(()=>{const T=window.TAL,O=window.OREN;const st=T.S().set;delete st.plan;st.noDaily=0;O.WORLDS.forEach(w=>{O.save.story[w.id+'-in']=1;});const rw=T.S().rw=T.S().rw||{};O.WORLDS.concat(T.BUILD).forEach(x=>{rw[x.id]=1;});/* no real-world mission joins the path here */
    const acts=T.dailyPool().filter(id=>!/^(write-trace)$/.test(id)).slice(0,2);window.__started=[];

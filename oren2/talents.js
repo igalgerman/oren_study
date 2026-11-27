@@ -1465,7 +1465,11 @@ function home(){const S0=T.S();
   else if(d&&d.t.length){const card=h('div','today');const path=h('div','tpath');path.style.setProperty('--n',d.t.length-(d.bs|0)+1);
     d.t.forEach((id,i)=>{if(i<(d.bs|0))return;const inf=stepInfo(id);if(i>(d.bs|0))path.appendChild(h('i','tlink'+(d.done[i-1]?' on':'')));
       const b=h('div','tstep2'+(d.done[i]?' done':i===nx?' cur':'')+(/^tog:/.test(id)?' tog':''),`<span class="ti2">${d.done[i]?`<span class="qk">${q.k}</span>`:inf.ic}</span>`);b.style.setProperty('--sc',inf.c);b.title=T.plainHe(inf.n);b.setAttribute('role','img');b.setAttribute('aria-label',T.plainHe(inf.n));path.appendChild(b);});
-    path.appendChild(h('i','tlink'+(nx<0?' on':'')));path.appendChild(h('span','tgoal'+(nx<0?' won':''),`<span>${nx<0?'🏆':q.e}</span>`));
+    path.appendChild(h('i','tlink'+(nx<0?' on':'')));
+    /* #392 the story door: the end of the path shows the ship piece that opens it; a tap, the friend says so */
+    const dk=!d.claimed&&window.SHIP&&window.SHIP.door?window.SHIP.door():null;
+    const gl=path.appendChild(h('span','tgoal'+(nx<0?' won':'')+(dk?' sdoor':''),dk?`<span>🚪</span><small>${dk.n}</small>`:`<span>${nx<0?'🏆':q.e}</span>`));
+    if(dk){path.classList.add('hasdoor');gl.setAttribute('role','button');gl.onclick=()=>{sfx.pop(2);window.SHIP.talk(dk.say);};}
     card.appendChild(path);const row=h('div','btnrow');
     if(nx>=0){const go=h('button','bigbtn huge',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=()=>{sfx.pop(3);runStep(nx);};row.appendChild(go);}
     else if(!d.claimed){const c=h('button','bigbtn gold huge',`${q.e} <span>סוֹף הַסִּפּוּר</span>`);c.onclick=()=>finale(d,q);row.appendChild(c);}
