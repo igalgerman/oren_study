@@ -362,6 +362,28 @@ def batch_tick(send, log, issues=None, now=None):
     log(f"batch trigger -> inbox (rc {rc}): {msg[:150]}")
     return msg if rc == 0 else None
 
+PLAYLOG_RUN = None   # #641: tests swap in a fake (argv -> rc)
+PLAYLOG_RETRY_MIN = 60
+
+def playlog_if_due(log, now=None, run=None):
+    """#641, every watchdog tick: once a day archive yesterday's play events on this PC (tools/playlog.py day <yesterday>
+    -> ~/.oren/playlog/<day>.json, private, never in the repo). A failed run is tried again at most once an hour. -> rc or None."""
+    now = now or time.time()
+    lt = time.localtime(now); day = time.strftime("%Y-%m-%d", time.localtime(time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday - 1, 12, 0, 0, 0, 0, -1))))
+    st = load_state()
+    if st.get("playlog_day") == day or now - st.get("playlog_at", 0) < PLAYLOG_RETRY_MIN * 60: return None
+    st["playlog_at"] = now; save_state(st)
+    run = run or PLAYLOG_RUN
+    argv = [sys.executable, str(Path(R.MAIN_CHECKOUT) / "tools" / "playlog.py"), "day", day]
+    if run: rc = run(argv)
+    else:
+        try: rc = R.run(argv, timeout=120)[0]
+        except (OSError, subprocess.TimeoutExpired) as e: log(f"playlog {day}: {e!r}"[:200]); return 1
+    if rc == 0:
+        st = load_state(); st["playlog_day"] = day; save_state(st)
+    log(f"playlog {day}: " + ("archived" if rc == 0 else f"failed (rc {rc}), again in {PLAYLOG_RETRY_MIN} min"))
+    return rc
+
 def prune_if_due(log, now=None):
     """Watchdog hook (#304): once a day remove .runs/<n> of issues closed > PRUNE_HOURS. -> numbers pruned, or None."""
     now = now or time.time(); day = time.strftime("%Y-%m-%d", time.localtime(now))

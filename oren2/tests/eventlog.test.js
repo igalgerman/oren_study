@@ -54,8 +54,28 @@ function fakeD1() {
     ok('summary: raw recent events (newest first) with the admin key', Array.isArray(sr.raw) && sr.raw.length === 5 && sr.raw[0].k === 'tap' && sr.raw[0].i === 13 && sr.raw[0].sid === 'abcd1234', JSON.stringify(sr.raw && sr.raw[0]));
     D1.db.prepare('INSERT INTO evlog(fam,sid,at,tz,n,ev) VALUES(?,?,?,?,?,?)').run('old', 'old00000', t0 - 31 * 864e5, 0, 1, JSON.stringify([{ k: 'tap', t: t0 - 31 * 864e5 }]));
     D1.db.prepare('INSERT INTO evlog(fam,sid,at,tz,n,ev) VALUES(?,?,?,?,?,?)').run('mid', 'mid00000', t0 - 20 * 864e5, 0, 1, JSON.stringify([{ k: 'tap', t: t0 - 20 * 864e5 }]));
+    D1.db.prepare('INSERT INTO evlog(fam,sid,at,tz,n,ev) VALUES(?,?,?,?,?,?)').run('yr', 'yr000000', t0 - 366 * 864e5, 0, 1, JSON.stringify([{ k: 'tap', t: t0 - 366 * 864e5 }]));
+    D1.db.prepare('INSERT INTO evlog(fam,sid,at,tz,n,ev) VALUES(?,?,?,?,?,?)').run('half', 'half0000', t0 - 200 * 864e5, 0, 1, JSON.stringify([{ k: 'tap', t: t0 - 200 * 864e5 }]));
     const s30 = await (await f('/api/log/summary?days=30')).json();
-    ok('prune: raw events older than 30 days are deleted, newer ones kept', !rows().some(x => x.fam === 'old') && rows().some(x => x.fam === 'mid') && s30.days.length === 2, JSON.stringify(rows().map(x => x.fam)));
+    ok('#641 prune: raw events older than 365 days are deleted, newer ones (20, 31, 200 days) kept', !rows().some(x => x.fam === 'yr') && ['old', 'mid', 'half'].every(k => rows().some(x => x.fam === k)) && s30.days.length === 2, JSON.stringify(rows().map(x => x.fam)));
+    D1.db.exec('DELETE FROM evlog'); }
+  // #641 raw read with paging and filters: /api/log/raw?from&to&sid&k&n&after|before (admin key only)
+  { const day = t0 - 5 * 864e5; const E = (i, k, sid) => ({ i, t: day + i * 1000, k, ...(sid ? { osid: sid } : {}) });
+    D1.db.prepare('INSERT INTO evlog(fam,sid,at,tz,n,ev) VALUES(?,?,?,?,?,?)').run('f', 'sessa000', day + 4000, 0, 3, JSON.stringify([E(1, 'ss'), E(2, 'tap'), E(3, 'mis')]));
+    D1.db.prepare('INSERT INTO evlog(fam,sid,at,tz,n,ev) VALUES(?,?,?,?,?,?)').run('f', 'sessb000', day + 7000, 0, 3, JSON.stringify([E(4, 'ss'), E(5, 'tap'), E(6, 'tap')]));
+    D1.db.prepare('INSERT INTO evlog(fam,sid,at,tz,n,ev) VALUES(?,?,?,?,?,?)').run('f', 'sessc000', day + 9e7, 0, 1, JSON.stringify([E(90000, 'tap')]));   // the next day: outside `to`
+    const raw = async (q, h = H) => { const r = await f('/api/log/raw?' + q, h); return r.status === 200 ? r.json() : { status: r.status }; };
+    const Q = 'from=' + day + '&to=' + (day + 864e5);
+    ok('#641 raw: no admin key = 401', (await raw(Q, {})).status === 401);
+    const p1 = await raw(Q + '&n=3'), p2 = await raw(Q + '&n=3&after=' + encodeURIComponent(p1.next || ''));
+    const all = (p1.ev || []).concat(p2.ev || []).map(e => e.i);
+    ok('#641 raw paging: two pages of 3 events give 6 in order, no gaps or repeats', p1.ev.length === 3 && p2.ev.length === 3 && JSON.stringify(all) === '[1,2,3,4,5,6]' && !!p1.next && !p2.next, JSON.stringify({ p1, p2 }));
+    ok('#641 raw: every event carries its session id', p1.ev[0].sid === 'sessa000' && p2.ev[0].sid === 'sessb000', JSON.stringify(p2.ev[0]));
+    const one = await raw(Q + '&n=5000');
+    ok('#641 raw: one page of up to 5000, only events inside from..to', one.ev.length === 6 && !one.next, JSON.stringify(one.ev.map(e => e.i)));
+    ok('#641 raw filters: sid and kind', (await raw(Q + '&sid=sessb000')).ev.map(e => e.i).join() === '4,5,6' && (await raw(Q + '&k=ss')).ev.map(e => e.i).join() === '1,4', '');
+    const n1 = await raw('n=2'), n2 = await raw('n=2&before=' + encodeURIComponent(n1.next || ''));
+    ok('#641 raw without from: newest first, before= gives the older page', n1.ev.map(e => e.i).join() === '90000,6' && n2.ev.map(e => e.i).join() === '5,4', JSON.stringify({ n1, n2 }));
     D1.db.exec('DELETE FROM evlog'); }
   // #612: a save failure on Oren's device (sync, kid 1) comes back with the save (x-sync-fail), so the parent's panel can say "no update since"
   { await f('/api/save/' + fam, { method: 'PUT', body: JSON.stringify({ v: 4, upT: t0 }) });
@@ -100,7 +120,10 @@ function fakeD1() {
   const raw = (await summary(400)).raw || [];
   const K = k => raw.filter(e => e.k === k);
   { const ss = K('ss')[0] || {};
-    ok('session start: device, host, version, viewport, browser, language, network', ss.dev === 'desktop' && !!ss.os && ss.sid.length === 10 && ss.host === 'localhost' && ss.ver > 0 && ss.vw === 1366 && /Chrom/.test(ss.br) && !!ss.lang && 'net' in ss, JSON.stringify(ss)); }
+    ok('session start: device, host, version, viewport, browser, language, network', ss.dev === 'desktop' && !!ss.os && ss.sid.length === 10 && ss.host === 'localhost' && ss.ver > 0 && ss.vw === 1366 && /Chrom/.test(ss.br) && !!ss.lang && 'net' in ss, JSON.stringify(ss));
+    ok('#641 session start is the first event of the session and has the screen size', raw[raw.length - 1] && raw[raw.length - 1].k === 'ss' && ss.scw > 0 && ss.sch > 0, JSON.stringify(ss)); }
+  { const ms = K('mis')[0] || {};
+    ok('#641 mission start says why it was picked (the tap and screen that opened it, or auto)', ms.auto === 1 || (!!ms.tg && !!ms.via), JSON.stringify(ms)); }
   ok('session end on page hide', K('se').length === 1 && K('se')[0].dur >= 0);
   ok('screen changes with time spent', K('scr').some(e => e.s === 'sPlay') && K('scr').every(e => typeof e.ms === 'number'), JSON.stringify(K('scr').slice(0, 3)));
   ok('answers carry the time to answer and the question id', K('ans').length === 3 && K('ans').every(e => e.ms >= 0 && e.q && e.m === q0.m), JSON.stringify(K('ans')));

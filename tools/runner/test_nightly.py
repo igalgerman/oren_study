@@ -182,3 +182,18 @@ N.retro_if_due(told.append, logs.append, hour=23, now=d26(71), where="cloud"); a
 N.GH = CloudGH([])
 N.retro_if_due(told.append, logs.append, hour=23, now=d26(97), where="cloud"); assert len(starts) == 2      # proven: off for good
 print("ok #525 cloud retro fallback")
+
+# ---- #641: once a day the watchdog archives yesterday's play events (tools/playlog.py day <yesterday>) on this PC ----
+N.STATE = tmp / "nightly.641.json"; runs = []; logs = []
+d27 = lambda h, m=5: time.mktime((2026, 11, 27, h, m, 0, 0, 0, -1))
+rc_next = [1]
+fake_run = lambda argv: runs.append(argv) or rc_next[0]
+assert N.playlog_if_due(logs.append, now=d27(8), run=fake_run) == 1                       # network down: failed
+assert runs[0][-2:] == ["day", "2026-11-26"] and runs[0][1].endswith("playlog.py"), runs
+assert N.playlog_if_due(logs.append, now=d27(8, 30), run=fake_run) is None and len(runs) == 1   # retry at most once an hour
+rc_next[0] = 0
+assert N.playlog_if_due(logs.append, now=d27(9, 10), run=fake_run) == 0 and len(runs) == 2      # archived
+assert N.playlog_if_due(logs.append, now=d27(23), run=fake_run) is None and len(runs) == 2      # once a day
+assert N.playlog_if_due(logs.append, now=d27(24 + 2), run=fake_run) == 0 and runs[-1][-1] == "2026-11-27"   # next day: yesterday
+assert any("archived" in l for l in logs), logs
+print("ok #641 nightly playlog archive")
