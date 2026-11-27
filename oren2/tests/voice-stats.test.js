@@ -191,8 +191,13 @@ const INIT = () => {
     ok('#404 hush (screen change) turns the light off', lit && !(await st('MISSING כָּבֶה')).lit, String(lit));
     // case 3: the whole session offline -> the browser voice, nothing lights up
     await ctx.setOffline(true);
-    await show('MISSING בְּלִי רֶשֶׁת'); await speak(p, 'MISSING בְּלִי רֶשֶׁת'); await sleep(600);
-    r = await st('MISSING בְּלִי רֶשֶׁת'); await ctx.setOffline(false);
+    // a timer that changes the screen meanwhile (slow under load) drops the line (#399): then the case is played again once
+    for (let k = 0; k < 2; k++) { const scr = await p.evaluate(() => window.__sq.scr);
+      await show('MISSING בְּלִי רֶשֶׁת'); await speak(p, 'MISSING בְּלִי רֶשֶׁת');
+      await p.waitForFunction(() => speechSynthesis.log.length || document.querySelector('.t404.vmiss'), null, { timeout: 4000 }).catch(() => {}); await sleep(200);
+      r = await st('MISSING בְּלִי רֶשֶׁת'); if (await p.evaluate(() => window.__sq.scr) === scr) break;
+      await p.evaluate(() => { window.__req = []; speechSynthesis.log.length = 0; }); }
+    await ctx.setOffline(false);
     ok('#404 case 3 (offline true): the browser voice says it, nothing lights up', r.browser === 1 && !r.lit && !r.btn && !r.hud, JSON.stringify(r));
     ok('#404 no page errors', !errs.length, errs.join('|'));
     await ctx.close(); }

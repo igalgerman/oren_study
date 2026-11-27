@@ -52,9 +52,9 @@ function talk(t,o){o=o||{};last=t;FR.log.push(t);if(FR.log.length>50)FR.log.shif
    {nobub} = no bubble (the screen shows the line itself). Returns the line. */
 FR.onCorrect=ctx=>{ctx=ctx||{};if(!FR.shown()&&onAct())FR.mount();const fixed=(ctx.tries|0)>0||missed;missed=false;
   if(fixed)streak=0;else streak++;anim('joy');
-  let t;if(fixed)t=draw(EFFORT);else if(STREAK[streak])t=STREAK[streak];else if(streak>=10&&streak%5===0)t=STREAK_MORE;else t=draw(OK);
+  let t;if(fixed)t=draw(EFFORT);else if(yday(ctx))t=RXL.yday;else if(STREAK[streak])t=STREAK[streak];else if(streak>=10&&streak%5===0)t=STREAK_MORE;else t=draw(OK);
   return talk(t,ctx);};
-FR.onWrong=ctx=>{ctx=ctx||{};if(!FR.shown()&&onAct())FR.mount();streak=0;missed=!ctx.final;anim('sad');if(ctx.final)missed=false;return talk(draw(ctx.final?SHOWN:WRONG),ctx);};
+FR.onWrong=ctx=>{ctx=ctx||{};if(!FR.shown()&&onAct())FR.mount();streak=0;const x=hk(kindOf(ctx));if(x)x.n++;missed=!ctx.final;anim('sad');if(ctx.final)missed=false;return talk(draw(ctx.final?SHOWN:WRONG),ctx);};
 FR.reset=()=>{streak=0;missed=false;};
 /* a story opens: try to read alone first (#355). Bubble only: the screen's own instruction (sayNow) says it */
 const READFIRST='קוֹדֶם נְנַסֶּה לִקְרֹא לְבַד!';FR.READFIRST=READFIRST;FR.readFirst=()=>talk(READFIRST,{quiet:1,ms:4000});
@@ -127,7 +127,7 @@ O.on('levelDone',()=>setTimeout(FR.stepCheck,D(600)));
 /* #433: an error in the middle of a mission sent Oren home (core error handler): the friend says it on the home screen */
 const OOPS='אוֹי, חוֹזְרִים לַמַּסָּע';
 FR.oops=()=>{FR.mount();anim('sad');return talk(OOPS,{ms:3000});};
-FR.speakList=()=>[LISTEN,OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
+FR.speakList=()=>[LISTEN,RXL.hint,RXL.yday,RXL.back,OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.values(STREAK),STREAK_MORE,...EFFORT,...WRONG,...SHOWN,FIRST,LAST,ALL,
   ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([a,b])=>[a,FIRST+' '+a,LAST+' '+a,b,b+' '+ALL])):[]),...(SM()?SM().speakList():[])];
 /* ---------- #389 listen first ----------
    A new row of answer buttons (.chs .chb) rests until the spoken question has ended, 4 s at most; with no voice (offline,
@@ -137,6 +137,31 @@ FR.speakList=()=>[LISTEN,OOPS,READFIRST,DONE,FREE,FREE+' '+MORE,...OK,...Object.
 const LISTEN='בּוֹא נַקְשִׁיב שׁוּב';
 const LS={MAX:4000,REST:2000,FAST:1500,log:[]};FR.listen=LS;LS.line=LISTEN;
 let vS=0;
+/* ---------- #408 the friend reacts to how Oren plays: one short line, at most one reaction per question (one .chs row) ----------
+   silence: RX.QUIET with no tap and no voice while a question waits -> 'want a hint?', the help button (#54) lights up;
+   fast guessing: the listen-first rest below, with its line (LISTEN) -- the same trigger, never a second message;
+   hard yesterday (2+ mistakes in that activity), right at the first try today -> once; back after RX.BREAK -> a welcome before the question. */
+const RXL={hint:'רוֹצֶה רֶמֶז? גַּע בַּכַּפְתּוֹר עֶזְרָה.',fast:LISTEN,yday:'אֶתְמוֹל זֶה הָיָה קָשֶׁה, וְהַיּוֹם הִצְלַחְתָּ!',back:'אֵיזֶה כֵּיף שֶׁחָזַרְתָּ! בּוֹא נַמְשִׁיךְ.'};
+const RX={QUIET:20000,BREAK:30*60000,lines:RXL,log:[]};FR.react=RX;
+let lastRow=null,vOn=false,vE=0;
+function reacted(r,k){if(r){if(r._rx)return false;r._rx=k;}RX.log.push(k);if(RX.log.length>50)RX.log.shift();return true;}
+const ymd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const yest=()=>{const d=new Date();d.setDate(d.getDate()-1);return ymd(d);};
+function kindOf(ctx){if(ctx&&ctx.m)return ctx.m;const e=$('#sPlay');return e&&!e.hidden?'math':'';}
+/* mistakes per activity per day: {d, n, pd, pn (the day before it was played), y (said today)} */
+function hk(m){const S=O.save;if(!S||!m)return null;const H=S.frh=S.frh||{};let x=H[m];const t=ymd(new Date());
+  if(!x||x.d!==t)x=H[m]={d:t,n:0,pd:x?x.d:'',pn:x?x.n|0:0};return x;}
+function yday(ctx){const x=hk(kindOf(ctx));if(!x||x.y||x.pd!==yest()||x.pn<2)return false;
+  if(!reacted(lastRow&&lastRow.isConnected?lastRow:null,'yday'))return false;x.y=1;return true;}
+const ovOpen=()=>['#ov','#dlg'].some(q=>{const e=$(q);return e&&!e.hidden;});
+function helpOf(r){for(let e=r.parentElement;e&&e!==document.body;e=e.parentElement){const q=e.querySelector('.helpq');if(q)return q._help||null;}return null;}
+function onRow(r){const t=Date.now();r._q={t0:t};const S=O.save;if(!S||speedy(r))return;const b=S.frt;S.frt=t;
+  if(!b||t-b<RX.BREAK||!reacted(r,'back'))return;const w=T.spk(RXL.back);talk(RXL.back,{quiet:1,ms:3500});
+  if(window.__noAuto)O.say(w);else O.sayNow=w+' '+(O.sayNow||'');}
+function quiet(t){if(vOn||document.hidden||window.__noAuto||ovOpen()||(window.HELP&&HELP.state))return;
+  document.querySelectorAll('.chs').forEach(r=>{const s=r._q;if(!s||r._rx||!r.offsetParent||r.classList.contains('lsn')||done(r)||speedy(r))return;
+    if(t-Math.max(s.t0,s.lt||0,vE)<RX.QUIET)return;const hb=helpOf(r);if(!hb||hb.step||!hb.el.isConnected||!reacted(r,'hint'))return;
+    hb.el.classList.add('offer');talk(RXL.hint,{ms:3500});});}
 const lsOff=()=>window.__listen===false;
 const noVoice=()=>!!(window.__fast||window.__noAuto||navigator.onLine===false||(O.save&&O.save.set&&O.save.set.autoRead===0));
 const P4=()=>(window.__oren4||{}).play;
@@ -152,18 +177,19 @@ FR.held=b=>{const r=b&&b.closest&&b.closest('.chs');return !!(r&&r.classList.con
 function right(r){try{const q=window.__quiz,l=window.__learn,p=P4();let a=null;
   if(p&&p.choice&&p.choice.row===r)a=p.choice.ans;else if(q&&q.wrap&&q.wrap.contains(r))a=q.ans;else if(l&&l.wrap&&l.wrap.contains(r))a=l.ans;
   return a==null?null:r.children[a];}catch(e){return null;}}
-document.addEventListener('click',e=>{const b=e.target&&e.target.closest&&e.target.closest('.chs .chb');if(!b||lsOff())return;const r=b.closest('.chs'),s=gate(r);
+document.addEventListener('click',e=>{const b=e.target&&e.target.closest&&e.target.closest('.chs .chb');if(!b)return;const r=b.closest('.chs');
+  lastRow=r;if(r._q)r._q.lt=Date.now();if(O.save)O.save.frt=Date.now();if(lsOff())return;const s=gate(r);
   if(r.classList.contains('lsn')){e.stopImmediatePropagation();e.preventDefault();return;}
   if(s.w&&Date.now()-s.w<LS.FAST&&!b.disabled&&!done(r)&&!speedy(r)&&right(r)!==b){e.stopImmediatePropagation();e.preventDefault();
-    s.w=0;rest(r,LS.REST);s.re=Date.now();LS.log.push('rest');talk(LISTEN,{ms:LS.REST});return;}
+    s.w=0;rest(r,LS.REST);s.re=Date.now();LS.log.push('rest');if(reacted(r,'fast'))talk(LISTEN,{ms:LS.REST});return;}
   setTimeout(()=>{if(b.classList.contains('bad'))s.w=Date.now();},0);},true);
-O.on('voice',on=>{const t=Date.now();if(on){vS=t;return;}
+O.on('voice',on=>{const t=Date.now();vOn=!!on;if(on){vS=t;return;}vE=t;
   document.querySelectorAll('.chs').forEach(r=>{const s=r._ls;if(!s)return;
     if(s.re&&vS>=s.re){reread(s);return;}                       /* the friend's line ended: read the question again */
     if(s.wait&&vS>=s.t0)free(r);});});                           /* the question was heard: open */
-setInterval(()=>{const t=Date.now();document.querySelectorAll('.chs.lsn').forEach(r=>{if(r._ls&&r._ls.until<=t)free(r);});},100);
-new MutationObserver(ms=>{if(lsOff())return;for(const m of ms)for(const n of m.addedNodes){if(n.nodeType!==1)continue;
-  const rs=n.matches('.chs')?[n]:n.querySelectorAll('.chs');rs.forEach(r=>{if(r.querySelector('.chb'))gate(r);});}}).observe(document.body,{childList:true,subtree:true});
+setInterval(()=>{const t=Date.now();quiet(t);document.querySelectorAll('.chs.lsn').forEach(r=>{if(r._ls&&r._ls.until<=t)free(r);});},100);
+new MutationObserver(ms=>{for(const m of ms)for(const n of m.addedNodes){if(n.nodeType!==1)continue;
+  const rs=n.matches('.chs')?[n]:n.querySelectorAll('.chs');rs.forEach(r=>{if(!r.querySelector('.chb'))return;if(!r._q)onRow(r);if(!lsOff())gate(r);});}}).observe(document.body,{childList:true,subtree:true});
 FR._cur=()=>cur;FR._lines={ok:OK,streak:[...Object.values(STREAK),STREAK_MORE],effort:EFFORT,wrong:WRONG,shown:SHOWN};
 window.FRIEND=FR;window.PATHBAR=PATHBAR;
 })();
