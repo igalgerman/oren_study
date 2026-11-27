@@ -81,7 +81,7 @@ function nikQ(r,i,n){const learned=learnedAt(r);const kind=i<n*.4?'hs':i<n*.75?'
   const like=pool.filter(x=>x!==w&&(x.f===w.f||x.plain.length===w.plain.length));const ds=shuffle(like.length>=2?like:pool.filter(x=>x!==w)).slice(0,2);
   const os=shuffle([w,...ds]);return {pr:`<div class="gp-ear">👂</div><div class="qq">אֵיזוֹ מִלָּה שָׁמַעְתָּ?</div>`,opts:os.map(x=>x.w),ans:os.indexOf(w),cls:'tx',
     play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'איזו מילה שמעת',explain:`${pic(w)}<span class="bigw">${w.w}</span>`,bank:'gp-nik',bkey:w.w,key:'rw'+w.w,chk:{t:'word',w:w.w}};}
-function nikRound(r,back){const n=8;T.quiz({id:'nik-'+(r+1),title:RUNG[r].n,bg:'city',back,n,gen:i=>nikQ(r,i,n),doneTitle:'עָלִיתָ בַּסֻּלָּם!'});}
+function nikRound(r,back){const n=5;T.quiz({id:'nik-'+(r+1),title:RUNG[r].n,bg:'city',back,n,gen:i=>nikQ(r,i,n),doneTitle:'עָלִיתָ בַּסֻּלָּם!'});}
 function nikIntro(r,back){O.setScreen('sTal','city',back);T.hudT('סֻלַּם הַנִּקּוּד');const R=RUNG[r];const s=$('#sTal');s.innerHTML='';
   const ex=shuffle(focusAt(r).filter(w=>w.s1)).slice(0,3);O.sayNow=R.n+'. כמו במילים: '+ex.map(w=>plainHe(w.w)).join(', ');
   const card=h('div','prq tqc gp-intro',`<div class="gp-new">חָדָשׁ!</div><div class="gp-sign">${R.ex}</div><div class="qq">${R.say}</div>`);
@@ -101,7 +101,7 @@ function sndQ(L){const pool=WD.filter(w=>w.s1&&(L<3||w.s1.v!=='s'));const w=lwor
       play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו אות מתחילה המילה ששמעת',explain:`${pic(w)}<span class="bigw">${hi(w)}</span>`,bank:'gp-snd',bkey:w.w,key:w.w,chk:{t:'letter',w:w.w}};}
   const os=sylOpts(w,['a','i','o','u','e']);return {pr:`<div class="gp-ear">👂</div><div class="qq">בְּאֵיזוֹ הֲבָרָה מַתְחִילָה הַמִּלָּה שֶׁשָּׁמַעְתָּ?</div>`,opts:os.map(o=>o.s),ans:os.findIndex(o=>o.s===w.s1.s),cls:'tx big2',
     play:()=>sayW(w),auto:1,playLbl:'שׁוּב',say:'באיזו הברה מתחילה המילה ששמעת',explain:`${pic(w)}<span class="bigw">${hi(w)}</span>`,bank:'gp-snd',bkey:w.w,key:w.w,chk:{t:'syl',w:w.w}};}
-function sndRound(back,L0){const L=L0||level('snd',3);T.quiz({id:'snd-'+L,title:'מָה שׁוֹמְעִים בַּהַתְחָלָה?',bg:'city',back,n:8,gen:()=>sndQ(L)});}
+function sndRound(back,L0){const L=L0||level('snd',3);T.quiz({id:'snd-'+L,title:'מָה שׁוֹמְעִים בַּהַתְחָלָה?',bg:'city',back,n:5,gen:()=>sndQ(L)});}
 
 /* ===================== 7. SPELLING: hear a word, build it from letters ===================== */
 const FINAL={'ך':'כ','ם':'מ','ן':'נ','ף':'פ','ץ':'צ'};
