@@ -185,7 +185,7 @@ const SH = process.env.HSHOTS; if (SH) fs.mkdirSync(SH, { recursive: true });
   await p.evaluate(() => { const t = window.HEALTH.clock() - 3 * 3600e3; window.TAL.S().set.rem = { k: 'water', at: t, t }; window.HEALTH.check(); }); await sleep(300);
   ok('a reminder from hours ago is skipped', !(await rem()));
   // ---------- #353: a typed message from the parent, the friend says it aloud ----------
-  const msg = () => p.evaluate(() => { const e = document.querySelector('.hlock.hmsg'); if (!e) return null; return { h2: (e.querySelector('h2') || {}).textContent, again: !!e.querySelector('.hagain'), close: !!e.querySelector('.hback'), fr: !!e.querySelector('.hav') }; });
+  const msg = () => p.evaluate(() => { const e = document.querySelector('.hlock.hmsg'); if (!e) return null; return { h2: (e.querySelector('h2') || {}).textContent, again: !!e.querySelector('.hagain'), close: !!e.querySelector('.hback'), faces: [...e.querySelectorAll('.hface')].map(b => b.textContent), fr: !!e.querySelector('.hav') }; });
   const TXT = 'אורן, יש לך 2 דקות ואז לאכול <b>';
   if (BUILT) {
     await p.evaluate(() => window.TAL.parentPanel('rem')); await sleep(400);
@@ -211,18 +211,42 @@ const SH = process.env.HSHOTS; if (SH) fs.mkdirSync(SH, { recursive: true });
   ok('#353 the message does not interrupt an activity', !(await msg()));
   await p.evaluate(id => window.TAL.finishAct(id, 0, 5, 0, () => window.OREN.showMap()), rid); await sleep(600);
   await p.locator('#ov .bigbtn:not(.plain)').click(); await sleep(700); l = await msg();
-  ok('#353 at the end of the activity: the friend big, the text big, hear-again and close', l && l.fr && l.h2 === TXT && l.again && l.close, JSON.stringify(l));
+  ok('#353 at the end of the activity: the friend big, the text big, hear-again; #413 Oren answers with one face (no other close)', l && l.fr && l.h2 === TXT && l.again && !l.close && l.faces.length >= 3 && l.faces.length <= 5, JSON.stringify(l));
   ok('#353 the friend says the text in the game voice', await p.evaluate(x => window.__says.some(s => s.includes('אורן, יש לך 2 דקות ואז לאכול')), TXT), JSON.stringify(await p.evaluate(() => window.__says)));
   ok('#353 digits are spoken as Hebrew words (#122 path)', await p.evaluate(() => !/\d/.test(window.__fullSpell('יש לך 2 דקות')) && /שתי/.test(window.__fullSpell('יש לך 2 דקות'))));
   await shot('message-kid');
   await p.evaluate(() => { window.__says = []; }); await p.locator('.hlock .hagain').click(); await sleep(300);
   ok('#353 "hear again" says it again', await p.evaluate(() => window.__says.some(s => s.includes('2 דקות'))) && !!(await msg()));
   ok('#353 shown = said', await p.evaluate(() => !!window.TAL.S().set.rem.s));
-  await pressBack(); await sleep(300);
-  ok('#353 close dismisses it and it does not come back', !(await msg()) && await p.evaluate(() => { window.HEALTH.check(); return window.TAL.S().set.rem.ok === 1 && !document.querySelector('.hlock.hmsg'); }));
+  const face = await p.locator('.hlock .hface').nth(1).textContent(); await p.locator('.hlock .hface').nth(1).click(); await sleep(300);
+  ok('#353 a face closes it and it does not come back', !(await msg()) && await p.evaluate(() => { window.HEALTH.check(); return window.TAL.S().set.rem.ok === 1 && !document.querySelector('.hlock.hmsg'); }));
+  ok('#413 the face Oren tapped is stored as his answer', await p.evaluate(f => window.TAL.S().set.rem.f === f, face), face);
   if (BUILT) { await p.evaluate(() => window.TAL.parentPanel('rem')); await sleep(300);
-    ok('#353 the parent sees "said"', /נאמרה/.test(await p.locator('#sPar .psec', { hasText: 'תזכורת לאורן' }).textContent()));
+    const pt = await p.locator('#sPar .psec', { hasText: 'תזכורת לאורן' }).textContent();
+    ok('#353 the parent sees "said"; #413 and Oren\'s face answer', /נאמרה/.test(pt) && pt.includes('אורן ענה') && pt.includes(face), pt.slice(0, 200));
     await p.evaluate(() => window.OREN.showMap()); await sleep(300); }
+  // ---------- #413: 6 ready one-tap messages, pre-generated audio ----------
+  const rd = await p.evaluate(() => { const R = window.HEALTH.readyMsgs(), L = new Set(window.TAL.choiceList()), sp = window.TAL.spk; return { R, nik: R.every(x => /[ְ-ּ]/.test(x)), pre: R.filter(x => !L.has(sp(x))) }; });
+  ok('#413 six ready messages, Hebrew with nikud', rd.R.length === 6 && rd.nik && rd.R.includes('אַבָּא גֵּאֶה בְּךָ!') && rd.R.includes('עוֹד מְעַט אוֹכֶל!'), JSON.stringify(rd.R));
+  ok('#413 every ready message is in the pregen list (audio made in advance)', !rd.pre.length, JSON.stringify(rd.pre));
+  if (BUILT) {
+    await p.evaluate(() => { window.TAL.S().set.rem = null; window.TAL.parentPanel('rem'); }); await sleep(300);
+    const ms = () => p.locator('#sPar .psec', { hasText: 'תזכורת לאורן' });
+    const rb = await ms().evaluate(s => [...s.querySelectorAll('.hready')].map(b => b.textContent.trim()));
+    ok('#413 the parent sees the 6 ready messages as one-tap buttons', rb.length === 6 && rb.includes('אַבָּא גֵּאֶה בְּךָ!'), JSON.stringify(rb));
+    await ms().locator('.pchip', { hasText: /^עכשיו$/ }).click(); await sleep(200);
+    await p.evaluate(() => { const s = [...document.querySelectorAll('#sPar .psec')].find(x => /תזכורת לאורן/.test(x.textContent)); s.scrollIntoView(); }); await shot('parent-ready');
+    await ms().locator('.hready', { hasText: 'אַבָּא גֵּאֶה בְּךָ!' }).click(); await sleep(300);
+    const r1 = await p.evaluate(() => ({ r: window.TAL.S().set.rem, now: window.HEALTH.clock() }));
+    ok('#413 one tap sends it "now" (no typing)', r1.r && r1.r.k === 'msg' && r1.r.x === 'אַבָּא גֵּאֶה בְּךָ!' && r1.r.at === r1.now && !r1.r.ok, JSON.stringify(r1));
+    await p.evaluate(() => { window.__says = []; window.OREN.showMap(); window.HEALTH.check(); }); await sleep(600);
+    const k1 = await msg();
+    ok('#413 the friend says the ready message at once (on home)', k1 && k1.h2 === 'אַבָּא גֵּאֶה בְּךָ!' && await p.evaluate(() => window.__says.some(s => s.includes(window.TAL.spk('אַבָּא גֵּאֶה בְּךָ!')))), JSON.stringify(k1));
+    await shot('ready-kid');
+    await p.locator('.hlock .hface').first().click(); await sleep(300);
+    ok('#413 Oren answers with one face', !(await msg()) && await p.evaluate(() => !!window.TAL.S().set.rem.f));
+    await p.evaluate(() => window.OREN.showMap()); await sleep(200);
+  }
   await p.evaluate(() => { const t = window.HEALTH.clock(); window.TAL.S().set.rem = { k: 'msg', x: '   ', at: t, t }; window.HEALTH.check(); }); await sleep(300);
   ok('#353 an empty message is never shown', !(await msg()));
   await p.evaluate(() => { window.TAL.S().set.rem = null; });

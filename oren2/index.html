@@ -2624,8 +2624,6 @@ window.OREN.on('tlDone',()=>herePut(null));window.OREN.on('levelDone',()=>herePu
 @media (hover:hover){.ucard:hover,.pfb:hover,.ptab:hover{filter:brightness(1.08)}}
 .plog .pli,.callp{font-size:58px;line-height:1}.plog input{margin:4px 0}.plink{font-size:14px;text-decoration:underline;color:var(--ink-soft);background:none;margin-top:8px}
 .pgin.sm{font-size:18px;width:150px;padding:4px}
-.pmsg{font-family:var(--read);font-size:28px;line-height:1.6;background:#fff8e1;padding:12px 18px;max-width:560px;text-align:center;box-shadow:inset 0 0 0 3px #ffd166;user-select:text}
-.bigbtn.emo{font-size:30px;padding:6px 14px}
 .toast{position:fixed;top:74px;left:50%;transform:translateX(-50%);z-index:60;background:#fff;padding:10px 22px;font-weight:800;font-size:20px;box-shadow:0 0 0 4px var(--gold),0 8px 0 4px rgba(0,0,0,.25);animation:tin .4s;pointer-events:none;white-space:nowrap}
 .toast.out{opacity:0;transition:opacity .5s}@keyframes tin{from{transform:translate(-50%,-30px);opacity:0}}
 
@@ -2650,7 +2648,6 @@ window.OREN.on('tlDone',()=>herePut(null));window.OREN.on('levelDone',()=>herePu
 .gord{display:flex;flex-direction:column;gap:4px;margin-top:4px}.gro{display:flex;align-items:center;gap:8px;justify-content:space-between;background:#f6f2e8;padding:3px 8px;font-weight:700;font-size:14px}.gro.open{background:#e3f3d9}
 .pbld{display:flex;flex-direction:column;gap:4px;padding:6px 0;border-bottom:1px solid #eee}.pacts{display:flex;flex-wrap:wrap;gap:6px;padding-inline-start:18px}.pacts .pchip{font-size:12px;padding:3px 8px}
 .prow .pchip{margin-inline-start:4px}.pchip.bad{background:#f8d9d0}.pchip.arm{background:var(--bad);color:#fff}
-.pmsgold{background:#fff8e1;padding:8px 12px;margin:6px 0;font-family:var(--read);font-size:18px}.pmsgold small{display:block;font-family:var(--font);color:var(--ink-soft);font-size:13px}.pmsgold .emo{font-size:20px}
 .pta.big{font-family:var(--font);font-size:17px;direction:rtl;min-height:70px}
 @media (max-width:760px){.profg{grid-template-columns:repeat(2,1fr)}.toast{font-size:16px;white-space:normal;width:86vw;text-align:center}.ucard{padding:12px 16px}}
 @media (max-width:760px){.ptabs{display:grid;grid-template-columns:1fr 1fr}.ptab{font-size:14px;padding:7px 6px}}
@@ -2847,7 +2844,7 @@ button:focus:not(:focus-visible){outline:none}
 .trng::-webkit-slider-thumb{width:40px;height:40px}
 .arrow{border:14px solid transparent;border-left:26px solid #e4572e;border-right:0;transform:translate(-100%,-50%)}
 .cbn{width:min(560px,94vw,calc(100vh - 250px))}
-@media (max-width:760px){#ov .bigbtn.emo{font-size:24px;padding:4px 9px}.orow .sw{width:44px;height:44px}}
+@media (max-width:760px){.orow .sw{width:44px;height:44px}}
 /* locked lessons: solid card with a lock, clearly not pressable yet */
 .actc.locked{opacity:1;filter:none;background:#ddd6c6;color:#7b7466;position:relative;box-shadow:inset 0 0 0 3px #c9bfa8}
 .actc.locked::after{content:"🔒";position:absolute;top:6px;inset-inline-start:8px;font-size:18px}
@@ -3116,7 +3113,9 @@ body.hlocked #ov{position:fixed;z-index:100}
 /* #353: the parent's typed message, said by the friend */
 .hlock.hmsg .hav svg{width:170px;height:170px}.hlock.hmsg h2{font-family:var(--read);font-size:34px;overflow-wrap:anywhere}
 .hlock .hagain{font-size:40px;width:76px;height:76px;border-radius:50%;border:4px solid var(--ink);background:#fff;cursor:pointer}
-.hmsgrow{flex-wrap:wrap}.hmsgrow .hmsgin{direction:rtl;text-align:right;width:min(320px,100%);font-size:20px;padding:6px}.hmsgsend[disabled]{opacity:.45}
+.hmsgrow{flex-wrap:wrap}.hready{font-family:var(--read);font-size:18px;padding:6px 12px;border-radius:14px;border:2px solid var(--ink);background:#fff8e1;cursor:pointer}.hmsgtype{display:flex;gap:6px;flex-wrap:wrap;width:100%}
+.hlock .hfaces{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}.hlock .hface{font-size:46px;width:88px;height:88px;border-radius:50%;border:4px solid var(--ink);background:#fff;cursor:pointer}
+@media (max-width:500px){.hlock .hfaces{gap:8px}.hlock .hface{font-size:36px;width:70px;height:70px}}.hmsgrow .hmsgin{direction:rtl;text-align:right;width:min(320px,100%);font-size:20px;padding:6px}.hmsgsend[disabled]{opacity:.45}
 .hcnt{font-size:56px;font-weight:900;line-height:1;color:#3a8fc4}
 .hlock .hback[disabled]{cursor:default;background:linear-gradient(to left,var(--ok) var(--p,0%),#b9c2c9 var(--p,0%));box-shadow:inset -6px -6px 0 rgba(0,0,0,.15),0 7px 0 rgba(0,0,0,.3)}
 .hlock .hback.ready{animation:pop .35s ease-out both}
@@ -4767,11 +4766,6 @@ O.on('map',m=>{const st=SET();
   /* hide math worlds the parent switched off */
   const cards=m.querySelectorAll('.worlds > .wcard2');O.WORLDS.forEach((w,i)=>{if(st.offW[w.id]&&cards[i])cards[i].hidden=true;});
 });
-T.checkMsg=()=>{const msg=SET().msg;if(msg&&msg.text&&!msg.seen)setTimeout(()=>{if(!$('#ov').hidden||$('#sHome').hidden)return;showMsg(msg);},D(700));};
-function showMsg(msg){const ov=$('#ov');ov.hidden=false;ov.innerHTML=`<div class="card"><div class="callp">💌</div><h2>הוֹדָעָה מֵהַהוֹרִים</h2><div class="pmsg">${esc(msg.text)}</div>${msg.gems?`<div class="gain">+${msg.gems} ${SPR.gem}</div>`:''}<div class="sub">שְׁלַח תְּשׁוּבָה:</div></div>`;
-  const row=h('div','btnrow');['❤️','😊','👍','🤗','😂'].forEach(em=>{const b=h('button','bigbtn plain sm emo',em);b.onclick=()=>{msg.seen=Date.now();msg.reply=em;if(msg.gems)O.addGems(msg.gems);O.persist();ov.hidden=true;sfx.win();O.rain();};row.appendChild(b);});
-  ov.firstChild.appendChild(row);O.say('הודעה מההורים. '+msg.text);sfx.star(0);}
-const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])).replace(/\n/g,'<br>');
 /* ---------- start screen: choose user ---------- */
 (()=>{const sb=$('#btnStart');if(!sb)return;const u=h('div','users');
   sb.className='ucard kid';sb.innerHTML=`<span class="ua bob">${O.AV()}</span><b>אוֹרֶן</b><small>יוֹצְאִים לַדֶּרֶךְ!</small>`;
@@ -4797,10 +4791,10 @@ const BAR=(v,max,col)=>`<span class="pbar"><i style="width:${max?Math.min(100,v/
 const fmtMin=sec=>{const m=Math.round(sec/60);return m<60?m+' דק׳':(m/60).toFixed(1)+' שע׳';};
 function lastDays(n){const out=[];const d=new Date();for(let i=n-1;i>=0;i--){const x=new Date(d);x.setDate(d.getDate()-i);const k=x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');out.push([k,x]);}return out;}
 /* #359: the main view is one day (what he did, live · the plan ahead · strong / weak); everything else is behind one "הגדרות ועוד" entry, in closed sections */
-const MORE=[['time','⏱️ זמן משחק והגבלה'],['rem','⏰ תזכורת והודעה לאורן'],['tmpl','🗓️ התבנית לכל יום'],['know','🧭 מה אורן כבר יודע'],['learn','🛤️ המסלול של אורן — הבא בתור'],['full','📈 פירוט מלא'],['iss','⚠️ תקלות'],['voice','🔊 קול — בדיקה ובחירה'],['try','🎮 לשחק כהורה (ניסיון)'],['msg','💌 הודעה לאורן'],['parts','🧩 להפעיל / לכבות חלקים'],['health','🥤 הפסקות וארוחות'],['read','📖 קריאה'],['prog','⏭️ דילוג, איפוס ויהלומים'],['perm','🎤 הרשאות'],['set','🔑 סיסמה וגיבוי'],['map','🗺️ מפת התוכן']];
+const MORE=[['time','⏱️ זמן משחק והגבלה'],['rem','⏰ תזכורת והודעה לאורן'],['tmpl','🗓️ התבנית לכל יום'],['know','🧭 מה אורן כבר יודע'],['learn','🛤️ המסלול של אורן — הבא בתור'],['full','📈 פירוט מלא'],['iss','⚠️ תקלות'],['voice','🔊 קול — בדיקה ובחירה'],['try','🎮 לשחק כהורה (ניסיון)'],['parts','🧩 להפעיל / לכבות חלקים'],['health','🥤 הפסקות וארוחות'],['read','📖 קריאה'],['prog','⏭️ דילוג, איפוס ויהלומים'],['perm','🎤 הרשאות'],['set','🔑 סיסמה וגיבוי'],['map','🗺️ מפת התוכן']];
 const FN={map:box=>{if(T.contentMap)T.contentMap(box,sec,BAR);},full:fullTab,try:tryTab,tmpl:tmplTab,time:timeTab,iss:issues,
   rem:box=>{if(window.HEALTH)window.HEALTH.panel(box,sec,()=>panel('rem'),'today');},know:box=>{if(window.KNOW)window.KNOW.panel(box,sec,()=>panel('know'));},learn:box=>{if(window.LEARN)window.LEARN.parentPanel(box,sec,()=>panel('learn'));},
-  health:box=>{if(window.HEALTH)window.HEALTH.panel(box,sec,()=>panel('health'),'set');},read:box=>{if(T.rdSettings)T.rdSettings(box,sec,()=>panel('read'));},voice:voiceTab,perm:permTab,parts:partsTab,prog:progTab,msg:msgTab,set:setTab};
+  health:box=>{if(window.HEALTH)window.HEALTH.panel(box,sec,()=>panel('health'),'set');},read:box=>{if(T.rdSettings)T.rdSettings(box,sec,()=>panel('read'));},voice:voiceTab,perm:permTab,parts:partsTab,prog:progTab,set:setTab};
 /* a section that would be empty is not listed (G8) */
 const HAS={iss:()=>issList().length>0,perm:()=>!permNone(),rem:()=>!!window.HEALTH,know:()=>!!window.KNOW,learn:()=>!!window.LEARN};
 const ALIAS={sum:'day',plan:'day','plan-t':'tmpl'};
@@ -5056,12 +5050,6 @@ function progTab(box){const sv=O.save,s0=T.S();
   if(window.LEARN)window.LEARN.skillsPanel(pdet(box,'skills','📶 רמות לפי מיומנות'),sec,()=>panel('prog'));
   const rs=sec(box,'איפוס מלא','<div class="pnote">מוחק את כל ההתקדמות של אורן. הסיסמה, ההגדרות והכרטיס האישי נשמרים.</div>');
   const rr=h('div','popt');rr.appendChild(armBtn('🗑️ איפוס כל ההתקדמות','bad',()=>{const keep={set:SET(),prof:prof()};O.resetAll(keep);}));rs.appendChild(rr);}
-/* --- message to Oren --- */
-function msgTab(box){const st=SET();const m=st.msg;
-  const ms=sec(box,'הודעה לאורן','<div class="pnote">אורן ישמע אותה בפעם הבאה שייכנס, ויוכל להגיב באימוג׳י.</div>');
-  if(m&&m.text)ms.appendChild(h('div','pmsgold',`<div>${esc(m.text)}</div><small>${m.seen?`נקראה ✓ ${m.reply?'· אורן הגיב: <span class="emo">'+m.reply+'</span>':''}`:'עוד לא נקראה'}</small>`));
-  const ta=h('textarea','pta big');ta.rows=3;ta.placeholder='למשל: אורן, כל הכבוד על השבוע! אוהבים אותך 💛';ta.setAttribute('aria-label','הודעה');ta.onkeydown=e=>e.stopPropagation();ms.appendChild(ta);
-  const row=h('div','btnrow');const sd=h('button','bigbtn sm','💌 <span>שליחה</span>');sd.onclick=()=>{const t=ta.value.trim();if(!t){O.floatText(sd,'כתבו משהו');return;}st.msg={text:t.slice(0,300),t:Date.now(),seen:0};O.persist();sfx.win();panel('msg');};row.appendChild(sd);ms.appendChild(row);}
 /* --- settings --- */
 function setTab(box){const st=SET();
   const ps=sec(box,'סיסמת הורה','<div class="pnote">החלפת הסיסמה. (אם תשכחו: במסך הכניסה יש "שכחתי סיסמה".)</div>');const p1=h('input','pgin sm');p1.type='password';p1.placeholder='סיסמה חדשה';const p2=h('input','pgin sm');p2.type='password';p2.placeholder='שוב';
@@ -5257,7 +5245,7 @@ function home(){const S0=T.S();
   if(window.AGAIN)window.AGAIN.button(s);
   O.sayNow=say?T.spk(say)+T.choiceSay(s,'.dcard b,.dmore span,.door b,.bigbtn span,.againbtn b'):'';
   const pb=h('button','parbtn','🔒');pb.title='כניסת הורים';pb.setAttribute('aria-label','כניסת הורים');pb.onclick=()=>window.TAL_parentGate();s.appendChild(pb);
-  T.checkMsg&&T.checkMsg();}
+}
 function doorsEl(){const doors=h('div','doors2');
   const DOORS=[['journey','מַסָּע',SPR.mount||SPR.tree,'#d99a2b',()=>O.showJourney()],['city','עִיר',X.portal,'#6c4fc1',()=>T.openHub()],['king','מַמְלָכָה',SPR.tower,'#3a8fc4',()=>O.kingdom()]];
   if(window.TAL_arcade)DOORS.push(['arcade','אַרְקֵייד','<span style="font-size:46px;line-height:1">🕹️</span>','#ff3fa4',()=>window.TAL_arcade(O.showMap)]);
@@ -5700,6 +5688,9 @@ const inAct=()=>vis('#sPlay')||(vis('#sTal')&&!!cur);
 /* #353: k:'msg' = a short text the parent typed (x); the friend says it as typed (on demand from /api/tts), s=1 once said */
 const MSG_MAX=120,msgOf=m=>m&&m.k==='msg'&&typeof m.x==='string'?m.x.trim().slice(0,MSG_MAX):'';
 const remOk=m=>m&&(REM[m.k]||msgOf(m));
+/* #413: 6 ready one-tap messages (audio made in advance: in the pregen list); Oren answers with one face (f) */
+const READY=['אַבָּא גֵּאֶה בְּךָ!','אִמָּא גֵּאָה בְּךָ!','אוֹהֲבִים אוֹתְךָ!','כָּל הַכָּבוֹד, אוֹרֶן!','עוֹד מְעַט אוֹכֶל!','בּוֹא רֶגַע אֵלֵינוּ.'],FACES=['❤️','😊','👍','😂'];
+H.readyMsgs=()=>READY.slice();T.addSay&&T.addSay(READY);
 function remCheck(t){const m=(T.S().set||{}).rem;if(!m||m.ok||!remOk(m)||t<m.at||t-m.at>REM_OLD){remSince=null;return false;}
   if(!remSince||remSince.t!==m.t)remSince={t:m.t,at:t};
   if(inAct()&&!(pend&&pend.ready)&&t-remSince.at<REM_WAIT)return false;
@@ -5707,8 +5698,7 @@ function remCheck(t){const m=(T.S().set||{}).rem;if(!m||m.ok||!remOk(m)||t<m.at|
 function showMsg(m){const x=msgOf(m);
   const el=lock('hrem hmsg',`<div class="hfr"><span class="hav bob">${friend()}</span></div><h2></h2>`);el.querySelector('h2').textContent=x;
   const ag=h('button','hagain','🔊');ag.setAttribute('aria-label','שׁוּב');ag.onclick=()=>O.say(T.spk(x));el.firstChild.appendChild(ag);
-  const btn=h('button','bigbtn huge hback','<span>בְּסֵדֶר!</span>');el.firstChild.appendChild(btn);
-  btn.onclick=()=>{m.ok=1;O.persist();sfx.win&&sfx.win();close();after();};
+  const row=h('div','hfaces');FACES.forEach(f=>{const b=h('button','hface',f);b.onclick=()=>{m.ok=1;m.f=f;O.persist();O.famNow&&O.famNow();sfx.win&&sfx.win();close();after();};row.appendChild(b);});el.firstChild.appendChild(row);
   m.s=1;O.persist();sfx.star&&sfx.star(0);say(x);return el;}
 function showRem(m){if(m.k==='msg')return showMsg(m);const x=REM[m.k];
   const el=lock('hrem',`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">${x.e}</span></div><div class="sub">${REM_BY}</div><h2>${x.t}</h2>`);
@@ -5718,15 +5708,16 @@ function showRem(m){if(m.k==='msg')return showMsg(m);const x=REM[m.k];
 let remWhen=0;
 function remPanel(box,sec,re){const m=(T.S().set||{}).rem;
   const s=sec(box,'🔔 תזכורת לאורן','<div class="pnote">אורן יראה תמונה גדולה וישמע אותה בקול — בסוף מה שהוא עושה עכשיו (עד דקה המתנה).</div>');
-  if(remOk(m)&&now()-m.at<REM_OLD){const st=h('div','pstat');st.textContent=`${m.k==='msg'?'💬 '+msgOf(m):REM[m.k].p} · ${m.k==='msg'&&(m.s||m.ok)?'נאמרה ✓':m.ok?'אורן ראה ✓':now()<m.at?'תופיע ב-'+hm(m.at):'ממתינה לסוף הפעילות'}`;s.appendChild(st);}
+  if(remOk(m)&&now()-m.at<REM_OLD){const st=h('div','pstat');st.textContent=`${m.k==='msg'?'💬 '+msgOf(m):REM[m.k].p} · ${m.k==='msg'&&(m.s||m.ok)?'נאמרה ✓'+(m.f?' · אורן ענה: '+m.f:''):m.ok?'אורן ראה ✓':now()<m.at?'תופיע ב-'+hm(m.at):'ממתינה לסוף הפעילות'}`;s.appendChild(st);}
   const w=h('div','popt','<span>מתי:</span>');[[0,'עכשיו'],[5,'5 דק׳'],[10,'10 דק׳'],[15,'15 דק׳'],[30,'30 דק׳']].forEach(([v,n])=>{const b=h('button','pchip'+(remWhen===v?' on':''),n);b.onclick=()=>{remWhen=v;re&&re();};w.appendChild(b);});s.appendChild(w);
   const g=h('div','pbig');Object.entries(REM).forEach(([k,x])=>{const b=h('button','bigbtn sm','<span>'+x.p+'</span>');b.onclick=()=>{const t=now();T.S().set.rem={k,at:t+remWhen*60000,t};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);re&&re();};g.appendChild(b);});s.appendChild(g);
   /* #353: a typed message the friend says aloud (same "when", same delivery) */
-  const f=h('div','popt hmsgrow','<span>הודעה מהחבר:</span>');const i=document.createElement('input');i.type='text';i.className='pgin hmsgin';i.maxLength=MSG_MAX;i.dir='rtl';i.placeholder='מה החבר יגיד לאורן?';i.setAttribute('aria-label','הודעה מהחבר');
+  const send=x=>{const t=now();T.S().set.rem={k:'msg',x,at:t+remWhen*60000,t};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);re&&re();};
+  const f=h('div','popt hmsgrow','<span>הודעה מהחבר:</span>');READY.forEach(x=>{const b=h('button','hready',x);b.onclick=()=>send(x);f.appendChild(b);});const i=document.createElement('input');i.type='text';i.className='pgin hmsgin';i.maxLength=MSG_MAX;i.dir='rtl';i.placeholder='מה החבר יגיד לאורן?';i.setAttribute('aria-label','הודעה מהחבר');
   const sb=h('button','pchip hmsgsend','📣 שלח');const upd=()=>{sb.disabled=!i.value.trim();};upd();
   i.oninput=upd;i.onkeydown=e=>{e.stopPropagation();if(e.key==='Enter')sb.click();};
-  sb.onclick=()=>{const x=i.value.trim().slice(0,MSG_MAX);if(!x)return;const t=now();T.S().set.rem={k:'msg',x,at:t+remWhen*60000,t};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);re&&re();};
-  f.appendChild(i);f.appendChild(sb);s.appendChild(f);}
+  sb.onclick=()=>{const x=i.value.trim().slice(0,MSG_MAX);if(x)send(x);};
+  const g2=h('div','hmsgtype');g2.append(i,sb);f.appendChild(g2);s.appendChild(f);}
 
 /* two big cards of other domains Oren did least today */
 function cards(ex){const r=day();return DOMS.filter(d=>d.id!==ex&&!H.resting(d.id)&&enabled(d.id)).map(d=>[d,(r.dom[d.id]|0)+Math.random()]).sort((a,b)=>a[1]-b[1]).slice(0,2).map(x=>x[0]);}
