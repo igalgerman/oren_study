@@ -162,6 +162,11 @@ const INIT = () => {
     await show('MISSING חָסֵר'); await speak(p, 'MISSING חָסֵר'); await sleep(600);
     r = await st('MISSING חָסֵר');
     ok('#404 case 2 (offline false): exactly one retry, then the text lights up with a 🔊, no browser voice', r.req === 2 && !r.played && r.lit && r.btn && !r.browser, JSON.stringify(r));
+    // #641 every audio failure carries the sentence id; the final miss also logs the HTTP status of that sentence's URL
+    await sleep(300);
+    { const au = await p.evaluate(() => window.OREN.evBuf().filter(e => e.k === 'au' && e.src === 'google'));
+      const fl = au.filter(e => e.ev === 'fail'), miss = au.find(e => e.ev === 'missing'), hs = au.find(e => e.ev === 'http');
+      ok('#641 audio failure: sentence id on every fail, the HTTP status (404) after the miss', fl.length >= 2 && fl.every(e => !!e.sn) && !!miss && miss.sn === fl[fl.length - 1].sn && !!hs && hs.st === 404 && hs.sn === miss.sn, JSON.stringify(au)); }
     // the 🔊 tries again: now the server has it -> it plays and the light goes off
     await p.evaluate(() => { window.__fixed = ['MISSING חָסֵר']; });
     await p.click('.t404 .vmissb'); await sleep(400);
