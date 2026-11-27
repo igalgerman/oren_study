@@ -107,7 +107,7 @@ const P = t => String(t || '').replace(/[֑-ׇ]/g, '');
     const pl = o4.play; if (!pl) return { err: 'no play' };
     /* help twice = the answer, the question ends: now on the 2nd question */ for (let k = 0; k < 2; k++) { const hb = document.querySelector('#sPlay .helpbtn'); if (hb) hb.click(); await wait(80); }
     for (let k = 0; k < 40 && o4.play.i < 1; k++) await wait(50);
-    const sb = document.querySelector('#sPlay .skipbtn'); if (!sb) return { err: 'no button', i: pl.i };
+    for (let k = 0; k < 60 && O.tapTooSoon && O.tapTooSoon(); k++) await wait(30); const sb = document.querySelector('#sPlay .skipbtn'); if (!sb) return { err: 'no button', i: pl.i };
     const i0 = pl.i, e0 = pl.errors, s0 = O.stars(lv.id); sb.click(); await wait(300); return { i0, i1: o4.play.i, e0, e1: o4.play.errors, s0, s1: O.stars(lv.id), ov: !!document.querySelector('.pdskip') }; });
   ok('math level: skip → the next question, no error counted, no stars', m.i1 === m.i0 + 1 && m.e1 === m.e0 && m.s1 === m.s0 && !m.ov, JSON.stringify(m));
 
