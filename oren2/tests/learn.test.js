@@ -168,11 +168,13 @@ ok(C.SCN.filter(t => /x\.v\(/.test(t.g.toString())).every(t => stBoth.has(t.id +
 // the scene's thing is used when the story runs; no story (or no thing) -> the old themes
 { const was = window.STORYMIX; const ids = new Set(C.SCN.map(t => t.id)); let inScene = 0, old = 0;
   window.STORYMIX = { thing: () => ['דָּג', 'דָּגִים', 'm'] };
-  for (let lv = 1; lv <= 5; lv++) for (let i = 0; i < 40; i++) { const q = C.wordQ(lv); if (ids.has(q.tid) && q.tx.includes('דָּגִים')) inScene++; }
+  const oldIds = new Set(); let multi = 0;
+  for (let lv = 1; lv <= 5; lv++) for (let i = 0; i < 300; i++) { const q = C.wordQ(lv); if (ids.has(q.tid)) { if (q.tx.includes('דָּגִים')) inScene++; } else { oldIds.add(q.tid); if (q.f.length > 3) multi++; } }
   window.STORYMIX = { thing: () => null };
   for (let lv = 1; lv <= 5; lv++) for (let i = 0; i < 40; i++) if (!ids.has(C.wordQ(lv).tid)) old++;
   window.STORYMIX = was; for (let lv = 1; lv <= 5; lv++) for (let i = 0; i < 40; i++) if (!ids.has(C.wordQ(lv).tid)) old++;
-  ok(inScene === 200 && old === 400, '#416 word problems count the scene thing (fish in the fish scene); without one the old themes', `scene ${inScene}/200, old ${old}/400`); }
+  ok(inScene >= 300 && inScene <= 750 && oldIds.size >= 30 && multi > 0 && old === 400, '#416 story questions (fish in the fish scene) are mixed in (~1 in 3); the old themes and multi-step ones stay; without a thing only the old themes',
+    `scene ${inScene}/1500, old templates ${oldIds.size}, multi-step ${multi}, fallback ${old}/400`); }
 // the count helper itself
 ok(C.count(1, 'goal') === 'גּוֹל אֶחָד' && C.count(1, 'kick') === 'בְּעִיטָה אַחַת' && C.count(2, 'window') === 'שְׁנֵי חַלּוֹנוֹת' && C.count(2, 'rock') === 'שְׁתֵּי אֲבָנִים' && C.count(2, 'tower', 'לְ') === 'לִשְׁנֵי מִגְדָּלִים' && C.count(2, 'ship', 'לְ') === 'לִשְׁתֵּי חֲלָלִיּוֹת' && C.count(7, 'minute') === '<b>7</b> דַּקּוֹת',
   'count(): irregular genders (חַלּוֹנוֹת m, אֲבָנִים f) and prefixes');

@@ -93,10 +93,10 @@ const r3=await p.evaluate(src=>{const O=window.__oren4,M=window.STORYMIX,LN=wind
  const things=[...Object.values(M.THING),...M.CH_THING];const units=O.ALLU.filter(u=>/^word-(\d|boss)/.test(u.id));
  for(const t of things){M.thing=()=>t;
    for(const u of units)for(let i=0;i<40;i++){const q=u.gen(i);if(q.k!=='word')continue;n++;if(q.tx.includes(t[1]))used++;if(/undefined|NaN/.test(q.tx+q.u))bad.push('text '+q.tx);}
-   for(let lv=1;lv<=5;lv++){const q=LN.wordQ(lv);if(!/^sc-/.test(q.tid)||!q.tx.includes(t[1]))bad.push('learn not the scene thing '+t[1]+' '+q.tid);
+   for(let lv=1;lv<=5;lv++)for(const st of LN.SCN.filter(x=>x.lv[0]<=lv&&lv<=x.lv[1])){const q=LN.wordQ(lv,st.id);if(!q.tx.includes(t[1]))bad.push('learn not the scene thing '+t[1]+' '+q.tid);
      const said=window.__fullSpell(strip(q.tx));if(!RANDOM.test(said))bad.push('pregen would keep a random sentence: '+said);}}
  M.thing=()=>null;let old=0;for(const u of units.filter(u=>/^word-[0-4]$/.test(u.id)))for(let i=0;i<40;i++){const q=u.gen(i);{const hit=q.k==='word'&&things.find(t=>q.tx.includes(t[1])&&!/תַּפּוּחִים|צְדָפִים|בָּלוֹנִים|עוּגִיּוֹת|סֻכָּרִיּוֹת/.test(t[1]));if(hit){old++;bad.push('fb '+hit[1]+': '+q.tx.slice(0,60));}}}
- if(old)bad.push('fallback still uses scene things '+old);if(LN.wordQ(2).tid.startsWith('sc-'))bad.push('learn fallback');
+ if(old)bad.push('fallback still uses scene things '+old);{let sc=0,all=0;for(let i=0;i<300;i++){all++;if(LN.wordQ(3).tid.startsWith('sc-'))sc++;}if(sc)bad.push('learn fallback '+sc);M.thing=()=>M.THING['1.2'];sc=0;for(let i=0;i<300;i++)if(LN.wordQ(3).tid.startsWith('sc-'))sc++;if(sc<50||sc>150)bad.push('learn story share '+sc+'/300');}
  M.thing=was;const fish=(()=>{const s0=O.save.mix;O.save.mix={c:1,s:2};const t=M.thing();O.save.mix=s0;return t&&t[1];})();if(fish!=='דָּגִים')bad.push('scene 1.2 thing '+fish);
  return {bad:[...new Set(bad)].slice(0,10),share:Math.round(100*used/Math.max(1,n))};},RANDOM.source);
 await b.close();

@@ -260,9 +260,10 @@ const sceneThing=()=>{const M=typeof window!=='undefined'&&window.STORYMIX;try{r
 const WT_BY_LV=lv=>WT.filter(t=>t.lv[0]<=lv&&lv<=t.lv[1]);
 /* the answer from the numbers, in text order */
 const solve=(f,nums)=>{const [a,b,c,d]=nums;return Function('a','b','c','d','return '+f)(a,b,c,d);};
-/* tid: one template; thing: [one, many, gender] (default: the story scene's thing -> the story templates; none -> the old themes) */
+/* tid: one template; thing: [one, many, gender] (default: the story scene's thing -> story templates mixed in; none -> only the old themes) */
 function wordQ(lv,tid,thing){thing=thing||(tid&&!/^sc-/.test(tid)?null:sceneThing());const ALL=[...WT,...SCN];
-  const pool=tid?ALL.filter(t=>t.id===tid):thing?SCN.filter(t=>t.lv[0]<=lv&&lv<=t.lv[1]):WT_BY_LV(lv);const t=pk(pool);if(!t||(t.th==='story'&&!thing))throw new Error('word template '+tid);const fem=rnd()<.5;
+  /* the story templates are mixed in (about 1 in 3), the old themes and multi-step problems stay */
+  const pool=tid?ALL.filter(t=>t.id===tid):thing&&rnd()<1/3?SCN.filter(t=>t.lv[0]<=lv&&lv<=t.lv[1]):WT_BY_LV(lv);const t=pk(pool);if(!t||(t.th==='story'&&!thing))throw new Error('word template '+tid);const fem=rnd()<.5;
   const Nn=pk(fem?NAMES_F:NAMES_M);let Mn;do{Mn=pk(rnd()<.5?NAMES_F:NAMES_M);}while(Mn===Nn);const gM=NAMES_F.includes(Mn);
   const x={lv:Math.max(t.lv[0],Math.min(t.lv[1],lv)),Nn,Mn,N:Nn,M:Mn,v:(m,f)=>mark(Nn,fem?f:m),w:(m,f)=>mark(Mn,gM?f:m),c:count,t:thing};
   for(let k=0;k<40;k++){const [text,...nums]=t.g(x);const v=solve(t.f,nums);if(Number.isInteger(v)&&v>=0&&v<=200)
