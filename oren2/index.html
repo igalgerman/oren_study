@@ -5776,7 +5776,7 @@ T.rdQ=(q,card,o)=>{clearQ();decorateAll();const target=o&&o.read&&!q.play?card.q
   Q.target.after(h('div','rdcue','נַסֵּה לִקְרֹא 👀'));
   const me=Q,wrap=card.parentNode;if(wrap&&!wrap._rdL){wrap._rdL=1;wrap.addEventListener('click',e=>{if(Q&&e.target.closest('.chb'))Q.answered=true;},true);}
   me.timers.push(setTimeout(()=>{if(Q===me&&!me.answered&&!me.heard&&me.target.isConnected)T.readEl(me.target).then(()=>{/* then the answers that are words */
-    if(Q!==me||me.answered||!wrap)return;const os=[...wrap.querySelectorAll('.chs .chb')].filter(b=>!b.disabled).map(b=>b.textContent.trim()).filter(t=>HEB.test(t));if(os.length)O.say(os.join(', '));});},D(lv===1?3000:8000)));};
+    if(Q!==me||me.answered||!wrap)return;const os=[...wrap.querySelectorAll('.chs .chb')].filter(b=>!b.disabled).map(b=>b.textContent.trim()).filter(t=>HEB.test(t));if(os.length&&RH().ans)O.say(os.join(', '));/* #613 the parent may turn the answers off */});},D(lv===1?3000:8000)));};
 T.rdA=(q,tries,b)=>{if(!Q||Q.q!==q||!Q.target)return;clearQ();if(tries||Q.heard||RH().m==='read')return;/* read to him: never "read alone" */
   const r=RD();r.solo=(r.solo|0)+1;
   if(UP[r.lvl]&&r.solo>=UP[r.lvl]){r.lvl++;O.floatText(Q.card,'🎉 עָלִיתָ שָׁלָב בִּקְרִיאָה!');}

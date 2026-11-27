@@ -90,6 +90,17 @@ const fast = s => Math.ceil(s * 1000 / 15) + 250;   /* D(): __fast runs the cloc
   const ans = await p.evaluate(() => { const T = window.TAL, s = T.S().set; const r1 = document.createElement('div'); const on = T.ansSay(r1, ['כֶּלֶב', 'חָתוּל']);
     s.rh = { ans: 0 }; const r2 = document.createElement('div'); const off = T.ansSay(r2, ['כֶּלֶב', 'חָתוּל']); delete s.rh; return { on: !!on && r1.dataset.ra === '1', off, ra: r2.dataset.ra || '' }; });
   ok('answers: read one by one by default, not when off', ans.on && ans.off === '' && !ans.ra, JSON.stringify(ans));
+  // 7b. answers off also after a reading sentence reads itself (tries first, sentence level 1): the sentence, then no answers
+  const sentAns = async ans => { await setRH(ans ? null : { ans: 0 }); return p.evaluate(async () => { const T = window.TAL; T.S().rd = { lvl: 1, solo: 0 }; window.__fast = false; speechSynthesis.log = []; T.ACT['read-sent'].run(() => {});
+    const N = t => window.TAL.plainHe(String(t)).replace(/[^א-ת]/g, '').replace(/[וי]/g, '');
+    const opts = () => [...document.querySelectorAll('#sTal .chs .chb')].map(b => N(b.textContent)).filter(Boolean);
+    for (let k = 0; k < 200; k++) { await new Promise(r => setTimeout(r, 50)); if (speechSynthesis.log.some(t => opts().length && opts().every(o => N(t).includes(o)))) break; }
+    await new Promise(r => setTimeout(r, 300)); window.OREN.hush(); window.__fast = true;
+    const sent = N(document.querySelector('#sTal .tqc .sent').textContent), os = opts();
+    return { sent: speechSynthesis.log.some(t => N(t).includes(sent.slice(0, 6))), answers: speechSynthesis.log.some(t => os.every(o => N(t).includes(o))) }; }); };
+  const sa1 = await sentAns(true), sa0 = await sentAns(false);
+  ok('answers off: after a reading sentence reads itself, the answers are not read (on: they are)', sa1.sent && sa1.answers && sa0.sent && !sa0.answers, JSON.stringify([sa1, sa0]));
+  await setRH(null);
   // 8. word light (#421): off → the words do not light while read
   const lit = async hi => { await setRH(hi ? null : { hi: 0 }); await p.evaluate(() => window.TAL.ACT['read-sent'].run(() => {})); await p.waitForSelector('#sTal .tqc .qq .rdb');
     return p.evaluate(async () => { window.__fast = false; const el = document.querySelector('#sTal .tqc .qq'); window.TAL.readEl(el); let n = 0; for (let k = 0; k < 30; k++) { await new Promise(r => setTimeout(r, 50)); n = Math.max(n, el.querySelectorAll('.rw.on').length); }
