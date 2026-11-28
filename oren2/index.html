@@ -3249,6 +3249,27 @@ body:has(#dlg:not([hidden])) .toast{top:74px;bottom:auto}
 .rink .mallet.me{background:radial-gradient(circle at 35% 30%,#ffb347,#ff7a00)}
 .rink .mallet.cpu{background:radial-gradient(circle at 35% 30%,#b48cff,#6a3ad8)}
 
+/* ===== arcade runner (#666): own art, CSS only ===== */
+.field.runf{background:linear-gradient(#7fd3ff,#d8f5ff 62%,#8ee08a 62%);overflow:hidden;direction:ltr;touch-action:manipulation}
+.rn-ground{position:absolute;left:0;right:0;bottom:0;height:20%;background:#6bc46a;border-top:6px solid #4ea84f}
+.rn-me{position:absolute;left:18%;bottom:18%;width:44px;height:64px;margin-left:-22px;transition:height .12s}
+.rn-me .rh{position:absolute;left:6px;top:0;width:32px;height:32px;border-radius:50%;background:#ff7a59;box-shadow:inset -6px -4px 0 rgba(0,0,0,.12)}
+.rn-me .rh:after{content:"";position:absolute;right:6px;top:11px;width:7px;height:7px;border-radius:50%;background:#1a0b3d;box-shadow:-11px 0 #1a0b3d}
+.rn-me .rb{position:absolute;left:10px;top:28px;width:24px;height:26px;border-radius:10px;background:#ffb02e}
+.rn-me .rl{position:absolute;top:50px;width:9px;height:14px;border-radius:4px;background:#1a0b3d;animation:rnleg .3s infinite alternate}
+.rn-me .rl.a{left:11px}.rn-me .rl.b{left:24px;animation-delay:.15s}
+@keyframes rnleg{to{transform:translateY(-4px)}}
+.rn-me.duck{height:38px;transform:translateY(0)}.rn-me.duck .rb{top:16px;height:18px}.rn-me.duck .rl{top:30px}.rn-me.duck .rh{top:-4px;left:10px;width:28px;height:28px}
+.rn-me.oops{animation:rnoops .5s}@keyframes rnoops{25%{transform:rotate(-14deg)}75%{transform:rotate(12deg)}}
+.rn-i{position:absolute;margin-left:-20px}
+.rn-i.rock{bottom:18%;width:40px;height:30px;border-radius:50% 50% 8px 8px;background:#9aa0aa;box-shadow:inset -6px -5px 0 rgba(0,0,0,.18)}
+.rn-i.bar{bottom:calc(18% + 40px);width:70px;height:12px;border-radius:6px;background:#7a4a24;box-shadow:0 -8px 0 -2px #3cb04a}
+.rn-i.star{bottom:calc(18% + 8px);font-size:30px}.rn-i.star.hi{bottom:calc(18% + 54px)}.rn-i.got{animation:rngot .25s forwards}
+@keyframes rngot{to{transform:translateY(-30px) scale(1.6);opacity:0}}
+.rn-pad{display:flex;gap:14px;justify-content:center;padding:10px 0}
+.rn-pad .bigbtn{min-width:140px;min-height:64px;font-size:24px}
+@media (max-width:760px){.rn-pad .bigbtn{min-width:46%;min-height:76px}}
+
 /* ARCADE chase (#665) */
 .field.trk{background:linear-gradient(#1d0e46 0 40%,#2f8f3a 40%)}
 .road{position:absolute;left:3%;right:3%;top:42%;height:130px;direction:ltr;background:repeating-linear-gradient(90deg,rgba(255,255,255,.12) 0 40px,transparent 40px 80px),#c8925a;border-top:5px solid #fff;border-bottom:5px solid #fff}
@@ -5784,6 +5805,57 @@ T.arcBreak=breakRound;T.arcGames=GAMES;
 T.arcPack={add:(gm,fn)=>{if(G(gm.id))return;GAMES.push(gm);RUN[gm.id]=fn;T.addChoices&&T.addChoices([gm.n]);},frame,countdown,finish,tune,setCur:c=>{cur=c;}};
 window.TAL_arcade=openArcade;T.arcade=openArcade;
 window.__arc={open:openArcade,start,brk:breakRound,get inBreak(){return !!brk;},get brkId(){return brk?brk.id:null;},get cur(){return cur;},finish:sc=>cur&&cur.finish(sc),hit:()=>cur&&cur.hit(),state:()=>A(),tune,q:id=>qGen(tune(id))};
+})();
+
+/* ===== 🏃 ARCADE RUNNER (#666): jump the rocks, duck the branches, collect stars. Calm speed (#351). Pack file: registers into the arcade. ===== */
+(()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T||!T.arcAdd)return;const {h,$}=O;const sfx=O.sfx,D=O.D;
+const GAME={id:'runner',n:'רִיצָה',e:'🏃',c:'#ff7a59',d:'קוֹפְצִים וְאוֹסְפִים'};
+const RULE='🏃 קְפֹץ מֵעַל הָאֲבָנִים, הִתְכּוֹפֵף מִתַּחַת לַעֲנָפִים, וַאֲסֹף כּוֹכָבִים!';
+const SAY='קְפֹץ מֵעַל הָאֲבָנִים, הִתְכּוֹפֵף מִתַּחַת לַעֲנָפִים, וַאֲסֹף כּוֹכָבִים';
+T.addChoices&&T.addChoices([GAME.n]);T.addSay&&T.addSay([SAY+'.']);   /* #266 for pregen */
+const PX=.18,ROUND=36000,JUMP=760,DUCK=650;   /* player x (fraction of the width), round ms, jump ms, duck ms */
+function run(){const K=T.arcKit,F=K.frame('runner');const t=K.tune('runner');
+  const SPEED=.2*(1+t.lv*.07);   /* field widths per second: calm base, the level (0..4) is the hard cap (#351) */
+  const GAPMS=2300-t.lv*80;
+  F.field.classList.add('runf');
+  const me=h('div','rn-me','<i class="rh"></i><i class="rb"></i><i class="rl a"></i><i class="rl b"></i>');
+  const ground=h('div','rn-ground');F.field.append(ground,me);
+  const jb=h('button','bigbtn gold rn-j','⬆ <span>קְפֹץ</span>'),db=h('button','bigbtn rn-d','⬇ <span>הִתְכּוֹפֵף</span>');
+  const pad=h('div','rn-pad');pad.append(jb,db);F.box.appendChild(pad);
+  let alive=true,last=0,clock=0,spawn=700,stars=0,hits=0,jt=-1,dt_=-1,inv=0,items=[],seq=0;
+  const hgt=()=>jt<0?0:Math.sin(Math.PI*jt/JUMP);   /* 0..1 */
+  const jump=()=>{if(!alive||jt>=0)return;jt=0;dt_=-1;me.classList.remove('duck');sfx.jump?sfx.jump():sfx.pop(3);};
+  const duck=()=>{if(!alive||jt>=0||dt_>=0)return;dt_=0;me.classList.add('duck');sfx.pop(1);};
+  jb.onpointerdown=e=>{e.preventDefault();jump();};db.onpointerdown=e=>{e.preventDefault();duck();};
+  F.field.onpointerdown=e=>{if(e.target.closest('.rn-pad'))return;e.preventDefault();jump();};
+  T.setKey(e=>{if(e.key===' '||e.key==='ArrowUp'||e.key==='w'){e.preventDefault();jump();}else if(e.key==='ArrowDown'||e.key==='s'){e.preventDefault();duck();}});
+  const add=(kind,y)=>{const el=h('div','rn-i '+kind+(y?' hi':''),kind==='star'?'⭐':'');F.field.appendChild(el);items.push({kind,y:y|0,x:1.08,el});};
+  const make=()=>{seq++;const r=seq%4;   /* rock, stars, branch, stars: always fair and slow */
+    if(r===1)add('rock');else if(r===3)add('bar');else{const hi=seq%8===2?1:0;for(let i=0;i<3;i++){add('star',hi);items[items.length-1].x+=i*.07;}}};
+  const sync=()=>{me.style.bottom=`calc(18% + ${(hgt()*46).toFixed(1)}%)`;
+    items.forEach(o=>{o.el.style.left=(o.x*100)+'%';});};
+  const step=ms=>{clock+=ms;if(jt>=0){jt+=ms;if(jt>=JUMP)jt=-1;}if(dt_>=0){dt_+=ms;if(dt_>=DUCK){dt_=-1;me.classList.remove('duck');}}if(inv>0)inv-=ms;
+    spawn-=ms;if(spawn<=0){make();spawn=GAMEMS();}
+    items.forEach(o=>{o.x-=SPEED*ms/1000;});
+    items=items.filter(o=>{if(o.dead)return false;const near=Math.abs(o.x-PX)<.045;
+      if(near&&!o.done){const hh=hgt();
+        if(o.kind==='star'&&((!o.y&&hh<.3)||(o.y&&hh>.4))){o.done=1;stars++;F.score(stars);sfx.pop(stars%8);o.el.classList.add('got');setTimeout(()=>o.el.remove(),D(250));return false;}
+        if(o.kind==='rock'&&hh<.35&&inv<=0)bump(o);
+        if(o.kind==='bar'&&dt_<0&&inv<=0)bump(o);}
+      if(o.x<-.1){o.el.remove();return false;}return true;});
+    sync();};
+  const GAMEMS=()=>GAPMS;
+  function bump(o){o.done=1;hits++;inv=1100;sfx.no();me.classList.add('oops');setTimeout(()=>me.classList.remove('oops'),D(500));}   /* calm: a stumble costs nothing but a moment */
+  const loop=now=>{if(!alive||!F.field.isConnected){alive=false;return;}if(O.paused){last=now;requestAnimationFrame(loop);return;}
+    const ms=Math.min(50,now-last)*(window.__fast?4:1);last=now;step(ms);F.time('⏱️ '+Math.max(0,Math.ceil((ROUND-clock)/1000)));if(clock>=ROUND){done();return;}requestAnimationFrame(loop);};
+  function done(){if(!alive)return;alive=false;const st=stars>=9?3:stars>=5?2:1;K.finish('runner',stars,st);}
+  /* test + no-hands helper: the next thing ahead is answered the right way */
+  const hit=()=>{const o=items.filter(x=>!x.done&&x.x>PX&&x.x<PX+.2).sort((a,b)=>a.x-b.x)[0];if(!o)return;if(o.kind==='rock'&&o.x<PX+.12)jump();else if(o.kind==='bar'&&o.x<PX+.12)duck();else if(o.kind==='star'&&o.y&&o.x<PX+.1)jump();};
+  K.setCur({stop:()=>{alive=false;},finish:sc=>{if(sc!=null)stars=sc;done();},hit,get score(){return stars;}});
+  F.rule(RULE,SAY);sync();
+  K.countdown(F,()=>{last=performance.now();requestAnimationFrame(loop);});
+  window.__run={jump,duck,get state(){return {h:hgt(),jumping:jt>=0,ducking:dt_>=0,stars,hits,items:items.length,alive,clock,speed:SPEED};}};}
+T.arcAdd(GAME,run);
 })();
 
 /* ===== 🏒 AIR HOCKEY (#668): an arcade cabinet, own pack file. You against the computer, mouse / touch / arrow keys. Calm speed rules of #351 (tune().pk puck cap, tune().ai) ===== */

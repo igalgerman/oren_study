@@ -5,7 +5,7 @@ d=pathlib.Path(__file__).parent
 idx=(d/'index.html').read_text(encoding='utf-8')
 css=(d/'talents.css').read_text(encoding='utf-8')
 js=(d/'talents.js').read_text(encoding='utf-8')
-for extra in ['arcade','airhockey','pinball','chase','reading','health','story','friend','ship','build','lessoncard','know','gaps','read-bank2','music2','chess','explore2','english2','think-bank','think','learn','help','topic','goals','daylog','pday','again','shots','wire']:
+for extra in ['arcade','runner','airhockey','pinball','chase','reading','health','story','friend','ship','build','lessoncard','know','gaps','read-bank2','music2','chess','explore2','english2','think-bank','think','learn','help','topic','goals','daylog','pday','again','shots','wire']:
     if (d/(extra+'.css')).exists(): css+='\n'+(d/(extra+'.css')).read_text(encoding='utf-8')
     if (d/(extra+'.js')).exists(): js+='\n'+(d/(extra+'.js')).read_text(encoding='utf-8')
 assert '</script' not in js and '</style' not in css
