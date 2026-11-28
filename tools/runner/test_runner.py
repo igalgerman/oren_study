@@ -1871,3 +1871,27 @@ try:
     assert r.post_decided(7, 9, "rename x") == [] and len(_sent) == 1
 finally: r.gh = _g0; _tg.send = _t0
 print("ok #901 decided notices")
+
+# --- #978: post_polish never creates on a failed search; concurrent runs end with ONE issue per lane ---
+import threading as _th
+_g0 = r.gh
+_issues, _made = [], []
+def _gh(*a, **k):
+    if a[:2] == ("issue", "list"):
+        if _fail[0]: return 1, "HTTP 502"
+        return 0, json.dumps(list(_issues))
+    if a[:2] == ("issue", "create"):
+        time.sleep(0.05); _made.append(a); n = 900 + len(_made)
+        _issues.append({"number": n, "title": a[a.index("--title") + 1], "labels": []}); return 0, f"https://github.com/x/y/issues/{n}"
+    return 0, ""
+_fail = [True]
+r.gh = _gh
+try:
+    r.post_polish(1, "pack", 5, "a; b")
+    assert _made == [], _made                                # search failed: no new issue
+    _fail[0] = False
+    ts = [_th.Thread(target=r.post_polish, args=(k, "pack", 10 + k, "note")) for k in range(4)]
+    [t.start() for t in ts]; [t.join() for t in ts]
+    assert len(_made) == 1, _made                            # four runs at once, one issue
+finally: r.gh = _g0
+print("ok #978 post_polish")

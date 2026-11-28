@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import runner as R
 
 PARK_H, POLISH_MAX, POLISH_H, EVERY_S = 2, 5, 24, 3600
+POLISH_PR = 8   # #978: a worker takes at most this many notes per PR; the rest stay listed
 OWNER_Q_TITLE = "Questions for the owner"
 DATE_RE = re.compile(r"(?i)\b(?:until|due)\b[:\s]+(\d{4}-\d{2}-\d{2})")
 
@@ -91,11 +92,41 @@ def polish_due(i, comments, now):
     ts = polish_notes(i, comments)
     return len(ts) >= POLISH_MAX or bool(ts) and now - min(ts) >= POLISH_H * 3600
 
-def with_acceptance(body):
+def with_acceptance(body, n=None):
     """The runner starts no issue without an Acceptance section (#186): add a short one to a polish list."""
     if R.has_acceptance(body): return body
+    if n is not None:
+        return (body or "").rstrip() + (f"\n\n## Acceptance\n- Exactly the {n} notes under 'Notes for this PR' are done, in ONE PR. Ignore the comments of this issue: the later notes live in the next polish list.\n"
+                                       "- All suites green.\nOut of scope: every other note.\n")
     return (body or "").rstrip() + ("\n\n## Acceptance\n- Every note in this issue and its comments is done, in ONE PR.\n- All suites green.\n"
                                     "Out of scope: anything not in the notes.\n")
+
+def note_lines(i, comments):
+    """Every note line ('- ...') of a polish list, oldest first (body, then comments)."""
+    out = [l for l in (i.get("body") or "").splitlines() if l.startswith("- ")]
+    for c in comments: out += [l for l in (c.get("body") or "").splitlines() if l.startswith("- ")]
+    return out
+
+def split_list(i, comments):
+    """-> (body, rest): with more than POLISH_PR notes the issue keeps the oldest POLISH_PR as its task and `rest` are the other
+    note lines (for the next list); with fewer: (None, [])."""
+    ls = note_lines(i, comments)
+    if len(ls) <= POLISH_PR: return None, []
+    head = "Rolling list of BLUE review notes (polish only), first batch.\n\n## Notes for this PR\n" + "\n".join(ls[:POLISH_PR])
+    return head, ls[POLISH_PR:]
+
+def list_comments(n, api=None):
+    """All comments of issue n (pages of 100, #978), or None when unreadable. `gh api` takes no --repo (R.gh would add it)."""
+    api = api or (lambda *a: R.run(["gh", "api", *a]))
+    out, page = [], 1
+    while True:
+        rc, text = api(f"repos/{R.REPO}/issues/{n}/comments?per_page=100&page={page}")
+        try: got = json.loads(text or "[]") if rc == 0 else None
+        except ValueError: got = None
+        if not isinstance(got, list): return None
+        out += got
+        if len(got) < 100: return out
+        page += 1
 
 def reason(i, issues, prs, qs, bm, now):
     """Why an open issue without ready-for-agent is not forgotten, or None (= alarm)."""
@@ -146,7 +177,7 @@ def fetch(gh):
     if rc or rc2: return None
     return [{**i, "labels": [l["name"] if isinstance(l, dict) else l for l in i["labels"]]} for i in json.loads(out)], json.loads(out2)
 
-def tick(gh=None, tell=print, log=print, now=None, questions=owner_q_issues, st=None):
+def tick(gh=None, tell=print, log=print, now=None, questions=owner_q_issues, st=None, api=None):
     """Watchdog, once an hour: orphaned batch members and due polish lists get ready-for-agent; parked issues -> ONE note
     to the orchestrator. Any gh error: nothing is done."""
     gh, now, st = gh or R.gh, now or time.time(), _st if st is None else st
@@ -163,10 +194,17 @@ def tick(gh=None, tell=print, log=print, now=None, questions=owner_q_issues, st=
         notes.append(f"#{n} back to ready-for-agent (batch #{b} closed)")
     for i in _open(issues):
         if not is_polish(i) or "ready-for-agent" in i["labels"]: continue
-        rc, out = gh("api", f"repos/{R.REPO}/issues/{i['number']}/comments?per_page=100")
-        if rc or not polish_due(i, json.loads(out or "[]"), now): continue
-        gh("issue", "edit", str(i["number"]), "--add-label", "ready-for-agent", "--add-label", "P3", "--remove-label", "later", "--body", with_acceptance(i.get("body")))
-        notes.append(f"#{i['number']} polish list is ready-for-agent (P3)")
+        cs = list_comments(i["number"], api)
+        if cs is None or not polish_due(i, cs, now): continue
+        head, rest = split_list(i, cs)
+        lane = re.search(r"\(([^)]*)\)", i["title"])[1]
+        if rest:                                          # the rest goes to a NEW list first, so no note is lost
+            rc, _ = gh("issue", "create", "--title", i["title"], "--label", lane, "--label", "later",
+                       "--body", "Rolling list of BLUE review notes (polish only), carried over from #%d.\n\n" % i["number"] + "\n".join(rest))
+            if rc: continue
+        gh("issue", "edit", str(i["number"]), "--add-label", "ready-for-agent", "--add-label", "P3", "--remove-label", "later",
+           "--body", with_acceptance(head or i.get("body"), POLISH_PR if head else None))
+        notes.append(f"#{i['number']} polish list is ready-for-agent (P3)" + (f", {len(rest)} notes carried to a new list" if rest else ""))
     notes += [t for _, t in parked_alarms(issues, prs, qs, now)]
     if notes:
         tell("PARKED (watchdog, #282): " + " · ".join(notes)); log("parked: " + " · ".join(notes))
