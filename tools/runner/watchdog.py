@@ -477,6 +477,15 @@ def sync_tick():
     if msg and msg != _sync["msg"]: log(msg)
     _sync["msg"] = msg
 
+def mirror_tick():
+    """#854: GAME follows INFRA main (tools/split/mirror.py). Off while `game_checkout` is not set in config.toml; one alarm per problem."""
+    game = R.CFG.get("game_checkout")
+    if not game: return
+    sys.path.insert(0, str(R.ROOT / "tools" / "split"))
+    import mirror
+    out = mirror.tick(R.CFG.get("main_checkout", str(R.ROOT)), game, say=lambda t: alarm("MIRROR", "", t))
+    if out not in ("nothing to mirror", "stopped", "paused"): log("mirror: " + out)
+
 PR_QUIET_MIN, BLOCKED_HOURS, FREE_MIN, ALARM_EVERY_MIN = 60, 2, 15, 60   # #117 idle alarm
 _alarm = {"last": 0.0, "free_since": None, "sent": {}}
 
@@ -733,7 +742,7 @@ def tick():
         for name, fn in (("observer_tick", observer_tick), ("ai_observer_tick", ai_observer_tick), ("nightly_tick", nightly_tick),
                          ("parked_tick", parked_tick), ("due_tick", due_tick), ("garden_tick", garden_tick),   # #282 #241 #187
                          ("issues_stuck_tick", issues_stuck_tick), ("desks_tick", desks_tick), ("canary_tick", canary_tick),   # #280 #330
-                         ("sync_tick", sync_tick), ("alarm_tick", alarm_tick), ("trends_tick", trends_tick), ("ai_tick", ai_tick), ("usage_tick", usage_tick), ("usage_alarm_tick", usage_alarm_tick), ("progress_alarm_tick", progress_alarm_tick), ("merges_tick", merges_tick), ("interaction_limit_tick", interaction_limit_tick),
+                         ("sync_tick", sync_tick), ("mirror_tick", mirror_tick), ("alarm_tick", alarm_tick), ("trends_tick", trends_tick), ("ai_tick", ai_tick), ("usage_tick", usage_tick), ("usage_alarm_tick", usage_alarm_tick), ("progress_alarm_tick", progress_alarm_tick), ("merges_tick", merges_tick), ("interaction_limit_tick", interaction_limit_tick),
                          ("lock_tick", lock_tick), ("orch_idle_tick", orch_idle_tick)):
             step(name, fn)
 

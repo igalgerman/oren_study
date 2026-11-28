@@ -22,3 +22,6 @@ This is the public game repo. The backlog (issues) lives elsewhere; a session ge
 
 ## Rules that hold on every screen
 - A rule that must hold on every screen (voice, back/forward, help) gets an automatic test that walks every screen (`oren2/tests/walk.js`) and fails with the list of screens that break it.
+
+## Before the switch: mirror PRs only (#854)
+- Until the deploy switch, this repo only takes PRs from the mirror (branch `mirror/*`, label `mirror`); issues are off. Do not open other PRs here. After the switch, normal `lane/<n>` game PRs are allowed too.
