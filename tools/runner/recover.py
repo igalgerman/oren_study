@@ -26,13 +26,14 @@ EXECUTOR_PROMPT = r"Read C:\work\Oren_study\EXECUTOR.md and follow it."
 INSPECTOR_PROMPT = "You are the INSPECTOR of the Oren game multi-agent system. Read C:/work/Oren_study/INSPECTOR_HANDOFF.md first and follow it."
 
 # ---------- pure logic (test_recover.py) ----------
-def control_argv(name, main_checkout, plugin_dir, claude="claude", python="python", watchdog=""):
+def control_argv(name, main_checkout, plugin_dir, claude="claude", python="python", watchdog="", model_dir=None):
     """-> (cwd, argv) of the program for orchestrator / inbox / inspector / executor / watchdog."""
     mc = str(main_checkout)
+    pd = ["--plugin-dir", str(model_dir)] if model_dir else []   # #850: the model + usage status line (not the orchestrator: it has oren-lanes)
     return {"orchestrator": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-orchestrator", "--plugin-dir", str(plugin_dir), ORCH_PROMPT]),
-            "inbox": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-inbox", INBOX_PROMPT]),
-            "inspector": (str(Path(mc).parent), [claude, "--model", "opus", "--remote-control", "oren-inspector", INSPECTOR_PROMPT]),
-            "executor": (mc, [claude, "--model", "opus", "--remote-control", "oren-executor", EXECUTOR_PROMPT]),
+            "inbox": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-inbox", *pd, INBOX_PROMPT]),
+            "inspector": (str(Path(mc).parent), [claude, "--model", "opus", "--remote-control", "oren-inspector", *pd, INSPECTOR_PROMPT]),
+            "executor": (mc, [claude, "--model", "opus", "--remote-control", "oren-executor", *pd, EXECUTOR_PROMPT]),
             "watchdog": (mc, [python, str(watchdog)])}[name]
 
 def hc_run_args(name, cwd, argv, space_id=""):
@@ -210,7 +211,7 @@ def start_control(R, name, space_id=None):
     if space_id is None: space_id = pick_space(spaces(R), control_space(R)) if name in CONTROL else ""
     mc = R.CFG.get("main_checkout", str(R.ROOT))
     cwd, argv = control_argv(name, mc, Path(mc) / "tools" / "mods" / "oren-lanes", shutil.which("claude") or "claude",
-                             sys.executable, R.HERE / "watchdog.py")
+                             sys.executable, R.HERE / "watchdog.py", Path(mc) / "tools" / "mods" / "oren-model")
     rc, out = R.hc(*hc_run_args(name, cwd, argv, space_id), timeout=60)
     print(name, out.strip()[:200])
     return rc
