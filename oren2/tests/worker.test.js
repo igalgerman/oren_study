@@ -350,6 +350,29 @@ const path = require('path');
     const wf = require('fs').readFileSync(path.join(L.ROOT, '..', '.github', 'workflows', 'deploy.yml'), 'utf8');
     ok('CI pregen job runs voicecheck time-boxed with its state kept (no PC cost)', /node oren2\/cf\/tools\/voicecheck\.js/.test(wf) && /MAX_MIN/.test(wf) && /oren-voicecheck/.test(wf), '');
   }
+  // #869 owner console: questions + notices in D1, three separate keys, the first answer wins (fake D1 = node:sqlite)
+  { const { DatabaseSync } = require('node:sqlite'); const sq = new DatabaseSync(':memory:');
+    const st = sql => { let a = []; return { bind(...x) { a = x; return this; }, async run() { const r = sq.prepare(sql).run(...a); return { meta: { last_row_id: Number(r.lastInsertRowid), changes: r.changes } }; }, async all() { return { results: sq.prepare(sql).all(...a) }; }, async first() { return sq.prepare(sql).get(...a) || null; } }; };
+    const cenv = { SAVES: env.SAVES, DB: { prepare: st, exec: async q => { sq.exec(q); } }, CONSOLE_PUSH_KEY: 'push-k', CONSOLE_READ_KEY: 'read-k', CONSOLE_ANSWER_KEY: 'ans-k' };
+    const c = (u, key, body, method) => m.default.fetch(new Request('https://oren.test/api/console' + u, { method: method || (body ? 'POST' : 'GET'), headers: key ? { 'x-console-key': key } : {}, body: body ? JSON.stringify(body) : undefined }), cenv);
+    const Q = { repo: 'igalgerman/a', key: 'q1', project: 'oren', issue: 869, gates: [869, 'igalgerman/b#5'], text_he: 'שאלה?', options: ['כן', 'לא'], recommended: 'כן' };
+    const r1 = await c('/question', 'push-k', Q); ok('console: create a question', r1.status === 200 && (await r1.json()).created === true);
+    ok('console: wrong or missing key -> 403', (await c('/question', 'bad', Q)).status === 403 && (await c('/question', null, Q)).status === 403 && (await c('/questions', 'push-k')).status === 403 && (await c('/answer', 'read-k', { repo: Q.repo, key: 'q1', answer: 'כן', via: 'web' })).status === 403);
+    ok('console: the push key can create but never answer', (await c('/answer', 'push-k', { repo: Q.repo, key: 'q1', answer: 'כן', via: 'web' })).status === 403 && (await (await c('/questions?state=answered', 'read-k')).json()).questions.length === 0);
+    const r2 = await c('/question', 'push-k', { ...Q, text_he: 'שאלה חדשה?' }); ok('console: duplicate key = one row, updated', (await r2.json()).created === false && sq.prepare('SELECT COUNT(*) n FROM questions').get().n === 1);
+    await c('/question', 'push-k', { ...Q, repo: 'igalgerman/b' }); ok('console: the same key in another repo is another question', sq.prepare('SELECT COUNT(*) n FROM questions').get().n === 2);
+    const open = (await (await c('/questions', 'read-k')).json()).questions.find(x => x.repo === Q.repo);
+    ok('console: list open with gates as repo#n strings', open.text_he === 'שאלה חדשה?' && open.gates.join() === '869,igalgerman/b#5' && open.options.length === 2 && open.answer === null);
+    const a1 = await c('/answer', 'ans-k', { repo: Q.repo, key: 'q1', answer: 'כן', via: 'web' }); ok('console: first answer wins', a1.status === 200);
+    const a2 = await c('/answer', 'ans-k', { repo: Q.repo, key: 'q1', answer: 'לא', via: 'telegram' }); const j2 = await a2.json();
+    ok('console: second answer gets already answered (via, time)', a2.status === 409 && /^already answered \(web, /.test(j2.error), JSON.stringify(j2));
+    await c('/question', 'push-k', { ...Q, text_he: 'שוב' });
+    const done = (await (await c('/questions?state=answered', 'read-k')).json()).questions;
+    ok('console: an answered question keeps its answer and text', done.length === 1 && done[0].answer === 'כן' && done[0].text_he === 'שאלה חדשה?' && done[0].via === 'web');
+    ok('console: unknown question -> 404', (await c('/answer', 'ans-k', { repo: Q.repo, key: 'zz', answer: 'x', via: 'web' })).status === 404);
+    ok('console: bad body -> 400', (await c('/question', 'push-k', { ...Q, key: 'a b' })).status === 400 && (await c('/question', 'push-k', { ...Q, gates: ['x'] })).status === 400);
+    ok('console: notice create + list', (await c('/notice', 'push-k', { repo: Q.repo, project: 'oren', text_he: 'הודעה' })).status === 200 && (await (await c('/notices', 'read-k')).json()).notices[0].text_he === 'הודעה');
+    ok('console: no key configured -> 403', (await m.default.fetch(new Request('https://oren.test/api/console/questions', { headers: { 'x-console-key': 'x' } }), { ...cenv, CONSOLE_READ_KEY: undefined })).status === 403); }
   globalThis.fetch = realFetch;
   L.finish('worker', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT worker 0 1'); process.exitCode = 1; });
