@@ -10,7 +10,7 @@ Usage:
   python tools/runner/owner_q.py gate <#n>                      # #608: the owner's answers for issue n (exit 0 = gate open, 1 = closed)
 A PR whose issue is owner-gated (an owner question about it exists) never merges while that gate is CLOSED (#636, merge_gate).
 """
-import hashlib, json, os, re, shutil, subprocess, sys, threading
+import hashlib, json, os, re, shutil, subprocess, sys, threading, time
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -26,6 +26,10 @@ KEY_RE = re.compile(r"<!-- owner-q:([0-9a-f]{12}) -->")
 MARK = "<!-- owner_q -->"  # #211: every post of this tool (same GitHub account as the owner) -> never counted as his answer
 QUICK_S = 10        # #469: an owner question never waits longer than this on GitHub (a limit -> other identity, else queued)
 ANSWER_RE = re.compile(r"<!-- owner-answer:([0-9a-f]{12}) -->")   # #608: the record qwin.answer writes on the asking issue
+CHAT_RE = re.compile(r"<!-- owner-answer:([0-9a-f]{12}) via=inspector-chat -->")   # #803: the chat answer record (never matches ANSWER_RE)
+FINAL_RE = re.compile(r"<!-- owner-answer-final:([0-9a-f]{12}) -->")              # #803: written by the watchdog when the chat answer is in force
+UNDO_RE = re.compile(r"<!-- owner-answer-undo:([0-9a-f]{12}) -->")                # #803: the owner's undo (Telegram)
+CHAT_STATE = R.RUNS / "qwin_chat.json"                                             # #803: Telegram confirmation state (qwin.py)
 GATES_RE = re.compile(r"<!-- gates: ([#\d ,]+) -->")   # #630: the issues this question gates (any window)
 OPT_RE = re.compile(r"^\s*[❯>›]?\s*(\d+[.)]\s+\S.*)$")
 
@@ -105,7 +109,7 @@ def answered_keys(comments):
     done = set()
     for c in trust.only(comments):                  # #800: only trusted authors; ANSWERED lines only from the App bot
         b = c.get("body") or ""
-        if trust.is_bot(c): done |= set(re.findall(r"(?m)^\s*ANSWERED owner-q:([0-9a-f]{12})", b))
+        if trust.answer_ok(c): done |= set(re.findall(r"(?m)^\s*ANSWERED owner-q:([0-9a-f]{12})", b))
         m = KEY_RE.search(b)
         if m and owner_reacted(c): done.add(m[1])
     return done
@@ -113,6 +117,27 @@ def answered_keys(comments):
 def answer_body(key, text):
     """#608: the owner's answer as recorded on the asking issue (only qwin.answer writes it): the one thing that counts as him."""
     return f"OWNER ANSWER (question window, owner-q:{key}): {text}\n<!-- owner-answer:{key} -->"
+
+def chat_answer_body(key, text, quote):
+    """#803: the inspector-chat answer record. Not an `owner-answer` record (ANSWER_RE needs no `via=`): it counts only with the final marker."""
+    return f"OWNER ANSWER (inspector chat, owner-q:{key}): {text}\nQuote: {quote}\n<!-- owner-answer:{key} via=inspector-chat -->"
+
+def chat_record(body):
+    """Pure (#803): (key, answer, quote) of an inspector-chat record, else None."""
+    m = CHAT_RE.search(body or "")
+    a = re.match(r"^OWNER ANSWER \(inspector chat, owner-q:([0-9a-f]{12})\):\s*(.*?)(?:\nQuote:\s*(.*?))?\n?<!-- owner-answer:", (body or "").strip(), re.S)
+    if not (m and a and a[1] == m[1]): return None
+    return m[1], a[2].strip(), (a[3] or "").strip()
+
+def chat_states(issue_comments):
+    """Pure (#803): {key: {'answer', 'final', 'undo'}} of the bot-written chat records, markers and undo records on one issue."""
+    out = {}
+    for c in trust.bots(issue_comments):
+        b = c.get("body") or ""; r = chat_record(b)
+        if r: out.setdefault(r[0], {"answer": r[1], "quote": r[2], "final": False, "undo": False}).update(answer=r[1], quote=r[2])
+        for rx, f in ((FINAL_RE, "final"), (UNDO_RE, "undo")):
+            for k in rx.findall(b): out.setdefault(k, {"answer": "", "final": False, "undo": False})[f] = True
+    return {k: v for k, v in out.items() if v["answer"]}
 
 def record_answer(body):
     """Pure (#608): (key, answer text) of an owner_q answer record, else None. Free comment text never is one."""
@@ -129,9 +154,12 @@ def gate(n, issue_comments, question_comments):
     for c in trust.only(question_comments):
         b = c.get("body") or ""; m = KEY_RE.search(b)
         if m and (re.search(rf"\*\*#{n}\*\*", b) or n in gates_of(b)): keys[m[1]] = c   # #630: or it gates #n
-    for c in trust.bots(issue_comments):             # #800: an answer record counts only from the App bot
+    for c in issue_comments or []:                   # #800: an answer record counts only from the App bot (or the owner login before trust_since)
+        if not trust.answer_ok(c): continue
         r = record_answer(c.get("body"))
         if r and r[0] in keys: out.append(r[1])
+    for k, v in chat_states(issue_comments).items():   # #803: a chat answer counts only with the bot's final marker and no undo
+        if k in keys and v["final"] and not v["undo"]: out.append(f"{v['answer']} (inspector chat)")
     for c in keys.values():
         out += [f"reaction {g.get('content', '')}" for g in c.get("reactionGroups") or [] if trust.OWNER in {u.get('login') for u in (g.get('users') or {}).get('nodes') or []}]   # #800: owner login only
     return out
@@ -195,12 +223,33 @@ def find_issue(gh=None):
     s["issue"] = n; _save(s)
     return n
 
+_CQ = ("query($o:String!,$r:String!,$n:Int!,$c:String){repository(owner:$o,name:$r){issue(number:$n){comments(first:100,after:$c){"
+       "pageInfo{hasNextPage endCursor} nodes{body createdAt url author{login} reactionGroups{content users(first:20){totalCount nodes{login}}}}}}}}")
+MAX_PAGES = 30
+
+def _api(*args):
+    return R.run(["gh", *args])        # args start with "api"
+
 def comments(n, gh=None):
-    gh = gh or GH
-    rc, out = gh("issue", "view", str(n), "--json", "comments")
-    if rc: return None
-    try: return json.loads(out).get("comments", [])
-    except ValueError: return None
+    """All comments of issue n, oldest first, with author login, url and the reacting users (`gh issue view --json comments` has no
+    reaction logins, so every owner thumbs-up was invisible). GraphQL, first:100 + after-cursor loop. None when unreadable.
+    A test fake gh is called as gh('api', 'graphql', ...); the real one runs plain `gh api`."""
+    call = gh or GH
+    if call is R.gh: call = _api                      # the real gh wrapper appends --repo, which `gh api` does not know
+    owner, name = R.REPO.split("/", 1)
+    out, cur = [], ""
+    for _ in range(MAX_PAGES):
+        args = ["graphql", "-f", f"query={_CQ}", "-f", f"o={owner}", "-f", f"r={name}", "-F", f"n={int(n)}"] + (["-f", f"c={cur}"] if cur else [])
+        rc, txt = call("api", *args)
+        if rc: return None
+        try:
+            c = json.loads(txt)["data"]["repository"]["issue"]["comments"]
+            out += c["nodes"]; page = c["pageInfo"]
+        except (ValueError, KeyError, TypeError): return None
+        if not page.get("hasNextPage"): return out
+        cur = page.get("endCursor") or ""
+        if not cur: return None
+    return None                                      # absurdly long: refuse rather than decide on a partial list
 
 def post(window, question, tail="", gh=None, gates=()):
     """Post the question once per window+question. -> comment url when posted now, '' when already there, None when gh failed:
@@ -243,10 +292,11 @@ def open_list(gh=None):
     return None if cs is None else [{**q, "issue": n} for q in open_questions(cs)]
 
 def mark_answered(key, answer="", gh=None):
-    gh = gh or GH
+    """#800: the ANSWERED line is written by the App bot only (gh=None; a test passes a fake gh). True = posted now; False = queued
+    (flush_pending retries) or no questions issue. Never under the owner login."""
     with ghcache.quick(QUICK_S):
         n = find_issue(gh)
-        return bool(n) and post_app(n, f"ANSWERED owner-q:{key} {answer}".strip() + "\n" + MARK, gh)
+        return bool(n) and post_or_queue(n, f"ANSWERED owner-q:{key} {answer}".strip() + "\n" + MARK, gh)
 
 def post_app(n, text, gh=None):
     """#800: an owner-answer record / ANSWERED line is written ONLY by the App bot. gh=None: R.gh as the App with no owner fallback
@@ -272,8 +322,8 @@ def new_answers(cs, seen):
 
 def answers_tick(tell, gh=None):
     """Watchdog: the owner replied in the questions issue -> tell the orchestrator (reply + open questions) so it relays the answer."""
+    flush_pending(gh)                                # gh=None here: queued answer records go out as the App only (#800), never via R.gh's owner fallback
     gh = gh or GH
-    flush_pending(gh)
     if _state().get("pending_answers") and not _state().get("answers_alarm"):    # #800: an answer record cannot be posted (no App token)
         tell("ALARM: an owner answer record is queued: the GitHub App token is missing, nothing is posted under another login (#800).")
         s = _state(); s["answers_alarm"] = True; _save(s)
@@ -304,13 +354,18 @@ def main(argv):
         print("\n".join(f"{q['key']}  {q['window']}  {q['text']}  {q['url']}" for q in qs) or "no open questions"); return 0
     if len(argv) in (2, 3) and argv[0] == "answered":
         ok = mark_answered(argv[1], argv[2] if len(argv) == 3 else "")
-        print("marked answered" if ok else "could not mark (gh)"); return 0 if ok else 1
+        print("marked answered" if ok else "could not mark now (no App token or gh failed): queued, the watchdog posts it as the App"); return 0 if ok else 1
     if len(argv) == 2 and argv[0] == "gate":
         n = int(argv[1].lstrip("#"))
         with ghcache.quick(QUICK_S):
             q = find_issue(); qcs = comments(q) if q else None; ics = comments(n)
         if qcs is None or ics is None: print("could not read GitHub (gh)"); return 2
         got = gate(n, ics, qcs)
+        wait = [k for k, v in chat_states(ics).items() if not v["final"] and not v["undo"] and k not in {x for x in answered_keys(qcs)}]
+        if not got and wait:
+            try: at = json.loads(CHAT_STATE.read_text(encoding="utf-8")).get(wait[0], {}).get("sent_at")
+            except Exception: at = None
+            print(f"CLOSED: chat answer for {wait[0]} waits" + (f" until {time.strftime('%H:%M', time.localtime(at + 600))}" if at else " for the Telegram confirmation")); return 1
         print(("OPEN: " + " | ".join(got)) if got else f"CLOSED: no owner_q answer for #{n} (free comments never count, #608)")
         return 0 if got else 1
     print(__doc__); return 2

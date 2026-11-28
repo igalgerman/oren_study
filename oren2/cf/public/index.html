@@ -3249,6 +3249,27 @@ body:has(#dlg:not([hidden])) .toast{top:74px;bottom:auto}
 .rink .mallet.me{background:radial-gradient(circle at 35% 30%,#ffb347,#ff7a00)}
 .rink .mallet.cpu{background:radial-gradient(circle at 35% 30%,#b48cff,#6a3ad8)}
 
+/* ===== arcade runner (#666): own art, CSS only ===== */
+.field.runf{background:linear-gradient(#7fd3ff,#d8f5ff 62%,#8ee08a 62%);overflow:hidden;direction:ltr;touch-action:manipulation}
+.rn-ground{position:absolute;left:0;right:0;bottom:0;height:20%;background:#6bc46a;border-top:6px solid #4ea84f}
+.rn-me{position:absolute;left:18%;bottom:18%;width:44px;height:64px;margin-left:-22px;transition:height .12s}
+.rn-me .rh{position:absolute;left:6px;top:0;width:32px;height:32px;border-radius:50%;background:#ff7a59;box-shadow:inset -6px -4px 0 rgba(0,0,0,.12)}
+.rn-me .rh:after{content:"";position:absolute;right:6px;top:11px;width:7px;height:7px;border-radius:50%;background:#1a0b3d;box-shadow:-11px 0 #1a0b3d}
+.rn-me .rb{position:absolute;left:10px;top:28px;width:24px;height:26px;border-radius:10px;background:#ffb02e}
+.rn-me .rl{position:absolute;top:50px;width:9px;height:14px;border-radius:4px;background:#1a0b3d;animation:rnleg .3s infinite alternate}
+.rn-me .rl.a{left:11px}.rn-me .rl.b{left:24px;animation-delay:.15s}
+@keyframes rnleg{to{transform:translateY(-4px)}}
+.rn-me.duck{height:38px;transform:translateY(0)}.rn-me.duck .rb{top:16px;height:18px}.rn-me.duck .rl{top:30px}.rn-me.duck .rh{top:-4px;left:10px;width:28px;height:28px}
+.rn-me.oops{animation:rnoops .5s}@keyframes rnoops{25%{transform:rotate(-14deg)}75%{transform:rotate(12deg)}}
+.rn-i{position:absolute;margin-left:-20px}
+.rn-i.rock{bottom:18%;width:40px;height:30px;border-radius:50% 50% 8px 8px;background:#9aa0aa;box-shadow:inset -6px -5px 0 rgba(0,0,0,.18)}
+.rn-i.bar{bottom:calc(18% + 40px);width:70px;height:12px;border-radius:6px;background:#7a4a24;box-shadow:0 -8px 0 -2px #3cb04a}
+.rn-i.star{bottom:calc(18% + 8px);font-size:30px}.rn-i.star.hi{bottom:calc(18% + 54px)}.rn-i.got{animation:rngot .25s forwards}
+@keyframes rngot{to{transform:translateY(-30px) scale(1.6);opacity:0}}
+.rn-pad{display:flex;gap:14px;justify-content:center;padding:10px 0}
+.rn-pad .bigbtn{min-width:140px;min-height:64px;font-size:24px}
+@media (max-width:760px){.rn-pad .bigbtn{min-width:46%;min-height:76px}}
+
 /* ARCADE chase (#665) */
 .field.trk{background:linear-gradient(#1d0e46 0 40%,#2f8f3a 40%)}
 .road{position:absolute;left:3%;right:3%;top:42%;height:130px;direction:ltr;background:repeating-linear-gradient(90deg,rgba(255,255,255,.12) 0 40px,transparent 40px 80px),#c8925a;border-top:5px solid #fff;border-bottom:5px solid #fff}
@@ -3387,6 +3408,15 @@ body.fron #screens{padding-bottom:84px}
 .frhero .frms svg{width:72px;height:72px;display:block;margin:0 auto 4px}
 .frhero .btnrow{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:8px}
 .tq.hero .tqc{border:4px solid #e0a800;box-shadow:0 0 14px #ffd54a}
+/* #663 the Mixer opening + the chase card (one button each) and the chapter icon on the path strip */
+.frpath{cursor:pointer;position:relative}.frpath .fpc{position:absolute;top:-7px;inset-inline-end:-5px;font-size:13px;line-height:1;background:#fffdf5;border:2px solid #2b2b3a;border-radius:999px;padding:0 1px}
+.frcc{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(40,36,70,.55);padding:12px}
+.frcard{background:#fffdf5;border:3px solid #2b2b3a;border-radius:18px;padding:14px 18px;max-width:min(440px,94vw);max-height:92vh;overflow:auto;text-align:center;font-size:20px;font-weight:700;line-height:1.45;direction:rtl;animation:frpop .25s ease-out}
+.frcard p{margin:6px 0}.frcard h3{margin:0 0 6px;font-size:22px}
+.frcm svg{width:96px;height:96px}.frcp .hship.big svg{width:min(220px,60vw)}
+.frcard .bigbtn{margin-top:10px}
+.frnext{background:#fff6d6;border-radius:12px;padding:6px 10px}
+@media (max-width:520px){.frcard{font-size:18px}.frcm svg{width:72px;height:72px}}
 
 /* #391 the ship on home: next to Oren and his friend; #392 a tap on a built piece, the friend says what it is */
 .hrow{display:flex;align-items:flex-end;justify-content:center;gap:10px}
@@ -4003,6 +4033,9 @@ svg.tl{width:60px;height:60px;display:block}
 .dlrow.dl-q,.dlrow.dl-s{opacity:.75}
 .pnow .dlnow{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.pnow .dlnow .pchip{margin:0}
 .dlrow .dlgoal{font-size:.85em;opacity:.8;white-space:nowrap}
+
+/* #660 */
+.dlsum{font-size:15px;font-weight:700;margin:2px 0 8px}.dlhard{font-weight:400;color:#c0392b;margin-top:2px}.dldet>summary{cursor:pointer;font-size:14px;margin:0 0 6px;color:#555}
 
 /* #359 parent day view */
 .pdnav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0 8px}
@@ -5798,6 +5831,57 @@ window.TAL_arcade=openArcade;T.arcade=openArcade;
 window.__arc={open:openArcade,start,brk:breakRound,get inBreak(){return !!brk;},get brkId(){return brk?brk.id:null;},get cur(){return cur;},finish:sc=>cur&&cur.finish(sc),hit:()=>cur&&cur.hit(),state:()=>A(),tune,q:id=>qGen(tune(id))};
 })();
 
+/* ===== 🏃 ARCADE RUNNER (#666): jump the rocks, duck the branches, collect stars. Calm speed (#351). Pack file: registers into the arcade. ===== */
+(()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T||!T.arcAdd)return;const {h,$}=O;const sfx=O.sfx,D=O.D;
+const GAME={id:'runner',n:'רִיצָה',e:'🏃',c:'#ff7a59',d:'קוֹפְצִים וְאוֹסְפִים'};
+const RULE='🏃 קְפֹץ מֵעַל הָאֲבָנִים, הִתְכּוֹפֵף מִתַּחַת לַעֲנָפִים, וַאֲסֹף כּוֹכָבִים!';
+const SAY='קְפֹץ מֵעַל הָאֲבָנִים, הִתְכּוֹפֵף מִתַּחַת לַעֲנָפִים, וַאֲסֹף כּוֹכָבִים';
+T.addChoices&&T.addChoices([GAME.n]);T.addSay&&T.addSay([SAY+'.']);   /* #266 for pregen */
+const PX=.18,ROUND=36000,JUMP=760,DUCK=650;   /* player x (fraction of the width), round ms, jump ms, duck ms */
+function run(){const K=T.arcKit,F=K.frame('runner');const t=K.tune('runner');
+  const SPEED=.2*(1+t.lv*.07);   /* field widths per second: calm base, the level (0..4) is the hard cap (#351) */
+  const GAPMS=2300-t.lv*80;
+  F.field.classList.add('runf');
+  const me=h('div','rn-me','<i class="rh"></i><i class="rb"></i><i class="rl a"></i><i class="rl b"></i>');
+  const ground=h('div','rn-ground');F.field.append(ground,me);
+  const jb=h('button','bigbtn gold rn-j','⬆ <span>קְפֹץ</span>'),db=h('button','bigbtn rn-d','⬇ <span>הִתְכּוֹפֵף</span>');
+  const pad=h('div','rn-pad');pad.append(jb,db);F.box.appendChild(pad);
+  let alive=true,last=0,clock=0,spawn=700,stars=0,hits=0,jt=-1,dt_=-1,inv=0,items=[],seq=0;
+  const hgt=()=>jt<0?0:Math.sin(Math.PI*jt/JUMP);   /* 0..1 */
+  const jump=()=>{if(!alive||jt>=0)return;jt=0;dt_=-1;me.classList.remove('duck');sfx.jump?sfx.jump():sfx.pop(3);};
+  const duck=()=>{if(!alive||jt>=0||dt_>=0)return;dt_=0;me.classList.add('duck');sfx.pop(1);};
+  jb.onpointerdown=e=>{e.preventDefault();jump();};db.onpointerdown=e=>{e.preventDefault();duck();};
+  F.field.onpointerdown=e=>{if(e.target.closest('.rn-pad'))return;e.preventDefault();jump();};
+  T.setKey(e=>{if(e.key===' '||e.key==='ArrowUp'||e.key==='w'){e.preventDefault();jump();}else if(e.key==='ArrowDown'||e.key==='s'){e.preventDefault();duck();}});
+  const add=(kind,y)=>{const el=h('div','rn-i '+kind+(y?' hi':''),kind==='star'?'⭐':'');F.field.appendChild(el);items.push({kind,y:y|0,x:1.08,el});};
+  const make=()=>{seq++;const r=seq%4;   /* rock, stars, branch, stars: always fair and slow */
+    if(r===1)add('rock');else if(r===3)add('bar');else{const hi=seq%8===2?1:0;for(let i=0;i<3;i++){add('star',hi);items[items.length-1].x+=i*.07;}}};
+  const sync=()=>{me.style.bottom=`calc(18% + ${(hgt()*46).toFixed(1)}%)`;
+    items.forEach(o=>{o.el.style.left=(o.x*100)+'%';});};
+  const step=ms=>{clock+=ms;if(jt>=0){jt+=ms;if(jt>=JUMP)jt=-1;}if(dt_>=0){dt_+=ms;if(dt_>=DUCK){dt_=-1;me.classList.remove('duck');}}if(inv>0)inv-=ms;
+    spawn-=ms;if(spawn<=0){make();spawn=GAMEMS();}
+    items.forEach(o=>{o.x-=SPEED*ms/1000;});
+    items=items.filter(o=>{if(o.dead)return false;const near=Math.abs(o.x-PX)<.045;
+      if(near&&!o.done){const hh=hgt();
+        if(o.kind==='star'&&((!o.y&&hh<.3)||(o.y&&hh>.4))){o.done=1;stars++;F.score(stars);sfx.pop(stars%8);o.el.classList.add('got');setTimeout(()=>o.el.remove(),D(250));return false;}
+        if(o.kind==='rock'&&hh<.35&&inv<=0)bump(o);
+        if(o.kind==='bar'&&dt_<0&&inv<=0)bump(o);}
+      if(o.x<-.1){o.el.remove();return false;}return true;});
+    sync();};
+  const GAMEMS=()=>GAPMS;
+  function bump(o){o.done=1;hits++;inv=1100;sfx.no();me.classList.add('oops');setTimeout(()=>me.classList.remove('oops'),D(500));}   /* calm: a stumble costs nothing but a moment */
+  const loop=now=>{if(!alive||!F.field.isConnected){alive=false;return;}if(O.paused){last=now;requestAnimationFrame(loop);return;}
+    const ms=Math.min(50,now-last)*(window.__fast?4:1);last=now;step(ms);F.time('⏱️ '+Math.max(0,Math.ceil((ROUND-clock)/1000)));if(clock>=ROUND){done();return;}requestAnimationFrame(loop);};
+  function done(){if(!alive)return;alive=false;const st=stars>=9?3:stars>=5?2:1;K.finish('runner',stars,st);}
+  /* test + no-hands helper: the next thing ahead is answered the right way */
+  const hit=()=>{const o=items.filter(x=>!x.done&&x.x>PX&&x.x<PX+.2).sort((a,b)=>a.x-b.x)[0];if(!o)return;if(o.kind==='rock'&&o.x<PX+.12)jump();else if(o.kind==='bar'&&o.x<PX+.12)duck();else if(o.kind==='star'&&o.y&&o.x<PX+.1)jump();};
+  K.setCur({stop:()=>{alive=false;},finish:sc=>{if(sc!=null)stars=sc;done();},hit,get score(){return stars;}});
+  F.rule(RULE,SAY);sync();
+  K.countdown(F,()=>{last=performance.now();requestAnimationFrame(loop);});
+  window.__run={jump,duck,get state(){return {h:hgt(),jumping:jt>=0,ducking:dt_>=0,stars,hits,items:items.length,alive,clock,speed:SPEED};}};}
+T.arcAdd(GAME,run);
+})();
+
 /* ===== 🏒 AIR HOCKEY (#668): an arcade cabinet, own pack file. You against the computer, mouse / touch / arrow keys. Calm speed rules of #351 (tune().pk puck cap, tune().ai) ===== */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T||!T.arcPack)return;const {h}=O;const P=T.arcPack,sfx=O.sfx,D=O.D;
 const RULE='הַזֵּז אֶת הַמַּחְבֵּט וְהַבְקַע שַׁעַר!';
@@ -6602,7 +6686,8 @@ FR.stepStart=i=>{const d=daily();if(!d||i==null||i<0||i>=d.t.length){cur=null;re
   const dn=d.done.slice(d.bs|0),left=dn.filter(x=>!x).length,first=!dn.some(Boolean);
   /* #412 the latest piece he collected comes along: its own clip before the scene's opening line */
   const it=window.SHIP&&SHIP.latest&&SHIP.latest(),carry=it?SHIP.carrySay(it.i)+GSEP:'';
-  lead=SM()&&isScene(cur.id)?carry+(first?FIRST+' ':left<=1?LAST+' ':'')+(SM().lead?SM().lead():SM().scene().open):'';PATHBAR.render();};
+  lead=SM()&&isScene(cur.id)?carry+(first?FIRST+' ':left<=1?LAST+' ':'')+(SM().lead?SM().lead():SM().scene().open):'';PATHBAR.render();
+  if(lead&&O.save&&!O.save.mixIntro&&(!navigator.webdriver||window.__mixIntro)){const l=lead;lead='';FR.mixIntro(()=>{if(cur&&cur.i===i){lead=l;leadOnScreen();}});}};
 FR.stepCheck=()=>{if(!cur)return;const d=daily();if(!d||d.d!==cur.d||d.t[cur.i]!==cur.id||!d.done[cur.i]||cur.done)return;cur.done=1;PATHBAR.render();
   if(!SM()||!isScene(cur.id))return;const sc=SM().scene(),close=sc.close;SM().advance();
   const t=d.done.slice(d.bs|0).every(Boolean)?close+' '+ALL:close;
@@ -6685,14 +6770,44 @@ function storyPic(card,sc){const S=window.SHIP;if(!S||!S.el||card.querySelector(
   if(getComputedStyle(card).position==='static')card.style.position='relative';card.appendChild(e);e._t=setTimeout(end,D(PICMS));}
 FR.inStep=()=>!!cur;FR.lead=t=>{lead=t;};FR._lead=t=>{const x=lead;if(t!=null)lead=t;return x;};
 
+/* #663 the story must come across: who (the Mixer), what to do, where we are, what happened.
+   - the opening (once, save.mixIntro): the Mixer's picture + 3 short spoken lines (about 15 s), one button 'let's go' that also skips it;
+   - the strip in the top bar shows the chapter's icon next to the chase; one tap opens the chase card: where we are, what happened
+     (the closing lines of the scenes played in this chapter) and what comes next, read aloud, one button to go on. */
+const MIXI=['זֶה הַמְּבַלְבֵּל! הוּא קָטָן וְצוֹחֵק, וְהוּא מְבַלְבֵּל אֶת הַכֹּל.','הוּא בָּרַח לַיָּם, וַאֲנַחְנוּ בּוֹנִים סְפִינָה כְּדֵי לְהַגִּיעַ אֵלָיו.','כָּל מִשִּׂימָה שֶׁתִּפְתֹּר מְקָרֶבֶת אוֹתָנוּ אֵלָיו.'];
+const MIXGO='יוֹצְאִים!',CH_ICON=['⚓','🕰️','🔤','🍎','💬','💡','🥖','🌙','📚','🌫️','🏝️','🎉'];
+const CHT='הַמַּסָּע',CHW='מָה הָיָה:',CHN='עַכְשָׁו:',CHX='הַמְשֵׁךְ';
+const chaseSays=()=>[...MIXI,MIXI.join(' '),MIXGO,CHT,CHW,CHN];
+const overlayEl=(cls,html)=>{const e=h('div',cls,html);document.body.appendChild(e);return e;};
+function chaseCard(say,box,btn){const e=overlayEl('frcc',box);const b=e.querySelector('button');let done=0;
+  const end=()=>{if(done)return;done=1;if(e.isConnected)e.remove();if(btn)btn();};b.onclick=ev=>{ev.stopPropagation();O.sfx.pop&&O.sfx.pop(2);end();};
+  last=say;voice(say);return e;}
+/* the opening: false when it was seen already (then go on at once) */
+/* a browser under automation (tests) skips it, unless window.__mixIntro asks for it: other suites click straight through the path */
+FR.mixIntro=go=>{const S=O.save;if(!S||S.mixIntro||(navigator.webdriver&&!window.__mixIntro)){go&&go();return false;}S.mixIntro=1;O.persist();
+  const e=chaseCard(MIXI.join(' '),`<div class="frcard"><div class="frcm">${O.SPR.mixer}</div>`+MIXI.map(x=>`<p>${x}</p>`).join('')+`<button class="bigbtn">${MIXGO}</button></div>`,go);e.classList.add('frintro');return true;};
+FR.chase=q=>{const M=SM();if(!M)return null;const p=q||M.pos(),sc=M.scene(p),past=[];
+  for(let i=1;i<p.s;i++)past.push(M.scene({c:p.c,s:i}).close);
+  if(!past.length&&p.c>1)past.push(M.scene({c:p.c-1,s:5}).close);
+  return {c:p.c,s:p.s,n:sc.n,past,next:sc.open};};
+const chaseSay=(c,s)=>{const x=FR.chase({c,s});return [CHT+'. '+x.n+'.',...(x.past.length?[CHW,...x.past]:[]),CHN,x.next].join(' ');};
+FR.openChase=()=>{if($('.frcc'))return null;const c=FR.chase();if(!c)return null;const SH=window.SHIP,k=(c.c-1)*5+c.s-1;
+  const pic=SH&&SH.el?SH.el('big',Math.max(0,k)):'';
+  const say=chaseSay(c.c,c.s);
+  const e=chaseCard(say,`<div class="frcard"><h3>${CH_ICON[c.c-1]} ${c.n} · ${c.s}/5</h3><div class="frcp">${pic}</div>`+
+    (c.past.length?`<p class="frpast"><b>${CHW}</b> ${c.past.join(' ')}</p>`:'')+`<p class="frnext"><b>${CHN}</b> ${c.next}</p><button class="bigbtn">${CHX}</button></div>`);
+  e.classList.add('frchase');return e;};
+
 const PATHBAR={render(){let b=$('#frPath');const d=cur&&daily();
   document.body.classList.toggle('frpon',!!(d&&d.d===cur.d));if(!d||d.d!==cur.d){if(b)b.remove();return;}
-  const mid=$('#hudMid');if(!mid)return;if(!b){b=h('div','frpath');b.id='frPath';b.setAttribute('role','img');}if(b.parentNode!==mid)mid.appendChild(b);
+  const mid=$('#hudMid');if(!mid)return;if(!b){b=h('div','frpath');b.id='frPath';b.setAttribute('role','button');b.onclick=ev=>{ev.stopPropagation();FR.openChase();};}if(b.parentNode!==mid)mid.appendChild(b);
   const q=quest();const o=d.bs|0,t=d.t.slice(o),dn=d.done.slice(o),n=t.length,k=dn.filter(Boolean).length;
   b.setAttribute('aria-label',`${k}/${n}`);
   /* #393 the hero chases the Mixer: one step closer per finished mission, the last one catches him (same size as the old dots) */
   const sp=b.querySelector('.fpt');if(!sp){b.innerHTML=`<span class="fpq">${q.e}</span><span class="fpt"><span class="fph">${O.AV()}</span><span class="fpm">${O.SPR.mixer}</span></span>`;}
-  const tr=b.querySelector('.fpt');tr.style.setProperty('--n',n);tr.style.setProperty('--k',Math.min(k,n));tr.dataset.k=Math.min(k,n);tr.classList.toggle('caught',k>=n);}};
+  const tr=b.querySelector('.fpt');tr.style.setProperty('--n',n);tr.style.setProperty('--k',Math.min(k,n));tr.dataset.k=Math.min(k,n);tr.classList.toggle('caught',k>=n);
+  /* #663 the chapter icon: after the strip is built (the template above runs once and would wipe it) */
+  {const M=SM(),ci=M?M.pos().c:0;let c=b.querySelector('.fpc');if(ci){if(!c){c=h('span','fpc');b.insertBefore(c,b.firstChild);}c.textContent=CH_ICON[ci-1];}b.tabIndex=0;b.title=CHT;b.onkeydown=ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();FR.openChase();}};}}};
 
 /* the top bar is rewritten by every screen: keep the strip in it while inside a step */
 (()=>{const mid=$('#hudMid');if(mid)new MutationObserver(()=>{const b=$('#frPath');if(cur&&(!b||b.parentNode!==mid))PATHBAR.render();}).observe(mid,{childList:true});})();
@@ -6717,9 +6832,10 @@ const HB=()=>window.HELP&&HELP.BT;
 FR.voiceList=()=>{const hl=HB()?[HB().clue,HB().offer].flatMap(h=>[HB().elim,HB().again,...new Set(window.HELP_TEXTS||[])].map(c=>h+': '+c)):[];
   return [...new Set([...Object.values(EVENTS).map(e=>e.line),...KINDS.flatMap(k=>[k.intro,k.ok]),START,OOPS,RXL.hint,RXL.yday,LISTEN,
     EZ.q,HERO.ask,...games().map(BRK.ask),TCH.claim,TCH.ask,TCH.thanks,TCH.gentle,...hl,
-    ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([,b])=>[b,b+' '+ALL])):[])])];};
+    ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([,b])=>[b,b+' '+ALL])):[]),...chaseSays(),...(SM()?SM().SCRIPT.flatMap((ch,c)=>ch.sc.map((_,i)=>chaseSay(c+1,i+1))):[])])];};
 FR.speakList=()=>[...new Set([...FR.voiceList(),...(window.SHIP&&SHIP.carrySay?SHIP.PIECES.map((_,i)=>SHIP.carrySay(i)):[]),...(window.GOALS?window.GOALS.speakList():[]),RXL.back,READFIRST,FIRST,LAST,ALL,
-  ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([a])=>[a,FIRST+' '+a,LAST+' '+a])):[]),...(SM()?SM().speakList():[])])];
+  ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([a])=>[a,FIRST+' '+a,LAST+' '+a])):[]),...(SM()?SM().speakList():[]),...chaseSays(),
+  ...(SM()?SM().SCRIPT.flatMap((ch,c)=>ch.sc.map((_,i)=>chaseSay(c+1,i+1))):[])])];
 /* ---------- #389 listen first ----------
    A new row of answer buttons (.chs .chb) rests until the spoken question has ended, 4 s at most; with no voice (offline,
    auto-read off, reading practice where he reads first) it is open at once. A tap that comes fast after a wrong tap (Oren is
@@ -12349,6 +12465,7 @@ window.GOALS=G;
    x (optional object): a story's {t, g, lv, r} (#355); lg = what he learned, on a finished line (#414, goals.js); any activity: lv = his level when it started (learning engine), ra = taps on read-aloud (#359; shown "9 הקראות", #612)
    save.now = {id, t, s, dv}  the activity being played, the last moment something happened (ms; also each active play tick, the heartbeat) and when this play
      session started (s; a new session after 3+ min without a heartbeat) — "playing now · N min (from HH:MM)" for the parent (#352).
+   x.sc = seconds he spent in it (#660, from 30 s; shown as minutes)
    Detailed entries are kept for 14 days (think.js keeps the day counts for 35). Parent text has no nikud. */
 (()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;
 const DL=window.DAYLOG={};
@@ -12375,7 +12492,7 @@ DL.beat=()=>{const par=document.querySelector('#sPar');if(par&&!par.hidden)retur
 const lvOf=id=>{const k=((O.save.lrn||{}).k||{})['a:'+id];return k&&k.n?k.l|0:0;};
 function begin(id){if(O.isParentPlay)return;if(O.hereBegin)O.hereBegin(id);/* #44 the place Oren is in */if(cur&&!cur.end)end(cur.brk?'b':'q');cur={id,t:Date.now(),d:day(),ok:0,n:0,help:0,ra:0,lv:lvOf(id)};now();O.emit('dlBegin',id);}
 function end(o,st){const c=cur;if(!c||c.end)return;c.end=1;evEnd(c.id,o,c.t);if(o!=='c'&&o!=='p'&&o!=='k'&&!c.n&&Date.now()-c.t<15000)o='x';   /* opened and closed at once: 'x' — kept for Oren's "again" list, not shown to the parent */
-  const x=Object.assign({},c.x||{});if(c.lv&&x.lv==null)x.lv=c.lv;if(c.ra)x.ra=c.ra;if(o==='c'){const g=lgOf(c.id,x);if(g)x.lg=g;}
+  const x=Object.assign({},c.x||{});if(c.lv&&x.lv==null)x.lv=c.lv;if(c.ra)x.ra=c.ra;{const sc=Math.round((Date.now()-c.t)/1000);if(sc>=30)x.sc=Math.min(sc,7200);}/* #660 seconds in the mission */if(o==='c'){const g=lgOf(c.id,x);if(g)x.lg=g;}
   add(c.d,[minOf(c.t),c.id,st|0,c.ok,c.n,c.help,o].concat(Object.keys(x).length?[x]:[]));now();cur=null;O.persist();}
 /* #414 a finished mission keeps what he learned (parent text): a story's own goal, else the mission's goal (goals.js) */
 /* #730 play log: how a mission ended, once per line: mdone (finished) · mskip (Oren skipped it, #616/#647) · mleft (he went back early, also opened and closed at once); m = mission id, sec = seconds. Break/parent skip/path step are not events. Kinds are a-z only (the log server's rule). */
@@ -12419,10 +12536,20 @@ const ICO={c:'✓',q:'✗',s:'⏭',b:'⏸',p:'⏭',k:'⏭',f:'💬',h:'🦸'},WH
 /* a bank story's own quiz line (rb2-st-N) repeats its 'story-new' line: not shown */
 const undone=e=>e[6]==='p'&&e[7]&&(O.realSave.pcU||{})[e[7].pc];
 DL.rows=d=>{const L=((O.realSave.alog||{})[d]||{}).e||[];return L.filter(e=>e[6]!=='x'&&!/^rb2-st-/.test(e[1])&&!undone(e)).sort((a,b)=>a[0]-b[0]);};
+/* #660 hard for him: he said so, or fewer than half right on the first try (3+ questions) */
+DL.hard=e=>{const x=e[7]&&typeof e[7]==='object'?e[7]:null;return (!!x&&x.ez==='h')||(e[6]!=='f'&&e[6]!=='p'&&e[6]!=='k'&&e[6]!=='s'&&e[6]!=='b'&&e[4]>=3&&e[3]*2<e[4]);};
+/* #660 the day in one line, from the same rows as the list (so the two never disagree): done · left in the middle · skipped · right of questions · help · what was hard */
+DL.sum=rows=>{const r={done:0,left:0,skip:0,q:0,ok:0,help:0,hard:[]};
+  rows.forEach(e=>{const o=e[6];if(o==='c')r.done++;else if(o==='q')r.left++;else if(o==='p'||o==='k')r.skip++;
+    if(o!=='f'&&o!=='p'&&o!=='s'&&o!=='b'&&o!=='newday'){r.q+=e[4]|0;r.ok+=e[3]|0;r.help+=e[5]|0;}
+    if(e[1]!=='newday'&&DL.hard(e)){const n=DL.nameOf(e[1]);if(!r.hard.includes(n))r.hard.push(n);}});return r;};
+DL.sumHTML=rows=>{const r=DL.sum(rows);const a=[];if(r.done)a.push(r.done===1?'משימה אחת הושלמה':`${r.done} משימות הושלמו`);if(r.left)a.push(`${r.left} יצא באמצע`);if(r.skip)a.push(`דילג על ${r.skip}`);
+  if(r.q)a.push(`${r.ok} מתוך ${r.q} נכון בניסיון ראשון`);if(r.help)a.push(`עזרה ×${r.help}`);
+  return a.length||r.hard.length?`<div class="dlsum">${a.join(' · ')}${r.hard.length?`<div class="dlhard">קשה לו: ${r.hard.join(', ')}</div>`:''}</div>`:'';};
 DL.rowHTML=e=>{const [m,id,st,ok,n,hp,o,x]=e;const sx=x&&typeof x==='object'?x:null;
   if(id==='newday')return `<div class="prow dlrow dl-p"><span class="pn"><b class="dli">🌅</b> ${hhmm(m)} · יום חדש</span><span class="pc">מסלול חדש (הורה)</span></div>`;   /* #648 */
   const story=sx&&sx.t;
-  const res=[st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`✓ ${ok} · ✗ ${n-ok}`:'',sx&&sx.lv?'רמה '+(sx.lv|0):'',hp?`עזרה ×${hp}`:'',sx&&sx.sk?`דילג ×${sx.sk|0}`:'',story?(sx.r==='l'?'האזין להקראה':'קרא לבד'):'',sx&&sx.ra?(sx.ra===1?'הקראה אחת':`${sx.ra} הקראות`):'',sx&&sx.hr?(sx.hr==='y'?`אתגר גיבורים: ${sx.ok|0} מתוך ${sx.n|0}`:'דחה אתגר גיבורים'):'',sx&&sx.ez?(sx.ez==='h'?'אמר: היה קשה 😣':'אמר: היה קל 😀'):'',WHY[o]].filter(Boolean).join(' · ');
+  const res=[sx&&sx.sc?`${Math.max(1,Math.round(sx.sc/60))} דק׳`:'',st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`✓ ${ok} · ✗ ${n-ok}`:'',sx&&sx.lv?'רמה '+(sx.lv|0):'',hp?`עזרה ×${hp}`:'',sx&&sx.sk?`דילג ×${sx.sk|0}`:'',story?(sx.r==='l'?'האזין להקראה':'קרא לבד'):'',sx&&sx.ra?(sx.ra===1?'הקראה אחת':`${sx.ra} הקראות`):'',DL.hard(e)&&!(sx&&sx.ez==='h')?'היה לו קשה':'',sx&&sx.hr?(sx.hr==='y'?`אתגר גיבורים: ${sx.ok|0} מתוך ${sx.n|0}`:'דחה אתגר גיבורים'):'',sx&&sx.ez?(sx.ez==='h'?'אמר: היה קשה 😣':'אמר: היה קל 😀'):'',WHY[o]].filter(Boolean).join(' · ');
   const name=story?`${plain(sx.t)}${sx.g?` <span class="dlgoal">🎯 ${plain(sx.g)}</span>`:''}`:DL.nameOf(id);
   return `<div class="prow dlrow dl-${o}"><span class="pn"><b class="dli">${ICO[o]||''}</b> ${o==='s'?'':hhmm(m)+' · '}${name} <small>${DL.domOf(id)}</small></span><span class="pc">${res}</span></div>`;};
 /* the top line of the summary: playing now / last played */
@@ -12615,7 +12742,9 @@ function pendRowHTML(c){if(c.k==='new')return `<span class="pn"><b class="dli">�
 /* what he did on day d: his log lines, a "בטל" on a skip until the next mission starts, and the skips still on their way */
 function didSec(box,d,sec){const rows=DL.rows(d);const pend=d===today()?cmds().filter(c=>waiting(c)&&['now','drop','off','know','new'].includes(c.k)):[];
   if(!rows.length&&!pend.length){if(d===today()&&DL.playing())return;/* #621 playing: the "playing now" line says it */box.appendChild(h('div','pnote pdnone',d===today()?'עוד לא שיחק היום':'לא שיחק ביום הזה'));return;}
-  const s=sec(box,'מה הוא עשה','');const L=h('div','dllog');L.dataset.d=d;s.appendChild(L);
+  const s=sec(box,'מה הוא עשה','');const L=h('div','dllog');L.dataset.d=d;
+  /* #660 a short summary on top; the lines are one tap away (open today, where the skip buttons are; closed on other days) */
+  s.insertAdjacentHTML('beforeend',DL.sumHTML(rows));const dt=h('details','dldet');dt.open=d===today();dt.appendChild(h('summary','','פירוט לפי שעה'));dt.appendChild(L);s.appendChild(dt);
   const lastReal=Math.max(-1,...rows.filter(e=>e[6]!=='p').map(e=>e[0]));
   rows.forEach(e=>{const w=h('div','',DL.rowHTML(e));const r=w.firstChild;L.appendChild(r);const x=e[7]||{};
     if(d===today()&&e[6]==='p'&&x.pc&&(x.k==='now'||e[1]==='newday'))r.querySelector('.pc').insertAdjacentHTML('beforeend',' · <b class="pdheard">אורן שמע ✓</b>');   /* #617 */

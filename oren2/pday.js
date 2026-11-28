@@ -172,7 +172,9 @@ function pendRowHTML(c){if(c.k==='new')return `<span class="pn"><b class="dli">�
 /* what he did on day d: his log lines, a "בטל" on a skip until the next mission starts, and the skips still on their way */
 function didSec(box,d,sec){const rows=DL.rows(d);const pend=d===today()?cmds().filter(c=>waiting(c)&&['now','drop','off','know','new'].includes(c.k)):[];
   if(!rows.length&&!pend.length){if(d===today()&&DL.playing())return;/* #621 playing: the "playing now" line says it */box.appendChild(h('div','pnote pdnone',d===today()?'עוד לא שיחק היום':'לא שיחק ביום הזה'));return;}
-  const s=sec(box,'מה הוא עשה','');const L=h('div','dllog');L.dataset.d=d;s.appendChild(L);
+  const s=sec(box,'מה הוא עשה','');const L=h('div','dllog');L.dataset.d=d;
+  /* #660 a short summary on top; the lines are one tap away (open today, where the skip buttons are; closed on other days) */
+  s.insertAdjacentHTML('beforeend',DL.sumHTML(rows));const dt=h('details','dldet');dt.open=d===today();dt.appendChild(h('summary','','פירוט לפי שעה'));dt.appendChild(L);s.appendChild(dt);
   const lastReal=Math.max(-1,...rows.filter(e=>e[6]!=='p').map(e=>e[0]));
   rows.forEach(e=>{const w=h('div','',DL.rowHTML(e));const r=w.firstChild;L.appendChild(r);const x=e[7]||{};
     if(d===today()&&e[6]==='p'&&x.pc&&(x.k==='now'||e[1]==='newday'))r.querySelector('.pc').insertAdjacentHTML('beforeend',' · <b class="pdheard">אורן שמע ✓</b>');   /* #617 */

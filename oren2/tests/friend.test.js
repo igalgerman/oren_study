@@ -455,7 +455,7 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
     for (let k = 0; k < 3; k++) { await click(true); await next(); }
     out.offerA = !!W().querySelector('.frhero'); out.btnsA = W().querySelectorAll('.frhero button').length; out.sayA = F.said.includes(F.HERO.ask);
     W().querySelectorAll('.frhero button')[1].click(); await sl(200);
-    out.afterNo = !W().querySelector('.frhero') && !!W().querySelector('.chs'); out.helpA = !!W().querySelector('.hbtn,.helpbtn,[class*="help"]');
+    out.afterNo = !W().querySelector('.frhero') && !!W().querySelector('.chs');
     for (let k = 0; k < 3; k++) { await click(true); await next(); } out.twice = !!W().querySelector('.frhero'); out.rowA = rows('hero-a').map(e => e[7]);
     // B: slow right answers -> no offer
     mk('hero-b'); await sl(100); for (let k = 0; k < 3; k++) { window.__quiz.wrap.querySelector('.tqc'); const qq = window.__quiz; await sl(30); /* make the question look old */ const cur = qq.wrap; cur.dispatchEvent(new Event('x')); const bs = [...qq.wrap.querySelectorAll('.chs .chb')]; const real = Date.now; Date.now = () => real() + 9000; bs[qq.ans].click(); Date.now = real; await sl(200); await next(); }
@@ -473,6 +473,24 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
   await p.evaluate(() => { window.__hero = false; });
   const HV = await p.evaluate(() => { const D = window.DAYLOG; return [D.rowHTML([600, 'sci-float', 0, 0, 0, 0, 'h', { hr: 'y', ok: 2, n: 3 }]), D.rowHTML([601, 'sci-float', 0, 0, 0, 0, 'h', { hr: 'n' }]), window.FRIEND.speakList().includes(window.FRIEND.HERO.ask), window.FRIEND.HERO.ask, window.FRIEND.HERO.yes, window.FRIEND.HERO.no]; });
   ok('#681 the parent view shows the answer and the round; kid text has nikud and is in the pregen list', /אתגר גיבורים: 2 מתוך 3/.test(HV[0]) && /דחה אתגר גיבורים/.test(HV[1]) && HV[2] && [HV[3], HV[4], HV[5]].every(t => NIK.test(t)), HV.slice(0, 2).join(' | '));
+  // --- #663 the story comes across: opening, chase strip, one-tap "what happened" ---
+  const st663 = await p.evaluate(async () => { const O = window.OREN, T = window.TAL, F = window.FRIEND, M = window.STORYMIX; window.__mixIntro = true; delete O.save.mixIntro;
+    const d = T.dailyEnsure(); d.t = ['read-first', 'math']; d.done = [0, 0]; O.save.mix = { c: 2, s: 3 }; O.showMap(); await new Promise(r => setTimeout(r, 500));   // the map's own screen event first, then ONE stepStart on a fresh strip
+    F.stepStart(0); const ic1 = (document.querySelector('#frPath .fpc') || {}).textContent; const ov = document.querySelector('.frintro'), txt = ov ? ov.textContent : '', btn = ov && ov.querySelector('button');
+    const held = F._lead(''); if (btn) btn.click(); const gone = !document.querySelector('.frintro'), seen = O.save.mixIntro;
+    const lines = F.speakList(), again = F.mixIntro();
+    const strip = document.querySelector('#frPath'), ic = strip && strip.querySelector('.fpc');
+    strip.click(); const cc = document.querySelector('.frchase'), ct = cc ? cc.textContent : '';
+    const want = M.scene({ c: 2, s: 2 }).close, nxt = M.scene({ c: 2, s: 3 }).open; const pic = !!(cc && cc.querySelector('svg'));
+    cc && cc.querySelector('button').click(); const closed = !document.querySelector('.frchase');
+    O.save.mix = { c: 1, s: 1 }; const first = F.chase(); O.save.mix = { c: 1, s: 1 }; delete window.__mixIntro;
+    return { txt, held, gone, seen, again, ic: ic1, ct, want, nxt, pic, closed, first, lines, all: M.SCRIPT.flatMap((ch, c) => ch.sc.map((_, i) => F.chase({ c: c + 1, s: i + 1 }))).length }; });
+  ok('#663 first time: an opening with the Mixer (who) and what to do, one button, the first scene line waits', /הַמְּבַלְבֵּל/.test(st663.txt) && /מִשִּׂימָה/.test(st663.txt) && st663.held === '', JSON.stringify([st663.txt, st663.held]));
+  ok('#663 the button closes it (skip), it is not shown again', st663.gone && st663.seen === 1 && st663.again === false);
+  ok('#663 the strip shows the chapter icon', st663.ic === '🕰️', st663.ic);
+  ok('#663 a tap on the strip: the chase card with a picture, what happened (closing line of the last scene) and what is next', st663.pic && st663.ct.includes(st663.want) && st663.ct.includes(st663.nxt) && st663.closed, st663.ct);
+  ok('#663 chapter start: nothing happened yet (no past lines)', st663.first && st663.first.past.length === 0);
+  ok('#663 all opening/chase lines have nikud and are in the pregen list', st663.lines.filter(x => /[א-ת]/.test(x) && !NIK.test(x)).length === 0 && st663.lines.some(x => x.includes('מִשִּׂימָה')) && st663.all === 60);
   ok('#572 no page errors', !errs.length, errs.join(' | '));
   await b.close(); L.finish('friend', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT friend 0 1'); process.exitCode = 1; });

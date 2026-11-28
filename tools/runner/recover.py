@@ -56,16 +56,24 @@ def _labels(t):
 def _argv(t):
     fg = t.get("foreground") if isinstance(t.get("foreground"), dict) else {}
     a = fg.get("argv") or t.get("foreground_argv") or t.get("argv") or t.get("command") or t.get("cmd") or []
-    return a.split() if isinstance(a, str) else [str(x) for x in a]
+    a = a.split() if isinstance(a, str) else [str(x) for x in a]
+    return [w for x in a for w in x.split()]   # #820: one argv string 'claude --remote-control oren-x' too
+
+def _role(x, roles):
+    """#820: 'inspector' or 'oren-inspector' -> 'inspector' when it is a role, else None."""
+    x = str(x or "").strip()
+    x = x[5:] if x.startswith("oren-") else x
+    return x if x in roles else None
 
 def control_role(t, roles=CONTROL):
     """#331: the control role (orchestrator/inbox/inspector) a terminal is, matched by name, by '--remote-control oren-<role>' in its
     foreground argv, by its tab ('where' ending in '/ <role>') or by label name=<role> (#332). A hand-started session has no name. -> role or None"""
-    if t.get("name") in roles: return t["name"]
-    if _labels(t).get("name") in roles: return _labels(t)["name"]
+    if _role(t.get("name"), roles): return _role(t["name"], roles)
+    if _role(_labels(t).get("name"), roles): return _role(_labels(t)["name"], roles)
     a = _argv(t)
-    for i, x in enumerate(a[:-1]):
-        if x == "--remote-control" and a[i + 1].startswith("oren-") and a[i + 1][5:] in roles: return a[i + 1][5:]
+    for i, x in enumerate(a):
+        v = x.split("=", 1)[1] if x.startswith("--remote-control=") else a[i + 1] if x == "--remote-control" and i + 1 < len(a) else None
+        if v and v.startswith("oren-") and _role(v, roles): return _role(v, roles)
     tab = str(t.get("where") or "").rsplit("/", 1)
     if len(tab) == 2 and tab[1].strip() in roles: return tab[1].strip()
     return None
