@@ -60,8 +60,10 @@ const NEXT=n=>n===1?'עוֹד כּוֹכָב אֶחָד לַקֻּבִּיָּה
 const NEWB=b=>`כָּל הַכָּבוֹד! פָּתַחְתָּ קֻבִּיָּה חֲדָשָׁה: ${b.n}!`;
 const NEWA=a=>`פָּתַחְתָּ מָקוֹם חָדָשׁ: ${a.in}!`;
 const GO='הַמְשֵׁךְ';
+/* #679: show Dad or Mom what he built */
+const SHOWB='הַרְאֵה לְאַבָּא אוֹ לְאִמָּא',SHOWSAID='הִרְאֵיתִי לְאַבָּא וּלְאִמָּא!',SHOW_MAX=5,SHOW_BYTES=1500;
 BW.speakList=()=>{const gaps=new Set();const us=[...new Set(BLOCKS.map(b=>b.u))].sort((a,b)=>a-b);for(let i=1;i<us.length;i++)for(let n=1;n<=us[i]-us[i-1];n++)gaps.add(n);
-  return [HINT.replace('👇 ',''),REMOVE,NOGEM,FIRST,...BLOCKS.map(b=>b.n),...AREAS.map(a=>a.n),...BLOCKS.filter(b=>b.u).map(NEWB),...AREAS.filter(a=>a.u).map(NEWA),...[...gaps].map(NEXT)];};
+  return [SHOWB,SHOWSAID,HINT.replace('👇 ',''),REMOVE,NOGEM,FIRST,...BLOCKS.map(b=>b.n),...AREAS.map(a=>a.n),...BLOCKS.filter(b=>b.u).map(NEWB),...AREAS.filter(a=>a.u).map(NEWA),...[...gaps].map(NEXT)];};
 BW.BLOCKS=BLOCKS;BW.AREAS=AREAS;
 
 /* ---------- save ---------- */
@@ -98,6 +100,7 @@ function draw(drop){if(!root)return;const w=W(),st=allStars(),A=area(cur),ar=ope
   if(!w.first)root.appendChild(h('div','lcap bwhint',HINT));
   const nx=BLOCKS.filter(b=>b.u>st).sort((a,b)=>a.u-b.u)[0];
   if(nx){const n=nx.u-st,l=h('button','bwnext',`<span class="bwsil">${nx.svg}</span><span>⭐ עוֹד ${n} לַקֻּבִּיָּה הַבָּאָה</span>`);l.onclick=()=>say(NEXT(n));root.appendChild(l);}
+  if(!O.isParentPlay&&diff(A,cur)>0){const sb=h('button','bwshow',`<span aria-hidden="true">📤</span><span>${SHOWB}</span>`);sb.onclick=()=>{if(BW.show()){sb.disabled=true;sb.classList.add('sent');say(SHOWSAID);}};root.appendChild(sb);}
   const bb=h('div','bwbar');for(const b of list){const o=h('button','bwb'+(b.id===sel?' sel':''),`<span class="si">${b.svg}</span><span class="pr">💎${b.c}</span>`);o.dataset.b=b.id;
     o.setAttribute('aria-label',b.n.replace(/[֑-ׇ]/g,''));o.onclick=()=>{sel=b.id;sfx.pop&&sfx.pop(2);say(b.n);draw();};bb.appendChild(o);}
   root.appendChild(bb);const s=bb.querySelector('.sel');if(s&&s.scrollIntoView&&bb.scrollWidth>bb.clientWidth)try{s.scrollIntoView({block:'nearest',inline:'nearest'});}catch(e){}}
@@ -133,6 +136,19 @@ function cards(list){const ov=$('#ov');let i=0;const friend=()=>{try{return T&&T
 /* ---------- the parent day tab: one picture of what he built (no buttons, no counts) ---------- */
 /* how many cells differ from the starter ground */
 const diff=(A,id)=>{const s0=starter(id);let n=0;for(const k of new Set([...Object.keys(A||{}),...Object.keys(s0)]))if((A||{})[k]!==s0[k])n++;return n;};
+/* #679: one tap saves a small copy of this area for the parent panel (set.show, newest 5, each at most SHOW_BYTES; synced with the family save) */
+BW.show=()=>{const st=S();if(O.isParentPlay)return false;const A=area(cur),a={};for(const [k,id] of Object.entries(A))if(B[id])a[k]=id;
+  const it={i:Date.now().toString(36),t:Date.now(),ar:cur,a};if(JSON.stringify(it).length>SHOW_BYTES)return false;
+  st.set=st.set||{};st.set.show=[...(st.set.show||[]),it].slice(-SHOW_MAX);persist();try{O.famNow&&O.famNow();}catch(e){}return true;};
+const pic=(A,id)=>{const bg={meadow:'#bfe6f5',beach:'#9fdcf5',sky:'#3b3f8f'}[id]||'#bfe6f5';
+  return `<svg viewBox="0 0 128 128" role="img" aria-label="מה אורן בנה"><rect width="128" height="128" fill="${bg}"/>${Object.entries(A).filter(([,b])=>B[b]).map(([k,b])=>{const [x,y]=k.split(',').map(Number);return B[b].svg.replace('<svg ',`<svg x="${x*16}" y="${y*16}" width="16" height="16" `);}).join('')}</svg>`;};
+/* the parent day tab: what he showed (newest 3), a heart or "well done" goes back to his device only (HEALTH.reply = the #413/#617 message) */
+BW.parentShows=()=>{const rs=O.realSave||O.save,L=((rs&&rs.set)||{}).show;if(!Array.isArray(L)||!L.length)return null;
+  const box=h('div','bwshows');L.slice(-3).reverse().forEach(it=>{const r=h('div','bwshow-row');r.dataset.i=it.i;r.innerHTML=pic(it.a||{},it.ar)+'<div class="bwcap">אורן הראה לכם</div>';
+    const row=h('div','bwreply');const H=window.HEALTH;
+    if(it.r){const d=h('span','pchip on',it.r==='h'?'❤️ נשלח':'נשלח ✓');row.appendChild(d);}
+    else[['h','❤️'],['w','כל הכבוד']].forEach(([k,n])=>{const b=h('button','pchip bwrb',n);b.onclick=()=>{if(H&&H.reply&&H.reply(k==='h'?2:3)){it.r=k;persist();row.innerHTML='';row.appendChild(h('span','pchip on',k==='h'?'❤️ נשלח':'נשלח ✓'));}};row.appendChild(b);});
+    r.appendChild(row);box.appendChild(r);});return box;};
 BW.parentPic=()=>{const rs=O.realSave||O.save,w=rs&&rs.bw;if(!w||!w.a)return null;
   let best=null,bn=0;for(const id of Object.keys(w.a)){const n=diff(w.a[id],id);if(n>bn){bn=n;best=id;}}
   if(!best)return null;const A=w.a[best],bg={meadow:'#bfe6f5',beach:'#9fdcf5',sky:'#3b3f8f'}[best]||'#bfe6f5';

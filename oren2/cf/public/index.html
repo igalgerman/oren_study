@@ -1246,11 +1246,13 @@ function mergeIn(o){if(!o||typeof o!=='object')return;
   if(window.DAYLOG&&(o.alog||o.now)){save.alog=save.alog||{};window.DAYLOG.merge(save,o);}/* the heartbeat (save.now) comes even without a day log (#352) */
   for(const [k,v] of Object.entries(o.time||{})){save.time=save.time||{};save.time[k]=Math.max(save.time[k]|0,v|0);}
   for(const [k,v] of Object.entries(o.st||{})){save.st=save.st||{};const c=save.st[k]||{a:0,o:0};save.st[k]={a:Math.max(c.a|0,v.a|0),o:Math.max(c.o|0,v.o|0)};}
-  {const clean=JSON.stringify(save.set||{})===lastSetJ,mine=(save.set||{}).pc;
+  {const clean=JSON.stringify(save.set||{})===lastSetJ,mine=(save.set||{}).pc,mineShow=(save.set||{}).show;
   if(o.set&&(+o.setT||0)>(+save.setT||0)){save.set=o.set;save.setT=o.setT;lastSetJ=JSON.stringify(save.set);}
   /* #614: the parent's commands (set.pc) are a list, not one setting: both copies are joined by id. With the whole set newer-wins, a later
      save from another copy (a second tab or phone, or Oren's device answering a message) dropped a skip that copy had not seen yet */
-  const pc=pcJoin(mine,(o.set||{}).pc);if(save.set&&pc.length&&JSON.stringify(pc)!==JSON.stringify(save.set.pc||[])){const took=JSON.stringify(save.set)===lastSetJ;save.set.pc=pc;if(clean||took)lastSetJ=JSON.stringify(save.set);}}
+  const pc=pcJoin(mine,(o.set||{}).pc);if(save.set&&pc.length&&JSON.stringify(pc)!==JSON.stringify(save.set.pc||[])){const took=JSON.stringify(save.set)===lastSetJ;save.set.pc=pc;if(clean||took)lastSetJ=JSON.stringify(save.set);}
+  /* #679: what he showed (set.show) is a list too: joined by id, so a parent edit to set never drops it (and the answer r stays) */
+  const sh=showJoin(mineShow,(o.set||{}).show);if(save.set&&sh.length&&JSON.stringify(sh)!==JSON.stringify(save.set.show||[])){const took=JSON.stringify(save.set)===lastSetJ;save.set.show=sh;if(clean||took)lastSetJ=JSON.stringify(save.set);}}
   for(const x of (o.iss||[])){if(!x||!x.d||!x.k)continue;save.iss=save.iss||[];const e=save.iss.find(y=>y.d===x.d&&y.k===x.k);if(e)e.n=Math.max(e.n|0,x.n|0);else save.iss.push(x);}if(save.iss)save.iss=save.iss.sort((a,b)=>a.d<b.d?-1:1).slice(-30);
   for(const k of ['prof','last'])if(o[k]&&!save[k])save[k]=o[k];
   for(const m of ['dom','rw','coach','cnt','tg','pcA','pcU','pk','pkx','hb'])for(const [k,v] of Object.entries(o[m]||{})){save[m]=save[m]||{};save[m][k]=Math.max(+save[m][k]||0,+v||0);}
@@ -1264,6 +1266,7 @@ function mergeIn(o){if(!o||typeof o!=='object')return;
 function hatsBack(){const P={helmet:20,crown:60,wizard:120};let g=0;for(const [k,v] of Object.entries(P))if(save.owned&&save.owned[k]&&!(save.hb&&save.hb[k])){save.hb=save.hb||{};save.hb[k]=1;g+=v;}
   if(g)save.gems=(save.gems|0)+g;if(save.av&&save.av.hat)delete save.av.hat;return g;}
 var lastSetJ='';
+function showJoin(a,b){const m=new Map();for(const c of [...(a||[]),...(b||[])])if(c&&c.i){const e=m.get(c.i);if(!e)m.set(c.i,c);else if(c.r&&!e.r)m.set(c.i,Object.assign({},e,{r:c.r}));}return [...m.values()].sort((x,y)=>(+x.t||0)-(+y.t||0)).slice(-5);}
 function pcJoin(a,b){const m=new Map();for(const c of [...(a||[]),...(b||[])])if(c&&c.i&&!m.has(c.i))m.set(c.i,c);return [...m.values()].sort((x,y)=>(+x.t||0)-(+y.t||0)).slice(-40);}
 /* problem log for the parent panel: one entry per kind per day with a count (synced with the family) */
 function logIssue(k,m){try{if(kidSave||window.__fast)return;const d=today();save.iss=save.iss||[];let e=save.iss.find(x=>x.d===d&&x.k===k);if(!e){e={d,k,n:0};save.iss.push(e);save.iss=save.iss.slice(-30);}e.n++;if(m)e.m=String(m).slice(0,200);try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}}catch(e){}}/* local only: goes to the family save with the next normal save (no retry loops) */
@@ -3556,6 +3559,14 @@ body.fron #screens{padding-bottom:84px}
 .bwpic svg{width:min(240px,70vw);height:auto;display:block;margin:0 auto;shape-rendering:crispEdges;box-shadow:0 4px 0 rgba(0,0,0,.18)}
 .bwcap{font-weight:700;margin-top:6px}
 
+/* #679 show Dad or Mom */
+.bwshow{display:flex;gap:8px;align-items:center;justify-content:center;margin:6px auto;padding:8px 16px;min-height:44px;border:0;border-radius:22px;background:#fff;font:inherit;font-weight:800;font-size:17px;cursor:pointer;box-shadow:0 3px 0 rgba(0,0,0,.18)}
+.bwshow.sent{opacity:.6}
+.bwshows{margin:10px auto;text-align:center}
+.bwshow-row{margin:10px auto}
+.bwshow-row svg{width:min(160px,50vw);height:auto;display:block;margin:0 auto;shape-rendering:crispEdges;box-shadow:0 4px 0 rgba(0,0,0,.18)}
+.bwreply{display:flex;gap:8px;justify-content:center;margin-top:6px}
+
 /* ===== LESSON CARDS (#56) ===== */
 .lccard{width:min(640px,100%)}
 .lcart{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:10px;min-height:130px}
@@ -5184,7 +5195,7 @@ function panel(tab){if(O.isParentPlay)O.parentPlay(false);const dl=$('#dlg');if(
   const sy=$('#screens').scrollTop;O.setScreen('sPar','valley',exitParent);O.hud('<div class="chip">לוח הורים</div>');const s=$('#sPar');s.innerHTML='';
   s.appendChild(h('div','whead',`<h1>${curTab==='more'?'הגדרות ועוד':'לוח הורים'}</h1>`));
   const body=h('div','pbody');s.appendChild(body);
-  if(curTab==='day'){const v=h('div','pday');body.appendChild(v);if(window.PDAY)window.PDAY.view(v,{sec,nowTop});{const pic=window.BW&&window.BW.parentPic();if(pic)body.appendChild(pic);}
+  if(curTab==='day'){const v=h('div','pday');body.appendChild(v);if(window.PDAY)window.PDAY.view(v,{sec,nowTop});{const pic=window.BW&&window.BW.parentPic();if(pic)body.appendChild(pic);const shw=window.BW&&window.BW.parentShows&&window.BW.parentShows();if(shw)body.appendChild(shw);}
     const mr=h('div','btnrow');const mb=h('button','bigbtn plain sm pdmore','⚙️ <span>הגדרות ועוד</span>');mb.onclick=()=>{openSec=null;panel('more');};mr.appendChild(mb);body.appendChild(mr);}
   else{const bk=h('button','pchip pdback','→ חזרה ליום');bk.onclick=()=>panel('day');body.appendChild(bk);warns(body);
     MORE.filter(([id])=>!HAS[id]||HAS[id]()).forEach(([id,n])=>{const d=document.createElement('details');d.className='pdet';const sm=document.createElement('summary');sm.textContent=n;d.appendChild(sm);const inner=h('div','pdin');d.appendChild(inner);let done=false;
@@ -5208,7 +5219,7 @@ function nowTop(el){const DL=window.DAYLOG,PD=window.PDAY;el.innerHTML=DL?DL.now
 /* while the parent panel is open: pull the family save every 30 s so the day view follows Oren live, also from another house;
    #612: and at once when the phone screen is opened again (a locked phone runs no timers) */
 let parLive=0;
-const parPull=()=>{O.parMark&&O.parMark();return Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(!parentOn||$('#sPar').hidden)return;if(window.PDAY&&curTab==='day')window.PDAY.refresh();if(window.HEALTH&&window.HEALTH.remRefresh)window.HEALTH.remRefresh();});};
+const parPull=()=>{O.parMark&&O.parMark();return Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(!parentOn||$('#sPar').hidden)return;if(window.PDAY&&curTab==='day')window.PDAY.refresh();if(window.HEALTH&&window.HEALTH.remRefresh)window.HEALTH.remRefresh();if(curTab==='day'&&window.BW&&window.BW.parentShows){const old=document.querySelector('#sPar .bwshows'),nw=window.BW.parentShows();if(old&&nw)old.replaceWith(nw);else if(old)old.remove();else if(nw){const pb=document.querySelector('#sPar .pbody'),pc=pb&&pb.querySelector('.bwpic');if(pc)pc.after(nw);else if(pb)pb.insertBefore(nw,pb.querySelector(':scope > .btnrow'));}}});};
 function parLiveOn(){if(parLive)return;parLive=setInterval(()=>{if(!parentOn||$('#sPar').hidden){clearInterval(parLive);parLive=0;return;}parPull();},window.__parPull||30000);}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&parentOn&&!$('#sPar').hidden){parPull();parLiveOn();}});
 const sec=(box,t,html)=>{const d=h('section','psec',`<h3>${t}</h3>`);if(html)d.insertAdjacentHTML('beforeend',html);box.appendChild(d);return d;};
@@ -6330,7 +6341,9 @@ const MSG_MAX=120,msgOf=m=>m&&m.k==='msg'&&typeof m.x==='string'?m.x.trim().slic
 const remOk=m=>m&&(REM[m.k]||msgOf(m));
 /* #413: 6 ready one-tap messages (audio made in advance: in the pregen list); Oren answers with one face (f) */
 const READY=['אַבָּא גֵּאֶה בְּךָ!','אִמָּא גֵּאָה בְּךָ!','אוֹהֲבִים אוֹתְךָ!','כָּל הַכָּבוֹד, אוֹרֶן!','עוֹד מְעַט אוֹכֶל!','בּוֹא רֶגַע אֵלֵינוּ.'],FACES=['❤️','😊','👍','😂'];
-H.readyMsgs=()=>READY.slice();T.addSay&&T.addSay(READY);
+H.readyMsgs=()=>READY.slice();
+/* #679: the parent's one-tap answer to what Oren showed: ready message n (2 = heart, 3 = well done), now, only on his play device */
+H.reply=n=>{const x=READY[n];if(!x)return false;const t=now();T.S().set.rem={k:'msg',x,at:t,t,to:'kid',by:O.dev};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);return true;};T.addSay&&T.addSay(READY);
 /* #617: only on Oren's play device (never on the parent's phone that sent it) */
 function remCheck(t){const m=(T.S().set||{}).rem;if(!m||m.ok||!remOk(m)||t<m.at||t-m.at>REM_OLD||(O.kidDev&&!O.kidDev(m))){remSince=null;return false;}
   if(!remSince||remSince.t!==m.t)remSince={t:m.t,at:t};
@@ -7188,8 +7201,10 @@ const NEXT=n=>n===1?'עוֹד כּוֹכָב אֶחָד לַקֻּבִּיָּה
 const NEWB=b=>`כָּל הַכָּבוֹד! פָּתַחְתָּ קֻבִּיָּה חֲדָשָׁה: ${b.n}!`;
 const NEWA=a=>`פָּתַחְתָּ מָקוֹם חָדָשׁ: ${a.in}!`;
 const GO='הַמְשֵׁךְ';
+/* #679: show Dad or Mom what he built */
+const SHOWB='הַרְאֵה לְאַבָּא אוֹ לְאִמָּא',SHOWSAID='הִרְאֵיתִי לְאַבָּא וּלְאִמָּא!',SHOW_MAX=5,SHOW_BYTES=1500;
 BW.speakList=()=>{const gaps=new Set();const us=[...new Set(BLOCKS.map(b=>b.u))].sort((a,b)=>a-b);for(let i=1;i<us.length;i++)for(let n=1;n<=us[i]-us[i-1];n++)gaps.add(n);
-  return [HINT.replace('👇 ',''),REMOVE,NOGEM,FIRST,...BLOCKS.map(b=>b.n),...AREAS.map(a=>a.n),...BLOCKS.filter(b=>b.u).map(NEWB),...AREAS.filter(a=>a.u).map(NEWA),...[...gaps].map(NEXT)];};
+  return [SHOWB,SHOWSAID,HINT.replace('👇 ',''),REMOVE,NOGEM,FIRST,...BLOCKS.map(b=>b.n),...AREAS.map(a=>a.n),...BLOCKS.filter(b=>b.u).map(NEWB),...AREAS.filter(a=>a.u).map(NEWA),...[...gaps].map(NEXT)];};
 BW.BLOCKS=BLOCKS;BW.AREAS=AREAS;
 
 /* ---------- save ---------- */
@@ -7226,6 +7241,7 @@ function draw(drop){if(!root)return;const w=W(),st=allStars(),A=area(cur),ar=ope
   if(!w.first)root.appendChild(h('div','lcap bwhint',HINT));
   const nx=BLOCKS.filter(b=>b.u>st).sort((a,b)=>a.u-b.u)[0];
   if(nx){const n=nx.u-st,l=h('button','bwnext',`<span class="bwsil">${nx.svg}</span><span>⭐ עוֹד ${n} לַקֻּבִּיָּה הַבָּאָה</span>`);l.onclick=()=>say(NEXT(n));root.appendChild(l);}
+  if(!O.isParentPlay&&diff(A,cur)>0){const sb=h('button','bwshow',`<span aria-hidden="true">📤</span><span>${SHOWB}</span>`);sb.onclick=()=>{if(BW.show()){sb.disabled=true;sb.classList.add('sent');say(SHOWSAID);}};root.appendChild(sb);}
   const bb=h('div','bwbar');for(const b of list){const o=h('button','bwb'+(b.id===sel?' sel':''),`<span class="si">${b.svg}</span><span class="pr">💎${b.c}</span>`);o.dataset.b=b.id;
     o.setAttribute('aria-label',b.n.replace(/[֑-ׇ]/g,''));o.onclick=()=>{sel=b.id;sfx.pop&&sfx.pop(2);say(b.n);draw();};bb.appendChild(o);}
   root.appendChild(bb);const s=bb.querySelector('.sel');if(s&&s.scrollIntoView&&bb.scrollWidth>bb.clientWidth)try{s.scrollIntoView({block:'nearest',inline:'nearest'});}catch(e){}}
@@ -7261,6 +7277,19 @@ function cards(list){const ov=$('#ov');let i=0;const friend=()=>{try{return T&&T
 /* ---------- the parent day tab: one picture of what he built (no buttons, no counts) ---------- */
 /* how many cells differ from the starter ground */
 const diff=(A,id)=>{const s0=starter(id);let n=0;for(const k of new Set([...Object.keys(A||{}),...Object.keys(s0)]))if((A||{})[k]!==s0[k])n++;return n;};
+/* #679: one tap saves a small copy of this area for the parent panel (set.show, newest 5, each at most SHOW_BYTES; synced with the family save) */
+BW.show=()=>{const st=S();if(O.isParentPlay)return false;const A=area(cur),a={};for(const [k,id] of Object.entries(A))if(B[id])a[k]=id;
+  const it={i:Date.now().toString(36),t:Date.now(),ar:cur,a};if(JSON.stringify(it).length>SHOW_BYTES)return false;
+  st.set=st.set||{};st.set.show=[...(st.set.show||[]),it].slice(-SHOW_MAX);persist();try{O.famNow&&O.famNow();}catch(e){}return true;};
+const pic=(A,id)=>{const bg={meadow:'#bfe6f5',beach:'#9fdcf5',sky:'#3b3f8f'}[id]||'#bfe6f5';
+  return `<svg viewBox="0 0 128 128" role="img" aria-label="מה אורן בנה"><rect width="128" height="128" fill="${bg}"/>${Object.entries(A).filter(([,b])=>B[b]).map(([k,b])=>{const [x,y]=k.split(',').map(Number);return B[b].svg.replace('<svg ',`<svg x="${x*16}" y="${y*16}" width="16" height="16" `);}).join('')}</svg>`;};
+/* the parent day tab: what he showed (newest 3), a heart or "well done" goes back to his device only (HEALTH.reply = the #413/#617 message) */
+BW.parentShows=()=>{const rs=O.realSave||O.save,L=((rs&&rs.set)||{}).show;if(!Array.isArray(L)||!L.length)return null;
+  const box=h('div','bwshows');L.slice(-3).reverse().forEach(it=>{const r=h('div','bwshow-row');r.dataset.i=it.i;r.innerHTML=pic(it.a||{},it.ar)+'<div class="bwcap">אורן הראה לכם</div>';
+    const row=h('div','bwreply');const H=window.HEALTH;
+    if(it.r){const d=h('span','pchip on',it.r==='h'?'❤️ נשלח':'נשלח ✓');row.appendChild(d);}
+    else[['h','❤️'],['w','כל הכבוד']].forEach(([k,n])=>{const b=h('button','pchip bwrb',n);b.onclick=()=>{if(H&&H.reply&&H.reply(k==='h'?2:3)){it.r=k;persist();row.innerHTML='';row.appendChild(h('span','pchip on',k==='h'?'❤️ נשלח':'נשלח ✓'));}};row.appendChild(b);});
+    r.appendChild(row);box.appendChild(r);});return box;};
 BW.parentPic=()=>{const rs=O.realSave||O.save,w=rs&&rs.bw;if(!w||!w.a)return null;
   let best=null,bn=0;for(const id of Object.keys(w.a)){const n=diff(w.a[id],id);if(n>bn){bn=n;best=id;}}
   if(!best)return null;const A=w.a[best],bg={meadow:'#bfe6f5',beach:'#9fdcf5',sky:'#3b3f8f'}[best]||'#bfe6f5';

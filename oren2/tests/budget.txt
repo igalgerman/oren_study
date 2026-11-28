@@ -22,7 +22,7 @@ friend-desktop 80         # #663 Mixer opening + chase card (1 page call, ~1 s) 
 friend-phone 80           # same file on the phone viewport
 shots 90                  # #462 screenshots: worker + fake D1, then the real page (six moments, busy/offline, a played level, review page desktop + phone): ~40 s alone
 pday 100                  # #359 (+ #614 a third parent copy, skip-now feedback, offline + undo: ~30 s) two devices through a fake save server: plan changes, skips, undo, offline queue, skip-now waiting for an answer + #438 learned today, the question, the week picture (~5 s): ~50 s alone + #621 a fresh family: playing, no rows
-kidcmd 100               # #617 two devices through a fake save server: message, reminder, skip only on the kid device + delivery status (~25 s alone) + #648 new day (~10 s) + #746 mission done on B while A is on a mission screen (~3 s) + #659 pause/resume from the parent panel (~15 s)
+kidcmd 100               # #617 two devices through a fake save server: message, reminder, skip only on the kid device + delivery status (~25 s alone) + #648 new day (~10 s) + #746 mission done on B while A is on a mission screen (~3 s) + #659 pause/resume from the parent panel (~15 s) + #679 live day tab (~5 s)
 livepanel 90              # #612 three pages through a fake save server: 4 activities, a save outage (capped retry), screen lock/unlock, the "no update since" line: ~18 s alone
 network 60                # #434 slow network (throttled) + offline (service worker, voice from the device, save after reconnect): ~18 s alone
 english2-desktop 60       # #425 second-tap slow replay (~3 s), #592 leave-round wait (5 s): ~44 s under load
@@ -38,7 +38,7 @@ parent-desktop 60          # #61 suggestions block (sample skills data per kind)
 parent-phone 60            # same file on the phone viewport: ~18 s
 resume-desktop 60          # #44 reloads mid-level, mid-quiz and while paused + timed rounds paused 2 s: ~37 s
 resume-phone 60            # same file on the phone viewport
-build 60                  # #64 building world: two viewports + 3 small pages, place/remove/unlock/merge/parent picture: ~15 s
+build 90                  # #64 building world: two viewports + 3 small pages, place/remove/unlock/merge/parent picture: ~15 s
 instructions-desktop 100   # every activity instruction (~50 s) + #266 the 21 choice screens (each clip in the pregen list) name their choices: ~75 s
 qa-fix-desktop 60          # #267 adds the hands-on checks (clock drag, pizza taps, carry/borrow board, times array) + #439 ten-frame lessons/hint/fill, coins, mistake hints (~4 s): ~19 s
 qa-fix-phone 60            # same file on the phone viewport: ~19 s
