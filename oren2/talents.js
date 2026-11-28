@@ -1543,7 +1543,7 @@ O.on('hub',s=>later(()=>{const b=s.querySelector('.gdoor');if(b)intro('i-city',b
 O.on('group',s=>later(()=>{const b=s.querySelector('.bld:not(.lockb)');if(b)coach(b,'לְחַץ עַל בִּנְיָן כְּדֵי לְהִכָּנֵס','group',2);}));
 O.on('map',m=>later(()=>{const b=m.querySelector('.jnext')||m.querySelector('.worlds .wcard2:not(.locked):not([hidden])');if(b&&!$('#sMap').hidden)intro('i-map',b,'זֶה הַמַּסָּע! בְּכָל עוֹלָם יֵשׁ חֶשְׁבּוֹן וְחָבֵר שֶׁצָּרִיךְ עֶזְרָה. אוֹסְפִים כּוֹכָבִים וּמַצִּילִים אוֹתוֹ!',()=>coach(b,'לְחַץ עַל עוֹלָם כְּדֵי לְהַתְחִיל אֶת הַמַּסָּע','map',2));}));
 O.on('kingdomScene',sc=>later(()=>{const b=sc.querySelector('.bwgrid');if(b&&!$('#sKing').hidden&&$('#ov').hidden)intro('i-king',b,'זֹאת הַמַּמְלָכָה שֶׁלְּךָ! בַּיַּהֲלוֹמִים בּוֹנִים, וְהַכּוֹכָבִים פּוֹתְחִים קֻבִּיּוֹת חֲדָשׁוֹת.');}));
-O.on('synced',()=>{if(!$('#sHome').hidden&&$('#ov').hidden&&!document.querySelector('.tour'))home();});
+O.on('synced',()=>{if(!$('#sHome').hidden&&$('#ov').hidden&&!document.querySelector('.tour'))O.quiet(home);});/* #617: a change from another device redraws home silently */
 /* a home button that is always in the same place */
 (()=>{const bb=$('#btnBack');if(!bb)return;const hb=h('button','ibtn','');hb.id='btnHome';hb.innerHTML=ICON.home;hb.setAttribute('aria-label','בית');hb.title='הַבַּיִת';hb.hidden=true;hb.onclick=()=>{O.hush&&O.hush();sfx.pop(1);O.showMap();};bb.after(hb);
   O.on('screen',(id,back)=>{hb.hidden=id==='sStart'||id==='sHome'||back===O.showMap;});})();
