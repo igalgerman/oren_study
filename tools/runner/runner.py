@@ -824,11 +824,43 @@ def assign_where(chosen, local_busy, remote_busy, local_lanes, remote_lanes):
 ACCEPT = ("Build exactly the issue's `## Acceptance` list (every point, with the tests it names) and nothing in its `Out of scope` (#186). "
           "New tests: add the test to an existing suite unless a new one is clearly needed; give it a budget line in oren2/tests/budget.txt (#187).")
 
-def finish_issue(n, text):
-    """#652 (owner 27 Nov): the run's DONE step closes issue n after the merge + deploy, also one labelled `later`
-    (no hold for live checks; reopen if a problem shows up)."""
-    gh("issue", "close", str(n), "--comment", text)
-    return True
+LIVE_RE = re.compile(r"^\s*LIVE:\s*\S", re.M)
+LIVE_EXEMPT = {"docs", "tooling"}     # #744: docs and tooling issues close without a LIVE line
+
+def has_live_line(comments):
+    """#744 (pure): True when one comment has a line `LIVE: <what was seen on production, with the date>`."""
+    return any(LIVE_RE.search(c or "") for c in comments)
+
+def live_proof(base="https://oren-game.pages.dev"):
+    """#744: the automatic live check, run by the runner itself after the deploy (never the owner). -> (ok, line):
+    ok True = `LIVE: ...` seen on production; ok False = a check failed (the issue stays open); ok None = could not run (closes, line says so)."""
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    try:
+        rc, out = run([sys.executable, str(ROOT / "tools/ci/deploy_ci.py"), "smoke", base], timeout=300)
+    except Exception as e:
+        return None, f"LIVE: not checked ({day}): the automatic check could not run: {str(e)[:120]}"
+    if rc == 0: return True, f"LIVE: production smoke ok on {base} ({day}): page loads, save round trip, D1 bound, voice status"
+    if "FAIL" in (out or ""): return False, f"LIVE check FAILED on {base} ({day}): " + (out or "").strip()[-300:]
+    return None, f"LIVE: not checked ({day}): the automatic check could not run (rc {rc})"
+
+def finish_issue(n, text, live=None):
+    """#652 + #744: the run's DONE step closes issue n after the merge + deploy, but only with a `LIVE: ...` line on the issue
+    (written by the runner's automatic check, `live` = (ok, line) from live_proof, or already there from the deploy tour / a tester).
+    No line and no proof: the issue stays open. A failed check keeps it open and sends it back to a worker. docs/tooling issues are exempt.
+    Returns True when closed."""
+    rc, out = gh("issue", "view", str(n), "--json", "labels,comments")
+    try: d = json.loads(out); labels = {l["name"] for l in d["labels"]}; comments = [c.get("body", "") for c in d.get("comments", [])]
+    except (ValueError, KeyError, TypeError): return False
+    if labels & LIVE_EXEMPT: return gh("issue", "close", str(n), "--comment", text)[0] == 0
+    if not has_live_line(comments):
+        if live is None: return False
+        ok, line = live
+        if ok is False:
+            gh("issue", "comment", str(n), "--body", redact(line + "\nThe issue stays open: a worker fixes it."))
+            set_labels(n, add=["ready-for-agent"], remove=["in-progress"])
+            return False
+        text += "\n" + line
+    return gh("issue", "close", str(n), "--comment", text)[0] == 0
 
 def owner_gate(n):
     """#608: we share the owner's GitHub account, so only the owner_q record is him; every worker and reviewer prompt says so."""
@@ -2391,7 +2423,8 @@ def process_locked(issue, where="local"):
         pre = start_pregen(log) if dep.startswith("deployed") else ""    # #175: after the lock, in the background; #301: never blocks
         m = sync_main(log)                       # result logged (review of #47)
         if m: log_line(m)
-        finish_issue(n, f"Merged to {BRANCH}, tests green, {dep}.{pregen_note(pre)}")
+        if not finish_issue(n, f"Merged to {BRANCH}, tests green, {dep}.{pregen_note(pre)}", live=live_proof()):
+            log_line(f"#{n}: not closed (no LIVE line or the live check failed)")
         set_labels(n, remove=["in-progress"])
         remove_worktree(wt, log)
         close_windows(n)
