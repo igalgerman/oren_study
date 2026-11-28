@@ -1,4 +1,6 @@
 # Tests for handoff.py save/show (#923), fake gh + tmp dirs: python tools/runner/test_handoff.py
+import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229
+os.environ["OREN_TEST"] = "1"   # #325
 import base64, json, os, sys, tempfile
 from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
