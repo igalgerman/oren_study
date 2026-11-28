@@ -1,4 +1,4 @@
-# Unit test for the deploy workflow helper (#192): python3 tools/ci/test_deploy_ci.py
+# Unit test for the deploy workflow helper (#192): python3 oren2/ci/test_deploy_ci.py
 import json, os, sys, tempfile, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

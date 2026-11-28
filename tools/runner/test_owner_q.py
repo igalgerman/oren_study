@@ -298,6 +298,12 @@ assert OQ.merge_state(64, [rec], qcs2) == "closed" and OQ.merge_state(64, [rec, 
 assert OQ.record_answer(rec["body"]) is None, "the old record pattern never matches a chat record"
 print("ok owner_q #803 inspector chat gate")
 
+# #872: a record with `via` is still the same owner-answer record: the gate does not change
+_b = OQ.answer_body("0123456789ab", "כן", "console")
+assert "via console" in _b and OQ.record_answer(_b) == ("0123456789ab", "כן")
+assert OQ.record_answer(OQ.answer_body("0123456789ab", "כן")) == ("0123456789ab", "כן")
+print("ok owner_q answer record via")
+
 # ---- #897: an owner answer is written only as the App, also while the App is rate limited ----
 import remote as RM, ghauth, ghcache, subprocess as _sp
 K1, K2 = OQ.key_of("#677", "QUESTION: gate?"), OQ.key_of("#9", "QUESTION: max_core?")

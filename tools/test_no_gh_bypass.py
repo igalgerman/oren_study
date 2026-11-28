@@ -1,8 +1,8 @@
 # CI test (#783): every `gh` WRITE call under tools/**/*.py goes through R.run / R.gh (where the privacy scrub lives, tools/runner/scrub.py).
-# A new bypass fails with the file:line list. Run: python3 tools/ci/test_no_gh_bypass.py
+# A new bypass fails with the file:line list. Run: python3 tools/test_no_gh_bypass.py
 import ast, os, sys
 from pathlib import Path
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "runner"))
 import ghcache
 
