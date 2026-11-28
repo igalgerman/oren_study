@@ -105,4 +105,22 @@ assert sorted(bs) == ["a", "b"] and bs["a"]["entity"] == "inspector" and abs(bs[
 assert abs(bs["a"]["week_pct"] - bs["a"]["day_pct"] * 0.1) < 0.001 and abs(bs["b"]["day_pct"] - 100 * 100 / 1050.05) < 0.01
 assert all(v["week_pct"] is None for v in U.by_session(bs_rows, None).values())
 assert "sessions" in U.compute(now=T0 + 10, root=root, known=KNOWN) and "s1" in U.compute(now=T0 + 10, root=root, known=KNOWN)["sessions"]
+# --- #955: a hand-started inspector (no known prompt, no --name) is attributed by its live tab / cwd; sub-agents follow the parent ---
+terms = [{"name": "", "state": "live", "where": "Oren control / inspector", "cwd": "C:\\work\\Oren_study\\"},
+         {"name": "x", "state": "live", "where": "Oren control / executor", "cwd": "/home/x/exec"},
+         {"name": "", "state": "live", "where": "Oren control / inbox", "cwd": "/shared"}, {"name": "", "state": "live", "where": "Oren control / executor", "cwd": "/shared"}]
+hints = U.terminal_hints(terms)
+assert hints == {"c:/work/oren_study": "inspector", "/home/x/exec": "executor"}, hints      # '/shared' is two roles: left out
+assert U.classify_session("some hand typed prompt", KNOWN, cwd="C:/work/Oren_study", hints=hints) == "inspector"
+assert U.classify_session("hi", KNOWN, title="oren-executor") == "executor" and U.classify_session("hi", KNOWN, cwd="/shared", hints=hints) == "other"
+root2 = Path(tempfile.mkdtemp(prefix="proj2-")); s2 = root2 / "p" / "h1.jsonl"
+write(s2, [{"type": "agent-name", "agentName": "x"}, {**user("hand typed " + SECRET), "cwd": "C:/work/Oren_study"}, asst(T0, "n1", "claude-opus-5-5", 1000, 0)])
+write(root2 / "p" / "h2.jsonl", [{**user("something else"), "cwd": "/elsewhere"}, asst(T0, "n2", "claude-sonnet-5-5", 10, 0)])
+write(root2 / "p" / "h1" / "subagents" / "agent-a.jsonl", [asst(T0 + 1, "n3", "claude-fable-5-2", 500, 0)])
+(root2 / "p" / "h1" / "subagents" / "agent-a.meta.json").write_text(json.dumps({"agentType": "Explore"}))
+r2 = U.transcript_rows(root2, 0, KNOWN, hints)
+assert sorted({r["entity"] for r in r2}) == ["inspector", "inspector/sub:Explore", "other"], r2
+assert sorted({r["entity"] for r in U.transcript_rows(root2, 0, KNOWN)}) == ["other", "other/sub:Explore"]   # no tab list: as before
+t2b = U.build(r2, None); assert U.other_share(t2b) < 5 and U.usage_line(t2b).endswith("other total %.1f%%" % U.other_share(t2b))
+assert U.other_share(U.build(U.transcript_rows(root2, 0, KNOWN), None)) > 99
 print("test_usage_entities: ok")
