@@ -40,8 +40,14 @@ start_cmd = next(c[0] for c in f.calls if c[0][1] == "run")
 first = " ".join(start_cmd)
 assert " run " in f"{first} " and "--name remote-143" in first and "--cloud" in first, first
 assert "unset CLAUDE_CODE_OAUTH_TOKEN" in first, first
-assert start_cmd[-1] == "do it", "task passed as its own argument"
+assert start_cmd[-1].endswith("do it") and "user.email" in start_cmd[-1], "task passed as its own argument"
 assert any("wait" in c[0] for c in f.calls), "waits for the start command to end"
+# #778: every cloud start has an explicit permission mode (else the owner's 'auto' default sends approval asks to his phone)
+bash_line = start_cmd[start_cmd.index("-c") + 1]
+assert "--permission-mode bypassPermissions" in bash_line and bash_line.endswith('--cloud "$1"'), bash_line
+assert r.start_command("opus", "high") == ('unset CLAUDE_CODE_OAUTH_TOKEN; "$0" --model opus --effort high '
+                                           '--permission-mode bypassPermissions --cloud "$1"'), r.start_command("opus", "high")
+assert r.start_command() == 'unset CLAUDE_CODE_OAUTH_TOKEN; "$0" --permission-mode bypassPermissions --cloud "$1"'
 # terminal could not even start -> refused
 f = Fake(("run", 1, "hc: no server"))
 s = r.start(143, "do it", cwd="C:/x", run=f)
@@ -101,8 +107,13 @@ f = Fake(("issue list", 0, json.dumps([iss])), ("pr list", 0, json.dumps([{**pr,
 rows = r.cloud(run=f, now=NOW)
 assert [(x["n"], x["stale"], x["last"], x["pr"]) for x in rows] == [(140, False, "2026-11-26T11:45:00Z", pr["url"])], rows
 assert "--label" in f.calls[0][0] and "cloud" in f.calls[0][0]
-f = Fake(("issue list", 0, json.dumps([iss])), ("pr list", 0, "[]"), ("branches/lane/140", 0, "2026-11-26T11:55:00Z\n"))
+f = Fake(("issue list", 0, json.dumps([iss])), ("pr list", 0, "[]"),
+         ("graphql", 0, json.dumps({"data": {"repository": {"l140": {"target": {"committedDate": "2026-11-26T11:55:00Z"}}}}})))
 assert r.cloud(run=f, now=NOW)[0]["last"] == "2026-11-26T11:55:00Z"                       # no PR yet: the lane branch's last commit
+assert sum("graphql" in " ".join(map(str, c[0])) for c in f.calls) == 1 and not any("branches/lane" in " ".join(map(str, c[0])) for c in f.calls), "#911: one query, no REST call per lane"
+f = Fake(("graphql", 0, json.dumps({"data": {"repository": {"l1": {"target": {"committedDate": "d1"}}, "l2": None, "l3": {"target": {"committedDate": "d3"}}}}})))
+assert r.lane_dates([1, 2, 3], run=f) == {1: "d1", 3: "d3"} and len(f.calls) == 1 and r.lane_dates([], run=f) == {} and len(f.calls) == 1, "#911: ONE call for all lanes, none for no lanes"
+assert r.lane_dates([1], run=Fake(("graphql", 1, "boom"))) == {}
 assert r.cloud(run=Fake(("issue list", 1, "error")), now=NOW) == []
 print("ok cloud")
 

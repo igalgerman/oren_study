@@ -139,7 +139,8 @@ def model(issues, prs, events, now, log_text="", cloud=(), qnums=frozenset()):
         "last_deploy": max(deploys, key=lambda e: e["ts"]) if deploys else None,
         "fc": fc,
         "fc_p0": forecast(by_prio["P0"], p0_closed, [], now, history_h) if by_prio["P0"] else None, "p0_open": by_prio["P0"],
-        "truth": {"started": started, "by_runner": by_runner, "fixes": fixes, "passes": passes, "red_escalated": red_esc,
+        "truth": {"started": started, "by_runner": by_runner, "merged_by": S.merged_by([e for e in events if e.get("issue") not in can], now),   # #851
+                  "by_runner": by_runner, "fixes": fixes, "passes": passes, "red_escalated": red_esc,
                   "canary": sum(within(m, 24) for m in can_merged),
                   "deploys_ok": sum(1 for d in deploys if d["ts"] > now - 86400 and d.get("ok")),
                   "deploys_fail": sum(1 for d in deploys if d["ts"] > now - 86400 and d.get("ok") is False),
@@ -252,15 +253,17 @@ def text(m):
              f"Forecast (estimate, {m['history_h']:.0f} h of history): " + fc_text(fc, m["now"], "all open issues"),
              "  " + (fc_text(m["fc_p0"], m["now"], f"the {m['p0_open']} open P0") if m["fc_p0"] else "no open P0"),
              f"Runner (24 h): started {tr['started']}, finished by itself {tr['by_runner']} ({pct(tr['by_runner'], tr['started'])}); "
-             f"PRs not finished by the runner (by hand, or it crashed after merging) ≈ {max(0, m['merged_24h'] - tr['by_runner'])}; reviews sent back {tr['fixes']} of {tr['fixes'] + tr['passes']}; "
+             f"PRs not finished by the runner (by hand, or it crashed after merging) ≈ {max(0, m['merged_24h'] - tr['by_runner'])} (recorded: auto-merge {tr['merged_by'].get('auto', 0)}, by hand {tr['merged_by'].get('hand', 0)}); reviews sent back {tr['fixes']} of {tr['fixes'] + tr['passes']}; "
              f"to the orchestrator after 3 RED reviews: {tr.get('red_escalated', 0)}; canary PRs merged {tr.get('canary', 0)} (not counted above)",
              f"Average: build {S.fmt(m['avg_build'])}, review {S.fmt(m['avg_review'])}, start to merge {S.fmt(m['avg_merge'])}",
              f"Bugs found by the tester: {m['bug_sources']['tester']} · reported by the owner from the live game: {m['bug_sources']['owner']}"]
     d = m["last_deploy"]
     if m.get("privacy"): lines.append(m["privacy"])                     # #783: privacy scrub: on (N names) | no names file · ALARM
     if m.get("github"): lines.append(m["github"])                     # #329: calls/min, graphql/core left, alarm < 20%
+    if m.get("progress"): lines.append(m["progress"])                  # #891: NEEDS-ATTENTION: no progress Nh
     if m.get("canary"): lines.append("Canary: " + m["canary"])          # #330: flow ok HH:MM | NEEDS-ATTENTION ...
     if m.get("usage"): lines.append(m["usage"])                         # #708: usage per entity (top rows, NEEDS-ATTENTION)
+    import backoff; lines += backoff.lines()                           # #842: backoff: <job> next try HH:MM
     if m.get("pc"): lines.append(m["pc"])                               # #293: PC: CPU x% · RAM y% free (· ALARM)
     v = m.get("voice")                                                  # #400: kid sentences with no recording (after the last pregen)
     if v and v["n"]: lines.append(f"Voice: {v['text']} (first 20 in the deploy log)")
@@ -543,7 +546,7 @@ def page(m):
             f'<title>Oren game: status {hhmm(now)}</title><style>{CSS}</style></head><body><main>'
             f'<h1>Oren game: work status</h1><div class="sub">Updated {time.strftime("%a %d %b %H:%M", time.localtime(now))} (Israel time). '
             f'For fresh numbers run tools\\dashboard.cmd again.</div>'
-            f'{top}<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}{" · " + e(m["governor"]) if m.get("governor") else ""}</div>{pc_div(m.get('privacy'), e)}{f'<div class="sub">{e(m["github"])}</div>' if m.get("github") else ""}{f'<div class="sub">Canary: {e(m["canary"])}</div>' if m.get("canary") else ""}{pc_div(m.get('pc'), e)}{f'<pre class="sub"{chr(32)}style="white-space:pre-wrap">{e(m["usage"])}</pre>' if m.get("usage") else ""}{qcard}{needs}{bottom}{timeline}{cloud}{_health_card(m)}{_ai_card(m)}'
+            f'{top}<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}{" · " + e(m["governor"]) if m.get("governor") else ""}</div>{pc_div(m.get('privacy'), e)}{f'<div class="sub">{e(m["github"])}</div>' if m.get("github") else ""}{f'<div class="sub">{e(m["progress"])}</div>' if m.get("progress") else ""}{f'<div class="sub">Canary: {e(m["canary"])}</div>' if m.get("canary") else ""}{pc_div(m.get('pc'), e)}{f'<pre class="sub"{chr(32)}style="white-space:pre-wrap">{e(m["usage"])}</pre>' if m.get("usage") else ""}{qcard}{needs}{bottom}{timeline}{cloud}{_health_card(m)}{_ai_card(m)}'
             f'<h2 class="more">More details</h2><div class="sub">Everything else is here. Click a line to open it.</div>'
             f'{lists}{recent}{truth}{charts}{speed}{_ov_card(m)}{how}</main></body></html>')
 
@@ -754,6 +757,8 @@ def gather():
     except Exception: m["usage"] = ""
     try: m["canary"] = json.loads((R.RUNS / "canary.json").read_text(encoding="utf-8")).get("text", "")   # #330 (written by canary.py)
     except Exception: m["canary"] = ""
+    try: m["progress"] = json.loads((R.RUNS / "progress_alarm.json").read_text(encoding="utf-8")).get("text", "")   # #891
+    except Exception: m["progress"] = ""
     import pcload; m["pc"] = pc_line(pcload.load(), now)    # #293 (written by the watchdog)
     m["voice"] = ci_voice() if ci else None                # #400
     return m
@@ -761,9 +766,11 @@ def gather():
 def ai_tick(log=print):
     """Watchdog hook: refresh the AI assessment when it is older than AI_EVERY_MIN (call it in a background thread)."""
     a = ai_load()
-    if a and time.time() - a.get("at", 0) < AI_EVERY_MIN * 60: return
+    if a and time.time() - a.get("at", 0) < AI_EVERY_MIN * 60: return None
     m = gather()
-    log("ai assessment " + ("refreshed" if ai_refresh(text(m) + "\n" + ov_text(m["ov"])) else "failed"))
+    ok = bool(ai_refresh(text(m) + "\n" + ov_text(m["ov"])))
+    log("ai assessment " + ("refreshed" if ok else "failed"))
+    return ok     # #842: the watchdog backs off while it fails
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8")

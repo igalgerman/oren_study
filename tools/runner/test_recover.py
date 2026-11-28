@@ -60,6 +60,13 @@ cwd, a = rc.control_argv("orchestrator", "C:/work/Oren_study/a", "P")
 assert a[:7] == ["claude", "--model", "sonnet", "--remote-control", "oren-orchestrator", "--plugin-dir", "P"]
 cwd, a = rc.control_argv("executor", "C:/work/Oren_study/a", "P")
 assert cwd == "C:/work/Oren_study/a" and a[:5] == ["claude", "--model", "opus", "--remote-control", "oren-executor"] and "EXECUTOR.md" in a[5] and "executor" in rc.CONTROL
+# #850: model_dir -> --plugin-dir right after oren-<role> for inspector/executor/inbox, prompt still last; orchestrator and watchdog unchanged
+for role in ("inspector", "executor", "inbox"):
+    _, a0 = rc.control_argv(role, "C:/work/Oren_study/a", "P"); _, a1 = rc.control_argv(role, "C:/work/Oren_study/a", "P", model_dir="MD")
+    assert a1[:5] == a0[:5] and a1[5:7] == ["--plugin-dir", "MD"] and a1[7:] == a0[5:] and a1[-1] == a0[-1] and "P" not in a1, (role, a1)
+_, ao = rc.control_argv("orchestrator", "C:/work/Oren_study/a", "P", model_dir="MD")
+assert "MD" not in ao and ao == rc.control_argv("orchestrator", "C:/work/Oren_study/a", "P")[1]
+assert rc.control_argv("watchdog", "M", "P", python="py", watchdog="W", model_dir="MD")[1] == ["py", "W"]
 assert rc.control_argv("watchdog", "M", "P", python="py", watchdog="W")[1] == ["py", "W"]
 h = rc.hc_run_args("inbox", "C:/m", ["claude"], "sp1")
 assert h[:4] == ["run", "--bg", "--no-parent", "--outlive-parent"] and "herdr.space=sp1" in h and h[-1] == "claude"
@@ -190,4 +197,14 @@ assert calls[0] == ("rm", "t:9") and calls[1] == ("start", "inbox"), calls
 calls.clear()   # #332: finished 'inspector' row + live unnamed inspector (label name=inspector, status done) -> no rm, no restart
 W.check_control([T("inspector", "finished", "t:4"), {"name": "", "state": "live", "status": "done", "address": "t:7", "labels": {"name": "inspector"}}])
 assert calls == [], calls
+# #863: role files live in the repo; ensure_handoff creates the live file only when missing
+repo = Path(__file__).resolve().parents[2]
+assert "docs/roles/EXECUTOR.md" in rc.EXECUTOR_PROMPT and (repo / "docs/roles/EXECUTOR.md").is_file()
+tpl = repo / "docs/roles/INSPECTOR_HANDOFF.template.md"
+assert tpl.read_text(encoding="utf-8").rstrip().endswith("## UPDATE")
+with tempfile.TemporaryDirectory() as d:
+    live = Path(d) / "sub" / "H.md"
+    assert rc.ensure_handoff(live, tpl) is True and live.read_bytes() == tpl.read_bytes()
+    live.write_text("live state", encoding="utf-8")
+    assert rc.ensure_handoff(live, tpl) is False and live.read_bytes() == b"live state"
 print("ok")

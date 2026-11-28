@@ -34,6 +34,16 @@ def names():
         if n and not n.startswith("#") and n.lower() not in seen: seen.add(n.lower()); res.append(n)
     return res
 
+MISSING = ("privacy scrub: the names list is empty (#876): set env PRIVATE_NAMES (comma list; a GitHub Actions secret, a cloud "
+           "environment variable) or the private_names.txt file")
+
+def require(ns=None):
+    """#876: loud when no names are configured (the scrub would silently replace nothing). Raises RuntimeError with a clear
+    message; never prints or includes the names. -> the number of names."""
+    ns = names() if ns is None else ns
+    if not ns: raise RuntimeError(MISSING)
+    return len(ns)
+
 # a match must not touch a word/path character before, and not continue into a word, path, URL or hyphenated name after
 _BEFORE = r"(?<![\w/\\@#~.\-])"
 _AFTER = r"(?![\w" + _NIKUD + r"]|[/\\_\-]\w|\.\w|://)"
@@ -129,11 +139,11 @@ def _save(d):
     except OSError: pass
 
 def warn_once(now=None, say=None):
-    """No names: ONE warning per day (log line + say). -> True when it warned."""
+    """No names: ONE warning per hour (log line + say). -> True when it warned."""
     now = time.time() if now is None else now
-    day, st = time.strftime("%Y-%m-%d", time.localtime(now)), _load()
-    if st.get("warned") == day: return False
-    st["warned"] = day; _save(st)
+    st = _load()
+    if now - st.get("warned_at", 0) < 3600: return False                      # #876: once per hour
+    st["warned_at"] = now; _save(st)
     try:
         RUNS.mkdir(parents=True, exist_ok=True)
         with open(RUNS / "privacy_scrub.log", "a", encoding="utf-8") as f:
@@ -192,3 +202,7 @@ def sweep_due(now=None):
 
 def add_fixes(n):
     if n: st = _load(); st["fixes"] = st.get("fixes", 0) + n; _save(st)
+
+if __name__ == "__main__" and sys.argv[1:] == ["require"]:     # python3 tools/runner/scrub.py require  (CI steps, setup checks)
+    try: print(f"privacy scrub: {require()} names ok")
+    except RuntimeError as e: print(e, file=sys.stderr); sys.exit(1)
