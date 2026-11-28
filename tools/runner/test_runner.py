@@ -1677,6 +1677,39 @@ assert _ev713 == [("parked", {"model": "sonnet", "effort": "medium", "colour": "
                   ("review_pass", {"model": "sonnet", "effort": "medium", "colour": "purple"})], _ev713
 assert "stat_purple(n, lane, extra, me)" in inspect.getsource(r.process_locked)
 
+# #747: draft PR early; a draft PR without RESULT = resume at worker; DONE without PR -> the runner opens it
+_p = r.remote_worker_prompt(7, "pack")
+assert "--draft" in _p and "first green commit" in _p and "gh pr ready" in _p
+_tasks = []
+def _fs(n, task, cwd): _tasks.append(task); return {"ok": True, "session": "s", "url": "u"}
+r.remote_worker(7, "pack", False, _fs, lambda: {"state": "done", "line": "RESULT: DONE"}, lambda s: None, lambda: 0, 60, 30, has_draft=lambda: 5)
+assert "continue from it" in _tasks[-1] and "draft PR" in _tasks[-1]            # draft PR exists -> continue on lane/7
+r.remote_worker(7, "pack", False, _fs, lambda: {"state": "done", "line": "RESULT: DONE"}, lambda s: None, lambda: 0, 60, 30, has_draft=lambda: None)
+assert "continue from it" not in _tasks[-1]                                      # no draft -> fresh start
+_sv = (r.gh, r.run, r.find_pr)
+try:
+    _g = []
+    r.find_pr = lambda n: 5                       # pass level: a draft PR (no RESULT) is not resumed into review; a ready PR is
+    r.gh = lambda *a, **k: (0, json.dumps({"number": 5, "state": "OPEN", "isDraft": True}))
+    assert r.resume_lookup(7) is None
+    _ch = r.open_pr_resumes([{"number": 7}], r.resume_lookup)
+    assert _ch == [{"number": 7}] and not r._resume_file(7, "resume").exists()   # started as a worker, no resume=review stored
+    r.gh = lambda *a, **k: (0, json.dumps({"number": 5, "state": "OPEN", "isDraft": False, "mergeable": "MERGEABLE", "headRefOid": "x", "commits": [], "comments": []}))
+    assert r.resume_lookup(7) is not None
+    _g = []
+    r.find_pr = lambda n: 5                                                                    # also a claude/* PR
+    r.gh = lambda *a, **k: (_g.append(a), (0, json.dumps({"isDraft": True}) if a[:2] == ("pr", "view") else ""))[1]
+    assert r.draft_pr(7) == 5 and r.ensure_pr_ready(7) == 5 and ("pr", "ready", "5") in _g     # DONE + draft -> marked ready
+    _g.clear(); _made = []
+    r.gh = lambda *a, **k: (_g.append(a), (0, ""))[1]
+    r.find_pr = lambda n: 9 if any(x[:2] == ("pr", "create") for x in _g) else None
+    r.run = lambda cmd, **k: (0, "abc\trefs/heads/lane/7\n")
+    assert r.ensure_pr_ready(7) == 9 and any(x[:2] == ("pr", "create") and "Fixes #7" in x[-1] for x in _g)   # DONE, pushed, no PR -> runner opens it
+    _g.clear(); r.find_pr = lambda n: None; r.run = lambda cmd, **k: (0, "")
+    assert r.ensure_pr_ready(7) is None and not any(x[:2] == ("pr", "create") for x in _g)    # nothing pushed -> still blocked
+finally: r.gh, r.run, r.find_pr = _sv
+print("ok #747 draft PR resume + runner opens PR")
+
 # #711 budget pressure p and shift (0 or +1, never lower)
 for _p, _s in ((0.3, 0), (0.8, 0), (1.0, 0), (1.5, 1)):      # need = p * b * N_hi with b 0.2, N_hi 10
     _pp, _sh = r.budget_shift(_p * 2.0, 0.2, 10); assert abs(_pp - _p) < 1e-9 and _sh == _s, (_p, _pp, _sh)
