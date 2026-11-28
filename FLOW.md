@@ -32,7 +32,7 @@ Test level (#618): just before the VERDICT line the reviewer writes one line `TE
 - `T0` none: docs/tooling only;
 - `T1` smoke: one kid screen, no shared code;
 - `T2` flows: touches voice/sound, help, the mission picker, a screen used by many activities, or kid-facing text at scale;
-- `T3` live two-device: touches sync/save, parent ↔ kid commands, time limits, or the parent panel.
+- `T3` live two-device: touches sync/save, parent ↔ kid commands, time limits, or the parent panel. #746: a PR touching sync, speech (`say`, `hush`) or the home redraw is raised to T3 by `tester.raise_level` whatever the reviewer wrote (list: `T3_FILES`/`T3_CODE` in tools/runner/tester.py).
 A missing (or unknown) TEST line counts as `T2` (`tools/runner/tester.py parse_level`).
 
 ## If you are a TESTER (cloud session `test-<n>`, #618)
