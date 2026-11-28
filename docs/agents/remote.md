@@ -90,3 +90,14 @@ qwin does not send the answer itself for these issues (no double send); a cloud 
   counts as running for `conflicts.RESOLVE_WAIT_MIN` = 40 min while the head does not move) and the resolve / red-CI fix inside a
   cloud lane's flow (`runner.remote_task`). Local `run-<n>` lanes (`local_lanes`) keep their local worker.
 - The orchestrator's reviews and fixes: `runner.py <n> --cloud-review` / `runner.py <n> --cloud-fix="<points>"` (ORCHESTRATOR.md).
+
+## Play log key for cloud sessions (#715)
+- Cloud sessions (runner lanes, reviews, scheduled tasks) read the play log with the environment variable `LOG_READ_KEY`: set it in
+  the Claude Code cloud environment (claude.ai/code > the environment > edit > environment variables), same value as the Cloudflare
+  Pages secret `LOG_READ_KEY` (project oren-game) and the PC's `.env`. The owner sets it; no session ever sees or writes the value.
+- It is **read-only**: `oren2/cf/tools/make_worker.py` accepts it for GET under `/api/log` only; every write is refused
+  (`oren2/tests/eventlog.test.js`).
+- Use `python3 tools/playlog.py day YYYY-MM-DD` (reads the variable first, then `.env`) or `GET /api/log/summary` with header
+  `x-admin-key: $LOG_READ_KEY`. Never print, log, commit or post the key. Not set: `playlog.py` prints the single line
+  `LOG_READ_KEY missing in the cloud environment` and stops (no 401 loop); report that line, do not ask for the key.
+- Comments and issues get aggregates only (counts, ids, times), never raw events or kid answers.
