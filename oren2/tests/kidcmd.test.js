@@ -166,6 +166,16 @@ const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout:
     ok('a tap on the phone reaches the laptop (synced)', r.syn > 0, JSON.stringify(r));
     ok('the laptop does not speak because of a tap on the phone', !r.said, JSON.stringify(r));
     ok('the laptop does not stop its own speech or change screen because of a tap on the phone', !r.cancels && r.home && !r.kid.length, JSON.stringify(r)); }
+  // ---------- #746: the same, with a mission done on the phone, while the laptop is on a mission screen (not home) ----------
+  await A.evaluate(id => { window.__fast = true; window.TAL_step(window.TAL.S().daily.t.indexOf(id)); }, ids.e); await sleep(600);
+  await A.evaluate(() => { window.__fast = false; window.__kidUI = []; window.__cancels = 0; window.__scr = document.querySelector('.screen:not([hidden])') && document.querySelector('.screen:not([hidden])').id; window.__syn = 0; });
+  const said1 = await A.evaluate(() => window.__autoSaid || 0);
+  await B.evaluate(() => { const O = window.OREN, d = window.TAL.S().daily, i = d.done.findIndex(x => !x); if (i >= 0) d.done[i] = 1; O.addGems(2); O.persist(); O.famNow(); }); await sleep(800);
+  await pullA(); await sleep(1500);
+  { const r = await A.evaluate(s0 => ({ said: (window.__autoSaid || 0) > s0, cancels: window.__cancels, scr: (document.querySelector('.screen:not([hidden])') || {}).id, was: window.__scr, kid: window.__kidUI.slice() }), said1);
+    await A.evaluate(() => { window.__fast = true; });
+    ok('a mission done on the phone: the laptop on a mission screen stays there (no redraw to another screen)', r.scr === r.was && !r.kid.length, JSON.stringify(r));
+    ok('... and does not speak or cut its speech', !r.said && !r.cancels, JSON.stringify(r)); }
   ok('no page errors', !errs.length, errs.join(' | '));
   await b.close(); srv.close();
   console.log(res.join('\n')); const f = res.filter(x => x.startsWith('FAIL')).length; console.log('RESULT kidcmd', res.length - f, f); process.exit(f ? 1 : 0);

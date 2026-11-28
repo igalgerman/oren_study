@@ -1,6 +1,9 @@
 # Unit test for the selection logic: python tools/runner/test_runner.py
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
+import re, trust   # #800: old fixtures have no author: default them to the owner (explicit authors still count; test_trust.py covers the real rules)
+_login = trust.login
+trust.login = lambda c: _login(c) or (("oren-study-bot" if re.match(r"\s*(OWNER ANSWER|ANSWERED)", c.get("body") or "") or "owner-answer:" in (c.get("body") or "") else "igalgerman") if isinstance(c, dict) else "")
 import subprocess as _sp; _real_popen = _sp.Popen; _pregen_popens = []
 class _NoPregenPopen(_real_popen):                 # #325: fail if any test path launches the real node pregen.js
     def __init__(self, args, *a, **k):
@@ -811,11 +814,15 @@ _ps = [r.remote_worker_prompt(64, "pack"), r.worker_prompt(64, "pack"), r.remote
        r.remote_fix_prompt(64, "FIX x"), r.ci_fix_prompt(64, []), r.resolve_prompt(64, []), r.remote_resolve_prompt(64, []),
        r.remote_resolve_prompt(64, [], ci=True), r.tester.prompt(64, 557, "T1", "u")]
 for _p in _ps: assert r.NO_MERGE in _p, _p[:80]
+# #808: no cloud prompt may make the owner's phone ask for an approval (Artifact tool, screenshots on public GitHub)
+for _p in _ps: assert r.remote.NO_APPROVAL in _p, _p[:80]
+assert "Artifact" in r.remote.NO_APPROVAL and "RESULT" in r.remote.NO_APPROVAL and "VERDICT" in r.remote.NO_APPROVAL and "public GitHub" in r.remote.NO_APPROVAL
 assert "gh pr merge" in r.NO_MERGE and "Bash(gh pr merge:*)" in r.DENY_TOOLS
 _sent = []
 r.remote_resume(64, "pack", False, "s1", "yes", lambda s, t: _sent.append(t) or {"ok": True}, None,
                 lambda: {"state": "done", "line": "RESULT: DONE x"}, lambda s: None, lambda: 0)
 assert _sent and r.NO_MERGE in _sent[0], "#557: the answer relay to the resumed session forbids merging"
+assert r.remote.NO_APPROVAL in _sent[0], "#808: the answer relay carries the no-approval rule"
 _ag = _src.split("def agent(", 1)[1].split("\ndef ", 1)[0]
 assert '"--disallowedTools", *DENY_TOOLS' in _ag
 # the orchestrator's hand merge goes through the same guard: tools/runner/merge.py <pr>
@@ -868,6 +875,23 @@ _G = {"stale_s": 900}
 def _u(pct, reset_h, week=None, week_reset_h=24 * 6, age=60):
     return {"five_h_pct": pct, "five_h_reset": _iso(_now + reset_h * 3600), "week_pct": week, "week_reset": _iso(_now + week_reset_h * 3600), "at": _iso(_now - age)}
 def _ux(week, H, age=60): return {"five_h_pct": None, "week_pct": week, "week_reset": _iso(_now + H * 3600), "at": _iso(_now - age)}   # Ultra: week bucket only
+# #712 owner override: only the lane count moves, inside the core's bounds
+_g0 = r.governor(_ux(40, 80), [], _now, _G, busy=3, ready=9)
+_o = lambda m, **k: r.override_make(m, _now, **k)
+g = r.override_apply(_g0, _o("fast"), _now)[0]; assert g["lanes"] == _g0["n_hi"] == 12 and g["override"]["mode"] == "fast", g
+_gs = r.governor(_ux(98, 80), [], _now, _G, busy=3, ready=9); assert _gs["stop"], _gs                      # W 98 >= week_stop: fast cannot start anything
+g = r.override_apply(_gs, _o("fast"), _now)[0]; assert g["stop"] and g["lanes"] == _gs["lanes"], g
+g, ex = r.override_apply(_g0, _o("fast"), _now + 3 * 3600 + 1); assert ex == "expired" and g["lanes"] == _g0["lanes"] and "override" not in g   # expiry -> normal
+assert r.override_apply(_g0, _o("fast", until_reset=True), _now + 80 * 3600 + 1)[1] == "expired"
+g = r.override_apply(_g0, _o("fast", until_reset=True), _now + 3600)[0]; assert g["lanes"] == 12 and g["override"]["until_reset"]
+assert r.override_apply(_g0, _o("20"), _now)[0]["lanes"] == _g0["n_hi"]                                    # lanes 20 -> clamped to N_hi
+assert r.override_apply(_g0, _o("2"), _now)[0]["lanes"] == 2
+g = r.override_apply(_g0, _o("save"), _now)[0]; assert g["lanes"] == max(_g0["n_lo"], round(0.6 * _g0["n_week"])) < _g0["n_hi"], g
+for m in ("fast", "save", "5", "normal"):                                                                  # models and efforts are never touched
+    g = r.override_apply(_g0, _o(m), _now)[0]; assert {k: v for k, v in g.items() if k not in ("lanes", "why", "override")} == {k: v for k, v in _g0.items() if k not in ("lanes", "why")}, m
+assert r.override_make("bogus", _now) is None and r.parse_for("3h") == 10800 and r.parse_for("90m") == 5400 and r.parse_for("x") is None
+assert "mode FAST until" in r.governor_text(r.override_apply(_g0, _o("fast"), _now)[0])
+print("ok #712 owner override")
 # #705 even pacing: 80h left, week 40%, 3 busy lanes, 9 ready -> need (94-40-0.3)/80-0.1 = 0.57 %/h -> ~3 lanes
 g = r.governor(_ux(40, 80), [], _now, _G, busy=3, ready=9); assert g["lanes"] == 3 and g["mode"] == "week-only" and abs(g["need"] - 0.5712) < 0.001 and g["n_hi"] == 12, g
 t = r.governor_text(g); assert t == "governor: 3 lanes: week 40%, behind pace (need 0.6%/h), 9 ready, reserve 5% · b̂ 0.20%/h (prior) · p 0.24 budget: tight, fewer lanes", t
@@ -1343,7 +1367,7 @@ assert r.remote_resume(7, "pack", False, "session_w", "green", lambda s, x: sent
 assert sent[0][0] == "session_w" and "green" in sent[0][1] and "RESULT: DONE" in sent[0][1] and not starts
 kept = []
 assert r.remote_resume(7, "pack", False, "session_w", "green", lambda s, x: {"ok": False}, _st, done, lambda s: None, lambda: 0, on_start=kept.append) == "RESULT: DONE https://p"
-assert len(starts) == 1 and "green" in starts[0] and "gh issue view 7" in starts[0] and "lane/7" in starts[0] and kept[0]["session"] == "session_new"
+assert len(starts) == 1 and "green" in starts[0] and "view.py issue 7" in starts[0] and "lane/7" in starts[0] and kept[0]["session"] == "session_new"
 assert r.remote_resume(7, "pack", False, "", "green", lambda s, x: 1 / 0, _st, done, lambda s: None, lambda: 0) == "RESULT: DONE https://p"
 assert r.remote_resume(7, "pack", False, "", "g", None, lambda n, t, c: {"ok": False, "error": "limit"}, done, lambda s: None, lambda: 0).startswith("RESULT: STUCK")
 assert r.remote_resume(7, "pack", False, "s", "g", lambda s, x: {"ok": True}, _st, lambda: {"state": "question", "line": "QUESTION: c?"}, lambda s: None, lambda: 0) == "QUESTION: c?"
@@ -1489,24 +1513,33 @@ assert r.remote.fixes("Fixes #7", 7) and not r.remote.fixes("Fixes #70", 7)
 _saved = {k: getattr(r, k) for k in ("gh",)}
 try:                                                                                   # the DONE step with a fake gh: always closes
     _calls = []
-    def _lab(names):
+    def _lab(names, comments=()):
         _calls.clear()
         def g(*a, **k):
             _calls.append(a)
-            if a[:2] == ("issue", "view"): return 0, json.dumps({"labels": [{"name": x} for x in names]})
+            if a[:2] == ("issue", "view"): return 0, json.dumps({"labels": [{"name": x} for x in names], "comments": [{"body": c} for c in comments]})
             return 0, ""
         return g
-    for _names in (["pack", "later"], ["pack"]):                                       # also an issue that had 'later'
-        r.gh = _lab(_names); assert r.finish_issue(7, "Merged.") is True
-        assert ("issue", "close", "7", "--comment", "Merged.") in _calls, _calls
-        assert not any(a[:2] == ("issue", "comment") for a in _calls), _calls
+    closes = lambda: ("issue", "close", "7", "--comment", "Merged.") in _calls
+    # #744: no LIVE line and no proof -> stays open; a LIVE comment line -> closes; docs/tooling exempt
+    r.gh = _lab(["pack"]); assert r.finish_issue(7, "Merged.") is False and not any(a[:2] == ("issue", "close") for a in _calls), _calls
+    r.gh = _lab(["pack"], ["LIVE seen ok"]); assert r.finish_issue(7, "Merged.") is False      # not a `LIVE:` line
+    r.gh = _lab(["pack", "later"], ["x\nLIVE: kid screen seen on production 2026-11-28"]); assert r.finish_issue(7, "Merged.") is True and closes(), _calls
+    r.gh = _lab(["pack", "tooling"]); assert r.finish_issue(7, "Merged.") is True and closes(), _calls
+    # automatic proof: ok -> LIVE line goes into the close comment; none (could not run) -> closes with the 'not checked' line; failed -> open + back to a worker
+    r.gh = _lab(["pack"]); assert r.finish_issue(7, "Merged.", live=(True, "LIVE: smoke ok")) is True
+    assert ("issue", "close", "7", "--comment", "Merged.\nLIVE: smoke ok") in _calls, _calls
+    r.gh = _lab(["pack"]); assert r.finish_issue(7, "Merged.", live=(None, "LIVE: not checked: no network")) is True
+    r.gh = _lab(["pack"]); assert r.finish_issue(7, "Merged.", live=(False, "LIVE check FAILED")) is False
+    assert not any(a[:2] == ("issue", "close") for a in _calls) and any("ready-for-agent" in a for a in _calls), _calls
+    assert r.has_live_line(["a", "LIVE: x"]) and not r.has_live_line(["live: x", "LIVE:"])
 finally:
     for k, v in _saved.items(): setattr(r, k, v)
 _src = open(r.__file__, encoding="utf-8").read()
-assert 'finish_issue(n, f"Merged to' in _src and 'gh("issue", "close", str(n), "--comment", f"Merged to' not in _src   # the run's DONE step uses it
+assert 'finish_issue(n, f"Merged to' in _src and 'gh("issue", "close", str(n), "--comment", f"Merged to' not in _src and "live=live_proof()" in _src   # the run's DONE step uses it
 _i = _src.index('finish_issue(n, f"Merged to')
 assert _src.rindex("deploy_main(log)", 0, _i) < _i                                     # closes only after the merge + deploy step
-print("ok #652 close on merge + deploy, no later rule")
+print("ok #652 close on merge + deploy, #744 only with a LIVE line")
 assert _pregen_popens == [], _pregen_popens          # #325: no test path launched the real pregen.js
 print("ok #325 no real pregen under tests")
 
@@ -1660,6 +1693,39 @@ assert _ev713 == [("parked", {"model": "sonnet", "effort": "medium", "colour": "
                   ("review_pass", {"model": "sonnet", "effort": "medium", "colour": "purple"})], _ev713
 assert "stat_purple(n, lane, extra, me)" in inspect.getsource(r.process_locked)
 
+# #747: draft PR early; a draft PR without RESULT = resume at worker; DONE without PR -> the runner opens it
+_p = r.remote_worker_prompt(7, "pack")
+assert "--draft" in _p and "first green commit" in _p and "gh pr ready" in _p
+_tasks = []
+def _fs(n, task, cwd): _tasks.append(task); return {"ok": True, "session": "s", "url": "u"}
+r.remote_worker(7, "pack", False, _fs, lambda: {"state": "done", "line": "RESULT: DONE"}, lambda s: None, lambda: 0, 60, 30, has_draft=lambda: 5)
+assert "continue from it" in _tasks[-1] and "draft PR" in _tasks[-1]            # draft PR exists -> continue on lane/7
+r.remote_worker(7, "pack", False, _fs, lambda: {"state": "done", "line": "RESULT: DONE"}, lambda s: None, lambda: 0, 60, 30, has_draft=lambda: None)
+assert "continue from it" not in _tasks[-1]                                      # no draft -> fresh start
+_sv = (r.gh, r.run, r.find_pr)
+try:
+    _g = []
+    r.find_pr = lambda n: 5                       # pass level: a draft PR (no RESULT) is not resumed into review; a ready PR is
+    r.gh = lambda *a, **k: (0, json.dumps({"number": 5, "state": "OPEN", "isDraft": True}))
+    assert r.resume_lookup(7) is None
+    _ch = r.open_pr_resumes([{"number": 7}], r.resume_lookup)
+    assert _ch == [{"number": 7}] and not r._resume_file(7, "resume").exists()   # started as a worker, no resume=review stored
+    r.gh = lambda *a, **k: (0, json.dumps({"number": 5, "state": "OPEN", "isDraft": False, "mergeable": "MERGEABLE", "headRefOid": "x", "commits": [], "comments": []}))
+    assert r.resume_lookup(7) is not None
+    _g = []
+    r.find_pr = lambda n: 5                                                                    # also a claude/* PR
+    r.gh = lambda *a, **k: (_g.append(a), (0, json.dumps({"isDraft": True}) if a[:2] == ("pr", "view") else ""))[1]
+    assert r.draft_pr(7) == 5 and r.ensure_pr_ready(7) == 5 and ("pr", "ready", "5") in _g     # DONE + draft -> marked ready
+    _g.clear(); _made = []
+    r.gh = lambda *a, **k: (_g.append(a), (0, ""))[1]
+    r.find_pr = lambda n: 9 if any(x[:2] == ("pr", "create") for x in _g) else None
+    r.run = lambda cmd, **k: (0, "abc\trefs/heads/lane/7\n")
+    assert r.ensure_pr_ready(7) == 9 and any(x[:2] == ("pr", "create") and "Fixes #7" in x[-1] for x in _g)   # DONE, pushed, no PR -> runner opens it
+    _g.clear(); r.find_pr = lambda n: None; r.run = lambda cmd, **k: (0, "")
+    assert r.ensure_pr_ready(7) is None and not any(x[:2] == ("pr", "create") for x in _g)    # nothing pushed -> still blocked
+finally: r.gh, r.run, r.find_pr = _sv
+print("ok #747 draft PR resume + runner opens PR")
+
 # #711 budget pressure p and shift (0 or +1, never lower)
 for _p, _s in ((0.3, 0), (0.8, 0), (1.0, 0), (1.5, 1)):      # need = p * b * N_hi with b 0.2, N_hi 10
     _pp, _sh = r.budget_shift(_p * 2.0, 0.2, 10); assert abs(_pp - _p) < 1e-9 and _sh == _s, (_p, _pp, _sh)
@@ -1669,3 +1735,16 @@ _g2 = r.governor(_ux(1, 80), [], _now, _G, busy=3, ready=1); assert _g2["p"] > 1
 _gl = [r.governor(_ux(w, 80), [], _now, _G, busy=3, ready=9) for w in (10, 40, 70)]
 assert _gl[0]["p"] > _gl[1]["p"] > _gl[2]["p"] and _gl[0]["lanes"] >= _gl[1]["lanes"] >= _gl[2]["lanes"] and _gl[0]["lanes"] > _gl[2]["lanes"], _gl   # p falls -> fewer lanes
 assert all(x["shift"] in (0, 1) for x in _gl)
+
+# #719 budget shift at start: behind (+1) raises a core worker above the floors; tight (0) changes nothing; never lowers; an upgraded task keeps its rung
+assert r.apply_shift(1, "sonnet", "medium", "core") == ("sonnet", "high")                       # behind: Sonnet core task -> high
+assert r.apply_shift(0, "sonnet", "medium", "core") == ("sonnet", "medium")                     # tight: labels as they are
+assert r.apply_shift(1, "sonnet", "medium", "pack") == ("sonnet", "medium")                     # not core: unchanged
+assert r.apply_shift(-1, "sonnet", "high", "core") == ("sonnet", "high")                        # no negative shift
+for _m, _e in (("sonnet", "medium"), ("sonnet", "high"), ("opus", "medium"), ("opus", "xhigh"), ("fable", "high")):
+    for _s in (0, 1):
+        _m2, _e2 = r.apply_shift(_s, _m, _e, "core"); assert r._rung_index(_m2, _e2) >= r._rung_index(_m, _e) or _m == "fable", (_m, _e, _s)
+assert r.floors("worker", *r.apply_shift(1, "opus", "high", "core"), labels=()) [1] in ("high", "xhigh")   # a floor is never lowered
+_src719 = inspect.getsource(r.process_locked)
+assert "if not upgrade:" in _src719 and "apply_shift(shift" in _src719 and "shift=shift" in _src719 and '", shift +1"' in _src719   # upgraded task keeps its rung; shown in stat + comment
+assert r.governor_now(now=0)["shift"] in (0, 1)

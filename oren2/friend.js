@@ -129,8 +129,9 @@ function missionStart(card,hasLead,q){const k=task;let line='',ev=null;
   if(k&&!seen()[k.k]){seen()[k.k]=1;O.persist();line=k.intro;ev='newtype';if(goalT)O.sayNow=FR.noGoal(O.sayNow);}
   else if(!hasLead&&ownOk())line=START;
   if(!line)return;
+  window.__autoSaid=Date.now()+2000;   /* #767 claim the screen's auto-read now: on a slow machine its 300 ms check could run before the timer below and say the question first, then again after him */
   /* after the screen's auto-read has seen its instruction: the friend first, then the instruction (auto-read then skips) */
-  setTimeout(()=>{if(card&&!card.isConnected)return;if(!ev&&String(O.sayNow||'').includes(GSEP))return;   /* a goal / story clip came meanwhile: that is the sentence */
+  setTimeout(()=>{if(card&&!card.isConnected||!ev&&String(O.sayNow||'').includes(GSEP)){window.__autoSaid=0;return;}   /* a goal / story clip came meanwhile: that is the sentence */
     ownAt=Date.now();if(ev)event(ev,line,{ms:4000});else talk(line,{ms:3000});
     if(O.sayNow&&!window.__noAuto&&!(q&&q.auto&&q.play))O.say(O.sayNow);},D(150));}   /* a question that plays itself (q.auto) does so, after him */
 FR.START=START;FR.SHOWN=SHOWN;FR.HELPTAP=HELPTAP;FR.task=()=>task&&task.k;FR._own=t=>{ownAt=t==null?-1e9:t;};
@@ -145,7 +146,8 @@ FR.stepStart=i=>{const d=daily();if(!d||i==null||i<0||i>=d.t.length){cur=null;re
   const dn=d.done.slice(d.bs|0),left=dn.filter(x=>!x).length,first=!dn.some(Boolean);
   /* #412 the latest piece he collected comes along: its own clip before the scene's opening line */
   const it=window.SHIP&&SHIP.latest&&SHIP.latest(),carry=it?SHIP.carrySay(it.i)+GSEP:'';
-  lead=SM()&&isScene(cur.id)?carry+(first?FIRST+' ':left<=1?LAST+' ':'')+(SM().lead?SM().lead():SM().scene().open):'';PATHBAR.render();};
+  lead=SM()&&isScene(cur.id)?carry+(first?FIRST+' ':left<=1?LAST+' ':'')+(SM().lead?SM().lead():SM().scene().open):'';PATHBAR.render();
+  if(lead&&O.save&&!O.save.mixIntro&&(!navigator.webdriver||window.__mixIntro)){const l=lead;lead='';FR.mixIntro(()=>{if(cur&&cur.i===i){lead=l;leadOnScreen();}});}};
 FR.stepCheck=()=>{if(!cur)return;const d=daily();if(!d||d.d!==cur.d||d.t[cur.i]!==cur.id||!d.done[cur.i]||cur.done)return;cur.done=1;PATHBAR.render();
   if(!SM()||!isScene(cur.id))return;const sc=SM().scene(),close=sc.close;SM().advance();
   const t=d.done.slice(d.bs|0).every(Boolean)?close+' '+ALL:close;
@@ -220,14 +222,44 @@ function storyPic(card,sc){const S=window.SHIP;if(!S||!S.el||card.querySelector(
   if(getComputedStyle(card).position==='static')card.style.position='relative';card.appendChild(e);e._t=setTimeout(end,D(PICMS));}
 FR.inStep=()=>!!cur;FR.lead=t=>{lead=t;};FR._lead=t=>{const x=lead;if(t!=null)lead=t;return x;};
 
+/* #663 the story must come across: who (the Mixer), what to do, where we are, what happened.
+   - the opening (once, save.mixIntro): the Mixer's picture + 3 short spoken lines (about 15 s), one button 'let's go' that also skips it;
+   - the strip in the top bar shows the chapter's icon next to the chase; one tap opens the chase card: where we are, what happened
+     (the closing lines of the scenes played in this chapter) and what comes next, read aloud, one button to go on. */
+const MIXI=['זֶה הַמְּבַלְבֵּל! הוּא קָטָן וְצוֹחֵק, וְהוּא מְבַלְבֵּל אֶת הַכֹּל.','הוּא בָּרַח לַיָּם, וַאֲנַחְנוּ בּוֹנִים סְפִינָה כְּדֵי לְהַגִּיעַ אֵלָיו.','כָּל מִשִּׂימָה שֶׁתִּפְתֹּר מְקָרֶבֶת אוֹתָנוּ אֵלָיו.'];
+const MIXGO='יוֹצְאִים!',CH_ICON=['⚓','🕰️','🔤','🍎','💬','💡','🥖','🌙','📚','🌫️','🏝️','🎉'];
+const CHT='הַמַּסָּע',CHW='מָה הָיָה:',CHN='עַכְשָׁו:',CHX='הַמְשֵׁךְ';
+const chaseSays=()=>[...MIXI,MIXI.join(' '),MIXGO,CHT,CHW,CHN];
+const overlayEl=(cls,html)=>{const e=h('div',cls,html);document.body.appendChild(e);return e;};
+function chaseCard(say,box,btn){const e=overlayEl('frcc',box);const b=e.querySelector('button');let done=0;
+  const end=()=>{if(done)return;done=1;if(e.isConnected)e.remove();if(btn)btn();};b.onclick=ev=>{ev.stopPropagation();O.sfx.pop&&O.sfx.pop(2);end();};
+  last=say;voice(say);return e;}
+/* the opening: false when it was seen already (then go on at once) */
+/* a browser under automation (tests) skips it, unless window.__mixIntro asks for it: other suites click straight through the path */
+FR.mixIntro=go=>{const S=O.save;if(!S||S.mixIntro||(navigator.webdriver&&!window.__mixIntro)){go&&go();return false;}S.mixIntro=1;O.persist();
+  const e=chaseCard(MIXI.join(' '),`<div class="frcard"><div class="frcm">${O.SPR.mixer}</div>`+MIXI.map(x=>`<p>${x}</p>`).join('')+`<button class="bigbtn">${MIXGO}</button></div>`,go);e.classList.add('frintro');return true;};
+FR.chase=q=>{const M=SM();if(!M)return null;const p=q||M.pos(),sc=M.scene(p),past=[];
+  for(let i=1;i<p.s;i++)past.push(M.scene({c:p.c,s:i}).close);
+  if(!past.length&&p.c>1)past.push(M.scene({c:p.c-1,s:5}).close);
+  return {c:p.c,s:p.s,n:sc.n,past,next:sc.open};};
+const chaseSay=(c,s)=>{const x=FR.chase({c,s});return [CHT+'. '+x.n+'.',...(x.past.length?[CHW,...x.past]:[]),CHN,x.next].join(' ');};
+FR.openChase=()=>{if($('.frcc'))return null;const c=FR.chase();if(!c)return null;const SH=window.SHIP,k=(c.c-1)*5+c.s-1;
+  const pic=SH&&SH.el?SH.el('big',Math.max(0,k)):'';
+  const say=chaseSay(c.c,c.s);
+  const e=chaseCard(say,`<div class="frcard"><h3>${CH_ICON[c.c-1]} ${c.n} · ${c.s}/5</h3><div class="frcp">${pic}</div>`+
+    (c.past.length?`<p class="frpast"><b>${CHW}</b> ${c.past.join(' ')}</p>`:'')+`<p class="frnext"><b>${CHN}</b> ${c.next}</p><button class="bigbtn">${CHX}</button></div>`);
+  e.classList.add('frchase');return e;};
+
 const PATHBAR={render(){let b=$('#frPath');const d=cur&&daily();
   document.body.classList.toggle('frpon',!!(d&&d.d===cur.d));if(!d||d.d!==cur.d){if(b)b.remove();return;}
-  const mid=$('#hudMid');if(!mid)return;if(!b){b=h('div','frpath');b.id='frPath';b.setAttribute('role','img');}if(b.parentNode!==mid)mid.appendChild(b);
+  const mid=$('#hudMid');if(!mid)return;if(!b){b=h('div','frpath');b.id='frPath';b.setAttribute('role','button');b.onclick=ev=>{ev.stopPropagation();FR.openChase();};}if(b.parentNode!==mid)mid.appendChild(b);
   const q=quest();const o=d.bs|0,t=d.t.slice(o),dn=d.done.slice(o),n=t.length,k=dn.filter(Boolean).length;
   b.setAttribute('aria-label',`${k}/${n}`);
   /* #393 the hero chases the Mixer: one step closer per finished mission, the last one catches him (same size as the old dots) */
   const sp=b.querySelector('.fpt');if(!sp){b.innerHTML=`<span class="fpq">${q.e}</span><span class="fpt"><span class="fph">${O.AV()}</span><span class="fpm">${O.SPR.mixer}</span></span>`;}
-  const tr=b.querySelector('.fpt');tr.style.setProperty('--n',n);tr.style.setProperty('--k',Math.min(k,n));tr.dataset.k=Math.min(k,n);tr.classList.toggle('caught',k>=n);}};
+  const tr=b.querySelector('.fpt');tr.style.setProperty('--n',n);tr.style.setProperty('--k',Math.min(k,n));tr.dataset.k=Math.min(k,n);tr.classList.toggle('caught',k>=n);
+  /* #663 the chapter icon: after the strip is built (the template above runs once and would wipe it) */
+  {const M=SM(),ci=M?M.pos().c:0;let c=b.querySelector('.fpc');if(ci){if(!c){c=h('span','fpc');b.insertBefore(c,b.firstChild);}c.textContent=CH_ICON[ci-1];}b.tabIndex=0;b.title=CHT;b.onkeydown=ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();FR.openChase();}};}}};
 
 /* the top bar is rewritten by every screen: keep the strip in it while inside a step */
 (()=>{const mid=$('#hudMid');if(mid)new MutationObserver(()=>{const b=$('#frPath');if(cur&&(!b||b.parentNode!==mid))PATHBAR.render();}).observe(mid,{childList:true});})();
@@ -252,9 +284,10 @@ const HB=()=>window.HELP&&HELP.BT;
 FR.voiceList=()=>{const hl=HB()?[HB().clue,HB().offer].flatMap(h=>[HB().elim,HB().again,...new Set(window.HELP_TEXTS||[])].map(c=>h+': '+c)):[];
   return [...new Set([...Object.values(EVENTS).map(e=>e.line),...KINDS.flatMap(k=>[k.intro,k.ok]),START,OOPS,RXL.hint,RXL.yday,LISTEN,
     EZ.q,...games().map(BRK.ask),TCH.claim,TCH.ask,TCH.thanks,TCH.gentle,...hl,
-    ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([,b])=>[b,b+' '+ALL])):[])])];};
+    ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([,b])=>[b,b+' '+ALL])):[]),...chaseSays(),...(SM()?SM().SCRIPT.flatMap((ch,c)=>ch.sc.map((_,i)=>chaseSay(c+1,i+1))):[])])];};
 FR.speakList=()=>[...new Set([...FR.voiceList(),...(window.SHIP&&SHIP.carrySay?SHIP.PIECES.map((_,i)=>SHIP.carrySay(i)):[]),...(window.GOALS?window.GOALS.speakList():[]),RXL.back,READFIRST,FIRST,LAST,ALL,
-  ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([a])=>[a,FIRST+' '+a,LAST+' '+a])):[]),...(SM()?SM().speakList():[])])];
+  ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([a])=>[a,FIRST+' '+a,LAST+' '+a])):[]),...(SM()?SM().speakList():[]),...chaseSays(),
+  ...(SM()?SM().SCRIPT.flatMap((ch,c)=>ch.sc.map((_,i)=>chaseSay(c+1,i+1))):[])])];
 /* ---------- #389 listen first ----------
    A new row of answer buttons (.chs .chb) rests until the spoken question has ended, 4 s at most; with no voice (offline,
    auto-read off, reading practice where he reads first) it is open at once. A tap that comes fast after a wrong tap (Oren is

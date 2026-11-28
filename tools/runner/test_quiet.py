@@ -98,7 +98,7 @@ import json as _j
 (R.RUNS / "governor.json").write_text(_j.dumps({"at": time.time(), "lanes": 5, "stop": False, "pct": 40}))
 assert R.governor_now()["lanes"] == 5 and not R.governor_now()["stop"]
 (R.RUNS / "governor.json").write_text(_j.dumps({"at": time.time() - 3600, "lanes": 5, "stop": True}))
-assert R.governor_now() == {"lanes": R.REMOTE_LANES, "stop": False, "pct": None, "week_pct": None, "limit_hit": False}
+assert R.governor_now() == {"lanes": R.REMOTE_LANES, "stop": False, "pct": None, "week_pct": None, "limit_hit": False, "shift": 0}
 (R.RUNS / "governor.json").write_text(_j.dumps({"at": time.time(), "lanes": 2, "stop": False, "pct": 10}))
 # the watchdog: no free lane -> no `hc run` (no pass, no gh call of a pass); a free lane -> a pass with notify off
 calls, issues_now = [], []

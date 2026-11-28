@@ -62,9 +62,9 @@ Same limits as local: 2 fix rounds, then blocked. The local worktree is made onl
 1. The session posts `QUESTION: <question, options>` on the issue and stops. The runner sees it within one poll (60 s).
 2. `park_remote`: labels `blocked` + `ready-for-human` (lane freed, `in-progress` dropped), a `Parked (cloud)` comment, the question in the
    pinned 'Questions for the owner' issue (window `remote-<n>`: question page + phone push, panel, dashboard 'needs you'), and the orchestrator is told.
-3. The owner answers: on the question page or the phone push (qwin posts `OWNER ANSWER ...` on the issue), through the orchestrator, or in the questions issue (the orchestrator records it with `qwin.py answer`). #608: a plain comment on the issue is never an answer (every session posts as the owner's account).
+3. The owner answers: on the question page or the phone push (qwin posts `OWNER ANSWER ...` on the issue), through the orchestrator, or in the questions issue (the watchdog records it; the inspector chat uses `qwin.py chat-answer`, #803). #608: a plain comment on the issue is never an answer (every session posts as the owner's account).
 4. Every watchdog tick `resume_answered()` finds parked cloud issues (`.runs/<n>/where` = remote) whose last QUESTION has an answer
-   (`remote.answer_after_question`: a later owner_q answer record `<!-- owner-answer:KEY -->`, written only by `qwin.py answer`; #608), stores it in
+   (`remote.answer_after_question`: a later owner_q answer record `<!-- owner-answer:KEY -->`, written only by the watchdog; #608), stores it in
    `.runs/<n>/answer.json`, removes `blocked` + `ready-for-human` and comments `Runner: ...`.
 5. The next runner pass starts the issue again (always remote): `remote_resume` sends the answer to the saved session
    (`remote.json`); no session or the send fails -> a new cloud session that reads the thread and continues `lane/<n>`. Then review/merge as usual.
@@ -72,10 +72,10 @@ qwin does not send the answer itself for these issues (no double send); a cloud 
 
 ## Cloud desks: inbox + ask from the phone (#306)
 `tools/runner/desks.py` (called by the watchdog every minute, in a thread; test `test_desks.py`). Two long-lived cloud sessions:
-`Oren inbox (cloud)` (creates issues from the owner's Hebrew/English messages, one backlog, no duplicates) and
-`Oren ask (cloud)` (read-only status answers in Hebrew). Their prompts are `desks.prompt()`.
-- ONE pinned issue `Oren cloud: phone links + live status` (label `manual`): the two session links + `dashboard.py --text`,
-  body edited in place every `status_minutes` (10; 0 = off). Nothing is committed. The ask session reads it.
+`Game inbox (cloud)` (creates issues from the owner's Hebrew/English messages, one backlog, no duplicates) and
+`Game ask (cloud)` (read-only status answers in Hebrew). Their prompts are `desks.prompt()`.
+- ONE pinned issue `Cloud desks: phone links` (label `manual`, found by its marker `<!-- desks #306 -->`, not by title): ONLY the two session links + an 'updated' line (#785: no status text, no titles),
+  body edited in place every `status_minutes` (10; 0 = off). Nothing is committed. The ask session answers from the issue/PR lists; the live panel is on the PC.
 - Keep-alive: a desk without a session is started (`remote.start(..., name="desk-<role>")`, window `desk-<role>`, label `role=desk`);
   every `desk_probe_hours` (12) a short `PING` goes to it (`remote.send`); no `ok` from the send = ended -> a new session, links updated.
   A refused start is retried after 30 min. State: `.runs/desks_state.json`; panel/dashboard line: `.runs/desks.json` (`cloud desks: inbox ok · ask down`).
@@ -102,3 +102,10 @@ qwin does not send the answer itself for these issues (no double send); a cloud 
   `x-admin-key: $LOG_READ_KEY`. Never print, log, commit or post the key. Not set: `playlog.py` prints the single line
   `LOG_READ_KEY missing in the cloud environment` and stops (no 401 loop); report that line, do not ask for the key.
 - Comments and issues get aggregates only (counts, ids, times), never raw events or kid answers.
+
+## Renew the repo interaction limit (#829, owner steps)
+The public repos (INFRA, and GAME once it exists) use the interaction limit "collaborators only"; GitHub ends it after at most 6 months (set 2026-11-28, so it ends by 2027-05-28).
+The watchdog (`tools/runner/interaction_limit.py`) reads `expires_at` hourly and alarms the owner (orchestrator + Telegram) 14 days before, daily until renewed, at once if the limit is gone. Add the GAME repo to `interaction_limit_repos` in `tools/runner/config.toml` when it exists.
+1. When the alarm arrives, run in a terminal, once per public repo (renews for 6 months):
+   `gh api -X PUT repos/<owner>/<repo>/interaction-limits -f limit=collaborators_only -f expiry=six_months`
+2. Write in the chat "חודש".

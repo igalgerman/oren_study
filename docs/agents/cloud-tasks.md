@@ -47,6 +47,8 @@ label `ai-observer`): at most 5 lines, each exactly
 or the single line `no problems`. "owner" only when it is truly his decision. Nothing else in that comment.
 
 ## Nightly retro
+Play data never goes to GitHub (#786): post only conclusion lines, no play numbers, answers, minutes or kid words.
+## Nightly retro
 You are the NIGHTLY RETRO of the Oren study flow for today (Asia/Jerusalem date). Read-only except the one issue below.
 Follow docs/agents/skills/retro.md for the DAY (today's issues, PRs, runner/reviewer comments, `Deploy failed`/canary issues,
 the `ai-observer` issue comments), then docs/agents/skills/handoff.md for the two handoffs. Every proposal points to a concrete

@@ -38,6 +38,7 @@ LANES = ("core", "pack", "review")
 
 PROMPT = """You are the NIGHTLY RETRO of the Oren study automatic flow ({date}). Read-only: you change NOTHING.
 Follow docs/agents/skills/retro.md for the DAY below, then docs/agents/skills/handoff.md for the two handoffs. Repo: {repo}.
+Play data never goes to GitHub (#786): RETRO lines are conclusions about the game only, no play numbers, answers, minutes or kid words; detail goes only to the private data folder (never to GitHub).
 Every proposal must point to a concrete moment (a log line, an issue #n, a time HH:MM). No evidence -> leave it out.
 Output exactly this, nothing else:
 RETRO: <proposal, one line> | EVIDENCE: <log line / #n / HH:MM>

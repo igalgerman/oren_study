@@ -6,8 +6,7 @@ worker/reviewer PURPLE/cloud QUESTION:/intake/orchestrator). The watchdog calls 
   - tick reads the page's answer (<key>.answers.json) itself -> answer(): relayed, owner_q answered, page stopped
   - #390 phone, at the SAME time as the page (owner 26 Nov 20:15): NOT from a freshly opened window (Claude Code calls a new
     session 'active' and skips the push). One `hc send` line to a long-lived Remote Control session that is idle (PUSHERS:
-    inbox, else orchestrator): send this exact push, write a PUSH-RESULT line, and run `qwin.py answer <key> "<reply>"` when
-    the owner answers in that chat. Busy sessions get nothing; the push waits for the next tick with an idle one.
+    inbox, else orchestrator): send this exact push and write a PUSH-RESULT line (#803: no session records an answer). Busy sessions get nothing; the push waits for the next tick with an idle one.
   - its result is read from that session's screen and logged once in watchdog.log: sent / NOT sent / no result line in
     10 min / no idle session for 10 min (Claude Code skips the push while the owner is active on this PC)
   - #440 Telegram, also at the SAME time (telegram.py; token + chat id only in ~/.oren/telegram.env, never logged): the
@@ -22,7 +21,10 @@ worker/reviewer PURPLE/cloud QUESTION:/intake/orchestrator). The watchdog calls 
   - question-* windows are not used any more: a live one (old) is unpinned and closed (#310)
   - the owner is never asked inside a terminal: the push line says no AskUserQuestion (Hebrew shows reversed there, #310)
   - unanswered for 2 h -> one reminder push through the same session
-Usage: python tools/runner/qwin.py answer <key> "<answer>"
+  - #803 third channel, the chat with the inspector: `qwin.py chat-answer <key> "<answer>" --quote "<his exact words>"` runs only when
+    its process tree goes back to the live inspector terminal (is_inspector); it writes a bot record `via=inspector-chat`, nothing
+    else. The watchdog confirms it on Telegram (undo `בטל` within 10 min, `אשר` = at once) and only then (final marker) it is in force
+Usage: python tools/runner/qwin.py chat-answer <key> "<answer>" --quote "<quote>"   (the old `answer` CLI is gone, #803)
 """
 import json, os, re, signal, subprocess, sys, time
 from pathlib import Path
@@ -31,7 +33,9 @@ HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 import runner as R
 import owner_q as OQ
+import trust
 import telegram as TG
+import recover
 
 MAX_WINDOWS = 3
 REMIND_S = 2 * 3600
@@ -42,12 +46,18 @@ IDLE = ("idle", "done")
 STATE = R.RUNS / "qwin.json"
 DIR = R.RUNS / "questions"
 ASK = (HERE.parent / "ask" / "ask.py").as_posix()
+CHAT_WINDOW_S = 600                                  # #803: a chat answer comes into force 10 min after its Telegram confirmation
+CHAT_STATE = OQ.CHAT_STATE
 TG_STATE = R.RUNS / "telegram.json"                  # #440: the getUpdates offset
 
 # swapped by the tests
 def _hc(*a, **kw): return R.hc(*a, **kw)
 def _gh(*a, **kw):
     with R.ghcache.quick(OQ.QUICK_S): return R.gh(*a, **kw)   # #469: never more than 10 s on GitHub per call
+_gh_real = _gh
+def _app_post(n, text):
+    """#800: App-bot post or queue; a fake `_gh` (tests) is used as the App."""
+    with R.ghcache.quick(OQ.QUICK_S): return OQ.post_or_queue(n, text, _gh if _gh is not _gh_real else None)
 def _run(cmd, **kw): return R.run(cmd, **kw)
 def _herdr_ok(): return Path(R.HERDR_APP).exists()
 def _spawn(cmd, out, err):
@@ -175,12 +185,13 @@ def tg_send(st, now):
 def tg_poll(st):
     """#440: read the owner's Telegram replies (getUpdates, offset in .runs) and record each one like a page answer."""
     wait = {k: e for k, e in st.items() if e.get("tg") and not e.get("answered") and not is_note(e)}
-    if not wait or not TG.config(): return
+    if not TG.config() or not (wait or load_chat()): return
     try: off = json.loads(TG_STATE.read_text(encoding="utf-8")).get("offset", 0)
     except Exception: off = 0
     new, msgs = TG.messages(off)
     if new != off: R.RUNS.mkdir(parents=True, exist_ok=True); TG_STATE.write_text(json.dumps({"offset": new}), encoding="utf-8")
     for m in msgs:
+        if chat_command(st, m): continue                  # #803: `בטל` / `אשר` for a pending inspector-chat answer
         wait = {k: e for k, e in st.items() if e.get("tg") and not e.get("answered") and not is_note(e)}
         key = next((k for k, e in st.items() if m["reply_to"] and m["reply_to"] in (e.get("tg"), e.get("tg_r"))), None)
         if key is None and not m["reply_to"]:            # #632: at most one question is out: a plain reply is its answer
@@ -193,13 +204,11 @@ def tg_poll(st):
         log(f"{e['name']}: answered in telegram")
 
 def push_message(q):
-    """#390: the ONE line a long-lived idle session gets (hc send): push this text, report, relay the chat answer."""
-    py = sys.executable.replace("\\", "/")
+    """#390: the ONE line a long-lived idle session gets (hc send): push this text, report. #803: no session records an answer."""
     return R.one_line(
         f"PHONE PUSH (owner-q:{q['key']}, #390): send ONE PushNotification with exactly this text: {R.one_line(push_text(q))} "
         f"-- Right after it, write one line: PUSH-RESULT <key> ok, or PUSH-RESULT <key> failed <the reason the tool gave>. "
-        f"When the owner answers it in this chat (a number = that option, other text = his own answer), run once: "
-        f"{py} {(HERE / 'qwin.py').as_posix()} answer {q['key']} \"<the answer, as given>\" "
+        "The owner answers on the page, in Telegram, or in the chat with the inspector (never record an answer yourself). "
         "Never ask him inside the terminal (no AskUserQuestion: Hebrew shows reversed there). Then go on with your own work.")
 
 def start_page(q):
@@ -274,6 +283,7 @@ def tick(ts, now=None):
             e["reminded"] = True; log(f"{e['name']}: 2 h reminder via {e['via']}")
     check_pushes(st, now)
     tg_poll(st); tg_send(st, now)                         # #440; #632 poll first: an answer sends the next one now
+    chat_tick(st, qs, now)                                # #803: confirm, undo, bring into force
     save(st)
 
 def push_result(screen, key):
@@ -302,11 +312,11 @@ def session_of(n):
     try: return json.loads((R.RUNS / str(n) / "remote.json").read_text(encoding="utf-8")).get("session", "")
     except Exception: pass
     rc, out = _gh("issue", "view", str(n), "--json", "comments")
-    try: bodies = [c.get("body", "") for c in json.loads(out).get("comments", [])] if rc == 0 else []
+    try: bodies = [c.get("body", "") for c in trust.only(json.loads(out).get("comments", []))] if rc == 0 else []
     except ValueError: bodies = []
     return next((m[0].rsplit("/", 1)[-1] for b in reversed(bodies) for m in [re.search(r"https://claude\.ai/code/session_\w+", b or "")] if m), "")
 
-def answer(key, text, from_page=False, from_tg=False, tg=0):
+def answer(key, text, from_page=False, from_tg=False, tg=0, records=True):
     """Relay the owner's answer: comment on the source issue, ANSWERED in the questions issue, tell the orchestrator,
     and a cloud worker (remote-<n>) gets it in its session. -> dict of what was done."""
     st = load()
@@ -314,9 +324,9 @@ def answer(key, text, from_page=False, from_tg=False, tg=0):
                                       "gates": q.get("gates", [])}
                                      for q in OQ.open_list() or [] if q["key"] == key), {})
     n, src, done = info.get("issue", 0), info.get("source", ""), {}
-    if n: done["issue"] = _gh("issue", "comment", str(n), "--body", R.redact(OQ.answer_body(key, text)))[0] == 0
-    for g in [g for g in info.get("gates", []) if g != n]:     # #630: the record also on each issue the question gates
-        done.setdefault("gates", {})[g] = _gh("issue", "comment", str(g), "--body", R.redact(OQ.answer_body(key, text)))[0] == 0
+    if n and records: done["issue"] = _app_post(n, OQ.answer_body(key, text))      # #800: the record is written only by the App bot; queued when it cannot
+    for g in [g for g in info.get("gates", []) if g != n and records]:     # #630: the record also on each issue the question gates
+        done.setdefault("gates", {})[g] = _app_post(g, OQ.answer_body(key, text))
     done["answered"] = OQ.mark_answered(key, text)
     resumes = src.startswith("remote-") and n and R.where_of(n) == "remote"   # #135: runner-managed: the watchdog resumes the session from the issue comment
     if src.startswith("remote-") and n and not resumes:
@@ -333,10 +343,177 @@ def answer(key, text, from_page=False, from_tg=False, tg=0):
     if key in st: st[key]["answered"] = True; save(st)
     return done
 
+# ---------- #803: the inspector chat channel ----------
+def load_chat():
+    try: return json.loads(CHAT_STATE.read_text(encoding="utf-8"))
+    except Exception: return {}
+
+def save_chat(c):
+    R.RUNS.mkdir(parents=True, exist_ok=True)
+    CHAT_STATE.write_text(json.dumps(c, ensure_ascii=False), encoding="utf-8")
+
+def _norm(p): return str(p or "").replace("\\", "/").rstrip("/").lower()
+
+def _term_pid(t):
+    fg = t.get("foreground") if isinstance(t.get("foreground"), dict) else {}
+    return fg.get("pid") or t.get("foreground_pid") or t.get("pid")
+
+def _term_cwd(t):
+    fg = t.get("foreground") if isinstance(t.get("foreground"), dict) else {}
+    return t.get("cwd") or fg.get("cwd") or ""
+
+def is_inspector(chain_pids, terminals, inspector_dir):
+    """Pure (#803): True only when exactly ONE live terminal has the control role inspector, its foreground is `claude` with
+    `--remote-control oren-inspector` in the inspector folder, and that claude pid is in the caller's parent chain.
+    terminals None (herdr unreadable) or anything else -> False."""
+    if not terminals: return False
+    ins = [t for t in terminals if t.get("state", "live") == "live" and recover.control_role(t) == "inspector"]
+    if len(ins) != 1: return False
+    t = ins[0]; a = recover._argv(t)
+    if not a or not re.match(r"claude(\.exe|\.cmd)?$", re.split(r"[\\/]", a[0])[-1].lower()): return False
+    if not any(x == "--remote-control" and a[i + 1] == "oren-inspector" for i, x in enumerate(a[:-1])): return False
+    if _norm(_term_cwd(t)) != _norm(inspector_dir): return False
+    pid = _term_pid(t)
+    return bool(pid) and pid in set(chain_pids or [])
+
+def chain_pids(limit=16):
+    """Our own parent-process chain on Windows (ctypes Toolhelp snapshot, at most `limit` steps); [] elsewhere or on any failure."""
+    if os.name != "nt": return []
+    try:
+        import ctypes
+        from ctypes import wintypes
+        class PE(ctypes.Structure):
+            _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
+                        ("th32DefaultHeapID", ctypes.c_void_p), ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                        ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long), ("dwFlags", wintypes.DWORD),
+                        ("szExeFile", ctypes.c_wchar * 260)]
+        k = ctypes.windll.kernel32; k.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+        snap = k.CreateToolhelp32Snapshot(2, 0); parent = {}
+        pe = PE(); pe.dwSize = ctypes.sizeof(PE); ok = k.Process32FirstW(snap, ctypes.byref(pe))
+        while ok:
+            parent[pe.th32ProcessID] = pe.th32ParentProcessID; ok = k.Process32NextW(snap, ctypes.byref(pe))
+        k.CloseHandle(snap)
+        out, pid = [], os.getpid()
+        for _ in range(limit):
+            if pid not in parent: break
+            out.append(pid); pid = parent[pid]
+        return out + [pid] if pid else out
+    except Exception: return []
+
+def live_terminals():
+    """hc ls --json, then hc get <t> --json for each live terminal -> list of merged dicts, or None when herdr is unreadable."""
+    rc, out = _hc("ls", "--json", timeout=30)
+    if rc: return None
+    rows = None
+    for line in reversed((out or "").strip().splitlines()):
+        try: rows = json.loads(line).get("terminals"); break
+        except (ValueError, AttributeError): continue
+    if rows is None: return None
+    res = []
+    for r in rows:
+        if r.get("state", "live") != "live": continue
+        d = {}
+        for line in reversed((_hc("get", r.get("address") or r.get("name") or "", "--json", timeout=30)[1] or "").strip().splitlines()):
+            try: d = json.loads(line); break
+            except ValueError: continue
+        res.append({**r, **d})
+    return res
+
+def _inspector_dir(): return Path(R.MAIN_CHECKOUT).parent
+def _chain(): return chain_pids()
+
+def refuse(why):
+    log(f"chat-answer REFUSED: {why}")
+    TG.send("תשובה מהצ'אט נדחתה: ניסיון מסשן אחר (לא האינספקטור). לא נרשם כלום.")
+    return 1
+
+def chat_answer(key, text, quote):
+    """#803: the inspector records the owner's chat answer: one bot record per issue, nothing else. -> (exit code, message)."""
+    quote = R.redact((quote or "").strip())
+    if not quote or len(quote) > 500: return 2, "--quote is required (1-500 characters: the owner's exact words)"
+    if not is_inspector(_chain(), live_terminals(), _inspector_dir()): refuse("the caller is not the inspector"); return 1, "refused: not the inspector"
+    info = next(({"issue": issue_no(q), "gates": q.get("gates", [])} for q in OQ.open_list() or [] if q["key"] == key), None)
+    if not info: return 1, f"no open question {key}"
+    body = OQ.chat_answer_body(key, text, quote)
+    for n in dict.fromkeys([info["issue"], *info["gates"]]):
+        if n: _app_post(n, body)
+    log(f"chat answer recorded for {key} (waits for the Telegram confirmation)")
+    return 0, "recorded: waits for the Telegram confirmation (10 min to undo)"
+
+def _issues_of(e): return [n for n in dict.fromkeys([e.get("issue", 0), *e.get("gates", [])]) if n]
+
+def _post_all(e, text):
+    for n in _issues_of(e): _app_post(n, text)
+
+def _find_chat(e):
+    """The chat answer on the question's issues (bot-written, #800) -> {'answer','final','undo'} or None, for the key found."""
+    out = {}
+    for n in _issues_of(e):
+        for k, v in OQ.chat_states(OQ.comments(n) or []).items():
+            o = out.setdefault(k, {"answer": v["answer"], "quote": v.get("quote", ""), "final": False, "undo": False})
+            o["final"] |= v["final"]; o["undo"] |= v["undo"]
+    return out
+
+def finalize(key, e, c, now):
+    """The chat answer is in force: final marker, then what answer() does (ANSWERED, relay, page stopped), `✓ נכנסה לתוקף`."""
+    _post_all(e, f"<!-- owner-answer-final:{key} -->")
+    answer(key, c["answer"], from_tg=True, records=False); e["answered"] = True
+    c["final"] = True
+    if e.get("tg"): TG.send("✓ נכנסה לתוקף", reply_to=e["tg"])
+    elif c.get("mid"): TG.send("✓ נכנסה לתוקף", reply_to=c["mid"])
+    log(f"{e['name']}: chat answer in force for {key}")
+
+def chat_command(st, m):
+    """#803: a Telegram `בטל` / `אשר` -> True when it was for a chat answer (reply to its confirmation, or the one pending)."""
+    cmd = (m.get("text") or "").strip()
+    if cmd not in ("בטל", "אשר"): return False
+    cs = load_chat()
+    key = next((k for k, c in cs.items() if m.get("reply_to") and c.get("mid") == m["reply_to"]), None)
+    if key is None and not m.get("reply_to"):
+        pend = [k for k, c in cs.items() if c.get("mid") and not c.get("final") and not c.get("undo")]
+        key = pend[0] if len(pend) == 1 else None
+    if key is None: return False
+    c, e = cs[key], st.get(key) or {}
+    if c.get("final"): TG.send("מאוחר מדי: התשובה כבר בתוקף.", reply_to=m["id"]); return True
+    if c.get("undo"): return True
+    if cmd == "בטל":
+        _post_all(e, f"<!-- owner-answer-undo:{key} -->"); c["undo"] = True
+        TG.send("בוטל. השאלה פתוחה שוב.", reply_to=m["id"]); log(f"chat answer for {key} undone by the owner")
+    else:
+        finalize(key, e, c, 0)
+    save_chat(cs)
+    return True
+
+def chat_tick(st, qs, now):
+    """#803 watchdog pass: confirm each new chat record on Telegram once, bring it into force 10 min after the confirmation,
+    one alarm when it cannot be confirmed; a question answered elsewhere never gets its chat answer in force."""
+    cs, open_keys = load_chat(), {q["key"] for q in qs}
+    for k in [k for k in cs if k not in open_keys or (st.get(k) or {}).get("answered") and not cs[k].get("final")]: cs.pop(k)
+    for key, e in st.items():
+        if e.get("answered") or key not in open_keys or is_note(e): continue
+        found = _find_chat(e).get(key)
+        if not found or found["undo"]: continue
+        c = cs.setdefault(key, {"answer": found["answer"], "quote": found.get("quote", ""), "seen": now})
+        if c.get("final") or c.get("undo"): continue
+        if found["final"] and not c.get("final"): finalize(key, e, c, now); continue
+        if not c.get("mid"):
+            mid = TG.send(f"נרשמה תשובה מהצ'אט עם האינספקטור: {c.get('quote') or c['answer']} — לביטול תוך 10 דקות: השב \"בטל\" להודעה הזו. \"אשר\" = בתוקף מיד.", reply_to=e.get("tg", 0))
+            if mid: c["mid"], c["sent_at"] = mid, now
+            elif now - c["seen"] >= CHAT_WINDOW_S and not c.get("alarm"):
+                c["alarm"] = True
+                for who in ("inspector", "orchestrator"):
+                    _hc("send", who, f"chat answer {key} not confirmed: ask the owner to answer on the page or in Telegram", timeout=30)
+                log(f"chat answer {key} not confirmed (Telegram off or failing)")
+        elif now - c["sent_at"] >= CHAT_WINDOW_S: finalize(key, e, c, now)
+    save_chat(cs)
+
 def main(argv):
     sys.stdout.reconfigure(encoding="utf-8")
-    if len(argv) == 3 and argv[0] == "answer":
-        print(json.dumps(answer(argv[1], argv[2]), ensure_ascii=False)); return 0
+    if len(argv) >= 1 and argv[0] == "answer":
+        print("refused: the owner's answer is recorded on the page, in Telegram, or with `chat-answer` by the inspector (#803)"); return 2
+    if len(argv) >= 3 and argv[0] == "chat-answer":
+        quote = argv[argv.index("--quote") + 1] if "--quote" in argv[:-1] else ""
+        rc, msg = chat_answer(argv[1], argv[2], quote); print(msg); return rc
     print(__doc__); return 2
 
 if __name__ == "__main__":

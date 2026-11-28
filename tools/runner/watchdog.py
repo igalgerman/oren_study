@@ -19,7 +19,7 @@ Every minute it checks, deterministically:
       24 h old -> its recommended option when it says 'skip is safe', else 'waiting for owner Nh' on the dashboard
   5e. #241 due.py, every 10 min: an open issue's 'Due: YYYY-MM-DD HH:MM' passed -> one 'Due reached' comment, the orchestrator told,
       label owner -> an owner question (popup)
-  5d. #306 desks.py: keeps the two cloud sessions 'Oren inbox (cloud)' / 'Oren ask (cloud)' alive and every status_minutes
+  5d. #306 desks.py: keeps the two cloud sessions 'Game inbox (cloud)' / 'Game ask (cloud)' alive and every status_minutes
       writes the session links + dashboard.py --text into ONE pinned issue (edited in place, nothing committed)
   5d. #330 canary.py: every 6 h (and after a merge into tools/runner or tools/mods; #538: at most once per canary_minutes) ONE rolling canary issue runs the whole flow;
       a step past its deadline -> alarm to the orchestrator + inspector, NEEDS-ATTENTION on panel/dashboard; side paths hourly
@@ -185,7 +185,7 @@ def check_intake(ts):
     if not i: return
     n, name = i["number"], f"intake-{i['number']}"
     import recover
-    prompt = (f"/grill-me issue #{n} (gh issue view {n} --repo {R.CFG['repo']} --comments), then /to-tickets for what comes out of it, "
+    prompt = (f"/grill-me issue #{n} (python3 tools/runner/view.py issue {n}: trusted authors only), then /to-tickets for what comes out of it, "
               f"then close #{n} with links to the new tickets. Every ticket gets an '## Acceptance' section before ready-for-agent: 3-7 checkable points "
               f"+ the tests that prove them, and 'Out of scope' (#186). If #{n} is only waiting because it has no Acceptance section, "
               f"skip the grilling: write that section into #{n}'s body. " + recover.TRIAGE_STEPS)
@@ -355,6 +355,21 @@ def issues_stuck_tick():
     """#280: no issue sits without a live state; owner questions re-pushed at 4 h, the 24 h rule."""
     import stuck
     stuck.tick(tell=tell, log=log)
+def privacy_tick(now=None, cache=None, gh=None):
+    """#783, every 10 min: no names file -> ONE warning a day; else issues/PRs touched in the last 30 min (ghcache read, no extra calls)
+    whose title or new comment holds the kid's name are rewritten through the scrub (cloud sessions write with their own gh)."""
+    import scrub, ghcache
+    now = now or time.time()
+    if not scrub.names(): scrub.warn_once(now, say=tell); return 0
+    if not scrub.sweep_due(now): return 0
+    gh = gh or R.gh
+    def title(kind, n, text): return gh(kind, "edit", str(n), "--title", text)[0] == 0
+    def comment(cid, text): return gh("api", "-X", "PATCH", f"repos/{R.REPO}/issues/comments/{cid}", "-f", f"body={text}")[0] == 0
+    n = scrub.sweep(cache if cache is not None else ghcache.load(), title, comment, now)
+    scrub.add_fixes(n)
+    if n: log(f"privacy sweep: fixed {n} title/comment(s)")
+    return n
+
 def due_tick():
     """#241, every 10 min: a passed 'Due:' line in an open issue -> one 'Due reached' comment + the orchestrator (+ owner popup)."""
     import due
@@ -655,6 +670,7 @@ def tick():
         step("cleanup", cleanup, all_ts)
         rts = step("run_rows", run_rows, ts) or ts   # #289: + the ONE poller's cloud lanes as virtual run-<n> rows
         step("sweep_tick", sweep_tick, all_ts)  # #492
+        step("privacy_tick", privacy_tick)      # #783
         step("reap_tick", reap_tick, ts)       # #248 (a virtual run ends itself when its issue closes)
         step("stuck_tick", stuck_tick, rts)
         step("net_due_tick", net_due_tick, rts) # #364
@@ -663,7 +679,7 @@ def tick():
         for name, fn in (("observer_tick", observer_tick), ("ai_observer_tick", ai_observer_tick), ("nightly_tick", nightly_tick),
                          ("parked_tick", parked_tick), ("due_tick", due_tick), ("garden_tick", garden_tick),   # #282 #241 #187
                          ("issues_stuck_tick", issues_stuck_tick), ("desks_tick", desks_tick), ("canary_tick", canary_tick),   # #280 #330
-                         ("sync_tick", sync_tick), ("alarm_tick", alarm_tick), ("trends_tick", trends_tick), ("ai_tick", ai_tick), ("usage_tick", usage_tick), ("usage_alarm_tick", usage_alarm_tick),
+                         ("sync_tick", sync_tick), ("alarm_tick", alarm_tick), ("trends_tick", trends_tick), ("ai_tick", ai_tick), ("usage_tick", usage_tick), ("usage_alarm_tick", usage_alarm_tick), ("interaction_limit_tick", interaction_limit_tick),
                          ("lock_tick", lock_tick), ("orch_idle_tick", orch_idle_tick)):
             step(name, fn)
 
@@ -998,6 +1014,13 @@ def usage_alarm_tick():
     if time.time() - _ualarm["last"] < 300: return
     _ualarm["last"] = time.time()
     import usage_alarms; importlib.reload(usage_alarms); usage_alarms.tick(tell, log)
+
+_ilimit = {"last": 0.0}
+def interaction_limit_tick():
+    """#829: hourly, read each public repo's interaction-limits expiry; alarm 14 days before (daily) or at once when gone."""
+    if time.time() - _ilimit["last"] < 3600: return
+    _ilimit["last"] = time.time()
+    import interaction_limit; importlib.reload(interaction_limit); interaction_limit.tick(tell, log)
 
 def trends_tick():
     """#155: hourly patterns over 24 h (repeated BLOCKED reasons, finish/fix rates); reloaded so merged fixes apply."""

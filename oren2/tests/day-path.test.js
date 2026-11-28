@@ -38,11 +38,23 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  await p.locator('#sTal .dall .dcard',{hasText:'אַבָּא'}).click();await sleep(300);
  const d3=await p.evaluate(()=>{const d=window.TAL.S().daily;return {t:d.t,ch:d.ch,lead:window.TAL.TOG.find(a=>'tog:'+a.k===d.t[0]).lead};});
  ok('"together" from something else: an Oren-led together step + 2 surprises + the English scene (#424)',d3.ch==='tog'&&/^tog:/.test(d3.t[0])&&d3.lead===1&&d3.t.length===4&&d3.t[3]==='en-day',JSON.stringify(d3));
- // --- together screen ---
- await p.locator('#sHome .bigbtn.huge').click({force:true});await sleep(300);
+ // --- together screen (#657: the pick opens it at once) ---
+ ok('#657 something else: a pick opens that topic at once (the together screen, no home stop)',await p.locator('#sTal .tspec').count()===1&&await p.locator('#sHome').isHidden());
  const ts=await p.evaluate(()=>({kid:document.querySelector('#sTal .tspec .lsent').textContent,par:document.querySelector('#sTal .tpar').textContent,btn:[...document.querySelectorAll('#sTal .tspec .bigbtn')].map(b=>b.textContent)}));
  ok('together screen: kid text with nikud, parent line without nikud, one "we finished" button',/[ְ-ּ]/.test(ts.kid)&&ts.par.startsWith('להורה:')&&!/[ְ-ּ]/.test(ts.par)&&ts.btn.length===1&&ts.btn[0].includes('סִיַּמְנוּ'),JSON.stringify(ts));
  await p.locator('#sTal .tspec .bigbtn').click();await sleep(300);ok('finishing returns home with the step done',await p.evaluate(()=>window.TAL.S().daily.done[0]===1&&!document.querySelector('#sHome').hidden));
+ // --- #657 something else: text + voice, pick -> open, close -> the pick is first on the path ---
+ await home();await sleep(200);
+ await p.evaluate(()=>window.TAL.otherDay());await sleep(300);
+ const say=await p.evaluate(()=>{const t=(document.querySelector('#sTal .sub')||{}).textContent||'';return {t,nik:/[\u05B0-\u05BC]/.test(t),voice:String(window.OREN.sayNow||'').length>0};});
+ ok('#657 the something-else screen says what happens (text + voice, nikud)',/מַתְחִילִים/.test(say.t)&&say.nik&&say.voice,JSON.stringify(say));
+ const t0=await p.evaluate(()=>window.TAL.S().daily.t.length);
+ await p.locator('#sTal .dall .dcard').nth(0).click();await sleep(400);
+ const op=await p.evaluate(()=>{const d=window.TAL.S().daily,i=d.done.findIndex(x=>!x);return {home:!document.querySelector("#sHome").hidden,len:d.t.length,first:d.t[i]};});
+ ok('#657 pick -> that topic is open at once (not home), its mission is the first open one',!op.home&&op.len>t0&&!!op.first,JSON.stringify(op));
+ await home();await sleep(300);
+ const cl=await p.evaluate(()=>{const d=window.TAL.S().daily,i=d.done.findIndex(x=>!x);return {home:!document.querySelector('#sHome').hidden,first:d.t[i]};});
+ ok('#657 pick -> close -> it stays the first mission of the path',cl.home&&cl.first===op.first,JSON.stringify({cl,op}));
  // --- parent: "I have time now" ---
  await p.click('#sHome .parbtn');await p.fill('#pw1','abcd');await p.fill('#pw2','abcd');await p.keyboard.press('Enter');await sleep(300);
  await p.locator('.pchoice .ucard.tog').click();await sleep(200);
@@ -205,4 +217,21 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  await fin(await p.evaluate(()=>window.__started[window.__started.length-1]));await sleep(2600);
  const tl=await p.evaluate(n0=>({started:window.__started.length-n0,lock:!!document.querySelector('.tlock:not(.tyay)')}),n0);
  ok('#388 time limit: continue does not start the next mission, the time-up screen shows',tl.started===0&&tl.lock,JSON.stringify(tl));
+ // --- #732 no repeats: a mission left in under 10 s is not offered again today; a due question asked today is not asked again
+ await p.evaluate(()=>{const T=window.TAL,O=window.OREN,ids=T.dailyPool().slice(0,2);window.__ids=ids;window.__bk=[];const r=Date.now;window.__off=0;Date.now=()=>r()+window.__off;
+  ids.forEach(id=>{T.ACT[id].run=back=>{window.__bk.push(back);};});T.S().daily={d:O.today(),t:ids.slice(),done:[0,0],claimed:0,ch:'plan',cr:[]};});
+ await p.evaluate(()=>window.TAL_step(0));await p.evaluate(()=>window.__bk[0]());
+ const q1=await p.evaluate(()=>{const d=window.TAL.S().daily;return {t:d.t,q:d.q,id:window.__ids[0],done:d.done};});
+ ok('#732 a mission left in under 10 s is swapped out and listed as skipped today',q1.q&&q1.q.includes(q1.id)&&!q1.t.includes(q1.id)&&q1.done[0]===0,JSON.stringify(q1));
+ await p.evaluate(()=>{const d=window.TAL.S().daily;d.done=d.done.map(()=>2);window.TAL.chooseDay('math',null,1);});
+ const q2=await p.evaluate(()=>{const d=window.TAL.S().daily;return d.t.slice(d.bs).includes(window.__ids[0]);});
+ ok('#732 the next path of the day does not offer the quickly left mission',q2===false);
+ await p.evaluate(()=>{const T=window.TAL,O=window.OREN,id=window.__ids[1];T.S().daily={d:O.today(),t:[id],done:[0],claimed:0,ch:'plan',cr:[]};window.__bk.length=0;window.TAL_step(0);window.__off=20000;});
+ await p.evaluate(()=>window.__bk[0]());
+ ok('#732 a mission left after 10+ s stays on the path',await p.evaluate(()=>{const d=window.TAL.S().daily;return d.t[0]===window.__ids[1]&&!(d.q||[]).length;}));
+ await p.evaluate(()=>{const T=window.TAL,L=window.LEARN;window.__off=0;const keys=['a','b','c'];L.pickItem=(bk,c)=>({item:c.slice().sort((x,y)=>x.k<y.k?-1:1)[0]});
+  const mk=()=>{const k=keys[Math.floor(Math.random()*3)];return {pr:'q'+k,opts:['1','2'],ans:0,key:k};};
+  const show=()=>{T.quiz({id:'t732',title:'t',n:2,pool:1,gen:mk,back(){}});return document.querySelector('#sTal .tqc').textContent;};
+  window.__f=[show(),show()];});
+ ok('#732 a due question asked today is not asked again while others exist',await p.evaluate(()=>window.__f[0]!==window.__f[1]),await p.evaluate(()=>window.__f.join()));
  ok('no errors',!errs.length,errs.join('|'));await b.close();L.finish('day-path-'+L.variant,res);})();

@@ -1,6 +1,9 @@
 # Unit test for tester.py (#618: reviewer test level, Tester role, post-deploy tour): python tools/runner/test_tester.py
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")
 os.environ["OREN_TEST"] = "1"
+import re, trust   # #800: old fixtures have no author: default them to the owner (explicit authors still count; test_trust.py covers the real rules)
+_login = trust.login
+trust.login = lambda c: _login(c) or (("oren-study-bot" if re.match(r"\s*(OWNER ANSWER|ANSWERED)", c.get("body") or "") or "owner-answer:" in (c.get("body") or "") else "igalgerman") if isinstance(c, dict) else "")
 import tester as T
 
 # the reviewer's TEST line: T0-T3; a missing or broken line counts as T2
@@ -66,6 +69,22 @@ assert (step, level) == ("fix", "T3") and red.startswith("VERDICT: FIX") and "pa
 step, _, why = T.gate("TEST: T1", lambda l: ("tester posted nothing in 60 min", ""))
 assert step == "blocked" and "60 min" in why, why
 print("ok gate")
+
+# #746: sync / speech / home-redraw code in the diff raises the level to T3, whatever the reviewer wrote
+def d(path, line, sign="+"): return f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n{sign}{line}\n"
+for line in ("O.on('synced',()=>limCheck());", "if(x)emit('synced');", "async function famPull(){", "function say(t,lang){", "function hush(){",
+             "O.hush&&O.hush();", "O.quiet(home);", "window.OREN.famNow()", "mergeIn(snap.data());"):
+    assert T.touches_t3(d("oren2/talents.js", line)), line
+assert T.touches_t3(d("oren2/talents.js", "O.hush();", "-")), "a removed line counts"
+assert T.touches_t3(d("oren2/cf/functions/api/save/[id].js", "x"))
+assert not T.touches_t3(d("oren2/talents.js", "const a = 1;")) and not T.touches_t3("") and not T.touches_t3(None)
+assert not T.touches_t3(d("oren2/cf/public/index.html", "function say(t){")), "the built copy alone does not count"
+assert T.raise_level("T0", d("oren2/talents.js", "O.hush();")) == "T3" and T.raise_level("T1", "") == "T1"
+ran = []
+def tester2(l): ran.append(l); return ("ok", "TEST: PASS")
+assert T.gate("TEST: T0\nVERDICT: PASS", tester2, d("oren2/index.html", "emit('synced');"))[:2] == ("merge", "T3") and ran == ["T3"]
+assert T.gate("TEST: T0\nVERDICT: PASS", tester2, "")[:2] == ("merge", "T0") and ran == ["T3"]
+print("ok t3 rule")
 
 # after deploy: a tour fail opens a P0 bug with the repro; it undoes the last merge only when the tour passed on the previous deploy
 a = T.tour_fail_actions("parent-live: panel did not update", "abc1234def", "Fix the skip button (#614)", prev="pass")

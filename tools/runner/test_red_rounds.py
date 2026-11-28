@@ -92,7 +92,7 @@ assert "effort" in inspect.signature(r.agent).parameters and '"--effort"' in ins
 src = inspect.getsource(r.process_locked)
 for ev in ("start", "review_pass", "fix_done", "resolve", "test_pass"):
     assert f'"{ev}"' in src
-assert "effort=eff" in src and "model=model_name" in src
+assert "effort=eff" in src and "model=wm" in src
 print("ok effort")
 
 # ---- dashboard counts the escalations (24 h) ----

@@ -18,11 +18,11 @@ health-phone 90           # same file on the phone viewport: ~40 s alone
 eventlog 60               # #348 event log: worker + fake D1, then the real page through the worker + #641 raw paging/filters, 365-day prune (< 1 s): ~15 s
 kidtext 60                # #422 every kid string + 8.5k level questions + 1.2k activity screens through 4 text rules: ~8 s
 voice-stats 100           # #404 missing recording: one more page (~4 s); #399 screen id (1 more page, ~3 s) + #397 speech queue (2 more pages, ~3 s) + #400 missing-voice report (node, < 1 s) + #396 static scan for direct browser speech (< 1 s) + #641 audio-fail sentence id + HTTP status (< 1 s) + #635 retry limit (one line, re-said, a tap, a timeout: ~3 s): ~30 s alone, 57 s in a loaded cloud box
-friend-desktop 80         # #433 error-in-a-mission check + #386 story engine (2 reopened pages from a save, a step, the day-end hint) + #387 story picture for every path mission (~2 s) + #411 easy/hard question (7 scenes, 3 taps, parent view, ~2 s) + #407 memory lines (2 homes + a finale, ~4 s) + #414 mission goals (3 activities + a path step, ~5 s) + #572 friend moments (break, teach, held item; ~5 s) + #423 scene English word (one page call + a step, <1 s) + #53 coaching (events, voice, rate limit, silence hint, ~4 s): ~52 s in all
+friend-desktop 80         # #663 Mixer opening + chase card (1 page call, ~1 s) + #433 error-in-a-mission check + #386 story engine (2 reopened pages from a save, a step, the day-end hint) + #387 story picture for every path mission (~2 s) + #411 easy/hard question (7 scenes, 3 taps, parent view, ~2 s) + #407 memory lines (2 homes + a finale, ~4 s) + #414 mission goals (3 activities + a path step, ~5 s) + #572 friend moments (break, teach, held item; ~5 s) + #423 scene English word (one page call + a step, <1 s) + #53 coaching (events, voice, rate limit, silence hint, ~4 s): ~52 s in all
 friend-phone 80           # same file on the phone viewport
 shots 90                  # #462 screenshots: worker + fake D1, then the real page (six moments, busy/offline, a played level, review page desktop + phone): ~40 s alone
 pday 100                  # #359 (+ #614 a third parent copy, skip-now feedback, offline + undo: ~30 s) two devices through a fake save server: plan changes, skips, undo, offline queue, skip-now waiting for an answer + #438 learned today, the question, the week picture (~5 s): ~50 s alone + #621 a fresh family: playing, no rows
-kidcmd 70                # #617 two devices through a fake save server: message, reminder, skip only on the kid device + delivery status (~25 s alone) + #648 new day (~10 s)
+kidcmd 70                # #617 two devices through a fake save server: message, reminder, skip only on the kid device + delivery status (~25 s alone) + #648 new day (~10 s) + #746 mission done on B while A is on a mission screen (~3 s)
 livepanel 90              # #612 three pages through a fake save server: 4 activities, a save outage (capped retry), screen lock/unlock, the "no update since" line: ~18 s alone
 network 60                # #434 slow network (throttled) + offline (service worker, voice from the device, save after reconnect): ~18 s alone
 english2-desktop 60       # #425 second-tap slow replay (~3 s), #592 leave-round wait (5 s): ~44 s under load
@@ -61,5 +61,11 @@ voice-audit-2 150          # #406 the other half of the activities + #610 the ex
 music2-desktop 60         # #615 play games first (4 games played through, unlock after 3 good rounds) + the theory levels: ~31 s
 music2-phone 60           # same file on the phone viewport: ~30 s
 fullday 60                # #634 a simulated 60-minute day on home (~40 missions) + 3 mission checks + 3 flag rounds: ~16 s
+runner-desktop 30         # #666 arcade runner: plays a full round (fast clock), keys + touch, #351 caps
+runner-phone 30           # same file on the phone viewport
+pinball-desktop 60       # #667 plays 3 balls to the drain with no input: ~10-20 s
+pinball-phone 60         # same file on the phone viewport
 arcade-desktop 90          # #668 air hockey round added (~15 s: countdown + mouse/key checks + a played round)
 arcade-phone 90            # #668 same on the phone viewport
+walk 60                   # #745 example walker: helper self-check + walks all ~120 activities for the back control: ~15 s
+mcp 60                    # #674 MCP server on the worker: auth/revoke, every tool, writes logged, rate limits (worker + fake KV/D1, no browser): ~2 s
