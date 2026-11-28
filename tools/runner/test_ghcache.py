@@ -119,8 +119,9 @@ rc, out = ans("gh", "pr", "view", "20", "--repo", R, "--json", "comments")
 assert json.loads(out)["comments"][0]["body"] == "VERDICT: PASS"
 
 # #637: comments keep url + reactionGroups (a thumbs-up answers an owner question); > 100 comments -> real gh (it pages)
-for sel in (G._COMMENTS, G._Q.split("prs:")[1]):
-    assert "url" in sel.split("comments(")[1] and "reactionGroups{content users(first:20){totalCount nodes{login}}}" in sel and "totalCount" in sel.split("comments(")[1], sel
+for sel in (G._COMMENTS, G._Q.split("prs:")[1], G._GATED_C):    # #911: reactions only for the gated issues (G._GATED_C), the rest is slim
+    assert "url" in sel.split("comments(")[1] and "totalCount" in sel.split("comments(")[1], sel
+assert "reactionGroups{content users(first:20){totalCount nodes{login}}}" in G._GATED_C
 import owner_q as OQ
 QB = "<!-- owner_q --><!-- owner-q:{k} -->\n**#{n}** חלון `remote-{n}`\n\n**שאלה:** q{n}?\n"
 QCS = [{"body": QB.format(k="47df330c6428", n=392), "createdAt": "2026-11-27T10:00:00Z", "author": {"login": "o"},
@@ -266,13 +267,14 @@ def ident(name, answers):
     f.got = got; return f
 LIM = (1, "GraphQL: API rate limit already exceeded for installation ID 186191764")
 slept.clear()
+G._save({**G.load(), "rate_owner": {"graphql": [4000, 5000]}})          # #911: the owner login has budget left
 app, own = ident("app", [LIM]), ident("owner", [])
-rc, out = G.call(["gh", "issue", "view", "123", "--json", "body"], app, sleep=fsleep, alt=own)
+rc, out = G.call(["gh", "issue", "comment", "123", "--body", "x"], app, sleep=fsleep, alt=own)     # #911: a WRITE may use the owner login
 assert (rc, out) == (0, "owner") and slept == [] and len(app.got) == 1 and len(own.got) == 1, (rc, out, slept)
 assert "switched to owner" in (G.RUNS / "ghauth.log").read_text(encoding="utf-8")
 app2, own2 = ident("app", []), ident("owner", [])
-assert G.call(["gh", "issue", "view", "124", "--json", "body"], app2, sleep=fsleep, alt=own2) == (0, "owner") and not app2.got, \
-    "the next READ starts on the other identity while the app is limited"
+assert G.call(["gh", "issue", "edit", "124", "--add-label", "x"], app2, sleep=fsleep, alt=own2) == (0, "owner") and not app2.got, \
+    "the next WRITE starts on the other identity while the app is limited"
 w_app, w_own = ident("app", []), ident("owner", [])
 assert G.call(["gh", "issue", "comment", "5", "--body", "x"], w_app, sleep=fsleep, alt=w_own) == (0, "owner") and not w_app.got, "a write leaves the app only while it is limited"
 G.LIMITED.unlink()
@@ -281,7 +283,7 @@ assert G.call(["gh", "issue", "comment", "5", "--body", "x"], w_app, sleep=fslee
 print("ok #469 app limited -> owner used at once, no 60 s sleep")
 G.LIMITED.unlink(missing_ok=True); slept.clear()
 app, own = ident("app", [LIM, (0, "app")]), ident("owner", [(1, "You have exceeded a secondary rate limit")])
-assert G.call(["gh", "issue", "view", "125", "--json", "body"], app, sleep=fsleep, alt=own) == (0, "app")
+assert G.call(["gh", "issue", "comment", "125", "--body", "x"], app, sleep=fsleep, alt=own) == (0, "app")
 assert slept == [G.BOTH_WAIT] and G.BOTH_WAIT <= 15, slept
 print("ok #469 both limited -> short wait, then retry")
 G.LIMITED.unlink(missing_ok=True); slept.clear()
@@ -302,6 +304,17 @@ G.CALLS.write_text("".join(f"{t} {w} {c}\n" for t, w, c in [(NOW, "app", "watchd
 assert G.calls_per_min(now=NOW + 30) == 3 and G.calls_by(now=NOW + 30) == {"app": 2, "owner": 1}
 rep = G.top_report(NOW - 1, NOW + 120)
 assert rep.splitlines()[0].endswith("3  app 2 watchdog:api · owner 1 owner_q:issue") and "remote:pr" in rep.splitlines()[1], rep
+# #848: endpoint per call (numbers replaced, no query/token), old lines parse, top groups by caller + endpoint
+assert G.endpoint_of(["gh", "api", "repos/igalgerman/oren_study/issues/848/comments?per_page=100&access_token=SECRET"]) == "repos/{o}/{r}/issues/{n}/comments"
+assert G.endpoint_of(["gh", "api", "-X", "GET", "repos/a/b/pulls/7"]) == "repos/{o}/{r}/pulls/{n}" and G.endpoint_of(["gh", "api", "graphql", "-f", "query=x"]) == "graphql"
+assert G.endpoint_of(["gh", "issue", "list", "--json", "x"]) == "issue_list" and G.endpoint_of(["gh"]) == ""
+G.CALLS.write_text(f"{NOW} app watchdog:api\ngarbage\n{NOW+1} app watchdog:api repos/{{o}}/{{r}}/issues/{{n}}/comments\n{NOW+2} app watchdog:api repos/{{o}}/{{r}}/issues/{{n}}/comments\n{NOW+3} owner x:pr pr_list\n", encoding="utf-8")
+assert [c[3] for c in G._calls()] == ["", "repos/{o}/{r}/issues/{n}/comments", "repos/{o}/{r}/issues/{n}/comments", "pr_list"]
+tail = G.top_report(NOW - 1, NOW + 120).split("total by caller + endpoint:")[1].split("\n")
+assert tail[1].split(None, 1) == ["2", "watchdog:api repos/{o}/{r}/issues/{n}/comments"] and any(l.split(None, 1) == ["1", "watchdog:api"] for l in tail), tail
+G.note_call(NOW, "app", "w:api", G.endpoint_of(["gh", "api", "repos/a/b/issues/3"]))
+assert G.CALLS.read_text(encoding="utf-8").splitlines()[-1] == f"{NOW} app w:api repos/{{o}}/{{r}}/issues/{{n}}"
+print("ok #848 endpoint log + top by caller+endpoint")
 G.LIMITED.unlink(missing_ok=True)
 G.mark_limited("app", "You have exceeded a secondary rate limit", now=NOW + 5)
 line = G.status_line({"ts": NOW, "rate": {"graphql": [4000, 5000]}, "rate_owner": {"graphql": [3000, 5000]}}, 3, now=NOW + 20, by={"app": 2, "owner": 1})
@@ -315,7 +328,7 @@ def sub_lim(cmd, **k):
     toks.append(k["env"].get("GH_TOKEN"))
     return P(1, LIM[1]) if k["env"].get("GH_TOKEN") == "ghs_app" else P(0, "owner ok")
 ghauth.token = lambda *a, **k: "ghs_app"; RN.subprocess.run = sub_lim; G.time.sleep = lambda s: (_ for _ in ()).throw(AssertionError("slept"))
-try: rc, out = RN.run(["gh", "issue", "view", "127", "--json", "body"])
+try: rc, out = RN.run(["gh", "issue", "comment", "127", "--body", "x"])
 finally: RN.subprocess.run, ghauth.token, G.time.sleep = real_sub, real_tok, real_sleep
 assert (rc, out) == (0, "owner ok") and toks[0] == "ghs_app" and toks[1] != "ghs_app", toks
 G.LIMITED.unlink(missing_ok=True); G._clock = time.monotonic
@@ -337,4 +350,95 @@ try: G._save({"ts": NOW + 300})
 finally: G.os.replace, G.time.sleep = real_replace, time.sleep
 assert n_perm and G.load()["ts"] == NOW + 300, "saved after one PermissionError"
 print("ok #726 garbage log lines and replace retry")
+
+# ---------- #911 ----------
+# 1. a cached PR view without -q: every field the CI wait reads comes from the cache, no gh call
+G.LIMITED.unlink(missing_ok=True)
+def pr_cache(state, **extra):
+    G._save({"ts": NOW, "open": [], "closed": [], "open_complete": True, "prs_complete": True, "lanes": {}, "rate": {}, "closed_total": 0,
+             "prs": [{"number": 30, "state": "OPEN", "mergeable": "MERGEABLE", "isDraft": False, "labels": [{"name": "x"}], "body": "Fixes #5",
+                      "headRefOid": "a" * 40, "headRefName": "lane/5", "statusCheckRollup": [{"state": state, "conclusion": state}] if state else [], **extra}]})
+    if G.DIRTY.exists(): G.DIRTY.unlink()
+pr_cache("PENDING")
+nogh = lambda: (_ for _ in ()).throw(AssertionError("real gh call"))
+for f in ("state,mergeable", "mergeable", "headRefOid", "isDraft,labels,body"):
+    rc, out = G.call(["gh", "pr", "view", "30", "--json", f, "--repo", R], nogh, now=NOW + 5)
+    assert rc == 0 and set(json.loads(out)) == set(f.split(",")), (f, out)
+assert json.loads(G.call(["gh", "pr", "view", "30", "--json", "headRefOid", "--repo", R], nogh, now=NOW + 5)[1])["headRefOid"] == "a" * 40
+assert G.call(["gh", "pr", "view", "30", "--json", "mergeable", "-q", ".mergeable", "--repo", R], lambda: (0, "RAW"), now=NOW + 5) == (0, "RAW"), "-q still goes to gh"
+print("ok #911 pr view (no -q) answered from the cache")
+# 2. the cached rollup
+assert G.pr_rollup(30, now=NOW + 5) == "PENDING" and G.pr_rollup(99, now=NOW + 5) is None and G.pr_rollup(30, now=NOW + 999) is None
+pr_cache(None); assert G.pr_rollup(30, now=NOW + 5) == ""
+pr_cache("SUCCESS"); G.mark_dirty("30", NOW + 6); assert G.pr_rollup(30, now=NOW + 7) is None, "a write to the PR makes the rollup unknown"
+print("ok #911 pr_rollup")
+# 3. unknown write targets mark only what they can touch
+assert G.write_target(["gh", "pr", "merge", "--repo", R, "30", "--squash"]) == "30" and G.write_target(["gh", "issue", "comment", "--repo", R, "911", "--body", "5"]) == "911"
+assert G.write_target(["gh", "pr", "merge", "30", "--auto", "--squash", "--match-head-commit", "abc"]) == "30"
+assert G.write_target(["gh", "issue", "create", "--title", "t"]) == "new" and G.write_target(["gh", "pr", "create", "--base", "main"]) == "new"
+assert G.write_target(["gh", "api", "-X", "POST", f"repos/{R}/issues", "-f", "title=t"]) == "new"
+assert G.write_target(["gh", "api", "graphql", "-f", "query=mutation{x}", "-F", "n=7"]) == "7"
+assert G.write_target(["gh", "api", "graphql", "-f", "query=mutation{x}"]) == "*", "still unknown: the old behaviour"
+pr_cache("SUCCESS"); G.mark_dirty("new", NOW + 6)
+assert G.call(["gh", "pr", "view", "30", "--json", "state"], nogh, now=NOW + 7)[0] == 0, "a created issue does not dirty an unrelated PR view"
+print("ok #911 write targets")
+# 4. the owner login only above 50% and for writes / gate reads
+def own_cache(pct, **kw):
+    pr_cache("SUCCESS"); c = G.load(); c["rate_owner"] = {"graphql": [pct * 50, 5000]}; G._save(c)
+own_cache(40); G.LIMITED.unlink(missing_ok=True); slept.clear()
+G.mark_limited("app", "API rate limit already exceeded", now=time.time())
+a_, o_ = ident("app", []), ident("owner", [])
+assert G.call(["gh", "issue", "comment", "5", "--body", "x"], a_, sleep=fsleep, alt=o_, now=time.time()) [0] == 0 and not o_.got, "owner at 40%: not even a write"
+own_cache(80); G.LIMITED.unlink(missing_ok=True); G.mark_limited("app", "API rate limit already exceeded", now=time.time())
+a_, o_ = ident("app", []), ident("owner", [])
+assert G.call(["gh", "issue", "comment", "5", "--body", "x"], a_, sleep=fsleep, alt=o_, now=time.time()) == (0, "owner") and not a_.got, "owner at 80%: a write goes"
+a_, o_ = ident("app", []), ident("owner", [])
+assert G.call(["gh", "api", "graphql", "-f", "query=q"], a_, sleep=fsleep, alt=o_, now=time.time())[0] == 0 and not o_.got, "a plain read never uses the owner login"
+with G.gate_read():
+    a_, o_ = ident("app", []), ident("owner", [])
+    assert G.call(["gh", "api", "graphql", "-f", "query=q"], a_, sleep=fsleep, alt=o_, now=time.time()) == (0, "owner"), "a gate read may"
+assert not getattr(G._TICK, "gate", False)
+own_cache(30); G.LIMITED.unlink(missing_ok=True); G.mark_limited("app", "API rate limit already exceeded", now=time.time())
+with G.gate_read():
+    a_, o_ = ident("app", []), ident("owner", [])
+    G.call(["gh", "api", "graphql", "-f", "query=q"], a_, sleep=fsleep, alt=o_, now=time.time()); assert not o_.got, "a gate read below 50% waits too"
+# limited app + a read the (up to 10 min old) cache can answer: no call at all
+own_cache(80); c = G.load(); c["ts"] = time.time() - 400; G._save(c); G.LIMITED.unlink(missing_ok=True); G.mark_limited("app", "API rate limit already exceeded", now=time.time())
+assert G.call(["gh", "pr", "view", "30", "--json", "mergeable", "--repo", R], nogh, alt=nogh)[0] == 0, "a 400 s old cache serves a limited app's read"
+c["ts"] = time.time() - 700; G._save(c)
+a_ = ident("app", []); assert G.call(["gh", "pr", "view", "30", "--json", "mergeable", "--repo", R], a_, sleep=fsleep, alt=ident("owner", []))[0] == 0 and a_.got, "older than 10 min: a real call"
+G.LIMITED.unlink(missing_ok=True)
+print("ok #911 owner login: writes and gate reads only, above 50%")
+# 5. dashboard: a recent 'already exceeded' answer is the real state
+G.LIMITED.unlink(missing_ok=True); G.mark_limited("app", "API rate limit already exceeded", now=NOW + 20)
+line = G.status_line({"ts": NOW, "rate": {"graphql": [4516, 5000], "core": [4900, 5000]}, "rate_owner": {"graphql": [4000, 5000]}}, 3, now=NOW + 21)
+assert "app graphql 0/5000 (0%" in line and "limited until" in line and "ALARM GitHub budget" in line and "owner graphql 4000/5000 (80%)" in line, line
+assert "limited until" not in G.status_line({"ts": NOW, "rate": {"graphql": [4516, 5000]}}, 3, now=NOW + 200), "the limit ends at its Retry-After"
+G.LIMITED.unlink(missing_ok=True)
+print("ok #911 dashboard shows the answer's state")
+# 6. the refresh query is slim and its cost is logged
+assert "reactionGroups" not in G._Q and "comments(last:100)" not in G._Q and "comments(last:50)" not in G._Q and "rateLimit{cost" in G._Q
+def costly(cmd):
+    d = json.loads(fake_gh(cmd)[1]) if cmd[:3] == ["gh", "api", "graphql"] else None
+    if d: d["data"]["rateLimit"] = {"cost": 31, "remaining": 4000}; return 0, json.dumps(d)
+    return fake_gh(cmd)
+G.CALLS.write_text("", encoding="utf-8"); G.refresh(costly, now=time.time())
+assert G.refresh_costs(5) and all(x == 31 for x in G.refresh_costs(5)), G.refresh_costs(5)
+assert G.calls_per_min() == 0 and G.calls_by() == {}, "cost lines are not calls"
+# the gated issue (an owner question in its comments, or the owner_q questions issue) gets its comments with reaction users in ONE extra query
+G.RUNS.joinpath("owner_q.json").write_text(json.dumps({"issue": 8}), encoding="utf-8")
+seen.clear()
+GC = [{"body": "x", "createdAt": "2026-11-27T10:00:00Z", "url": "u", "author": {"login": "igalgerman"}, "reactionGroups": [{"content": "THUMBS_UP", "users": {"totalCount": 1, "nodes": [{"login": "igalgerman"}]}}]}]
+def gated_gh(cmd):
+    if cmd[:3] == ["gh", "api", "graphql"] and "i8:issue(number:8)" in " ".join(cmd): seen.append(cmd)
+    if cmd[:3] == ["gh", "api", "graphql"] and "i8:issue(number:8)" in " ".join(cmd):
+        return 0, json.dumps({"data": {"repository": {"i8": {"comments": {"totalCount": 1, "nodes": GC}}}, "rateLimit": {"cost": 4, "remaining": 1}}})
+    return fake_gh(cmd)
+assert G.gated_issues([G._flat(i) for i in OPEN]) == [8]
+c = G.refresh(gated_gh, now=time.time())
+assert [i["number"] for i in c["open"]] == [9, 8] and c["open"][1]["comments"] == GC and "comments_cut" not in c["open"][1], c["open"][1]
+assert c["open"][0]["comments"][0]["body"].startswith("Runner: started"), "other issues stay slim"
+assert sum(x[:3] == ["gh", "api", "graphql"] for x in seen) == 2, "main query + ONE gated query"
+G.RUNS.joinpath("owner_q.json").unlink()
+print("ok #911 refresh query slim + cost logged")
 print("ALL ghcache tests passed")

@@ -1,17 +1,28 @@
 """Deploy workflow helper (#192), used by .github/workflows/deploy.yml. Stdlib only.
-  python3 tools/ci/deploy_ci.py report <deploy.log>   parse deploy.sh output -> job summary + outputs ok/url/d1; exit 1 if not deployed
-  python3 tools/ci/deploy_ci.py smoke <url> [<url>..] live check (#150): page loads, save round trip (random id, then deleted), D1 bound,
+  python3 oren2/ci/deploy_ci.py report <deploy.log>   parse deploy.sh output -> job summary + outputs ok/url/d1; exit 1 if not deployed
+  python3 oren2/ci/deploy_ci.py smoke <url> [<url>..] live check (#150): page loads, save round trip (random id, then deleted), D1 bound,
                                                       /api/tts/status; exit 1 on a failure. Workers: run it on demand against
                                                       https://oren-game.pages.dev to verify a fix on the live site; it leaves no data behind.
-  python3 tools/ci/deploy_ci.py tour <tour.log>         #618: the regression tour's result (tools/ci/tour.js output) -> outputs tour=pass|fail, repro
-  python3 tools/ci/deploy_ci.py tour-issue            #618: a failed tour on production -> one P0 bug issue (env REPRO, SHA, TITLE, PREV);
+  python3 oren2/ci/deploy_ci.py tour <tour.log>         #618: the regression tour's result (oren2/ci/tour.js output) -> outputs tour=pass|fail, repro
+  python3 oren2/ci/deploy_ci.py tour-issue            #618: a failed tour on production -> one P0 bug issue (env REPRO, SHA, TITLE, PREV);
                                                       PREV=pass (the tour passed on the previous deploy) -> also the express undo (revert) Acceptance
-  python3 tools/ci/deploy_ci.py plan                  which sha to deploy (env EVENT, RUN_SHA, MAIN_SHA, GREEN_SHA) -> output sha ("" = skip)"""
+  python3 oren2/ci/deploy_ci.py plan                  which sha to deploy (env EVENT, RUN_SHA, MAIN_SHA, GREEN_SHA) -> output sha ("" = skip)"""
 import json, os, secrets, subprocess, sys, time, urllib.error, urllib.request
 
 UA = {"user-agent": "oren-deploy-smoke"}
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "runner"))
-import scrub   # #783: the kid's name never reaches a GitHub write; in Actions the names come from env PRIVATE_NAMES (a secret)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "runner"))
+try:
+    import scrub   # #783: the kid's name never reaches a GitHub write; in Actions the names come from env PRIVATE_NAMES (a secret)
+except ImportError:   # game-only checkout (#794): no tools/ tree; same rule, stdlib only: env PRIVATE_NAMES (comma list) -> the kid
+    import re
+    class scrub:
+        @staticmethod
+        def scrub_cmd(cmd):
+            ns = [n.strip() for n in os.environ.get("PRIVATE_NAMES", "").split(",") if n.strip()]
+            if not ns: return list(cmd), 0
+            rx = re.compile("|".join(re.escape(n) for n in sorted(ns, key=len, reverse=True)), re.I)
+            out = [rx.sub(lambda m: "הילד" if re.search("[\u0590-\u05ff]", m.group(0)) else "the kid", c) for c in cmd]
+            return out, sum(a != b for a, b in zip(cmd, out))
 
 def parse(out):
     """deploy.sh prints progress lines first and 'ok <url>' last (#50); it warns 'D1 not bound' (#109)."""
@@ -94,7 +105,7 @@ def attempted_cache(sha):
 TESTER_MARK = "<!-- found-by: tester -->"   # #618: in every bug the tester / the post-deploy tour opens (dashboard count)
 
 def tour_result(log):
-    """tools/ci/tour.js prints `TOUR: PASS` or `TOUR: FAIL <id>: <repro>; ...` last -> (pass|fail, repro). No line = fail."""
+    """oren2/ci/tour.js prints `TOUR: PASS` or `TOUR: FAIL <id>: <repro>; ...` last -> (pass|fail, repro). No line = fail."""
     lines = [l.strip() for l in (log or "").splitlines() if l.strip().startswith("TOUR:")]
     if not lines: return "fail", "the tour did not finish (no TOUR line): " + " / ".join((log or "").strip().splitlines()[-3:])[:300]
     rest = lines[-1][len("TOUR:"):].strip()
@@ -106,7 +117,7 @@ def tour_fail_actions(repro, sha, merge_title, prev):
     (prev = 'pass'); otherwise the bug was there before, a revert would not fix it."""
     undo = prev == "pass"
     title = f"Live tour failed after deploy {sha[:7]}"
-    body = (f"The post-deploy regression tour (tools/ci/tour.js) failed on https://oren-game.pages.dev after deploy {sha[:7]} ({merge_title}).\n\n"
+    body = (f"The post-deploy regression tour (oren2/ci/tour.js) failed on https://oren-game.pages.dev after deploy {sha[:7]} ({merge_title}).\n\n"
             f"Repro: {repro}\n\n")
     if undo:
         body += ("The tour passed on the previous deploy, so the last merge is undone (/undo):\n\n## Acceptance\n"

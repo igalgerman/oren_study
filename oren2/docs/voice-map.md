@@ -53,6 +53,7 @@ For each sentence the queue picks ONE voice, in this order:
 |---|---|
 | `again.js` | 23 |
 | `arcade.js` | 22, 31 |
+| `bag.js` | 30 (the bag: item name and effect line, #664; all through `say` via `O.say`) |
 | `build.js` | 10, 83, 95, 100, 102, 107, 113, 130 (building world #64: block and area names, cards, hints; all through `say` via `O.say`) |
 | `chess.js` | 95, 111, 115, 181, 258 |
 | `english2.js` | 339, 340 (reads `speechSynthesis.speaking` / `__gv.audio`, never speaks), 416, 428, 457 |

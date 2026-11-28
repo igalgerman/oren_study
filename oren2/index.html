@@ -53,7 +53,7 @@ svg.px{shape-rendering:crispEdges;display:block}
 @media (max-width:440px){body.pzon .hud-mid .chip{display:none}}/* a phone has no room for the title next to the pause button (activities hide it anyway) */
 .pzov{position:fixed;inset:0;z-index:95;display:grid;place-items:center;background:rgba(20,40,60,.74);backdrop-filter:blur(3px);padding:16px}
 .pzov .card{display:flex;flex-direction:column;align-items:center;gap:14px;background:var(--paper);padding:24px 32px;max-width:420px;width:100%;box-sizing:border-box;text-align:center;box-shadow:0 0 0 6px var(--ink),0 14px 0 6px rgba(0,0,0,.3);animation:pop .35s ease-out both}
-.pzov .pzi svg{width:90px;height:90px}.pzov h2{margin:0;font-size:32px;line-height:1.35}.pzov .bigbtn svg{width:30px;height:30px}
+.pzov .pzi svg,.pzov .hav svg{width:90px;height:90px}.pzov.remote .hav svg{width:140px;height:140px}.pzov h2{margin:0;font-size:32px;line-height:1.35}.pzov .bigbtn svg{width:30px;height:30px}
 .ibtn.off{opacity:.5}
 /* #403 audio blocked: a small muted-speaker mark on the speaker button (no popup) */
 .ibtn.blk{position:relative}.ibtn.blk::after{content:'';position:absolute;top:-7px;inset-inline-end:-7px;width:22px;height:22px;border-radius:50%;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c0392b' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 9v6h4l5 4V5L8 9H4z' fill='%23c0392b'/%3E%3Cpath d='M16 9l5 6M21 9l-5 6'/%3E%3C/svg%3E") center/15px no-repeat;box-shadow:0 0 0 2px #c0392b;pointer-events:none}
@@ -1261,7 +1261,7 @@ function mergeIn(o){if(!o||typeof o!=='object')return;
   if(o.help&&typeof o.help==='object'){const hp=save.help=save.help||{items:{},tb:[],t:0};hp.items=hp.items||{};for(const [k,v] of Object.entries(o.help.items||{})){const c=hp.items[k];if(!c||(v.n|0)>(c.n|0)||((v.n|0)===(c.n|0)&&String(v.last||'')>String(c.last||'')))hp.items[k]=v;}
     if((o.help.tb||[]).length>(hp.tb||[]).length)hp.tb=o.help.tb;hp.t=Math.max(hp.t|0,o.help.t|0);}
   if(o.health&&window.HEALTH)save.health=window.HEALTH.merge(save.health||{},o.health);else if(o.health&&!save.health)save.health=o.health;
-  if((+o.t||0)>(+save.t||0)){for(const k of ['gems','av','k','bw','tc','made','art','daily','typ','kpic','jar','mood','prof','arc','togL','ship'])if(o[k]!=null)save[k]=o[k];if(o.set&&!(+o.setT||0)&&!(+save.setT||0))save.set=o.set;save.t=o.t;}hatsBack();}
+  if((+o.t||0)>(+save.t||0)){for(const k of ['gems','av','k','bw','tc','made','art','daily','typ','kpic','jar','mood','prof','arc','togL','ship','bag'])if(o[k]!=null)save[k]=o[k];if(o.set&&!(+o.setT||0)&&!(+save.setT||0))save.set=o.set;save.t=o.t;}hatsBack();}
 /* #426: hats are gone; a hat bought earlier gives its gems back, once per hat (save.hb, synced like the other max-merged maps) */
 function hatsBack(){const P={helmet:20,crown:60,wizard:120};let g=0;for(const [k,v] of Object.entries(P))if(save.owned&&save.owned[k]&&!(save.hb&&save.hb[k])){save.hb=save.hb||{};save.hb[k]=1;g+=v;}
   if(g)save.gems=(save.gems|0)+g;if(save.av&&save.av.hat)delete save.av.hat;return g;}
@@ -1304,7 +1304,9 @@ function hereResume(){const r=HERE.boot;HERE.boot=null;if(!r||!r.id||kidSave)ret
   HERE.want=null;if(!done){herePut(null);return false;}if(r.pz)pauseOn();return true;}
 /* the pause button: one big "continue" button over the game; play time does not count; a reload comes back paused */
 const paused=()=>document.body.classList.contains('paused');
-function pauseOn(){if(paused())return;hush();document.body.classList.add('paused');const o=h('div','pzov',`<div class="card"><div class="pzi">${ICON.pause}</div><h2>עָצַרְנוּ לְרֶגַע</h2></div>`);
+/* #659 remote=1: the parent paused from the panel: the friend and no button (the parent resumes), nothing written to HERE */
+function pauseOn(rm){if(paused())return;hush();document.body.classList.add('paused');const fr=rm&&window.TAL&&TAL.friend?`<div class="hav bob">${TAL.friend()}</div>`:`<div class="pzi">${ICON.pause}</div>`;const o=h('div','pzov'+(rm?' remote':''),`<div class="card">${fr}<h2>עָצַרְנוּ לְרֶגַע</h2></div>`);
+  if(rm){document.body.appendChild(o);return;}
   const b=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');b.onclick=()=>{sfx.pop(2);pauseOff();};o.firstChild.appendChild(b);document.body.appendChild(o);
   const r=hereGet();if(r){r.pz=1;herePut(r);}setTimeout(()=>b.focus(),50);}
 function pauseOff(){document.querySelectorAll('.pzov').forEach(e=>e.remove());document.body.classList.remove('paused');const r=hereGet();if(r&&r.pz){delete r.pz;herePut(r);}}
@@ -1809,7 +1811,7 @@ const wipeEl=$('#wipe');wipeEl.innerHTML='<i></i>'.repeat(70);
 function wipe(){if(window.__fast||RM())return;sfx.whoosh();wipeEl.hidden=false;[...wipeEl.children].forEach((c,i)=>{const r=i/10|0,col=i%10;c.style.animation='none';void c.offsetWidth;c.style.animation='';c.style.animationDelay=((r+col)*22)+'ms';});clearTimeout(wipe.t);wipe.t=setTimeout(()=>wipeEl.hidden=true,720);}
 function setScreen(id,w,back){SQ.scr++;hush();AUTO.scr=Date.now();if(window.HELP)HELP.stop();document.body.classList.toggle('inpar',id==='sPar');document.body.classList.remove('act');window.__noAuto=0;/* leaving a screen stops any reading aloud; the new screen may speak right after */['sStart','sHome','sMap','sWorld','sLearn','sPlay','sKing','sStudio','sTeach','sTable','sFinal','sTal','sPar'].forEach(s=>$('#'+s).hidden=s!==id);$('#hud').hidden=id==='sStart';$('#hudMid').innerHTML='';/* #8: no stale label from the last screen */$('#ov').hidden=true;{const dl=$('#dlg');if(!dl.hidden){dl.hidden=true;dl.innerHTML='';}}/* #356: a story dialog belongs to the screen it was opened on */
   if(app.dataset.w!==(w||'meadow')){app.dataset.w=w||'meadow';bgW=app.dataset.w;paintBG(performance.now());}setTheme(THEME_OF[app.dataset.w]||'map');
-  pauseOff();if(!ACTIVE_S.includes(id)&&id!=='sStart'&&id!=='sPar')herePut(null);backTo=back||null;$('#btnBack').style.visibility=back?'visible':'hidden';$('#btnBack').innerHTML=back===showMap||(back&&back.home)?ICON.home:ICON.back;$('#screens').scrollTop=0;play=null;stopSpeed();updateGems();wipe();evScreen(id);emit('screen',id,back);pzSync();}
+  if(!document.querySelector('.pzov.remote'))pauseOff();/* #659 the parent's pause stays over a screen change (a sync redraws home) */if(!ACTIVE_S.includes(id)&&id!=='sStart'&&id!=='sPar')herePut(null);backTo=back||null;$('#btnBack').style.visibility=back?'visible':'hidden';$('#btnBack').innerHTML=back===showMap||(back&&back.home)?ICON.home:ICON.back;$('#screens').scrollTop=0;play=null;stopSpeed();updateGems();wipe();evScreen(id);emit('screen',id,back);pzSync();}
 $('#btnSay').innerHTML=ICON.say;$('#btnMusic').innerHTML=ICON.music;$('#icoStart').innerHTML=ICON.play;
 if(!save.avOren){save.av=Object.assign({},save.av,OREN_LOOK);save.avOren=1;try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}}
 if(hatsBack())try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}
@@ -3466,6 +3468,43 @@ body.fron #screens{padding-bottom:84px}
 .hpair .hheld{align-self:flex-end;margin-inline-start:-4px;margin-bottom:4px;font-size:14px;font-weight:700;color:#5b3a1a;background:#fff3c4;border:2px solid #e0c36a;border-radius:10px;padding:1px 6px;white-space:nowrap;cursor:pointer}
 @media (min-width:761px){.hpair .hheld{font-size:16px}}
 
+/* #664 the bag: button on home, the bag card, the finale surprise, the effects of the 12 artifacts */
+.hstage{position:relative}
+.bgbtn{position:absolute;top:0;inset-inline-start:2px;z-index:3;width:52px;height:52px;font-size:30px;line-height:1;border-radius:50%;border:3px solid #e0c36a;background:#fff3c4;cursor:pointer;padding:0;}
+.bgcard{position:relative;width:min(94vw,440px);box-sizing:border-box;text-align:center}
+.bgcard h2{font-size:24px;margin:0 0 8px;padding:0 44px}
+.bgg{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.bgs{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:78px;padding:4px 2px;border-radius:14px;border:3px solid #e0c36a;background:#fff3c4;cursor:pointer;font:inherit;color:#5b3a1a}
+.bgs .bge{font-size:34px;line-height:1}.bgs b{font-size:13px;line-height:1.1}
+.bgs.lock{background:#e6e6e6;border-color:#c8c8c8;opacity:.8}.bgs.lock .bge{filter:grayscale(1)}
+.bgx{position:absolute;top:8px;inset-inline-end:8px;width:44px;height:44px;border-radius:50%;border:0;background:#eee;font-size:20px;cursor:pointer}
+@media (max-width:420px){.bgs{min-height:72px}.bgs b{font-size:12px}}
+.bgnew{margin-top:10px;position:relative;min-height:90px;display:flex;flex-direction:column;align-items:center;gap:4px}
+.bgnew b{font-size:22px}.bgbox,.bgpop{font-size:48px;line-height:1}
+.bgbox{animation:bgwob .9s ease-in-out 2,bgfade .3s 1.8s forwards}.bgpop{position:absolute;top:0;opacity:0;animation:bgpopin .6s 1.8s forwards}
+@keyframes bgwob{0%,100%{transform:rotate(-12deg)}50%{transform:rotate(12deg)}}
+@keyframes bgfade{to{opacity:0}}
+@keyframes bgpopin{0%{opacity:0;transform:scale(.2) rotate(-30deg)}70%{opacity:1;transform:scale(1.5) rotate(10deg)}100%{opacity:1;transform:scale(1.15)}}
+.bgfx{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:2}
+.bgp{position:absolute;left:var(--x);font-size:var(--s);animation-delay:var(--d);animation-iteration-count:infinite;animation-timing-function:linear}
+.bgm-rise .bgp{bottom:-10%;animation:bgrise 7s linear infinite;animation-delay:var(--d)}
+.bgm-fall .bgp{top:-10%;animation:bgfall 8s linear infinite;animation-delay:var(--d)}
+.bgm-drift .bgp{top:var(--y);animation:bgdrift 9s ease-in-out infinite;animation-delay:var(--d)}
+.bgm-pop .bgp{top:var(--y);opacity:0;animation:bgpop 3.2s ease-out infinite;animation-delay:var(--d)}
+.bgm-big .bgp{top:6%;left:20%;font-size:min(46vw,260px);animation:bgbig 14s ease-in-out infinite}
+.bgm-glow{background:radial-gradient(ellipse at 50% 60%,rgba(255,200,90,.38),rgba(255,140,40,.2) 55%,rgba(60,20,0,.18));animation:bgglow 3s ease-in-out infinite}
+@keyframes bgrise{from{transform:translateY(0)}to{transform:translateY(-115vh) rotate(12deg)}}
+@keyframes bgfall{from{transform:translateY(0)}to{transform:translateY(115vh) rotate(60deg)}}
+@keyframes bgdrift{0%,100%{transform:translate(0,0)}50%{transform:translate(18vw,-6vh) rotate(10deg)}}
+@keyframes bgpop{0%{opacity:0;transform:scale(.2)}20%{opacity:1;transform:scale(1.6)}100%{opacity:0;transform:scale(2.4)}}
+@keyframes bgbig{0%,100%{transform:translateX(-4vw)}50%{transform:translateX(8vw)}}
+@keyframes bgglow{0%,100%{opacity:.75}50%{opacity:1}}
+.bgpulse{animation:bgpl 1s ease-in-out infinite}
+@keyframes bgpl{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(255,200,0,.7)}50%{transform:scale(1.07);box-shadow:0 0 0 14px rgba(255,200,0,0)}}
+.bghop{animation:bghp .7s ease-in-out infinite}
+@keyframes bghp{0%,100%{transform:translateY(0)}40%{transform:translateY(-28px)}}
+@media (prefers-reduced-motion:reduce){.bgfx *,.bgfx,.bgpulse,.bghop{animation-duration:30s!important}}
+
 /* ===== the building world (#64) ===== */
 #sKing .kscene{position:relative;width:min(640px,100%)}
 @media (max-width:440px){#sKing .kscene{padding-inline:0}}
@@ -4326,7 +4365,7 @@ function dailyEnsure(){const s=S();if(s.daily&&s.daily.d===today()){const d=s.da
   const plan=S().set.plan;let t=[];
   if(plan&&plan.length){const used=new Set();t=plan.map(sp=>{if(sp==='math')return 'math';if(String(sp).startsWith('act:')){const aid=sp.slice(4);if(ACT[aid]&&dailyPool().includes(aid)&&!used.has(aid)){used.add(aid);return aid;}sp='any';}const pool=dailyPool().filter(id=>!used.has(id)&&(sp==='any'||ACT[id].b.id===sp));const id=pool.length?fitPick([...used],pool):pick(dailyPool().filter(x=>!used.has(x)));used.add(id);return id||'math';}).concat(cr);}
   s.daily={d:today(),t,done:t.map(()=>0),claimed:0,ch:t.length?'plan':0,cr:t.length?[]:cr};O.persist();return s.daily;}
-function dailyMark(id){const d=dailyEnsure();const i=d.t.indexOf(id);if(i>=0&&!d.done[i]){d.done[i]=1;}}
+function dailyMark(id){const d=dailyEnsure();(d.q=d.q||[]).includes(id)||d.q.push(id);/* #634 #811 q = missions not to offer again today: played (also outside the path) or quit fast */const i=d.t.indexOf(id);if(i>=0&&!d.done[i]){d.done[i]=1;}}
 O.on('levelDone',(lv)=>{if(!lv||lv.type==='train')return;S().last={id:'math',d:today()};const d=dailyEnsure();const i=d.t.findIndex((x,k)=>x==='math'&&!d.done[k]);if(i>=0){d.done[i]=1;O.persist();}});
 /* ---------- map integration ---------- */
 O.on('map',m=>{const rs=m.querySelector('.reset');if(rs)rs.remove();if(window.TAL_noHome)return;m.querySelectorAll('.hello,.statline').forEach(e=>e.remove());m.querySelectorAll('.topbar .tool').forEach(t=>{if(/הַמַּמְלָכָה|הַגִּבּוֹר שֶׁלִּי/.test(t.textContent))t.remove();});});
@@ -4493,7 +4532,7 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
   if(help.band!=='read'&&window.FRIEND&&FRIEND.readFirst){O.sayNow=T.spk(FRIEND.READFIRST);FRIEND.readFirst();}else O.sayNow=STORY_SAY;}   /* read to him: no "try alone first" */
 T.addSay([STORY_SAY]);T.storyScreen=storyScreen;T.READ_HELP=READ_HELP;T.helpOf=helpOf;T.storyHelp=storyHelp;window.__story={get ss(){return SS;}};
 function readStory(k,back){const st=STORIES[k];storyScreen({act:'story-'+k,id:'story-'+k,title:st.t,name:st.t,tp:T.plainHe(st.t),goal:st.goal,spr:st.spr.map(x=>ALLSPR(x)),lines:st.s,hw:st.hw,
-  q:st.q.map(([pr,a,ds])=>({pr,a,ds})),back,qback:()=>openStories(back)});}
+  q:st.q.map(([pr,a,ds])=>({pr,a,ds})),back,qback:back&&back.home?back:()=>openStories(back)});}/* #832: a story that is a path step goes on along the path; from the building or 'something else' it goes to the list */
 function openStories(back){O.setScreen('sTal','final',back);T.hudT('סִפּוּרֵי עֶרֶב');const s=$('#sTal');s.innerHTML='';s.appendChild(h('div','whead',`<span class="gd">${X.moon}</span><h1>סִפּוּרֵי עֶרֶב</h1>`));
   const g=h('div','acts');STORIES.forEach((st,k)=>{const n=(T.S().tl['story-'+k]||{}).s|0;const c=h('button','actc',`<span class="ai">${ALLSPR(st.spr[0])}</span><span class="an">${st.t}</span><span class="st">${[0,1,2].map(j=>j<n?SPR.star:SPR.starOff).join('')}</span>`);c.onclick=()=>readStory(k,()=>openStories(back));g.appendChild(c);});s.appendChild(g);}
 T.STORIES=STORIES;T.readStory=readStory;
@@ -4812,19 +4851,22 @@ function sounds(back){clearT();stopAmb();const bk=leave(back);O.setScreen('sTal'
   Object.entries(AMB).forEach(([k,[n,e]])=>{const b=h('button','ambb',`<span class="ae">${e}</span><span>${n}</span>`);b.onclick=()=>{stopAmb();g.querySelectorAll('.ambb').forEach(x=>x.classList.remove('on'));if(cur===k){cur=null;return;}cur=k;b.classList.add('on');amb=makeAmb(k);if(!t0)t0=Date.now();};g.appendChild(b);});
   O.sayNow='בְּחַר צְלִיל, עֲצֹם עֵינַיִם וְהַקְשֵׁב.'+T.choiceSay(g,'.ambb span:last-child');const tm=h('div','lcap');s.append(g,tm);const iv=setInterval(()=>{if($('#sTal').hidden){clearInterval(iv);stopAmb();return;}if(t0&&cur){const sec=((Date.now()-t0)/1000)|0;tm.textContent=`🕰️ ${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')}`;if(sec>=45&&!(T.S().tl['mind-sounds']||{}).n){T.record('mind-sounds',3);O.addGems(3);}else if(sec===45)T.record('mind-sounds',3);}},1000);timers.push(iv);}
 /* --- feelings check-in --- */
-const REPLY={happy:['אֵיזֶה כֵּיף! 🌞','רוֹצֶה לְהוֹסִיף מַשֶּׁהוּ לְצִנְצֶנֶת הַתּוֹדָה?','mind-jar'],calm:['נִפְלָא. רֹגַע זֶה כֹּחַ.','אֶפְשָׁר לְהַקְשִׁיב לִצְלִילִים מַרְגִּיעִים.','mind-sounds'],excited:['וָאוּ, יֵשׁ לְךָ הַרְבֵּה אֵנֶרְגִּיָּה!','נְשִׁימָה אַחַת אֲרֻכָּה עוֹזֶרֶת לְהִתְרַכֵּז.','mind-breath'],
-  tired:['זֶה בְּסֵדֶר לִהְיוֹת עָיֵף.','אוּלַי מְתִיחָה קְטַנָּה אוֹ סְרִיקַת גּוּף?','mind-scan'],sad:['זֶה בְּסֵדֶר לִהְיוֹת עָצוּב. כָּל רֶגֶשׁ עוֹבֵר.','אֶפְשָׁר לְסַפֵּר לְמִישֶׁהוּ שֶׁאוֹהֵב אוֹתְךָ, אוֹ לִנְשֹׁם יַחַד.','mind-breath'],angry:['גַּם כַּעַס הוּא רֶגֶשׁ רָגִיל.','בּוֹא נִנְשֹׁם לְאַט כְּמוֹ בּוּעָה, וְהַכַּעַס יִקְטַן.','mind-breath']};
+/* #836 each face: its calm line + the missions that fit it, best first; the offer skips what he already played today (path d.t, quick exits d.q: the rule of lastStep) */
+const REPLY={happy:['אֵיזֶה כֵּיף! 🌞',['mind-jar','mind-sounds','mind-breath']],calm:['נִפְלָא. רֹגַע זֶה כֹּחַ.',['mind-sounds','mind-breath','mind-scan']],excited:['וָאוּ, יֵשׁ לְךָ הַרְבֵּה אֵנֶרְגִּיָּה!',['mind-breath','mind-scan','mind-sounds']],
+  tired:['זֶה בְּסֵדֶר לִהְיוֹת עָיֵף.',['mind-scan','mind-sounds','mind-breath']],sad:['זֶה בְּסֵדֶר לִהְיוֹת עָצוּב. כָּל רֶגֶשׁ עוֹבֵר.',['mind-breath','mind-sounds','mind-scan']],angry:['גַּם כַּעַס הוּא רֶגֶשׁ רָגִיל.',['mind-breath','mind-sounds','mind-scan']]};
+const OFFER={'mind-jar':'רוֹצֶה לְהוֹסִיף מַשֶּׁהוּ לְצִנְצֶנֶת הַתּוֹדָה?','mind-sounds':'אֶפְשָׁר לְהַקְשִׁיב לִצְלִילִים מַרְגִּיעִים.','mind-breath':'בּוֹא נִנְשֹׁם לְאַט כְּמוֹ בּוּעָה.','mind-scan':'אוּלַי סְרִיקַת גּוּף קְטַנָּה, שֶׁהַגּוּף יָנוּחַ?'};
+function feelPick(k){const d=T.S().daily,played=d&&d.d===O.today()?[].concat(d.t||[],d.q||[]):[];return (REPLY[k][1]).find(id=>!played.includes(id))||null;}
 function logMood(k){const s=T.S();s.mood.push({d:O.today(),f:k,t:Date.now()});if(s.mood.length>120)s.mood=s.mood.slice(-120);s.moodT=Date.now();O.persist();}
 function feel(back){clearT();O.setScreen('sTal','forest',back);T.hudT('אֵיךְ אֲנִי מַרְגִּישׁ?');O.sayNow='איך אתה מרגיש היום?';const s=$('#sTal');s.innerHTML='';
   s.appendChild(h('div','whead',`<h1>אֵיךְ אַתָּה מַרְגִּישׁ עַכְשָׁו?</h1>`));const g=h('div','faces');
-  Object.entries(FACES).forEach(([k,f])=>{const b=h('button','face',`${f.s}<span>${f.n}</span>`);b.onclick=()=>{logMood(k);T.record('mind-feel',3);sfx.ok(1);const [a,b2,act]=REPLY[k];s.innerHTML='';
-    s.appendChild(h('div','fresp',`<div class="fbig">${f.s}</div><h2>${a}</h2><div class="lsent">${b2}</div>`));O.say(a+' '+b2);const row=h('div','btnrow');
-    const go=h('button','bigbtn',ICON.play+'<span>בּוֹא נְנַסֶּה</span>');go.onclick=()=>T.ACT[act].run(back);const no=h('button','bigbtn plain sm','<span>לֹא עַכְשָׁו</span>');no.onclick=back;row.append(no,go);s.appendChild(row);};g.appendChild(b);});
+  Object.entries(FACES).forEach(([k,f])=>{const b=h('button','face',`${f.s}<span>${f.n}</span>`);b.onclick=()=>{logMood(k);T.record('mind-feel',3);sfx.ok(1);const a=REPLY[k][0],act=feelPick(k),b2=act?OFFER[act]:'';s.innerHTML='';
+    s.appendChild(h('div','fresp',`<div class="fbig">${f.s}</div><h2>${a}</h2>${b2?`<div class="lsent">${b2}</div>`:''}`));O.say(a+(b2?' '+b2:''));const row=h('div','btnrow');
+    const no=h('button','bigbtn plain sm','<span>לֹא עַכְשָׁו</span>');no.onclick=back;row.appendChild(no);if(act){const go=h('button','bigbtn',ICON.play+'<span>בּוֹא נְנַסֶּה</span>');go.onclick=()=>T.ACT[act].run(back);row.appendChild(go);}s.appendChild(row);};g.appendChild(b);});
   s.appendChild(g);O.sayNow='אֵיךְ אַתָּה מַרְגִּישׁ הַיּוֹם?'+T.choiceSay(g,'.face span');const hist=T.S().mood.slice(-7);if(hist.length)s.appendChild(h('div','mhist',`<span>הָרְגָשׁוֹת הָאַחֲרוֹנִים שֶׁלִּי:</span>${hist.map(m=>FACES[m.f]?`<i>${FACES[m.f].s}</i>`:'').join('')}`));}
 /* --- gratitude jar --- */
 const THX=[['🏠','הַמִּשְׁפָּחָה שֶׁלִּי'],['🧑‍🤝‍🧑','חֲבֵרִים'],['🐱','חַיּוֹת'],['🍎','אֹכֶל טָעִים'],['☀️','מֶזֶג אֲוִיר יָפֶה'],['⚽','מִשְׂחָק בַּחוּץ'],['📚','סִפּוּר טוֹב'],['🎨','צִיּוּר'],['🛏️','מִטָּה חַמָּה'],['🎵','מוּזִיקָה'],['🤗','חִבּוּק'],['🏫','מַשֶּׁהוּ שֶׁלָּמַדְתִּי']];
 /* the kid sees 6 of them (saved days keep the index into THX) */
-const JAR6=[0,1,2,3,5,10];T.addChoices(Object.values(FACES).map(f=>f.n).concat(JAR6.map(k=>THX[k][1]),Object.values(AMB).map(a=>a[0]),['נְגִינָה חָפְשִׁית','שִׁיר']));T.addSay(['נְגִינָה חָפְשִׁית, אוֹ שִׁיר?','בַּחֲרוּ שְׁנֵי צְבָעִים וְעַרְבְּבוּ.','בְּחַר צְלִיל, עֲצֹם עֵינַיִם וְהַקְשֵׁב.','אֵיךְ אַתָּה מַרְגִּישׁ הַיּוֹם?','עַל מָה אַתָּה מוֹדֶה הַיּוֹם? בְּחַר שְׁלוֹשָׁה דְּבָרִים.']);
+const JAR6=[0,1,2,3,5,10];T.addChoices(Object.values(FACES).map(f=>f.n).concat(JAR6.map(k=>THX[k][1]),Object.values(AMB).map(a=>a[0]),['נְגִינָה חָפְשִׁית','שִׁיר']));T.addSay(Object.values(REPLY).map(r=>r[0]).concat(Object.values(OFFER)));T.addSay(['נְגִינָה חָפְשִׁית, אוֹ שִׁיר?','בַּחֲרוּ שְׁנֵי צְבָעִים וְעַרְבְּבוּ.','בְּחַר צְלִיל, עֲצֹם עֵינַיִם וְהַקְשֵׁב.','אֵיךְ אַתָּה מַרְגִּישׁ הַיּוֹם?','עַל מָה אַתָּה מוֹדֶה הַיּוֹם? בְּחַר שְׁלוֹשָׁה דְּבָרִים.']);
 const BALL=['#e63946','#ffd166','#4fae4f','#3a8fc4','#8e6fd1','#ff9cc2','#ff8a3d','#7fd6f5'];
 function jarSVG(n){const k=Math.min(n,40);let b='';for(let i=0;i<k;i++){const x=24+((i*37)%5)*14+(i%2)*5,y=150-Math.floor(i/5)*12;b+=`<circle cx="${x}" cy="${y}" r="7" fill="${BALL[i%BALL.length]}"/>`;}
   return `<svg viewBox="0 0 120 170" class="jarsvg" aria-hidden="true"><rect x="30" y="4" width="60" height="14" rx="4" fill="#c8925a"/><path d="M28 20 H92 Q100 24 100 34 V156 Q100 166 90 166 H30 Q20 166 20 156 V34 Q20 24 28 20Z" fill="rgba(200,235,255,.35)" stroke="#5a7f9a" stroke-width="3"/>${b}<path d="M30 34 V150" stroke="#fff" stroke-opacity=".6" stroke-width="4" stroke-linecap="round"/></svg>`;}
@@ -5507,7 +5549,7 @@ function choose(dm,first,quiet){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.
   const isEn=x=>!!(ACT[x]&&ACT[x].b&&ACT[x].b.id==='eng'),noEn=a=>dm==='b:eng'?a:a.filter(x=>!isEn(x)||x===first);st=noEn(st);
   if(!st.length)st=['math'];
   /* a domain that rested yesterday: the path starts with it, where Oren stopped (once a day) */
-  if(!bonus&&!d.rv&&window.HEALTH){d.rv=1;const rv=window.HEALTH.review().find(x=>!d.t.includes(x)&&!st.includes(x));if(rv&&!isEn(rv))st=[rv].concat(st);}
+  if(!bonus&&!d.rv&&window.HEALTH){d.rv=1;const rv=window.HEALTH.review().find(x=>!d.t.includes(x)&&!(d.q||[]).includes(x)&&!st.includes(x));if(rv&&!isEn(rv))st=[rv].concat(st);}
   /* #358 variety: a mission that would repeat the kind is swapped for the engine's next pick in this domain, then in the others */
   st=T.vary(d.t,st,()=>{let ex=[];[dm,...wpick(doms().filter(x=>x.id!==gid(dm)),9).map(o=>o.id)].forEach(id=>{if(id!=='tog')ex=ex.concat(noEn(stepsOf(id,3,new Set([...d.t,...(d.q||[]),...st,...ex]))).filter(x=>!ex.includes(x)));});return ex;});
   /* #424 one short English scene per path, once a day, while English is on for him */
@@ -5579,10 +5621,10 @@ T.stepName=id=>{const P=T.plainHe;if(id==='math')return '🧮 שלב בחשבו�
   if(k==='tog')return '🤝 יחד: '+P((TOG.find(x=>x.k===v)||{n:''}).n);if(k==='rw')return '🏠 משימה בבית: '+P((RW[v]||{t:''}).t);
   return ACT[id]?P(ACT[id].b.name)+' — '+P(ACT[id].name):id;};
 /* end of the path: the day's story ends with a hint for tomorrow (no prize), then sometimes the friend suggests time together */
-function finale(d,q){d.claimed=1;const SH=window.SHIP,pc=SH?SH.award():null;/* #391 the day's ship piece */O.persist();q=quest();/* #386: the day ends with a short hint about tomorrow */const ov=$('#ov');ov.hidden=false;ov.innerHTML=`<div class="card qwin"><div class="qbig">${q.e}</div><h2>${q.z}</h2>${SH?SH.cardHTML(pc):''}</div>`;
+function finale(d,q){d.claimed=1;const SH=window.SHIP,pc=SH?SH.award():null;/* #391 the day's ship piece */const BG=window.BAG,ar=BG&&pc?BG.award():null;/* #664 an artifact for the bag */O.persist();q=quest();/* #386: the day ends with a short hint about tomorrow */const ov=$('#ov');ov.hidden=false;ov.innerHTML=`<div class="card qwin"><div class="qbig">${q.e}</div><h2>${q.z}</h2>${SH?SH.cardHTML(pc):''}${ar?BG.cardHTML(ar):''}</div>`;
   const after=()=>{if(!d.sg&&!d.t.some(x=>/^tog:/.test(x))){d.sg=1;O.persist();suggestTog();}else home();};
   const r=h('div','btnrow');const ok=h('button','bigbtn',ICON.play+'<span>יֶשׁ!</span>');ok.onclick=()=>{ov.hidden=true;if(SH)SH.offer(after);else after();};
-  r.appendChild(ok);ov.firstChild.appendChild(r);O.celebrate(ov.firstChild);O.say(T.spk(q.z)+(pc?'\u2063'+T.spk(SH.newSay(pc)):''));}
+  r.appendChild(ok);ov.firstChild.appendChild(r);O.celebrate(ov.firstChild);O.say(T.spk(q.z)+(pc?'\u2063'+T.spk(SH.newSay(pc)):'')+(ar?'\u2063'+T.spk(BG.newSay(ar)):''));}
 function suggestTog(){const pr=T.S().prof||{};const ov=$('#ov');ov.hidden=false;
   ov.innerHTML=`<div class="card"><div class="callp bob">${T.friend()}</div><h2>רוֹצֶה לְשַׂחֵק עִם אַבָּא אוֹ אִמָּא?</h2><div class="sub">לֵךְ לִשְׁאֹל אִם יֵשׁ לָהֶם זְמַן!</div></div>`;
   const r=h('div','btnrow');const no=h('button','bigbtn plain sm','<span>אַחַר כָּךְ</span>');no.onclick=()=>{ov.hidden=true;home();};
@@ -5603,6 +5645,7 @@ function home(){const S0=T.S();
   const tl='';
   s.appendChild(h('div','hstage',`${say?`<div class="hbub2" style="--fc:${pr.col||'#4fae4f'}">${say}${tl}</div>`:''}<div class="hrow"><div class="hpair" role="button" aria-label="מָה אֶפְשָׁר לַעֲשׂוֹת כָּאן?"><span class="hav bob">${O.AV()}</span><span class="hpet2 bob" style="animation-delay:-.7s">${T.friend()}</span>${window.SHIP&&window.SHIP.held?window.SHIP.held():''}</div>${window.SHIP?window.SHIP.el():''}</div>`));
   s.querySelector('.hpair').onclick=()=>{sfx.pop(2);if(window.TOPIC)window.TOPIC.open();else tour();};
+  if(window.BAG)BAG.mount(s);/* #664 the bag button + today's effect */
   if(pickDay){/* "what do you feel like today?": 3 big cards (one is "continue" when there is a last activity) + something else */
     const all=doms(),ln=lastStep(),lg=ln&&domOf(ln);if(!d.o||all.some(x=>!d.o.includes(x.id))){d.o=wpick(all,all.length).map(x=>x.id);O.persist();}
     const list=d.o.map(id=>all.find(x=>x.id===id)).filter(x=>x&&x.id!==lg).slice(0,ln?2:3);
@@ -6319,7 +6362,23 @@ function showRem(m){if(m.k==='msg')return showMsg(m);const x=REM[m.k];
 let remWhen=0;
 /* #617: the delivery status the parent sees: "נשלח…" until Oren's device showed it, then "אורן שמע ✓" (and his face answer) */
 const remStat=m=>`${m.k==='msg'?'💬 '+msgOf(m):REM[m.k].p} · ${m.s||m.ok?'אורן שמע ✓'+(m.f?' · אורן ענה: '+m.f:''):'נשלח…'+(now()<m.at?' · תופיע ב-'+hm(m.at):'')}`;
-H.remRefresh=()=>{const el=document.querySelector('#sPar .hremst'),m=(T.S().set||{}).rem;if(el&&remOk(m))el.textContent=remStat(m);};
+H.remRefresh=()=>{if(document.querySelector('#sPar .hpzst')){const m=(T.S().set||{}).pz,on=pzOn(m),ok=on&&m.ok;document.querySelector('#sPar .hpzst').textContent=ok?'המשחק עצור ✓':on?'נשלח… ממתין למכשיר של אורן':'המשחק פועל';document.querySelector('#sPar .hpzbtn span').textContent=on?(ok?'המשך את המשחק':'ביטול'):'עצור את המשחק עכשיו';}const el=document.querySelector('#sPar .hremst'),m=(T.S().set||{}).rem;if(el&&remOk(m))el.textContent=remStat(m);};
+/* ---------- #659 the parent pauses the game: set.pz = {on, t, to:'kid', by, ok}; only Oren's device obeys (O.kidDev, panel closed) ----------
+   The device saves first, then shows the friend's calm pause screen and only then writes ok (the panel shows "עצור" after that).
+   Resume = on:0. A pause older than REM_OLD ends by itself. No button for Oren: the parent resumes. */
+const pzOn=m=>!!(m&&m.to==='kid'&&m.on&&now()-m.t<REM_OLD);
+function pzCheck(){const m=(T.S().set||{}).pz,rm=document.querySelector('.pzov.remote');
+  if(pzOn(m)){if(O.kidDev&&!O.kidDev(m))return;if(vis('#sPar'))return;
+    if(O.paused&&!rm)O.pauseOff();/* Oren's own pause becomes the parent's, so the parent's resume works */
+    if(!O.paused){O.persist();O.pauseOn(1);}
+    if(!m.ok){m.ok=1;O.persist();O.famNow&&O.famNow();}}
+  else if(rm&&O.paused)O.pauseOff();}
+setInterval(pzCheck,1000);
+function pzPanel(box,sec,re){const m=(T.S().set||{}).pz,on=pzOn(m),ok=on&&m.ok;
+  const s=sec(box,'⏸️ עצירת המשחק','<div class="pnote">אורן יראה מסך רגוע עם החבר. ההתקדמות נשמרת קודם.</div>');
+  const st=h('div','pstat hpzst');st.textContent=ok?'המשחק עצור ✓':on?'נשלח… ממתין למכשיר של אורן':'המשחק פועל';s.appendChild(st);
+  const b=h('button','bigbtn sm hpzbtn','<span>'+(on?(ok?'המשך את המשחק':'ביטול'):'עצור את המשחק עכשיו')+'</span>');
+  b.onclick=()=>{const t=now();T.S().set.pz=on?{on:0,t,to:'kid',by:O.dev}:{on:1,t,to:'kid',by:O.dev};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);re&&re();};s.appendChild(b);}
 function remPanel(box,sec,re){const m=(T.S().set||{}).rem;
   const s=sec(box,'🔔 תזכורת לאורן','<div class="pnote">אורן יראה תמונה גדולה וישמע אותה בקול — בסוף מה שהוא עושה עכשיו (עד דקה המתנה).</div>');
   if(remOk(m)&&now()-m.at<REM_OLD){const st=h('div','pstat hremst');st.textContent=remStat(m);s.appendChild(st);}
@@ -6341,9 +6400,9 @@ function cards(ex){const r=day();return DOMS.filter(d=>d.id!==ex&&!H.resting(d.i
 function goDom(dm){close();sfx.pop&&sfx.pop(3);
   if(dm==='math'){const lv=T.nextLevel&&T.nextLevel();if(lv){if(!O.save.story[lv.w.id+'-in'])O.showWorld(lv.w);else O.startLevel(lv);}else O.showJourney();return;}
   if(dm==='arcade'){window.TAL_arcade(O.showMap);return;}
-  const tl=T.S().tl,dt=((T.S().daily||{}).t)||[];let pool=T.dailyPool().filter(id=>H.domOf(id)===dm).sort((a,b)=>((tl[a]||{}).n|0)-((tl[b]||{}).n|0));
+  const tl=T.S().tl,dt=[...(((T.S().daily||{}).t)||[]),...(((T.S().daily||{}).q)||[])];let pool=T.dailyPool().filter(id=>H.domOf(id)===dm).sort((a,b)=>((tl[a]||{}).n|0)-((tl[b]||{}).n|0));
   const nw=pool.filter(id=>!dt.includes(id));if(nw.length)pool=nw;   /* #634 not a mission he already played today */
-  const id=pool.length?O.pick(pool.slice(0,3)):null;if(id)T.ACT[id].run(O.showMap);else O.showMap();}
+  const id=pool.length?O.pick(pool.slice(0,3)):null;if(id){const d=T.dailyEnsure();(d.q=d.q||[]).includes(id)||d.q.push(id);O.persist();}if(id)T.ACT[id].run(O.showMap);else O.showMap();}
 H.goDom=goDom;
 function chooser(cls,dm,head,sub,oneMore){const r=day();const el=lock('htopic '+cls,`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">🌙</span></div><h2>${head}</h2><div class="sub">${sub}</div>`);
   const row=h('div','hcards');cards(dm).forEach(d=>{const b=h('button','dcard',`<span class="dic"><span>${d.e}</span></span><b>${d.n}</b>`);b.style.setProperty('--dc',d.c);b.onclick=()=>goDom(d.id);row.appendChild(b);});el.firstChild.appendChild(row);
@@ -6374,7 +6433,7 @@ document.addEventListener('click',e=>{if(bypass||off())return;const el=e.target.
 
 /* ---------- parent panel (no nikud) ---------- */
 /* part: 'today' = the reminder + today's log (day tab), 'set' = the settings (settings tab), none = all */
-H.panel=(box,sec,re,part)=>{const c=cfg(),r=day();if(part!=='set')remPanel(box,sec,re);
+H.panel=(box,sec,re,part)=>{const c=cfg(),r=day();if(part!=='set'){pzPanel(box,sec,re);remPanel(box,sec,re);}
   const s1=part==='today'?null:sec(box,'הפסקות, ארוחות והחלפת נושא','<div class="pnote">בסוף פעילות (אף פעם לא באמצע שאלה): כל כמה דקות פעילות — הפסקה של כחצי דקה עם החבר, בסבב: מים, שירותים, תנועה, מנוחת עיניים. בזמן ארוחה המשחק עוצר עד "אכלתי" (לפחות 10 דקות, או סיסמת הורה). אחרי הרבה זמן באותו תחום — החבר מציע תחום אחר, והתחום נח עד מחר.</div>');
   if(s1){const tg=h('div','popt','<span>תזכורות:</span>');[['water','💧 מים'],['toilet','🚽 שירותים'],['move','🤸 תנועה'],['eyes','👀 עיניים'],['meal','🍽️ ארוחות']].forEach(([k,n])=>{const b=h('button','pchip'+(c.off[k]?'':' on'),n);b.onclick=()=>{H.setCfg('off',{[k]:c.off[k]?0:1});re&&re();};tg.appendChild(b);});s1.appendChild(tg);
   const iv=h('div','popt','<span>הפסקה כל:</span>');[15,20,30].forEach(v=>{const b=h('button','pchip'+(c.brk===v?' on':''),v+' דק׳');b.onclick=()=>{H.setCfg('brk',v);re&&re();};iv.appendChild(b);});s1.appendChild(iv);
@@ -7017,6 +7076,67 @@ S.offer=next=>{const s=S.get(),left=S.EXTRAS.filter(e=>!s.x.includes(e.id));if((
     b.onclick=()=>{if(b.disabled)return;row.querySelectorAll('button').forEach(x=>x.disabled=true);O.save.gems=Math.max(0,(O.save.gems|0)-S.COST);s.x.push(e.id);O.persist();O.updateGems&&O.updateGems(true);
       O.sfx&&O.sfx.win&&O.sfx.win();ov.hidden=true;next();};row.appendChild(b);});
   ov.firstChild.appendChild(row);O.say(T.spk(TITLE)+T.choiceSay(row,'b'));};
+})();
+
+/* ===== THE BAG (#664): 12 artifacts Oren wins and uses (injected into index.html by build) =====
+   Design: oren2/docs/bag-artifacts.md. Won at the end of the daily path (one per two ship pieces, in order); one tap in the bag
+   uses it: a visible effect on home for the rest of the day + the friend says it. No currency.
+   save.bag = {h:[ids won], fx:{id,d}}; old or broken saves = an empty bag.
+   BAG.award()    the next artifact for this finale (needs ship pieces: held < ceil(n/2)), or null
+   BAG.cardHTML/newSay  the finale card's surprise
+   BAG.mount(s)   home: the bag button (once he has one) + today's effect
+   BAG.open()     the bag screen;  BAG.use(id)  use it;  BAG.says() every kid sentence (pregen) */
+(()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T)return;const {h,$}=O;
+const B=window.BAG={};
+/* id, emoji, name, how it moves, particle emoji (default = the emoji), spoken effect line */
+B.ARTS=[
+ {id:'lamp',e:'🏮',n:'פָּנָס קֶסֶם',m:'glow',t:'הַבַּיִת מֵאִיר בְּאוֹר חַם!'},
+ {id:'rainbow',e:'🌈',n:'קֶשֶׁת',m:'big',t:'קֶשֶׁת גְּדוֹלָה בַּשָּׁמַיִם!'},
+ {id:'balloon',e:'🎈',n:'בָּלוֹנִים',m:'rise',t:'בָּלוֹנִים עוֹלִים לַשָּׁמַיִם!'},
+ {id:'snow',e:'❄️',n:'כַּדּוּר שֶׁלֶג',m:'fall',t:'יוֹרֵד שֶׁלֶג רַךְ!'},
+ {id:'butter',e:'🦋',n:'פַּרְפָּרִים',m:'drift',t:'פַּרְפָּרִים מְעַפְעֲפִים סְבִיבֵנוּ!'},
+ {id:'fire',e:'🎆',n:'זִקּוּקִים',m:'pop',t:'בּוּם! זִקּוּקִים בַּשָּׁמַיִם!'},
+ {id:'compass',e:'🧭',n:'מַצְפֵּן קֶסֶם',m:'pulse',t:'הַמַּצְפֵּן מַרְאֶה לָנוּ לְאָן לָלֶכֶת!'},
+ {id:'bell',e:'🔔',n:'פַּעֲמוֹן',m:'rise',p:'🎵',t:'דִּינְג דּוֹנְג! צְלִילִים עוֹלִים!'},
+ {id:'hat',e:'🎩',n:'כּוֹבַע קֶסֶם',m:'hop',t:'הוֹפּ! כֻּלָּנוּ קוֹפְצִים!'},
+ {id:'bubble',e:'🫧',n:'בּוּעוֹת',m:'rise',t:'בּוּעוֹת עוֹלוֹת וְצָפוֹת!'},
+ {id:'kite',e:'🪁',n:'עֲפִיפוֹן',m:'big',t:'הָעֲפִיפוֹן עָף לְאַט לְאַט!'},
+ {id:'flower',e:'🌸',n:'פְּרָחִים',m:'fall',t:'פְּרָחִים יוֹרְדִים כְּמוֹ גֶּשֶׁם!'}];
+const TITLE='הַתִּיק שֶׁלִּי',ASK='בְּחַר חֵפֶץ וְנִרְאֶה מָה הוּא עוֹשֶׂה!',LOCK='עוֹד לֹא מָצָאנוּ אֶת זֶה. נַמְשִׁיךְ בַּמַּסְלוּל!',NEW=n=>'חֵפֶץ חָדָשׁ בַּתִּיק: '+n+'!';
+B.useSay=a=>a.n+'! '+a.t;
+B.newSay=a=>a?NEW(a.n):'';
+B.says=()=>[TITLE,ASK,LOCK,...B.ARTS.map(B.useSay),...B.ARTS.map(B.newSay)];
+T.addSay&&T.addSay(B.says());T.addChoices&&T.addChoices(B.ARTS.map(a=>a.n));
+const say=t=>{try{O.say(T.spk(t));}catch(e){}};
+B.get=()=>{let s=O.save.bag;if(!s||typeof s!=='object'||Array.isArray(s))s=O.save.bag={h:[]};
+  if(!Array.isArray(s.h))s.h=[];s.h=s.h.filter((id,i,a)=>B.ARTS.some(x=>x.id===id)&&a.indexOf(id)===i);
+  if(s.fx&&(typeof s.fx!=='object'||!s.h.includes(s.fx.id)))delete s.fx;return s;};
+B.art=id=>B.ARTS.find(x=>x.id===id);
+B.fxNow=()=>{const s=B.get();return s.fx&&s.fx.d===O.today()?B.art(s.fx.id):null;};
+/* won at the finale, after the ship piece: one artifact per two pieces, in order */
+B.award=()=>{const s=B.get(),n=window.SHIP&&SHIP.get?SHIP.get().n:0;if(s.h.length>=B.ARTS.length||s.h.length>=Math.ceil(n/2))return null;
+  const a=B.ARTS[s.h.length];s.h.push(a.id);O.persist();return a;};
+B.cardHTML=a=>a?'<div class="bgnew"><span class="bgbox">🎁</span><span class="bgpop">'+a.e+'</span><b>'+NEW(a.n)+'</b></div>':'';
+/* home: the effect of today (a layer over home that never takes a tap) and the bag button */
+const rnd=(i,k)=>((i*37+k*53)%100);
+function layer(a){const l=h('div','bgfx bgm-'+a.m);l.dataset.id=a.id;l.setAttribute('aria-hidden','true');
+  const n={rise:9,fall:11,drift:7,pop:7,big:1,glow:0,pulse:0,hop:0}[a.m]||0;
+  for(let i=0;i<n;i++){const p=h('span','bgp',a.p||a.e);p.style.cssText='--x:'+rnd(i,3)+'%;--y:'+(8+rnd(i,7)*.6)+'%;--d:'+(-(i*0.9)).toFixed(1)+'s;--s:'+(22+rnd(i,11)%18)+'px';l.appendChild(p);}
+  return l;}
+B.mount=s=>{const st=B.get();if(!st.h.length)return;
+  const hr=s.querySelector('.hrow'),bt=h('button','bgbtn','🎒');bt.setAttribute('aria-label',TITLE);bt.onclick=e=>{e.stopPropagation();O.sfx&&O.sfx.pop&&O.sfx.pop(2);B.open();};
+  (s.querySelector('.hstage')||s).appendChild(bt);
+  const a=B.fxNow();if(!a)return;s.appendChild(layer(a));
+  if(a.m==='hop'){const p=s.querySelector('.hpair');p&&p.classList.add('bghop');}
+  if(a.m==='pulse')setTimeout(()=>{const g=s.querySelector('.bigbtn.huge');g&&g.classList.add('bgpulse');},0);};
+/* use: one at a time, shown at once on home, spoken */
+B.use=id=>{const a=B.art(id),s=B.get();if(!a||!s.h.includes(id))return false;s.fx={id,d:O.today()};O.persist();
+  const ov=$('#ov');ov.hidden=true;ov.innerHTML='';O.showMap();O.sfx&&(a.id==='bell'?O.sfx.win&&O.sfx.win():O.sfx.star&&O.sfx.star(1));say(B.useSay(a));return true;};
+B.open=()=>{const s=B.get(),ov=$('#ov');ov.hidden=false;ov.innerHTML='<div class="card bgcard"><h2>'+TITLE+'</h2></div>';const c=ov.firstChild,g=h('div','bgg');
+  B.ARTS.forEach(a=>{const won=s.h.includes(a.id),b=h('button','bgs'+(won?' won':' lock'),won?'<span class="bge">'+a.e+'</span><b>'+a.n+'</b>':'<span class="bge">❔</span>');b.dataset.id=a.id;
+    b.onclick=()=>{if(won){B.use(a.id);}else{O.sfx&&O.sfx.pop&&O.sfx.pop(1);say(LOCK);}};g.appendChild(b);});
+  c.appendChild(g);const x=h('button','bgx','✕');x.setAttribute('aria-label','סגור');x.onclick=()=>{O.sfx&&O.sfx.pop&&O.sfx.pop(1);ov.hidden=true;ov.innerHTML='';};c.appendChild(x);
+  say(TITLE+'. '+ASK);};
 })();
 
 /* ===== THE BUILDING WORLD (#64, spec: oren2/docs/building-world.md; injected into index.html by build) =====
