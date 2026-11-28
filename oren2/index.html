@@ -627,7 +627,7 @@ const PETS={cat:{n:'פִּיקְסֶל',s:()=>SPR.cat},dog:{n:'בְּלוֹקִ�
 const FCOL=[['',null,0],['red','#e4572e',0],['blue','#3a8fc4',0],['green','#4fae4f',0],['purple','#8e6fd1',3],['pink','#e0609a',6],['orange','#f28c28',10],['teal','#3cc8bb',15]];
 const FHAT=[['',null,0],['cap',['.aaaa.','aaaaaaaa'],0,{a:'#3a8fc4'}],['party',['.cc.','.aa.','abba'],0,{a:'#e0609a',b:'#ffd166',c:'#ffd166'}],['flower',['.pp.','pzzp','.pp.'],5,{p:'#ff7eb6',z:'#ffd166'}],['crown',['a.aa.a','aaaaaa'],10,{a:'#ffc93c'}],['wizard',['.az.','.aa.','aaaa'],20,{a:'#6c6fd1',z:'#ffc93c'}]];
 const FACC=[['',null,0],['bow','xyyx',0,{x:'#e4572e',y:'#a8321a'}],['scarf','xxxxxx',0,{x:'#3a8fc4'}],['medal','xx',8,{x:'#ffc93c'}],['heart','xx',15,{x:'#e0609a'}]];
-const FNAME=['פִּיקְסֶל','בְּלוֹקִי','נִיצוֹץ','נוֹצִי','אִטִּי','כּוֹכָבִי','גַּלִּי','זִיו'];
+const FNAME=['פִּיקְסֶל','בְּלוֹקִי','נִיצוֹץ','נוֹצִי','אִטִּי','כּוֹכָבִי','שַׁחַר','זִיו'];
 const FAGE=[[3,'שָׁלוֹשׁ'],[5,'חָמֵשׁ'],[7,'שֶׁבַע'],[10,'עֶשֶׂר']];
 const fopt=(L,k)=>L.find(o=>o[0]===k)||L[0];
 function petSprite(av){av=av||{};if(av.pet&&!PETDEF[av.pet]&&PETS[av.pet])return PETS[av.pet].s();const d=PETDEF[av.pet]||PETDEF.cat;const pal=Object.assign({},d.p);const c=fopt(FCOL,av.pcol)[1];
