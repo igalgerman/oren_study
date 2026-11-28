@@ -56,16 +56,16 @@ def _argv(t):
     a = fg.get("argv") or t.get("foreground_argv") or t.get("argv") or t.get("command") or t.get("cmd") or []
     return a.split() if isinstance(a, str) else [str(x) for x in a]
 
-def control_role(t):
+def control_role(t, roles=CONTROL):
     """#331: the control role (orchestrator/inbox/inspector) a terminal is, matched by name, by '--remote-control oren-<role>' in its
     foreground argv, by its tab ('where' ending in '/ <role>') or by label name=<role> (#332). A hand-started session has no name. -> role or None"""
-    if t.get("name") in CONTROL: return t["name"]
-    if _labels(t).get("name") in CONTROL: return _labels(t)["name"]
+    if t.get("name") in roles: return t["name"]
+    if _labels(t).get("name") in roles: return _labels(t)["name"]
     a = _argv(t)
     for i, x in enumerate(a[:-1]):
-        if x == "--remote-control" and a[i + 1].startswith("oren-") and a[i + 1][5:] in CONTROL: return a[i + 1][5:]
+        if x == "--remote-control" and a[i + 1].startswith("oren-") and a[i + 1][5:] in roles: return a[i + 1][5:]
     tab = str(t.get("where") or "").rsplit("/", 1)
-    if len(tab) == 2 and tab[1].strip() in CONTROL: return tab[1].strip()
+    if len(tab) == 2 and tab[1].strip() in roles: return tab[1].strip()
     return None
 
 def live_roles(ts):
