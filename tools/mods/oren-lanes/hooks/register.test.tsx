@@ -200,6 +200,11 @@ test('#306 the panel shows the cloud desks line (.runs/desks.json text), red whe
   expect(panel(base({ desks: 'cloud desks: inbox ok · ask down' })).desks!.tone).toBe('red')
 })
 
+test('#890 the panel lists a stuck control session in red, nothing otherwise', () => {
+  expect(panel(base()).control).toBe(null)
+  expect(panel(base({ control: 'NEEDS-ATTENTION: control session inbox frozen since 14:05' })).control!.tone).toBe('red')
+})
+
 test('#330 the panel shows the canary line (.runs/canary.json text), red on NEEDS-ATTENTION', () => {
   expect(panel(base()).canary).toBe(null)
   expect(panel(base({ canary: 'flow ok 14:45' })).canary).toEqual({ text: 'flow ok 14:45', tone: 'dim' })

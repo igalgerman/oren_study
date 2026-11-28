@@ -75,6 +75,12 @@ owner_q_alarm_min = 10          # #912: a queued owner-answer record still stuck
 owner_q_archive_max = 100       # #912: more than this many comments in the pinned questions issue -> every answered question moves to the archive issue (also: answered and older than 30 days)
 trust_since = "2026-11-28T12:28:45Z"
 
+# #890 control-session heartbeat (control_health.py): error screen / approval prompt / frozen session -> Telegram + inspector note
+control_health = true           # false = off
+control_approval_min = 3        # a blocked status or a permission dialog held this long
+control_frozen_min = 30         # status working AND the screen unchanged this long
+control_error_patterns = ["limit reached", "usage limit", "rate.?limit", "overloaded", "api error", "please run /login", "(login|session|token|authentication) (has )?expired", "invalid api key", "credit balance is too low"]   # regexes on the last 12 screen lines
+
 # #872 owner console mirror (console_mirror.py): open questions + notices go to the console API (D1, #869) on watchdog ticks (changed, and at least every 10 min).
 # keys + url: ~/.oren/console.json {"url", "push_key", "read_key"} (outside the repo). console_answers = false: mirror only (shadow); true: new D1 answers are pulled into qwin.answer.
 console_answers = false

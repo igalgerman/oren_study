@@ -262,6 +262,7 @@ def text(m):
     if m.get("github"): lines.append(m["github"])                     # #329: calls/min, graphql/core left, alarm < 20%
     if m.get("progress"): lines.append(m["progress"])                  # #891: NEEDS-ATTENTION: no progress Nh
     if m.get("canary"): lines.append("Canary: " + m["canary"])          # #330: flow ok HH:MM | NEEDS-ATTENTION ...
+    if m.get("control"): lines.append(m["control"])                    # #890: NEEDS-ATTENTION: control session <role> <state> since HH:MM
     if m.get("usage"): lines.append(m["usage"])                         # #708: usage per entity (top rows, NEEDS-ATTENTION)
     import backoff; lines += backoff.lines()                           # #842: backoff: <job> next try HH:MM
     if m.get("pc"): lines.append(m["pc"])                               # #293: PC: CPU x% · RAM y% free (· ALARM)
@@ -768,6 +769,7 @@ def gather():
     except Exception: m["canary"] = ""
     try: m["progress"] = json.loads((R.RUNS / "progress_alarm.json").read_text(encoding="utf-8")).get("text", "")   # #891
     except Exception: m["progress"] = ""
+    import control_health; m["control"] = control_health.line()   # #890
     import pcload; m["pc"] = pc_line(pcload.load(), now)    # #293 (written by the watchdog)
     m["voice"] = ci_voice() if ci else None                # #400
     return m
