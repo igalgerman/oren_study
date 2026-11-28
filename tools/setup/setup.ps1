@@ -1,7 +1,7 @@
 # PC setup (#865): one idempotent script rebuilds the PC. PowerShell 5.1 and 7.
-#   powershell -File tools\setup\setup.ps1 [-Install] [-DryRun] [-Repo owner/name]
+#   powershell -File tools\setup\setup.ps1 [-Install] [-DryRun] [-Check] [-Repo owner/name]
 # Each step prints OK / FIXED / MISSING <what to do>. Never prints, copies or creates a secret.
-param([switch]$Install, [switch]$DryRun, [string]$Repo = '', [string]$ConfigPath = '')
+param([switch]$Install, [switch]$DryRun, [switch]$Check, [string]$Repo = '', [string]$ConfigPath = '')
 
 $DefaultRepo = 'igalgerman/oren_study'      # the ONE hard-coded repo name; config.toml `repo` wins inside a checkout
 $DefaultRoot = 'C:/work/Oren_study'         # only used when no config.toml is found (fresh PC, script run alone)
@@ -50,11 +50,36 @@ function Get-RepoDirs($Cfg, [string]$Repo, [string]$Root) {
   return $dirs
 }
 
-function Get-Plan([bool]$Install) {
+function Get-HomeDir { if ($env:USERPROFILE) { return $env:USERPROFILE } else { return $env:HOME } }
+
+# Plan lines for step 3, per checkout: clone when missing, else the origin fix (#868). $GetOrigin reads the origin URL (read-only).
+function Get-RepoPlan($Cfg, [string]$Repo, [string]$Root, [scriptblock]$GetOrigin) {
+  $lines = @()
+  foreach ($e in (Get-RepoDirs $Cfg $Repo $Root).GetEnumerator()) {
+    $url = Get-RepoUrl $e.Key
+    if (-not (Test-Path -LiteralPath (Join-Path $e.Value '.git'))) { $lines += "3 repo: git clone $url $($e.Value)"; continue }
+    $fix = Get-RemoteFix ([string](& $GetOrigin $e.Value)) $e.Key
+    if ($fix) { $lines += "3 repo: git remote set-url origin $fix (in $($e.Value))" } else { $lines += "3 repo: origin of $($e.Value) is already $($e.Key)" }
+  }
+  return $lines
+}
+
+# Secret files that must exist (never read): config github_app_key + the two files under ~/.oren. Returns name/path pairs.
+function Get-SecretFiles($Cfg, [string]$HomeDir) {
+  $o = Join-Path $HomeDir '.oren'
+  $l = @()
+  if ($Cfg.github_app_key) { $l += , @('github app key', $Cfg.github_app_key) }
+  $l += , @('telegram.env', (Join-Path $o 'telegram.env'))
+  $l += , @('diag.key', (Join-Path $o 'diag.key'))
+  return $l
+}
+
+function Get-Plan([bool]$Install, [string[]]$RepoPlan = @('3 repo: clone the checkouts when missing, fix an old origin URL')) {
   return @(
-    "1 tools: check git, gh, node >= 22, claude, miniforge python 3.12, herdr core + app" + $(if ($Install) { " (winget install what is missing)" } else { " (install only with -Install)" }),
-    "2 folders: work folder, bin\python3 shim, %USERPROFILE%\.oren (empty)",
-    "3 repo: clone the checkouts when missing, core.autocrlf false, fix an old origin URL",
+    ("1 tools: check git, gh, node >= 22, claude, miniforge python 3.12, herdr core + app" + $(if ($Install) { " (winget install what is missing)" } else { " (install only with -Install)" })),
+    "2 folders: work folder, bin\python3 shim, %USERPROFILE%\.oren (empty)"
+  ) + $RepoPlan + @(
+    "3 repo: core.autocrlf false",
     "4 herdr: start the app, check the spaces, python tools\runner\recover.py --open",
     "5 scheduled tasks: tools\recover.cmd --install, tools\runner\beatcheck.py --install",
     "6 verify: re-check everything, print the summary table"
@@ -73,18 +98,29 @@ $user = $env:USERNAME
 $main = $(if ($cfg.main_checkout) { $cfg.main_checkout } else { "$DefaultRoot/a" })
 $root = (Split-Path -Parent $main) -replace '\\', '/'
 $results = New-Object System.Collections.ArrayList
+function Have([string]$cmd) { return [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
 
 if ($DryRun) {
   Write-Host "DRY RUN: nothing is changed (repo $Repo)"
-  foreach ($p in (Get-Plan $Install.IsPresent)) { Write-Host "DRYRUN $p" }
+  $rp = Get-RepoPlan $cfg $Repo $root { param($d) if (Have 'git') { & git -C $d remote get-url origin 2>$null } }
+  foreach ($p in (Get-Plan $Install.IsPresent $rp)) { Write-Host "DRYRUN $p" }
   exit 0
+}
+
+if ($Check) {   # #868: secrets present? only the paths are tested and printed, never a file's content
+  $bad = 0
+  foreach ($f in (Get-SecretFiles $cfg (Get-HomeDir))) {
+    if (Test-Path -LiteralPath $f[1]) { Write-Host ("OK      secret {0}: {1}" -f $f[0], $f[1]) }
+    else { $bad++; Write-Host ("MISSING secret {0}: {1} (put the file there by hand; setup never creates a secret)" -f $f[0], $f[1]) }
+  }
+  Write-Host ("check: {0} missing" -f $bad)
+  exit $(if ($bad) { 1 } else { 0 })
 }
 
 function Add-Result([string]$Step, [string]$Name, [string]$Status, [string]$Hint = '') {
   [void]$results.Add([pscustomobject]@{ Step = $Step; Name = $Name; Status = $Status; Hint = $Hint })
   Write-Host ("{0,-7} {1}: {2} {3}" -f $Status, $Step, $Name, $Hint)
 }
-function Have([string]$cmd) { return [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
 function Winget-Or-Page([string]$Id, [string]$Page, [string]$Name, [string]$Step, [scriptblock]$Probe = $null) {
   if ($Install -and $Id -and (Have 'winget')) {
     & winget install --id $Id -e --silent --accept-package-agreements --accept-source-agreements | Out-Null
