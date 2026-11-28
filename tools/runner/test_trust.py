@@ -111,7 +111,7 @@ assert OQ.gate(687, [], OQ.comments(205, fq)) == ["reaction THUMBS_UP"] and OQ.o
 seen = []; real_run = R.run
 R.run = lambda cmd, **kw: (seen.append(cmd), (0, gqlpage([], None)))[1]
 OQ.GH = R.gh
-try: assert OQ.comments(205) == [] and seen[0][:3] == ["gh", "api", "graphql"] and "--repo" not in seen[0]
+try: assert OQ.comments(205) == [] and OQ.comments(205, R.gh) == [] and all(x[:3] == ["gh", "api", "graphql"] and "--repo" not in x for x in seen) and len(seen) == 2   # open_list/_post pass R.gh itself
 finally: R.run = real_run
 
 # qwin: no App token -> the record is queued, never posted under another login (fake gh = the App; real path refuses without a token)

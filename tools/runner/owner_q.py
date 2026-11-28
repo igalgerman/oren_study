@@ -206,8 +206,9 @@ def _api(*args):
 def comments(n, gh=None):
     """All comments of issue n, oldest first, with author login, url and the reacting users (`gh issue view --json comments` has no
     reaction logins, so every owner thumbs-up was invisible). GraphQL, first:100 + after-cursor loop. None when unreadable.
-    `gh` (a test fake) is called as gh('api', 'graphql', ...); the default is plain `gh api` (it has no --repo flag)."""
-    call = gh or (_api if GH is R.gh else GH)
+    A test fake gh is called as gh('api', 'graphql', ...); the real one runs plain `gh api`."""
+    call = gh or GH
+    if call is R.gh: call = _api                      # the real gh wrapper appends --repo, which `gh api` does not know
     owner, name = R.REPO.split("/", 1)
     out, cur = [], ""
     for _ in range(MAX_PAGES):
