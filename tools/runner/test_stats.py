@@ -49,3 +49,27 @@ E3 = [ev(1, "start", 1, model="opus", effort="high"), ev(1, "merged", 2, lines=5
 assert S.models_data(E3, {1: ["build"]}, NOW)[0]["over"]
 assert not S.models_data(E3, {1: ["ui"]}, NOW)[0]["over"] and not S.models_data(E3, {1: ["security"]}, NOW)[0]["over"]
 print("test_stats fix round ok")
+
+# #851: every merged PR gets one `merged` event (auto-merge / by hand), never twice; the runner-finished rate is unchanged
+import time as _t
+NOW2 = 1_800_000_000
+def iso(t): return _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime(t))
+def pr(n, at, body="", head="", auto=None): return {"number": n, "title": "x", "body": body, "headRefName": head, "mergedAt": iso(at) if at else None, "autoMergeRequest": auto}
+assert S.pr_issue(pr(1, 1, body="Fixes #851")) == 851 and S.pr_issue(pr(1, 1, head="lane/77")) == 77 and S.pr_issue(pr(1, 1, head="claude/github-issue-5-ab")) == 5
+prs = [pr(10, NOW2 - 3600, body="Fixes #100", auto={"enabledAt": "x"}), pr(11, NOW2 - 7200, head="lane/101"), pr(12, NOW2 - 20 * D, body="Closes #102"), pr(13, None, body="Closes #103")]
+EV = [ev(101, "start", NOW2 - 9000), ev(101, "merged", NOW2 - 7000, lines=1, files=1)]      # the runner already recorded #101 (PR 11)
+new = S.merge_events(prs, EV, NOW2)
+assert [(e["pr"], e["issue"], e["by"]) for e in new] == [(10, 100, "auto")], new          # auto-merged -> one event; runner-recorded, too old, unmerged -> none
+assert new[0]["merged_at"] == iso(NOW2 - 3600) and new[0]["ts"] == NOW2 - 3600
+assert S.merge_events(prs, EV + new, NOW2) == []                                         # already recorded -> none
+assert [e["by"] for e in S.merge_events([pr(14, NOW2 - 60, body="Closes #104")], [], NOW2)] == ["hand"]
+assert len(S.merge_events([pr(15, NOW2 - 60, body="Closes #105")] * 2, [], NOW2)) == 1     # the same PR twice in one list: once
+f = Path(os.environ["RUNNER_RUNS"]) / "m.jsonl"
+assert len(S.record_merges(prs, NOW2, path=f)) == 2 and len(S.record_merges(prs, NOW2, path=f)) == 0 and len(S.read_events(f)) == 2   # file: never twice
+assert S.backfill(apply=False, run=lambda: "[]").startswith("backfill 7 days: 0")
+base = S.finish_rate(EV, NOW2)
+assert base == (1, 1) and S.finish_rate(EV + new, NOW2) == base                          # runner-finished rate unchanged by auto/hand events
+assert S.finish_rate(EV + [ev(100, "start", NOW2 - 5000), dict(new[0])], NOW2) == (1, 2)
+assert S.merged_by(EV + new, NOW2) == {"runner": 1, "auto": 1}
+assert S.report(EV + new, NOW2)
+print("test_stats #851 ok")
