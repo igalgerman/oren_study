@@ -1,7 +1,8 @@
 # PC setup (#865): one idempotent script rebuilds the PC. PowerShell 5.1 and 7.
 #   powershell -File tools\setup\setup.ps1 [-Install] [-DryRun] [-Repo owner/name]
+#   powershell -File tools\setup\setup.ps1 -Check     (#867: secrets present / missing / empty; never prints a value)
 # Each step prints OK / FIXED / MISSING <what to do>. Never prints, copies or creates a secret.
-param([switch]$Install, [switch]$DryRun, [string]$Repo = '', [string]$ConfigPath = '')
+param([switch]$Install, [switch]$DryRun, [switch]$Check, [string]$Repo = '', [string]$ConfigPath = '', [string]$HomeDir = '', [string]$CheckoutDir = '')
 
 $DefaultRepo = 'igalgerman/oren_study'      # the ONE hard-coded repo name; config.toml `repo` wins inside a checkout
 $DefaultRoot = 'C:/work/Oren_study'         # only used when no config.toml is found (fresh PC, script run alone)
@@ -61,6 +62,60 @@ function Get-Plan([bool]$Install) {
   )
 }
 
+# ---------- secrets (#867): THE one table; docs/setup-secrets.he.md has one row per Id ----------
+# Kind: file = a file with content; keys = key=value file, Keys must all be set; dir = a folder; gh / claude = login state; appids = config.toml keys.
+$SecretItems = @(
+  @{ Id = 'app.pem';          Kind = 'file';   Path = '.oren/app.pem';           Required = $true  },
+  @{ Id = 'telegram.env';     Kind = 'keys';   Path = '.oren/telegram.env';      Required = $true;  KeyNames = @('TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID') },
+  @{ Id = 'diag.key';         Kind = 'file';   Path = '.oren/diag.key';          Required = $true  },
+  @{ Id = 'private_names.txt'; Kind = 'file';  Path = '.oren/private_names.txt'; Required = $true  },
+  @{ Id = 'playlog';          Kind = 'dir';    Path = '.oren/playlog';           Required = $false },
+  @{ Id = '.env';             Kind = 'keys';   Path = '.env';                    Required = $false; KeyNames = @('CLOUDFLARE_API_TOKEN'); InCheckout = $true },
+  @{ Id = 'gh-login';         Kind = 'gh';     Required = $true  },
+  @{ Id = 'claude-login';     Kind = 'claude'; Required = $true  },
+  @{ Id = 'app-ids';          Kind = 'appids'; Required = $true;  KeyNames = @('github_app_id', 'github_app_installation_id') }
+)
+
+# Names of the keys set (non-empty) in a key=value file text; values are never kept.
+function Get-KeyNamesSet([string]$Text) {
+  $names = @()
+  foreach ($line in ($Text -split "`n")) {
+    if ($line -match '^\s*(?:export\s+)?([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$') {
+      $v = $Matches[2].Trim('"', "'", ' ')
+      if ($v.Length -gt 0) { $names += $Matches[1] }
+    }
+  }
+  return $names
+}
+
+# Status of a file-ish item: Status present|missing|empty, Missing = key NAMES that are not set. No value leaves this function.
+function Get-ItemState($Item, [string]$HomeDir, [string]$CheckoutDir, $Cfg) {
+  $r = @{ Status = 'missing'; Missing = @() }
+  $base = $(if ($Item.InCheckout) { $CheckoutDir } else { $HomeDir })
+  switch ($Item.Kind) {
+    'appids' { $miss = @($Item.KeyNames | Where-Object { -not $Cfg[$_] }); $r.Missing = $miss; $r.Status = $(if ($miss.Count) { 'missing' } else { 'present' }); return $r }
+    'dir' {
+      $d = Join-Path $base $Item.Path
+      if (-not (Test-Path -LiteralPath $d -PathType Container)) { return $r }
+      $r.Status = $(if (@(Get-ChildItem -LiteralPath $d -Force).Count) { 'present' } else { 'empty' }); return $r
+    }
+    'file' {
+      $f = Join-Path $base $Item.Path
+      if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { return $r }
+      $r.Status = $(if ((Get-Item -LiteralPath $f).Length -gt 0 -and ([IO.File]::ReadAllText($f)).Trim().Length -gt 0) { 'present' } else { 'empty' }); return $r
+    }
+    'keys' {
+      $f = Join-Path $base $Item.Path
+      if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { return $r }
+      $set = @(Get-KeyNamesSet ([IO.File]::ReadAllText($f)))
+      $r.Missing = @($Item.KeyNames | Where-Object { $set -notcontains $_ })
+      if ($set.Count -eq 0) { $r.Status = 'empty' } elseif ($r.Missing.Count) { $r.Status = 'missing' } else { $r.Status = 'present' }
+      return $r
+    }
+  }
+  return $r
+}
+
 if ($MyInvocation.InvocationName -eq '.') { return }   # dot-sourced by the test: helpers only
 
 # ---------- run ----------
@@ -73,6 +128,31 @@ $user = $env:USERNAME
 $main = $(if ($cfg.main_checkout) { $cfg.main_checkout } else { "$DefaultRoot/a" })
 $root = (Split-Path -Parent $main) -replace '\\', '/'
 $results = New-Object System.Collections.ArrayList
+
+if ($Check) {
+  if (-not $HomeDir) { $HomeDir = $env:USERPROFILE }
+  if (-not $CheckoutDir) { $CheckoutDir = (Resolve-Path (Join-Path $here '..\..')).Path }
+  Write-Host "CHECK secrets (names and state only, no value is read out or printed)"
+  $bad = 0
+  foreach ($it in $SecretItems) {
+    $st = 'missing'; $miss = @()
+    if ($it.Kind -eq 'gh') {
+      if (Have 'gh') { & gh auth status 2>&1 | Out-Null; $st = $(if ($LASTEXITCODE -eq 0) { 'present' } else { 'missing' }) }
+    } elseif ($it.Kind -eq 'claude') {
+      if (Have 'claude') { & claude auth status 2>&1 | Out-Null; $st = $(if ($LASTEXITCODE -eq 0) { 'present' } else { 'missing' }) }
+    } else {
+      $r = Get-ItemState $it $HomeDir $CheckoutDir $cfg
+      $st = $r.Status; $miss = @($r.Missing)
+    }
+    $note = $(if ($miss.Count) { ' missing keys: ' + ($miss -join ', ') } else { '' })
+    $req = $(if ($it.Required) { 'required' } else { 'optional' })
+    Write-Host ("{0,-8} {1} ({2}){3}" -f $st, $it.Id, $req, $note)
+    if ($it.Required -and $st -ne 'present') { $bad++ }
+  }
+  if ($bad) { Write-Host "$bad required item(s) not present: see docs/setup-secrets.he.md"; exit 1 }
+  Write-Host 'all required secrets present'
+  exit 0
+}
 
 if ($DryRun) {
   Write-Host "DRY RUN: nothing is changed (repo $Repo)"
