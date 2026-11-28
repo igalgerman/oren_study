@@ -1186,6 +1186,10 @@ def stat(n, lane, event, **extra):
             f.write(json.dumps({"ts": int(time.time()), "issue": n, "lane": lane, "event": event, **extra}) + chr(10))
     except Exception: pass
 
+def stat_purple(n, lane, extra, me):
+    """PURPLE verdict: merge-safe counts as a review pass, a hold as parked (#713: both carry model + effort)."""
+    stat(n, lane, "review_pass" if extra == "merge-safe" else "parked", **me, colour="purple")
+
 # ---------- pipeline for one issue ----------
 class Blocked(Exception):
     pass
@@ -2075,7 +2079,7 @@ def process_locked(issue, where="local"):
             if kind == "notes":                    # BLUE: merge now, notes go to the rolling polish issue
                 stat(n, lane, "review_pass", **me, colour="blue"); post_polish(n, lane, pr, text)
             if kind == "purple":                   # PURPLE: owner question; merge-safe merges, hold parks
-                stat(n, lane, "review_pass", **me if extra == "merge-safe" else "parked", colour="purple")
+                stat_purple(n, lane, extra, me)
                 ask_owner(n, pr, text, extra)
                 if extra != "merge-safe": raise Parked(f"owner question: {text[:200]}")
             if kind in ("pass", "notes", "purple"):  # #618: review -> test (T1+, cloud tester on the preview) -> merge

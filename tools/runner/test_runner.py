@@ -735,7 +735,7 @@ _ci = _src.split("def ci_integrate", 1)[1].split("def find_pr_merged", 1)[0]
 assert '"--auto"' in _ci and "auto_refused_clean" in _ci and "disable_auto(pr, log)" in _ci and "FileLock" not in _ci
 _proc = _src.split("verdict = \"\"; red = \"\"", 1)[1]
 assert _proc.index('stat(n, lane, "review_pass", **me)') < _proc.index("ci_integrate(")
-_fix = _proc.split('stat(n, lane, "review_fix")', 1)[0].rsplit("if kind != \"fix\":", 1)[1]
+_fix = _proc.split('stat(n, lane, "review_fix", **me)', 1)[0].rsplit("if kind != \"fix\":", 1)[1]
 assert "disable_auto(pr, log)" in _fix
 assert '"--auto"' not in _src.split("def ci_integrate", 1)[0]                                 # nothing marks a PR before the review
 print("ok #185 auto-merge after PASS")
@@ -1571,3 +1571,14 @@ g = r.governor({**_uw, "week_pct": 50}, [], _now, _Gw); assert not g["stop"] and
 assert r.limit_requeue("RESULT: STUCK cloud worker died twice without a RESULT line (a, b)", True)
 assert r.limit_requeue("", True) and not r.limit_requeue("RESULT: STUCK cloud worker died twice x", False) and not r.limit_requeue("RESULT: DONE", True)
 print("ok #703 governor: week hard bounds, limit_hit, week-only usage, died run goes back in the queue")
+
+# #713: PURPLE hold/merge-safe stat events (a hold must not crash, must say "parked")
+_ev713 = []
+_old_stat = r.stat; r.stat = lambda n, lane, event, **x: _ev713.append((event, x))
+try:
+    r.stat_purple(5, "pack", "hold", {"model": "sonnet", "effort": "medium"})
+    r.stat_purple(5, "pack", "merge-safe", {"model": "sonnet", "effort": "medium"})
+finally: r.stat = _old_stat
+assert _ev713 == [("parked", {"model": "sonnet", "effort": "medium", "colour": "purple"}),
+                  ("review_pass", {"model": "sonnet", "effort": "medium", "colour": "purple"})], _ev713
+assert "stat_purple(n, lane, extra, me)" in inspect.getsource(r.process_locked)
