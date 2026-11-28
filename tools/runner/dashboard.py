@@ -262,6 +262,7 @@ def text(m):
     if m.get("github"): lines.append(m["github"])                     # #329: calls/min, graphql/core left, alarm < 20%
     if m.get("canary"): lines.append("Canary: " + m["canary"])          # #330: flow ok HH:MM | NEEDS-ATTENTION ...
     if m.get("usage"): lines.append(m["usage"])                         # #708: usage per entity (top rows, NEEDS-ATTENTION)
+    import alerts; lines += alerts.lines()                            # #844: alarms the orchestrator could not get
     import backoff; lines += backoff.lines()                           # #842: backoff: <job> next try HH:MM
     if m.get("pc"): lines.append(m["pc"])                               # #293: PC: CPU x% · RAM y% free (· ALARM)
     v = m.get("voice")                                                  # #400: kid sentences with no recording (after the last pregen)

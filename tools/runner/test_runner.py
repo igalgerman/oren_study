@@ -75,6 +75,7 @@ print("ok park")
 
 # watchdog cleanup: which windows are leftovers
 import watchdog as W
+import alerts; alerts.state_of = lambda n: "live"   # #844: alarms go through alerts.py; the orchestrator counts as live, the tests fake W.tell
 _ts = [
   {"name": "issue-2", "state": "live", "status": "done", "marker": True},    # superseded by review-2 -> close
   {"name": "review-2", "state": "live", "status": "working", "marker": False},

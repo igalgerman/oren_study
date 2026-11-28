@@ -360,7 +360,8 @@ def night_report_if_due(tell, log, hour=None, now=None, data=parked_data):
     d = data()
     if d is None: log("night report: GitHub unreadable"); return None
     st["parked_day"] = time.strftime("%Y-%m-%d", time.localtime(now)); save_state(st)
-    text = parked.night_report(*d, now) + "\n" + models_line_now(now)
+    import alerts
+    text = parked.night_report(*d, now) + "\n" + models_line_now(now) + "\n" + alerts.night_line()      # #844: alarm count per rule
     tell(text); log(text[:300])
     return text
 

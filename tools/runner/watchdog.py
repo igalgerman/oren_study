@@ -71,6 +71,15 @@ def windows():
 def tell(text):
     rc, out = R.hc("send", "orchestrator", text, timeout=30)
     log(("told orchestrator: " if rc == 0 else "could not tell orchestrator: ") + text[:200])
+    return rc
+
+def alarm(rule, subject, text, info=False):
+    """#844: the ONE way every watchdog alarm leaves (same rule+subject once per alert_repeat_minutes with a count; orchestrator
+    live -> tell, else Hebrew Telegram + inspector, see alerts.py)."""
+    import alerts
+    out = alerts.raise_alarm(rule, subject, text, info, tell=lambda t: tell(t))
+    log(f"alarm {rule} {subject}: {out}: " + text[:160])
+    return out
 
 def screen_text(name):
     return R.hc("read", name, "--lines", "80", timeout=30)[1]
@@ -113,7 +122,7 @@ def check_windows(ts):
                 told[name] = h
                 pin(t, True)
                 what = f"asks: {q}" if q else "is waiting for an answer"
-                tell(f"{needs_you_line(name, q, tail)}{chr(10)}WATCHDOG: window {name} {what}. NEW OWNER QUESTION"
+                alarm("WAITING", name, f"{needs_you_line(name, q, tail)}{chr(10)}WATCHDOG: window {name} {what}. NEW OWNER QUESTION"
                      + (f" (posted: {url})" if url else " (in the 'Questions for the owner' issue)")
                      + f": qwin (#220/#390) asks him on the Hebrew page and has an idle inbox/orchestrator session send the PushNotification; send one yourself only when it hands you a PHONE PUSH line. "
                      f"When it tells you OWNER ANSWERED, relay the answer (hc send {name} \"..\" or the menu option he picks). Its screen ends with:{chr(10)}{tail}")
@@ -130,7 +139,7 @@ def check_windows(ts):
             first = idle_since.setdefault(name, now)
             if now - first > 600 and told.get(name) != "idle":
                 told[name] = "idle"
-                tell(f"WATCHDOG: {name} stopped 10+ minutes ago without its {marker} line. Read it (hc read {name}) and get it to finish "
+                alarm("STUCK", name, f"WATCHDOG: {name} stopped 10+ minutes ago without its {marker} line. Read it (hc read {name}) and get it to finish "
                      f"(push, PR, last line {marker} ...), or ask the owner.")
         else:
             idle_since.pop(name, None); told.pop(name, None)
@@ -328,7 +337,7 @@ def check_control(ts):
         R.hc("rm", address, timeout=30)
         rc = recover.start_control(R, name)
         log(f"{name} had finished: restarted (rc {rc})")
-        if rc == 0 and name != "orchestrator": tell(f"WATCHDOG: {name} had finished; restarted it")
+        if rc == 0 and name != "orchestrator": alarm("RESTARTED", name, f"WATCHDOG: {name} had finished; restarted it", info=True)
 
 def qwin_tick(ts):
     if not BO.due("qwin"): return                        # #842: a failing job waits 2, 4, 8 ... 60 min
@@ -386,7 +395,7 @@ def due_tick():
     due.tick(tell=tell, log=log)
 
 def canary_tick():
-    import canary; canary.tick(say=lambda t: (tell(t), R.hc("send", "inspector", t, timeout=30)), log=lambda m: log("canary: " + m))   # #330
+    import canary; canary.tick(say=lambda t: alarm("CANARY", "", t), log=lambda m: log("canary: " + m))   # #330
 
 def pc_tick(ts):
     import pcload; pcload.tick(ts, send=lambda w, m: R.hc("send", w, m, timeout=30), log=log)   # #293: reports only, never kills
@@ -411,7 +420,7 @@ def net_streak(streaks, key, msg):
 
 def net_alarm(what, msg):
     text = f"network error {NET_ALARM} in a row ({what}): {msg[:200]}"
-    log(text); tell("WATCHDOG: " + text)
+    log(text); alarm("NET", what, "WATCHDOG: " + text)
 
 SYNC_MIN = int(R.CFG.get("sync_minutes", 3))
 _sync = {"last": 0.0, "msg": ""}
@@ -426,7 +435,7 @@ def sync_tick():
     _sync["last"] = time.time()
     info = {}
     msg = R.sync_main(info=info)
-    mainsync.after_sync(info, time.time(), say=lambda t: (tell(t), R.hc("send", "inspector", t, timeout=30)), log=log)
+    mainsync.after_sync(info, time.time(), say=lambda t: alarm("SYNC", "", t), log=log)
     k, alarm = net_streak(_net, "sync", msg)
     if k:
         _sync["last"] = 0.0
@@ -526,7 +535,7 @@ def alarm_tick():
     fin = load_finish_state()
     new, _alarm["sent"], fin2 = pick_alarms(al, _alarm["sent"], fin, _alarm.get("finish", (0, 0)), now)
     if fin2 != fin: save_finish_state(fin2)
-    if new: tell("IDLE ALARM (watchdog): " + " · ".join(new))
+    if new: alarm("IDLE", "lanes", "IDLE ALARM (watchdog): " + " · ".join(new))
 
 KEEP = ()   # #345: empty; the never-two guards (observer/ai_observer/nightly `_running`, desks `_busy`) survive a reload
 
@@ -837,7 +846,7 @@ def stuck_tick(ts, now=None):
     held = in_progress_nums() if nums else None
     alarms, lanes = stuck_runs(ts, {n: run_mtime(n) for n in nums}, now, float(R.CFG.get("stuck_hours", 2)), _stuck, held)
     for n, text in alarms: log("#248 " + text)
-    if alarms: tell("STUCK RUN (watchdog #248): " + " · ".join(t for _, t in alarms))
+    for n, t in alarms: alarm("STUCK", f"run-{n}", f"STUCK RUN (watchdog #248): {t}")
     try: (R.RUNS / "stuck_lanes.json").write_text(json.dumps(lanes), encoding="utf-8")
     except OSError: pass
 
@@ -970,7 +979,7 @@ def lock_tick(now=None):
     key = (info[0], info[1])
     if _lock["key"] == key and now - _lock["sent"] < LOCK_REPEAT_MIN * 60: return
     a = lock_alarm(info, True, now, green_waiting())
-    _lock.update(sent=now, key=key); tell(a[1])
+    _lock.update(sent=now, key=key); alarm("LOCK", "merge", a[1])
 
 _ai = {"running": False}
 def ai_tick():
@@ -1018,14 +1027,14 @@ def usage_tick():
     """#708: every 30 min the per-entity usage table (.runs/usage_by_entity.json) + ENTITY alarms (watchdog tell + Telegram, once per entity per 3 h)."""
     if time.time() - _usage["last"] < 1800: return
     _usage["last"] = time.time()
-    import usage_entities; importlib.reload(usage_entities); usage_entities.tick(tell, log)
+    import usage_entities; importlib.reload(usage_entities); usage_entities.tick(tell, log, alarm=alarm)
 
 _ualarm = {"last": 0.0}
 def usage_alarm_tick():
     """#710: every 5 min the usage alarms (UNDERUSE, IDLE, BEHIND, OVERUSE, STALE, PLAN CHANGED): watchdog tell + Telegram, once per rule per 3 h."""
     if time.time() - _ualarm["last"] < 300: return
     _ualarm["last"] = time.time()
-    import usage_alarms; importlib.reload(usage_alarms); usage_alarms.tick(tell, log)
+    import usage_alarms; importlib.reload(usage_alarms); usage_alarms.tick(tell, log, alarm=alarm)
 
 _merges = {"last": 0.0}
 def merges_tick():
