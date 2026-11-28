@@ -1363,6 +1363,11 @@ def gh(*args, **kw):
 def now():
     return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
+def pr_diff(pr):
+    """#746: the PR's unified diff (tester.raise_level looks for sync/speech/home-redraw code in it); '' when unreadable."""
+    rc, out = gh("pr", "diff", str(pr))
+    return out if rc == 0 else ""
+
 def pr_size(text):
     """Pure (#717): `gh pr view --json files` output -> {"lines": additions+deletions, "files": count}, the built index.html copies left out; {} when unreadable."""
     try:
@@ -2279,7 +2284,8 @@ def process_locked(issue, where="local"):
             if tester.parse_result(hi.get("test", ""))[0] != "pass":   # #618: never merge a T1+ head without a TEST: PASS (auto-resume, #295)
                 since = utc()
                 go, level, ttext = fresh_tester().gate(hi.get("review") or red0 or "", lambda lv: remote_tester(
-                    n, pr, lv, rstart_test, lambda: fresh_tester().status(pr, since=since), poll_sleep, time.time, 5400, 60, ended=over))
+                    n, pr, lv, rstart_test, lambda: fresh_tester().status(pr, since=since), poll_sleep, time.time, 5400, 60, ended=over),
+                    diff=pr_diff(pr))
                 if go == "blocked": raise Blocked(f"tester ({level}): {ttext[:300]}")
                 stat(n, lane, "test_pass" if go == "merge" and level != "T0" else "test_skip" if go == "merge" else "test_fail", level=level, **me)
                 if go == "fix": step, red0, tfail0 = "fix", ttext, True  # the #303 FIX loop below, round 1 = this fail
@@ -2312,7 +2318,8 @@ def process_locked(issue, where="local"):
             if kind in ("pass", "notes", "purple"):  # #618: review -> test (T1+, cloud tester on the preview) -> merge
                 since = utc()
                 go, level, ttext = fresh_tester().gate(rv or verdict, lambda lv: remote_tester(
-                    n, pr, lv, rstart_test, lambda: fresh_tester().status(pr, since=since), poll_sleep, time.time, 5400, 60, ended=over))
+                    n, pr, lv, rstart_test, lambda: fresh_tester().status(pr, since=since), poll_sleep, time.time, 5400, 60, ended=over),
+                    diff=pr_diff(pr))
                 if go == "merge":
                     stat(n, lane, "test_pass" if level != "T0" else "test_skip", level=level, **me); break
                 if go == "blocked": raise Blocked(f"tester ({level}): {ttext[:300]}")
