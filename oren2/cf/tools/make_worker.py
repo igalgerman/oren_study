@@ -591,6 +591,7 @@ export default{async fetch(req,env,ctx){const u=new URL(req.url);const p=u.pathn
  if(p==='/sw.js')return new Response(SW,{headers:{'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache'}});
  if(p.startsWith('/api/tts'))return tts(req,env,u).catch(e=>J({ok:false,why:String(e&&e.message||e).slice(0,200)},503));/* a failing KV write (daily limit) used to be Cloudflare error 1101 */
  if(p==='/api/log'||p.startsWith('/api/log/'))return evlog(req,env,u).catch(e=>J({error:'log',why:String(e&&e.message||e).slice(0,200)},503));
+ if(p==='/mcp'||p.startsWith('/oauth/')||p.startsWith('/.well-known/oauth-'))return consoleMcp(req,env,u).catch(e=>J({error:'console'},503));/* #885 owner console in the Claude chat */
  if(p.startsWith('/api/console/'))return consoleApi(req,env,u).catch(e=>J({error:'console'},503));
  if(p==='/api/mcp')return mcp(req,env).catch(e=>J({error:'mcp'},503));
  if(p==='/api/diag')return diag(req,env,u).catch(e=>J({error:'diag',why:String(e&&e.message||e).slice(0,200)},503));
