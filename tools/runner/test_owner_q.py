@@ -337,4 +337,11 @@ g.issues[677] = {"title": "x", "comments": [{"body": rec677, "author": {"login":
 assert OQ.repair([K1], g) == {K1: 1} and g.issues[677]["comments"][-1]["body"] == rec677 and len(g.issues[677]["comments"]) == 2
 g.issues[677]["comments"][-1]["author"] = {"login": "oren-study-bot"}
 assert OQ.repair([K1], g) == {} and len(g.issues[677]["comments"]) == 2, "already posted by the App: nothing to repair"
+# the ANSWERED line on the questions issue, written under the owner login (the max_core answer), is posted again too
+OQ._save({"issue": 205, "posted": []}); ans = f"ANSWERED owner-q:{K2} ok\n{OQ.MARK}"
+g = FakeGH(); g.issues[9] = {"title": "x", "comments": []}; g.issues[205] = {"title": OQ.TITLE, "comments": [{"body": OQ.body(K2, "#9", "QUESTION: max_core?"), "author": {"login": "igalgerman"}},
+                                                           {"body": ans, "author": {"login": "igalgerman"}, "createdAt": "2026-11-28T12:41:00Z"}]}
+assert OQ.answered_keys(g.issues[205]["comments"]) == set() and OQ.repair([K2], g) == {K2: 1} and g.issues[205]["comments"][-1]["body"] == ans
+g.issues[205]["comments"][-1]["author"] = {"login": "oren-study-bot"}
+assert OQ.answered_keys(g.issues[205]["comments"]) == {K2} and OQ.repair([K2], g) == {} and len(g.issues[205]["comments"]) == 3
 print("ok owner_q #897 owner answers are App-only, queued answers")

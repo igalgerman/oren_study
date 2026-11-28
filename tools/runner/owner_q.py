@@ -333,6 +333,12 @@ def repair(keys, gh=None):
     out = {}
     q = find_issue(gh); qcs = comments(q, gh) if q else None
     if qcs is None: return out
+    for k in keys:                                   # the ANSWERED line lives in the questions issue itself (#205), not on the asking issue
+        line = re.compile(rf"(?m)^\s*ANSWERED owner-q:{k}\b")
+        if any(trust.is_bot(c) and line.search(c.get("body") or "") for c in qcs): continue
+        src = next((c for c in qcs if trust.login(c) == trust.OWNER and not trust.answer_ok(c) and line.search(c.get("body") or "")), None)
+        if src: post_or_queue(q, src["body"], gh); out[k] = out.get(k, 0) + 1
+    # the issues to repair: the one the question was asked from (`**#n**` in its comment) and the ones it gates (`--gates`)
     issues = {int(m[1]) for c in trust.only(qcs) for m in [re.search(r"\*\*#(\d+)\*\*", c.get("body") or "")] if m and any(k in (c.get("body") or "") for k in keys)}
     for n in sorted(issues | {x for c in qcs if any(k in (c.get("body") or "") for k in keys) for x in gates_of(c.get("body") or "")}):
         cs = comments(n, gh) or []
