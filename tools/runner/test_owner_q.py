@@ -175,11 +175,13 @@ print("ok owner_q #608 owner gate only through an owner_q answer record")
 
 # #636: the merge gate. An issue is owner-gated when an owner question about it exists (any window but its own reviewer's
 # PURPLE: hold parks the issue, merge-safe merges by design). Gated + gate CLOSED -> never merge; gated + OPEN or not gated -> fine.
-qcs2 = [{"body": OQ.body(QK, "remote-64", "QUESTION: design ok?"), "reactionGroups": []},
+qcs2 = [{"body": OQ.body(QK, "remote-64", "QUESTION: design ok?", gates=[64]), "reactionGroups": []},
+        {"body": OQ.body("4" * 12, "remote-65", "QUESTION: how do I get the play-log key?"), "reactionGroups": []},
         {"body": OQ.body("3" * 12, "review-66", "QUESTION: blue or green?"), "reactionGroups": []}]
 assert OQ.merge_state(64, bot, qcs2) == "closed", "#557: the owner's #64 question unanswered + a bot 'design approved' -> closed"
 assert OQ.merge_state(64, bot + [{"body": OQ.answer_body(QK, "כן")}], qcs2) == "open"
 assert OQ.merge_state(65, [], qcs2) == "none", "no owner question about #65 -> not owner-gated"
+assert OQ.merge_state(65, [], qcs2) == "none", "#739: an open plain access question (no gates marker) never closes the merge gate"
 assert OQ.merge_state(66, [], qcs2) == "none", "a reviewer PURPLE question (merge-safe or hold) is not a merge gate"
 assert OQ.merge_state(64, None, qcs2) == "error" and OQ.merge_state(64, [], None) == "error"
 g4 = FakeGH(); OQ.STATE = tmp / "owner_q_merge.json"; OQ.GH = g4
