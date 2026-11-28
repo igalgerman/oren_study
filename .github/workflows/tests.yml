@@ -111,6 +111,7 @@ jobs:
           fetch-depth: 0
       - name: Did this PR touch the setup files?
         id: touched
+        if: hashFiles('tools/setup/test_setup.ps1') != ''
         run: |
           if [ "${{ github.event_name }}" = pull_request ]; then
             git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -E '^(tools/setup/|tools/runner/recover\.py$|tools/runner/config\.toml$|tools/recover\.cmd$|\.github/workflows/tests\.yml$)' > /dev/null && echo run=1 >> "$GITHUB_OUTPUT" || echo run=0 >> "$GITHUB_OUTPUT"
@@ -118,7 +119,7 @@ jobs:
             echo run=1 >> "$GITHUB_OUTPUT"
           fi
       - name: setup.ps1 -DryRun and -Check with mocks (pwsh)
-        if: steps.touched.outputs.run == '1'
+        if: steps.touched.outputs.run == '1' && hashFiles('tools/setup/test_setup.ps1') != ''
         shell: pwsh
         run: ./tools/setup/test_setup.ps1
   tests:
