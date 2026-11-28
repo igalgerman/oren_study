@@ -66,5 +66,94 @@ def report(events, now=None):
                      f"fix rounds {p['fix_rounds']}, merge {fmt(p.get('merge'))}")
     return "\n".join(lines)
 
+# ---------- #717: model x effort audit (deterministic, reads only stats.jsonl + issue labels) ----------
+RANK = {"haiku": 0, "sonnet": 1, "opus": 2, "fable": 3}
+EFFORT = {"low": 0, "medium": 1, "high": 2, "xhigh": 3, "max": 4}
+HIGH = {"high", "xhigh", "max"}
+SKIP_OVER = ("design", "ui", "kid", "security", "save", "sync")   # never OVER: design/kid UI, security/save/sync
+
+def _effort(e): return e.get("effort") if e.get("effort") in EFFORT else "medium"   # no effort (before #713) = medium
+def _model(e): return e.get("model") if e.get("model") in RANK else "sonnet"
+
+def models_data(events, labels=None, now=None):
+    """-> per issue (latest start): lane, model, effort, fix count, merged?, worker seconds, lines, files, upgraded.
+    labels: issue number -> label names. The reviewer is not looked at (always Opus)."""
+    per = {}
+    for e in sorted(events, key=lambda e: e["ts"]):
+        n, ev = e["issue"], e["event"]
+        if ev == "start":
+            old = per.get(n)
+            m, f = _model(e), _effort(e)
+            up = bool(old and (old["up"] or RANK[m] > RANK[old["model"]] or EFFORT[f] > EFFORT[old["effort"]]))
+            per[n] = {"issue": n, "lane": e.get("lane") or "?", "model": m, "effort": f, "start": e["ts"], "fix": 0,
+                      "merged": None, "work": None, "lines": None, "files": None, "up": up}
+            continue
+        p = per.get(n)
+        if not p: continue
+        if ev == "fix_done": p["fix"] += 1
+        elif ev == "worker_done" and p["work"] is None: p["work"] = e["ts"] - p["start"]
+        elif ev == "merged":
+            p["merged"] = e["ts"]
+            for k in ("lines", "files"):
+                if isinstance(e.get(k), int): p[k] = e[k]
+    out = []
+    for p in per.values():
+        L = [l.lower() for l in (labels or {}).get(p["issue"], [])]
+        p["labels"] = L
+        p["first"] = p["merged"] is not None and p["fix"] == 0 and not p["up"]
+        p["under"] = p["fix"] >= 2 or p["up"]
+        p["over"] = (p["merged"] is not None and p["fix"] == 0 and not p["up"] and (p["model"] == "opus" or p["effort"] in HIGH)
+                     and p["lines"] is not None and p["lines"] <= 60 and p["files"] is not None and p["files"] <= 3
+                     and not any(w in l.replace("-", " ").replace(":", " ").split() for l in L for w in SKIP_OVER))
+        out.append(p)
+    return out
+
+def _median(xs):
+    xs = sorted(xs); n = len(xs)
+    return None if not n else xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2
+
+def models_table(data):
+    rows = {}
+    for p in data: rows.setdefault((p["model"], p["effort"], p["lane"]), []).append(p)
+    lines = ["model x effort x lane       issues  first-time  FIX/merged  median worker"]
+    for k in sorted(rows, key=lambda k: (RANK[k[0]], EFFORT[k[1]], k[2])):
+        r = rows[k]; mg = [p for p in r if p["merged"]]
+        first = f"{100 * sum(p['first'] for p in mg) // len(mg)}%" if mg else "-"
+        fpm = f"{sum(p['fix'] for p in mg) / len(mg):.1f}" if mg else "-"
+        lines.append(f"{'/'.join(k):<27} {len(r):>6}  {first:>10}  {fpm:>10}  {fmt(_median([p['work'] for p in r if p['work'] is not None])):>13}")
+    return "\n".join(lines if rows else ["no runs yet"])
+
+def models_lists(data):
+    """-> (UNDER issues, OVER issues)"""
+    return [p for p in data if p["under"]], [p for p in data if p["over"]]
+
+def hits_by_type(data, now=None, days=7):
+    """lane -> UNDER+OVER hits in the last `days` (by merge/start time); 3+ = the inbox changes that row of docs/agents/models.md."""
+    now = time.time() if now is None else now
+    h = {}
+    for p in data:
+        if (p["merged"] or p["start"]) > now - days * 86400 and (p["under"] or p["over"]): h[p["lane"]] = h.get(p["lane"], 0) + 1
+    return h
+
+def models_line(data, now=None):
+    """The one nightly `MODELS:` line."""
+    u, o = models_lists(data)
+    hot = sorted(l for l, c in hits_by_type(data, now).items() if c >= 3)
+    return (f"MODELS: {len(data)} issues, UNDER {len(u)}, OVER {len(o)}"
+            + (f"; 3+ hits this week in {', '.join(hot)}: change that row of docs/agents/models.md" if hot else "; no row to change"))
+
+def models_report(events, labels=None, now=None):
+    d = models_data(events, labels, now); u, o = models_lists(d)
+    fmt_l = lambda ps: ", ".join(f"#{p['issue']} ({p['model']}/{p['effort']}, {p['lane']}, FIX {p['fix']}{', upgraded' if p['up'] else ''})" for p in ps) or "none"
+    return "\n".join([models_table(d), f"UNDER: {fmt_l(u)}", f"OVER: {fmt_l(o)}", models_line(d, now)])
+
+def issue_labels():
+    """issue number -> label names from .runs/gh_cache.json (best effort; empty when unreadable)."""
+    try:
+        import ghcache
+        c = ghcache.load() or {}
+        return {i["number"]: [x["name"] for x in i.get("labels", [])] for i in c.get("open", []) + c.get("closed", [])}
+    except Exception: return {}
+
 if __name__ == "__main__":
-    print(report(read_events()))
+    print(models_report(read_events(), issue_labels()) if "--models" in sys.argv else report(read_events()))

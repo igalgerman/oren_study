@@ -66,7 +66,8 @@ def build_prompt():
 
 def command(model=None):
     """The claude command line. The prompt goes on stdin (--allowedTools takes a list and would swallow it)."""
-    return [shutil.which("claude") or "claude", "-p", "--model", model or MODEL, "--no-session-persistence", "--output-format", "json",
+    m, eff = R.floors("observer", model or MODEL)    # #714
+    return [shutil.which("claude") or "claude", "-p", "--model", m, "--effort", eff, "--no-session-persistence", "--output-format", "json",
             "--tools", "Read,Grep,Glob,Bash", "--allowedTools", *TOOLS, "--disallowedTools", *DENY]
 
 def ask_claude(prompt):

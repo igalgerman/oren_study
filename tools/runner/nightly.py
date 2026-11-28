@@ -103,6 +103,13 @@ def parse(out):
     orch = out[ho + 21:hi if hi > ho else len(out)].strip() if ho >= 0 else ""
     return props[:MAX_PROPOSALS], insp, orch
 
+def models_line_now(now=None):
+    """#717: the nightly MODELS: line (stats.jsonl + labels only, no Claude)."""
+    try:
+        import stats
+        return stats.models_line(stats.models_data(stats.read_events(R.RUNS / "stats.jsonl"), stats.issue_labels(), now), now)
+    except Exception as e: return f"MODELS: unavailable ({e!r})"
+
 def retro_body(props, date):
     lines = [f"Nightly retro (#219) of {date}, following docs/agents/skills/retro.md. Ranked proposals, each with its evidence. "
              "Nothing was applied: the orchestrator turns the accepted ones into tickets.", ""]
@@ -184,7 +191,8 @@ def build_prompt(now):
                          trends=trends_summary(now), observer=_read(R.RUNS / "ai_observer.last").strip() or "(none)", transcripts=transcripts(now))
 
 def command():
-    return [shutil.which("claude") or "claude", "-p", "--model", MODEL, "--no-session-persistence", "--output-format", "json",
+    m, eff = R.floors("retro", MODEL)    # #714
+    return [shutil.which("claude") or "claude", "-p", "--model", m, "--effort", eff, "--no-session-persistence", "--output-format", "json",
             "--tools", "Read,Grep,Glob,Bash", "--allowedTools", *TOOLS]
 
 def ask_claude(prompt):
@@ -351,7 +359,7 @@ def night_report_if_due(tell, log, hour=None, now=None, data=parked_data):
     d = data()
     if d is None: log("night report: GitHub unreadable"); return None
     st["parked_day"] = time.strftime("%Y-%m-%d", time.localtime(now)); save_state(st)
-    text = parked.night_report(*d, now)
+    text = parked.night_report(*d, now) + "\n" + models_line_now(now)
     tell(text); log(text[:300])
     return text
 
