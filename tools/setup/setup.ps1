@@ -51,11 +51,24 @@ function Get-RepoDirs($Cfg, [string]$Repo, [string]$Root) {
   return $dirs
 }
 
-function Get-Plan([bool]$Install) {
+# Plan lines for step 3, per checkout: clone when missing, else the origin fix (#868). $GetOrigin reads the origin URL (read-only).
+function Get-RepoPlan($Cfg, [string]$Repo, [string]$Root, [scriptblock]$GetOrigin) {
+  $lines = @()
+  foreach ($e in (Get-RepoDirs $Cfg $Repo $Root).GetEnumerator()) {
+    $url = Get-RepoUrl $e.Key
+    if (-not (Test-Path -LiteralPath (Join-Path $e.Value '.git'))) { $lines += "3 repo: git clone $url $($e.Value)"; continue }
+    $fix = Get-RemoteFix ([string](& $GetOrigin $e.Value)) $e.Key
+    if ($fix) { $lines += "3 repo: git remote set-url origin $fix (in $($e.Value))" } else { $lines += "3 repo: origin of $($e.Value) is already $($e.Key)" }
+  }
+  return $lines
+}
+
+function Get-Plan([bool]$Install, [string[]]$RepoPlan = @('3 repo: clone the checkouts when missing, fix an old origin URL')) {
   return @(
-    "1 tools: check git, gh, node >= 22, claude, miniforge python 3.12, herdr core + app" + $(if ($Install) { " (winget install what is missing)" } else { " (install only with -Install)" }),
-    "2 folders: work folder, bin\python3 shim, %USERPROFILE%\.oren (empty)",
-    "3 repo: clone the checkouts when missing, core.autocrlf false, fix an old origin URL",
+    ("1 tools: check git, gh, node >= 22, claude, miniforge python 3.12, herdr core + app" + $(if ($Install) { " (winget install what is missing)" } else { " (install only with -Install)" })),
+    "2 folders: work folder, bin\python3 shim, %USERPROFILE%\.oren (empty)"
+  ) + $RepoPlan + @(
+    "3 repo: core.autocrlf false",
     "4 herdr: start the app, check the spaces, python tools\runner\recover.py --open",
     "5 scheduled tasks: tools\recover.cmd --install, tools\runner\beatcheck.py --install",
     "6 verify: re-check everything, print the summary table"
@@ -158,7 +171,8 @@ if ($Check) {
 
 if ($DryRun) {
   Write-Host "DRY RUN: nothing is changed (repo $Repo)"
-  foreach ($p in (Get-Plan $Install.IsPresent)) { Write-Host "DRYRUN $p" }
+  $rp = Get-RepoPlan $cfg $Repo $root { param($d) if (Have 'git') { & git -C $d remote get-url origin 2>$null } }
+  foreach ($p in (Get-Plan $Install.IsPresent $rp)) { Write-Host "DRYRUN $p" }
   exit 0
 }
 

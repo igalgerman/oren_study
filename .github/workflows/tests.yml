@@ -99,13 +99,37 @@ jobs:
       - name: Model status line tests
         if: hashFiles('tools/mods/oren-model/run-tests.mjs') != ''
         run: node tools/mods/oren-model/run-tests.mjs
+  setup:
+    # #868: setup.ps1 must keep planning the full PC setup. pwsh on ubuntu with mocked git/gh/hc/schtasks/winget/claude shims
+    # (tools/setup/test_setup.ps1): ~20 s and 1x minutes, a windows-latest runner costs 2x and starts slower; nothing here needs real Windows.
+    # Runs only when a PR touches the setup files (path filter below); no secret is used.
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Did this PR touch the setup files?
+        id: touched
+        if: hashFiles('tools/setup/test_setup.ps1') != ''
+        run: |
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -E '^(tools/setup/|tools/runner/recover\.py$|tools/runner/config\.toml$|tools/recover\.cmd$|\.github/workflows/tests\.yml$)' > /dev/null && echo run=1 >> "$GITHUB_OUTPUT" || echo run=0 >> "$GITHUB_OUTPUT"
+          else
+            echo run=1 >> "$GITHUB_OUTPUT"
+          fi
+      - name: setup.ps1 -DryRun and -Check with mocks (pwsh)
+        if: steps.touched.outputs.run == '1' && hashFiles('tools/setup/test_setup.ps1') != ''
+        shell: pwsh
+        run: ./tools/setup/test_setup.ps1
   tests:
     # The one required check: a PR is mergeable when this is green.
     if: always()
-    needs: [shard, ci, tools]
+    needs: [shard, ci, tools, setup]
     runs-on: ubuntu-latest
     steps:
       - run: |
           [ "${{ needs.shard.result }}" = success ] || { echo "a test shard failed: ${{ needs.shard.result }}"; exit 1; }
           [ "${{ needs.ci.result }}" = success ] || { echo "the game CI tests failed: ${{ needs.ci.result }}"; exit 1; }
           [ "${{ needs.tools.result }}" = success ] || { echo "the tools tests failed: ${{ needs.tools.result }}"; exit 1; }
+          [ "${{ needs.setup.result }}" = success ] || { echo "the setup.ps1 dry-run test failed: ${{ needs.setup.result }}"; exit 1; }
