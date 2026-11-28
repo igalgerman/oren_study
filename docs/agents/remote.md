@@ -101,3 +101,10 @@ qwin does not send the answer itself for these issues (no double send); a cloud 
   `x-admin-key: $LOG_READ_KEY`. Never print, log, commit or post the key. Not set: `playlog.py` prints the single line
   `LOG_READ_KEY missing in the cloud environment` and stops (no 401 loop); report that line, do not ask for the key.
 - Comments and issues get aggregates only (counts, ids, times), never raw events or kid answers.
+
+## Renew the repo interaction limit (#829, owner steps)
+The public repos (INFRA, and GAME once it exists) use the interaction limit "collaborators only"; GitHub ends it after at most 6 months (set 2026-11-28, so it ends by 2027-05-28).
+The watchdog (`tools/runner/interaction_limit.py`) reads `expires_at` hourly and alarms the owner (orchestrator + Telegram) 14 days before, daily until renewed, at once if the limit is gone. Add the GAME repo to `interaction_limit_repos` in `tools/runner/config.toml` when it exists.
+1. When the alarm arrives, run in a terminal, once per public repo (renews for 6 months):
+   `gh api -X PUT repos/<owner>/<repo>/interaction-limits -f limit=collaborators_only -f expiry=six_months`
+2. Write in the chat "חודש".
