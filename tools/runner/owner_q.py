@@ -174,11 +174,27 @@ def merge_state(n, issue_comments, question_comments):
     if not qs: return "none"
     return "open" if gate(n, issue_comments, qs) else "closed"
 
-def merge_gate(n):
-    """#636: merge_state of issue n read from GitHub (the questions issue + issue n)."""
-    with ghcache.quick(QUICK_S):
+GATE_TRIES = (QUICK_S, 3 * QUICK_S, 6 * QUICK_S)   # #908: a read that times out (PC at 100% CPU) is retried with a longer timeout
+GATE_BACKOFF = (5, 15)                              # seconds to wait before retry 2 and 3
+
+def _gate_read(n, secs):
+    with ghcache.quick(secs):
         q = find_issue(); qcs = comments(q) if q else None
         ics = comments(n) if qcs is not None else None
+    return ics, qcs
+
+def gate_read(n, tries=None, backoff=None, sleep=time.sleep):
+    """#908: (issue comments, question comments) of issue n; a failed read is retried with a longer timeout and backoff. (None, ...) = still unreadable."""
+    tries, backoff = tries or GATE_TRIES, GATE_BACKOFF if backoff is None else backoff
+    for i, secs in enumerate(tries):
+        ics, qcs = _gate_read(n, secs)
+        if ics is not None and qcs is not None: break
+        if i + 1 < len(tries): sleep(backoff[min(i, len(backoff) - 1)] if backoff else 0)
+    return ics, qcs
+
+def merge_gate(n, **kw):
+    """#636: merge_state of issue n read from GitHub (the questions issue + issue n). #908: reads retried before 'error'."""
+    ics, qcs = gate_read(n, **kw)
     return merge_state(n, ics, qcs)
 
 def open_questions(comments):
@@ -357,8 +373,7 @@ def main(argv):
         print("marked answered" if ok else "could not mark now (no App token or gh failed): queued, the watchdog posts it as the App"); return 0 if ok else 1
     if len(argv) == 2 and argv[0] == "gate":
         n = int(argv[1].lstrip("#"))
-        with ghcache.quick(QUICK_S):
-            q = find_issue(); qcs = comments(q) if q else None; ics = comments(n)
+        ics, qcs = gate_read(n)                              # #908: retried with a longer timeout
         if qcs is None or ics is None: print("could not read GitHub (gh)"); return 2
         got = gate(n, ics, qcs)
         wait = [k for k, v in chat_states(ics).items() if not v["final"] and not v["undo"] and k not in {x for x in answered_keys(qcs)}]

@@ -195,7 +195,19 @@ g4 = FakeGH(); OQ.STATE = tmp / "owner_q_merge.json"; OQ.GH = g4
 g4.issues[205] = {"title": OQ.TITLE, "comments": [dict(c) for c in qcs2]}; g4.issues[64] = {"title": "x", "comments": list(bot)}; g4.issues[65] = {"title": "y", "comments": []}
 assert OQ.merge_gate(64) == "closed" and OQ.merge_gate(65) == "none"
 g4.fail = True; OQ.STATE = tmp / "owner_q_merge2.json"
-assert OQ.merge_gate(64) == "error", "GitHub unreadable -> error (the runner refuses)"
+assert OQ.merge_gate(64, sleep=lambda s: None) == "error", "GitHub unreadable -> error (the runner refuses)"
+# #908: first read times out, second succeeds -> the gate is read (merge proceeds); timeouts grow, backoff between
+g4.fail = True; slept, secs = [], []
+_gr = OQ._gate_read
+def _flaky(n, s_):
+    secs.append(s_)
+    if len(secs) == 2: g4.fail = False
+    return _gr(n, s_)
+OQ._gate_read = _flaky
+assert OQ.merge_gate(64, sleep=slept.append) == "closed", "#908: a failed first read is retried"
+assert secs == [OQ.GATE_TRIES[0], OQ.GATE_TRIES[1]] and secs[1] > secs[0] and slept == [OQ.GATE_BACKOFF[0]], (secs, slept)
+OQ._gate_read = _gr; g4.fail = False
+print("ok owner_q #908 gate read retried with a longer timeout")
 print("ok owner_q #636 merge gate: gated + CLOSED never merges")
 
 # #630: a question names the issue(s) it gates (owner_q.py ask --gates 64): gate #64 opens on its answer, whatever its window
