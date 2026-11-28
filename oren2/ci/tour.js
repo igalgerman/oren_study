@@ -84,7 +84,7 @@ async function tour(b, vp) {
   await check('story', vp, K, 'open a story (story-0), tap "to the questions", see a question', async () => {
     await home(K); await K.evaluate(() => window.TAL.ACT['story-0'].run(() => {}));
     if (!await until(K, () => document.querySelectorAll('#sTal .sl').length > 0)) return 'no story lines';
-    await K.locator('#sTal .stgo').click();
+    for (let i = 0; i < 4 && await K.locator('#sTal .stgo').count(); i++) { await K.locator('#sTal .stgo').click(); await sleep(250); }   /* #731: a long story is read in chapters, continue until the question */
     return await until(K, () => [...document.querySelectorAll('#sTal .chs .chb')].filter(x => x.offsetParent).length >= 2) || 'no question after the story'; });
 
   // two devices on one throwaway family: the kid on `vp`, the parent on the other viewport

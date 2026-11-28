@@ -409,7 +409,7 @@ async function ui(variant) {
     await sleep(60); await p.evaluate(() => { const q = window.__quiz; q.wrap.querySelectorAll('.chs .chb')[q.ans].click(); }); await sleep(250); } };
   const story = async (wrongAt, aloud) => { await p.evaluate(() => { document.getElementById('ov').hidden = true; window.TAL.ACT['story-new'].run(window.OREN.showMap); }); await sleep(300);
     const open = await bankOf('rb-story'); if (aloud) await p.evaluate(() => document.querySelector('#sTal .sl').click());
-    await p.evaluate(() => [...document.querySelectorAll('#sTal .bigbtn')].pop().click()); await sleep(200); await answerQuiz(wrongAt); await sleep(200);
+    for (let i = 0; i < 6 && await p.evaluate(() => !!document.querySelector('#sTal .stgo')); i++) { await p.evaluate(() => [...document.querySelectorAll('#sTal .bigbtn')].pop().click()); await sleep(200); } await answerQuiz(wrongAt); await sleep(200);
     const done = await bankOf('rb-story'); const h = done.sn[done.sn.length - 1]; return { open, done, h, e: done.wr[h] }; };
   const s0 = await bankOf('rb-story'); await p.evaluate(() => { document.getElementById('ov').hidden = true; window.TAL.ACT['story-new'].run(window.OREN.showMap); }); await sleep(300);
   const s0b = await bankOf('rb-story'); ok(s0b.sn.length === s0.sn.length && !Object.keys(s0b.wr).length, V + 'story opened but not answered → not recorded as solved', JSON.stringify(s0b));

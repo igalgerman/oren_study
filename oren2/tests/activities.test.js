@@ -90,7 +90,7 @@ const URL=L.URL;const sleep=ms=>new Promise(r=>setTimeout(r,ms));
  for(const id of ids){await p.evaluate(()=>{document.querySelector('#ov').hidden=true;window.TAL.openHub();});await sleep(80);const e0=errs.length;
    const avail=await p.evaluate(id=>{const a=window.TAL.ACT[id];return !a.avail||a.avail();},id);if(!avail){res.push(`---- ${id}: unavailable here (dictation)`);continue;}
    if(id==='write-trace'){await p.evaluate(()=>window.TAL.ACT['write-trace'].run(()=>{}));await sleep(100);await click('#sTal .btnrow .bigbtn');}
-   else if(id.startsWith('story-')){await p.evaluate(id=>window.TAL.ACT[id].run(()=>{}),id);await sleep(100);await click('#sTal .btnrow .bigbtn:last-child');}
+   else if(id.startsWith('story-')){await p.evaluate(id=>window.TAL.ACT[id].run(()=>{}),id);await sleep(100);for(let k=0;k<6&&await p.evaluate(()=>!!document.querySelector('#sTal .stgo'));k++){await click('#sTal .btnrow .bigbtn:last-child');await sleep(150);}}
    else if(id!=='code-maze')await p.evaluate(id=>window.TAL.ACT[id].run(()=>{}),id);
    await sleep(150);let extra='';
    if(S[id])extra=await S[id]()||'';else if(!(await quizLoop()))extra='QUIZ NOT DONE';

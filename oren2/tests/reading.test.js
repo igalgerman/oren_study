@@ -165,8 +165,56 @@ async function stories(b) {
   const rows = await p.evaluate(() => [...document.querySelectorAll('.dllog .dlrow.dl-c')].map(x => x.textContent));
   ok('parent day log shows the story name, its goal, read alone / listened and the level', rows.length === 4 && rows.every(t => /🎯/.test(t) && /רמה 1/.test(t)) && rows.filter(t => /קרא לבד/.test(t)).length === 2 && rows.filter(t => /האזין/.test(t)).length === 2, JSON.stringify(rows));
   await words420(p, run);
+  await chapters731(p);
+  await mission731(p);
   ok('stories: no JS errors', !errs.length, errs.slice(0, 3).join(' | '));
   await ctx.close();
+}
+
+/* ---------- #731: a story mission fits 4 minutes, and a long story is read in chapters ---------- */
+/* the model of a mission (a slow first reader): 2 s a word + 30 s a question + the wait for the "read to me" help (the game's own, level 3),
+   added up for EVERY story the mission leads him through before it moves on */
+const STORY_MISSION_S = 240;
+async function mission731(p) {
+  const help = await p.evaluate(() => { const T = window.TAL, O = window.OREN, set = T.S().set; delete set.plan; set.noDaily = 0;
+    const rw = T.S().rw = T.S().rw || {}; O.WORLDS.concat(T.BUILD).forEach(x => { rw[x.id] = 1; });   /* no real-world step joins the path */
+    T.ACT['read-pw'].run = () => { window.__next = 1; }; return T.storyHelp(3).all || 0; });
+  /* one story, played to its result card: the model seconds */
+  const story = async () => { let words = 0;
+    for (let c = 0; c < 6 && await p.evaluate(() => !!document.querySelector('#sTal .stgo')); c++) {
+      words += await p.evaluate(() => { const n = [...document.querySelectorAll('#sTal .story .sl')].map(x => x.textContent).join(' ').split(/\s+/).filter(Boolean).length; document.querySelector('#sTal .stgo').click(); return n; }); await L.sleep(150); }
+    const q = await p.evaluate(() => window.__quiz.keys.length);
+    for (let i = 0; i < 10 && await p.evaluate(() => document.querySelector('#ov').hidden); i++) { await p.evaluate(() => { const Q = window.__quiz, b = Q.wrap.querySelector('.chs').children[Q.ans]; if (b) b.click(); }); await L.sleep(300); }
+    return words * 2 + q * 30 + help; };
+  for (const k of [3, 11]) {
+    await p.evaluate(k => { document.querySelector('#ov').hidden = true; window.__next = 0;
+      window.TAL.S().daily = { d: window.OREN.today(), t: ['story-' + k, 'read-pw'], done: [0, 0], claimed: 0, ch: 'plan', cr: [] }; window.TAL_step(0); }, k);
+    await L.sleep(150);
+    let n = 0, secs = 0;
+    while (n < 3) { secs += await story(); n++;
+      await p.evaluate(() => document.querySelector('#ov .bigbtn:not(.plain)').click()); await L.sleep(500);
+      /* a screen that offers more stories is still the same mission: he picks the next one */
+      const more = await p.evaluate(i => { const c = document.querySelectorAll('#sTal:not([hidden]) .acts .actc'); if (window.__next || !c.length) return false; c[i % c.length].click(); return true; }, k + n);
+      if (!more) break; await L.sleep(150); }
+    const next = await p.evaluate(() => window.__next);
+    ok(`#731 mission story-${k} (reading + help wait + questions) is at most 4 minutes: one story, then continue goes to the next mission`, n === 1 && next === 1 && secs <= STORY_MISSION_S, JSON.stringify({ stories: n, next, secs }));
+  }
+}
+
+async function chapters731(p) {
+  const d = await p.evaluate(() => { const T = window.TAL, all = [...window.READBANK2.stories.map(s => ['R' + s.id, s.s]), ...T.STORIES.map((s, k) => ['B' + k, s.s])];
+    const bad = all.filter(([, l]) => { const c = T.storyChapters(l.length); return c[0][0] !== 0 || c[c.length - 1][1] !== l.length || c.some(([a, b], i) => b <= a || (i && c[i - 1][1] !== a)); }).map(x => x[0]);
+    return { bad, n: all.length, multi: all.filter(([, l]) => T.storyChapters(l.length).length > 1).length }; });
+  ok('#731 chapters cover every line of every story; stories of 5+ lines have more than one', d.bad.length === 0 && d.n > 50 && d.multi >= 2, JSON.stringify(d));
+  const ch = await p.evaluate(() => { const T = window.TAL, c = T.storyChapters(T.STORIES[11].s.length); return c.map(([a, b]) => b - a); });
+  await p.evaluate(() => window.TAL.readStory(11, () => {})); await L.sleep(150);
+  const c1 = await p.evaluate(() => ({ lines: document.querySelectorAll('#sTal .story .sl').length, btns: [...document.querySelectorAll('#sTal .strow .bigbtn')].filter(b => !b.hidden && !b.classList.contains('strd')).length, go: !!document.querySelector('#sTal .stgo') }));
+  await p.evaluate(() => document.querySelector('#sTal .stgo').click()); await L.sleep(150);
+  const c2 = await p.evaluate(() => ({ lines: document.querySelectorAll('#sTal .story .sl').length, stories: document.querySelectorAll('#sTal .story').length, go: !!document.querySelector('#sTal .stgo'), q: !!window.__quiz && !window.__quiz.wrap.hidden }));
+  await p.evaluate(() => document.querySelector('#sTal .stgo').click()); await L.sleep(150);
+  const c3 = await p.evaluate(() => ({ q: !!document.querySelector('#sTal .tqc, #sTal .chs'), go: !!document.querySelector('#sTal .stgo') }));
+  ok('#731 chapter 1 then chapter 2 (cut by storyChapters), each with the one continue button; the last continue opens the questions',
+    c1.lines === ch[0] && c1.btns === 1 && c1.go && c2.lines === ch[1] && c2.stories === 1 && c2.go && c3.q && !c3.go, JSON.stringify([ch, c1, c2, c3]));
 }
 
 /* ---------- #420: "words we will meet" before a story; words he taps while reading come back the next day in word practice ---------- */
