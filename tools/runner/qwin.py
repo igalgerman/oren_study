@@ -24,7 +24,8 @@ worker/reviewer PURPLE/cloud QUESTION:/intake/orchestrator). The watchdog calls 
   - #803 third channel, the chat with the inspector: `qwin.py chat-answer <key> "<answer>" --quote "<his exact words>"` runs only when
     its process tree goes back to the live inspector terminal (is_inspector); it writes a bot record `via=inspector-chat`, nothing
     else. The watchdog confirms it on Telegram (undo `בטל` within 10 min, `אשר` = at once) and only then (final marker) it is in force
-Usage: python tools/runner/qwin.py chat-answer <key> "<answer>" --quote "<quote>"   (the old `answer` CLI is gone, #803)
+Usage: python tools/runner/qwin.py whoami   (#907: prints the parent chain and the verdict, records nothing)
+       python tools/runner/qwin.py chat-answer <key> "<answer>" --quote "<quote>"   (the old `answer` CLI is gone, #803)
 """
 import json, os, re, signal, subprocess, sys, time
 from pathlib import Path
@@ -376,28 +377,39 @@ def is_inspector(chain_pids, terminals, inspector_dir):
     pid = _term_pid(t)
     return bool(pid) and pid in set(chain_pids or [])
 
-def chain_pids(limit=16):
-    """Our own parent-process chain on Windows (ctypes Toolhelp snapshot, at most `limit` steps); [] elsewhere or on any failure."""
-    if os.name != "nt": return []
+def walk_chain(pid, info, limit=16):
+    """Pure (#907): our parent chain. info(pid) -> (parent pid, creation time) or None when the process cannot be opened.
+    Opening works for an exited process a child still holds (a Toolhelp snapshot lists running ones only). The walk ends at a
+    parent that cannot be opened or was created after its child (a reused pid); that parent is not in the chain."""
+    out, cur = [], info(pid)
+    if not cur: return out
+    out.append(pid)
+    while len(out) < limit:
+        ppid = cur[0]
+        nxt = info(ppid) if ppid and ppid != pid else None
+        if not nxt or nxt[1] > cur[1] or ppid in out: break
+        out.append(ppid); pid, cur = ppid, nxt
+    return out
+
+def _win_info(pid):
+    """(parent pid, creation time) of an openable process (also an exited one that is still held), else None. Windows only."""
+    import ctypes
+    from ctypes import wintypes
+    k = ctypes.windll.kernel32; k.OpenProcess.restype = wintypes.HANDLE
+    h = k.OpenProcess(0x1000, False, pid)                       # PROCESS_QUERY_LIMITED_INFORMATION
+    if not h: return None
     try:
-        import ctypes
-        from ctypes import wintypes
-        class PE(ctypes.Structure):
-            _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
-                        ("th32DefaultHeapID", ctypes.c_void_p), ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
-                        ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long), ("dwFlags", wintypes.DWORD),
-                        ("szExeFile", ctypes.c_wchar * 260)]
-        k = ctypes.windll.kernel32; k.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
-        snap = k.CreateToolhelp32Snapshot(2, 0); parent = {}
-        pe = PE(); pe.dwSize = ctypes.sizeof(PE); ok = k.Process32FirstW(snap, ctypes.byref(pe))
-        while ok:
-            parent[pe.th32ProcessID] = pe.th32ParentProcessID; ok = k.Process32NextW(snap, ctypes.byref(pe))
-        k.CloseHandle(snap)
-        out, pid = [], os.getpid()
-        for _ in range(limit):
-            if pid not in parent: break
-            out.append(pid); pid = parent[pid]
-        return out + [pid] if pid else out
+        pbi = (ctypes.c_size_t * 6)()                           # PROCESS_BASIC_INFORMATION: parent pid is the 6th word
+        if ctypes.windll.ntdll.NtQueryInformationProcess(h, 0, ctypes.byref(pbi), ctypes.sizeof(pbi), None) != 0: return None
+        t = [wintypes.FILETIME() for _ in range(4)]
+        if not k.GetProcessTimes(h, *[ctypes.byref(x) for x in t]): return None
+        return int(pbi[5]), (t[0].dwHighDateTime << 32) | t[0].dwLowDateTime
+    finally: k.CloseHandle(h)
+
+def chain_pids(limit=16):
+    """Our own parent-process chain on Windows (#907: each process is opened, not read from a snapshot); [] elsewhere or on failure."""
+    if os.name != "nt": return []
+    try: return walk_chain(os.getpid(), _win_info, limit)
     except Exception: return []
 
 def live_terminals():
@@ -507,8 +519,14 @@ def chat_tick(st, qs, now):
         elif now - c["sent_at"] >= CHAT_WINDOW_S: finalize(key, e, c, now)
     save_chat(cs)
 
+def whoami():
+    """#907: print the parent chain and the verdict; no gh / Telegram / log call. -> exit code."""
+    chain = _chain(); ok = is_inspector(chain, live_terminals(), _inspector_dir())
+    print("chain: " + " ".join(map(str, chain))); print("inspector" if ok else "not the inspector"); return 0 if ok else 1
+
 def main(argv):
-    sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stdout, "reconfigure"): sys.stdout.reconfigure(encoding="utf-8")
+    if argv[:1] == ["whoami"]: return whoami()
     if len(argv) >= 1 and argv[0] == "answer":
         print("refused: the owner's answer is recorded on the page, in Telegram, or with `chat-answer` by the inspector (#803)"); return 2
     if len(argv) >= 3 and argv[0] == "chat-answer":

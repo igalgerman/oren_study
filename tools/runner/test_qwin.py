@@ -387,6 +387,16 @@ assert not ok_i([10], [{**INS, "foreground": {"argv": ["claude"], "pid": 10}, "n
 assert not ok_i([10], [{**INS, "foreground": {"argv": ["python", "--remote-control", "oren-inspector"], "pid": 10}}])   # not claude
 assert not ok_i([10], [{**INS, "cwd": "C:/work/other"}])                          # wrong cwd
 assert not ok_i([10], None) and not ok_i([10], [])                                # herdr unreadable
+# #907 walk_chain (pure): table pid -> (parent pid, created); a pid missing from the table cannot be opened
+def _wc(tbl, start=100, limit=16): return QW.walk_chain(start, lambda p: tbl.get(p), limit)
+T = {100: (90, 50), 90: (80, 40), 80: (70, 30), 70: (60, 20), 60: (50, 10), 50: (0, 5)}   # 90 = exited-but-held parent (still openable)
+assert _wc(T) == [100, 90, 80, 70, 60, 50]                                         # reaches the claude pid through an exited parent
+assert _wc({100: (90, 50), 90: (80, 40), 80: (70, 30)}) == [100, 90, 80]            # a parent that cannot be opened ends the walk, its pid is not in the chain
+assert _wc({**T, 80: (70, 30), 70: (60, 35)}) == [100, 90, 80]                      # parent created after its child (pid reuse): ends the walk, not in the chain
+assert _wc(T, limit=3) == [100, 90, 80] and _wc({}) == []
+assert _wc({100: (100, 50)}) == [100]                                              # a self-parent loop ends
+assert ok_i(_wc(T), [{**INS, "foreground": {**INS["foreground"], "pid": 50}}])      # the claude pid at the end of the walk is accepted
+assert not ok_i(_wc({**T, 60: (50, 10), 70: (60, 35)}), [{**INS, "foreground": {**INS["foreground"], "pid": 50}}])   # ...but not past a reuse break
 # live_terminals: hc ls --json, then hc get per live terminal
 _calls = []
 def _fh(*a, **kw):
@@ -516,3 +526,16 @@ try:
 finally:
     real._kill(pid)
 print("ok qwin real ask.py page")
+
+# #907 `whoami`: prints the chain and the verdict, makes no gh / Telegram / log call
+import io, contextlib
+QW._chain = lambda: [5, 10, 1]; QW.live_terminals = lambda: [INS, other]; QW._inspector_dir = lambda: Path(D)
+g3.calls.clear(); FakeTG.calls.clear(); chat_log.clear(); _h = len(h7.sent)
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf): rc = QW.main(["whoami"])
+o = buf.getvalue(); assert rc == 0 and "5" in o and "10" in o and "inspector" in o.lower() and "not" not in o.lower(), o
+QW._chain = lambda: [5, 20, 1]; buf = io.StringIO()
+with contextlib.redirect_stdout(buf): rc = QW.main(["whoami"])
+assert rc == 1 and "not the inspector" in buf.getvalue(), buf.getvalue()
+assert not g3.calls and not FakeTG.calls and not chat_log and len(h7.sent) == _h
+print("ok qwin #907 chain walk + whoami")
