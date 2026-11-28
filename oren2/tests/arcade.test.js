@@ -7,12 +7,12 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  const p=await ctx.newPage();const errs=[];p.on('pageerror',e=>errs.push(e.message));p.on('console',m=>{if(m.type()==='error'&&!/fonts|ERR_|Failed to load/.test(m.text()))errs.push('console: '+m.text());});
  await p.goto(L.URL);await L.noCoach(p);await sleep(500);
  await p.evaluate(()=>{const O=window.OREN,T=window.TAL;O.save.story.intro=1;T.S().prof={an:'cat',col:'#3a8fc4',love:'art'};window.TAL_arcade(()=>O.showMap());});await sleep(400);
- ok('arcade hall with 6 cabinets',await p.locator('.cab').count()===6);ok('no tickets or prize shop',await p.locator('.prize,.tkbig').count()===0&&!/🎟|פְּרָסִים/.test(await p.textContent('#sTal')));await L.shot(p,{path:L.SHOTDIR+`/arc-${tag}-hall.png`,fullPage:true});
- const ids=['balloon','soccer','basket','swim','mole','frog'];
+ ok('arcade hall with 7 cabinets',await p.locator('.cab').count()===7);ok('no tickets or prize shop',await p.locator('.prize,.tkbig').count()===0&&!/🎟|פְּרָסִים/.test(await p.textContent('#sTal')));await L.shot(p,{path:L.SHOTDIR+`/arc-${tag}-hall.png`,fullPage:true});
+ const ids=['balloon','soccer','basket','swim','mole','frog','chase'];
  for(const id of ids){const e0=errs.length;
    await p.evaluate(id=>window.__arc.start(id),id);await sleep(700);await L.shot(p,{path:L.SHOTDIR+`/arc-${tag}-${id}.png`});
    // play by hooks until result overlay appears
-   for(let k=0;k<200;k++){if(await p.evaluate(()=>!document.querySelector('#ov').hidden))break;await p.evaluate(()=>window.__arc.hit());await sleep(id==='swim'||id==='basket'?120:60);
+   for(let k=0;k<200;k++){if(await p.evaluate(()=>!document.querySelector('#ov').hidden))break;await p.evaluate(()=>window.__arc.hit());await sleep(id==='swim'||id==='basket'||id==='chase'?120:60);
      if(k===40&&['balloon','mole'].includes(id))await p.evaluate(()=>window.__arc.finish());}
    if(!(await p.evaluate(()=>!document.querySelector('#ov').hidden)))await p.evaluate(()=>window.__arc.finish());await sleep(300);
    const r=await p.evaluate(id=>({ov:!document.querySelector('#ov').hidden,t:window.__arc.state().tickets,tk:/🎟/.test(document.querySelector('#ov').textContent),rc:/שִׂיא/.test(document.querySelector('#ov').textContent),best:window.__arc.state().best[id]|0,rec:(window.TAL.S().tl['arc-'+id]||{}).s|0}),id);
@@ -48,5 +48,13 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  ok('good round raises one step, never past the cap',ad.good===3&&ad.top<=4,JSON.stringify(ad));
  const wide=await p.evaluate(()=>{const a=window.__arc.state();a.gr={frog:3};return window.__arc.tune('frog');});
  ok('3 good rounds in a row open the wider range',wide.wide&&wide.max===20,JSON.stringify(wide));
+ // #665 chase: real tap + Space step the chaser; speed capped; calm base
+ await p.evaluate(()=>{document.querySelector('#ov').hidden=true;window.__arc.start('chase');});await sleep(300);
+ ok('chase: instructions shown (one rule line, one main button)',/תְּפֹס/.test(await p.locator('.rule').innerText())&&await p.locator('.rungo').count()===1);
+ await sleep(3200);const x0=await p.evaluate(()=>parseFloat(document.querySelector('.run.me').style.left)||0);
+ await p.locator('.rungo').click();await p.keyboard.press('Space');await sleep(100);const x1=await p.evaluate(()=>parseFloat(document.querySelector('.run.me').style.left)||0);
+ ok('chase: click and Space both move the chaser',x1>x0+4,x0+' -> '+x1);await p.evaluate(()=>window.__arc.finish());await sleep(200);await p.evaluate(()=>{document.querySelector('#ov').hidden=true;});
+ const ch=await p.evaluate(()=>{const a=window.__arc.state();a.lv={chase:999};const top=window.__arc.tune('chase');a.lv={};return {top,base:window.__arc.tune('chase')};});
+ ok('chase: runner speed hard-capped (>=13000 ms) and calm base slower',ch.top.chT>=13000&&ch.base.chT>ch.top.chT&&ch.base.chGap>=.25,JSON.stringify(ch));
  await p.evaluate(()=>window.OREN.showMap());await sleep(300);
  ok('no JS errors',!errs.length,errs.slice(0,5).join(' | '));await b.close();L.finish('arcade-'+L.variant,res);})();

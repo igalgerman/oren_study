@@ -3228,6 +3228,19 @@ body:has(#dlg:not([hidden])) .toast{top:74px;bottom:auto}
 .corner{height:42%}
 @media (max-width:760px){.arc.game{min-height:calc(100dvh - 120px)}}
 
+/* ARCADE chase (#665) */
+.field.trk{background:linear-gradient(#1d0e46 0 40%,#2f8f3a 40%)}
+.road{position:absolute;left:3%;right:3%;top:42%;height:130px;direction:ltr;background:repeating-linear-gradient(90deg,rgba(255,255,255,.12) 0 40px,transparent 40px 80px),#c8925a;border-top:5px solid #fff;border-bottom:5px solid #fff}
+.road .fl{position:absolute;right:0;top:0;bottom:0;width:30px;font-size:34px;background:repeating-conic-gradient(#fff 0 25%,#1a0b3d 0 50%) 0 0/20px 20px;display:flex;align-items:center;justify-content:center}
+.run{position:absolute;bottom:20px;width:44px;height:90px;transition:none}
+.run .rh{position:absolute;top:0;left:9px;width:26px;height:26px;border-radius:50%;background:#f1c27d}
+.run .rb{position:absolute;top:26px;left:7px;width:30px;height:38px;border-radius:6px}
+.run .rl{position:absolute;top:62px;width:10px;height:26px;background:#1a0b3d;transform-origin:top}.run .rl.a{left:10px}.run .rl.b{left:24px}
+.run.me .rb{background:#3d8bff}.run.him .rb{background:#ff4b5c}.run.him{bottom:34px}
+.run .rl.a{transform:rotate(18deg)}.run .rl.b{transform:rotate(-18deg)}.run.s2 .rl.a{transform:rotate(-18deg)}.run.s2 .rl.b{transform:rotate(18deg)}
+.rungo{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);font-size:34px;padding:16px 56px;z-index:4}
+@media (max-width:760px){.road{height:110px}.run{transform:scale(.85);transform-origin:bottom}.rungo{font-size:30px;padding:14px 44px}}
+
 /* ===== reading: 🔊 + lit-up words ===== */
 .rdb{display:inline-grid;place-items:center;width:34px;height:34px;padding:0;margin-inline-end:8px;font-size:18px;line-height:1;background:#fff;border-radius:50%;box-shadow:0 0 0 2px rgba(0,0,0,.12),0 3px 0 rgba(0,0,0,.18);vertical-align:middle;cursor:pointer}
 @media (hover:hover){.rdb:hover{filter:brightness(1.06)}}
@@ -5594,7 +5607,7 @@ function finish(id,score,stars,extra){if(cur){cur.stop();cur=null;}T.setKey(null
 /* #351 difficulty: a level 0..CAP per game (not the record). 3 stars -> one step up, 1 star -> one step down; wider numbers (1-20) only after 3 good rounds in a row */
 const CAP=4;
 const tune=id=>{const a=A(),l=brk?0:Math.max(0,Math.min(CAP,(a.lv||{})[id]|0)),w=!brk&&((a.gr||{})[id]|0)>=3;/* #428 a break round: the calm base level */
-  return {lv:l,wide:w,max:w?20:10,line:w?50:l>=2?20:10,sp:[.035*(1+l*.08),.056*(1+l*.08)],spawn:950-l*40,stay:2400-l*150,gap:1100-l*60,meter:.055*(1+l*.1),zone:34-l*2,rivalT:60000-l*3500};};
+  return {lv:l,wide:w,max:w?20:10,line:w?50:l>=2?20:10,sp:[.035*(1+l*.08),.056*(1+l*.08)],spawn:950-l*40,stay:2400-l*150,gap:1100-l*60,meter:.055*(1+l*.1),zone:34-l*2,rivalT:60000-l*3500,chT:16000-l*700,chGap:.3-l*.01};};
 const adapt=(id,stars)=>{const a=A();a.lv=a.lv||{};a.gr=a.gr||{};const l=tune(id).lv;
   if(stars>=3){a.lv[id]=Math.min(CAP,l+1);a.gr[id]=(a.gr[id]|0)+1;}else{a.gr[id]=0;if(stars<=1)a.lv[id]=Math.max(0,l-1);}};
 const COLS=[['#ff4b5c','אֲדֻמִּים'],['#3d8bff','כְּחֻלִּים'],['#ffd23f','צְהֻבִּים'],['#3cd070','יְרֻקִּים']];
@@ -5720,9 +5733,36 @@ function start(id){T.setKey(null);RUN[id]();}
 let brk=null;
 function brkEnd(){const n=brk&&brk.next;brk=null;if(n)n();}
 function breakRound(id,next){id=G(id)?id:GAMES[0].id;brk={next:next||O.showMap,id};start(id);}
+/* pack games (chase.js) join the hall through this small kit */
+T.arcReg=(g,fn)=>{if(!G(g.id)){GAMES.push(g);RUN[g.id]=fn;}};T.arcKit={frame,countdown,finish,tune,setCur:c=>{cur=c;}};
 T.arcBreak=breakRound;T.arcGames=GAMES;
 window.TAL_arcade=openArcade;T.arcade=openArcade;
 window.__arc={open:openArcade,start,brk:breakRound,get inBreak(){return !!brk;},get brkId(){return brk?brk.id:null;},get cur(){return cur;},finish:sc=>cur&&cur.finish(sc),hit:()=>cur&&cur.hit(),state:()=>A(),tune,q:id=>qGen(tune(id))};
+})();
+
+/* ===== 🏃 ARCADE pack: catch the runner before the finish line (#665). One main action: tap / Space / click the big button to run ===== */
+(()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T||!T.arcReg)return;const {h}=O,sfx=O.sfx,D=O.D;const K=T.arcKit;
+const RULE='תְּפֹס אֶת הָרַצָּץ לִפְנֵי קַו הַסִּיּוּם! לְחַץ עַל "רוּץ!" שׁוּב וָשׁוּב.';
+T.addSay&&T.addSay([RULE,'תְּפַסְתָּ אוֹתוֹ!','הוּא הִגִּיעַ לַסִּיּוּם. עוֹד פַּעַם!']);T.addChoices&&T.addChoices(['תְּפֹס אֶת הָרַצָּץ']);
+const R=3,STEP=.03;
+function chase(){const F=K.frame('chase');const t=K.tune('chase');let k=0,caught=0,me=0,rn=0,alive=true,running=false,last=0;
+  F.field.classList.add('trk');
+  const man=cls=>h('div','run '+cls,'<i class="rh"></i><i class="rb"></i><i class="rl a"></i><i class="rl b"></i>');
+  const road=h('div','road','<span class="fl">🏁</span>');const you=man('me'),him=man('him');road.append(him,you);
+  const go=h('button','bigbtn gold rungo','🏃 <span>רוּץ!</span>');const msg=h('div','kmsg','');F.field.append(road,msg,go);
+  const put=()=>{you.style.left=(me*86)+'%';him.style.left=(rn*86)+'%';};
+  const round=()=>{me=0;rn=t.chGap;put();msg.textContent='';msg.className='kmsg';running=true;last=performance.now();F.time(`🏃 ${k+1}/${R}`);F.rule('🏃 תְּפֹס אֶת הָרַצָּץ לִפְנֵי קַו הַסִּיּוּם!',RULE);requestAnimationFrame(loop);};
+  function step(){if(!running||!alive)return;me=Math.min(1,me+STEP);you.classList.toggle('s2');sfx.pop(2);put();check();}
+  function check(){if(!running)return;if(me>=rn){running=false;caught++;F.score(caught);msg.textContent='תְּפַסְתָּ אוֹתוֹ! 🎉';msg.className='kmsg win';sfx.win();next();}
+    else if(rn>=1){running=false;msg.textContent='הוּא הִגִּיעַ לַסִּיּוּם. עוֹד פַּעַם!';sfx.no();next();}}
+  const next=()=>setTimeout(()=>{if(!alive||!road.isConnected)return;k++;if(k>=R)done();else round();},D(1300));
+  const loop=now=>{if(!alive||!road.isConnected){alive=false;return;}if(!running)return;if(O.paused){last=now;requestAnimationFrame(loop);return;}const dt=Math.min(50,now-last);last=now;rn=Math.min(1,rn+dt*(1-t.chGap)/D(t.chT));him.classList.toggle('s2',Math.floor(now/160)%2===0);put();check();if(running)requestAnimationFrame(loop);};
+  go.onpointerdown=e=>{e.preventDefault();step();};go.onclick=e=>{if(e.detail===0)step();};/* keyboard Enter on the button */
+  T.setKey(e=>{if(e.key===' '||e.key==='Enter'||e.key.startsWith('Arrow')){e.preventDefault();step();}});
+  function done(){if(!alive)return;alive=false;running=false;const st=caught>=3?3:caught>=2?2:1;K.finish('chase',caught,st,` מִתּוֹךְ ${R}`);}
+  K.setCur({stop:()=>{alive=false;running=false;},finish:sc=>{if(sc!=null)caught=sc;done();},hit:()=>{step();},get score(){return caught;}});
+  F.rule('🏃 תְּפֹס אֶת הָרַצָּץ לִפְנֵי קַו הַסִּיּוּם!',RULE);K.countdown(F,round);}
+T.arcReg({id:'chase',n:'תְּפֹס אֶת הָרַצָּץ',e:'🏃',c:'#ff5a5f',d:'רָצִים לַסִּיּוּם'},chase);
 })();
 
 /* ===== READING: "קוֹדֶם אַתָּה, אַחַר כָּךְ אֲנִי" =====
