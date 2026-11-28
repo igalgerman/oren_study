@@ -11,7 +11,6 @@ OK_CALLEES = {"run", "gh", "GH", "_gh", "sh", "_sh", "scrub_cmd", "R.run", "R.gh
 # file -> reason; a write list in these files may bypass the wrapper
 ALLOW = {
     "tools/runner/ghauth.py": "mints the App installation token (POST access_tokens): no issue/PR text",
-    "tools/ci/deploy_ci.py:caches": "reads the Actions cache list only (no text written)",
 }
 
 def name_of(node):

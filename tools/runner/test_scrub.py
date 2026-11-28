@@ -99,6 +99,8 @@ print("ok warning once a day")
 
 # ---------- 6: the watchdog sweep ----------
 import watchdog as W
+os.environ["TZ"] = "Asia/Jerusalem"; time.tzset()                      # a DST zone: _epoch must still be exact UTC
+assert S._epoch("2026-07-01T12:00:00Z") == 1782907200 and S._epoch("2026-01-01T12:00:00Z") == 1767268800, S._epoch("2026-07-01T12:00:00Z")
 now = time.time()
 iso = lambda t: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
 cache = {"ts": now,

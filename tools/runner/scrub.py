@@ -4,7 +4,7 @@ The kid's real name never lives in the repo: the list is read from `private_name
 Hebrew word -> הילד, Latin word -> the kid (possessive: the kid's); Hebrew one-letter prefixes keep working.
 Protected, never touched: a name inside a longer word, a path, a URL, a repo/branch/label name.
 No names: nothing changes, ONE warning per day, the dashboard shows an ALARM line."""
-import json, os, re, sys, time
+import calendar, json, os, re, sys, time
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -154,7 +154,7 @@ SWEEP_WINDOW_S = 30 * 60
 SWEEP_EVERY_S = 10 * 60
 
 def _epoch(iso):
-    try: return time.mktime(time.strptime(iso, "%Y-%m-%dT%H:%M:%SZ")) - time.timezone
+    try: return calendar.timegm(time.strptime(iso, "%Y-%m-%dT%H:%M:%SZ"))
     except (ValueError, TypeError): return 0
 
 def _comment_id(url):
