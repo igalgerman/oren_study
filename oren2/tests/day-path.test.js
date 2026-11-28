@@ -35,31 +35,26 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  const o=await p.evaluate(()=>({names:[...document.querySelectorAll('#sTal .dall .dcard b')].map(x=>x.textContent)}));
  const exp=await p.evaluate(()=>{const T=window.TAL;return T.GROUPS.filter(g=>g.ids.some(id=>T.dailyPool().some(a=>T.ACT[a].b.id===id))).length+2;});
  ok('something else: math, the doors with something in them + together (no building list)',o.names.length===exp&&o.names.length<=6&&!o.names.some(n=>/מַעְבָּדָה|אָמָּנוּת/.test(n))&&o.names.some(n=>n.includes('אַבָּא')),JSON.stringify(o.names));
- // #657 the screen says what happens (text + voice): pick, and it starts at once
- const hint=await p.evaluate(()=>({sub:(document.querySelector('#sTal .whead .sub')||{}).textContent||'',say:window.OREN.sayNow||''}));
- ok('#657 something else says (text + voice): pick and it starts at once',/מִיָּד/.test(hint.sub)&&/מִיָּד|מיד/.test(hint.say)&&/[ְ-ּ]/.test(hint.sub),JSON.stringify(hint));
  await p.locator('#sTal .dall .dcard',{hasText:'אַבָּא'}).click();await sleep(300);
  const d3=await p.evaluate(()=>{const d=window.TAL.S().daily;return {t:d.t,ch:d.ch,lead:window.TAL.TOG.find(a=>'tog:'+a.k===d.t[0]).lead};});
  ok('"together" from something else: an Oren-led together step + 2 surprises + the English scene (#424)',d3.ch==='tog'&&/^tog:/.test(d3.t[0])&&d3.lead===1&&d3.t.length===4&&d3.t[3]==='en-day',JSON.stringify(d3));
- // --- together screen: #657 picking in "something else" lands in it at once (no home in between) ---
- ok('#657 pick -> open: the picked topic starts at once',await p.evaluate(()=>!document.querySelector('#sTal').hidden&&!!document.querySelector('#sTal .tspec')&&document.querySelector('#sHome').hidden));
+ // --- together screen (#657: the pick opens it at once) ---
+ ok('#657 something else: a pick opens that topic at once (the together screen, no home stop)',await p.locator('#sTal .tspec').count()===1&&await p.locator('#sHome').isHidden());
  const ts=await p.evaluate(()=>({kid:document.querySelector('#sTal .tspec .lsent').textContent,par:document.querySelector('#sTal .tpar').textContent,btn:[...document.querySelectorAll('#sTal .tspec .bigbtn')].map(b=>b.textContent)}));
  ok('together screen: kid text with nikud, parent line without nikud, one "we finished" button',/[ְ-ּ]/.test(ts.kid)&&ts.par.startsWith('להורה:')&&!/[ְ-ּ]/.test(ts.par)&&ts.btn.length===1&&ts.btn[0].includes('סִיַּמְנוּ'),JSON.stringify(ts));
  await p.locator('#sTal .tspec .bigbtn').click();await sleep(300);ok('finishing returns home with the step done',await p.evaluate(()=>window.TAL.S().daily.done[0]===1&&!document.querySelector('#sHome').hidden));
- // --- #657 mid-path: pick in "something else" -> it opens at once; close it -> it is the first mission of today's path ---
- const e0=await p.evaluate(()=>{const T=window.TAL,d=T.S().daily;window.__s657=[];window.__r657={};T.dailyPool().forEach(id=>{const a=T.ACT[id],r=a.run;window.__r657[id]=r;a.run=bk=>{window.__s657.push(id);window.__b657=bk;return r(bk);};});
-   return {n:d.t.length,nx:d.done.findIndex(x=>!x),ch:d.ch};});
- await p.locator('#sHome .dmore').click();await sleep(300);
- await p.evaluate(()=>{const T=window.TAL;const g=T.GROUPS.find(x=>x.ids.filter(b=>T.dailyPool().some(a=>T.ACT[a].b.id===b)).length>1);T.otherDay(g);});await sleep(200);
- await p.locator('#sTal .dall .dcard').first().click();await sleep(300);
- const e1=await p.evaluate(()=>{const d=window.TAL.S().daily;return {st:window.__s657.slice(),t:d.t.slice(),ch:d.ch,tal:!document.querySelector('#sTal').hidden};});
- ok('#657 mid-path pick -> open: the picked mission starts at once and is put in as the next step',e1.st.length===1&&e1.tal&&e1.t.length===e0.n+1&&e1.t[e0.nx]===e1.st[0]&&e1.ch===e0.ch,JSON.stringify({e0,e1}));
- await p.evaluate(()=>window.__b657());await sleep(300);
- const e2=await p.evaluate(()=>{const d=window.TAL.S().daily;const nx=d.done.findIndex(x=>!x);return {nx,id:d.t[nx],home:!document.querySelector('#sHome').hidden,cur:!!document.querySelector('#sHome .tstep2.cur')};});
- ok('#657 pick -> close: it stays the first mission of today\'s path',e2.home&&e2.nx===e0.nx&&e2.id===e1.st[0]&&e2.cur,JSON.stringify(e2));
- await p.locator('#sHome .bigbtn.huge').click({force:true});await sleep(300);
- ok('#657 the big button opens that same mission again',await p.evaluate(id=>window.__s657.length===2&&window.__s657[1]===id,e1.st[0]));
- await p.evaluate(()=>{const T=window.TAL;Object.entries(window.__r657).forEach(([id,r])=>{T.ACT[id].run=r;});const d=T.S().daily;d.done[d.done.findIndex(x=>!x)]=1;window.OREN.showMap();});await sleep(200);
+ // --- #657 something else: text + voice, pick -> open, close -> the pick is first on the path ---
+ await home();await sleep(200);
+ await p.evaluate(()=>window.TAL.otherDay());await sleep(300);
+ const say=await p.evaluate(()=>{const t=(document.querySelector('#sTal .sub')||{}).textContent||'';return {t,nik:/[\u05B0-\u05BC]/.test(t),voice:String(window.OREN.sayNow||'').length>0};});
+ ok('#657 the something-else screen says what happens (text + voice, nikud)',/מַתְחִילִים/.test(say.t)&&say.nik&&say.voice,JSON.stringify(say));
+ const t0=await p.evaluate(()=>window.TAL.S().daily.t.length);
+ await p.locator('#sTal .dall .dcard').nth(0).click();await sleep(400);
+ const op=await p.evaluate(()=>{const d=window.TAL.S().daily,i=d.done.findIndex(x=>!x);return {home:!document.querySelector("#sHome").hidden,len:d.t.length,first:d.t[i]};});
+ ok('#657 pick -> that topic is open at once (not home), its mission is the first open one',!op.home&&op.len>t0&&!!op.first,JSON.stringify(op));
+ await home();await sleep(300);
+ const cl=await p.evaluate(()=>{const d=window.TAL.S().daily,i=d.done.findIndex(x=>!x);return {home:!document.querySelector('#sHome').hidden,first:d.t[i]};});
+ ok('#657 pick -> close -> it stays the first mission of the path',cl.home&&cl.first===op.first,JSON.stringify({cl,op}));
  // --- parent: "I have time now" ---
  await p.click('#sHome .parbtn');await p.fill('#pw1','abcd');await p.fill('#pw2','abcd');await p.keyboard.press('Enter');await sleep(300);
  await p.locator('.pchoice .ucard.tog').click();await sleep(200);
