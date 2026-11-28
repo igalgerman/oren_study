@@ -230,3 +230,22 @@ with tempfile.TemporaryDirectory() as d:
     live.write_text("live state", encoding="utf-8")
     assert rc.ensure_handoff(live, tpl) is False and live.read_bytes() == b"live state"
 print("ok")
+
+# #944: the REAL start_control (used by recover and the watchdog restart) passes tools/mods/oren-model to inspector/inbox/executor
+import importlib, types
+_rc2 = importlib.reload(importlib.import_module("recover"))
+sys.modules["gitid"] = types.SimpleNamespace(set_email=lambda mc, run: None)
+_rc2.ensure_handoff = lambda live, tpl: False
+for _role in ("inspector", "inbox", "executor", "orchestrator"):
+    _seen = []
+    _R = types.SimpleNamespace(CFG={"main_checkout": "C:/work/Oren_study/a"}, ROOT=Path("C:/work/Oren_study/a"), HERE=Path("C:/work/Oren_study/a/tools/runner"),
+                               run=lambda *a, **k: (0, ""), hc=lambda *a, **k: (_seen.append(list(a)), (0, "ok"))[1])
+    assert _rc2.start_control(_R, _role, space_id="") == 0
+    _argv = _seen[0]
+    _model = str(Path("C:/work/Oren_study/a") / "tools" / "mods" / "oren-model")
+    if _role == "orchestrator":
+        assert _model not in _argv and str(Path("C:/work/Oren_study/a") / "tools" / "mods" / "oren-lanes") in _argv, _argv
+    else:
+        _i = _argv.index("--plugin-dir"); assert _argv[_i + 1] == _model, (_role, _argv)
+        assert _argv.index("oren-" + _role) < _i, _argv
+print("ok #944 start_control loads oren-model for inspector/inbox/executor")
