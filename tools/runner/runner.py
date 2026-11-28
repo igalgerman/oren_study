@@ -667,10 +667,18 @@ def governor(usage, hist, now, g=None, prev=None, wins=None, stale_since=None, b
     if mode == "5h+week" and fresh: why += "; new 5h window"
     if wk >= g["week_stop"]:
         stop = True; why = f"week {wk:.0f}% >= {g['week_stop']:.0f}%: no new run until the weekly reset"   # #698 week hard stop
-    gv = {"lanes": lanes, "stop": stop, "pct": pct, "reset": reset, "mode": mode, "need": parts["need"], "n_hi": parts["n_hi"], "n_lo": parts["n_lo"], "n_week": parts["n_week"],
+    p, shift = budget_shift(parts["need"], g["b"], parts["n_hi"])
+    gv = {"lanes": lanes, "stop": stop, "pct": pct, "reset": reset, "mode": mode, "p": p, "shift": shift, "need": parts["need"], "n_hi": parts["n_hi"], "n_lo": parts["n_lo"], "n_week": parts["n_week"],
           "reserve": parts["reserve"], "c": parts["c"], "ready": ready, "b": g["b"], "b0": g["b0"], "k": g["k"], "fit": g["fit"] if "fit" in g else False, "target": g["cap_5h"], "week_pct": wk, "week_reset": wreset, "why": why, "now": now,
           "projected": None if pct is None else pct + g["k"] * g["b"] * max(lanes, busy) * h5, "week_projected": None}
     return week_gate(gv, g, stalled_5h(usage, hist) if mode == "5h+week" else False)
+
+def budget_shift(need, b, n_hi):
+    """Pure (#711): budget pressure p = need / (b * N_hi) and the shift for workers above the floors: +1 when p > 1 (more budget than the
+    lanes can burn), else 0. A tight budget (p < 1) only lowers the lane count (N_week); there is no -1, nothing is ever made cheaper."""
+    try: p = need / (b * n_hi)
+    except (TypeError, ZeroDivisionError): return None, 0
+    return p, (1 if p > 1 else 0)
 
 def stalled_5h(usage, hist):
     """#703: 5h reads 0% while its reset time moved forward on 2 passes in a row (3 readings, lanes busy) = nothing is being counted."""
@@ -703,6 +711,7 @@ def governor_text(gv):
     s = f"governor: {n} lanes: {gv['why']}"
     if gv.get("b") is not None: s += f" · b̂ {gv['b']:.2f}%/h" + ("" if gv.get("fit") else " (prior)")
     if gv.get("pct") is not None: s += f" · 5h {gv['pct']:.0f}% (cap {gv.get('target', GOV['cap_5h']):.0f}%)"
+    if gv.get("p") is not None: s += f" · p {gv['p']:.2f} budget: " + ("behind, shift +1" if gv.get("shift") else "tight, fewer lanes")
     return s + (" · STOP" if gv["stop"] else "")
 
 def alarm_text():
