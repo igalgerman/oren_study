@@ -217,4 +217,21 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  await fin(await p.evaluate(()=>window.__started[window.__started.length-1]));await sleep(2600);
  const tl=await p.evaluate(n0=>({started:window.__started.length-n0,lock:!!document.querySelector('.tlock:not(.tyay)')}),n0);
  ok('#388 time limit: continue does not start the next mission, the time-up screen shows',tl.started===0&&tl.lock,JSON.stringify(tl));
+ // --- #732 no repeats: a mission left in under 10 s is not offered again today; a due question asked today is not asked again
+ await p.evaluate(()=>{const T=window.TAL,O=window.OREN,ids=T.dailyPool().slice(0,2);window.__ids=ids;window.__bk=[];const r=Date.now;window.__off=0;Date.now=()=>r()+window.__off;
+  ids.forEach(id=>{T.ACT[id].run=back=>{window.__bk.push(back);};});T.S().daily={d:O.today(),t:ids.slice(),done:[0,0],claimed:0,ch:'plan',cr:[]};});
+ await p.evaluate(()=>window.TAL_step(0));await p.evaluate(()=>window.__bk[0]());
+ const q1=await p.evaluate(()=>{const d=window.TAL.S().daily;return {t:d.t,q:d.q,id:window.__ids[0],done:d.done};});
+ ok('#732 a mission left in under 10 s is swapped out and listed as skipped today',q1.q&&q1.q.includes(q1.id)&&!q1.t.includes(q1.id)&&q1.done[0]===0,JSON.stringify(q1));
+ await p.evaluate(()=>{const d=window.TAL.S().daily;d.done=d.done.map(()=>2);window.TAL.chooseDay('math',null,1);});
+ const q2=await p.evaluate(()=>{const d=window.TAL.S().daily;return d.t.slice(d.bs).includes(window.__ids[0]);});
+ ok('#732 the next path of the day does not offer the quickly left mission',q2===false);
+ await p.evaluate(()=>{const T=window.TAL,O=window.OREN,id=window.__ids[1];T.S().daily={d:O.today(),t:[id],done:[0],claimed:0,ch:'plan',cr:[]};window.__bk.length=0;window.TAL_step(0);window.__off=20000;});
+ await p.evaluate(()=>window.__bk[0]());
+ ok('#732 a mission left after 10+ s stays on the path',await p.evaluate(()=>{const d=window.TAL.S().daily;return d.t[0]===window.__ids[1]&&!(d.q||[]).length;}));
+ await p.evaluate(()=>{const T=window.TAL,L=window.LEARN;window.__off=0;const keys=['a','b','c'];L.pickItem=(bk,c)=>({item:c.slice().sort((x,y)=>x.k<y.k?-1:1)[0]});
+  const mk=()=>{const k=keys[Math.floor(Math.random()*3)];return {pr:'q'+k,opts:['1','2'],ans:0,key:k};};
+  const show=()=>{T.quiz({id:'t732',title:'t',n:2,pool:1,gen:mk,back(){}});return document.querySelector('#sTal .tqc').textContent;};
+  window.__f=[show(),show()];});
+ ok('#732 a due question asked today is not asked again while others exist',await p.evaluate(()=>window.__f[0]!==window.__f[1]),await p.evaluate(()=>window.__f.join()));
  ok('no errors',!errs.length,errs.join('|'));await b.close();L.finish('day-path-'+L.variant,res);})();
