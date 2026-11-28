@@ -70,6 +70,16 @@ with tempfile.TemporaryDirectory() as d:
     assert t688(4) == [] and said == []                                # the 4 control sessions alone: no alarm
     assert t688(6) == ["claude"] and "4 control sessions + 1 allowed" in said[0], said   # plus 2 unknown claude windows: alarm
 
+# #820: real windows carry only a label or argv, in other spellings: prefix 'oren-' in name/label, '--remote-control=oren-x', one argv string,
+# a label list; 4 such live sessions -> 4 control, allowed = 5, no claude alarm
+ctl820 = [{"labels": {"name": "oren-orchestrator"}, "state": "live"}, {"labels": ["herdr.space=c1", "name=oren-inbox"], "state": "live"},
+          {"foreground": {"argv": ["claude --model opus --remote-control oren-inspector 'x'"]}, "state": "live"},
+          {"argv": ["claude", "--remote-control=oren-executor"], "state": "live"}, {"name": "lane-12", "state": "live"}]
+assert P.control_count(ctl820) == 4, P.control_count(ctl820)
+with tempfile.TemporaryDirectory() as d:
+    said = []
+    assert P.tick(ctl820, send=lambda w, m: said.append(m), log=lambda m: None, now=1, sample=sample(claude=5), runs=d, st={}) == [] and said == []
+
 # #567: once per 60 min per cause; sooner only when worse (RAM down 5+ points, claude count up)
 send, sent = P.due({"ram": 12, "chrome": 6}, {}, 0)
 assert sorted(send) == ["chrome", "ram"]
