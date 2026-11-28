@@ -331,7 +331,9 @@ def sweep_tick(ts, now=None, seen=None, hc=None, say=None):
     if gone: say(f"sweep: removed {len(gone)} finished terminal(s) older than {SWEEP_MIN} min: " + " ".join(n for n, _ in gone[:20]))
     return len(gone)
 
-def check_control(ts, now=None):
+CONTROL_RECHECK_S = 60   # #935: a role missing on the first look is looked at again after this long, inside the same call (not one tick later)
+
+def check_control(ts, now=None, sleep=None, reread=None, recheck=False):
     """#140: a finished control terminal is removed (by address) and started again, same command as recover.
     #935: a control role with NO terminal (tab closed by hand) is started after 2 checks in a row. One start per role per tick, and a role
     just started counts as present for 10 min. Nothing starts while recover runs, while frozen, or when `hc ls` gave no rows (stale view)."""
@@ -345,6 +347,10 @@ def check_control(ts, now=None):
     try: state = json.loads(f.read_text(encoding="utf-8"))
     except (OSError, ValueError): state = {}
     plan, state = recover.control_plan(state, ts, now)
+    if not plan and recover.missing_control(ts) and (recheck or reread is not None):
+        (sleep or time.sleep)(CONTROL_RECHECK_S)      # #935: tick length made 'two checks' ~5 min; the 2nd check is one `hc ls` after the grace
+        ts2 = (reread or (lambda: (R.hc_json("ls", "--all", "--json") or {}).get("terminals", [])))()
+        if ts2: plan, state = recover.control_plan(state, ts2, now + CONTROL_RECHECK_S)
     try: f.write_text(json.dumps(state), encoding="utf-8")
     except OSError: pass
     import control_health as CH
@@ -719,7 +725,7 @@ def tick():
         step("check_lanes", check_lanes, ts)
         step("check_intake", check_intake, ts)
         all_ts = (step("all_windows", R.hc_json, "ls", "--all", "--json") or {}).get("terminals", []) or ts
-        step("check_control", check_control, all_ts)
+        step("check_control", check_control, all_ts, recheck=True)
         step("control_tick", control_tick, ts)  # #890
         step("cleanup", cleanup, all_ts)
         rts = step("run_rows", run_rows, ts) or ts   # #289: + the ONE poller's cloud lanes as virtual run-<n> rows
