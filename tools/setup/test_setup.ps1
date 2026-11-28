@@ -94,3 +94,4 @@ if ($hits.Count) { $fail += "hard-coded repo name in: " + (($hits | ForEach-Obje
 
 if ($fail.Count) { $fail | ForEach-Object { Write-Host "FAIL $_" }; exit 1 }
 Write-Host 'setup tests passed'
+exit 0   # a stale $LASTEXITCODE from the last -Check run must not leak out (#868)
