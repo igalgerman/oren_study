@@ -107,8 +107,13 @@ f = Fake(("issue list", 0, json.dumps([iss])), ("pr list", 0, json.dumps([{**pr,
 rows = r.cloud(run=f, now=NOW)
 assert [(x["n"], x["stale"], x["last"], x["pr"]) for x in rows] == [(140, False, "2026-11-26T11:45:00Z", pr["url"])], rows
 assert "--label" in f.calls[0][0] and "cloud" in f.calls[0][0]
-f = Fake(("issue list", 0, json.dumps([iss])), ("pr list", 0, "[]"), ("branches/lane/140", 0, "2026-11-26T11:55:00Z\n"))
+f = Fake(("issue list", 0, json.dumps([iss])), ("pr list", 0, "[]"),
+         ("graphql", 0, json.dumps({"data": {"repository": {"l140": {"target": {"committedDate": "2026-11-26T11:55:00Z"}}}}})))
 assert r.cloud(run=f, now=NOW)[0]["last"] == "2026-11-26T11:55:00Z"                       # no PR yet: the lane branch's last commit
+assert sum("graphql" in " ".join(map(str, c[0])) for c in f.calls) == 1 and not any("branches/lane" in " ".join(map(str, c[0])) for c in f.calls), "#911: one query, no REST call per lane"
+f = Fake(("graphql", 0, json.dumps({"data": {"repository": {"l1": {"target": {"committedDate": "d1"}}, "l2": None, "l3": {"target": {"committedDate": "d3"}}}}})))
+assert r.lane_dates([1, 2, 3], run=f) == {1: "d1", 3: "d3"} and len(f.calls) == 1 and r.lane_dates([], run=f) == {} and len(f.calls) == 1, "#911: ONE call for all lanes, none for no lanes"
+assert r.lane_dates([1], run=Fake(("graphql", 1, "boom"))) == {}
 assert r.cloud(run=Fake(("issue list", 1, "error")), now=NOW) == []
 print("ok cloud")
 

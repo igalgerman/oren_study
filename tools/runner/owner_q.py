@@ -240,7 +240,8 @@ def comments(n, gh=None):
     out, cur = [], ""
     for _ in range(MAX_PAGES):
         args = ["graphql", "-f", f"query={_CQ}", "-f", f"o={owner}", "-f", f"r={name}", "-F", f"n={int(n)}"] + (["-f", f"c={cur}"] if cur else [])
-        rc, txt = call("api", *args)
+        with ghcache.gate_read():                      # #911: a gate read may use the owner login when the app is limited
+            rc, txt = call("api", *args)
         if rc: return None
         try:
             c = json.loads(txt)["data"]["repository"]["issue"]["comments"]
