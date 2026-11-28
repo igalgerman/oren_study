@@ -1,6 +1,9 @@
 # Unit test for remote.py with a fake CLI: python tools/runner/test_remote.py
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
+import re, trust   # #800: old fixtures have no author: default them to the owner (explicit authors still count; test_trust.py covers the real rules)
+_login = trust.login
+trust.login = lambda c: _login(c) or (("oren-study-bot" if re.match(r"\s*(OWNER ANSWER|ANSWERED)", c.get("body") or "") or "owner-answer:" in (c.get("body") or "") else "igalgerman") if isinstance(c, dict) else "")
 import json
 import remote as r
 import owner_q as OQ   # #608: the owner answer record
@@ -218,7 +221,7 @@ PARK = {"body": "Parked (cloud): the cloud session waits for the owner."}
 assert r.answer_after_question([Q]) == ""                                                    # no answer yet
 assert r.answer_after_question([Q, PARK]) == ""                                              # runner/tool comments are no answer
 assert r.answer_after_question([Q, PARK, {"body": OQ.answer_body("abcdef012345", "green")}]) == "green"
-assert r.answer_after_question(["x", Q["body"], OQ.answer_body("abcdef012345", "2")]) == "2"   # plain bodies work too
+assert r.answer_after_question([{"body": "x"}, {"body": Q["body"]}, {"body": OQ.answer_body("abcdef012345", "2")}]) == "2"
 assert r.answer_after_question([Q, {"body": OQ.answer_body("abcdef012345", "ירוק")}]) == "ירוק"     # #608: the owner_q record
 # #608: only an owner_q answer record counts; any free comment from the shared account is no answer
 assert r.answer_after_question([Q, {"body": "OWNER ANSWER (question window, owner-q:abcdef012345): ירוק"}]) == ""   # no hidden record mark

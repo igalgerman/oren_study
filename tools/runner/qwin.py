@@ -31,6 +31,7 @@ HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 import runner as R
 import owner_q as OQ
+import trust
 import telegram as TG
 
 MAX_WINDOWS = 3
@@ -48,6 +49,10 @@ TG_STATE = R.RUNS / "telegram.json"                  # #440: the getUpdates offs
 def _hc(*a, **kw): return R.hc(*a, **kw)
 def _gh(*a, **kw):
     with R.ghcache.quick(OQ.QUICK_S): return R.gh(*a, **kw)   # #469: never more than 10 s on GitHub per call
+_gh_real = _gh
+def _app_post(n, text):
+    """#800: App-bot post or queue; a fake `_gh` (tests) is used as the App."""
+    with R.ghcache.quick(OQ.QUICK_S): return OQ.post_or_queue(n, text, _gh if _gh is not _gh_real else None)
 def _run(cmd, **kw): return R.run(cmd, **kw)
 def _herdr_ok(): return Path(R.HERDR_APP).exists()
 def _spawn(cmd, out, err):
@@ -302,7 +307,7 @@ def session_of(n):
     try: return json.loads((R.RUNS / str(n) / "remote.json").read_text(encoding="utf-8")).get("session", "")
     except Exception: pass
     rc, out = _gh("issue", "view", str(n), "--json", "comments")
-    try: bodies = [c.get("body", "") for c in json.loads(out).get("comments", [])] if rc == 0 else []
+    try: bodies = [c.get("body", "") for c in trust.only(json.loads(out).get("comments", []))] if rc == 0 else []
     except ValueError: bodies = []
     return next((m[0].rsplit("/", 1)[-1] for b in reversed(bodies) for m in [re.search(r"https://claude\.ai/code/session_\w+", b or "")] if m), "")
 
@@ -314,9 +319,9 @@ def answer(key, text, from_page=False, from_tg=False, tg=0):
                                       "gates": q.get("gates", [])}
                                      for q in OQ.open_list() or [] if q["key"] == key), {})
     n, src, done = info.get("issue", 0), info.get("source", ""), {}
-    if n: done["issue"] = _gh("issue", "comment", str(n), "--body", R.redact(OQ.answer_body(key, text)))[0] == 0
+    if n: done["issue"] = _app_post(n, OQ.answer_body(key, text))      # #800: the record is written only by the App bot; queued when it cannot
     for g in [g for g in info.get("gates", []) if g != n]:     # #630: the record also on each issue the question gates
-        done.setdefault("gates", {})[g] = _gh("issue", "comment", str(g), "--body", R.redact(OQ.answer_body(key, text)))[0] == 0
+        done.setdefault("gates", {})[g] = _app_post(g, OQ.answer_body(key, text))
     done["answered"] = OQ.mark_answered(key, text)
     resumes = src.startswith("remote-") and n and R.where_of(n) == "remote"   # #135: runner-managed: the watchdog resumes the session from the issue comment
     if src.startswith("remote-") and n and not resumes:

@@ -16,7 +16,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 import runner as R
-import ghcache
+import ghcache, ghauth, trust, remote
 
 TITLE = "Questions for the owner"
 OWNER = R.REPO.split("/")[0]
@@ -97,13 +97,17 @@ def body(key, window, question, tail="", gates=(), he=None):
             + ("".join(f"\n- {o}" for o in opts) + "\n" if opts else "") + orig
             + "\nענה כאן בתגובה (או לאורקסטרטור). אחרי שהתשובה הועברה: `ANSWERED owner-q:" + key + "`")
 
+def owner_reacted(c):
+    """#800: a reaction counts only from the owner login: the reaction group must list its users and the owner must be one."""
+    return any(trust.OWNER in {u.get("login") for u in (g.get("users") or {}).get("nodes") or []} for g in c.get("reactionGroups") or [])
+
 def answered_keys(comments):
     done = set()
-    for c in comments:
+    for c in trust.only(comments):                  # #800: only trusted authors; ANSWERED lines only from the App bot
         b = c.get("body") or ""
-        done |= set(re.findall(r"(?m)^\s*ANSWERED owner-q:([0-9a-f]{12})", b))
+        if trust.is_bot(c): done |= set(re.findall(r"(?m)^\s*ANSWERED owner-q:([0-9a-f]{12})", b))
         m = KEY_RE.search(b)
-        if m and any(g.get("users", {}).get("totalCount", 1) for g in c.get("reactionGroups") or []): done.add(m[1])
+        if m and owner_reacted(c): done.add(m[1])
     return done
 
 def answer_body(key, text):
@@ -122,14 +126,14 @@ def gate(n, issue_comments, question_comments):
     A #n question = asked from #n's window, or one that gates #n (#630, any window).
     Counts only an answer record on issue n with the key of a #n question in the questions issue, or a reaction on that question."""
     keys, out = {}, []
-    for c in question_comments:
+    for c in trust.only(question_comments):
         b = c.get("body") or ""; m = KEY_RE.search(b)
         if m and (re.search(rf"\*\*#{n}\*\*", b) or n in gates_of(b)): keys[m[1]] = c   # #630: or it gates #n
-    for c in issue_comments:
+    for c in trust.bots(issue_comments):             # #800: an answer record counts only from the App bot
         r = record_answer(c.get("body"))
         if r and r[0] in keys: out.append(r[1])
     for c in keys.values():
-        out += [f"reaction {g.get('content', '')}" for g in c.get("reactionGroups") or [] if g.get("users", {}).get("totalCount", 1)]
+        out += [f"reaction {g.get('content', '')}" for g in c.get("reactionGroups") or [] if trust.OWNER in {u.get('login') for u in (g.get('users') or {}).get('nodes') or []}]   # #800: owner login only
     return out
 
 def merge_state(n, issue_comments, question_comments):
@@ -152,7 +156,7 @@ def merge_gate(n):
 def open_questions(comments):
     """Pure: unanswered question comments, oldest first -> [{key, window, text, url}]."""
     done, out = answered_keys(comments), []
-    for c in comments:
+    for c in trust.only(comments):
         b = c.get("body") or ""
         m = KEY_RE.search(b)
         if not m or m[1] in done or b.lstrip().startswith("ANSWERED"): continue
@@ -211,6 +215,9 @@ def post(window, question, tail="", gh=None, gates=()):
 def flush_pending(gh=None):
     """#469: post the questions that could not be posted earlier (GitHub limited); each stays queued until it is posted."""
     for p in list(_state().get("pending", [])): post(p["window"], p["question"], p.get("tail", ""), gh, p.get("gates", ()))
+    for p in list(_state().get("pending_answers", [])):      # #800: answer records waiting for the App token
+        if post_app(p["n"], p["text"], gh):
+            s = _state(); s["pending_answers"] = [x for x in s.get("pending_answers", []) if x != p]; _save(s)
 
 def _post(window, question, tail="", gh=None, gates=()):
     gh = gh or GH
@@ -221,7 +228,7 @@ def _post(window, question, tail="", gh=None, gates=()):
     if not n: return None
     cs = comments(n, gh)
     if cs is None: return None
-    if any(KEY_RE.search(c.get("body") or "") and key in c["body"] for c in cs):
+    if any(KEY_RE.search(c.get("body") or "") and key in c["body"] for c in trust.only(cs)):
         s = _state(); s.setdefault("posted", []).append(key); _save(s); return ""
     rc, out = gh("issue", "comment", str(n), "--body", R.redact(body(key, window, question, tail, gates, hebrew_of(question))))
     if rc: return None
@@ -239,17 +246,37 @@ def mark_answered(key, answer="", gh=None):
     gh = gh or GH
     with ghcache.quick(QUICK_S):
         n = find_issue(gh)
-        return bool(n) and gh("issue", "comment", str(n), "--body", f"ANSWERED owner-q:{key} {answer}".strip() + "\n" + MARK)[0] == 0
+        return bool(n) and post_app(n, f"ANSWERED owner-q:{key} {answer}".strip() + "\n" + MARK, gh)
+
+def post_app(n, text, gh=None):
+    """#800: an owner-answer record / ANSWERED line is written ONLY by the App bot. gh=None: R.gh as the App with no owner fallback
+    (no App token -> False, the caller queues it); a test passes a fake gh."""
+    if gh is not None: return gh("issue", "comment", str(n), "--body", R.redact(text))[0] == 0
+    env = {**os.environ, remote.APP_ONLY: "1"}
+    return remote.sh(["gh", "issue", "comment", str(n), "--repo", R.REPO, "--body", R.redact(text)], env=env)[0] == 0
+
+def queue_answer(n, text):
+    s = _state(); p = s.setdefault("pending_answers", [])
+    if {"n": n, "text": text} not in p: p.append({"n": n, "text": text})
+    s["pending_answers"] = p[-50:]; _save(s)
+
+def post_or_queue(n, text, gh=None):
+    """#800: App post, or queue (flush_pending retries, answers_tick alarms) when the App token is missing. -> True when posted now."""
+    if post_app(n, text, gh): return True
+    queue_answer(n, text); return False
 
 def new_answers(cs, seen):
     """Pure: comments after the first `seen` without the tool's marks (MARK, question key, ANSWERED line) = the owner's replies."""
     tool = lambda b: MARK in b or KEY_RE.search(b) or b.lstrip().startswith("ANSWERED")
-    return [c for c in cs[seen:] if not tool(c.get("body") or "")]
+    return [c for c in trust.only(cs[seen:]) if not tool(c.get("body") or "")]    # #800: only the owner's own account
 
 def answers_tick(tell, gh=None):
     """Watchdog: the owner replied in the questions issue -> tell the orchestrator (reply + open questions) so it relays the answer."""
     gh = gh or GH
     flush_pending(gh)
+    if _state().get("pending_answers") and not _state().get("answers_alarm"):    # #800: an answer record cannot be posted (no App token)
+        tell("ALARM: an owner answer record is queued: the GitHub App token is missing, nothing is posted under another login (#800).")
+        s = _state(); s["answers_alarm"] = True; _save(s)
     with ghcache.quick(QUICK_S):
         n = find_issue(gh)
         cs = comments(n, gh) if n else None

@@ -194,14 +194,14 @@ def _usable(now):
     c = load()
     return c if c and now - c.get("ts", 0) <= MAX_AGE else None
 
-_COMMENTS = "comments(last:100){totalCount nodes{body createdAt url author{login} reactionGroups{content users{totalCount}}}}"   # #637: url + reactions (owner_q)
+_COMMENTS = "comments(last:100){totalCount nodes{body createdAt url author{login} reactionGroups{content users(first:20){totalCount nodes{login}}}}}"   # #637: url + reactions (owner_q)
 _Q = ("query($o:String!,$r:String!,$oc:String,$cc:String,$wo:Boolean!,$wc:Boolean!,$full:Boolean!){repository(owner:$o,name:$r){"
       "open:issues(states:OPEN,first:100,after:$oc,orderBy:{field:CREATED_AT,direction:DESC})@include(if:$wo){totalCount pageInfo{hasNextPage endCursor}"
       " nodes{number title body url state createdAt updatedAt closedAt labels(first:30){nodes{name}} " + _COMMENTS + "}}"
       " closed:issues(states:CLOSED,first:100,after:$cc,orderBy:{field:UPDATED_AT,direction:DESC})@include(if:$wc){totalCount pageInfo{hasNextPage endCursor}"
       " nodes{number title url state createdAt updatedAt closedAt labels(first:30){nodes{name}}}}"
       " prs:pullRequests(first:100,orderBy:{field:UPDATED_AT,direction:DESC})@include(if:$full){nodes{number url title headRefName body state isDraft"
-      " mergedAt createdAt updatedAt closedAt labels(first:30){nodes{name}} mergeable autoMergeRequest{enabledAt} closingIssuesReferences(first:5){nodes{number}} commits(last:1){nodes{commit{committedDate statusCheckRollup{state}}}} comments(last:50){totalCount nodes{body createdAt url author{login} reactionGroups{content users{totalCount}}}}}}"
+      " mergedAt createdAt updatedAt closedAt labels(first:30){nodes{name}} mergeable autoMergeRequest{enabledAt} closingIssuesReferences(first:5){nodes{number}} commits(last:1){nodes{commit{committedDate statusCheckRollup{state}}}} comments(last:50){totalCount nodes{body createdAt url author{login} reactionGroups{content users(first:20){totalCount nodes{login}}}}}}}"
       " openPrs:pullRequests(states:OPEN)@include(if:$full){totalCount}"
       " refs(refPrefix:\"refs/heads/lane/\",first:100,orderBy:{field:TAG_COMMIT_DATE,direction:DESC})@include(if:$full){pageInfo{hasNextPage} nodes{name target{... on Commit{committedDate}}}}"
       "}}")
