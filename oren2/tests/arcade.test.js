@@ -7,7 +7,7 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  const p=await ctx.newPage();const errs=[];p.on('pageerror',e=>errs.push(e.message));p.on('console',m=>{if(m.type()==='error'&&!/fonts|ERR_|Failed to load/.test(m.text()))errs.push('console: '+m.text());});
  await p.goto(L.URL);await L.noCoach(p);await sleep(500);
  await p.evaluate(()=>{const O=window.OREN,T=window.TAL;O.save.story.intro=1;T.S().prof={an:'cat',col:'#3a8fc4',love:'art'};window.TAL_arcade(()=>O.showMap());});await sleep(400);
- ok('arcade hall with 6 cabinets',await p.locator('.cab').count()===6);ok('no tickets or prize shop',await p.locator('.prize,.tkbig').count()===0&&!/🎟|פְּרָסִים/.test(await p.textContent('#sTal')));await L.shot(p,{path:L.SHOTDIR+`/arc-${tag}-hall.png`,fullPage:true});
+ ok('arcade hall with 7 cabinets',await p.locator('.cab').count()===7);ok('no tickets or prize shop',await p.locator('.prize,.tkbig').count()===0&&!/🎟|פְּרָסִים/.test(await p.textContent('#sTal')));await L.shot(p,{path:L.SHOTDIR+`/arc-${tag}-hall.png`,fullPage:true});
  const ids=['balloon','soccer','basket','swim','mole','frog'];
  for(const id of ids){const e0=errs.length;
    await p.evaluate(id=>window.__arc.start(id),id);await sleep(700);await L.shot(p,{path:L.SHOTDIR+`/arc-${tag}-${id}.png`});
