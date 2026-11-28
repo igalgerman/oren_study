@@ -36,9 +36,9 @@ def plan(kind, project, title, body, labels=(), head=None, reg=None):
 
 class DuplicateCheckError(Exception): pass
 
-def duplicates(repo, title, run=gh):
+def duplicates(repo, title, run=None):
     """Open or closed issues in `repo` whose title equals ours (case-insensitive). An unreadable check raises DuplicateCheckError (#981)."""
-    r = run(["issue", "list", "-R", repo, "--state", "all", "--limit", "200", "--json", "number,title,state"], capture_output=True, text=True)
+    r = (run or gh)(["issue", "list", "-R", repo, "--state", "all", "--limit", "200", "--json", "number,title,state"], capture_output=True, text=True)
     if r.returncode: raise DuplicateCheckError(f"gh issue list failed (exit {r.returncode}): {(r.stderr or '').strip()[:200]}")
     try: items = json.loads(r.stdout or "")
     except (ValueError, TypeError): raise DuplicateCheckError("gh issue list gave empty or unreadable output")
