@@ -573,3 +573,45 @@ try:
 finally:
     real._kill(pid)
 print("ok qwin real ask.py page")
+
+# ---------- #872: console mirror (fake HTTP) ----------
+import console_mirror as CM
+CM.STATE = tmp / "console_mirror.json"; CM.log = lambda m: None
+CM.CONF = tmp / "console.json"; CM.CONF.write_text(json.dumps({"url": "https://c.test", "push_key": "pk", "read_key": "rk"}))
+Q1 = {"key": "aaaaaaaaaaaa", "window": "#5", "source": "issue-5", "text": "לאשר? 1) כן (מומלץ) 2) לא", "gates": [5], "at": "2026-11-28T10:00:00Z"}
+NOTE = {"key": "bbbbbbbbbbbb", "window": "ai-observer", "source": "ai-observer", "text": "PR #7 waits for your merge", "gates": [], "at": ""}
+class FakeNet:
+    def __init__(self): self.calls, self.fail, self.rows = [], False, []
+    def __call__(self, method, url, key, body=None):
+        self.calls.append((method, url.split("test")[1], key, body))
+        if self.fail: return 0, {}
+        return 200, ({"questions": self.rows} if method == "GET" else {"ok": True})
+net = FakeNet(); CM.http = net
+answers = []
+CM.QW.answer = lambda k, t, **kw: answers.append((k, t, kw)) or {}
+OQ.open_list = lambda gh=None: [dict(Q1), dict(NOTE)]
+CM.tick(now=1000, answers=False)
+posts = [c for c in net.calls if c[0] == "POST"]
+q = next(c for c in posts if c[1] == "/api/console/question")
+assert q[2] == "pk" and q[3]["key"] == Q1["key"] and q[3]["repo"] == R.REPO and q[3]["issue"] == 5 and q[3]["gates"] == [5]
+assert q[3]["options"] == ["כן (מומלץ)", "לא"] and q[3]["recommended"] == "כן" and q[3]["text_he"] and q[3]["asked_at"] > 0, q
+assert [c for c in posts if c[1] == "/api/console/notice"][0][3]["text_he"].startswith("PR #7"), posts
+# shadow: no pull; unchanged within 10 min: no push; notice never twice
+net.calls.clear(); net.rows = [{"repo": R.REPO, "key": Q1["key"], "answer": "כן", "via": "console"}]
+CM.tick(now=1100, answers=False)
+assert net.calls == [] and answers == [], (net.calls, answers)
+CM.tick(now=1000 + CM.EVERY_S + 1, answers=False)
+assert [c[1] for c in net.calls] == ["/api/console/question"], net.calls     # the refresh; the notice is not sent again
+# true: the D1 answer -> one qwin.answer with via; a second tick -> none
+net.calls.clear(); CM.tick(now=1200, answers=True); CM.tick(now=1300, answers=True)
+assert answers == [(Q1["key"], "כן", {"via": "console"})], answers
+# already answered another way (question no longer open) -> no record
+answers.clear(); st = CM._load(); st["pulled"] = []; CM._save(st)
+OQ.open_list = lambda gh=None: [dict(NOTE)]
+CM.tick(now=1400, answers=True); assert answers == [], answers
+# an API failure: tick returns True, never raises, retried next tick (digest not stored)
+OQ.open_list = lambda gh=None: [dict(Q1, key="cccccccccccc")]; net.fail = True
+assert CM.tick(now=2000, answers=True) is True
+net.fail = False; net.calls.clear(); assert CM.tick(now=2001, answers=False) is False
+assert any(c[3] and c[3].get("key") == "cccccccccccc" for c in net.calls)
+print("ok qwin console mirror")

@@ -284,3 +284,9 @@ assert OQ.gate(65, [rec, fin], qcs) == [], "a record for another issue's questio
 assert OQ.merge_state(64, [rec], qcs2) == "closed" and OQ.merge_state(64, [rec, fin], qcs2) == "open" and OQ.merge_state(64, [rec, fin, und], qcs2) == "closed"
 assert OQ.record_answer(rec["body"]) is None, "the old record pattern never matches a chat record"
 print("ok owner_q #803 inspector chat gate")
+
+# #872: a record with `via` is still the same owner-answer record: the gate does not change
+_b = OQ.answer_body("0123456789ab", "כן", "console")
+assert "via console" in _b and OQ.record_answer(_b) == ("0123456789ab", "כן")
+assert OQ.record_answer(OQ.answer_body("0123456789ab", "כן")) == ("0123456789ab", "כן")
+print("ok owner_q answer record via")

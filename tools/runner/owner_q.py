@@ -114,9 +114,11 @@ def answered_keys(comments):
         if m and owner_reacted(c): done.add(m[1])
     return done
 
-def answer_body(key, text):
-    """#608: the owner's answer as recorded on the asking issue (only qwin.answer writes it): the one thing that counts as him."""
-    return f"OWNER ANSWER (question window, owner-q:{key}): {text}\n<!-- owner-answer:{key} -->"
+def answer_body(key, text, via=""):
+    """#608: the owner's answer as recorded on the asking issue (only qwin.answer writes it): the one thing that counts as him.
+    #872: `via` (console|telegram) is named in the visible line only; the marker, and so the gate, stay the same."""
+    v = f" via {via}" if via else ""
+    return f"OWNER ANSWER (question window, owner-q:{key}{v}): {text}\n<!-- owner-answer:{key} -->"
 
 def chat_answer_body(key, text, quote):
     """#803: the inspector-chat answer record. Not an `owner-answer` record (ANSWER_RE needs no `via=`): it counts only with the final marker."""
@@ -142,7 +144,7 @@ def chat_states(issue_comments):
 def record_answer(body):
     """Pure (#608): (key, answer text) of an owner_q answer record, else None. Free comment text never is one."""
     m = ANSWER_RE.search(body or "")
-    a = re.match(r"^OWNER ANSWER \(question window, owner-q:([0-9a-f]{12})\):\s*(.*)", (body or "").strip(), re.S)
+    a = re.match(r"^OWNER ANSWER \(question window, owner-q:([0-9a-f]{12})(?: via [\w-]+)?\):\s*(.*)", (body or "").strip(), re.S)
     if not (m and a and a[1] == m[1]): return None
     return m[1], ANSWER_RE.sub("", a[2]).strip()
 
