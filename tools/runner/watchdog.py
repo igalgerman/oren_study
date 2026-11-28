@@ -1044,7 +1044,7 @@ def usage_tick():
     """#708: every 30 min the per-entity usage table (.runs/usage_by_entity.json) + ENTITY alarms (watchdog tell + Telegram, once per entity per 3 h)."""
     if time.time() - _usage["last"] < 1800: return
     _usage["last"] = time.time()
-    import usage_entities; importlib.reload(usage_entities); usage_entities.tick(tell, log)
+    import usage_entities; importlib.reload(usage_entities); usage_entities.tick(tell, log, terminals=windows())
 
 _ualarm = {"last": 0.0}
 def usage_alarm_tick():

@@ -65,14 +65,39 @@ assert A.token({}, now=t0, post=fake_post, sign=fake_sign) == "" and len(posts) 
 
 A.TOKEN_FILE.unlink()
 def bad_post(url, jwt): raise OSError("HTTP 401 Bad credentials")
-assert A.token(CFG, now=t0, post=bad_post, sign=fake_sign) == "", "a failed mint never breaks gh: owner login"
+NOSLEEP = lambda s_: None
+assert A.token(CFG, now=t0, post=bad_post, sign=fake_sign, sleep=NOSLEEP) == "", "a failed mint never breaks gh: owner login"
 assert "401" in A.LOG.read_text() and "SIG" not in A.LOG.read_text()
 assert A.token(CFG, now=t0 + 60, post=fake_post, sign=fake_sign) == "" and len(posts) == 2, "after a failure: back off, no mint storm"
 assert A.token(CFG, now=t0 + A.BACKOFF + 1, post=fake_post, sign=fake_sign) == "ghs_tok3", "tries again after the back-off"
 def no_key(data, key): raise FileNotFoundError(key)
 A.TOKEN_FILE.unlink()
-assert A.token(CFG, now=t0 + 9999, post=fake_post, sign=no_key) == "", "missing key file (cloud) -> owner login"
+assert A.token(CFG, now=t0 + 9999, post=fake_post, sign=no_key, sleep=NOSLEEP) == "", "missing key file (cloud) -> owner login"
 print("ok token mint / cache / refresh / fallback")
+
+# ---------- #912: the mint is retried 3 times, and one process mints (lock) ----------
+A.TOKEN_FILE.unlink(missing_ok=True); tries, waits = [], []
+def flaky_post(url, jwt):
+    tries.append(1)
+    if len(tries) < 3: raise OSError("HTTP 502")
+    return {"token": "ghs_retry", "expires_at": "2027-01-15T08:00:00Z"}
+assert A.token(CFG, now=t0, post=flaky_post, sign=fake_sign, sleep=waits.append) == "ghs_retry" and len(tries) == 3 and len(waits) == 2, (tries, waits)
+assert not A.LOCK_FILE.exists(), "the lock is released"
+A.TOKEN_FILE.unlink(); tries.clear()
+def dead_post(url, jwt): tries.append(1); raise OSError("HTTP 502")
+assert A.token(CFG, now=t0, post=dead_post, sign=fake_sign, sleep=NOSLEEP) == "" and len(tries) == A.MINT_TRIES, "3 tries, then the owner login"
+# parallel processes: the lock holder mints, the others wait and take its token (one mint, not 8 to 11)
+A.TOKEN_FILE.unlink(); A.LOCK_FILE.write_text("")           # another process holds the lock
+mints = []
+def other_mints(sec):                                        # while we wait, the holder writes its token and releases
+    A._write({"token": "ghs_holder", "expires_at": EXP}); mints.append(1)
+assert A.token(CFG, now=t0, post=fake_post, sign=fake_sign, sleep=other_mints) == "ghs_holder" and len(posts) == 3, "waited for the holder's token: no second mint"
+A.LOCK_FILE.unlink(missing_ok=True)
+A.TOKEN_FILE.unlink(); A.LOCK_FILE.write_text(""); os.utime(A.LOCK_FILE, (t0 - 1000, t0 - 1000))
+_t = A.time.time; A.time.time = lambda: t0
+assert A.token(CFG, now=t0, post=fake_post, sign=fake_sign, sleep=NOSLEEP) == "ghs_tok4", "a dead (stale) lock is taken over"
+A.time.time = _t
+print("ok #912 mint retried 3 times, one mint under the lock")
 
 # ---------- apply: only gh commands get the App token ----------
 A.TOKEN_FILE.write_text(json.dumps({"token": "ghs_live", "expires_at": NOW + 3600}))
