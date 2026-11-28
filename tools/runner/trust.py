@@ -10,11 +10,14 @@ BOTS = tuple(_CFG.get("bot_logins", ["oren-study-bot", "oren-study-bot[bot]"]))
 SINCE = str(_CFG.get("trust_since", "2026-11-28T12:28:45Z"))   # before this the owner login also wrote ANSWERED lines / answer records
 
 def login(c):
-    """The author login of a comment/issue/PR dict ('' when missing)."""
+    """The author login of a comment/issue/PR dict ('' when missing). #979: gh spells the App bot `app/<bot>`;
+    that maps to the configured bot login, any other `app/...` stays as is (untrusted)."""
     if not isinstance(c, dict): return ""
     for k in ("author", "user"):
         a = c.get(k)
-        if isinstance(a, dict) and a.get("login"): return str(a["login"])
+        if isinstance(a, dict) and a.get("login"):
+            l = str(a["login"])
+            return l[4:] if l.startswith("app/") and l[4:] in BOTS else l
     return ""
 
 def is_bot(c): return login(c) in BOTS
