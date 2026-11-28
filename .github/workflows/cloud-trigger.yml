@@ -1,0 +1,28 @@
+# #853: start a cloud worker for one issue through a scheduled-task API trigger. Manual only.
+name: cloud-trigger
+on:
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Issue number
+        required: true
+      lane:
+        description: Lane (pack, core, review)
+        default: pack
+permissions:
+  contents: read
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the cloud session
+        env:
+          CLAUDE_TRIGGER_URL: ${{ secrets.CLAUDE_TRIGGER_URL }}
+          CLAUDE_TRIGGER_TOKEN: ${{ secrets.CLAUDE_TRIGGER_TOKEN }}
+          ISSUE: ${{ inputs.issue }}
+          LANE: ${{ inputs.lane }}
+        run: |
+          echo "::add-mask::$CLAUDE_TRIGGER_URL"
+          echo "::add-mask::$CLAUDE_TRIGGER_TOKEN"
+          python3 tools/ci/cloud_trigger.py "$ISSUE" "$LANE"

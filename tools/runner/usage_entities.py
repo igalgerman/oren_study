@@ -100,14 +100,14 @@ def transcript_rows(root, since, known=None):
         except OSError: continue
         first, rows = parse_transcript(f)
         ent = classify(first, known)
-        out += [{**r, "entity": ent} for r in rows]
+        out += [{**r, "entity": ent, "session": f.stem} for r in rows]
         for sf in (f.parent / f.stem / "subagents").glob("agent-*.jsonl") if (f.parent / f.stem / "subagents").is_dir() else ():
             meta = {}
             try: meta = json.loads(sf.with_suffix(".meta.json").read_text(encoding="utf-8"))
             except Exception: pass
             _, srows = parse_transcript(sf)
             kind = re.sub(r"[^A-Za-z0-9_-]", "", str(meta.get("agentType") or "agent"))[:30]
-            out += [{**r, "model": r["model"] or str(meta.get("model") or ""), "entity": f"{ent}/sub:{kind}"} for r in srows]
+            out += [{**r, "model": r["model"] or str(meta.get("model") or ""), "entity": f"{ent}/sub:{kind}", "session": f.stem} for r in srows]
     return [r for r in out if r["ts"] >= since]
 
 def record_headless(entity, model, usage=None, cost=None, now=None):
@@ -197,6 +197,23 @@ def build(rows, wk, day="", now=None):
                     "runs": a["runs"], "merged_per_week_pct": round(a["merged"] / iw[a["issue"]], 2) if a["merged"] and iw.get(a["issue"]) else None})
     return out
 
+def by_session(rows, wk):
+    """Pure (#850): -> {session_id: {entity, day_pct, week_pct}}: a session's units / the day's total units (same units as build);
+    week_pct = day_pct x wk / 100, None when wk is unknown. Rows without a session (headless, cloud) are skipped; < 0.01% dropped."""
+    units = lambda r: r["tokens"] * (1.0 if r.get("proxy") else weight(r["model"]))
+    tot = sum(units(r) for r in rows) or 1.0
+    g = {}
+    for r in rows:
+        if not r.get("session"): continue
+        a = g.setdefault(r["session"], {"entity": str(r["entity"]).split("/")[0], "u": 0.0})
+        a["u"] += units(r)
+    out = {}
+    for sid, a in g.items():
+        d = 100 * a["u"] / tot
+        if d < 0.01: continue
+        out[sid] = {"entity": a["entity"], "day_pct": round(d, 2), "week_pct": None if wk is None else round(d * wk / 100, 3)}
+    return out
+
 def entity_totals(rows):
     """Pure: -> ({entity: day %} for non-issue entities, {issue: (day %, week % or None)})."""
     ents, iss = {}, {}
@@ -258,8 +275,9 @@ def compute(now=None, root=None, known=None):
     try: raw += transcript_rows(root or projects_root(), since, known)
     except Exception: pass
     raw += headless_rows(since) + cloud_rows(_jsonl("stats.jsonl", since - 86400), since)
-    rows = build(raw, week_burn(_jsonl("usage_hist.jsonl"), now), now=now)
-    return {"day": time.strftime("%Y-%m-%d", time.localtime(now)), "rows": rows, "attention": [], "at": now}
+    wk = week_burn(_jsonl("usage_hist.jsonl"), now)
+    rows = build(raw, wk, now=now)
+    return {"day": time.strftime("%Y-%m-%d", time.localtime(now)), "rows": rows, "sessions": by_session(raw, wk), "attention": [], "at": now}
 
 def tick(tell=print, log=print, now=None, send=None, **kw):
     """Watchdog hook: write the table, send the due alarms (watchdog tell + Telegram) and keep them as NEEDS-ATTENTION."""

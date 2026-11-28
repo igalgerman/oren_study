@@ -1,6 +1,6 @@
 # Build check (#503): a fresh `python3 build_talents.py` on the checked-out tree (in CI: the PR merged into main)
 # must leave the committed oren2/index.html and oren2/cf/public/index.html unchanged, else CI is red.
-# Usage: python3 tools/ci/buildcheck.py [repo root]
+# Usage: python3 oren2/ci/buildcheck.py [repo root]
 import pathlib, subprocess, sys
 
 BUILT = ["oren2/index.html", "oren2/cf/public/index.html"]

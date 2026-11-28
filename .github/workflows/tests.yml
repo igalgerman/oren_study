@@ -54,8 +54,27 @@ jobs:
           path: oren2/tests/.tmp/times.tsv
           retention-days: 35
           if-no-files-found: ignore
+  ci:
+    # Game CI helpers (oren2/ci): build check + their unit tests. Needs only the game files (#794).
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build check (a fresh build_talents.py on the merged tree changes no built file, #503)
+        run: python3 oren2/ci/buildcheck.py
+      - name: Game CI tests
+        run: |
+          fail=0
+          for t in oren2/ci/test_*.py; do
+            echo "== $t"; python3 "$t" || { echo "FAILED: $t"; fail=1; }
+          done
+          exit $fail
   tools:
-    # Runner / watchdog / ask / panel tests (#152): python + node, no install, < 1 min.
+    # INFRA side only (#152, #794): runner / watchdog / ask / panel tests, python + node, no install, < 1 min.
+    # A game-only checkout has no tools/: the steps skip and the job is green.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -66,23 +85,26 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Build check (a fresh build_talents.py on the merged tree changes no built file, #503)
-        run: python3 tools/ci/buildcheck.py
       - name: Python tool tests
+        if: hashFiles('tools/runner/runner.py') != ''
         run: |
           fail=0
-          for t in tools/runner/test_*.py tools/ci/test_*.py tools/ask/test/*_test.py; do
+          for t in tools/runner/test_*.py tools/test_*.py tools/ask/test/*_test.py; do
             echo "== $t"; python3 "$t" || { echo "FAILED: $t"; fail=1; }
           done
           exit $fail
       - name: Panel tests
+        if: hashFiles('tools/mods/oren-lanes/run-tests.mjs') != ''
         run: node tools/mods/oren-lanes/run-tests.mjs
+      - name: Model status line tests
+        run: node tools/mods/oren-model/run-tests.mjs
   tests:
     # The one required check: a PR is mergeable when this is green.
     if: always()
-    needs: [shard, tools]
+    needs: [shard, ci, tools]
     runs-on: ubuntu-latest
     steps:
       - run: |
           [ "${{ needs.shard.result }}" = success ] || { echo "a test shard failed: ${{ needs.shard.result }}"; exit 1; }
+          [ "${{ needs.ci.result }}" = success ] || { echo "the game CI tests failed: ${{ needs.ci.result }}"; exit 1; }
           [ "${{ needs.tools.result }}" = success ] || { echo "the tools tests failed: ${{ needs.tools.result }}"; exit 1; }
