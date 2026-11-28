@@ -56,6 +56,31 @@ def classify(first_prompt, known):
         if p and (p == k or p.startswith(k) or (len(p) >= MIN_PREFIX and k.startswith(p))): return name
     return "other"
 
+def _norm_cwd(c):
+    return str(c or "").replace("\\", "/").rstrip("/").lower()
+
+def terminal_hints(terminals):
+    """#955 pure: live herdr terminals -> {cwd: control role} for a cwd that belongs to exactly ONE control role (a tab label
+    like 'Oren control / inspector', a name or --remote-control, via recover.control_role). A cwd shared by two roles is left out."""
+    try:
+        import recover as RC
+    except Exception: return {}
+    seen = {}
+    for t in terminals or []:
+        if not isinstance(t, dict) or t.get("state", "live") != "live": continue
+        c, r = _norm_cwd(t.get("cwd")), RC.control_role(t)
+        if c and r: seen.setdefault(c, set()).add(r)
+    return {c: next(iter(rs)) for c, rs in seen.items() if len(rs) == 1}
+
+def classify_session(first_prompt, known, title="", cwd="", hints=None):
+    """#955 pure: a session's control name by its first prompt (classify), else by its --name / custom title ('oren-inspector'),
+    else by its cwd matching a live control tab (hints). Anything else is 'other'."""
+    r = classify(first_prompt, known)
+    if r != "other": return r
+    for role in CONTROL:
+        if re.sub(r"^oren-", "", (title or "").strip().lower()) == role: return role
+    return (hints or {}).get(_norm_cwd(cwd), "other")
+
 def _first_text(msg):
     c = (msg or {}).get("content")
     if isinstance(c, str): return c
@@ -66,13 +91,22 @@ def _first_text(msg):
 
 def parse_transcript(path):
     """-> (first user prompt text [for classify only, never stored], [ {ts, model, effort, tokens} ]); one row per message.id."""
-    first, seen, rows = None, set(), []
+    first, rows, _ = parse_meta(path)
+    return first, rows
+
+def parse_meta(path):
+    """-> (first prompt, rows, {title, cwd}); title = the session --name (custom-title / agent-name line), cwd = its first cwd."""
+    first, seen, rows, meta = None, set(), [], {"title": "", "cwd": ""}
     try: lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError: return "", []
+    except OSError: return "", [], meta
     for l in lines:
         try: d = json.loads(l)
         except ValueError: continue
         if not isinstance(d, dict): continue
+        if not meta["cwd"] and isinstance(d.get("cwd"), str): meta["cwd"] = d["cwd"]
+        if d.get("type") in ("custom-title", "agent-name"):
+            t = d.get("customTitle") or d.get("agentName")
+            if isinstance(t, str): meta["title"] = t
         if d.get("type") == "user" and first is None: first = _first_text(d.get("message"))
         if d.get("type") != "assistant": continue
         m = d.get("message") or {}
@@ -81,7 +115,7 @@ def parse_transcript(path):
             if mid in seen: continue
             seen.add(mid)
         rows.append({"ts": _ts(d.get("timestamp")), "model": m.get("model") or "", "effort": d.get("effort") or "", "tokens": usage_tokens(m.get("usage"))})
-    return first or "", rows
+    return first or "", rows, meta
 
 def _ts(v):
     if isinstance(v, (int, float)): return float(v)
@@ -90,7 +124,7 @@ def _ts(v):
         return float(calendar.timegm(time.strptime(str(v)[:19], "%Y-%m-%dT%H:%M:%S")))
     except Exception: return 0.0
 
-def transcript_rows(root, since, known=None):
+def transcript_rows(root, since, known=None, hints=None):
     """All transcripts under root (a ~/.claude/projects folder or its parent) -> [ {entity, model, effort, tokens, ts} ] newer than since."""
     known, out = known if known is not None else known_prompts(), []
     for f in Path(root).rglob("*.jsonl"):
@@ -98,8 +132,8 @@ def transcript_rows(root, since, known=None):
         try:
             if f.stat().st_mtime < since: continue
         except OSError: continue
-        first, rows = parse_transcript(f)
-        ent = classify(first, known)
+        first, rows, meta = parse_meta(f)
+        ent = classify_session(first, known, meta["title"], meta["cwd"], hints)
         out += [{**r, "entity": ent, "session": f.stem} for r in rows]
         for sf in (f.parent / f.stem / "subagents").glob("agent-*.jsonl") if (f.parent / f.stem / "subagents").is_dir() else ():
             meta = {}
@@ -243,12 +277,17 @@ def alarms(rows, sent, now):
         new[key] = now; texts.append(f"ENTITY {key} takes {what}. Fix: {fix}.")
     return texts, new
 
+def other_share(rows):
+    """#955 pure: % of the day in unattributed sessions (entity 'other' and 'other/sub:*')."""
+    return sum(r["day_pct"] for r in rows if str(r["entity"]).split("/")[0] == "other")
+
 def usage_line(rows, n=5):
-    """Pure: the nightly `USAGE:` line, top n entities (an entity's rows summed)."""
+    """Pure: the nightly `USAGE:` line, top n entities (an entity's rows summed), then the unattributed `other` share (#955)."""
     ents = {}
     for r in rows: ents[r["entity"]] = ents.get(r["entity"], 0.0) + r["day_pct"]
     top = sorted(ents.items(), key=lambda kv: -kv[1])[:n]
-    return "USAGE: " + (" · ".join(f"{e} {p:.0f}%" for e, p in top) if top else "no data")
+    if not top: return "USAGE: no data"
+    return "USAGE: " + " · ".join(f"{e} {p:.0f}%" for e, p in top) + f" · other total {other_share(rows):.1f}%"
 
 def text(table, n=8):
     """Dashboard lines for the table (top n rows)."""
@@ -268,11 +307,11 @@ def load():
 def projects_root():
     return Path(os.environ.get("CLAUDE_PROJECTS") or Path.home() / ".claude" / "projects")
 
-def compute(now=None, root=None, known=None):
-    """Read everything for the last 24 h -> the table dict (not written)."""
+def compute(now=None, root=None, known=None, terminals=None):
+    """Read everything for the last 24 h -> the table dict (not written). terminals = live herdr terminals (#955)."""
     now = now or time.time(); since = now - 86400
     raw = []
-    try: raw += transcript_rows(root or projects_root(), since, known)
+    try: raw += transcript_rows(root or projects_root(), since, known, terminal_hints(terminals))
     except Exception: pass
     raw += headless_rows(since) + cloud_rows(_jsonl("stats.jsonl", since - 86400), since)
     wk = week_burn(_jsonl("usage_hist.jsonl"), now)
