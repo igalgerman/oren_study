@@ -694,6 +694,16 @@ W._orch.update(nudged=0.0, first=0.0, escalated=0.0)
 try: W.orch_idle_tick(now=_n, ts=_ts)
 finally: W.R.hc_json, W.R.gh, W.tell, W.windows = _saved
 assert len(_calls) == 1 and "#466" in _calls[0] and "#213" in _calls[0] and "#464" not in _calls[0] and "#465" not in _calls[0], _calls
+# #765: cloud run = no run-<n> window, but issue-<n>.lock held by a live pid -> PR not listed
+assert W.run_owned(_own, _ts, locked={213}) == {464, 465, 213}, W.run_owned(_own, _ts, locked={213})
+assert W.run_owned(_own, [], locked={500}) == {466} and W.run_owned(_own, [], locked={500}, parked={500}) == set()
+import tempfile as _tf, os as _os
+_runs0 = W.R.RUNS
+W.R.RUNS = Path(_tf.mkdtemp())
+(W.R.RUNS / "issue-213.lock").write_text(str(_os.getpid()) + "\n")       # live pid
+(W.R.RUNS / "issue-466.lock").write_text("99999999\n")                    # dead pid
+try: assert W.locked_issues() == {213}, W.locked_issues()
+finally: W.R.RUNS = _runs0
 print("ok #471 nudge skips PRs owned by a live run")
 # #542: PRs only the owner merges (owner-merge / no-automerge) are not nudged; owner-merge open 12 h -> ONE owner note (owner_q)
 _lb = lambda *ns: [{"name": x} for x in ns]
