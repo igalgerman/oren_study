@@ -53,7 +53,7 @@ svg.px{shape-rendering:crispEdges;display:block}
 @media (max-width:440px){body.pzon .hud-mid .chip{display:none}}/* a phone has no room for the title next to the pause button (activities hide it anyway) */
 .pzov{position:fixed;inset:0;z-index:95;display:grid;place-items:center;background:rgba(20,40,60,.74);backdrop-filter:blur(3px);padding:16px}
 .pzov .card{display:flex;flex-direction:column;align-items:center;gap:14px;background:var(--paper);padding:24px 32px;max-width:420px;width:100%;box-sizing:border-box;text-align:center;box-shadow:0 0 0 6px var(--ink),0 14px 0 6px rgba(0,0,0,.3);animation:pop .35s ease-out both}
-.pzov .pzi svg{width:90px;height:90px}.pzov h2{margin:0;font-size:32px;line-height:1.35}.pzov .bigbtn svg{width:30px;height:30px}
+.pzov .pzi svg,.pzov .hav svg{width:90px;height:90px}.pzov.remote .hav svg{width:140px;height:140px}.pzov h2{margin:0;font-size:32px;line-height:1.35}.pzov .bigbtn svg{width:30px;height:30px}
 .ibtn.off{opacity:.5}
 /* #403 audio blocked: a small muted-speaker mark on the speaker button (no popup) */
 .ibtn.blk{position:relative}.ibtn.blk::after{content:'';position:absolute;top:-7px;inset-inline-end:-7px;width:22px;height:22px;border-radius:50%;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c0392b' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 9v6h4l5 4V5L8 9H4z' fill='%23c0392b'/%3E%3Cpath d='M16 9l5 6M21 9l-5 6'/%3E%3C/svg%3E") center/15px no-repeat;box-shadow:0 0 0 2px #c0392b;pointer-events:none}
@@ -1281,7 +1281,9 @@ function hereResume(){const r=HERE.boot;HERE.boot=null;if(!r||!r.id||kidSave)ret
   HERE.want=null;if(!done){herePut(null);return false;}if(r.pz)pauseOn();return true;}
 /* the pause button: one big "continue" button over the game; play time does not count; a reload comes back paused */
 const paused=()=>document.body.classList.contains('paused');
-function pauseOn(){if(paused())return;hush();document.body.classList.add('paused');const o=h('div','pzov',`<div class="card"><div class="pzi">${ICON.pause}</div><h2>עָצַרְנוּ לְרֶגַע</h2></div>`);
+/* #659 remote=1: the parent paused from the panel: the friend and no button (the parent resumes), nothing written to HERE */
+function pauseOn(rm){if(paused())return;hush();document.body.classList.add('paused');const fr=rm&&window.TAL&&TAL.friend?`<div class="hav bob">${TAL.friend()}</div>`:`<div class="pzi">${ICON.pause}</div>`;const o=h('div','pzov'+(rm?' remote':''),`<div class="card">${fr}<h2>עָצַרְנוּ לְרֶגַע</h2></div>`);
+  if(rm){document.body.appendChild(o);return;}
   const b=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');b.onclick=()=>{sfx.pop(2);pauseOff();};o.firstChild.appendChild(b);document.body.appendChild(o);
   const r=hereGet();if(r){r.pz=1;herePut(r);}setTimeout(()=>b.focus(),50);}
 function pauseOff(){document.querySelectorAll('.pzov').forEach(e=>e.remove());document.body.classList.remove('paused');const r=hereGet();if(r&&r.pz){delete r.pz;herePut(r);}}
@@ -6013,7 +6015,22 @@ function showRem(m){if(m.k==='msg')return showMsg(m);const x=REM[m.k];
 let remWhen=0;
 /* #617: the delivery status the parent sees: "נשלח…" until Oren's device showed it, then "אורן שמע ✓" (and his face answer) */
 const remStat=m=>`${m.k==='msg'?'💬 '+msgOf(m):REM[m.k].p} · ${m.s||m.ok?'אורן שמע ✓'+(m.f?' · אורן ענה: '+m.f:''):'נשלח…'+(now()<m.at?' · תופיע ב-'+hm(m.at):'')}`;
-H.remRefresh=()=>{const el=document.querySelector('#sPar .hremst'),m=(T.S().set||{}).rem;if(el&&remOk(m))el.textContent=remStat(m);};
+H.remRefresh=()=>{if(document.querySelector('#sPar .hpzst')){const m=(T.S().set||{}).pz,on=pzOn(m),ok=on&&m.ok;document.querySelector('#sPar .hpzst').textContent=ok?'המשחק עצור ✓':on?'נשלח… ממתין למכשיר של אורן':'המשחק פועל';document.querySelector('#sPar .hpzbtn span').textContent=on?(ok?'המשך את המשחק':'ביטול'):'עצור את המשחק עכשיו';}const el=document.querySelector('#sPar .hremst'),m=(T.S().set||{}).rem;if(el&&remOk(m))el.textContent=remStat(m);};
+/* ---------- #659 the parent pauses the game: set.pz = {on, t, to:'kid', by, ok}; only Oren's device obeys (O.kidDev, panel closed) ----------
+   The device saves first, then shows the friend's calm pause screen and only then writes ok (the panel shows "עצור" after that).
+   Resume = on:0. A pause older than REM_OLD ends by itself. No button for Oren: the parent resumes. */
+const pzOn=m=>!!(m&&m.to==='kid'&&m.on&&now()-m.t<REM_OLD);
+function pzCheck(){const m=(T.S().set||{}).pz,rm=document.querySelector('.pzov.remote');
+  if(pzOn(m)){if(O.kidDev&&!O.kidDev(m))return;if(vis('#sPar'))return;
+    if(!O.paused){O.persist();O.pauseOn(1);}
+    if(!m.ok){m.ok=1;O.persist();O.famNow&&O.famNow();}}
+  else if(rm&&O.paused)O.pauseOff();}
+setInterval(pzCheck,1000);
+function pzPanel(box,sec,re){const m=(T.S().set||{}).pz,on=pzOn(m),ok=on&&m.ok;
+  const s=sec(box,'⏸️ עצירת המשחק','<div class="pnote">אורן יראה מסך רגוע עם החבר. ההתקדמות נשמרת קודם.</div>');
+  const st=h('div','pstat hpzst');st.textContent=ok?'המשחק עצור ✓':on?'נשלח… ממתין למכשיר של אורן':'המשחק פועל';s.appendChild(st);
+  const b=h('button','bigbtn sm hpzbtn','<span>'+(on?(ok?'המשך את המשחק':'ביטול'):'עצור את המשחק עכשיו')+'</span>');
+  b.onclick=()=>{const t=now();T.S().set.pz=on?{on:0,t,to:'kid',by:O.dev}:{on:1,t,to:'kid',by:O.dev};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);re&&re();};s.appendChild(b);}
 function remPanel(box,sec,re){const m=(T.S().set||{}).rem;
   const s=sec(box,'🔔 תזכורת לאורן','<div class="pnote">אורן יראה תמונה גדולה וישמע אותה בקול — בסוף מה שהוא עושה עכשיו (עד דקה המתנה).</div>');
   if(remOk(m)&&now()-m.at<REM_OLD){const st=h('div','pstat hremst');st.textContent=remStat(m);s.appendChild(st);}
@@ -6066,7 +6083,7 @@ document.addEventListener('click',e=>{if(bypass||off())return;const el=e.target.
 
 /* ---------- parent panel (no nikud) ---------- */
 /* part: 'today' = the reminder + today's log (day tab), 'set' = the settings (settings tab), none = all */
-H.panel=(box,sec,re,part)=>{const c=cfg(),r=day();if(part!=='set')remPanel(box,sec,re);
+H.panel=(box,sec,re,part)=>{const c=cfg(),r=day();if(part!=='set'){pzPanel(box,sec,re);remPanel(box,sec,re);}
   const s1=part==='today'?null:sec(box,'הפסקות, ארוחות והחלפת נושא','<div class="pnote">בסוף פעילות (אף פעם לא באמצע שאלה): כל כמה דקות פעילות — הפסקה של כחצי דקה עם החבר, בסבב: מים, שירותים, תנועה, מנוחת עיניים. בזמן ארוחה המשחק עוצר עד "אכלתי" (לפחות 10 דקות, או סיסמת הורה). אחרי הרבה זמן באותו תחום — החבר מציע תחום אחר, והתחום נח עד מחר.</div>');
   if(s1){const tg=h('div','popt','<span>תזכורות:</span>');[['water','💧 מים'],['toilet','🚽 שירותים'],['move','🤸 תנועה'],['eyes','👀 עיניים'],['meal','🍽️ ארוחות']].forEach(([k,n])=>{const b=h('button','pchip'+(c.off[k]?'':' on'),n);b.onclick=()=>{H.setCfg('off',{[k]:c.off[k]?0:1});re&&re();};tg.appendChild(b);});s1.appendChild(tg);
   const iv=h('div','popt','<span>הפסקה כל:</span>');[15,20,30].forEach(v=>{const b=h('button','pchip'+(c.brk===v?' on':''),v+' דק׳');b.onclick=()=>{H.setCfg('brk',v);re&&re();};iv.appendChild(b);});s1.appendChild(iv);

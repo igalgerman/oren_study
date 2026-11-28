@@ -151,6 +151,30 @@ const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout:
   ok('the parent\'s timeline shows "יום חדש" with "אורן שמע ✓"', await until(B, () => [...document.querySelectorAll('#sPar .dllog .dlrow')].some(r => /יום חדש/.test(r.textContent) && /אורן שמע ✓/.test(r.textContent)), null, 6000),
     await B.evaluate(() => [...document.querySelectorAll('#sPar .dllog .dlrow')].map(r => r.textContent).join(' | ')));
   ok('no kid overlay on the parent\'s phone after the new day', !(await bKid()).length, JSON.stringify(await bKid()) + ' ' + bDaily0.length);
+  // ---------- #659 pause / resume from the parent panel: only Oren's laptop obeys, saved first, "עצור ✓" only after it confirmed ----------
+  const SH = process.env.SHOTS_659; const shot = (pg, n) => SH ? pg.screenshot({ path: path.join(SH, n + '.png') }) : null;
+  await B.evaluate(() => window.TAL.parentPanel('rem')); await sleep(400);
+  const pzSec = B.locator('#sPar .psec', { hasText: 'עצירת המשחק' });
+  ok('the panel has one pause button', (await pzSec.locator('.bigbtn').count()) === 1 && /עצור את המשחק/.test(await pzSec.textContent()));
+  await A.evaluate(() => { window.__kidUI = []; window.OREN.persist(); });
+  const saveT0 = await A.evaluate(() => JSON.stringify(window.OREN.save).length);
+  await pzSec.locator('.bigbtn').click(); await sleep(300);
+  { const r = await B.evaluate(() => ({ m: window.TAL.S().set.pz, me: window.OREN.dev })); ok('the pause command is for Oren\'s device and carries the sender', r.m && r.m.on === 1 && r.m.to === 'kid' && r.m.by === r.me && !r.m.ok, JSON.stringify(r)); }
+  ok('the panel says "נשלח…", not "עצור", before the device confirmed', /נשלח…/.test(await pzSec.textContent()) && !/עצור ✓/.test(await pzSec.textContent()));
+  ok('the parent\'s phone is not paused', !(await B.evaluate(() => window.OREN.paused)));
+  await pullA();
+  ok('Oren\'s laptop shows the calm pause screen with the friend', await until(A, () => window.OREN.paused && !!document.querySelector('.pzov.remote .hav svg') && !document.querySelector('.pzov.remote button'), null, 4000));
+  ok('progress was saved before the pause (save kept, local copy written)', await A.evaluate(n => !!localStorage.getItem(Object.keys(localStorage).find(k => /oren4-save|oren4-s$/.test(k)) || 'x') || JSON.stringify(window.OREN.save).length >= n * 0.9, saveT0));
+  await shot(A, 'pause-laptop-1366x768');
+  await sleep(500); await A.evaluate(() => window.OREN.famNow()); await sleep(600);
+  ok('the panel shows "המשחק עצור ✓" after the device confirmed (it follows by itself)', await until(B, () => /המשחק עצור ✓/.test((document.querySelector('#sPar .hpzst') || {}).textContent || ''), null, 6000), await pzSec.textContent().catch(() => ''));
+  await shot(B, 'panel-phone-390x844');
+  ok('still not paused on the parent\'s phone', !(await B.evaluate(() => window.OREN.paused)));
+  await pzSec.locator('.bigbtn').click(); await sleep(300);
+  await pullA();
+  ok('resume: Oren\'s laptop is playing again', await until(A, () => !window.OREN.paused && !document.querySelector('.pzov'), null, 4000));
+  await sleep(500); await A.evaluate(() => window.OREN.famNow()); await sleep(600);
+  ok('the panel is back to "המשחק פועל"', await until(B, () => /המשחק פועל/.test((document.querySelector('#sPar .hpzst') || {}).textContent || ''), null, 6000));
   ok('no page errors', !errs.length, errs.join(' | '));
   await b.close(); srv.close();
   console.log(res.join('\n')); const f = res.filter(x => x.startsWith('FAIL')).length; console.log('RESULT kidcmd', res.length - f, f); process.exit(f ? 1 : 0);

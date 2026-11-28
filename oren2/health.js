@@ -163,7 +163,22 @@ function showRem(m){if(m.k==='msg')return showMsg(m);const x=REM[m.k];
 let remWhen=0;
 /* #617: the delivery status the parent sees: "נשלח…" until Oren's device showed it, then "אורן שמע ✓" (and his face answer) */
 const remStat=m=>`${m.k==='msg'?'💬 '+msgOf(m):REM[m.k].p} · ${m.s||m.ok?'אורן שמע ✓'+(m.f?' · אורן ענה: '+m.f:''):'נשלח…'+(now()<m.at?' · תופיע ב-'+hm(m.at):'')}`;
-H.remRefresh=()=>{const el=document.querySelector('#sPar .hremst'),m=(T.S().set||{}).rem;if(el&&remOk(m))el.textContent=remStat(m);};
+H.remRefresh=()=>{if(document.querySelector('#sPar .hpzst')){const m=(T.S().set||{}).pz,on=pzOn(m),ok=on&&m.ok;document.querySelector('#sPar .hpzst').textContent=ok?'המשחק עצור ✓':on?'נשלח… ממתין למכשיר של אורן':'המשחק פועל';document.querySelector('#sPar .hpzbtn span').textContent=on?(ok?'המשך את המשחק':'ביטול'):'עצור את המשחק עכשיו';}const el=document.querySelector('#sPar .hremst'),m=(T.S().set||{}).rem;if(el&&remOk(m))el.textContent=remStat(m);};
+/* ---------- #659 the parent pauses the game: set.pz = {on, t, to:'kid', by, ok}; only Oren's device obeys (O.kidDev, panel closed) ----------
+   The device saves first, then shows the friend's calm pause screen and only then writes ok (the panel shows "עצור" after that).
+   Resume = on:0. A pause older than REM_OLD ends by itself. No button for Oren: the parent resumes. */
+const pzOn=m=>!!(m&&m.to==='kid'&&m.on&&now()-m.t<REM_OLD);
+function pzCheck(){const m=(T.S().set||{}).pz,rm=document.querySelector('.pzov.remote');
+  if(pzOn(m)){if(O.kidDev&&!O.kidDev(m))return;if(vis('#sPar'))return;
+    if(!O.paused){O.persist();O.pauseOn(1);}
+    if(!m.ok){m.ok=1;O.persist();O.famNow&&O.famNow();}}
+  else if(rm&&O.paused)O.pauseOff();}
+setInterval(pzCheck,1000);
+function pzPanel(box,sec,re){const m=(T.S().set||{}).pz,on=pzOn(m),ok=on&&m.ok;
+  const s=sec(box,'⏸️ עצירת המשחק','<div class="pnote">אורן יראה מסך רגוע עם החבר. ההתקדמות נשמרת קודם.</div>');
+  const st=h('div','pstat hpzst');st.textContent=ok?'המשחק עצור ✓':on?'נשלח… ממתין למכשיר של אורן':'המשחק פועל';s.appendChild(st);
+  const b=h('button','bigbtn sm hpzbtn','<span>'+(on?(ok?'המשך את המשחק':'ביטול'):'עצור את המשחק עכשיו')+'</span>');
+  b.onclick=()=>{const t=now();T.S().set.pz=on?{on:0,t,to:'kid',by:O.dev}:{on:1,t,to:'kid',by:O.dev};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);re&&re();};s.appendChild(b);}
 function remPanel(box,sec,re){const m=(T.S().set||{}).rem;
   const s=sec(box,'🔔 תזכורת לאורן','<div class="pnote">אורן יראה תמונה גדולה וישמע אותה בקול — בסוף מה שהוא עושה עכשיו (עד דקה המתנה).</div>');
   if(remOk(m)&&now()-m.at<REM_OLD){const st=h('div','pstat hremst');st.textContent=remStat(m);s.appendChild(st);}
@@ -216,7 +231,7 @@ document.addEventListener('click',e=>{if(bypass||off())return;const el=e.target.
 
 /* ---------- parent panel (no nikud) ---------- */
 /* part: 'today' = the reminder + today's log (day tab), 'set' = the settings (settings tab), none = all */
-H.panel=(box,sec,re,part)=>{const c=cfg(),r=day();if(part!=='set')remPanel(box,sec,re);
+H.panel=(box,sec,re,part)=>{const c=cfg(),r=day();if(part!=='set'){pzPanel(box,sec,re);remPanel(box,sec,re);}
   const s1=part==='today'?null:sec(box,'הפסקות, ארוחות והחלפת נושא','<div class="pnote">בסוף פעילות (אף פעם לא באמצע שאלה): כל כמה דקות פעילות — הפסקה של כחצי דקה עם החבר, בסבב: מים, שירותים, תנועה, מנוחת עיניים. בזמן ארוחה המשחק עוצר עד "אכלתי" (לפחות 10 דקות, או סיסמת הורה). אחרי הרבה זמן באותו תחום — החבר מציע תחום אחר, והתחום נח עד מחר.</div>');
   if(s1){const tg=h('div','popt','<span>תזכורות:</span>');[['water','💧 מים'],['toilet','🚽 שירותים'],['move','🤸 תנועה'],['eyes','👀 עיניים'],['meal','🍽️ ארוחות']].forEach(([k,n])=>{const b=h('button','pchip'+(c.off[k]?'':' on'),n);b.onclick=()=>{H.setCfg('off',{[k]:c.off[k]?0:1});re&&re();};tg.appendChild(b);});s1.appendChild(tg);
   const iv=h('div','popt','<span>הפסקה כל:</span>');[15,20,30].forEach(v=>{const b=h('button','pchip'+(c.brk===v?' on':''),v+' דק׳');b.onclick=()=>{H.setCfg('brk',v);re&&re();};iv.appendChild(b);});s1.appendChild(iv);
