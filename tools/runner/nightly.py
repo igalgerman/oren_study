@@ -184,7 +184,7 @@ def build_prompt(now):
                          trends=trends_summary(now), observer=_read(R.RUNS / "ai_observer.last").strip() or "(none)", transcripts=transcripts(now))
 
 def command():
-    return [shutil.which("claude") or "claude", "-p", "--model", MODEL, "--no-session-persistence",
+    return [shutil.which("claude") or "claude", "-p", "--model", MODEL, "--no-session-persistence", "--output-format", "json",
             "--tools", "Read,Grep,Glob,Bash", "--allowedTools", *TOOLS]
 
 def ask_claude(prompt):
@@ -193,7 +193,8 @@ def ask_claude(prompt):
     except subprocess.TimeoutExpired: return False, f"timeout after {TIMEOUT_S // 60} min"
     except OSError as e: return False, f"could not start claude: {e!r}"
     if p.returncode: return False, f"claude exit {p.returncode}: {((p.stderr or '') + (p.stdout or '')).strip()[:200]}"
-    return True, p.stdout or ""
+    import usage_entities as UE
+    return True, UE.unwrap(p.stdout or "", "retro", MODEL)
 
 def gh(*args):
     return GH(["gh", *args, "--repo", R.REPO]) if args[0] != "api" else GH(["gh", *args])

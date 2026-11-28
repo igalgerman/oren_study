@@ -18,6 +18,7 @@ CACHE_READ_W = 0.1            # a cache read costs about a tenth of a fresh inpu
 PROXY_TOK_PER_MIN = 20000     # prior: a cloud run-minute counted as this many tokens (before the model weight)
 CONTROL = ("orchestrator", "inbox", "inspector", "executor")
 ALARM_EVERY_H = 3
+MIN_PREFIX = 20               # a first prompt shorter than this never matches as a prefix of a known prompt
 LIMITS = {"orchestrator": 15.0, "control": 10.0, "governor": 3.0}   # % of the day
 ISSUE_WEEK_LIMIT = 5.0                                              # % of the week, one issue
 FIX = {"orchestrator": "shorten its turns / stop polling loops, hand work to the runner",
@@ -38,18 +39,21 @@ def usage_tokens(u):
     return _num(u.get("input_tokens")) + _num(u.get("output_tokens")) + _num(u.get("cache_creation_input_tokens")) \
         + CACHE_READ_W * _num(u.get("cache_read_input_tokens"))
 
+_warned = []
 def known_prompts():
     try:
         import recover as RC
         return {"inbox": RC.INBOX_PROMPT, "orchestrator": RC.ORCH_PROMPT, "inspector": RC.INSPECTOR_PROMPT, "executor": RC.EXECUTOR_PROMPT}
-    except Exception: return {}
+    except Exception as e:
+        if not _warned: _warned.append(1); print(f"usage_entities: cannot read the control prompts from recover.py ({e!r}); control sessions count as 'other'", file=sys.stderr)
+        return {}
 
 def classify(first_prompt, known):
     """Pure: the first user prompt -> a control session name or 'other' (equality or prefix only)."""
     p = (first_prompt or "").strip()
     for name, k in known.items():
         k = k.strip()
-        if p and (p == k or p.startswith(k) or k.startswith(p)): return name
+        if p and (p == k or p.startswith(k) or (len(p) >= MIN_PREFIX and k.startswith(p))): return name
     return "other"
 
 def _first_text(msg):
@@ -114,6 +118,17 @@ def record_headless(entity, model, usage=None, cost=None, now=None):
             f.write(json.dumps({"ts": int(now or time.time()), "entity": entity, "model": model or "", "tokens": usage_tokens(usage),
                                 "cost": _num(cost)}) + "\n")
     except Exception: pass
+
+def unwrap(stdout, entity, model="", now=None):
+    """For a `claude -p --output-format json` call: record its numeric usage / total_cost_usd for `entity` and return the reply
+    text. Output that is not that JSON (an older claude, a fake in a test) comes back unchanged. Never raises."""
+    try:
+        d = json.loads(stdout)
+        if not isinstance(d, dict) or "result" not in d: return stdout
+    except (ValueError, TypeError): return stdout
+    record_headless(entity, model, d.get("usage"), d.get("total_cost_usd"), now)
+    r = d.get("result")
+    return r if isinstance(r, str) else ""
 
 def _jsonl(name, since=0):
     out = []

@@ -1254,11 +1254,12 @@ class FileLock:
         self.path.unlink(missing_ok=True)
 
 def claude_hidden(prompt, cwd, tools, log, model=MODEL):
-    cmd = [shutil.which("claude") or "claude", "-p", "--model", model, "--permission-mode", "auto",
+    cmd = [shutil.which("claude") or "claude", "-p", "--model", model, "--permission-mode", "auto", "--output-format", "json",
            "--disallowedTools", *DENY_TOOLS, "--allowedTools", *tools]
     # prompt goes via stdin; "--allowedTools" is variadic so keep it last
     rc, out = run(cmd, cwd=cwd, input=prompt, log=log, timeout=3 * 3600)
-    return out
+    import usage_entities as UE
+    return UE.unwrap(out, "local-run", model)
 
 # ---------- herdr terminals ----------
 HERDR_APP = CFG.get("herdr_app", r"C:\Users\97254\AppData\Local\Programs\herdr-app\herdr-app.exe")

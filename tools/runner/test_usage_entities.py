@@ -8,9 +8,8 @@ import usage_entities as U
 
 SECRET = "TOP-SECRET-MESSAGE-CONTENT"
 T0 = 1_800_000_000
-iso = lambda t: time_iso(t)
 import time
-time_iso = lambda t: time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(t))
+iso = lambda t: time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(t))
 KNOWN = {"orchestrator": "Read ORCHESTRATOR.md and continue as the orchestrator.", "inbox": "You are the INBOX of the Oren"}
 
 def asst(t, mid, model, inp, out, cr=0, cc=0, effort="high"):
@@ -81,4 +80,19 @@ assert SECRET not in out and "ORCHESTRATOR.md" not in out and SECRET not in "".j
 U.record_headless("governor", "haiku", {"input_tokens": 5, "output_tokens": 1}, 0.01, now=T0)
 assert SECRET not in (U.RUNS / "usage_headless.jsonl").read_text() and U.headless_rows(0)[0]["entity"] == "governor"
 assert "Usage per entity" in U.text(d) and "NEEDS-ATTENTION" in U.text(d)
+# --- (6) headless claude -p calls: --output-format json -> one row per call, reply text returned, plain output untouched ---
+import subprocess, ai_observer as AO, nightly as NG
+(U.RUNS / "usage_headless.jsonl").unlink()
+reply = json.dumps({"type": "result", "result": "OBSERVER: " + SECRET, "total_cost_usd": 0.02, "usage": {"input_tokens": 100, "output_tokens": 20}})
+class P:  returncode, stderr, stdout = 0, "", reply
+AO.RUN = lambda *a, **k: P
+assert "--output-format" in AO.command() and "--output-format" in NG.command()
+ok, txt = AO.ask_claude("x"); assert ok and txt == "OBSERVER: " + SECRET
+hr = U.headless_rows(0); assert len(hr) == 1 and hr[0]["entity"] == "observer" and hr[0]["tokens"] == 120 and SECRET not in (U.RUNS / "usage_headless.jsonl").read_text()
+NG.RUN = AO.RUN; assert NG.ask_claude("x")[0] and {r["entity"] for r in U.headless_rows(0)} == {"observer", "retro"}
+assert U.unwrap("plain text", "observer") == "plain text" and len(U.headless_rows(0)) == 2
+g = U.build(U.headless_rows(0) + [{"entity": "governor", "model": "haiku", "effort": "", "tokens": 5000, "ts": T0}], None)   # a governor row appears in the table
+assert any(r["entity"] == "governor" for r in g)
+# prefix match needs a real length
+assert U.classify("Read", KNOWN) == "other" and U.classify("Read ORCHESTRATOR.md and continue", KNOWN) == "orchestrator"
 print("test_usage_entities: ok")

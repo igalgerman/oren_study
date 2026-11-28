@@ -709,11 +709,11 @@ def ai_refresh(numbers, model=None):
     claude = shutil.which("claude") or "claude"
     try:
         # the prompt goes on stdin: --tools takes a list and would swallow a prompt argument after it
-        p = subprocess.run([claude, "-p", "--model", model, "--no-session-persistence", "--tools", ""], input=AI_PROMPT + numbers,
+        p = subprocess.run([claude, "-p", "--model", model, "--no-session-persistence", "--output-format", "json", "--tools", ""], input=AI_PROMPT + numbers,
                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180, creationflags=R.no_window())
     except (OSError, subprocess.TimeoutExpired):
         return None
-    out = (p.stdout or "").strip()
+    out = UE.unwrap(p.stdout or "", "dashboard-ai", model).strip()
     if p.returncode or not out: return None
     data = {"at": time.time(), "model": model, "text": out[:3000]}
     AI_FILE.write_text(json.dumps(data), encoding="utf-8")
