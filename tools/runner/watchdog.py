@@ -360,7 +360,8 @@ def privacy_tick(now=None, cache=None, gh=None):
     whose title or new comment holds the kid's name are rewritten through the scrub (cloud sessions write with their own gh)."""
     import scrub, ghcache
     now = now or time.time()
-    if not scrub.names(): scrub.warn_once(now, say=tell); return 0
+    try: scrub.require()
+    except RuntimeError: scrub.warn_once(now, say=tell); return 0     # #876: loud, one alarm per hour (a day before)
     if not scrub.sweep_due(now): return 0
     gh = gh or R.gh
     def title(kind, n, text): return gh(kind, "edit", str(n), "--title", text)[0] == 0
