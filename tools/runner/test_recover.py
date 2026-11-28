@@ -46,7 +46,7 @@ assert rc.finished(idle) == ["t:1"]
 assert rc.finished_control([{"name": "", "state": "exited", "address": "t:9", "labels": ["name=inbox"]}]) == [("inbox", "t:9")]
 # recover --open: an unnamed live inspector is not started again
 d332 = {"spaces": lambda: {"oren": "c1", "oren-workers": "w1"}, "control_space": "oren", "worker_space": "oren-workers",
-        "terminals": lambda: [live_unnamed, T("orchestrator", "live", "t:1"), T("inbox", "live", "t:2")], "start": lambda n, s: started.append(n) or 0}
+        "terminals": lambda: [live_unnamed, T("orchestrator", "live", "t:1"), T("inbox", "live", "t:2"), T("executor", "live", "t:5")], "start": lambda n, s: started.append(n) or 0}
 started = []; rc.start_tabs(d332, [])
 assert started == [], started
 
@@ -56,7 +56,9 @@ assert cwd == "C:/work/Oren_study/a" and a[:5] == ["claude", "--model", "sonnet"
 cwd, a = rc.control_argv("inspector", "C:/work/Oren_study/a", "P")
 assert Path(cwd) == Path("C:/work/Oren_study") and a[:5] == ["claude", "--model", "opus", "--remote-control", "oren-inspector"] and "INSPECTOR_HANDOFF.md" in a[5]
 cwd, a = rc.control_argv("orchestrator", "C:/work/Oren_study/a", "P")
-assert a[:5] == ["claude", "--remote-control", "oren-orchestrator", "--plugin-dir", "P"]
+assert a[:7] == ["claude", "--model", "sonnet", "--remote-control", "oren-orchestrator", "--plugin-dir", "P"]
+cwd, a = rc.control_argv("executor", "C:/work/Oren_study/a", "P")
+assert cwd == "C:/work/Oren_study/a" and a[:5] == ["claude", "--model", "sonnet", "--remote-control", "oren-executor"] and "EXECUTOR.md" in a[5] and "executor" in rc.CONTROL
 assert rc.control_argv("watchdog", "M", "P", python="py", watchdog="W")[1] == ["py", "W"]
 h = rc.hc_run_args("inbox", "C:/m", ["claude"], "sp1")
 assert h[:4] == ["run", "--bg", "--no-parent", "--outlive-parent"] and "herdr.space=sp1" in h and h[-1] == "claude"
@@ -91,7 +93,7 @@ with tempfile.TemporaryDirectory() as d:
     r = rc.recover(deps)
     assert log["order"][0] == "herdr"
     assert log["rm"] == ["t:1", "t:2", "t:3"]
-    assert log["start"] == [("orchestrator", "c1"), ("inbox", "c1"), ("inspector", "c1"), ("watchdog", "")], log["start"]
+    assert log["start"] == [("orchestrator", "c1"), ("inbox", "c1"), ("inspector", "c1"), ("executor", "c1"), ("watchdog", "")], log["start"]
     assert r["restarted"] == [5] and log["relabel"] == [5] and log["reset"] == [5]   # #6 is remote: its cloud session runs on, never reset
     o = log["order"]; assert o.index("unfreeze") < o.index("relabel 5") and o[-1] == "start watchdog", o
     assert not (Path(d) / "frozen").exists() and (Path(d) / "freeze.recovered.json").exists()
@@ -101,7 +103,7 @@ with tempfile.TemporaryDirectory() as d:
 
 # everything already running: nothing started twice, live runner untouched
 with tempfile.TemporaryDirectory() as d:
-    terms = [T(n, "live", f"t:{k}") for k, n in enumerate(["orchestrator", "inbox", "inspector", "watchdog", "run-5"])]
+    terms = [T(n, "live", f"t:{k}") for k, n in enumerate(["orchestrator", "inbox", "inspector", "executor", "watchdog", "run-5"])]
     deps, log = mk(d, terms, [I(5, ["in-progress"])])
     r = rc.recover(deps)
     assert log["start"] == [] and log["rm"] == [] and r["restarted"] == [] and "nothing to do" in log["comment"][0]
@@ -119,12 +121,12 @@ c = rc.install_cmd(r"C:\work\a\tools\recover.cmd", r"PC\owner")
 assert c[:2] == ["schtasks", "/Create"] and c[c.index("/SC") + 1] == "ONLOGON" and c[c.index("/TN") + 1] == "Oren recover"
 assert c[c.index("/RU") + 1] == r"PC\owner" and c[c.index("/TR") + 1] == r'"C:\work\a\tools\recover.cmd"' and "/DELAY" in c
 
-# #25: the space names the owner asked for (26 Nov): ONE space 'oren' (orchestrator, inbox, inspector), workers in 'oren-workers'
+# #25: the space names the owner asked for (26 Nov): ONE space 'oren' (orchestrator, inbox, inspector, executor), workers in 'oren-workers'
 import tomllib
 cfg = tomllib.loads((Path(__file__).resolve().parent / "config.toml").read_text(encoding="utf-8"))
 assert cfg["control_space"] == "oren" and cfg["herdr_space"] == "oren-workers", cfg
 
-# #25: tools/orchestrator.cmd (double-click) = open_oren: Herdr up, the 3 tabs of 'oren' in order, watchdog with no tab (no space),
+# #25: tools/orchestrator.cmd (double-click) = open_oren: Herdr up, the 4 tabs of 'oren' in order, watchdog with no tab (no space),
 # nothing else (no issue resets, no terminals removed); a second double-click starts nothing twice
 def mk_open(terms, herdr=True, sp=None):
     log = {"start": [], "order": []}
@@ -136,13 +138,13 @@ def mk_open(terms, herdr=True, sp=None):
 deps, log = mk_open([], herdr=False)
 lines = rc.open_oren(deps)
 assert log["order"] == ["herdr"]
-assert log["start"] == [("orchestrator", "c1"), ("inbox", "c1"), ("inspector", "c1"), ("watchdog", "")], log["start"]
+assert log["start"] == [("orchestrator", "c1"), ("inbox", "c1"), ("inspector", "c1"), ("executor", "c1"), ("watchdog", "")], log["start"]
 assert "started orchestrator" in lines and "started watchdog" in lines, lines
-deps, log = mk_open([T(n, "live", f"t:{k}") for k, n in enumerate(["orchestrator", "inbox", "inspector", "watchdog"])])
+deps, log = mk_open([T(n, "live", f"t:{k}") for k, n in enumerate(["orchestrator", "inbox", "inspector", "executor", "watchdog"])])
 assert rc.open_oren(deps) == [] and log["start"] == []
 deps, log = mk_open([T("orchestrator", "live", "t:1")], sp={})      # spaces not made in Herdr yet: said plainly, windows still start
 lines = rc.open_oren(deps)
-assert [s for s, _ in log["start"]] == ["inbox", "inspector", "watchdog"]
+assert [s for s, _ in log["start"]] == ["inbox", "inspector", "executor", "watchdog"]
 assert any("'oren' not found" in l for l in lines) and any("'oren-workers' not found" in l for l in lines), lines
 
 # #331: a control role is present when ANY live terminal matches it by name, by '--remote-control oren-<role>' in its foreground argv,
@@ -153,7 +155,7 @@ by_tab = {"name": None, "state": "live", "address": "t:7", "where": "Oren contro
 assert rc.control_role(by_argv) == "inspector" and rc.control_role(by_argv2) == "inbox" and rc.control_role(by_tab) == "orchestrator"
 assert rc.control_role(T("inbox", "live", "t:1")) == "inbox" and rc.control_role({"name": None, "where": "Oren workers / issue-5"}) is None
 assert rc.live_roles([by_argv, dict(by_tab, state="finished")]) == {"inspector"}
-deps, log = mk_open([by_argv, by_argv2, by_tab, T("watchdog", "live", "t:1")])
+deps, log = mk_open([by_argv, by_argv2, by_tab, T("executor", "live", "t:9"), T("watchdog", "live", "t:1")])
 assert rc.open_oren(deps) == [] and log["start"] == [], log
 with tempfile.TemporaryDirectory() as d:
     deps, log = mk(d, [by_argv, by_tab, T("inbox", "live", "t:2"), T("watchdog", "live", "t:3")], [])
