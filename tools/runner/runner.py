@@ -609,7 +609,7 @@ def governor_pass(remote_busy, now=None):
     try:
         RUNS.mkdir(exist_ok=True)
         if gv["pct"] is not None:                    # #245: 16 h of samples = the current and the last two 5h windows
-            hist = [h for h in hist if now - h.get("at", 0) < 16 * 3600] + [{"at": now, "pct": gv["pct"], "reset": usage.get("five_h_reset"), "busy": remote_busy, "lanes": gv["lanes"]}]
+            hist = [h for h in hist if now - h.get("at", 0) < 16 * 3600] + [{"at": now, "pct": gv["pct"], "reset": usage.get("five_h_reset"), "busy": remote_busy, "lanes": gv["lanes"], "week": usage.get("week_pct")}]
             (RUNS / "usage_hist.jsonl").write_text("".join(json.dumps(h) + "\n" for h in hist), encoding="utf-8")
             wins = gov_windows(hist, events, now)
         (RUNS / "governor.json").write_text(json.dumps({**gv, **eff_fields(wins), "text": governor_text(gv) + eff_text(wins), "at": now}), encoding="utf-8")

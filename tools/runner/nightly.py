@@ -234,6 +234,14 @@ def orchestrator_handoff_pr(text, date, log):
     log(f"handoff: PR {url or 'failed: ' + out[:120]}")
     return url
 
+def usage_tell(tell):
+    """#708: one `USAGE:` line, the top 5 entities of the day (from .runs/usage_by_entity.json)."""
+    try:
+        import usage_entities as UE
+        t = UE.load()
+        if t: tell(UE.usage_line(t["rows"]))
+    except Exception: pass
+
 def run_once(tell=print, log=print, now=None):
     """One nightly retro + handoff. -> parsed result or None when claude failed."""
     now = now or time.time(); date = time.strftime("%Y-%m-%d", time.localtime(now))
@@ -248,6 +256,7 @@ def run_once(tell=print, log=print, now=None):
     pr = orchestrator_handoff_pr(orch, date, log) if orch else None
     tell(f"NIGHTLY RETRO {date}: {len(props)} proposal(s)" + (f" in {url}" if url else "") + (f"; handoff PR {pr}" if pr else "")
          + ". Turn the accepted ones into tickets.")
+    usage_tell(tell)
     return res
 
 RELAY_MIN, MISSING_H = 10, 2
@@ -304,6 +313,7 @@ def cloud_retro(tell, log, hour, now):
     pr = orchestrator_handoff_pr(orch, date, log) if orch else None
     tell(f"NIGHTLY RETRO {date} (cloud task): {len(props)} proposal(s) in {found.get('url') or '#' + str(found.get('number'))}"
          + (f"; handoff PR {pr}" if pr else "") + ". Turn the accepted ones into tickets.")
+    usage_tell(tell)
     return True
 
 def retro_if_due(tell, log, hour=None, now=None, where=None):
