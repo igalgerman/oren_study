@@ -260,3 +260,23 @@ OQ.TRANSLATE = lambda t: "תרגום טוב."; OQ.post("#699c", "QUESTION: fine"
 assert OQ.open_questions([{"body": posts(g6)[-1]["body"], "url": "u"}])[0]["text"] == "תרגום טוב."
 OQ.TRANSLATE = None; OQ.TR_TIMEOUT_S = 15
 print("ok owner_q #699 translation bounded, Hebrew fallback")
+
+# #803 inspector-chat answers: CLOSED without the bot's final marker, OPEN with it, CLOSED again with an undo, CLOSED when not the App bot
+CK = QK
+qcs = [{"body": OQ.body(QK, "remote-64", "QUESTION: design ok?"), "reactionGroups": []}, {"body": OQ.body("1" * 12, "remote-65", "QUESTION: other?"), "reactionGroups": []}]
+qcs2 = [qcs[0]]
+qcs2[0] = {**qcs[0], "body": OQ.body(QK, "remote-64", "QUESTION: design ok?", gates=[64])}
+rec = {"body": OQ.chat_answer_body(CK, "כן", "הוא אמר כן"), "author": {"login": "oren-study-bot"}}
+fin = {"body": f"<!-- owner-answer-final:{CK} -->", "author": {"login": "oren-study-bot"}}
+und = {"body": f"<!-- owner-answer-undo:{CK} -->", "author": {"login": "oren-study-bot"}}
+as_owner = lambda c: {**c, "author": {"login": "igalgerman"}}
+assert OQ.gate(64, [rec], qcs) == [], "chat record without the final marker = CLOSED"
+assert OQ.gate(64, [rec, fin], qcs) == ["כן (inspector chat)"], "with the final marker = OPEN"
+assert OQ.gate(64, [rec, fin, und], qcs) == [] and OQ.gate(64, [rec, und, fin], qcs) == [], "with an undo record = CLOSED"
+assert OQ.gate(64, [as_owner(rec), fin], qcs) == [] and OQ.gate(64, [rec, as_owner(fin)], qcs) == [], "not written by the App bot = CLOSED (#800)"
+assert OQ.gate(64, [{**rec, "author": {"login": "someone"}}, fin], qcs) == []
+assert OQ.gate(64, [fin], qcs) == [], "a final marker alone is nothing"
+assert OQ.gate(65, [rec, fin], qcs) == [], "a record for another issue's question does not count"
+assert OQ.merge_state(64, [rec], qcs2) == "closed" and OQ.merge_state(64, [rec, fin], qcs2) == "open" and OQ.merge_state(64, [rec, fin, und], qcs2) == "closed"
+assert OQ.record_answer(rec["body"]) is None, "the old record pattern never matches a chat record"
+print("ok owner_q #803 inspector chat gate")
