@@ -64,13 +64,13 @@ assert cmd[1:8] == ["-p", "--model", "sonnet", "--effort", "medium", "--no-sessi
 assert "Bash(gh:*)" in cmd and "Bash(python tools/runner/remote.py status:*)" in cmd and "Bash(gh issue comment:*)" in cmd[cmd.index("--disallowedTools"):]
 assert "Edit" not in cmd and "Write" not in cmd
 assert "#51 red check" in A.LAST.read_text(encoding="utf-8") and len(told) == 1 and "#50" in told[0] and "#51" in told[0]
-assert [c for c in gh_calls if c[:2] == ("issue", "comment")] and "choose blue or green" in [c for c in gh_calls if c[:2] == ("issue", "comment")][0][4]
+assert not [c for c in gh_calls if c[:2] == ("issue", "comment")]                         # #899: never a post on the owner questions
 n_comments = len([c for c in gh_calls if c[:2] == ("issue", "comment")])
 assert A.run_once(told.append, logs.append, now=10**6 + 3600) and len(told) == 1          # same findings an hour later: not sent again
 assert len([c for c in gh_calls if c[:2] == ("issue", "comment")]) == n_comments
 OQ.GH = lambda *a, **kw: (0, "[]") if a[:2] == ("issue", "list") else (_ for _ in ()).throw(AssertionError("posted without #193"))
 A.RUN = FakeClaude("OBSERVER: #60 decide the level -> owner: pick")
-A.run_once(told.append, logs.append, now=10**6 + 7200); assert len(told) == 2           # told the orchestrator, no owner issue: no post
+A.run_once(told.append, logs.append, now=10**6 + 7200); assert len(told) == 2           # told the orchestrator, no post
 A.RUN = FakeClaude("no problems"); assert A.run_once(told.append, logs.append) == [] and len(told) == 2
 assert "no problems" in A.LAST.read_text(encoding="utf-8")
 A.RUN = FakeClaude(timeout=True); assert A.run_once(told.append, logs.append) is None and "timeout" in A.LAST.read_text(encoding="utf-8")
@@ -107,7 +107,7 @@ print("ok cloud lanes")
 
 # ---------- #289: the AI observer runs as a cloud scheduled task; the PC only relays its comment (no claude -p here) ----------
 A.STATE = tmp / "ai_observer.cloud.json"
-A.LAUNCH = lambda *a, **kw: {"ok": True}; A.OWNER_POST = lambda w, q: "url"   # #525: never a real cloud start / owner post here
+A.LAUNCH = lambda *a, **kw: {"ok": True}; A.TELEGRAM = lambda t: 1; A.WEEK_STOP = lambda: False   # #525: never a real cloud start / owner post here
 OQ.GH = lambda *a, **kw: (0, GQL([]) if a[:2] == ("api", "graphql") else "[]")   # #603: the once-cleanup reads #193
 claude = FakeClaude(out="OBSERVER: never used")
 A.RUN = claude
@@ -182,7 +182,7 @@ print("ok #289 cloud AI observer relay")
 # trigger-made comment is seen the watchdog starts the observer prompt itself as a cloud job every hour (remote.launch) ----------
 A.STATE = tmp / "ai_observer.525.json"
 posts, starts = [], []
-A.OWNER_POST = lambda window, q: posts.append((window, q)) or "url"
+A.TELEGRAM = lambda text: posts.append(("tg", "QUESTION: " + text)) or 1; A.WEEK_STOP = lambda: False   # #899: Telegram notice, no owner_q
 def LAUNCH(ok=True):
     def launch(n, task, cwd, name=None, model=None, desk=False):
         starts.append({"task": task, "name": name, "desk": desk, "model": model}); return {"ok": ok}
@@ -203,25 +203,25 @@ A.relay(told.append, lambda s: None, t0 + 3 * 3600, gh=NOISSUE, api=API([]))
 assert len(posts) == 1 and posts[0][1].startswith("QUESTION: cloud AI observer silent since "), posts
 assert "log in again (/login) or check claude.ai/code -> Scheduled" in posts[0][1]
 since = time.strftime("%H:%M", time.localtime(t0)); assert f"silent since {since} " in posts[0][1], posts
-for k in range(1, 12):                                                            # dedupe: not again within 12 h
+for k in range(1, 21):                                                            # dedupe: not again within 24 h
     A.relay(told.append, lambda s: None, t0 + 3 * 3600 + k * 3600 - 60, gh=NOISSUE, api=API([]))
 assert len(posts) == 1, posts
-A.relay(told.append, lambda s: None, t0 + 15 * 3600 + 60, gh=NOISSUE, api=API([]))
-assert len(posts) == 2 and posts[1][0] != posts[0][0], posts                      # 12 h later: once more (a new key, not swallowed)
-# fallback-made comments do not prove the trigger: the fallback keeps running and the owner note keeps its 12 h repeat
-FB = {"created_at": "2026-11-27T16:00:00Z", "body": A.FALLBACK_MARK + "\nno problems"}
+A.relay(told.append, lambda s: None, t0 + 27 * 3600 + 60, gh=NOISSUE, api=API([]))
+assert len(posts) == 2, posts                                                     # 24 h later: once more
+# fallback-made comments do not prove the trigger: the fallback keeps running and the owner note keeps its 24 h repeat
+FB = {"created_at": "2026-11-28T16:00:00Z", "body": A.FALLBACK_MARK + "\nno problems"}
 n0 = len(starts)
-A.relay(told.append, lambda s: None, t0 + 17 * 3600, gh=GH(), api=API([FB]))
+A.relay(told.append, lambda s: None, t0 + 41 * 3600, gh=GH(), api=API([FB]))
 assert len(starts) == n0 + 1 and not A.load_state().get("proven")
 # a trigger-made comment (no marker) -> proven: the fallback stops by itself, and no owner note while it keeps posting
-TR = {"created_at": "2026-11-27T17:30:00Z", "body": "no problems"}
-A.relay(told.append, lambda s: None, t0 + 18 * 3600, gh=GH(), api=API([FB, TR]))
+TR = {"created_at": "2026-11-28T17:30:00Z", "body": "no problems"}
+A.relay(told.append, lambda s: None, t0 + 42 * 3600, gh=GH(), api=API([FB, TR]))
 assert A.load_state().get("proven") is True
-for k in range(1, 3): A.relay(told.append, lambda s: None, t0 + 18 * 3600 + k * 3600, gh=GH(), api=API([]))
+for k in range(1, 3): A.relay(told.append, lambda s: None, t0 + 42 * 3600 + k * 3600, gh=GH(), api=API([]))
 assert len(starts) == n0 + 1, starts                                              # off while the trigger is < 3 h old (#689)
 np = len(posts)
-A.relay(told.append, lambda s: None, t0 + 30 * 3600, gh=GH(), api=API([]))       # trigger silent again 3 h+: owner note again
-assert len(posts) == np + 1 and "silent since " + time.strftime("%H:%M", time.localtime(t0 + 17.5 * 3600)) in posts[-1][1], posts
+A.relay(told.append, lambda s: None, t0 + 54 * 3600, gh=GH(), api=API([]))       # trigger silent again 3 h+: owner note again
+assert len(posts) == np + 1 and "silent since " + time.strftime("%H:%M", time.localtime(t0 + 41.5 * 3600)) in posts[-1][1], posts
 # #689: proven once, then the trigger stops: trigger_seen 4 h old -> the fallback runs again; 1 h old -> not; fallback 30 min ago -> not
 A.STATE = tmp / "ai_observer.689.json"; starts.clear(); A.LAUNCH = LAUNCH()
 iso = lambda e: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(e))
@@ -257,8 +257,8 @@ def gh603(*a, **kw):
     return 0, ""
 OQ.GH = gh603; told = []
 A.report(True, "OBSERVER: #1 dirty -> orchestrator: y\nOBSERVER: #531 green -> owner: merge #531", told.append, lambda s: None, 10**7)
-assert len(told) == 1 and "#1 dirty" in told[0] and "#531" in told[0]                     # the orchestrator hears both
-assert len(posted) == 1 and "merge #531" in posted[0] and "#1 dirty" not in posted[0], posted   # one owner question
+assert len(told) == 1 and "#1 dirty" in told[0] and "#531" not in told[0]                  # #899: 'owner: merge #n' is the watchdog's
+assert posted == [], posted                                                               # #899: no owner question from the observer
 # the old wrong ones (window ai-observer, no owner doer) are closed once; owner-doer ones and other windows stay open
 def qc(key, window, text): return {"body": OQ.body(key, window, "QUESTION: " + text), "url": f"u/{key}", "reactionGroups": []}
 OLD = [qc("a" * 12, "ai-observer", "#557 dirty -> orchestrator: rebase, or ask the owner"),
@@ -283,3 +283,44 @@ print("ok #603 owner questions only when the owner is the doer")
 _c = A.command()
 assert _c[_c.index("--effort") + 1] == "medium" and _c[_c.index("--model") + 1] == "sonnet", _c
 print("ok #714 observer effort")
+
+# ---------- #899: the observer never posts to owner_q; findings go to the orchestrator only ----------
+A.STATE = tmp / "ai_observer.899.json"
+oq_posts = []; _orig_post = OQ.post
+OQ.post = lambda *a, **kw: oq_posts.append(a) or "url"
+told899, log899 = [], []
+OUT = "OBSERVER: PR stuck #5 -> owner: click the login\nOBSERVER: ready PR #531 -> owner: merge #531\nOBSERVER: lane idle #7 -> orchestrator: rebase"
+A.report(True, OUT, told899.append, log899.append, time.time())
+assert oq_posts == [], oq_posts                                                  # no owner_q post, ever
+assert len(told899) == 1 and "click the login" in told899[0] and "rebase" in told899[0], told899   # told to the orchestrator
+assert "merge #531" not in told899[0], told899                                   # 'owner: merge #n' is the watchdog's (#542)
+# silence: known reason (week stop) -> nothing for the owner
+tg = []; todo = []
+A.TELEGRAM = lambda text: tg.append(text) or 1
+A.TODO_ADD = None
+A.WEEK_STOP = lambda: True
+A.STATE = tmp / "ai_observer.899b.json"
+s0 = {"relay_since": 0}; A.save_state(s0)
+assert A.owner_note(100 * 3600) is False and tg == [] and oq_posts == []
+# silence, no reason, no to-do list yet: ONE Telegram notice per 24 h, never owner_q
+A.WEEK_STOP = lambda: False
+assert A.owner_note(100 * 3600) is True and len(tg) == 1
+assert A.owner_note(101 * 3600) is False and A.owner_note(123 * 3600) is False and len(tg) == 1   # < 24 h: nothing more
+assert A.owner_note(100 * 3600 + 24 * 3600 + 1) is True and len(tg) == 2                          # 24 h later: one more
+# the #525 fallback ran (its comment was seen recently) -> a known reason, nothing for the owner
+A.STATE = tmp / "ai_observer.899c.json"; A.save_state({"relay_since": 0, "fallback_seen": "2026-11-27T09:30:00Z"})
+assert A.owner_note(_cal.timegm(time.strptime("2026-11-27T10:00:00", "%Y-%m-%dT%H:%M:%S"))) is False and len(tg) == 2
+# with a to-do list: ONE item (kind step, check trigger-seen), a second tick adds nothing
+A.STATE = tmp / "ai_observer.899d.json"; A.save_state({"relay_since": 0})
+A.TODO_ADD = lambda **kw: todo.append(kw) or True
+assert A.owner_note(100 * 3600) is True and len(todo) == 1 and todo[0]["kind"] == "step" and todo[0]["check"] == "trigger-seen"
+assert A.owner_note(100 * 3600 + 13 * 3600) is False and A.owner_note(100 * 3600 + 60) is False and len(todo) == 1 and len(tg) == 2
+assert oq_posts == []
+# a Telegram send that fails (0) is no notice: tried again on the next tick, not 24 h later
+A.TODO_ADD = None; A.STATE = tmp / "ai_observer.899e.json"; A.save_state({"relay_since": 0})
+A.TELEGRAM = lambda text: 0
+assert A.owner_note(100 * 3600) is False
+A.TELEGRAM = lambda text: tg.append(text) or 1
+assert A.owner_note(100 * 3600 + 60) is True and len(tg) == 3
+OQ.post = _orig_post
+print("ok 899")

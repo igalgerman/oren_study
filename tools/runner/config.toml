@@ -78,3 +78,8 @@ control_health = true           # false = off
 control_approval_min = 3        # a blocked status or a permission dialog held this long
 control_frozen_min = 30         # status working AND the screen unchanged this long
 control_error_patterns = ["limit reached", "usage limit", "rate.?limit", "overloaded", "api error", "please run /login", "(login|session|token|authentication) (has )?expired", "invalid api key", "credit balance is too low"]   # regexes on the last 12 screen lines
+
+# #872 owner console mirror (console_mirror.py): open questions + notices go to the console API (D1, #869) on watchdog ticks (changed, and at least every 10 min).
+# keys + url: ~/.oren/console.json {"url", "push_key", "read_key"} (outside the repo). console_answers = false: mirror only (shadow); true: new D1 answers are pulled into qwin.answer.
+console_answers = false
+console_project = "oren"
