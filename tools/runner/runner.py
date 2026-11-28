@@ -705,6 +705,12 @@ def governor_text(gv):
     if gv.get("pct") is not None: s += f" · 5h {gv['pct']:.0f}% (cap {gv.get('target', GOV['cap_5h']):.0f}%)"
     return s + (" · STOP" if gv["stop"] else "")
 
+def alarm_text():
+    """#710: ' · ALARM: UNDERUSE · IDLE' (usage_alarms.py) appended to the governor line (panel + dashboard); '' when none or on any error."""
+    try:
+        import usage_alarms; return usage_alarms.line()
+    except Exception: return ""
+
 def governor_now(now=None):
     """#279: the last governor decision (.runs/governor.json, < 15 min old) without taking a new usage sample -> {lanes, stop, pct};
     missing or stale -> config remote_lanes. A stop from before the 5h reset is over (#269)."""
@@ -789,7 +795,7 @@ def governor_pass(remote_busy, now=None, ready=None, models=None):
                     "models": models or {}, "wlanes": weighted_lanes(models) if models else remote_busy}]
             (RUNS / "usage_hist.jsonl").write_text("".join(json.dumps(h) + "\n" for h in hist), encoding="utf-8")
             wins = gov_windows([h for h in hist if now - h.get("at", 0) < 16 * 3600], events, now)
-        (RUNS / "governor.json").write_text(json.dumps({**gv, **eff_fields(wins), "text": governor_text(gv) + eff_text(wins), "at": now}), encoding="utf-8")
+        (RUNS / "governor.json").write_text(json.dumps({**gv, **eff_fields(wins), "text": governor_text(gv) + eff_text(wins) + alarm_text(), "at": now}), encoding="utf-8")
         pc = plan_change(prev_mode, gv.get("mode"))
         if pc: log_line(f"{datetime.fromtimestamp(now).astimezone():%Y-%m-%d %H:%M:%S} governor: {pc}")     # #705: once, at the change
         if prev is not None and gv["lanes"] != prev:
