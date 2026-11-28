@@ -109,7 +109,7 @@ def answered_keys(comments):
     done = set()
     for c in trust.only(comments):                  # #800: only trusted authors; ANSWERED lines only from the App bot
         b = c.get("body") or ""
-        if trust.is_bot(c): done |= set(re.findall(r"(?m)^\s*ANSWERED owner-q:([0-9a-f]{12})", b))
+        if trust.answer_ok(c): done |= set(re.findall(r"(?m)^\s*ANSWERED owner-q:([0-9a-f]{12})", b))
         m = KEY_RE.search(b)
         if m and owner_reacted(c): done.add(m[1])
     return done
@@ -154,7 +154,8 @@ def gate(n, issue_comments, question_comments):
     for c in trust.only(question_comments):
         b = c.get("body") or ""; m = KEY_RE.search(b)
         if m and (re.search(rf"\*\*#{n}\*\*", b) or n in gates_of(b)): keys[m[1]] = c   # #630: or it gates #n
-    for c in trust.bots(issue_comments):             # #800: an answer record counts only from the App bot
+    for c in issue_comments or []:                   # #800: an answer record counts only from the App bot (or the owner login before trust_since)
+        if not trust.answer_ok(c): continue
         r = record_answer(c.get("body"))
         if r and r[0] in keys: out.append(r[1])
     for k, v in chat_states(issue_comments).items():   # #803: a chat answer counts only with the bot's final marker and no undo
@@ -222,12 +223,33 @@ def find_issue(gh=None):
     s["issue"] = n; _save(s)
     return n
 
+_CQ = ("query($o:String!,$r:String!,$n:Int!,$c:String){repository(owner:$o,name:$r){issue(number:$n){comments(first:100,after:$c){"
+       "pageInfo{hasNextPage endCursor} nodes{body createdAt url author{login} reactionGroups{content users(first:20){totalCount nodes{login}}}}}}}}")
+MAX_PAGES = 30
+
+def _api(*args):
+    return R.run(["gh", *args])        # args start with "api"
+
 def comments(n, gh=None):
-    gh = gh or GH
-    rc, out = gh("issue", "view", str(n), "--json", "comments")
-    if rc: return None
-    try: return json.loads(out).get("comments", [])
-    except ValueError: return None
+    """All comments of issue n, oldest first, with author login, url and the reacting users (`gh issue view --json comments` has no
+    reaction logins, so every owner thumbs-up was invisible). GraphQL, first:100 + after-cursor loop. None when unreadable.
+    A test fake gh is called as gh('api', 'graphql', ...); the real one runs plain `gh api`."""
+    call = gh or GH
+    if call is R.gh: call = _api                      # the real gh wrapper appends --repo, which `gh api` does not know
+    owner, name = R.REPO.split("/", 1)
+    out, cur = [], ""
+    for _ in range(MAX_PAGES):
+        args = ["graphql", "-f", f"query={_CQ}", "-f", f"o={owner}", "-f", f"r={name}", "-F", f"n={int(n)}"] + (["-f", f"c={cur}"] if cur else [])
+        rc, txt = call("api", *args)
+        if rc: return None
+        try:
+            c = json.loads(txt)["data"]["repository"]["issue"]["comments"]
+            out += c["nodes"]; page = c["pageInfo"]
+        except (ValueError, KeyError, TypeError): return None
+        if not page.get("hasNextPage"): return out
+        cur = page.get("endCursor") or ""
+        if not cur: return None
+    return None                                      # absurdly long: refuse rather than decide on a partial list
 
 def post(window, question, tail="", gh=None, gates=()):
     """Post the question once per window+question. -> comment url when posted now, '' when already there, None when gh failed:
@@ -270,10 +292,11 @@ def open_list(gh=None):
     return None if cs is None else [{**q, "issue": n} for q in open_questions(cs)]
 
 def mark_answered(key, answer="", gh=None):
-    gh = gh or GH
+    """#800: the ANSWERED line is written by the App bot only (gh=None; a test passes a fake gh). True = posted now; False = queued
+    (flush_pending retries) or no questions issue. Never under the owner login."""
     with ghcache.quick(QUICK_S):
         n = find_issue(gh)
-        return bool(n) and post_app(n, f"ANSWERED owner-q:{key} {answer}".strip() + "\n" + MARK, gh)
+        return bool(n) and post_or_queue(n, f"ANSWERED owner-q:{key} {answer}".strip() + "\n" + MARK, gh)
 
 def post_app(n, text, gh=None):
     """#800: an owner-answer record / ANSWERED line is written ONLY by the App bot. gh=None: R.gh as the App with no owner fallback
@@ -299,8 +322,8 @@ def new_answers(cs, seen):
 
 def answers_tick(tell, gh=None):
     """Watchdog: the owner replied in the questions issue -> tell the orchestrator (reply + open questions) so it relays the answer."""
+    flush_pending(gh)                                # gh=None here: queued answer records go out as the App only (#800), never via R.gh's owner fallback
     gh = gh or GH
-    flush_pending(gh)
     if _state().get("pending_answers") and not _state().get("answers_alarm"):    # #800: an answer record cannot be posted (no App token)
         tell("ALARM: an owner answer record is queued: the GitHub App token is missing, nothing is posted under another login (#800).")
         s = _state(); s["answers_alarm"] = True; _save(s)
@@ -331,7 +354,7 @@ def main(argv):
         print("\n".join(f"{q['key']}  {q['window']}  {q['text']}  {q['url']}" for q in qs) or "no open questions"); return 0
     if len(argv) in (2, 3) and argv[0] == "answered":
         ok = mark_answered(argv[1], argv[2] if len(argv) == 3 else "")
-        print("marked answered" if ok else "could not mark (gh)"); return 0 if ok else 1
+        print("marked answered" if ok else "could not mark now (no App token or gh failed): queued, the watchdog posts it as the App"); return 0 if ok else 1
     if len(argv) == 2 and argv[0] == "gate":
         n = int(argv[1].lstrip("#"))
         with ghcache.quick(QUICK_S):

@@ -33,6 +33,10 @@ class FakeGH:
         if a[:2] == ("issue", "pin"): self.issues[int(a[2])]["pinned"] = True; return 0, ""
         if a[:2] == ("issue", "view"):
             return 0, json.dumps({"comments": self.issues[int(a[2])]["comments"]})
+        if a[:2] == ("api", "graphql"):            # #800: owner_q.comments = GraphQL pages of self.page comments
+            n = int(next(x for x in a if x.startswith("n=")).split("=")[1]); cur = next((x[2:] for x in a if x.startswith("c=")), "")
+            cs = self.issues[n]["comments"]; i = int(cur or 0); j = i + getattr(self, "page", 100)
+            return 0, json.dumps({"data": {"repository": {"issue": {"comments": {"pageInfo": {"hasNextPage": j < len(cs), "endCursor": str(j)}, "nodes": cs[i:j]}}}}})
         if a[:2] == ("issue", "comment"):
             cs = self.issues[int(a[2])]["comments"]
             cs.append({"body": a[a.index("--body") + 1], "url": f"https://github.com/x/y/issues/{a[2]}#c{len(cs)}", "reactionGroups": []})
