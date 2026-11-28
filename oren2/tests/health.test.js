@@ -194,6 +194,11 @@ const SH = process.env.HSHOTS; if (SH) fs.mkdirSync(SH, { recursive: true });
     const ms = () => p.locator('#sPar .psec', { hasText: 'תזכורת לאורן' });
     const fld = await ms().evaluate(s => { const i = s.querySelector('input.hmsgin'); return i ? { ph: i.placeholder, max: i.maxLength, lbl: s.textContent.includes('הודעה מהחבר') } : null; }).catch(() => null);
     ok('#353 one text field "a message from the friend", max ~120 chars', fld && fld.lbl && fld.max >= 100 && fld.max <= 140, JSON.stringify(fld));
+    // #674 what an AI helper (MCP) sent or changed is listed in this tab, only when there is something
+    ok('#674 no AI list when the AI did nothing', !(await ms().locator('.pmcplog').count()));
+    await p.evaluate(() => { window.TAL.S().set.mcpLog = [{ t: Date.now(), tool: 'send_message', x: 'כל הכבוד' }, { t: Date.now(), tool: 'pause_today', x: '' }]; window.TAL.parentPanel('rem'); }); await sleep(400);
+    { const t = await ms().locator('.pmcplog').textContent().catch(() => ''); ok('#674 the panel lists what the AI sent or changed', /עוזר AI/.test(t) && /הודעה · כל הכבוד/.test(t) && /עצירה להיום/.test(t), t); }
+    await p.evaluate(() => { window.TAL.S().set.mcpLog = null; window.TAL.parentPanel('rem'); }); await sleep(300);
     await p.evaluate(() => { window.TAL.S().set.rem = null; });
     await ms().locator('.pchip', { hasText: /^עכשיו$/ }).click(); await sleep(200);
     await ms().locator('input.hmsgin').fill('   '); const dis = await ms().locator('.hmsgsend').isDisabled();

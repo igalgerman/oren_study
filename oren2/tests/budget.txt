@@ -68,3 +68,4 @@ pinball-phone 60         # same file on the phone viewport
 arcade-desktop 90          # #668 air hockey round added (~15 s: countdown + mouse/key checks + a played round)
 arcade-phone 90            # #668 same on the phone viewport
 walk 60                   # #745 example walker: helper self-check + walks all ~120 activities for the back control: ~15 s
+mcp 60                    # #674 MCP server on the worker: auth/revoke, every tool, writes logged, rate limits (worker + fake KV/D1, no browser): ~2 s
