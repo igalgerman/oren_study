@@ -6462,8 +6462,9 @@ function missionStart(card,hasLead,q){const k=task;let line='',ev=null;
   if(k&&!seen()[k.k]){seen()[k.k]=1;O.persist();line=k.intro;ev='newtype';if(goalT)O.sayNow=FR.noGoal(O.sayNow);}
   else if(!hasLead&&ownOk())line=START;
   if(!line)return;
+  window.__autoSaid=Date.now()+2000;   /* #767 claim the screen's auto-read now: on a slow machine its 300 ms check could run before the timer below and say the question first, then again after him */
   /* after the screen's auto-read has seen its instruction: the friend first, then the instruction (auto-read then skips) */
-  setTimeout(()=>{if(card&&!card.isConnected)return;if(!ev&&String(O.sayNow||'').includes(GSEP))return;   /* a goal / story clip came meanwhile: that is the sentence */
+  setTimeout(()=>{if(card&&!card.isConnected||!ev&&String(O.sayNow||'').includes(GSEP)){window.__autoSaid=0;return;}   /* a goal / story clip came meanwhile: that is the sentence */
     ownAt=Date.now();if(ev)event(ev,line,{ms:4000});else talk(line,{ms:3000});
     if(O.sayNow&&!window.__noAuto&&!(q&&q.auto&&q.play))O.say(O.sayNow);},D(150));}   /* a question that plays itself (q.auto) does so, after him */
 FR.START=START;FR.SHOWN=SHOWN;FR.HELPTAP=HELPTAP;FR.task=()=>task&&task.k;FR._own=t=>{ownAt=t==null?-1e9:t;};
