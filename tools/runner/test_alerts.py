@@ -69,4 +69,19 @@ gv = {"week_pct": 50.0, "week_reset": T0 + 50 * 3600, "need": 0.5, "n_hi": 1, "l
 U.tick(tell=lambda t: seen.append(("tell", t)), now=T0, hist=[], busy=4, send=lambda t: seen.append(("tg", t)),
        alarm=lambda r, s, t, info=False: seen.append((r, t)))
 assert seen and all(k == "USAGE-UNDERUSE" for k, _ in seen), seen
+# ---- the watchdog wiring (reviewer #945): W.alarm, sync_tick, WAITING ----
+import time, watchdog as W, mainsync
+A.state_of = lambda n: "live"; A.R.RUNS = Path(tempfile.mkdtemp(prefix="runs-w-"))
+told = []; W.tell = lambda t: (told.append(t), 0)[1]; W.log = lambda m: None
+# sync_tick: the SYNC alarm reaches the orchestrator (no NameError from a shadowed `alarm`)
+W._sync.update(last=0.0, msg=""); W.R.sync_main = lambda info=None: ""
+mainsync.deliver_tick = lambda log: None
+mainsync.after_sync = lambda info, now, say, log: say("MAINSYNC behind 12 min")
+W.sync_tick(); assert told == ["MAINSYNC behind 12 min"], told
+# WAITING: two DIFFERENT questions from one window both arrive; the same screen again does not
+told.clear(); W.OQ.post = lambda *a, **k: ""; W.pin = lambda t, on: None
+scr = {"v": "x\n● QUESTION: first?\n"}; W.screen_text = lambda n: scr["v"]; W.told.clear()
+ts = [{"name": "issue-5", "status": "idle", "state": "live"}]
+W.check_windows(ts); W.check_windows(ts); assert len(told) == 1, told
+scr["v"] = "x\n● QUESTION: second?\n"; W.check_windows(ts); assert len(told) == 2 and "second?" in told[1], told
 print("test_alerts: ok")

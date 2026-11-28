@@ -122,7 +122,7 @@ def check_windows(ts):
                 told[name] = h
                 pin(t, True)
                 what = f"asks: {q}" if q else "is waiting for an answer"
-                alarm("WAITING", name, f"{needs_you_line(name, q, tail)}{chr(10)}WATCHDOG: window {name} {what}. NEW OWNER QUESTION"
+                alarm("WAITING", f"{name}-{h[:6]}", f"{needs_you_line(name, q, tail)}{chr(10)}WATCHDOG: window {name} {what}. NEW OWNER QUESTION"
                      + (f" (posted: {url})" if url else " (in the 'Questions for the owner' issue)")
                      + f": qwin (#220/#390) asks him on the Hebrew page and has an idle inbox/orchestrator session send the PushNotification; send one yourself only when it hands you a PHONE PUSH line. "
                      f"When it tells you OWNER ANSWERED, relay the answer (hc send {name} \"..\" or the menu option he picks). Its screen ends with:{chr(10)}{tail}")
@@ -436,10 +436,10 @@ def sync_tick():
     info = {}
     msg = R.sync_main(info=info)
     mainsync.after_sync(info, time.time(), say=lambda t: alarm("SYNC", "", t), log=log)
-    k, alarm = net_streak(_net, "sync", msg)
+    k, net_now = net_streak(_net, "sync", msg)
     if k:
         _sync["last"] = 0.0
-        if alarm: net_alarm("sync", msg)
+        if net_now: net_alarm("sync", msg)
         return
     if msg and msg != _sync["msg"]: log(msg)
     _sync["msg"] = msg
@@ -651,8 +651,8 @@ def loop(once):
         except AttributeError as e:           # #345: log once; no forced reload (that looped every tick); a real file change reloads
             if repr(e) not in seen: seen.add(repr(e)); log(f"error: {e!r}")
         except Exception as e:
-            k, alarm = net_streak(_net, "tick", repr(e))   # #304: a passing network/timeout error: quiet until NET_ALARM in a row
-            if alarm: net_alarm("tick", f"error: {e!r}")
+            k, net_now = net_streak(_net, "tick", repr(e))   # #304: a passing network/timeout error: quiet until NET_ALARM in a row
+            if net_now: net_alarm("tick", f"error: {e!r}")
             elif not k: log(f"error: {e!r}")
         if once: return
         time.sleep(EVERY)
