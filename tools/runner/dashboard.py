@@ -257,6 +257,7 @@ def text(m):
              f"Average: build {S.fmt(m['avg_build'])}, review {S.fmt(m['avg_review'])}, start to merge {S.fmt(m['avg_merge'])}",
              f"Bugs found by the tester: {m['bug_sources']['tester']} · reported by the owner from the live game: {m['bug_sources']['owner']}"]
     d = m["last_deploy"]
+    if m.get("privacy"): lines.append(m["privacy"])                     # #783: privacy scrub: on (N names) | no names file · ALARM
     if m.get("github"): lines.append(m["github"])                     # #329: calls/min, graphql/core left, alarm < 20%
     if m.get("canary"): lines.append("Canary: " + m["canary"])          # #330: flow ok HH:MM | NEEDS-ATTENTION ...
     if m.get("usage"): lines.append(m["usage"])                         # #708: usage per entity (top rows, NEEDS-ATTENTION)
@@ -542,7 +543,7 @@ def page(m):
             f'<title>Oren game: status {hhmm(now)}</title><style>{CSS}</style></head><body><main>'
             f'<h1>Oren game: work status</h1><div class="sub">Updated {time.strftime("%a %d %b %H:%M", time.localtime(now))} (Israel time). '
             f'For fresh numbers run tools\\dashboard.cmd again.</div>'
-            f'{top}<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}{" · " + e(m["governor"]) if m.get("governor") else ""}</div>{f'<div class="sub">{e(m["github"])}</div>' if m.get("github") else ""}{f'<div class="sub">Canary: {e(m["canary"])}</div>' if m.get("canary") else ""}{pc_div(m.get('pc'), e)}{f'<pre class="sub"{chr(32)}style="white-space:pre-wrap">{e(m["usage"])}</pre>' if m.get("usage") else ""}{qcard}{needs}{bottom}{timeline}{cloud}{_health_card(m)}{_ai_card(m)}'
+            f'{top}<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}{" · " + e(m["governor"]) if m.get("governor") else ""}</div>{pc_div(m.get('privacy'), e)}{f'<div class="sub">{e(m["github"])}</div>' if m.get("github") else ""}{f'<div class="sub">Canary: {e(m["canary"])}</div>' if m.get("canary") else ""}{pc_div(m.get('pc'), e)}{f'<pre class="sub"{chr(32)}style="white-space:pre-wrap">{e(m["usage"])}</pre>' if m.get("usage") else ""}{qcard}{needs}{bottom}{timeline}{cloud}{_health_card(m)}{_ai_card(m)}'
             f'<h2 class="more">More details</h2><div class="sub">Everything else is here. Click a line to open it.</div>'
             f'{lists}{recent}{truth}{charts}{speed}{_ov_card(m)}{how}</main></body></html>')
 
@@ -746,6 +747,7 @@ def gather():
     except Exception: m["pr_conflicts"] = []
     m["governor"] = governor_line()                         # #239
     import ghcache; m["github"] = ghcache.dashboard_line()  # #329
+    import scrub; m["privacy"] = scrub.status_line()        # #783
     try: m["desks"] = json.loads((R.RUNS / "desks.json").read_text(encoding="utf-8")).get("text", "")   # #306 (written by desks.py)
     except Exception: m["desks"] = ""
     try: m["usage"] = UE.text(UE.load())                                     # #708 (written by the watchdog's usage_tick)

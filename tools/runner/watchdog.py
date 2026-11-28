@@ -355,6 +355,21 @@ def issues_stuck_tick():
     """#280: no issue sits without a live state; owner questions re-pushed at 4 h, the 24 h rule."""
     import stuck
     stuck.tick(tell=tell, log=log)
+def privacy_tick(now=None, cache=None, gh=None):
+    """#783, every 10 min: no names file -> ONE warning a day; else issues/PRs touched in the last 30 min (ghcache read, no extra calls)
+    whose title or new comment holds the kid's name are rewritten through the scrub (cloud sessions write with their own gh)."""
+    import scrub, ghcache
+    now = now or time.time()
+    if not scrub.names(): scrub.warn_once(now, say=tell); return 0
+    if not scrub.sweep_due(now): return 0
+    gh = gh or R.gh
+    def title(kind, n, text): return gh(kind, "edit", str(n), "--title", text)[0] == 0
+    def comment(cid, text): return gh("api", "-X", "PATCH", f"repos/{R.REPO}/issues/comments/{cid}", "-f", f"body={text}")[0] == 0
+    n = scrub.sweep(cache if cache is not None else ghcache.load(), title, comment, now)
+    scrub.add_fixes(n)
+    if n: log(f"privacy sweep: fixed {n} title/comment(s)")
+    return n
+
 def due_tick():
     """#241, every 10 min: a passed 'Due:' line in an open issue -> one 'Due reached' comment + the orchestrator (+ owner popup)."""
     import due
@@ -655,6 +670,7 @@ def tick():
         step("cleanup", cleanup, all_ts)
         rts = step("run_rows", run_rows, ts) or ts   # #289: + the ONE poller's cloud lanes as virtual run-<n> rows
         step("sweep_tick", sweep_tick, all_ts)  # #492
+        step("privacy_tick", privacy_tick)      # #783
         step("reap_tick", reap_tick, ts)       # #248 (a virtual run ends itself when its issue closes)
         step("stuck_tick", stuck_tick, rts)
         step("net_due_tick", net_due_tick, rts) # #364
