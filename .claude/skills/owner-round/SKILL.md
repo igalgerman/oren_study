@@ -23,6 +23,7 @@ Say the count once ("5 items, first: ...") and start. No long list.
 - Use the AskUserQuestion tool, one question per call. Never batch items.
 - Short English question, the recommended option FIRST and marked `(Recommended)`, a link only if he needs to look.
 - Wait for the answer before the next item.
+- If AskUserQuestion is unavailable, ask the same single question as plain text with the recommended option first, and wait for his reply before the next item.
 
 ## 4. Record the answer (only this way)
 - Owner_q question: `python tools/runner/qwin.py chat-answer <key> "<answer>" --quote "<his exact words>"` (#803; only the inspector may run it). Telegram shows him a confirmation; he has 10 minutes to undo with `בטל`, `אשר` makes it final. Tell him that, and that the gate stays closed until the final marker (`python tools/runner/owner_q.py gate #n`).
