@@ -1163,6 +1163,13 @@ def gh(*args, **kw):
 def now():
     return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
+def pr_size(text):
+    """Pure (#717): `gh pr view --json files` output -> {"lines": additions+deletions, "files": count}, the built index.html copies left out; {} when unreadable."""
+    try:
+        fs = [f for f in json.loads(text or "{}").get("files") or [] if not f["path"].endswith("index.html")]
+        return {"lines": sum(f.get("additions", 0) + f.get("deletions", 0) for f in fs), "files": len(fs)}
+    except Exception: return {}
+
 def stat(n, lane, event, **extra):
     """Append one timing event to .runs/stats.jsonl (extra fields, e.g. deploy ok/url/d1); never raises."""
     try:
@@ -2147,7 +2154,7 @@ def process_locked(issue, where="local"):
         if outcome[0] == "failed":
             raise Blocked(integrate_failure(outcome[1], outcome[2]))
         with FileLock("integrate", wait=True, note=f"#{n} deploy"):
-            stat(n, lane, "merged")
+            stat(n, lane, "merged", **pr_size(json.dumps(remote.find_pr(n, run=run, state="all", fields="number,files") or {})))   # #717: PR size for the models audit
             dep = deploy_main(log) if CFG.get("ci_merge", True) and find_pr_merged(n) else deploy_text(log)
         pre = start_pregen(log) if dep.startswith("deployed") else ""    # #175: after the lock, in the background; #301: never blocks
         m = sync_main(log)                       # result logged (review of #47)

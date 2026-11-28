@@ -104,7 +104,7 @@ def models_data(events, labels=None, now=None):
         p["under"] = p["fix"] >= 2 or p["up"]
         p["over"] = (p["merged"] is not None and p["fix"] == 0 and not p["up"] and (p["model"] == "opus" or p["effort"] in HIGH)
                      and p["lines"] is not None and p["lines"] <= 60 and p["files"] is not None and p["files"] <= 3
-                     and not any(w in l for l in L for w in SKIP_OVER))
+                     and not any(w in l.replace("-", " ").replace(":", " ").split() for l in L for w in SKIP_OVER))
         out.append(p)
     return out
 

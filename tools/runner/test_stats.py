@@ -31,3 +31,20 @@ assert "pack" in S.models_line(S.models_data(E2, {}, NOW), 3 * D).split(";")[1]
 assert "no row" in S.models_line(S.models_data(E2, {}, NOW), NOW)
 assert S.models_report([]).startswith("no runs yet")
 print("test_stats ok")
+
+# fix round: the runner records the PR size on merge, and the audit reads it (OVER must fire on that path)
+import json, os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-"); os.environ["OREN_TEST"] = "1"
+sys.argv.append("--dry-run")
+import runner as R
+files = [{"path": "tools/runner/a.py", "additions": 20, "deletions": 5}, {"path": "oren2/index.html", "additions": 900, "deletions": 3},
+         {"path": "oren2/cf/public/index.html", "additions": 900, "deletions": 3}, {"path": "x.md", "additions": 1, "deletions": 0}]
+assert R.pr_size(json.dumps({"files": files})) == {"lines": 26, "files": 2}      # built index.html copies left out
+assert R.pr_size("garbage") == {} and R.pr_size("") == {"lines": 0, "files": 0}
+R.stat(9, "pack", "start", model="opus", effort="high"); R.stat(9, "pack", "merged", **R.pr_size(json.dumps({"files": files})))
+real = S.models_data(S.read_events(Path(os.environ["RUNNER_RUNS"]) / "stats.jsonl"), {})
+assert real[0]["lines"] == 26 and real[0]["files"] == 2 and real[0]["over"]      # written by the runner, read back: OVER fires
+# whole label names only: 'build' must not exempt an issue, 'ui' / 'security' do
+E3 = [ev(1, "start", 1, model="opus", effort="high"), ev(1, "merged", 2, lines=5, files=1)]
+assert S.models_data(E3, {1: ["build"]}, NOW)[0]["over"]
+assert not S.models_data(E3, {1: ["ui"]}, NOW)[0]["over"] and not S.models_data(E3, {1: ["security"]}, NOW)[0]["over"]
+print("test_stats fix round ok")
