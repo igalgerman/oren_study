@@ -14,7 +14,7 @@ it is removed so claude uses the stored claude.ai login.
 State comes from GitHub (the CLI's agents/logs do not list cloud sessions)."""
 import json, os, re, shutil, subprocess, sys, tomllib
 from pathlib import Path
-import ghauth, ghcache, trust
+import ghauth, ghcache, trust, gitid
 
 HERE = Path(__file__).resolve().parent
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -75,6 +75,7 @@ def start_command(model=None, effort=None):
 def launch(n, task, cwd, run=sh, name=None, model=None, desk=False, effort=None):
     """#289: start a cloud session in a short-lived herdr terminal and return at once (no 180 s wait for its URL), so a
     watchdog tick can start one. -> {ok, error}. name: window name (default remote-<n>); desk (#306): label role=desk."""
+    task = gitid.prompt_prefix() + task                          # #889: every cloud session sets the noreply e-mail first
     task = re.sub(r"[ \t]*[\r\n]+[ \t]*", " ", task.replace('"', "'")).strip()   # #390: cmd.exe cuts argv at a newline                             # double quotes break the Windows argv to bash ('file not found')
     labels = ["--label", "role=desk"] if desk else ["--label", f"issue={n}", "--label", "role=remote"]
     name = name or f"remote-{n}"
@@ -172,6 +173,18 @@ def status(n, run=sh, since=None, now=None):
         st["state"], st["line"] = "done", f"RESULT: DONE {st['pr'].get('url', '')} ({BY_PR})"
         log_line(f"#{n} {BY_PR}: PR #{st['pr'].get('number')} quiet {QUIET_MIN}+ min")
     return st
+
+def life(n, run=sh):
+    """#841: signature of the cloud session's signs of life: the issue's comment count + the heads of lane/<n> and claude/github-issue-<n>-* branches
+    (a new commit or branch changes it). Raises when GitHub cannot be read (the caller treats that as no news)."""
+    rc, out = run(["gh", "issue", "view", str(n), "--repo", REPO, "--json", "comments"])
+    if rc != 0: raise OSError(f"gh issue view: {out[:100]}")
+    sig = [len(json.loads(out).get("comments", []))]
+    for pre in (f"lane/{n}", f"claude/github-issue-{n}-"):
+        rc, out = run(["gh", "api", f"repos/{REPO}/git/matching-refs/heads/{pre}"])
+        if rc != 0: raise OSError(f"gh api refs: {out[:100]}")
+        sig += sorted((x.get("ref", ""), (x.get("object") or {}).get("sha", "")) for x in json.loads(out or "[]"))
+    return json.dumps(sig)
 
 PR_URL = re.compile(r"/pull/(\d+)")
 

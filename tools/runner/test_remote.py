@@ -40,7 +40,7 @@ start_cmd = next(c[0] for c in f.calls if c[0][1] == "run")
 first = " ".join(start_cmd)
 assert " run " in f"{first} " and "--name remote-143" in first and "--cloud" in first, first
 assert "unset CLAUDE_CODE_OAUTH_TOKEN" in first, first
-assert start_cmd[-1] == "do it", "task passed as its own argument"
+assert start_cmd[-1].endswith("do it") and "user.email" in start_cmd[-1], "task passed as its own argument"
 assert any("wait" in c[0] for c in f.calls), "waits for the start command to end"
 # #778: every cloud start has an explicit permission mode (else the owner's 'auto' default sends approval asks to his phone)
 bash_line = start_cmd[start_cmd.index("-c") + 1]

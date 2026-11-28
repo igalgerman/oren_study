@@ -45,6 +45,7 @@ sys.path.insert(0, str(HERE))
 import ghauth     # #363: GitHub App token for the bots
 import runner as R   # config, gh(), select(), hc paths
 import owner_q as OQ # #193: the pinned 'Questions for the owner' issue
+import backoff as BO # #842: exponential backoff + one alert for a job that keeps failing
 
 EVERY = int(R.CFG.get("watchdog_seconds", 60))
 LOG = R.RUNS / "watchdog.log"
@@ -164,6 +165,10 @@ def check_lanes(ts):
     key, now = tuple(sorted(i["number"] for i in ready)), time.time()
     ok, why = pass_decision(R.FileLock("pass").held_by_other(), key, last_pass_start(), now)   # #284/#250: one pass alive at a time
     if not ok: return
+    last = last_pass_start()
+    again = bool(last and list(last.get("key") or []) == list(key))   # #842: same ready issues as the last start = that pass started nothing
+    if again and not BO.due("run-pass", now): return
+    (BO.failed if again else BO.ok)("run-pass", now, tell)            # a new ready issue resets the wait
     note_pass_start(key, now)
     orch = R.hc_json("get", "orchestrator", "--json").get("address", "")
     name = f"run-pass-{int(time.time()) % 100000}"
@@ -326,7 +331,11 @@ def check_control(ts):
         if rc == 0 and name != "orchestrator": tell(f"WATCHDOG: {name} had finished; restarted it")
 
 def qwin_tick(ts):
-    import qwin; importlib.reload(qwin); qwin.tick(ts)   # #220/#390: page + phone push per open owner question
+    if not BO.due("qwin"): return                        # #842: a failing job waits 2, 4, 8 ... 60 min
+    import qwin; importlib.reload(qwin); before = qwin.OPEN_FAILS[0]
+    try: qwin.tick(ts)   # #220/#390: page + phone push per open owner question
+    except Exception: BO.failed("qwin", alert=tell); raise
+    (BO.failed if qwin.OPEN_FAILS[0] > before else BO.ok)("qwin", alert=tell)   # 'could not open' counts as a failure
 
 def resume_tick():
     for n in R.resume_answered(): log(f"#{n}: owner answered the cloud question -> unparked, the next pass resumes its session (#135)")
@@ -966,14 +975,16 @@ def lock_tick(now=None):
 _ai = {"running": False}
 def ai_tick():
     """#171: hourly AI assessment for the dashboard, in a background thread (claude -p can take a minute)."""
-    if _ai["running"] or not R.CFG.get("ai_model", "haiku"): return
+    if _ai["running"] or not R.CFG.get("ai_model", "haiku") or not BO.due("ai"): return   # #842
     import dashboard; importlib.reload(dashboard)
     a = dashboard.ai_load()
     if a and time.time() - a.get("at", 0) < dashboard.AI_EVERY_MIN * 60: return
     _ai["running"] = True
     def work():
-        try: dashboard.ai_tick(log)
-        except Exception as e: log(f"ai assessment error: {e!r}")
+        try:
+            r = dashboard.ai_tick(log)
+            if r is not None: (BO.ok if r else BO.failed)("ai", alert=tell)
+        except Exception as e: log(f"ai assessment error: {e!r}"); BO.failed("ai", alert=tell)
         finally: _ai["running"] = False
     threading.Thread(target=work, daemon=True).start()
 
@@ -983,12 +994,12 @@ def ghcache_tick(start=None):
     Never two at once; skipped when the cache is younger than 50 s."""
     import ghcache
     c = ghcache.load()
-    if _GH_BUSY.is_set() or (c and time.time() - c.get("ts", 0) < 50): return False
+    if _GH_BUSY.is_set() or (c and time.time() - c.get("ts", 0) < 50) or not BO.due("gh-cache"): return False   # #842
     _GH_BUSY.set()
     def work():
         owner = (lambda cmd: R.run(cmd, env={ghauth.OWNER: "1"}, timeout=120)) if ghauth.app_cfg(R.CFG) else None   # #363: owner budget too
-        try: ghcache.refresh(lambda cmd: R.run(cmd, timeout=120), run_owner=owner)
-        except Exception as e: log(f"gh cache refresh failed: {e}"[:300])      # old cache stays; readers fall back to gh when it is stale
+        try: ghcache.refresh(lambda cmd: R.run(cmd, timeout=120), run_owner=owner); BO.ok("gh-cache", alert=tell)
+        except Exception as e: log(f"gh cache refresh failed: {e}"[:300]); BO.failed("gh-cache", alert=tell)      # old cache stays; readers fall back to gh when it is stale
         finally: _GH_BUSY.clear()
     (start or (lambda f: threading.Thread(target=f, daemon=True).start()))(work)
     return True

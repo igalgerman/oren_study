@@ -77,6 +77,8 @@ jobs:
           exit $fail
       - name: Panel tests
         run: node tools/mods/oren-lanes/run-tests.mjs
+      - name: Model status line tests
+        run: node tools/mods/oren-model/run-tests.mjs
   tests:
     # The one required check: a PR is mergeable when this is green.
     if: always()

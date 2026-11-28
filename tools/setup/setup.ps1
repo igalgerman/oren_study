@@ -146,6 +146,10 @@ function Step-Repo {
     } else { Add-Result $s "clone $name" 'OK' }
     if ((& git -C $dir config --local core.autocrlf) -ne 'false') { & git -C $dir config core.autocrlf false; Add-Result $s "autocrlf $name" 'FIXED' 'core.autocrlf false' }
     else { Add-Result $s "autocrlf $name" 'OK' }
+    if ($cfg.git_email) {   # #889: repo-local noreply address (GitHub e-mail privacy push-block)
+      if ((& git -C $dir config --local user.email) -eq $cfg.git_email) { Add-Result $s "git email $name" 'OK' }
+      else { & git -C $dir config --local user.email $cfg.git_email; Add-Result $s "git email $name" 'FIXED' 'set to git_email from config.toml' }
+    }
     $cur = (& git -C $dir remote get-url origin 2>$null)
     $fix = Get-RemoteFix ([string]$cur) $name
     if ($fix) {
