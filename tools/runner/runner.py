@@ -410,6 +410,10 @@ def _gate(n):
     import owner_q; return owner_q.merge_gate(n)
 GATE = _gate          # tests swap in a fake
 
+def unreadable_gate(why):
+    """Pure (#908): True when merge_block's refusal only means 'the gate could not be read' (never a reason to BLOCK)."""
+    return why.startswith("cannot read the owner gate")
+
 def merge_block(pr, log=None):
     """#636: the one guard before any merge (runner and tools/runner/merge.py): draft, blocked / no-automerge / owner-merge, owner gate."""
     js = gh("pr", "view", str(pr), "--json", "isDraft,labels,body", log=log)[1]
@@ -1336,9 +1340,12 @@ def no_window(os_name=None):
     """#284: creationflags for every child process: CREATE_NO_WINDOW on Windows (no console window flashes), 0 elsewhere."""
     return 0x08000000 if (os_name or os.name) == "nt" else 0
 
+class GateUnreadable(Exception):
+    """#908: the owner gate could not be read (GitHub slow under load): not the issue's fault, the merge step retries next pass."""
+
 def is_transient(e):
-    """#284: a gh/git call that timed out under load is not the issue's fault: retry next pass, never BLOCK."""
-    return isinstance(e, subprocess.TimeoutExpired)
+    """#284: a gh/git call that timed out under load is not the issue's fault: retry next pass, never BLOCK. #908: so is an unreadable owner gate."""
+    return isinstance(e, (subprocess.TimeoutExpired, GateUnreadable))
 
 # #365: inside a watchdog tick (tick_mode) every call is bounded: no timeout -> TICK_TIMEOUT_S, a timeout is an rc-124 answer (never
 # raises), a rate limit is not slept on (ghcache), and after one gh timeout the tick's other gh calls fail at once. Threads keep their own rules.
@@ -2129,6 +2136,7 @@ def ci_integrate(n, wt, log, over=None, sha=""):
         return 4, "no open PR for issue #%d" % n
     if not sha: return 7, f"PR #{pr}: no reviewed head sha, refusing to merge"
     why = merge_block(pr, log)
+    if unreadable_gate(why): raise GateUnreadable(why)           # #908: wait, retry on the next pass; never BLOCKED
     if why:                                                      # #185/#636: never a draft / no-automerge / blocked / owner-merge PR, nor a CLOSED owner gate
         disable_auto(pr, log); return 7, f"PR #{pr}: {why}"
     mergeable = gh("pr", "view", str(pr), "--json", "mergeable", "-q", ".mergeable", log=log)[1].strip()
@@ -2148,7 +2156,9 @@ def ci_integrate(n, wt, log, over=None, sha=""):
         rid = run(["gh", "run", "list", "--repo", REPO, "--branch", br, "--limit", "1", "--json", "databaseId", "-q", ".[0].databaseId"], log=log)[1].strip()
         if rid.isdigit(): run(["gh", "run", "rerun", rid, "--failed", "--repo", REPO], log=log)
     def refused():
-        return merge_block(pr, log)
+        w = merge_block(pr, log)
+        if unreadable_gate(w): raise GateUnreadable(w)           # #908: no merge now, no BLOCKED; the issue is retried next pass
+        return w
     def merge():                                                 # #185: no lock: GitHub merges atomically; the deploy keeps its own lock
         if refused(): return False
         rc_, o_ = gh("pr", "merge", str(pr), "--squash", "--match-head-commit", sha, log=log)
