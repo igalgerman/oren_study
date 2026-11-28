@@ -23,6 +23,12 @@
 - One decision = one question (Hebrew, English original folded). Never ask again because an answer seems lost: fix the record and alarm the inspector.
 - Tests of the question channel never ask the real owner (test chat, test key).
 
+## Estimates (ETA) (#951)
+- Never guess a time. Run `python3 tools/runner/eta.py <issue...>`: it prints the ETA with its basis and logs it (the nightly retro reports hit/miss).
+- ETA = now + (ready issues ahead / merges per hour, last 6 h) + (open "Blocked by" chain + itself) x median cycle of the last 20 merged issues of its kind.
+- Always say the basis in a few words ("3 ahead, ~4 merges/h, 1 cycle ~2 h -> today ~21:00"). No numbers = no estimate.
+- Owner OKs and preview days are named separately, never hidden inside a guess.
+
 ## Simplicity first
 - Keep everything simple. Do not complicate things that don't need it.
 - Do not add a feature, option, button or setting unless it was asked for or is clearly needed. No features "just to add".

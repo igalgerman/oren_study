@@ -97,6 +97,7 @@ jobs:
         if: hashFiles('tools/mods/oren-lanes/run-tests.mjs') != ''
         run: node tools/mods/oren-lanes/run-tests.mjs
       - name: Model status line tests
+        if: hashFiles('tools/mods/oren-model/run-tests.mjs') != ''
         run: node tools/mods/oren-model/run-tests.mjs
   setup:
     # #868: setup.ps1 must keep planning the full PC setup. pwsh on ubuntu with mocked git/gh/hc/schtasks/winget/claude shims
