@@ -21,7 +21,8 @@ def main(argv, run=None):
     if len(argv) != 2 or argv[0] not in ("issue", "pr") or not argv[1].isdigit():
         print("usage: view.py issue|pr <n>"); return 2
     import remote
-    p = (run or remote.sh)(["gh", argv[0], "view", argv[1], "--repo", remote.REPO, "--json", "number,title,body,author,comments"])
+    sh = run or remote.sh
+    p = sh(["gh", argv[0], "view", argv[1], "--repo", remote.REPO, "--json", "number,title,body,author,comments"])
     if p[0]: print(p[1]); return 1
     print(render(json.loads(p[1]), argv[0])); return 0
 
