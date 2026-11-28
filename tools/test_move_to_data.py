@@ -26,6 +26,7 @@ for d in (repo, data):
     d.mkdir(exist_ok=True); git(d, "init", "-q"); git(d, "config", "user.email", "t@t"); git(d, "config", "user.name", "t")
 git(repo, "add", "-A"); git(repo, "commit", "-q", "-m", "x")
 
+REAL_GATE = M.GATE
 asked, gate = [], {"open": False}
 M.ASK = lambda t: asked.append(t); M.GATE = lambda: gate["open"]
 
@@ -44,6 +45,16 @@ ok("dry-run changes nothing", git(repo, "status", "--short") == "" and not any(d
 M.ROOT = repo
 rc = M.apply(repo, data)
 ok("apply without an open gate changes nothing", rc == 3 and git(repo, "status", "--short") == "" and "oren2" not in os.listdir(data))
+
+ok("yes_in: only a real yes opens", [M.yes_in(x) for x in ("OPEN: 1. כן, להעביר (מומלץ)", "OPEN: כן", "OPEN: 2. לא", "OPEN: reaction +1", "OPEN: reaction heart | 1. yes", "CLOSED: no owner_q answer", "OPEN: 1. כן | 2. לא", "")] == [True, True, False, False, True, False, False, False])
+import types
+M.GATE = REAL_GATE
+_run = subprocess.run
+subprocess.run = lambda *a, **k: types.SimpleNamespace(returncode=0, stdout="OPEN: 2. לא\n") if "gate" in a[0] else _run(*a, **k)
+rc = M.apply(repo, data)
+ok("gate open with the answer 'no' changes nothing", rc == 3 and git(repo, "status", "--short") == "" and "oren2" not in os.listdir(data))
+subprocess.run = _run
+M.GATE = lambda: gate["open"]
 
 # the owner keeps a pure UI shot: deletes its line
 M.plan_path().write_text("\n".join(l for l in plan.splitlines() if "shots/9/b.png" not in l) + "\n")

@@ -23,7 +23,18 @@ REFUSE_PATH = re.compile(r"(playlog|diag\.key|\.key$|family[-_ ]?codes?|private_
 REFUSE_TEXT = re.compile(r"(family[-_ ]?code\s*[:=]\s*\S+|(api[-_]?key|secret|token|LOG_READ_KEY)\s*[:=]\s*['\"]?[A-Za-z0-9_\-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY)", re.I)
 TEXT_EXT = {".md", ".txt", ".json", ".csv", ".html", ".js", ".py", ".toml", ".yml", ".yaml"}
 
-GATE = lambda: subprocess.run([sys.executable, str(HERE / "runner" / "owner_q.py"), "gate", f"#{ISSUE}"], capture_output=True).returncode == 0
+YES = re.compile(r"^\s*(1(\W|$)|כן|yes\b)", re.I)
+NO = re.compile(r"^\s*(2(\W|$)|לא|no\b)", re.I)
+
+def yes_in(out):
+    """Pure: True only for `OPEN: <answers>` where an answer is a yes and none is a no. A bare reaction is not a yes."""
+    if not (out or "").startswith("OPEN: "): return False
+    ans = [a.strip() for a in out[6:].splitlines()[0].split(" | ")]
+    return any(YES.match(a) for a in ans) and not any(NO.match(a) for a in ans)
+
+def GATE():
+    r = subprocess.run([sys.executable, str(HERE / "runner" / "owner_q.py"), "gate", f"#{ISSUE}"], capture_output=True, text=True)
+    return r.returncode == 0 and yes_in(r.stdout)
 def ASK(text): subprocess.run([sys.executable, str(HERE / "runner" / "owner_q.py"), "ask", f"#{ISSUE}", text, "--gates", str(ISSUE)])
 
 def plan_path(): return scrub.HOME / "move_to_data_plan.txt"
@@ -94,7 +105,11 @@ def apply(root=ROOT, data_dir=None):
     infra_dir = root
     tr, res, bad = set(tracked(root)), [], 0
     moved = []
+    names = {}
+    for kind, rel in items:
+        if kind == "infra": names.setdefault(Path(rel).name, []).append(rel)
     for kind, rel in items:                                                 # 1. copy + verify (nothing is removed yet)
+        if kind == "infra" and len(names[Path(rel).name]) > 1: res.append(f"{rel}: skipped (name clash)"); bad += 1; continue
         why = refused(root, rel) if rel in tr else "not tracked"
         if why: res.append(f"{rel}: skipped ({why})"); bad += 1; continue
         target = (data_dir if kind == "data" else infra_dir) / dest(kind, rel)
