@@ -75,6 +75,7 @@ print("ok park")
 
 # watchdog cleanup: which windows are leftovers
 import watchdog as W
+import alerts; alerts.state_of = lambda n: "live"   # #844: alarms go through alerts.py; the orchestrator counts as live, the tests fake W.tell
 _ts = [
   {"name": "issue-2", "state": "live", "status": "done", "marker": True},    # superseded by review-2 -> close
   {"name": "review-2", "state": "live", "status": "working", "marker": False},
@@ -709,13 +710,13 @@ assert W.run_owned(_own, _ts) == {464, 465}, W.run_owned(_own, _ts)
 assert W.run_owned(_own, _ts, parked={463}) == {465}                                              # parked/blocked run: back to the orchestrator
 assert W.run_owned(_own, []) == set()
 _calls = []
-_saved = W.R.hc_json, W.R.gh, W.tell, W.windows
+_saved = W.R.hc_json, W.R.gh, W.alarm, W.windows
 W.R.hc_json = lambda *a, **k: {"state": "live", "status": "done"}
 W.R.gh = lambda *a, **k: (0, _json.dumps([dict(p, statusCheckRollup=_g, updatedAt="2026-11-26T09:00:00Z") for p in _own])) if a[:2] == ("pr", "list") else (0, "[]")
-W.tell = lambda t: _calls.append(t)
+W.alarm = lambda rule, subj, text, info=False: _calls.append(text)     # #844: the nudge goes through the alarm router
 W._orch.update(nudged=0.0, first=0.0, escalated=0.0)
 try: W.orch_idle_tick(now=_n, ts=_ts)
-finally: W.R.hc_json, W.R.gh, W.tell, W.windows = _saved
+finally: W.R.hc_json, W.R.gh, W.alarm, W.windows = _saved
 assert len(_calls) == 1 and "#466" in _calls[0] and "#213" in _calls[0] and "#464" not in _calls[0] and "#465" not in _calls[0], _calls
 # #765: cloud run = no run-<n> window, but issue-<n>.lock held by a live pid -> PR not listed
 assert W.run_owned(_own, _ts, locked={213}) == {464, 465, 213}, W.run_owned(_own, _ts, locked={213})

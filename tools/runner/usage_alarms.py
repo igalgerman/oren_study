@@ -78,7 +78,7 @@ def line():
     except Exception: return ""
     return " · ALARM: " + " · ".join(d["active"]) if d.get("active") else ""
 
-def tick(tell=print, log=print, now=None, send=None, busy=None, hist=None):
+def tick(tell=print, log=print, now=None, send=None, busy=None, hist=None, alarm=None):
     """Watchdog hook: read governor.json + usage_hist.jsonl, send the due alarms, write usage_alarms.json."""
     now = now or time.time()
     try: gv = json.loads((RUNS / "governor.json").read_text(encoding="utf-8"))
@@ -96,6 +96,7 @@ def tick(tell=print, log=print, now=None, send=None, busy=None, hist=None):
         (RUNS / STATE).write_text(json.dumps({"state": st, "sent": sent, "active": active(sent, found, now), "at": now}), encoding="utf-8")
     except OSError as e: log(f"usage alarms not saved: {e!r}")
     for x in texts:
+        if alarm: alarm("USAGE-" + x.split(":")[0].replace(" ", "-"), "", "ALARM (usage): " + x, info=x.startswith("PLAN CHANGED")); continue   # #844: one alarm function
         tell("ALARM (usage): " + x)
         try: (send or __import__("telegram").send)("ALARM (usage): " + x)
         except Exception: pass

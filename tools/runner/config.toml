@@ -59,6 +59,8 @@ github_app_id = 5939551
 github_app_installation_id = 186191764
 github_app_key = "C:/Users/97254/.oren/app.pem"
 
+alert_repeat_minutes = 180      # #844: the same watchdog alarm (rule + subject) at most once per this many minutes; the next one carries a count
+
 # #710 usage alarms (usage_alarms.py): each rule fires at most once per usage_alarm_every_h hours
 usage_alarm_every_h = 3
 usage_underuse_pct = 94         # UNDERUSE: week + (b*N_hi + b0)*H below this = budget left over even at full speed
