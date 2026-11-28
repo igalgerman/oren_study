@@ -141,7 +141,8 @@ jobs:
           sparse-checkout: |
             oren2/ci
             tools/runner
-      - name: Names list present (#876)
+      - name: Names list present (#876; only where the infra tools/ tree exists, #794)
+        if: ${{ hashFiles('tools/runner/scrub.py') != '' }}
         env:
           PRIVATE_NAMES: ${{ secrets.PRIVATE_NAMES }}
         run: python3 tools/runner/scrub.py require || echo "::error::PRIVATE_NAMES secret is empty, the name scrub replaces nothing (#876)"

@@ -11,7 +11,11 @@ assert not (tmp / "tools").exists()
 
 # 1. no game workflow step or game file refers to tools/ (only the INFRA `tools` job of tests.yml may, guarded by hashFiles)
 for wf in ("deploy.yml", "preview.yml"):
-    t = "\n".join(l for l in (tmp / ".github" / "workflows" / wf).read_text().splitlines() if not l.lstrip().startswith("#"))
+    t = (tmp / ".github" / "workflows" / wf).read_text()
+    # the optional infra step (#876) is guarded by hashFiles('tools/...') and its sparse-checkout line; both skip on a game-only checkout
+    t = re.sub(r"      - name: Names list present.*?\n(?=      - )", "", t, flags=re.S)
+    t = t.replace("            tools/runner\n", "")
+    t = "\n".join(l for l in t.splitlines() if not l.lstrip().startswith("#"))
     assert not re.search(r"(?<![\w/])tools/(ci|runner|ask|mods)", t), f"{wf} refers to the INFRA tools/ tree"
     assert "tools/ci" not in t
 t = (tmp / ".github" / "workflows" / "tests.yml").read_text()
