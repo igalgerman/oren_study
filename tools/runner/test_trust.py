@@ -121,7 +121,7 @@ sent = []
 real_sh = r.sh
 r.sh = lambda cmd, env=None: (sent.append((cmd, dict(env or {}))), (1, "no App token: not posting under another login (#800)"))[1]
 OQ._save({"issue": 0, "posted": []})
-assert OQ.post_or_queue(64, rec) is False and sent[0][1].get(r.APP_ONLY) == "1" and OQ._state()["pending_answers"] == [{"n": 64, "text": rec}]
+assert OQ.post_or_queue(64, rec) is False and sent[0][1].get(r.APP_ONLY) == "1" and [(x["n"], x["text"]) for x in OQ._state()["pending_answers"]] == [(64, rec)]
 r.sh = lambda cmd, env=None: (sent.append(cmd), (0, ""))[1]
 OQ.flush_pending(); assert OQ._state()["pending_answers"] == [] and sent[-1][1] == "issue" and "--body" in sent[-1]
 # mark_answered: the App only (no gh fallback through R.gh) and queued when that fails; a test fake gh still works

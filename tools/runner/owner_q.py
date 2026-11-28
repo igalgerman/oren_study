@@ -256,7 +256,8 @@ def comments(n, gh=None):
     out, cur = [], ""
     for _ in range(MAX_PAGES):
         args = ["graphql", "-f", f"query={_CQ}", "-f", f"o={owner}", "-f", f"r={name}", "-F", f"n={int(n)}"] + (["-f", f"c={cur}"] if cur else [])
-        rc, txt = call("api", *args)
+        with ghcache.gate_read():                      # #911: a gate read may use the owner login when the app is limited
+            rc, txt = call("api", *args)
         if rc: return None
         try:
             c = json.loads(txt)["data"]["repository"]["issue"]["comments"]
@@ -288,7 +289,7 @@ def _post(window, question, tail="", gh=None, gates=()):
     gh = gh or GH
     key = key_of(window, question or tail[-600:])
     s = _state()
-    if key in s.get("posted", []): return ""
+    if key in s.get("posted", []) or key in queued_keys(): return ""     # #897: answered, record queued: never asked again
     n = find_issue(gh)
     if not n: return None
     cs = comments(n, gh)
@@ -305,7 +306,9 @@ def open_list(gh=None):
     with ghcache.quick(QUICK_S):
         n = find_issue(gh)
         cs = comments(n, gh) if n else None
-    return None if cs is None else [{**q, "issue": n} for q in open_questions(cs)]
+    if cs is None: return None
+    qk = queued_keys()                                # #897: answered, record queued: not open (no popup, no second ask)
+    return [{**q, "issue": n} for q in open_questions(cs) if q["key"] not in qk]
 
 def mark_answered(key, answer="", gh=None):
     """#800: the ANSWERED line is written by the App bot only (gh=None; a test passes a fake gh). True = posted now; False = queued
@@ -316,20 +319,51 @@ def mark_answered(key, answer="", gh=None):
 
 def post_app(n, text, gh=None):
     """#800: an owner-answer record / ANSWERED line is written ONLY by the App bot. gh=None: R.gh as the App with no owner fallback
-    (no App token -> False, the caller queues it); a test passes a fake gh."""
+    (no App token -> False, the caller queues it); a test passes a fake gh.
+    #897: R.gh itself (a caller's `gh`) is NOT a fake: it falls back to the owner login on an App rate limit (#469), so it too goes the App-only way."""
+    if gh is R.gh: gh = None
     if gh is not None: return gh("issue", "comment", str(n), "--body", R.redact(text))[0] == 0
     env = {**os.environ, remote.APP_ONLY: "1"}
     return remote.sh(["gh", "issue", "comment", str(n), "--repo", R.REPO, "--body", R.redact(text)], env=env)[0] == 0
 
-def queue_answer(n, text):
+def queue_answer(n, text, now=None):
     s = _state(); p = s.setdefault("pending_answers", [])
-    if {"n": n, "text": text} not in p: p.append({"n": n, "text": text})
+    if not any(x.get("n") == n and x.get("text") == text for x in p): p.append({"n": n, "text": text, "at": time.time() if now is None else now})
     s["pending_answers"] = p[-50:]; _save(s)
+
+QUEUE_KEY_RE = re.compile(r"owner-q:([0-9a-f]{12})|owner-answer:([0-9a-f]{12})")
+ALARM_S = 15 * 60                                     # #897: a queued answer record older than this -> one alarm
+
+def queued_keys():
+    """#897: keys of the owner answers whose record waits in pending_answers (the owner HAS answered; the App has not posted it yet)."""
+    return {m[1] or m[2] for p in _state().get("pending_answers", []) for m in QUEUE_KEY_RE.finditer(p.get("text", ""))}
 
 def post_or_queue(n, text, gh=None):
     """#800: App post, or queue (flush_pending retries, answers_tick alarms) when the App token is missing. -> True when posted now."""
     if post_app(n, text, gh): return True
     queue_answer(n, text); return False
+
+def repair(keys, gh=None):
+    """#897, one-time: re-post, as the App, the answer records that were written under the owner login after `trust_since` (the #800 rule ignores
+    them). Only the given keys; the record text is copied from the owner-login comment on each issue, so the owner's words stay exact.
+    -> {key: number of issues re-posted}; a record already there from the App is not posted twice."""
+    out = {}
+    q = find_issue(gh); qcs = comments(q, gh) if q else None
+    if qcs is None: return out
+    for k in keys:                                   # the ANSWERED line lives in the questions issue itself (#205), not on the asking issue
+        line = re.compile(rf"(?m)^\s*ANSWERED owner-q:{k}\b")
+        if any(trust.is_bot(c) and line.search(c.get("body") or "") for c in qcs): continue
+        src = next((c for c in qcs if trust.login(c) == trust.OWNER and not trust.answer_ok(c) and line.search(c.get("body") or "")), None)
+        if src: post_or_queue(q, src["body"], gh); out[k] = out.get(k, 0) + 1
+    # the issues to repair: the one the question was asked from (`**#n**` in its comment) and the ones it gates (`--gates`)
+    issues = {int(m[1]) for c in trust.only(qcs) for m in [re.search(r"\*\*#(\d+)\*\*", c.get("body") or "")] if m and any(k in (c.get("body") or "") for k in keys)}
+    for n in sorted(issues | {x for c in qcs if any(k in (c.get("body") or "") for k in keys) for x in gates_of(c.get("body") or "")}):
+        cs = comments(n, gh) or []
+        for k in keys:
+            if any(trust.is_bot(c) and f"<!-- owner-answer:{k} -->" in (c.get("body") or "") for c in cs): continue
+            src = next((c for c in cs if trust.login(c) == trust.OWNER and not trust.answer_ok(c) and f"<!-- owner-answer:{k} -->" in (c.get("body") or "")), None)
+            if src: post_or_queue(n, src["body"], gh); out[k] = out.get(k, 0) + 1
+    return out
 
 def new_answers(cs, seen):
     """Pure: comments after the first `seen` without the tool's marks (MARK, question key, ANSWERED line) = the owner's replies."""
@@ -340,9 +374,15 @@ def answers_tick(tell, gh=None):
     """Watchdog: the owner replied in the questions issue -> tell the orchestrator (reply + open questions) so it relays the answer."""
     flush_pending(gh)                                # gh=None here: queued answer records go out as the App only (#800), never via R.gh's owner fallback
     gh = gh or GH
-    if _state().get("pending_answers") and not _state().get("answers_alarm"):    # #800: an answer record cannot be posted (no App token)
-        tell("ALARM: an owner answer record is queued: the GitHub App token is missing, nothing is posted under another login (#800).")
-        s = _state(); s["answers_alarm"] = True; _save(s)
+    now = time.time(); s = _state(); late = [p for p in s.get("pending_answers", []) if now - p.get("at", now) >= ALARM_S and not p.get("alarmed")]
+    for p in s.get("pending_answers", []): p.setdefault("at", now)          # records queued by an older runner get their clock now
+    if late:                                         # #897: ONE alarm per record, to the orchestrator and the inspector
+        msg = f"ALARM: an owner answer record has waited {ALARM_S // 60}+ min in the queue ({len(late)}): the GitHub App cannot write (token missing or rate limited). Nothing is posted under the owner login (#800, #897); the question is not asked again."
+        tell(msg)
+        try: R.hc("send", "inspector", msg, timeout=30)
+        except Exception: pass
+        for p in late: p["alarmed"] = True
+    _save(s)
     with ghcache.quick(QUICK_S):
         n = find_issue(gh)
         cs = comments(n, gh) if n else None
@@ -367,10 +407,13 @@ def main(argv):
     if argv == ["open"]:
         qs = open_list()
         if qs is None: print("could not read GitHub (gh)"); return 1
-        print("\n".join(f"{q['key']}  {q['window']}  {q['text']}  {q['url']}" for q in qs) or "no open questions"); return 0
+        rows = [f"{q['key']}  {q['window']}  {q['text']}  {q['url']}" for q in qs] + [f"{k}  answered, record queued (the App posts it when it can write)" for k in sorted(queued_keys())]   # #897
+        print("\n".join(rows) or "no open questions"); return 0
     if len(argv) in (2, 3) and argv[0] == "answered":
         ok = mark_answered(argv[1], argv[2] if len(argv) == 3 else "")
         print("marked answered" if ok else "could not mark now (no App token or gh failed): queued, the watchdog posts it as the App"); return 0 if ok else 1
+    if len(argv) >= 2 and argv[0] == "repair":              # #897: python3 tools/runner/owner_q.py repair KEY KEY (the two 28 Nov answers)
+        done = repair([k for k in argv[1:] if re.fullmatch(r"[0-9a-f]{12}", k)]); print(f"re-posted as the App (or queued): {done or 'nothing to repair'}"); return 0
     if len(argv) == 2 and argv[0] == "gate":
         n = int(argv[1].lstrip("#"))
         ics, qcs = gate_read(n)                              # #908: retried with a longer timeout

@@ -1,10 +1,10 @@
-"""#787 tools/privacy_cleanup.py on a fake gh and a fake owner gate (points 1-5). Run: python3 tools/ci/test_privacy_cleanup.py
+"""#787 tools/privacy_cleanup.py on a fake gh and a fake owner gate (points 1-5). Run: python3 tools/test_privacy_cleanup.py
 The name and the play numbers below are invented; the real ones are never in the repo."""
 import os, tempfile
 os.environ["OREN_TEST"] = "1"; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")
 import json, re, sys
 from pathlib import Path
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 T = Path(tempfile.mkdtemp(prefix="pc-test-"))
 os.environ["OREN_HOME"] = str(T / "home"); os.environ["PRIVATE_NAMES"] = "Zorvak,זורבק"
 sys.path.insert(0, str(ROOT / "tools")); sys.path.insert(0, str(ROOT / "tools" / "runner"))

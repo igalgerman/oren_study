@@ -184,6 +184,24 @@ assert d.get("gates") == {64: True}, d
 assert any(a[:3] == ("issue", "comment", "64") and OQ.record_answer(a[-1]) == ("6"*12, "approve") for a in gh_calls), gh_calls
 print("ok qwin #630 answer recorded on the gated issue")
 
+# #897: the App is rate limited: the answer record and the ANSWERED line are queued (never posted under another login),
+# the question is answered-queued (no second ask), and the next flush posts them
+KEY7 = "7" * 12
+opened.append({"key": KEY7, "window": "#677", "source": "issue-677", "text": "שער?", "url": "u7", "gates": []})
+sent_as = []
+limited = [True]
+def app_gh(*a, **kw):
+    sent_as.append(a)
+    return (1, "API rate limit exceeded") if limited[0] and a[:2] == ("issue", "comment") else (0, "")
+QW._gh = app_gh
+OQ._save({"issue": 205, "posted": []})
+d = QW.answer(KEY7, "yes")
+assert d.get("issue") is False and KEY7 in OQ.queued_keys(), (d, OQ._state())      # the record is queued, not posted
+limited[0] = False
+OQ.flush_pending(app_gh)
+assert OQ._state()["pending_answers"] == [] and any(a[:3] == ("issue", "comment", "677") and OQ.record_answer(a[-1]) == (KEY7, "yes") for a in sent_as), sent_as
+print("ok qwin #897 App rate limited: answer queued, then posted by the flush")
+
 # #390: the push's result is checked on the pushing session's screen and logged once: Claude Code's 'Not sent' (or the
 # session's own PUSH-RESULT line) -> watchdog.log says so (second channel: Telegram, #440, once set up); ok -> logged too
 logged = []
@@ -388,6 +406,31 @@ assert not ok_i([10], [{**INS, "foreground": {"argv": ["claude"], "pid": 10}, "n
 assert not ok_i([10], [{**INS, "foreground": {"argv": ["python", "--remote-control", "oren-inspector"], "pid": 10}}])   # not claude
 assert not ok_i([10], [{**INS, "cwd": "C:/work/other"}])                          # wrong cwd
 assert not ok_i([10], None) and not ok_i([10], [])                                # herdr unreadable
+# #907 walk_chain over a fake process table {pid: {ppid, ctime}}: the inspector's claude is pid 10 (INS), another session's is 20
+def table(rows): return lambda pid: rows.get(pid)
+pids = lambda rows, start=1: [p for p, _ in QW.walk_chain(start, table(rows))]
+plain = {1: {"ppid": 2, "ctime": 900}, 2: {"ppid": 3, "ctime": 800}, 3: {"ppid": 10, "ctime": 700}, 10: {"ppid": 99, "ctime": 100}, 99: {"ppid": 0, "ctime": 50}}
+assert pids(plain) == [1, 2, 3, 10, 99] and ok_i(pids(plain), [INS, other])
+# a shell that Git Bash replaced (exited, still held by its parent): it is in the table, so the walk goes on to claude
+helper = {1: {"ppid": 2, "ctime": 900}, 2: {"ppid": 3, "ctime": 890}, 3: {"ppid": 4, "ctime": 880, "alive": False},
+          4: {"ppid": 5, "ctime": 870}, 5: {"ppid": 10, "ctime": 860}, 10: {"ppid": 99, "ctime": 100}}
+assert 10 in pids(helper) and ok_i(pids(helper), [INS, other])
+# a parent that cannot be opened (gone): the walk ends there, the pid is never in the chain -> refused
+dead = {1: {"ppid": 2, "ctime": 900}, 2: {"ppid": 10, "ctime": 800}, 9: {"ppid": 10, "ctime": 700}}
+assert pids(dead) == [1, 2] and not ok_i(pids(dead), [INS, other])
+# a reused pid: the recorded parent pid now belongs to a process created AFTER the child -> the walk stops before it
+reuse = {1: {"ppid": 2, "ctime": 900}, 2: {"ppid": 10, "ctime": 800}, 10: {"ppid": 99, "ctime": 850}}
+assert pids(reuse) == [1, 2] and not ok_i(pids(reuse), [INS, other])
+assert pids({1: {"ppid": 10, "ctime": 900}, 10: {"ppid": 0, "ctime": 900}}) == [1]    # the same creation time is not earlier
+assert pids({1: {"ppid": 10, "ctime": 900}, 10: {"ppid": 0, "ctime": 0}}) == [1]      # no creation time: not verified
+assert pids({1: {"ppid": 1, "ctime": 900}}) == [1] and pids({}) == []                  # a loop; nothing at all
+# another session (its own claude 20): refused, also through a replaced shell
+others = {1: {"ppid": 2, "ctime": 900}, 2: {"ppid": 3, "ctime": 880, "alive": False}, 3: {"ppid": 20, "ctime": 870},
+          20: {"ppid": 7, "ctime": 300}, 7: {"ppid": 0, "ctime": 10}}
+assert 20 in pids(others) and 10 not in pids(others) and not ok_i(pids(others), [INS, other])
+assert len(QW.walk_chain(1, lambda p: {"ppid": p + 1, "ctime": 10 ** 6 - p})) == 32   # at most 32 steps
+assert QW.walk_chain(1, lambda p: {"ppid": p + 1, "ctime": 10 ** 6 - p}, limit=3)[-1][0] == 3
+if os.name != "nt": assert QW.chain_pids() == [] and QW._chain_info() == []
 # live_terminals: hc ls --json, then hc get per live terminal
 _calls = []
 def _fh(*a, **kw):
@@ -435,6 +478,16 @@ rc, msg = QW.chat_answer(key, "כן", "הוא אמר כן")
 assert rc != 0 and not g3.calls, g3.calls
 assert len([l for l in chat_log if "REFUSED" in l]) == 1 and len([p for p in sent() if "נדחתה" in p["text"]]) == 1, (chat_log, sent())
 chain[0] = [10]
+# #907 whoami: the chain, the inspector terminal, the verdict; it posts, sends and logs nothing (both verdicts)
+g3.calls.clear(); FakeTG.calls.clear(); chat_log.clear(); real_ci = QW._chain_info
+for ch, want in (([(5, {"ppid": 10, "name": "python.exe"}), (10, {"ppid": 1, "name": "claude.exe"})], 0),
+                 ([(5, {"ppid": 20, "name": "python.exe"}), (20, {"ppid": 1, "name": "claude.exe", "alive": False})], 1)):
+    QW._chain_info = lambda ch=ch: ch
+    rc, out = QW.whoami()
+    assert rc == want and "claude.exe" in out and "pid 10" in out and ("verdict: INSPECTOR" in out) == (want == 0), out
+    assert QW.main(["whoami"]) == want
+assert "(exited)" in out and not g3.calls and not sent() and not chat_log, (g3.calls, sent(), chat_log)
+QW._chain_info = real_ci
 # a missing / empty / too long --quote is refused (no gh call)
 for q in (None, "", "  ", "x" * 501): assert QW.chat_answer(key, "כן", q)[0] != 0 and not g3.calls
 assert QW.main(["chat-answer", key, "כן"]) != 0 and QW.main(["answer", key, "כן"]) == 2     # no --quote; the old `answer` CLI refuses
