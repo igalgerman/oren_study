@@ -1,10 +1,10 @@
 // Regression tour (#618): the core game flows against a live URL, in a real browser, at desktop 1366x768 and phone 390x844.
-// Usage: node tools/ci/tour.js [url]   (default https://oren-game.pages.dev)   SHOTS=<dir> saves a screenshot per check.
+// Usage: node oren2/ci/tour.js [url]   (default https://oren-game.pages.dev)   SHOTS=<dir> saves a screenshot per check.
 // Prints `PASS <id> <viewport>` / `FAIL <id> <viewport> <repro>` per check, then `TOUR: PASS` or `TOUR: FAIL <id>: <repro>; ...`; exit 1 on a fail.
 // Never touches the real family save: every page's /api/save/<family> goes to a throwaway id (marked smoke, deleted at the end);
 // event logs and diagnostics are answered locally.
 const path = require('path'), fs = require('fs'), crypto = require('crypto');
-try { require(path.join(__dirname, '../../oren2/tests/mute.js')); } catch (e) {}   // silent browser + daytime clock + no teach/lesson/listen holds
+try { require(path.join(__dirname, '../tests/mute.js')); } catch (e) {}   // silent browser + daytime clock + no teach/lesson/listen holds
 const { chromium } = require('playwright');
 const BASE = (process.argv[2] || 'https://oren-game.pages.dev').replace(/\/+$/, '');
 const FAMILY = 'a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0', SHOTS = process.env.SHOTS;

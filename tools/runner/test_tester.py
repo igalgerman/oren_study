@@ -27,7 +27,7 @@ print("ok roles")
 p = T.prompt(618, 640, "T2", T.preview_url(640))
 for s in ("https://pr-640.oren-game.pages.dev", "1366x768", "390x844", "TEST: PASS", "TEST: FAIL",
           "3 missions", "help", "music", "story", "parent panel", "parent message", "time limit", "+minutes",
-          "duplicate", "one main action", "node tools/ci/tour.js https://pr-640.oren-game.pages.dev", "nikud", "open PR", "Polish backlog", "gh pr comment 640"):
+          "duplicate", "one main action", "node oren2/ci/tour.js https://pr-640.oren-game.pages.dev", "nikud", "open PR", "Polish backlog", "gh pr comment 640"):
     assert s in p, s
 assert "two browsers" not in p                                  # only T3 plays kid + parent at once
 assert "two browsers" in T.prompt(618, 640, "T3", T.preview_url(640))

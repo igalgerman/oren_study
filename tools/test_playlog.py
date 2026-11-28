@@ -1,9 +1,9 @@
-"""#641 tools/playlog.py: paging, the day file, the summary. Run: python3 tools/ci/test_playlog.py"""
+"""#641 tools/playlog.py: paging, the day file, the summary. Run: python3 tools/test_playlog.py"""
 import io, json, os, sys, tempfile, contextlib
 from pathlib import Path
 HOME = tempfile.mkdtemp(prefix="oren-home-"); os.environ["OREN_HOME"] = HOME
 os.environ["OREN_ENV"] = os.path.join(HOME, "no.env")   # #675: off unless a test writes it
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import playlog as P
 
 fails = []

@@ -3,10 +3,10 @@
 The reviewer ends its comment with `TEST: T0|T1|T2|T3` (missing = T2). After a review PASS, T1+ gets a cloud Tester session
 `test-<n>` (Sonnet; Opus for T3) that plays the changed flows + the regression tour on the PR's Cloudflare Pages preview
 and posts `TEST: PASS` or `TEST: FAIL <repro>` on the PR. FAIL goes back to the worker like a RED review (#303 loop).
-After deploy the scripted tour (tools/ci/tour.js) runs on production; a fail opens a P0 bug (tour_fail_actions)."""
+After deploy the scripted tour (oren2/ci/tour.js) runs on production; a fail opens a P0 bug (tour_fail_actions)."""
 import json, os, re, sys
 import remote
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ci"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "oren2", "ci"))
 from deploy_ci import TESTER_MARK, tour_fail_actions   # the post-deploy tour lives in CI (stdlib only); re-exported for the dashboard
 
 LEVELS = ("T0", "T1", "T2", "T3")
@@ -67,7 +67,7 @@ def prompt(n, pr, level, url, repo=remote.REPO):
             "With Playwright (require('playwright'), chromium.launch()) in a real browser, at desktop 1366x768 AND phone 390x844: "
             "play the changed flows like Oren (6-7, taps, no reading) and like the parent. " + two +
             "Use a throwaway test family code, never a real family. Then the fixed regression tour of the core experience: first the scripted "
-            f"part, `node tools/ci/tour.js {url}` (the same tour runs on production after deploy), then play it yourself:" + tour +
+            f"part, `node oren2/ci/tour.js {url}` (the same tour runs on production after deploy), then play it yourself:" + tour +
             "\nFit check (on the changed screens and the tour): " + "; ".join(FIT) + " (list the open PRs with "
             f"`gh pr list --repo {repo}` and look for one on the same screen). Fit issues are FAIL only for wrong behaviour; "
             "polish goes as a note to the rolling 'Polish backlog' issue of the lane. "
