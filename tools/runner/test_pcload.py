@@ -39,7 +39,7 @@ top = P.top3(procs, terms)
 assert top == ["chrome.exe 3.0 GB (unknown)", "chrome-headless-shell.exe 2.0 GB (claude session orchestrator)",
                "node.exe 1.0 GB (claude session pid 30)"], top
 
-# thresholds (fake samples): CPU > 85% for 4 min, free RAM < 15%, chrome-headless-shell > 5, claude > control sessions + 2
+# thresholds (fake samples): CPU > 85% for 4 min, free RAM < 15%, chrome-headless-shell > 5, claude > control sessions + 1 (#688)
 def sample(cpu=10, free=50, chrome=0, claude=0):
     ps = [proc(100 + i, 1, "chrome-headless-shell.exe") for i in range(chrome)] + [proc(200 + i, 1, "claude.exe") for i in range(claude)]
     return {"cpu": cpu, "ram_free": free, "procs": ps}
@@ -54,10 +54,21 @@ assert P.causes(sample(cpu=85), {}, 0, 3) == []                        # exactly
 assert [k for k, _ in P.causes(sample(free=14.9), {}, 0, 3)] == ["ram"]
 assert P.causes(sample(free=15), {}, 0, 3) == []
 assert P.causes(sample(chrome=5), {}, 0, 3) == [] and [k for k, _ in P.causes(sample(chrome=6), {}, 0, 3)] == ["chrome"]
-assert P.causes(sample(claude=5), {}, 0, 3) == [] and [k for k, _ in P.causes(sample(claude=6), {}, 0, 3)] == ["claude"]
-assert [k for k, _ in P.causes(sample(claude=3), {}, 0, 0)] == ["claude"]   # no control session live: > 2
+assert P.causes(sample(claude=4), {}, 0, 3) == [] and [k for k, _ in P.causes(sample(claude=5), {}, 0, 3)] == ["claude"]   # #688: + 1
+assert P.causes(sample(claude=1), {}, 0, 0) == [] and [k for k, _ in P.causes(sample(claude=2), {}, 0, 0)] == ["claude"]   # none live: > 1
 t = dict(P.causes(sample(free=10, chrome=50), {}, 0, 3))
 assert "RAM 10% free" in t["ram"] and "50 chrome-headless-shell" in t["chrome"], t
+
+# #688: the executor is a control session too; matched by name, label name=<role> or --remote-control oren-<role> (#332/#334)
+ctl = [{"name": "orchestrator", "state": "live"}, {"labels": ["name=inbox"], "state": "live"},
+       {"foreground": {"argv": ["claude", "--remote-control", "oren-inspector"]}, "state": "live"},
+       {"name": "executor", "state": "live"}, {"name": "executor", "state": "finished"}, {"name": "lane-12", "state": "live"}]
+assert P.control_count(ctl) == 4, P.control_count(ctl)
+with tempfile.TemporaryDirectory() as d:
+    said = []
+    def t688(n): return P.tick(ctl, send=lambda w, m: said.append(m), log=lambda m: None, now=1, sample=sample(claude=n), runs=d, st={})
+    assert t688(4) == [] and said == []                                # the 4 control sessions alone: no alarm
+    assert t688(6) == ["claude"] and "4 control sessions + 1 allowed" in said[0], said   # plus 2 unknown claude windows: alarm
 
 # #567: once per 60 min per cause; sooner only when worse (RAM down 5+ points, claude count up)
 send, sent = P.due({"ram": 12, "chrome": 6}, {}, 0)
