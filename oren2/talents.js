@@ -1161,9 +1161,17 @@ function timeTab(box){const l=LIM(),x=limNow(),left=T.limLeft(),t=todayL();
   /* one status line, two big buttons, the rest folded */
   const ts=sec(box,'⏱️ היום',`<div class="pstat">שוחקו ${usedMin()} דק׳ · ${doneN()} משימות · הגבלה: ${lt}${t?' (רק היום)':''}${ll?` · נשאר: ${ll}`:''}</div>`);
   const mk=(row,n,fn,on)=>{const b=h('button','pchip big'+(on?' on':''),n);b.onclick=()=>{fn();sfx.ok&&sfx.ok(1);panel('time');};row.appendChild(b);return b;};
-  const g=h('div','pbig');[['+15 דק׳',()=>grant(15)]].forEach(([n,f])=>{const b=h('button','bigbtn sm','<span>'+n+'</span>');b.onclick=()=>{f();sfx.ok&&sfx.ok(1);panel('time');};g.appendChild(b);});ts.appendChild(g);
+  /* #658: "he has N more minutes" with ANY N (1-60): big − / + , the last N is remembered, default 5 */
+  const GM='oren4-gmin';let gm=5;try{gm=Math.min(60,Math.max(1,parseInt(localStorage.getItem(GM),10)||5));}catch(e){}
+  const g=h('div','pbig');const stp=h('div','pstep');const mn=h('button','pchip big','−'),pl=h('button','pchip big','+'),nv=h('span','pnum','');
+  const go=h('button','bigbtn sm','<span></span>');
+  const shw=()=>{nv.textContent=gm+' דק׳';go.firstChild.textContent='יֵשׁ לוֹ עוֹד '+gm+' דק׳';try{localStorage.setItem(GM,gm);}catch(e){}};
+  mn.setAttribute('aria-label','פחות');pl.setAttribute('aria-label','יותר');
+  mn.onclick=()=>{gm=Math.max(1,gm-1);shw();};pl.onclick=()=>{gm=Math.min(60,gm+1);shw();};
+  go.onclick=()=>{l.today=giveT(usedMin(),gm);pnow();sfx.ok&&sfx.ok(1);panel('time');};
+  stp.append(mn,nv,pl);g.append(stp,go);shw();ts.appendChild(g);
   const more=pdet(ts,'tmore','עוד אפשרויות');
-  const pr=h('div','popt','<span>יֵשׁ לוֹ עוֹד:</span>');[20,30,45,60].forEach(v=>mk(pr,v+' דק׳',()=>{l.today=giveT(usedMin(),v);pnow();},left&&left.min===v));
+  const pr=h('div','popt');
   mk(pr,'ללא הגבלה',()=>{l.today={d:O.today(),none:1};pnow();},t&&t.none);if(t)mk(pr,'↺ כמו כל יום',()=>{l.today=null;pnow();});
   mk(pr,'⏹ לסיים עכשיו',stopNow).classList.add('bad');more.appendChild(pr);
   const ds=sec(pdet(box,'tdaily','🗓️ הגבלה קבועה לכל יום'),'הגבלה קבועה לכל יום','<div class="pnote">נספר רק זמן פעיל. אורן רואה למעלה כמה נשאר. בסוף הזמן — מסך "נתראה מחר"; אם אורן באמצע פעילות, הוא מסיים אותה (עד 5 דקות). שינוי מהטלפון שלכם מגיע למכשיר של אורן תוך כדקה.</div>');
