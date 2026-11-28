@@ -5,3 +5,6 @@ oren2/package-lock.json
 oren2/tests/.tmp/
 __pycache__/
 tools/runner/.runs-test*/
+playlog/
+playlog*.json
+diag.key

@@ -9,6 +9,7 @@ Built from the play log by fixed rules (no paid API, no model). The log is read 
 Only the three lines go to Telegram: counts and mission ids, no raw events, no kid answers, no names. Sent once per day
 (marker ~/.oren/digest/<day>.sent). Hebrew for the parent, so no nikud.
 """
+# Play data never goes to GitHub (#786): this digest goes to Telegram only, never to an issue, PR or file in the repo.
 import os, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
