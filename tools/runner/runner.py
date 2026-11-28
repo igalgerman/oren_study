@@ -52,10 +52,12 @@ def tier_of(labels):
     """#437: 1-3 from a tier-1..tier-3 label; tier 1 when missing."""
     return next((n for n in (1, 2, 3) if f"tier-{n}" in labels), 1)
 
+AI_ORDER = {}      # #707: issue number -> rank from the AI governor (applied order)
+
 def queue_key(i):
     """#437: express, then P0 (any tier), then tier 1 < 2 < 3, then bug, then P1..P3, then oldest."""
     l = i["labels"]; p = priority_of(l)
-    return ("express" not in l, p != 0, tier_of(l), "bug" not in l, p, i["createdAt"])
+    return ("express" not in l, p != 0, AI_ORDER.get(i.get("number"), 10**6), tier_of(l), "bug" not in l, p, i["createdAt"])    # #707: the AI governor's order sits after express/P0
 
 MODEL_IDS = {"haiku": "haiku", "sonnet": "sonnet", "opus": "opus", "fable": "claude-fable-5-2"}
 _MODEL_RANK = ["haiku", "sonnet", "opus", "fable"]
@@ -544,7 +546,7 @@ def lane_plan(W, H, F, h5, L, Q, prev, g):
     n = prev if prev is not None and abs(raw - prev) < g["hyst"] else int(round(raw))
     if prev is not None: n = max(prev - g["step"], min(prev + g["step"], n))
     n = max(n_lo, min(n, int(n_hi)))
-    return n, {"need": need, "n_week": n_week, "n_hi": n_hi, "n_lo": n_lo, "reserve": R, "c": C, "n_5h": n_5h}
+    return n, {"n_lo": n_lo, "need": need, "n_week": n_week, "n_hi": n_hi, "n_lo": n_lo, "reserve": R, "c": C, "n_5h": n_5h}
 
 def governor(usage, hist, now, g=None, prev=None, wins=None, stale_since=None, busy=0, ready=None):
     """Pure (#239, #705): usage.json dict (or None) + samples + now -> {lanes, stop, pct, projected, reset, week_pct, week_reset, need, n_hi, mode, why}.
@@ -593,7 +595,7 @@ def governor(usage, hist, now, g=None, prev=None, wins=None, stale_since=None, b
     if mode == "5h+week" and fresh: why += "; new 5h window"
     if wk >= g["week_stop"]:
         stop = True; why = f"week {wk:.0f}% >= {g['week_stop']:.0f}%: no new run until the weekly reset"   # #698 week hard stop
-    gv = {"lanes": lanes, "stop": stop, "pct": pct, "reset": reset, "mode": mode, "need": parts["need"], "n_hi": parts["n_hi"], "n_week": parts["n_week"],
+    gv = {"lanes": lanes, "stop": stop, "pct": pct, "reset": reset, "mode": mode, "need": parts["need"], "n_hi": parts["n_hi"], "n_lo": parts["n_lo"], "n_week": parts["n_week"],
           "reserve": parts["reserve"], "c": parts["c"], "ready": ready, "target": g["cap_5h"], "week_pct": wk, "week_reset": wreset, "why": why, "now": now,
           "projected": None if pct is None else pct + g["k"] * g["b"] * max(lanes, busy) * h5, "week_projected": None}
     return week_gate(gv, g, stalled_5h(usage, hist) if mode == "5h+week" else False)
@@ -671,6 +673,8 @@ def stop_filter(chosen, gv):
     ok = lambda c: "express" in c.get("labels", []) and "canary" not in c.get("labels", [])
     return [c for c in chosen if ok(c)] if (gv.get("pct") or 0) < 100 and (W is None or W < 98) else []
 
+AI_LABELS = {}      # #707: issue number -> labels, filled by run_pass for the AI governor floors
+
 def governor_pass(remote_busy, now=None, ready=None):
     """Read .runs/usage.json, keep a sample in .runs/usage_hist.jsonl, write .runs/governor.json. Returns the governor dict; never raises."""
     now = now or time.time()
@@ -695,6 +699,13 @@ def governor_pass(remote_busy, now=None, ready=None):
     except Exception: prev_mode = None
     gv = governor(usage, hist, now, prev=prev, wins=wins, stale_since=stale_since, busy=remote_busy, ready=ready)
     if DRY: return gv
+    try:                                             # #707: the AI step decides inside the core's bounds; any failure -> the core alone
+        import ai_governor as AG
+        if gv.get("n_hi") is not None and not gv.get("stop"):
+            AG.maybe_start(gv, now)
+            gv = AG.overlay(gv, now, lambda n: AI_LABELS.get(n, []))
+            AI_ORDER.clear(); AI_ORDER.update({n: k for k, n in enumerate((gv.get("ai") or {}).get("order", []))})
+    except Exception: pass
     try:
         RUNS.mkdir(exist_ok=True)
         sp = gv["pct"] if gv["pct"] is not None else (usage or {}).get("five_h_pct")     # #704: samples go on while stale (the frozen check needs them)
@@ -2481,7 +2492,11 @@ def run_pass():
         for m, step in auto_resume(issues, resume_lookup, set_labels, lambda k, b: gh("issue", "comment", str(k), "--body", b), tell_orchestrator):
             log_line(f"{now()} #{m}: auto-resume at {step}")
     busy = [i["number"] for i in issues if "in-progress" in i["labels"]]
+    AI_LABELS.clear(); AI_LABELS.update({i["number"]: i["labels"] for i in issues})
     gv = governor_pass(remote_busy(busy), ready=ready_count(issues))         # #239: remote lane count from the 5h usage (#277: a run waiting for a core slot holds no cloud lane)
+    for r in (gv.get("ai") or {}).get("raise", []):          # #707: raises only add model:/effort: labels above the inbox ones
+        for i in issues:
+            if i["number"] == r["issue"]: i["labels"] += [f"model:{r['model']}"] * bool(r.get("model")) + [f"effort:{r['effort']}"] * bool(r.get("effort"))
     pairs = pass_now(issues, gv)                  # #279: the same lane check as the watchdog (#137 refusal pause, #293 PC load, #269 stop)
     wmap = {c["number"]: w for c, w in pairs}
     chosen = [c for c, _ in pairs]
