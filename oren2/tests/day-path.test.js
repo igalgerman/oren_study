@@ -255,7 +255,8 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  const m3=await p.evaluate(()=>({scr:window.__scr.slice(),home:!document.querySelector('#sHome').hidden,end:!!document.querySelector('#sHome .bigbtn.huge')&&document.querySelector('#sHome .bigbtn.huge').textContent}));
  ok('#388 a 3-mission path is walked without seeing home; home comes at the end with the story ending',m3.home&&m3.scr.indexOf('sHome')===m3.scr.length-1&&/סוֹף הַסִּפּוּר/.test(m3.end||''),JSON.stringify(m3));
  // --- #832: a story that is a path step: after its questions "continue" goes to the next path mission; from the building it goes to the stories list ---
- const answerStory=async()=>{await p.evaluate(()=>{document.getElementById('ov').hidden=true;[...document.querySelectorAll('#sTal .bigbtn')].pop().click();});await sleep(200);
+ const answerStory=async()=>{await p.evaluate(()=>{document.getElementById('ov').hidden=true;});
+   for(let c=0;c<4&&await p.evaluate(()=>!!document.querySelector('#sTal .stgo'));c++){await p.evaluate(()=>document.querySelector('#sTal .stgo').click());await sleep(200);}/* #731: a long story is read in chapters */
    for(let n=0;n<12&&await p.evaluate(()=>document.getElementById('ov').hidden&&!!window.__quiz&&!!window.__quiz.wrap.isConnected);n++){await sleep(60);await p.evaluate(()=>{const q=window.__quiz;q.wrap.querySelectorAll('.chs .chb')[q.ans].click();});await sleep(250);}
    await sleep(400);};
  await p.evaluate(()=>{const T=window.TAL,O=window.OREN;window.__started=[];const a=window.__nx=T.dailyPool().find(id=>!/^(write-trace|math)$/.test(id)&&!/^story-/.test(id));const r=T.ACT[a].run;T.ACT[a].run=bk=>{window.__started.push(a);return r(bk);};
