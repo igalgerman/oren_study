@@ -16,6 +16,8 @@ GAME_REPO, INFRA_REPO = "igalgerman/learn-quest", "igalgerman/oren_study"
 TRAILER = "Synced-From: "
 
 def gh_run(cmd, input=None):
+    import scrub                                         # #783: the kid's name never reaches a GitHub write
+    cmd, input = scrub.scrub_cmd(cmd, input)
     r = subprocess.run(cmd, capture_output=True, text=True, input=input)
     return r.returncode, (r.stdout or r.stderr)
 RUN = gh_run          # tests swap in a fake gh
