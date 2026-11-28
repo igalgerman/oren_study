@@ -4173,7 +4173,7 @@ function quiz(o){if(o.lesson&&window.LESSONS&&!o._ls){o._ls=1;return window.LESS
   const nQ=o.n;while(qs.length<nQ&&t++<400){const q=gen();const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k)||(asked.has(k)&&t<300))continue;seen.add(k);qs.push(fit(q));}
   let i=0,err=0,gems=0,lock=false,tries=0,HB=null;
   /* #681 hero challenge (friend.js HERO): fast = right answers in a row on the first try in under 8 s; hero 0 not yet, 1 asked, 2 playing, 3 over; once per mission */
-  let fast=0,hero=0,hLeft=0,hok=0,hn=0,lv0=lv;const HR=()=>window.FRIEND&&window.FRIEND.HERO;
+  let fast=0,hero=0,hLeft=0,hok=0,hn=0,lv0=lv;const HR=()=>window.FRIEND&&window.FRIEND.HERO&&(window.__hero===true||(window.__hero!==false&&!navigator.webdriver))?window.FRIEND.HERO:null;/* off in automated browsers (suites answer fast) unless a test sets __hero=true */
   const heroLog=y=>{try{const D=window.DAYLOG,d=new Date();if(D&&D.add)D.add(O.today(),[d.getHours()*60+d.getMinutes(),o.id,0,0,0,0,'h',y?{hr:'y',ok:hok,n:hn}:{hr:'n'}]);if(O.track)O.track('hero',{m:o.id,y:y?1:0,ok:hok,n:hn});O.persist();}catch(e){}};
   const heroEnd=()=>{if(hero!==2)return;hero=3;if(ask){lv=lv0;for(let j=i+1;j<qs.length;j++)fit(qs[j]);}heroLog(1);wrap.classList.remove('hero');};
   const heroStart=()=>{hero=2;hLeft=Math.min(HR().LEN,qs.length-i);if(ask){lv0=lv;lv=ADAPT[o.id];for(let j=i;j<qs.length;j++)fit(qs[j]);}};

@@ -445,7 +445,7 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
     F.stepStart(1); const a = F._lead(''); O.showMap(); return { a, want: window.STORYMIX.wordSay('red') }; });
   ok('#423 the path step: the friend says the scene word after the opening line', st423.a.split('⁣').includes(st423.want), JSON.stringify(st423));
   // --- #681 hero challenge: after 3 fast right answers in a row one offer per mission (yes / not now); a miss costs nothing; logged + parent row ---
-  const H = await p.evaluate(async () => { const O = window.OREN, T = window.TAL, F = window.FRIEND, sl = ms => new Promise(r => setTimeout(r, ms)); const out = {};
+  const H = await p.evaluate(async () => { window.__hero = true; const O = window.OREN, T = window.TAL, F = window.FRIEND, sl = ms => new Promise(r => setTimeout(r, ms)); const out = {};
     const mk = id => { let n = 0; T.quiz({ id, title: 't', n: 9, back: () => {}, gen: () => { n++; return { pr: 'שאלה ' + n, opts: ['א', 'ב', 'ג'], ans: n % 3, key: id + n }; } }); };
     const W = () => window.__quiz.wrap, click = async (right, slow) => { const q = window.__quiz; if (slow) { /* the question has been open a long time */ } const w = q.wrap, r = q.ans; const bs = [...w.querySelectorAll('.chs .chb')]; await sl(30); const t0 = Date.now(); bs[right ? r : (r + 1) % 3].click(); await sl(200); };
     const next = () => sl(1500);
@@ -470,6 +470,7 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
   ok('#681 "not now": the normal question goes on, never a second offer in the same mission, logged as hr n', H.afterNo && !H.twice && JSON.stringify(H.rowA) === '[{"hr":"n"}]', JSON.stringify([H.afterNo, H.twice, H.rowA]));
   ok('#681 slow right answers never trigger the offer', !H.slowOffer && !H.rowB);
   ok('#681 "yes": a hero round; a miss ends it at once, back to the normal level with no loss, logged (hr y, 0 of 1)', H.heroOn && H.missEnds && H.afterMiss && JSON.stringify(H.rowC) === '[{"hr":"y","ok":0,"n":1}]', JSON.stringify([H.heroOn, H.missEnds, H.afterMiss, H.rowC]));
+  await p.evaluate(() => { window.__hero = false; });
   const HV = await p.evaluate(() => { const D = window.DAYLOG; return [D.rowHTML([600, 'sci-float', 0, 0, 0, 0, 'h', { hr: 'y', ok: 2, n: 3 }]), D.rowHTML([601, 'sci-float', 0, 0, 0, 0, 'h', { hr: 'n' }]), window.FRIEND.speakList().includes(window.FRIEND.HERO.ask), window.FRIEND.HERO.ask, window.FRIEND.HERO.yes, window.FRIEND.HERO.no]; });
   ok('#681 the parent view shows the answer and the round; kid text has nikud and is in the pregen list', /אתגר גיבורים: 2 מתוך 3/.test(HV[0]) && /דחה אתגר גיבורים/.test(HV[1]) && HV[2] && [HV[3], HV[4], HV[5]].every(t => NIK.test(t)), HV.slice(0, 2).join(' | '));
   ok('#572 no page errors', !errs.length, errs.join(' | '));
