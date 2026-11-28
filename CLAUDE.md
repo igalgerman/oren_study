@@ -24,6 +24,9 @@
 ## Rules that hold on every screen (#745)
 - An issue about something that must hold on every screen (voice, back/forward, help) gets this Acceptance point: "an automatic test walks every screen and fails with the list of screens that break the rule". Use the helper `oren2/tests/walk.js` (example: `tests/walk.test.js`). Not just the screens you looked at.
 
+## Play data never goes to GitHub (#786)
+- Play data never goes to GitHub: the play log, play numbers, the kid's answers or words, session recordings and per-day summaries are written ONLY to the private data folder of `tools/playlog.py` (its `HOME`), never to an issue, PR, comment, label, commit or file in this repo. A finding posted to GitHub is a conclusion about the game, as a task or proposal ('make mission X easier'), with no raw numbers, answers, minutes per day or quoted words of the kid. Cloud sessions post only the conclusion line (the detail can be recomputed with the read key). CI: `tools/ci/test_no_playdata_to_github.py` (#786).
+
 ## Language
 - Talk to the user in English.
 - Kid-facing text in Hebrew with correct nikud; parent-facing text can be without nikud.
