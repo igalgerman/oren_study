@@ -27,7 +27,7 @@ livepanel 90              # #612 three pages through a fake save server: 4 activ
 network 60                # #434 slow network (throttled) + offline (service worker, voice from the device, save after reconnect): ~18 s alone
 english2-desktop 60       # #425 second-tap slow replay (~3 s), #592 leave-round wait (5 s): ~44 s under load
 english2-phone 60         # same file on the phone viewport: ~43 s
-reading 60                # 42 checks: reading mode + #355 stories + #420 story words (card, tap, next-day practice, pregen) + #731 story chapters (one story played, ~2 s): ~29 s under load
+reading 60                # 42 checks: reading mode + #355 stories + #420 story words (card, tap, next-day practice, pregen) + #731 story chapters + the story-3 / story-11 path missions walked (~8 s): ~35 s under load
 readhelp 60               # #613 the reading-help setting: 29 checks, 3 modes x story + sentence, the 5 options, sync: ~15 s alone
 kidskip 60                # #616 Oren's skip button: 24 checks, quiz + math skips, the limit, the setting, the day view: ~10 s alone
 gaps-desktop 90           # #419 adds the rhymes checks (400 generated questions, voice timing ~5 s, a round of 5): ~38 s alone
