@@ -23,6 +23,9 @@ LIMITED = RUNS / "gh_limited.json"   # #469: {"until": {who: ts}, "hits": [[ts, 
 BOTH_WAIT = 5              # s: both identities limited -> wait this, then retry
 KEEP_CALLS = 7200          # s of gh_calls.log kept (enough to find a burst afterwards)
 OTHER = {"app": "owner", "owner": "app"}
+OWNER_MIN_PCT = 50         # #911: a bot uses the owner login only above this % GraphQL left (it is the login of every Claude session and git)
+STALE_LIMITED = 600        # #911: a read of a limited app is answered from a cache up to this old (s) instead of the owner login
+ROLLUP_FINAL = ("SUCCESS", "FAILURE", "ERROR")   # #911: a PR's cached check rollup is final (the real `gh pr checks` decides)
 
 import repos
 REPO, GAME = repos.INFRA, repos.GAME      # #792: INFRA (backlog) and GAME (game PRs; "" = one-repo mode), from config.toml only
@@ -54,6 +57,23 @@ def quick_left():
     """Seconds left inside quick(), else None."""
     d = getattr(_TICK, "deadline", None)
     return None if d is None else max(0.0, d - _clock())
+
+class gate_read:
+    """#911: inside, a read is an owner-gate read (owner_q.comments): it may use the owner login when the app is limited."""
+    def __enter__(self): self.prev = getattr(_TICK, "gate", False); _TICK.gate = True; return self
+    def __exit__(self, *a): _TICK.gate = self.prev
+
+def owner_pct():
+    """Owner login GraphQL left in % from the cache, None when unknown."""
+    r = ((load() or {}).get("rate_owner") or {}).get("graphql")
+    return round(100 * r[0] / r[1]) if r and r[1] else None
+
+def owner_allowed(cmd):
+    """#911: may a bot fall back to the owner login for this call? Only a write or a gate read, and only above OWNER_MIN_PCT
+    (unknown budget counts as allowed: a question to the owner must not wait)."""
+    if not (is_write(cmd) or getattr(_TICK, "gate", False)): return False
+    p = owner_pct()
+    return p is None or p > OWNER_MIN_PCT
 
 def _limits():
     try: return json.loads(LIMITED.read_text(encoding="utf-8"))
@@ -101,12 +121,23 @@ def is_write(cmd):
     return len(cmd) > 2 and cmd[2] in _WRITE_SUB.get(cmd[1], ())
 
 def write_target(cmd):
-    """The issue/PR number a write touches ('*' = unknown / many, '' = no issue/PR data: labels, workflow runs)."""
+    """The issue/PR number a write touches ('' = no issue/PR data: labels, workflow runs; 'new' = a created issue/PR: only lists change;
+    '*' = unknown, #911: only when no number can be found in the command)."""
     if len(cmd) > 1 and cmd[1] in ("label", "run"): return ""
     pre = "g:" if GAME and any(GAME in str(a) for a in cmd) else ""       # #792: GAME PR 5 and INFRA issue 5 are two things
-    if len(cmd) > 3 and cmd[1] in ("issue", "pr") and str(cmd[3]).lstrip("#").isdigit(): return pre + str(cmd[3]).lstrip("#")
+    if len(cmd) > 2 and cmd[1] in ("issue", "pr") and cmd[2] == "create": return "new"
+    if len(cmd) > 2 and cmd[1] in ("issue", "pr"):
+        skip = False
+        for a in cmd[3:]:                                    # the first positional number, flag values skipped (`--repo X 911`)
+            a = str(a)
+            if skip: skip = False; continue
+            if a.startswith("-"): skip = "=" not in a and a not in ("--squash", "--auto", "--merge", "--rebase", "--admin", "--delete-branch", "--web", "--disable-auto"); continue
+            if a.lstrip("#").isdigit(): return pre + a.lstrip("#")
     m = next((re.search(r"/(?:issues|pulls)/(\d+)", a) for a in cmd if re.search(r"/(?:issues|pulls)/(\d+)", a)), None)
-    return pre + m[1] if m else "*"
+    if m: return pre + m[1]
+    if len(cmd) > 2 and cmd[1] == "api" and any(re.search(r"/(?:issues|pulls)$", str(a)) for a in cmd): return "new"   # POST .../issues
+    nums = {m2 for a in cmd for m2 in re.findall(r"(?:^|[=\s])(?:number|issueNumber|prNumber|n)=(\d+)$", str(a))}
+    return pre + nums.pop() if len(nums) == 1 else "*"
 
 def _append(path, line):
     try:
@@ -145,6 +176,7 @@ def _calls():
     out = []
     for l in _lines(CALLS):
         f = l.split()
+        if len(f) > 1 and f[1] == "cost": continue                      # #911: refresh cost lines are not calls
         try: out.append((float(f[0]), f[1] if len(f) > 1 else "?", f[2] if len(f) > 2 else "?", f[3] if len(f) > 3 else ""))
         except (IndexError, ValueError): pass
     return out
@@ -206,13 +238,13 @@ def _save(c):
             if i == 4: raise
             time.sleep(0.2)
 
-def _usable(now):
+def _usable(now, max_age=None):
     c = load()
-    return c if c and now - c.get("ts", 0) <= MAX_AGE else None
+    return c if c and now - c.get("ts", 0) <= (MAX_AGE if max_age is None else max_age) else None
 
-_COMMENTS = "comments(last:100){totalCount nodes{body createdAt url author{login} reactionGroups{content users(first:20){totalCount nodes{login}}}}}"   # #637: url + reactions (owner_q)
+_COMMENTS = "comments(last:20){totalCount nodes{body createdAt url author{login}}}"   # #911: no reaction users (owner_q.comments reads them itself), the last 20 only (more -> comments_cut -> real gh)
 _PRS = (" prs:pullRequests(first:100,orderBy:{field:UPDATED_AT,direction:DESC})@include(if:$full){nodes{number url title headRefName body state isDraft"
-      " mergedAt createdAt updatedAt closedAt labels(first:30){nodes{name}} mergeable autoMergeRequest{enabledAt} closingIssuesReferences(first:5){nodes{number}} commits(last:1){nodes{commit{committedDate statusCheckRollup{state}}}} comments(last:50){totalCount nodes{body createdAt url author{login} reactionGroups{content users(first:20){totalCount nodes{login}}}}}}}"
+      " mergedAt createdAt updatedAt closedAt labels(first:30){nodes{name}} mergeable autoMergeRequest{enabledAt} closingIssuesReferences(first:5){nodes{number}} headRefOid commits(last:1){nodes{commit{committedDate statusCheckRollup{state}}}} comments(last:20){totalCount nodes{body createdAt url author{login}}}}}"   # #911: headRefOid for the CI wait; slim comments
       " openPrs:pullRequests(states:OPEN)@include(if:$full){totalCount}"
       " refs(refPrefix:\"refs/heads/lane/\",first:100,orderBy:{field:TAG_COMMIT_DATE,direction:DESC})@include(if:$full){pageInfo{hasNextPage} nodes{name target{... on Commit{committedDate}}}}")
 _GAME_Q = ' game:repository(owner:$go,name:$gr)@include(if:$hg){' + _PRS + '}'     # #792: the GAME repo's PRs in the SAME query: no second call a minute
@@ -221,7 +253,7 @@ _Q = ("query($o:String!,$r:String!,$oc:String,$cc:String,$wo:Boolean!,$wc:Boolea
       " nodes{number title body url state createdAt updatedAt closedAt labels(first:30){nodes{name}} " + _COMMENTS + "}}"
       " closed:issues(states:CLOSED,first:100,after:$cc,orderBy:{field:UPDATED_AT,direction:DESC})@include(if:$wc){totalCount pageInfo{hasNextPage endCursor}"
       " nodes{number title url state createdAt updatedAt closedAt labels(first:30){nodes{name}}}}"
-      " " + _PRS + "}" + _GAME_Q + "}")
+      " " + _PRS + "}" + _GAME_Q + " rateLimit{cost remaining}}")   # #911: the cost of every refresh is logged
 
 def _flat(node):
     d = dict(node)
@@ -247,9 +279,48 @@ def _query(run, full, open_cur=None, closed_cur=None, want_open=True, want_close
     rc, out = run(cmd)
     if rc: raise RuntimeError(f"gh graphql rc {rc}: {out.strip()[:200]}")
     try:
-        d = json.loads(out)["data"]
-        return {**d["repository"], "game": d.get("game")} if d.get("game") else d["repository"]
+        data = json.loads(out)["data"]
+        cost = (data.get("rateLimit") or {}).get("cost")
+        if cost is not None: _append(CALLS, f"{time.time():.0f} cost refresh graphql_cost={cost}")   # #911: measured, `ghcache.py top` shows it
+        return {**data["repository"], "game": data.get("game")} if data.get("game") else data["repository"]   # #792: GAME's PRs ride in the same call
     except (ValueError, KeyError, TypeError): raise RuntimeError(f"gh graphql: unexpected answer {out.strip()[:200]}")
+
+def refresh_costs(minutes=60, now=None):
+    """#911: the graphql cost (points) of each refresh in the last `minutes`, oldest first."""
+    now = time.time() if now is None else now
+    out = []
+    for l in _lines(CALLS):
+        f = l.split()
+        try:
+            if len(f) >= 4 and f[1] == "cost" and f[3].startswith("graphql_cost=") and now - 60 * minutes <= float(f[0]): out.append(int(f[3].split("=", 1)[1]))
+        except ValueError: pass
+    return out
+
+_GATED_C = "comments(last:100){totalCount nodes{body createdAt url author{login} reactionGroups{content users(first:20){totalCount nodes{login}}}}}"   # #637: reactions (owner_q)
+
+def gated_issues(opn):
+    """#911: the open issues whose cached comments need the reacting users: the ones holding an owner question (owner-gate issues)
+    and the owner_q questions issue itself. Everything else is cached without reactions."""
+    nums = {i["number"] for i in opn if any("<!-- owner-q:" in (c.get("body") or "") for c in i.get("comments") or [])}
+    try:
+        q = json.loads((RUNS / "owner_q.json").read_text(encoding="utf-8")).get("issue")
+        if q and any(i["number"] == int(q) for i in opn): nums.add(int(q))
+    except (OSError, ValueError, TypeError): pass
+    return sorted(nums)
+
+def _gated_comments(run, nums):
+    """One query for the comments (with reaction users) of the gated issues -> {number: flat issue fragment}."""
+    o, r = REPO.split("/", 1)
+    q = "query($o:String!,$r:String!){repository(owner:$o,name:$r){" + " ".join(f"i{n}:issue(number:{n}){{{_GATED_C}}}" for n in nums) + "} rateLimit{cost remaining}}"
+    rc, out = run(["gh", "api", "graphql", "-f", f"query={q}", "-f", f"o={o}", "-f", f"r={r}"])
+    if rc: return {}
+    try:
+        data = json.loads(out)["data"]
+        cost = (data.get("rateLimit") or {}).get("cost")
+        if cost is not None: _append(CALLS, f"{time.time():.0f} cost refresh graphql_cost={cost}")
+        repo = data["repository"]
+        return {n: _flat({"comments": repo[f"i{n}"]["comments"]}) for n in nums if repo.get(f"i{n}")}
+    except (ValueError, KeyError, TypeError): return {}
 
 def merge_closed(prev, new, open_nums, keep=CLOSED_KEEP):
     """Pure: closed issues = this refresh's page + the ones kept from before, minus issues open again; newest closedAt first."""
@@ -275,6 +346,15 @@ def refresh(run, now=None, run_owner=None):
         page = _query(run, False, open_cur=cur["endCursor"], want_closed=False)["open"]
         opn += [_flat(i) for i in page["nodes"]]; cur = page["pageInfo"]
     open_nums = {i["number"] for i in opn}
+    gated = gated_issues(opn)
+    if gated:                                                           # #911: reaction users only where an owner gate reads them
+        frag = _gated_comments(run, gated)
+        for i in opn:
+            f = frag.get(i["number"])
+            if f:
+                i["comments"] = f["comments"]
+                if f.get("comments_cut"): i["comments_cut"] = True
+                else: i.pop("comments_cut", None)
     prev = load() or {}
     closed = merge_closed(prev.get("closed") or [], [_flat(i) for i in repo["closed"]["nodes"]], open_nums)
     total, ccur = repo["closed"].get("totalCount", len(closed)), repo["closed"]["pageInfo"]
@@ -352,11 +432,11 @@ def _section(c, repo):
     if GAME and repo == GAME and c.get("game"): return {**c["game"], "open": [], "closed": [], "open_complete": True, "closed_total": 0}
     return None
 
-def answer(cmd, now=None):
-    """(0, json text) when the cache can answer this read exactly enough, else None (-> real gh)."""
+def answer(cmd, now=None, max_age=None):
+    """(0, json text) when the cache can answer this read exactly enough, else None (-> real gh). max_age: #911 a staler cache is fine."""
     if len(cmd) < 3 or cmd[0] != "gh" or is_write(cmd): return None
     now = time.time() if now is None else now
-    c = _usable(now)
+    c = _usable(now, max_age)
     if not c: return None
     dirty = _dirty_since(c["ts"])
     if cmd[1] == "api":
@@ -389,6 +469,18 @@ def answer(cmd, now=None):
     got = _pick(items, fields) if items is not None else None
     return (0, json.dumps(got, ensure_ascii=False)) if got is not None else None
 
+def pr_rollup(n, now=None, repo=None):
+    """#911: the cached check rollup of PR n: 'SUCCESS'|'FAILURE'|'ERROR'|'PENDING'|'EXPECTED'|'' (no checks yet), None when the cache cannot tell
+    (stale, PR missing, or a write touched it since the last refresh)."""
+    now = time.time() if now is None else now
+    c = _usable(now)
+    sec = _section(c, repo or REPO) if c else None                     # #792: GAME PR 5 and INFRA PR 5 are two rollups
+    if not c or sec is None or {("" if (repo or REPO) == REPO else "g:") + str(n), "*"} & _dirty_since(c["ts"]): return None
+    p = next((x for x in sec["prs"] if x["number"] == n), None)
+    if not p: return None
+    r = p.get("statusCheckRollup") or []
+    return (r[0].get("state") or "") if r else ""
+
 def issue_over_cached(n, since, now=None):
     """#234 from the cache: True/False when known, None when the cache cannot tell (-> the GraphQL check)."""
     now = time.time() if now is None else now
@@ -407,6 +499,11 @@ def call(cmd, raw, now=None, sleep=None, alt=None, who="app"):
     if not cmd or cmd[0] != "gh": return raw()
     hit = answer(cmd, now)
     if hit: return hit
+    if alt and who == "app" and not owner_allowed(cmd):          # #911: the owner login stays free for the sessions
+        alt = None
+        if is_limited("app", now):
+            hit = answer(cmd, now, max_age=STALE_LIMITED)        # the app is limited: a cache up to 10 min old, else wait for the reset
+            if hit: return hit
     ids = [(who, raw)] + ([(OTHER.get(who, "owner"), alt)] if alt else [])
     if alt and is_limited(ids[0][0]) and not is_limited(ids[1][0]): ids.reverse()   # the free budget first (reads and writes)
     caller, tries = caller_of(cmd), 1 if tick_cap() else TRIES
@@ -439,12 +536,16 @@ def status_line(c, calls, now=None, by=None):
     parts, low = [f"GitHub: {calls} calls/min{per}"], False
     ids = [("app ", c.get("rate") or {}), ("owner ", c["rate_owner"])] if c.get("rate_owner") else [("", c.get("rate") or {})]   # #363
     for who, rate in ids:
+        lim_until = _limits().get("until") or {}
+        until = lim_until.get(who.strip(), 0) if len(ids) > 1 else max(lim_until.values(), default=0)
         for k in ("graphql", "core"):
             if k in rate:
                 rem, lim = rate[k]
                 p = round(100 * rem / lim) if lim else 0
+                if until > now:                                    # #911: GitHub's own "already exceeded" answer beats the cached reading
+                    rem, p = 0, 0; parts.append(f"{who}{k} 0/{lim} (0%, limited until {time.strftime('%H:%M', time.localtime(until))} by GitHub's answer)")
+                else: parts.append(f"{who}{k} {rem}/{lim} ({p}%)")
                 low = low or p < ALARM_PCT
-                parts.append(f"{who}{k} {rem}/{lim} ({p}%)")
     age = int(now - c.get("ts", 0))
     parts.append(f"cache {age} s old")
     if low: parts.append(f"ALARM GitHub budget < {ALARM_PCT}%")

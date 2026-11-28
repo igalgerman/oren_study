@@ -121,7 +121,7 @@ export const register: Register = on => {
           panel: panel({
             now, open: open ?? [], closed, prs, wins: windows, cloud, events: parseEvents(await readText(`${RUNS}/stats.jsonl`)), where,
             gov: parseGov(await readText(`${RUNS}/governor.json`)) as Gov | null, limits, questions, questionIssue, pc, refusedAt, desks: parseGov(await readText(`${RUNS}/desks.json`))?.text ?? '',   // #306
-            canary: parseGov(await readText(`${RUNS}/canary.json`))?.text ?? '',   // #330
+            canary: [parseGov(await readText(`${RUNS}/progress_alarm.json`))?.text, parseGov(await readText(`${RUNS}/canary.json`))?.text].filter(Boolean).join(' · '),   // #330 + #891 (no-progress alarm)
             cfg: parseConfig(await readText(CONFIG)),
           }),
           errors, updatedAt: now,

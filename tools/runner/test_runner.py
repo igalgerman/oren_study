@@ -373,6 +373,26 @@ assert r.integrate_with_resolve(lambda: next(_mr), lambda f: True, 2)[0] == "fai
 _mr = iter([(2, "CONFLICTS"), (0, "ok")])
 assert r.integrate_with_resolve(lambda: next(_mr), lambda f: True, 2)[0] == "merged"            # merge conflict -> resolve round -> retry -> merged
 assert _cm([_ck("pending")] * 99, timeout_s=60, poll_s=30)[0] == ("timeout",)
+# #911: the CI wait polls the cache's rollup; `gh pr checks` only at a final state, when unknown, or every 120 s as a safety net
+_t, _real, _st = [1000.0], [], ["PENDING"]
+def _real_checks(): _real.append(_t[0]); return [{"name": "tests", "bucket": "pending"}]
+_gc = r.cached_checks(30, _real_checks, lambda n: _st[0], clock=lambda: _t[0])
+for _ in range(3): _t[0] += 30; assert r.ci_verdict(_gc()) == "pending" and not _real
+_t[0] += 30; _gc()
+assert len(_real) == 1 and _real[0] == 1120.0, f"pending: no `gh pr checks` before the 120 s safety net: {_real}"
+_t[0] += 60; _gc(); assert len(_real) == 1, "pending again: cache (the safety clock restarted at the real call)"
+_t[0] += 60; _gc(); assert len(_real) == 2, "120 s later: safety net"
+for _s in ("SUCCESS", "FAILURE", "ERROR"): _st[0] = _s; _n = len(_real); _gc(); assert len(_real) == _n + 1, f"a final rollup ({_s}) asks the real checks"
+_st[0] = None; _n = len(_real); _gc(); assert len(_real) == _n + 1, "unknown rollup (stale cache / dirty): real call"
+_t2, _real2 = [0.0], []
+_gc2 = r.cached_checks(1, lambda: _real2.append(1) or [], lambda n: "PENDING", clock=lambda: _t2[0])
+for _ in range(13): _t2[0] += 60; _gc2()          # 13 minutes of one lane in the CI wait
+assert len(_real2) <= 7, _real2                     # 13 lanes x ~0.5 real call a minute = 6.5 a minute (target <= 15)
+_sl = []
+_it = iter([_ck("pending")] * 3 + [_ck("pass")])
+assert r.ci_merge(lambda: next(_it), lambda: None, lambda: True, _sl.append, poll_s=30, pending_poll_s=60) == ("merged",) and _sl == [60, 60, 60], _sl
+assert r.pr_field('{"mergeable": "CONFLICTING"}', "mergeable") == "CONFLICTING" and r.pr_field("gh: error", "mergeable") == "" and r.pr_field("[]", "x") == ""
+assert r.pr_field(_json.dumps({"headRefOid": "a" * 40}), "headRefOid") == "a" * 40
 assert r.deploy_needed("a", "b") and not r.deploy_needed("b", "b") and r.deploy_needed("", "b") and not r.deploy_needed("a", "")
 assert r.conflict_files("CI RED\nc0\n") == ["c0"]
 assert r.integrate_with_resolve(iter([(6, "CI RED\nc0\n"), (0, "ok")]).__next__, lambda f: f == ["c0"], 2)[0] == "merged"
@@ -1750,3 +1770,50 @@ assert r.floors("worker", *r.apply_shift(1, "opus", "high", "core"), labels=()) 
 _src719 = inspect.getsource(r.process_locked)
 assert "if not upgrade:" in _src719 and "apply_shift(shift" in _src719 and "shift=shift" in _src719 and '", shift +1"' in _src719   # upgraded task keeps its rung; shown in stat + comment
 assert r.governor_now(now=0)["shift"] in (0, 1)
+
+# #841: a cloud session with no sign of life for dead_minutes goes back to the queue; 2 dead lanes in 30 min pause starts
+_dead_s = r.DEAD_MINUTES * 60
+assert r.DEAD_MINUTES == 20
+_t = [0]
+_sl = lambda s: _t.__setitem__(0, _t[0] + s)
+_res = r.wait_remote(lambda: {"state": "working"}, _sl, lambda: _t[0], 3 * 3600, 60, life=lambda: "same", dead_s=_dead_s)   # silent: dead at 20 min
+assert _res["state"] == "dead" and _t[0] == 20 * 60 and _res["minutes"] == 20, (_res, _t)
+_t[0] = 0                                                                                                                    # a commit at 15 min: keeps waiting
+_res = r.wait_remote(lambda: {"state": "working"}, _sl, lambda: _t[0], 3 * 3600, 60, life=lambda: "c1" if _t[0] < 900 else "c2", dead_s=_dead_s)
+assert _res["state"] == "dead" and _t[0] == 15 * 60 + 20 * 60, _t     # the 20 min restart from the sign of life
+_t[0] = 0                                                                                                                    # a session that keeps showing life keeps the 3 h limit
+_res = r.wait_remote(lambda: {"state": "working"}, _sl, lambda: _t[0], 3 * 3600, 60, life=lambda: _t[0] // 600, dead_s=_dead_s)
+assert _res["state"] == "timeout" and _t[0] == 3 * 3600
+_t[0] = 0                                                                                                                    # a change of the status (a PR appears) is life too; a failing life() is not death
+_res = r.wait_remote(lambda: {"state": "working", "pr": {"number": 5} if _t[0] >= 600 else None}, _sl, lambda: _t[0], 3600, 60, life=lambda: "x", dead_s=_dead_s)
+assert _res["state"] == "dead" and _t[0] == 600 + 20 * 60
+def _boom(): raise OSError("gh down")
+_t[0] = 0
+assert r.wait_remote(lambda: {"state": "working"}, _sl, lambda: _t[0], 3600, 60, life=_boom, dead_s=_dead_s)["state"] == "timeout"
+# remote_worker: a dead session -> one comment (session link + minutes silent), Dead raised (the caller requeues; no second session here)
+_cm = []
+try: r.remote_worker(7, "pack", False, fake_start, lambda: {"state": "working"}, _sl, lambda: _t[0], 3 * 3600, 60, comment=_cm.append, life=lambda: "same", dead_s=_dead_s); assert False, "no Dead"
+except r.Dead as e: assert e.minutes == 20 and "session_x" in e.url
+assert len(_cm) == 1 and "session_x" in _cm[0] and "20 min" in _cm[0], _cm
+# dead lanes: 2 within 30 min -> no new cloud starts for 30 min, why = 'dead lanes: 2', ONE alert per 3 h
+_st = {}
+_st, _n, _alert = r.note_dead(_st, 1000); assert (_n, _alert) == (1, False) and not r.dead_paused(_st, 1000)
+_st, _n, _alert = r.note_dead(_st, 1000 + 20 * 60); assert (_n, _alert) == (2, True) and r.dead_paused(_st, 1000 + 20 * 60)
+assert r.dead_why(_st, 1000 + 20 * 60) == "dead lanes: 2" and r.lanes_now(4, {}, 0, dead=_st) == 0 and r.lanes_now(4, {}, 0, dead={}) == 4
+assert not r.dead_paused(_st, 1000 + 20 * 60 + 30 * 60 + 1) and r.dead_why(_st, 1000 + 20 * 60 + 30 * 60 + 1) == ""
+_st, _n, _alert = r.note_dead(_st, 1000 + 25 * 60); assert _n == 3 and _alert is False          # at most one alert per 3 h
+_st2, _n, _alert = r.note_dead({}, 5000); _st2, _n, _alert = r.note_dead(_st2, 5000 + 31 * 60); assert _n == 1 and not r.dead_paused(_st2, 5000 + 31 * 60)   # 30 min apart: no pause
+_st3 = r.note_dead({**_st, "times": []}, 1000 + 3 * 3600 + 30 * 60)[0]; assert r.note_dead(_st3, 1000 + 3 * 3600 + 40 * 60)[2] is True     # 3 h later: alert again
+print("ok #841 dead sessions")
+# remote.life: comments + branch heads; a new commit changes it; an unreadable GitHub raises
+import remote as _rm
+_cn = [1]; _sha = ["a"]
+def _fake_gh(cmd):
+    if cmd[1] == "issue": return 0, json.dumps({"comments": [{}] * _cn[0]})
+    return 0, json.dumps([{"ref": "refs/heads/lane/7", "object": {"sha": _sha[0]}}] if cmd[2].endswith("heads/lane/7") else [])
+_s0 = _rm.life(7, _fake_gh); assert _rm.life(7, _fake_gh) == _s0
+_sha[0] = "b"; assert _rm.life(7, _fake_gh) != _s0
+_s1 = _rm.life(7, _fake_gh); _cn[0] = 2; assert _rm.life(7, _fake_gh) != _s1
+try: _rm.life(7, lambda c: (1, "err")); assert False
+except OSError: pass
+print("ok #841 remote.life")

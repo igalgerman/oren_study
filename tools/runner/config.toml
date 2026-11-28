@@ -5,6 +5,7 @@ data_repo = "igalgerman/family-vault"   # #792: DATA repo (private)
 remote = "origin"
 branch = "main"
 model = "sonnet"
+git_email = "4981680+igalgerman@users.noreply.github.com"   # #889: the only address sessions commit with (GitHub e-mail privacy push-block)
 local_lanes = 0                 # #133: worker windows on this PC (owner 26 Nov: 0, the PC froze; all workers in the cloud)
 remote_lanes = 6                # #133: cloud sessions (tools/runner/remote.py); a local lane busy + a remote slot free -> the worker runs in the cloud
 # #239/#705 usage governor: cloud lanes follow the remaining WEEK budget evenly, re-planned every pass (panel writes .runs/usage.json); the 5h window is only a cap
@@ -14,7 +15,7 @@ governor_reserve_release_h = 12
 governor_5h_cap = 97            # lanes never plan the 5h window past this % (a cap, not a goal)
 governor_ceiling = 16           # sanity ceiling against bugs only
 governor_week_stop = 97         # #698 owner 28 Nov: week at/above this %: no new run (runs in flight finish) until the weekly reset
-express_lanes = 2               # #72: extra lanes for issues labelled express (owner-approved), on top of the local + remote lanes (26 Nov: 2, two express P0s at once)
+express_lanes = 4               # #72: extra lanes for issues labelled express (owner-approved), on top of the local + remote lanes (26 Nov: 2; owner 28 Nov #918: 4, speed)
 max_core = 5                    # owner 28 Nov: keep 5 until sync+rebuild-before-review lands
 worktree_prefix = "C:/work/Oren_study/wt-"
 bash = "C:/Program Files/Git/bin/bash.exe"   # Git Bash (not WSL's bash)
@@ -22,6 +23,7 @@ extra_path = "/c/work/Oren_study/bin"        # python3 shim
 main_checkout = "C:/work/Oren_study/a"   # fast-forwarded after each integrate and every sync_minutes by the watchdog
 sync_minutes = 3
 stuck_hours = 2
+dead_minutes = 20               # #841: a cloud session with no sign of life (comment, commit, branch, status change) this long goes back to the queue
 park_minutes = 30               # a worker/reviewer waiting for the owner this long: issue parked (blocked + ready-for-human), lane freed, windows stay open
 hc = "C:/Users/97254/AppData/Local/Programs/herdr-core/hc.exe"   # herdr CLI; if missing the runner falls back to hidden `claude -p`
 parent = ""                     # herdr terminal that gets the notes (e.g. "t2g"); empty = the terminal that started run.cmd
@@ -36,6 +38,8 @@ recover_issue = 138              # #140: recover reports what it did in one comm
 observer_minutes = 10   # 0 = off
 ai_observer_minutes = 60   # #203: AI observer (ai_observer.py, headless Sonnet, read-only), findings to the orchestrator; 0 = off
 ai_observer_where = "cloud"     # #289: "cloud" = an hourly cloud scheduled task posts on the ai-observer issue, the watchdog relays it (no claude on the PC); "local" = headless run here
+progress_alarm_min = 60          # #891: ready work + no merge/PR/commit/close/RESULT this many minutes -> Telegram to the owner (progress_alarm.py)
+# progress_quiet_hours = "23-7"   # #891: local hours with no no-progress alarm (default: none)
 canary_minutes = 60              # #538: at most one canary run (canary.py) per this many minutes
 status_minutes = 10             # #306: cloud desks (desks.py): pinned links + live status every N min; keep-alive of the two cloud sessions; 0 = off
 desk_probe_hours = 12           # #306: a PING to each cloud desk this often; no answer -> a new session
