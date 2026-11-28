@@ -4243,7 +4243,7 @@ function dailyEnsure(){const s=S();if(s.daily&&s.daily.d===today()){const d=s.da
   const plan=S().set.plan;let t=[];
   if(plan&&plan.length){const used=new Set();t=plan.map(sp=>{if(sp==='math')return 'math';if(String(sp).startsWith('act:')){const aid=sp.slice(4);if(ACT[aid]&&dailyPool().includes(aid)&&!used.has(aid)){used.add(aid);return aid;}sp='any';}const pool=dailyPool().filter(id=>!used.has(id)&&(sp==='any'||ACT[id].b.id===sp));const id=pool.length?fitPick([...used],pool):pick(dailyPool().filter(x=>!used.has(x)));used.add(id);return id||'math';}).concat(cr);}
   s.daily={d:today(),t,done:t.map(()=>0),claimed:0,ch:t.length?'plan':0,cr:t.length?[]:cr};O.persist();return s.daily;}
-function dailyMark(id){const d=dailyEnsure();const i=d.t.indexOf(id);if(i>=0&&!d.done[i]){d.done[i]=1;}}
+function dailyMark(id){const d=dailyEnsure();(d.pl=d.pl||[]).includes(id)||d.pl.push(id);/* #634 pl = every mission played today, also one opened outside the path */const i=d.t.indexOf(id);if(i>=0&&!d.done[i]){d.done[i]=1;}}
 O.on('levelDone',(lv)=>{if(!lv||lv.type==='train')return;S().last={id:'math',d:today()};const d=dailyEnsure();const i=d.t.findIndex((x,k)=>x==='math'&&!d.done[k]);if(i>=0){d.done[i]=1;O.persist();}});
 /* ---------- map integration ---------- */
 O.on('map',m=>{const rs=m.querySelector('.reset');if(rs)rs.remove();if(window.TAL_noHome)return;m.querySelectorAll('.hello,.statline').forEach(e=>e.remove());m.querySelectorAll('.topbar .tool').forEach(t=>{if(/הַמַּמְלָכָה|הַגִּבּוֹר שֶׁלִּי/.test(t.textContent))t.remove();});});
@@ -5410,15 +5410,15 @@ function wpick(arr,n){const a=arr.slice(),out=[];while(out.length<n&&a.length){l
 /* 3 steps in the chosen domain + 1 surprise from another one ("together" = 1 together step + 2 surprises) */
 function choose(dm,first,quiet){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.bs|0)>0;let st=dm==='tog'?[togStep(true)]:first?[first]:[];
   /* #634 every path of the day is a full one (3 + a surprise), the next one too */
-  if(dm!=='tog')st=st.concat(stepsOf(dm,3-st.length,new Set([...d.t,...st])));
-  wpick(doms().filter(x=>x.id!==gid(dm)),dm==='tog'?2:1).forEach(o=>{st=st.concat(stepsOf(o.id,1,new Set([...d.t,...st])));});
+  if(dm!=='tog')st=st.concat(stepsOf(dm,3-st.length,new Set([...d.t,...(d.pl||[]),...st])));
+  wpick(doms().filter(x=>x.id!==gid(dm)),dm==='tog'?2:1).forEach(o=>{st=st.concat(stepsOf(o.id,1,new Set([...d.t,...(d.pl||[]),...st])));});
   /* #424 at most one English a day: English the path picks by itself goes (the English scene comes instead, below); English Oren picked himself (the building, "continue") stays */
   const isEn=x=>!!(ACT[x]&&ACT[x].b&&ACT[x].b.id==='eng'),noEn=a=>dm==='b:eng'?a:a.filter(x=>!isEn(x)||x===first);st=noEn(st);
   if(!st.length)st=['math'];
   /* a domain that rested yesterday: the path starts with it, where Oren stopped (once a day) */
-  if(!bonus&&!d.rv&&window.HEALTH){d.rv=1;const rv=window.HEALTH.review().find(x=>!d.t.includes(x)&&!st.includes(x));if(rv&&!isEn(rv))st=[rv].concat(st);}
+  if(!bonus&&!d.rv&&window.HEALTH){d.rv=1;const rv=window.HEALTH.review().find(x=>!d.t.includes(x)&&!(d.pl||[]).includes(x)&&!st.includes(x));if(rv&&!isEn(rv))st=[rv].concat(st);}
   /* #358 variety: a mission that would repeat the kind is swapped for the engine's next pick in this domain, then in the others */
-  st=T.vary(d.t,st,()=>{let ex=[];[dm,...wpick(doms().filter(x=>x.id!==gid(dm)),9).map(o=>o.id)].forEach(id=>{if(id!=='tog')ex=ex.concat(noEn(stepsOf(id,3,new Set([...d.t,...st,...ex]))).filter(x=>!ex.includes(x)));});return ex;});
+  st=T.vary(d.t,st,()=>{let ex=[];[dm,...wpick(doms().filter(x=>x.id!==gid(dm)),9).map(o=>o.id)].forEach(id=>{if(id!=='tog')ex=ex.concat(noEn(stepsOf(id,3,new Set([...d.t,...(d.pl||[]),...st,...ex]))).filter(x=>!ex.includes(x)));});return ex;});
   /* #424 one short English scene per path, once a day, while English is on for him */
   const sc=ACT['en-day'];st=noEn(st);
   if(!d.en&&!st.some(isEn)&&sc&&sc.inPath())st.push('en-day');if(st.some(isEn))d.en=1;
@@ -5428,7 +5428,7 @@ function choose(dm,first,quiet){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.
    or anything he did today), and a new full path starts at once in a domain the quiet balancing picks; stars, gems and the ship stay */
 function newDay(){const d=T.dailyEnsure();d.done=d.done.map(x=>x||2);d.bs=d.t.length;d.ch=null;const dm=(wpick(doms(),1)[0]||{id:'math'}).id;choose(dm,null,1);}
 function lastStep(){const l=T.S().last;if(!l)return null;if(l.id==='math')return nextLevel()?'math':null;const d=T.S().daily;/* #634 not a mission he already played today */
-  return T.dailyPool().includes(l.id)&&!(d&&d.d===O.today()&&d.t.includes(l.id))?l.id:null;}
+  return T.dailyPool().includes(l.id)&&!(d&&d.d===O.today()&&(d.t.includes(l.id)||(d.pl||[]).includes(l.id)))?l.id:null;}
 /* #657 a pick in "something else" opens that topic at once; it is put first among the open missions, so closing it leaves it as the next step of the path */
 function pickOther(dm){const d=T.dailyEnsure(),n0=d.t.length;choose(dm,null,1);if(d.t.length<=n0){home();return;}
   const mine=id=>dm==='math'?id==='math':dm==='tog'?/^tog:/.test(id):ACT[id]&&(String(dm).startsWith('b:')?ACT[id].b.id===dm.slice(2):domOf(id)===dm);
@@ -6182,9 +6182,9 @@ function cards(ex){const r=day();return DOMS.filter(d=>d.id!==ex&&!H.resting(d.i
 function goDom(dm){close();sfx.pop&&sfx.pop(3);
   if(dm==='math'){const lv=T.nextLevel&&T.nextLevel();if(lv){if(!O.save.story[lv.w.id+'-in'])O.showWorld(lv.w);else O.startLevel(lv);}else O.showJourney();return;}
   if(dm==='arcade'){window.TAL_arcade(O.showMap);return;}
-  const tl=T.S().tl,dt=((T.S().daily||{}).t)||[];let pool=T.dailyPool().filter(id=>H.domOf(id)===dm).sort((a,b)=>((tl[a]||{}).n|0)-((tl[b]||{}).n|0));
+  const tl=T.S().tl,dt=[...(((T.S().daily||{}).t)||[]),...(((T.S().daily||{}).pl)||[])];let pool=T.dailyPool().filter(id=>H.domOf(id)===dm).sort((a,b)=>((tl[a]||{}).n|0)-((tl[b]||{}).n|0));
   const nw=pool.filter(id=>!dt.includes(id));if(nw.length)pool=nw;   /* #634 not a mission he already played today */
-  const id=pool.length?O.pick(pool.slice(0,3)):null;if(id)T.ACT[id].run(O.showMap);else O.showMap();}
+  const id=pool.length?O.pick(pool.slice(0,3)):null;if(id){const d=T.dailyEnsure();(d.pl=d.pl||[]).includes(id)||d.pl.push(id);O.persist();}if(id)T.ACT[id].run(O.showMap);else O.showMap();}
 H.goDom=goDom;
 function chooser(cls,dm,head,sub,oneMore){const r=day();const el=lock('htopic '+cls,`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">🌙</span></div><h2>${head}</h2><div class="sub">${sub}</div>`);
   const row=h('div','hcards');cards(dm).forEach(d=>{const b=h('button','dcard',`<span class="dic"><span>${d.e}</span></span><b>${d.n}</b>`);b.style.setProperty('--dc',d.c);b.onclick=()=>goDom(d.id);row.appendChild(b);});el.firstChild.appendChild(row);

@@ -200,9 +200,9 @@ function cards(ex){const r=day();return DOMS.filter(d=>d.id!==ex&&!H.resting(d.i
 function goDom(dm){close();sfx.pop&&sfx.pop(3);
   if(dm==='math'){const lv=T.nextLevel&&T.nextLevel();if(lv){if(!O.save.story[lv.w.id+'-in'])O.showWorld(lv.w);else O.startLevel(lv);}else O.showJourney();return;}
   if(dm==='arcade'){window.TAL_arcade(O.showMap);return;}
-  const tl=T.S().tl,dt=((T.S().daily||{}).t)||[];let pool=T.dailyPool().filter(id=>H.domOf(id)===dm).sort((a,b)=>((tl[a]||{}).n|0)-((tl[b]||{}).n|0));
+  const tl=T.S().tl,dt=[...(((T.S().daily||{}).t)||[]),...(((T.S().daily||{}).pl)||[])];let pool=T.dailyPool().filter(id=>H.domOf(id)===dm).sort((a,b)=>((tl[a]||{}).n|0)-((tl[b]||{}).n|0));
   const nw=pool.filter(id=>!dt.includes(id));if(nw.length)pool=nw;   /* #634 not a mission he already played today */
-  const id=pool.length?O.pick(pool.slice(0,3)):null;if(id)T.ACT[id].run(O.showMap);else O.showMap();}
+  const id=pool.length?O.pick(pool.slice(0,3)):null;if(id){const d=T.dailyEnsure();(d.pl=d.pl||[]).includes(id)||d.pl.push(id);O.persist();}if(id)T.ACT[id].run(O.showMap);else O.showMap();}
 H.goDom=goDom;
 function chooser(cls,dm,head,sub,oneMore){const r=day();const el=lock('htopic '+cls,`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">🌙</span></div><h2>${head}</h2><div class="sub">${sub}</div>`);
   const row=h('div','hcards');cards(dm).forEach(d=>{const b=h('button','dcard',`<span class="dic"><span>${d.e}</span></span><b>${d.n}</b>`);b.style.setProperty('--dc',d.c);b.onclick=()=>goDom(d.id);row.appendChild(b);});el.firstChild.appendChild(row);
