@@ -33,5 +33,5 @@ jobs:
           bash cf/tools/deploy.sh 2>&1 | tee "$RUNNER_TEMP/deploy.log"
       - name: Summary
         run: |
-          python3 tools/ci/deploy_ci.py report "$RUNNER_TEMP/deploy.log" || true
+          python3 oren2/ci/deploy_ci.py report "$RUNNER_TEMP/deploy.log" || true
           echo "Preview: https://pr-${{ github.event.pull_request.number }}.oren-game.pages.dev" >> "$GITHUB_STEP_SUMMARY"

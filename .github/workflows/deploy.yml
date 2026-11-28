@@ -25,9 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: |
-            tools/ci
-            tools/runner
+          sparse-checkout: oren2/ci
       - id: plan
         env:
           GH_TOKEN: ${{ github.token }}
@@ -36,7 +34,7 @@ jobs:
         run: |
           export MAIN_SHA=$(git ls-remote origin refs/heads/main | cut -f1)
           export GREEN_SHA=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/tests.yml/runs?branch=main&event=push&status=success&per_page=1" --jq '.workflow_runs[0].head_sha // ""')
-          python3 tools/ci/deploy_ci.py plan
+          python3 oren2/ci/deploy_ci.py plan
 
   deploy:
     needs: plan
@@ -67,7 +65,7 @@ jobs:
         run: |
           export MAIN_SHA=$(git ls-remote origin refs/heads/main | cut -f1)
           export GREEN_SHA=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/tests.yml/runs?branch=main&event=push&status=success&per_page=1" --jq '.workflow_runs[0].head_sha // ""')
-          python3 tools/ci/deploy_ci.py guard
+          python3 oren2/ci/deploy_ci.py guard
       - name: Mark this sha as tried (the 15-min check never deploys it again)
         if: steps.guard.outputs.current == 'true'
         run: mkdir -p ~/.deploy-attempt && echo "${{ needs.plan.outputs.sha }}" > ~/.deploy-attempt/sha
@@ -92,12 +90,12 @@ jobs:
       - name: Summary
         if: steps.guard.outputs.current == 'true'
         id: report
-        run: python3 tools/ci/deploy_ci.py report "$RUNNER_TEMP/deploy.log"
+        run: python3 oren2/ci/deploy_ci.py report "$RUNNER_TEMP/deploy.log"
       - name: Live smoke check, deployment URL + production (page, save round trip then deleted, D1 bound, /api/tts/status; #150)
         # a failure fails this job: the GitHub deployment is failed (dashboard deploy event ok=false) and deploy-failed raises the P0 alarm
         if: steps.guard.outputs.current == 'true'
-        run: python3 tools/ci/deploy_ci.py smoke "${{ steps.report.outputs.url }}" https://oren-game.pages.dev
-      # #618: the fixed regression tour of the core experience on production (tools/ci/tour.js, real browser, desktop + phone).
+        run: python3 oren2/ci/deploy_ci.py smoke "${{ steps.report.outputs.url }}" https://oren-game.pages.dev
+      # #618: the fixed regression tour of the core experience on production (oren2/ci/tour.js, real browser, desktop + phone).
       # It never fails this job (the site is live already): a fail -> tour-failed opens a P0 bug (+ undo when the previous tour passed).
       - name: Previous tour result
         if: steps.guard.outputs.current == 'true'
@@ -117,9 +115,9 @@ jobs:
         run: |
           echo "prev=$(cat ~/.tour/last 2>/dev/null)" >> "$GITHUB_OUTPUT"
           { npm i --no-save --no-package-lock playwright && npx playwright install --with-deps chromium; } > "$RUNNER_TEMP/pw.log" 2>&1 || tail -20 "$RUNNER_TEMP/pw.log"
-          node tools/ci/tour.js https://oren-game.pages.dev > "$RUNNER_TEMP/tour.log" 2>&1 || true
+          node oren2/ci/tour.js https://oren-game.pages.dev > "$RUNNER_TEMP/tour.log" 2>&1 || true
           cat "$RUNNER_TEMP/tour.log"
-          python3 tools/ci/deploy_ci.py tour "$RUNNER_TEMP/tour.log"
+          python3 oren2/ci/deploy_ci.py tour "$RUNNER_TEMP/tour.log"
           mkdir -p ~/.tour; if grep -q '^TOUR: PASS' "$RUNNER_TEMP/tour.log"; then echo pass > ~/.tour/last; else echo fail > ~/.tour/last; fi
       - uses: actions/cache/save@v4
         if: steps.guard.outputs.current == 'true'
@@ -141,9 +139,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           sparse-checkout: |
-            tools/ci
+            oren2/ci
             tools/runner
-      - name: Names list present (#876)
+      - name: Names list present (#876; only where the infra tools/ tree exists, #794)
+        if: ${{ hashFiles('tools/runner/scrub.py') != '' }}
         env:
           PRIVATE_NAMES: ${{ secrets.PRIVATE_NAMES }}
         run: python3 tools/runner/scrub.py require || echo "::error::PRIVATE_NAMES secret is empty, the name scrub replaces nothing (#876)"
@@ -156,7 +155,7 @@ jobs:
           PREV: ${{ needs.deploy.outputs.prev }}
         run: |
           export TITLE=$(gh api "repos/$GH_REPO/commits/$SHA" --jq '.commit.message' | head -1)
-          python3 tools/ci/deploy_ci.py tour-issue
+          python3 oren2/ci/deploy_ci.py tour-issue
 
   deploy-failed:
     # one issue "Deploy failed" (P0): opened once, then commented on each new failure
