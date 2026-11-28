@@ -61,6 +61,8 @@ voice-audit-2 150          # #406 the other half of the activities + #610 the ex
 music2-desktop 60         # #615 play games first (4 games played through, unlock after 3 good rounds) + the theory levels: ~31 s
 music2-phone 60           # same file on the phone viewport: ~30 s
 fullday 60                # #634 a simulated 60-minute day on home (~40 missions) + 3 mission checks + 3 flag rounds: ~16 s
+runner-desktop 30         # #666 arcade runner: plays a full round (fast clock), keys + touch, #351 caps
+runner-phone 30           # same file on the phone viewport
 pinball-desktop 60       # #667 plays 3 balls to the drain with no input: ~10-20 s
 pinball-phone 60         # same file on the phone viewport
 arcade-desktop 90          # #668 air hockey round added (~15 s: countdown + mouse/key checks + a played round)

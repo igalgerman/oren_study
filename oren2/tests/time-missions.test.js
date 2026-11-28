@@ -24,7 +24,7 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  // time tab
  await p.evaluate(()=>window.TAL.parentPanel('time'));await sleep(200);await p.evaluate(()=>document.querySelectorAll('#sPar details').forEach(d=>d.open=true));await p.locator('#sPar .psec',{hasText:'הגבלה קבועה'}).locator('.pchip',{hasText:/^30$/}).click();await sleep(100);
  ok('daily limit set',await p.evaluate(()=>window.TAL.S().set.lim.daily===30));
- await p.locator('#sPar .bigbtn',{hasText:'+15'}).click();await sleep(100);ok('today +15',await p.evaluate(()=>window.TAL.S().set.lim.today.min===45));
+ await p.locator('#sPar .pbig .bigbtn').click();await sleep(100);ok('today: he has 5 more minutes (#658)',await p.evaluate(()=>{const t=window.TAL.S().set.lim.today;return t.add===5&&t.min===t.u+5;}));
  await p.evaluate(()=>document.querySelectorAll('#sPar details').forEach(d=>d.open=true));await p.locator('#sPar .pchip',{hasText:'כמו כל יום'}).click();await sleep(100);
  await p.locator('#sPar .bigbtn',{hasText:'יציאה'}).click();await sleep(300);
  ok('the top bar shows the time left',(await p.textContent('#hud .tpill')).includes('30 דַּקּוֹת'));
