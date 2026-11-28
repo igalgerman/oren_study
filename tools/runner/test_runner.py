@@ -1672,10 +1672,19 @@ assert "continue from it" not in _tasks[-1]                                     
 _sv = (r.gh, r.run, r.find_pr)
 try:
     _g = []
-    r.gh = lambda *a, **k: (_g.append(a), (0, json.dumps([{"number": 5, "isDraft": True}]) if a[:2] == ("pr", "list") else ""))[1]
+    r.find_pr = lambda n: 5                       # pass level: a draft PR (no RESULT) is not resumed into review; a ready PR is
+    r.gh = lambda *a, **k: (0, json.dumps({"number": 5, "state": "OPEN", "isDraft": True}))
+    assert r.resume_lookup(7) is None
+    _ch = r.open_pr_resumes([{"number": 7}], r.resume_lookup)
+    assert _ch == [{"number": 7}] and not r._resume_file(7, "resume").exists()   # started as a worker, no resume=review stored
+    r.gh = lambda *a, **k: (0, json.dumps({"number": 5, "state": "OPEN", "isDraft": False, "mergeable": "MERGEABLE", "headRefOid": "x", "commits": [], "comments": []}))
+    assert r.resume_lookup(7) is not None
+    _g = []
+    r.find_pr = lambda n: 5                                                                    # also a claude/* PR
+    r.gh = lambda *a, **k: (_g.append(a), (0, json.dumps({"isDraft": True}) if a[:2] == ("pr", "view") else ""))[1]
     assert r.draft_pr(7) == 5 and r.ensure_pr_ready(7) == 5 and ("pr", "ready", "5") in _g     # DONE + draft -> marked ready
     _g.clear(); _made = []
-    r.gh = lambda *a, **k: (_g.append(a), (0, "[]") if a[:2] == ("pr", "list") else (0, ""))[1]
+    r.gh = lambda *a, **k: (_g.append(a), (0, ""))[1]
     r.find_pr = lambda n: 9 if any(x[:2] == ("pr", "create") for x in _g) else None
     r.run = lambda cmd, **k: (0, "abc\trefs/heads/lane/7\n")
     assert r.ensure_pr_ready(7) == 9 and any(x[:2] == ("pr", "create") and "Fixes #7" in x[-1] for x in _g)   # DONE, pushed, no PR -> runner opens it

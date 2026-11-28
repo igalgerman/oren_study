@@ -1885,9 +1885,10 @@ def resume_lookup(n):
     """#264: pr_resume_info of issue n's open PR (lane/<n> or claude/*, #249 helper), or None."""
     pr = find_pr(n)
     if not pr: return None
-    rc, out = gh("pr", "view", str(pr), "--json", "number,state,mergeable,headRefOid,commits,comments")
+    rc, out = gh("pr", "view", str(pr), "--json", "number,state,isDraft,mergeable,headRefOid,commits,comments")
     try: pj = json.loads(out) if rc == 0 else {}
     except ValueError: return None
+    if pj.get("isDraft"): return None                 # #747: a draft PR has no RESULT yet: resume at worker (new session continues on the branch), never review
     return pr_resume_info(pj) if pj.get("state", "OPEN") == "OPEN" else None
 
 def migrate_human():
@@ -1904,11 +1905,12 @@ def find_pr(n):
     return remote.pr_for(n, run=run)[0]
 
 def draft_pr(n):
-    """#747: number of the DRAFT PR on lane/<n> (a worker that died early left it), else None."""
-    rc, out = gh("pr", "list", "--head", f"lane/{n}", "--state", "open", "--json", "number,isDraft")
-    try: prs = json.loads(out) if rc == 0 and out.strip() else []
-    except ValueError: return None
-    return next((p["number"] for p in prs if p.get("isDraft")), None)
+    """#747: number of issue n's open DRAFT PR (lane/<n> or a claude/* branch, via find_pr; a worker that died early left it), else None."""
+    pr = find_pr(n)
+    if not pr: return None
+    rc, out = gh("pr", "view", str(pr), "--json", "isDraft")
+    try: return pr if rc == 0 and json.loads(out).get("isDraft") else None
+    except (ValueError, AttributeError): return None
 
 def ensure_pr_ready(n):
     """#747: the worker said DONE: mark its draft PR ready, or open the PR from the pushed branch when it never did
@@ -2287,7 +2289,7 @@ def process_locked(issue, where="local"):
         for rnd in range(1, FIX_ROUNDS + 2):
             tfail = tfail0 and rnd == 1
             if step in ("resolve", "merge"): break
-            pr = find_pr(n) if step else ensure_pr_ready(n)      # #747: DONE -> ready / opened by the runner
+            pr = ensure_pr_ready(n)      # #747: DONE (also on resume) -> draft marked ready / PR opened by the runner
             if not pr: raise Blocked("worker said DONE but no open PR for #%d (lane/%d, the RESULT line's PR, or a PR body 'Fixes #%d')" % (n, n, n))
             reviewed["sha"] = gh("pr", "view", str(pr), "--json", "headRefOid", "-q", ".headRefOid")[1].strip()   # #185: the head the reviewer sees; the merge must match it
             if rnd == 1 and step == "fix":         # #264: the head's red VERDICT is known: fix first, then review
