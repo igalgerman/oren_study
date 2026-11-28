@@ -55,7 +55,7 @@ OQ.GH = fake_gh
 fc = A.RUN = FakeClaude("OBSERVER: #50 waits for a colour choice -> owner: choose blue or green\nOBSERVER: #51 red check -> worker: fix")
 assert A.run_once(told.append, logs.append, now=10**6) == ["OBSERVER: #50 waits for a colour choice -> owner: choose blue or green", "OBSERVER: #51 red check -> worker: fix"]
 cmd, kw = fc.calls[0]
-assert cmd[1:8] == ["-p", "--model", "sonnet", "--effort", "medium", "--no-session-persistence", "--tools"] and kw["timeout"] == 600 and "OBSERVER:" in kw["input"]
+assert cmd[1:8] == ["-p", "--model", "sonnet", "--effort", "medium", "--no-session-persistence", "--output-format"] and "--tools" in cmd and cmd[cmd.index("--output-format") + 1] == "json" and kw["timeout"] == 600 and "OBSERVER:" in kw["input"]
 assert "Bash(gh:*)" in cmd and "Bash(python tools/runner/remote.py status:*)" in cmd and "Bash(gh issue comment:*)" in cmd[cmd.index("--disallowedTools"):]
 assert "Edit" not in cmd and "Write" not in cmd
 assert "#51 red check" in A.LAST.read_text(encoding="utf-8") and len(told) == 1 and "#50" in told[0] and "#51" in told[0]

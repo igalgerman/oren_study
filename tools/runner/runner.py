@@ -743,7 +743,7 @@ def governor_pass(remote_busy, now=None, ready=None):
         RUNS.mkdir(exist_ok=True)
         sp = gv["pct"] if gv["pct"] is not None else (usage or {}).get("five_h_pct")     # #704: samples go on while stale (the frozen check needs them)
         if sp is not None:                           # #245: 16 h of samples = the current and the last two 5h windows
-            hist = [h for h in hist if now - h.get("at", 0) < 16 * 3600] + [{"at": now, "pct": float(sp), "reset": usage.get("five_h_reset"), "busy": remote_busy, "lanes": gv["lanes"]}]
+            hist = [h for h in hist if now - h.get("at", 0) < 16 * 3600] + [{"at": now, "pct": float(sp), "reset": usage.get("five_h_reset"), "busy": remote_busy, "lanes": gv["lanes"], "week": usage.get("week_pct")}]
             (RUNS / "usage_hist.jsonl").write_text("".join(json.dumps(h) + "\n" for h in hist), encoding="utf-8")
             wins = gov_windows(hist, events, now)
         (RUNS / "governor.json").write_text(json.dumps({**gv, **eff_fields(wins), "text": governor_text(gv) + eff_text(wins), "at": now}), encoding="utf-8")
@@ -1401,11 +1401,12 @@ class FileLock:
         self.path.unlink(missing_ok=True)
 
 def claude_hidden(prompt, cwd, tools, log, model=MODEL, effort=None):
-    cmd = [shutil.which("claude") or "claude", "-p", "--model", model, *(["--effort", effort] if effort else []), "--permission-mode", "auto",
+    cmd = [shutil.which("claude") or "claude", "-p", "--model", model, *(["--effort", effort] if effort else []), "--permission-mode", "auto", "--output-format", "json",
            "--disallowedTools", *DENY_TOOLS, "--allowedTools", *tools]
     # prompt goes via stdin; "--allowedTools" is variadic so keep it last
     rc, out = run(cmd, cwd=cwd, input=prompt, log=log, timeout=3 * 3600)
-    return out
+    import usage_entities as UE
+    return UE.unwrap(out, "local-run", model)
 
 # ---------- herdr terminals ----------
 HERDR_APP = CFG.get("herdr_app", r"C:\Users\97254\AppData\Local\Programs\herdr-app\herdr-app.exe")
