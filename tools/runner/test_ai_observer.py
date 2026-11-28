@@ -208,7 +208,7 @@ for k in range(1, 21):                                                          
 assert len(posts) == 1, posts
 A.relay(told.append, lambda s: None, t0 + 27 * 3600 + 60, gh=NOISSUE, api=API([]))
 assert len(posts) == 2, posts                                                     # 24 h later: once more
-# fallback-made comments do not prove the trigger: the fallback keeps running and the owner note keeps its 12 h repeat
+# fallback-made comments do not prove the trigger: the fallback keeps running and the owner note keeps its 24 h repeat
 FB = {"created_at": "2026-11-28T16:00:00Z", "body": A.FALLBACK_MARK + "\nno problems"}
 n0 = len(starts)
 A.relay(told.append, lambda s: None, t0 + 41 * 3600, gh=GH(), api=API([FB]))
@@ -316,5 +316,11 @@ A.TODO_ADD = lambda **kw: todo.append(kw) or True
 assert A.owner_note(100 * 3600) is True and len(todo) == 1 and todo[0]["kind"] == "step" and todo[0]["check"] == "trigger-seen"
 assert A.owner_note(100 * 3600 + 13 * 3600) is False and A.owner_note(100 * 3600 + 60) is False and len(todo) == 1 and len(tg) == 2
 assert oq_posts == []
+# a Telegram send that fails (0) is no notice: tried again on the next tick, not 24 h later
+A.TODO_ADD = None; A.STATE = tmp / "ai_observer.899e.json"; A.save_state({"relay_since": 0})
+A.TELEGRAM = lambda text: 0
+assert A.owner_note(100 * 3600) is False
+A.TELEGRAM = lambda text: tg.append(text) or 1
+assert A.owner_note(100 * 3600 + 60) is True and len(tg) == 3
 OQ.post = _orig_post
 print("ok 899")

@@ -223,7 +223,7 @@ def relay(tell, log, now, gh=None, api=None):
 
 # ---------- #525: the triggers never ran (no ai-observer issue at all on 27 Nov) ----------
 FALLBACK_MARK = "<!-- fallback #525 -->"   # the first line of a comment made by the runner's own fallback run (not the trigger)
-OWNER_SILENT_H, OWNER_REPEAT_H, FALLBACK_MIN = 3, 12, 60
+OWNER_SILENT_H, FALLBACK_MIN = 3, 60
 FALLBACK_PROMPT = ("Follow docs/agents/cloud-tasks.md, section AI observer, in igalgerman/oren_study. This is the runner's fallback "
                    f"run (#525: the scheduled task does not run): make the first line of your comment exactly {FALLBACK_MARK}")
 TELEGRAM = None     # text -> Telegram message; tests swap in a fake (None = telegram.send)
@@ -260,9 +260,10 @@ def owner_note(now):
         st = load_state(); st["todo_for"] = st.get("trigger_seen", "")
     else:
         if now - st.get("owner_told", 0) < NOTICE_H * 3600: return False
-        if TELEGRAM: TELEGRAM(text)
-        else:
-            import telegram; telegram.send(text)
+        send = TELEGRAM
+        if not send:
+            import telegram; send = telegram.send
+        if not send(text): return False                             # not sent: the next tick tries again
         st = load_state(); st["owner_told"] = now
     save_state(st)
     return True
