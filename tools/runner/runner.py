@@ -921,7 +921,7 @@ def live_proof(base="https://oren-game.pages.dev"):
     ok True = `LIVE: ...` seen on production; ok False = a check failed (the issue stays open); ok None = could not run (closes, line says so)."""
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     try:
-        rc, out = run([sys.executable, str(ROOT / "tools/ci/deploy_ci.py"), "smoke", base], timeout=300)
+        rc, out = run([sys.executable, str(ROOT / "oren2/ci/deploy_ci.py"), "smoke", base], timeout=300)
     except Exception as e:
         return None, f"LIVE: not checked ({day}): the automatic check could not run: {str(e)[:120]}"
     if rc == 0: return True, f"LIVE: production smoke ok on {base} ({day}): page loads, save round trip, D1 bound, voice status"
@@ -2283,7 +2283,7 @@ def find_pr_merged(n):
 def deploy_main(log):
     """After CI merges (#74): bring the integrate checkout to main, deploy ONCE (skipped when this sha is already deployed).
     #503: no rebuild + push to main here (that push raced other merges and ended runs BLOCKED): each PR carries its rebuilt
-    index.html files and CI (tools/ci/buildcheck.py) is red when they differ from a fresh build; deploy.sh builds from sources."""
+    index.html files and CI (oren2/ci/buildcheck.py) is red when they differ from a fresh build; deploy.sh builds from sources."""
     run(["git", "fetch", "-q", REMOTE], cwd=ROOT, log=log)
     if not (INTEG / ".git").exists():
         run(["git", "worktree", "prune"], cwd=ROOT); run(["git", "worktree", "add", "-B", "integrate", str(INTEG), f"{REMOTE}/{BRANCH}"], cwd=ROOT, log=log)

@@ -1,7 +1,7 @@
-"""#187 test gardener: candidate rules on fixtures, the issue it opens/updates, the weekly due check. Run: python3 tools/ci/test_test_garden.py"""
+"""#187 test gardener: candidate rules on fixtures, the issue it opens/updates, the weekly due check. Run: python3 tools/test_test_garden.py"""
 import calendar, sys, tempfile
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_garden as G
 
 DAY = 86400
