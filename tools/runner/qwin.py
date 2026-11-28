@@ -24,6 +24,10 @@ worker/reviewer PURPLE/cloud QUESTION:/intake/orchestrator). The watchdog calls 
   - #803 third channel, the chat with the inspector: `qwin.py chat-answer <key> "<answer>" --quote "<his exact words>"` runs only when
     its process tree goes back to the live inspector terminal (is_inspector); it writes a bot record `via=inspector-chat`, nothing
     else. The watchdog confirms it on Telegram (undo `בטל` within 10 min, `אשר` = at once) and only then (final marker) it is in force
+  - #894 a page that died (crash, kill, 24 h timeout) while its question is open is restarted by tick (backoff 1/2/5/10 min); a question
+    "answered" but still open 10 min later gets its page again; `qwin.py page <key>` starts / prints the page (the ping says so);
+    a reply that is a question back (ends with '?', names no option) is never an answer: relayed, the question stays open
+Usage: python tools/runner/qwin.py page <key>   (start or show the page of an open question)
 Usage: python tools/runner/qwin.py chat-answer <key> "<answer>" --quote "<quote>"   (the old `answer` CLI is gone, #803)
 """
 import json, os, re, signal, subprocess, sys, time
@@ -43,6 +47,8 @@ RESULT_S = 600                                        # #390: no PUSH-RESULT / '
 NO_IDLE_S = 600                                       # #390: no idle pushing session for 10 min -> logged once
 PUSHERS = ("inbox", "orchestrator")                   # #390: long-lived Remote Control sessions that send the phone push
 IDLE = ("idle", "done")
+BACKOFF_S = (60, 120, 300, 600)                       # #894: a dead page is restarted after 1, 2, 5, 10 min (max 1 per question per tick)
+CONFIRM_S = 600                                       # #894: "answered" but still open after 10 min (relay not confirmed) -> the page again
 STATE = R.RUNS / "qwin.json"
 DIR = R.RUNS / "questions"
 ASK = (HERE.parent / "ask" / "ask.py").as_posix()
@@ -66,6 +72,23 @@ def _spawn(cmd, out, err):
         return subprocess.Popen(cmd, stdout=o, stderr=e, stdin=subprocess.DEVNULL, cwd=str(HERE.parent.parent),
                                 creationflags=R.no_window() | (0x200 if os.name == "nt" else 0),   # + CREATE_NEW_PROCESS_GROUP
                                 start_new_session=os.name != "nt").pid
+def _alive(pid):
+    """#894: is the page process still running? (reaps our own zombie child first; never signals on Windows)"""
+    if not pid: return False
+    if os.name == "nt":
+        try:
+            import ctypes
+            k = ctypes.windll.kernel32; h = k.OpenProcess(0x1000, False, int(pid))
+            if not h: return False
+            code = ctypes.c_ulong(); ok = k.GetExitCodeProcess(h, ctypes.byref(code)); k.CloseHandle(h)
+            return bool(ok) and code.value == 259
+        except Exception: return False
+    try:
+        if os.waitpid(pid, os.WNOHANG)[0] == pid: return False
+    except ChildProcessError: pass
+    except Exception: return False
+    try: os.kill(pid, 0); return True
+    except Exception: return False
 def _kill(pid):
     try: os.kill(pid, signal.SIGTERM)
     except Exception: pass
@@ -138,11 +161,15 @@ def page_data(q):
     if rest: item["details"] = rest
     return {"title": "שאלה ממערכת המשחק", "intro": "בחר תשובה ולחץ שלח.", "questions": [item]}
 
+def reopen_hint(q):
+    """#894: how to get the page back when it is gone."""
+    return f"\nהדף נסגר? python tools/runner/qwin.py page {q['key']}" if q.get("key") else ""
+
 def push_text(q):
     """#368: the exact phone push: the question, numbered options, how to answer."""
     text, opts, _ = headline(q)
     return text + "".join(f"\n{i}. {o}" for i, o in enumerate(opts, 1)) + (
-        "\nענה במספר בצ'אט, או בדף שנפתח בדפדפן" if opts else "\nענה בצ'אט, או בדף שנפתח בדפדפן")
+        "\nענה במספר בצ'אט, או בדף שנפתח בדפדפן" if opts else "\nענה בצ'אט, או בדף שנפתח בדפדפן") + reopen_hint(q)
 
 def tg_text(q):
     """#440: the Telegram message: the question line, numbered options, how to answer; #699: no details, the page link instead."""
@@ -150,7 +177,23 @@ def tg_text(q):
     link = page_url(q["key"]) if q.get("key") else ""
     return text + "".join(f"\n{i}. {o}" for i, o in enumerate(opts, 1)) + (
         "\nענה במספר או במילים (Reply להודעה הזו), או בדף שנפתח במחשב" if opts else "\nענה כאן (Reply להודעה הזו), או בדף שנפתח במחשב") + (
-        f"\nפרטים: {link}" if rest and link else "")
+        f"\nפרטים: {link}" if rest and link else "") + reopen_hint(q)
+
+def question_back(text, q_text):
+    """#894: a reply that is a question back (ends with '?' and names no option) is never an answer."""
+    t = (text or "").strip()
+    if not t.endswith(("?", "\uff1f")): return False
+    opts = split_options(q_text)[1]
+    low = t.lower()
+    if any(o.lower().replace("(מומלץ)", "").strip() and o.lower().replace("(מומלץ)", "").strip() in low for o in opts): return False
+    return not any(n.isdigit() and 1 <= int(n) <= len(opts) for n in re.findall(r"\d+", t))
+
+def relay_question_back(key, q_text, text, src=""):
+    """#894: not an answer: no record, no gate; the orchestrator/inspector get it as a follow-up question; the question stays open."""
+    for who in ("orchestrator", "inspector"):
+        _hc("send", who, R.one_line(f"OWNER FOLLOW-UP QUESTION (not an answer; the question {src or key} stays open, its page stays live): "
+            f"{(q_text or '')[:200]} -> owner asks back: {text}"), timeout=30)
+    log(f"{key}: the reply is a question back, not an answer (relayed, question stays open)")
 
 def tg_answer(q_text, reply):
     """#440: '2' -> the 2nd option's text; anything else is his own answer."""
@@ -200,7 +243,9 @@ def tg_poll(st):
             elif len(fresh) > 1: TG.send("יש כמה שאלות פתוחות: ענה ב-Reply להודעה של השאלה.", reply_to=m["id"]); continue   # old state only (before #632)
         if key not in wait: continue                      # answered already (first answer wins) or not a question
         e = wait[key]
-        answer(key, tg_answer(e.get("text", ""), m["text"]), from_tg=True); e["answered"] = True
+        if answer(key, tg_answer(e.get("text", ""), m["text"]), from_tg=True).get("question_back"):
+            TG.send("זו שאלה חזרה, לא תשובה: הועברה הלאה. השאלה נשארת פתוחה.", reply_to=m["id"]); continue
+        e["answered"] = True; e["answered_at"] = time.time()
         log(f"{e['name']}: answered in telegram")
 
 def push_message(q):
@@ -240,6 +285,44 @@ def pin(name, on):
         _run([R.HERDR_APP, "do", "terminal.pin", "--terminal", info["address"], "--pinned", "true" if on else "false"], timeout=30)
     return info.get("address", "")
 
+def new_entry(q, now):
+    name = win_name(q)
+    return {"name": name, "since": now, "source": q.get("source", ""), "issue": issue_no(q), "text": q.get("text", ""),
+            "gates": q.get("gates", []), "pid": 0 if is_note(q) else start_page(q), "last_start": now, "restarts": 0}
+
+def restart_page(key, e, now, why):
+    """#894: the page again (old answers file dropped, new URL read from the new log); logged once."""
+    try: (DIR / f"{key}.answers.json").unlink()
+    except OSError: pass
+    e["pid"] = start_page({"key": key, "text": e.get("text", "")}); e["last_start"] = now; e["page"] = ""
+    e["restarts"] = max(e.get("restarts", 0), 0) + 1
+    log(f"{e['name']}: page restarted for {key} ({why}; pid {e['pid']})")
+
+def keep_page_alive(key, e, now):
+    """#894: an open, unanswered question always has a live page: dead -> restarted with backoff 1, 2, 5, 10 min."""
+    if _alive(e.get("pid")):
+        if now - e.get("last_start", e["since"]) >= BACKOFF_S[-1]: e["restarts"] = 0     # it lived: start the backoff over
+        return
+    n = e.get("restarts", 0)
+    if now - e.get("last_start", e["since"]) >= BACKOFF_S[min(n, len(BACKOFF_S) - 1)]:
+        restart_page(key, e, now, "it was not running")
+
+def page_cmd(key, now=None):
+    """#894: `qwin.py page <key>`: start the page of an open question, or print the URL of the live one. -> (rc, message)"""
+    now = time.time() if now is None else now
+    qs = OQ.open_list()
+    if qs is None: return 1, "cannot read the open questions now: try again"
+    q = next((q for q in qs if q["key"] == key), None)
+    if not q: return 1, f"no open question {key}"
+    st = load(); e = st.get(key)
+    if e is None: e = st[key] = new_entry(q, now); log(f"{e['name']}: page started for {key} by hand (pid {e['pid']})")
+    elif not _alive(e.get("pid")): e["answered"] = False; e.pop("answered_at", None); restart_page(key, e, now, "asked by hand")
+    save(st)
+    for _ in range(50):
+        if page_url(key): break
+        time.sleep(0.1)
+    return 0, page_url(key) or "page starting: run the command again in a few seconds"
+
 def tick(ts, now=None):
     """One watchdog pass: start pages and their phone pushes together, read the answers, remind, check push results."""
     now = time.time() if now is None else now
@@ -251,22 +334,32 @@ def tick(ts, now=None):
         close_window(name); log(f"{name}: old question window closed (#390: the push goes through {'/'.join(PUSHERS)})")
     for k in close:
         e = st.pop(k)
-        if e.get("pid") and not e.get("answered"): _kill(e["pid"])          # answered elsewhere: the page goes too
+        if e.get("pid") and _alive(e["pid"]): _kill(e["pid"])               # answered (confirmed closed) or elsewhere: the page goes too
         if e.get("tg") and not e.get("answered"): TG.send("✓ השאלה נענתה", reply_to=e["tg"])   # #440
         log(f"{e['name']}: answered, closed")
     for q in start:                                       # #368: the page, started by python itself
         name, key = win_name(q), q["key"]
-        st[key] = {"name": name, "since": now, "source": q.get("source", ""), "issue": issue_no(q), "text": q.get("text", ""),
-                   "gates": q.get("gates", []), "pid": 0 if is_note(q) else start_page(q)}
+        st[key] = new_entry(q, now)
         log(f"{name}: page started for {key} (pid {st[key]['pid']})")
     idle = [t["name"] for n in PUSHERS for t in ts if t.get("name") == n and t.get("state") == "live" and t.get("status") in IDLE]
     for key, e in st.items():
-        if e.get("answered") or is_note(e): continue    # #696: a notice: no page, no push, nothing to answer
+        if is_note(e): continue
+        if e.get("answered") and "answered_at" not in e: e["answered_at"] = now
+        if e.get("answered") and now - e["answered_at"] >= CONFIRM_S:     # #894: answered, but still open: the relay did not close it
+            e["answered"] = False; e.pop("answered_at", None); e["restarts"] = 0
+            if not _alive(e.get("pid")): restart_page(key, e, now, "answered but still open")
+        if e.get("answered"): continue                  # #696: a notice: no page, no push, nothing to answer
         if not e.get("page") and page_url(key): e["page"] = page_url(key); log(f"{e['name']}: page at {e['page']}")
         a = page_answer(key)
         if a is not None:                                 # #368: the page answered: relay it ourselves
-            answer(key, a, from_page=True, tg=e.get("tg", 0)); e["answered"] = True; log(f"{e['name']}: answered on the page")
-            continue
+            if answer(key, a, from_page=True, tg=e.get("tg", 0)).get("question_back"):
+                e["restarts"] = -1                          # a question back: the page (it exited) comes back at once, backoff over
+                if not _alive(e.get("pid")): restart_page(key, e, now, "question back, not an answer")
+                else: (DIR / f"{key}.answers.json").unlink(missing_ok=True)
+            else:
+                e["answered"] = True; e["answered_at"] = now; log(f"{e['name']}: answered on the page")
+                continue
+        keep_page_alive(key, e, now)
         if e.get("via"): continue
         if not idle:                                      # #390: busy sessions get nothing; next tick
             if now - e["since"] >= NO_IDLE_S and not e.get("no_idle"):
@@ -320,6 +413,9 @@ def answer(key, text, from_page=False, from_tg=False, tg=0, records=True):
     """Relay the owner's answer: comment on the source issue, ANSWERED in the questions issue, tell the orchestrator,
     and a cloud worker (remote-<n>) gets it in its session. -> dict of what was done."""
     st = load()
+    qt = (st.get(key) or {}).get("text") or next((q.get("text", "") for q in OQ.open_list() or [] if q["key"] == key), "")
+    if question_back(text, qt):                          # #894: never an answer: no record, no ANSWERED, no gate
+        relay_question_back(key, qt, text, (st.get(key) or {}).get("source", "")); return {"question_back": True}
     info = st.get(key) or next(({"source": q.get("source", ""), "issue": issue_no(q), "text": q.get("text", ""),
                                       "gates": q.get("gates", [])}
                                      for q in OQ.open_list() or [] if q["key"] == key), {})
@@ -432,8 +528,9 @@ def chat_answer(key, text, quote):
     quote = R.redact((quote or "").strip())
     if not quote or len(quote) > 500: return 2, "--quote is required (1-500 characters: the owner's exact words)"
     if not is_inspector(_chain(), live_terminals(), _inspector_dir()): refuse("the caller is not the inspector"); return 1, "refused: not the inspector"
-    info = next(({"issue": issue_no(q), "gates": q.get("gates", [])} for q in OQ.open_list() or [] if q["key"] == key), None)
+    info = next(({"issue": issue_no(q), "gates": q.get("gates", []), "text": q.get("text", "")} for q in OQ.open_list() or [] if q["key"] == key), None)
     if not info: return 1, f"no open question {key}"
+    if question_back(text, info["text"]): relay_question_back(key, info["text"], text); return 1, "that is a question back, not an answer: relayed, the question stays open"
     body = OQ.chat_answer_body(key, text, quote)
     for n in dict.fromkeys([info["issue"], *info["gates"]]):
         if n: _app_post(n, body)
@@ -514,6 +611,8 @@ def main(argv):
     if len(argv) >= 3 and argv[0] == "chat-answer":
         quote = argv[argv.index("--quote") + 1] if "--quote" in argv[:-1] else ""
         rc, msg = chat_answer(argv[1], argv[2], quote); print(msg); return rc
+    if len(argv) == 2 and argv[0] == "page":
+        rc, msg = page_cmd(argv[1]); print(msg); return rc
     print(__doc__); return 2
 
 if __name__ == "__main__":
