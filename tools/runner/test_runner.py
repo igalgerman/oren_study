@@ -1669,3 +1669,16 @@ _g2 = r.governor(_ux(1, 80), [], _now, _G, busy=3, ready=1); assert _g2["p"] > 1
 _gl = [r.governor(_ux(w, 80), [], _now, _G, busy=3, ready=9) for w in (10, 40, 70)]
 assert _gl[0]["p"] > _gl[1]["p"] > _gl[2]["p"] and _gl[0]["lanes"] >= _gl[1]["lanes"] >= _gl[2]["lanes"] and _gl[0]["lanes"] > _gl[2]["lanes"], _gl   # p falls -> fewer lanes
 assert all(x["shift"] in (0, 1) for x in _gl)
+
+# #719 budget shift at start: behind (+1) raises a core worker above the floors; tight (0) changes nothing; never lowers; an upgraded task keeps its rung
+assert r.apply_shift(1, "sonnet", "medium", "core") == ("sonnet", "high")                       # behind: Sonnet core task -> high
+assert r.apply_shift(0, "sonnet", "medium", "core") == ("sonnet", "medium")                     # tight: labels as they are
+assert r.apply_shift(1, "sonnet", "medium", "pack") == ("sonnet", "medium")                     # not core: unchanged
+assert r.apply_shift(-1, "sonnet", "high", "core") == ("sonnet", "high")                        # no negative shift
+for _m, _e in (("sonnet", "medium"), ("sonnet", "high"), ("opus", "medium"), ("opus", "xhigh"), ("fable", "high")):
+    for _s in (0, 1):
+        _m2, _e2 = r.apply_shift(_s, _m, _e, "core"); assert r._rung_index(_m2, _e2) >= r._rung_index(_m, _e) or _m == "fable", (_m, _e, _s)
+assert r.floors("worker", *r.apply_shift(1, "opus", "high", "core"), labels=()) [1] in ("high", "xhigh")   # a floor is never lowered
+_src719 = inspect.getsource(r.process_locked)
+assert "if not upgrade:" in _src719 and "apply_shift(shift" in _src719 and "shift=shift" in _src719 and '", shift +1"' in _src719   # upgraded task keeps its rung; shown in stat + comment
+assert r.governor_now(now=0)["shift"] in (0, 1)

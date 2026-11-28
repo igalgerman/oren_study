@@ -122,6 +122,12 @@ def fix_rung(rnd, model, effort):
     if rnd >= FIX_ROUNDS and cur[0] != MODEL_IDS["fable"] and _rung_index(*cur) < 3 and cur[1] != "max": cur = LADDER[3]
     return cur
 
+def apply_shift(shift, model, effort, lane):
+    """#719: the governor's budget shift (0 or +1, #711) at the start of a worker run: +1 and a core task move one rung up the ladder
+    (sonnet medium -> high -> opus medium ...); 0 changes nothing; never lowers (no negative shift). Floors are applied by the caller."""
+    if shift != 1 or lane != "core": return model, effort
+    return next_rung(model, effort)
+
 def read_rung(n):
     """#716: the last (model, effort) a run of issue n used, when that run ended blocked (rung + rung.blocked files); else None."""
     try:
@@ -728,9 +734,9 @@ def governor_now(now=None):
         gv = json.loads((RUNS / "governor.json").read_text(encoding="utf-8"))
         if now - gv["at"] < 15 * 60:
             return {"lanes": int(gv["lanes"]), "stop": bool(gv["stop"] and (gv.get("hard") or not (gv.get("reset") and gv["reset"] <= now))), "pct": gv.get("pct"),
-                    "week_pct": gv.get("week_pct"), "limit_hit": bool(gv.get("limit_hit"))}
+                    "week_pct": gv.get("week_pct"), "limit_hit": bool(gv.get("limit_hit")), "shift": 1 if gv.get("shift") == 1 else 0}
     except Exception: pass
-    return {"lanes": REMOTE_LANES, "stop": False, "pct": None, "week_pct": None, "limit_hit": False}
+    return {"lanes": REMOTE_LANES, "stop": False, "pct": None, "week_pct": None, "limit_hit": False, "shift": 0}
 
 def limit_requeue(res, limit_hit):
     """Pure (#703): a worker that died without a RESULT line while the limit was hit goes back to the queue, not BLOCKED."""
@@ -2166,17 +2172,24 @@ def process_locked(issue, where="local"):
         wm, eff = next_rung(*read_rung(n)); upgrade = "blocked restart"
         try: (RUNS / str(n) / "rung.blocked").unlink()
         except OSError: pass
+    shift = 0
+    if not upgrade:                                                             # #719: an upgraded task keeps its rung; else budget shift +1 (behind pace) raises a core worker
+        shift = governor_now().get("shift", 0)
+        m2, e2 = apply_shift(shift, wm, eff, lane)
+        m2, e2 = floors("worker", m2, e2, issue["labels"])
+        if (m2, e2) != (wm, eff): wm, eff, upgrade = m2, e2, "budget shift +1"
+        else: shift = 0
     write_rung(n, wm, eff)
     rstart = with_effort(remote.start, eff, wm if upgrade else None)           # #713
     rm, reff = floors("reviewer", None, reff0, issue["labels"])                   # #714: reviewer opus, medium (high for model:opus / effort:high)
     rstart_rev = with_effort(remote.start, reff, rm)
     rstart_test = with_effort(remote.start, floors("tester", "sonnet")[1])      # #714: tester medium
     resolver = lambda k: floors("resolver", "opus" if k >= 2 else "sonnet")     # #714: sonnet medium; opus medium on the 2nd failure of the same conflict
-    me = {"model": model_name(issue["labels"]), "effort": eff}                  # #713: every step event says which model + effort ran
+    me = {"model": wm, "effort": eff}                  # #713: every step event says which model + effort ran
     started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")      # remote: only issue comments after this count as the cloud worker's report
     try:
-        stat(n, lane, "start", model=model_name(issue["labels"]), effort=eff, where=where, code_mode=code_mode(n))
-        set_labels(n, add=["in-progress"]); gh("issue", "comment", str(n), "--body", f"Runner: started ({lane} lane, {where}, worker {model_name(issue['labels'])}, effort {eff}, reviewer {rm}).")
+        stat(n, lane, "start", model=wm, effort=eff, where=where, code_mode=code_mode(n), shift=shift)
+        set_labels(n, add=["in-progress"]); gh("issue", "comment", str(n), "--body", f"Runner: started ({lane} lane, {where}, worker {wm}, effort {eff}, reviewer {rm}" + (", shift +1" if shift else "") + ").")
         if upgrade: gh("issue", "comment", str(n), "--body", f"Runner: upgraded to {rung_name(wm, eff)} ({upgrade}).")
         run(["git", "fetch", "-q", REMOTE], cwd=ROOT, log=log)
         def prep_worktree():
