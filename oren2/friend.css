@@ -67,3 +67,7 @@ body.fron #screens{padding-bottom:84px}
 .frtr .frto{min-width:84px;min-height:72px;font-size:30px;font-weight:800;justify-content:center}
 .frtr .frto.ok{background:#e6f6e6;border-color:#4fae4f}
 .frtr .frto.show{background:#fff6d6;border-color:#c98a00}
+.frhero{text-align:center}
+.frhero .frms svg{width:72px;height:72px;display:block;margin:0 auto 4px}
+.frhero .btnrow{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:8px}
+.tq.hero .tqc{border:4px solid #e0a800;box-shadow:0 0 14px #ffd54a}
