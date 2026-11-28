@@ -3,6 +3,9 @@
 Repo: **igalgerman/oren_study**, branch **`main`** = what is live on the site. The old repo igalgerman/a (`old` remote) is history only — never push there.
 Backlog = GitHub issues. Owner guide: `HOWTO.md`. Main session: `ORCHESTRATOR.md`.
 
+## Privacy (#783)
+Every session (worker, reviewer, desk): write 'the kid' / 'הילד', never his real name, in titles, bodies, comments, PR text and commit messages. The bots' own gh writes are scrubbed centrally (`tools/runner/scrub.py`, names in `~/.oren/private_names.txt`, outside the repo); cloud sessions use their own gh, so the watchdog sweeps issues/PRs changed in the last 30 min every 10 min and fixes a title or comment with the name (a title rename stays visible in the issue timeline: the sweep limits exposure, this rule prevents it).
+
 ## The flow
 idea → `/grill-me` → `/to-tickets` → issue (backlog) → runner → worker → reviewer → tester (T1+, #618) → merge to main → all tests → deploy → regression tour on production → issue closed.
 Every issue needs an `## Acceptance` section (3-7 checkable points + the tests that prove them, and `Out of scope`) before `ready-for-agent`; triage writes it. The runner does not start an issue without it (no relabel); once per hour it sends ONE line `add Acceptance lists: #a #b ...` to the inbox window, which writes them. P0, `express` and `bug` issues are exempt (#186). An issue about something that must hold on every screen (voice, back/forward, help; the title or body says 'every' / 'all screens', or the owner says 'still missing') also gets the point 'an automatic test walks every screen and fails with the list of screens that break the rule' (helper `oren2/tests/walk.js`, #745); triage adds it. The worker builds exactly that list; the reviewer gives FIX only for a missed Acceptance point, wrong behaviour or a failing test, everything else is a PASS note.
