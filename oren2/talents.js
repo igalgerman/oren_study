@@ -381,7 +381,7 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
   if(help.band!=='read'&&window.FRIEND&&FRIEND.readFirst){O.sayNow=T.spk(FRIEND.READFIRST);FRIEND.readFirst();}else O.sayNow=STORY_SAY;}   /* read to him: no "try alone first" */
 T.addSay([STORY_SAY]);T.storyScreen=storyScreen;T.READ_HELP=READ_HELP;T.helpOf=helpOf;T.storyHelp=storyHelp;window.__story={get ss(){return SS;}};
 function readStory(k,back){const st=STORIES[k];storyScreen({act:'story-'+k,id:'story-'+k,title:st.t,name:st.t,tp:T.plainHe(st.t),goal:st.goal,spr:st.spr.map(x=>ALLSPR(x)),lines:st.s,hw:st.hw,
-  q:st.q.map(([pr,a,ds])=>({pr,a,ds})),back,qback:()=>openStories(back)});}
+  q:st.q.map(([pr,a,ds])=>({pr,a,ds})),back,qback:back&&back.home?back:()=>openStories(back)});}/* #832: a story that is a path step goes on along the path; from the building or 'something else' it goes to the list */
 function openStories(back){O.setScreen('sTal','final',back);T.hudT('סִפּוּרֵי עֶרֶב');const s=$('#sTal');s.innerHTML='';s.appendChild(h('div','whead',`<span class="gd">${X.moon}</span><h1>סִפּוּרֵי עֶרֶב</h1>`));
   const g=h('div','acts');STORIES.forEach((st,k)=>{const n=(T.S().tl['story-'+k]||{}).s|0;const c=h('button','actc',`<span class="ai">${ALLSPR(st.spr[0])}</span><span class="an">${st.t}</span><span class="st">${[0,1,2].map(j=>j<n?SPR.star:SPR.starOff).join('')}</span>`);c.onclick=()=>readStory(k,()=>openStories(back));g.appendChild(c);});s.appendChild(g);}
 T.STORIES=STORIES;T.readStory=readStory;

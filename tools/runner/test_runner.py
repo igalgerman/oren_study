@@ -922,7 +922,7 @@ assert lo < 3 < hi, (lo, hi)
 g = r.governor(_ux(80, 80), [], _now, _G, busy=3, ready=9); assert "ahead of pace" in g["why"], g
 assert r.governor(_ux(94, 80), [], _now, _G, busy=3, ready=9)["lanes"] == 0                  # no budget left (need < 0) and N_lo 0
 # 1% used with 6 h left (and plenty of work): N_hi; only L + Q or the ceiling bounds it
-g = r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=20); assert g["lanes"] == 16 == g["n_hi"], g
+g = r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=30); assert g["lanes"] == 24 == g["n_hi"], g
 g = r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=3); assert g["lanes"] == 5 == g["n_hi"], g                 # L + Q
 assert r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=0)["lanes"] == 2                                         # no work: N_lo 0, N_hi = L
 assert r.governor(_ux(1, 6), [], _now, {"ceiling": 4}, busy=0, ready=20)["lanes"] == 4
@@ -937,7 +937,7 @@ g = r.governor(_u(90, 4, week=1, week_reset_h=6), [], _now, _G, busy=2, ready=20
 g = r.governor(_u(20, 4, week=1, week_reset_h=6), [], _now, _G, busy=2, ready=20); assert g["lanes"] == 12 and g["pct"] == 20, g
 assert " · 5h 20% (cap 97%)" in r.governor_text(g), r.governor_text(g)
 # week-only: no 5h cap and no 5h stop even with a 5h value in an old shape of 99
-g = r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=20); assert g["pct"] is None and not g["stop"] and g["lanes"] == 16
+g = r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=30); assert g["pct"] is None and not g["stop"] and g["lanes"] == 24
 # 5h stop (99) stays on the 5h+week plan
 g = r.governor(_u(99, 1, week=1, week_reset_h=6), [], _now, _G, busy=2, ready=20); assert g["stop"] and "STOP" in r.governor_text(g) and "governor: 0 lanes" in r.governor_text(g)
 assert not r.governor(_u(92.9, 0.1, week=1, week_reset_h=6), [], _now, _G, busy=2, ready=20)["stop"]
@@ -949,7 +949,7 @@ for _k, _w in enumerate([40, 40.6, 40.4, 41.0, 40.9, 41.6, 41.5, 42.0, 42.2, 42.
 assert _chg <= 2 and max(_ln) - min(_ln) <= 2, _ln
 assert r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=20, prev=4)["lanes"] == 6                      # +2 per pass at most
 assert r.governor(_ux(93, 20), [], _now, _G, busy=8, ready=20, prev=8)["lanes"] == 6                    # -2 per pass at most (the limit is far)
-assert r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=20, prev=16)["lanes"] == 16
+assert r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=30, prev=24)["lanes"] == 24
 # a plan (bucket kinds) change is logged once, by the pass
 assert r.plan_mode(_u(5, 1, week=3)) == "5h+week" and r.plan_mode(_ux(3, 5)) == "week-only" and r.plan_mode(None) == "none"
 assert r.plan_mode({"buckets": [{"kind": "five_hour", "pct": 1}, {"kind": "seven_day", "pct": 2}]}) == "5h+week" and r.plan_mode({"buckets": [{"kind": "seven_day", "pct": 2}]}) == "week-only"
@@ -959,8 +959,8 @@ _gd = r.governor_pass(3, now=_now, ready=9)       # DRY: pure; the log line is w
 assert r.plan_change(r.governor(_u(5, 1, week=3), [], _now, _G)["mode"], r.governor(_ux(3, 5), [], _now, _G)["mode"]) == "plan changed: 5h+week -> week-only"
 _cfg = open(os.path.join(os.path.dirname(r.__file__), "config.toml"), encoding="utf-8").read()
 for _k in ("governor_min", "governor_max", "governor_week_cap", "governor_target", "governor_week_target", "governor_pace"): assert _k + " " not in _cfg and _k not in r.GOV, _k
-for _k in ("governor_reserve = 5", "governor_reserve_release_h = 12", "governor_5h_cap = 97", "governor_ceiling = 16"): assert _k in _cfg, _k
-assert (r.GOV["reserve"], r.GOV["release_h"], r.GOV["cap_5h"], r.GOV["ceiling"]) == (5, 12, 97, 16)
+for _k in ("governor_reserve = 5", "governor_reserve_release_h = 12", "governor_5h_cap = 97", "governor_ceiling = 24"): assert _k in _cfg, _k
+assert (r.GOV["reserve"], r.GOV["release_h"], r.GOV["cap_5h"], r.GOV["ceiling"]) == (5, 12, 97, 24)
 # replay of this week (simple model): week rises 0.40 %/h per lane + 0.15 %/h owner 08-23, from Thu 26 14:30 at 39%, reset Sat 17:00, one pass per 15 min,
 # 5h bucket absent (Ultra), 20 ready issues: ends 97-99.5%, never 100% before the reset
 _t0 = _dt(2026, 11, 26, 14, 30).timestamp(); _end = _dt(2026, 11, 28, 17, 0).timestamp(); _W, _L, _tt, _mx = 39.0, 3, _t0, 0

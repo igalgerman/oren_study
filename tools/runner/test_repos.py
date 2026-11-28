@@ -33,6 +33,7 @@ def test_no_hardcoded_repo():
             try: text = f.read_text(encoding="utf-8")
             except (UnicodeDecodeError, OSError): continue
             for i, l in enumerate(text.splitlines(), 1):
+                if f.name == "setup.ps1" and l.startswith("$DefaultRepo ="): continue   # fresh-PC fallback before any config.toml exists (#865)
                 if any(nm in l for nm in names) or re.search(r"\boren_study\b", l): bad.append(f"{f.relative_to(ROOT)}:{i}")
     assert not bad, "hardcoded repo name outside config.toml:\n" + "\n".join(bad)
 test_no_hardcoded_repo()

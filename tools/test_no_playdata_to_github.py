@@ -1,8 +1,8 @@
 # CI test (#786): play data never goes to GitHub. Fails with a file:line list (never prints play data or names).
-# Run: python3 tools/ci/test_no_playdata_to_github.py
+# Run: python3 tools/test_no_playdata_to_github.py
 import ast, re, sys, tempfile
 from pathlib import Path
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "runner"))
 import ghcache
 
