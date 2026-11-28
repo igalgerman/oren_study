@@ -679,7 +679,7 @@ def tick():
         for name, fn in (("observer_tick", observer_tick), ("ai_observer_tick", ai_observer_tick), ("nightly_tick", nightly_tick),
                          ("parked_tick", parked_tick), ("due_tick", due_tick), ("garden_tick", garden_tick),   # #282 #241 #187
                          ("issues_stuck_tick", issues_stuck_tick), ("desks_tick", desks_tick), ("canary_tick", canary_tick),   # #280 #330
-                         ("sync_tick", sync_tick), ("alarm_tick", alarm_tick), ("trends_tick", trends_tick), ("ai_tick", ai_tick), ("usage_tick", usage_tick), ("usage_alarm_tick", usage_alarm_tick),
+                         ("sync_tick", sync_tick), ("alarm_tick", alarm_tick), ("trends_tick", trends_tick), ("ai_tick", ai_tick), ("usage_tick", usage_tick), ("usage_alarm_tick", usage_alarm_tick), ("interaction_limit_tick", interaction_limit_tick),
                          ("lock_tick", lock_tick), ("orch_idle_tick", orch_idle_tick)):
             step(name, fn)
 
@@ -1014,6 +1014,13 @@ def usage_alarm_tick():
     if time.time() - _ualarm["last"] < 300: return
     _ualarm["last"] = time.time()
     import usage_alarms; importlib.reload(usage_alarms); usage_alarms.tick(tell, log)
+
+_ilimit = {"last": 0.0}
+def interaction_limit_tick():
+    """#829: hourly, read each public repo's interaction-limits expiry; alarm 14 days before (daily) or at once when gone."""
+    if time.time() - _ilimit["last"] < 3600: return
+    _ilimit["last"] = time.time()
+    import interaction_limit; importlib.reload(interaction_limit); interaction_limit.tick(tell, log)
 
 def trends_tick():
     """#155: hourly patterns over 24 h (repeated BLOCKED reasons, finish/fix rates); reloaded so merged fixes apply."""
