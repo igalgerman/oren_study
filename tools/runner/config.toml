@@ -69,3 +69,9 @@ owner_login = "igalgerman"
 bot_logins = ["oren-study-bot", "oren-study-bot[bot]"]
 # Before this time an ANSWERED line / owner-answer record written by the owner login still counts (PR #807 moved control lines to the App bot); after it only the bot counts.
 trust_since = "2026-11-28T12:28:45Z"
+
+# #890 control-session heartbeat (control_health.py): error screen / approval prompt / frozen session -> Telegram + inspector note
+control_health = true           # false = off
+control_approval_min = 3        # a blocked status or a permission dialog held this long
+control_frozen_min = 30         # status working AND the screen unchanged this long
+control_error_patterns = ["limit reached", "usage limit", "rate.?limit", "overloaded", "api error", "please run /login", "(login|session|token|authentication) (has )?expired", "invalid api key", "credit balance is too low"]   # regexes on the last 12 screen lines

@@ -32,6 +32,7 @@ Every minute it checks, deterministically:
   7. #304: a network error (sync, or a tick that raised a network/timeout error) is retried next tick and only logged + told to the
      orchestrator on the NET_ALARM-th in a row; nightly.prune_if_due removes .runs/<n> of issues closed > 24 h once a day
   4. the orchestrator window is gone                                           -> writes it in the log (the owner sees it in /status)
+  4a. #890 control_health.py: orchestrator/inbox/inspector/executor error screen, approval prompt or frozen session -> Telegram + inspector note (backoff), read-only
   4b. orchestrator / inbox / inspector terminal finished (#140)                -> removed by address and started again (recover.py commands)
   4c. #492 a finished run-/run-pass-/issue-/review-/resolve-/question- terminal 5+ min old -> removed by address (sweep_tick, no gh needed; first-seen times in .runs/sweep_seen.json survive a reload)
 It never answers questions or presses keys in other windows; it only tells the orchestrator and starts the runner.
@@ -324,11 +325,23 @@ def sweep_tick(ts, now=None, seen=None, hc=None, say=None):
 def check_control(ts):
     """#140: a finished orchestrator / inbox / inspector terminal is removed (by address) and started again, same command as recover."""
     import recover
+    import control_health as CH
     for name, address in recover.finished_control(ts):
+        if R.CFG.get("control_health", True) and not CH.restart_gate(name, time.time(), lambda t: _tg(t)): continue   # #890: 3 restarts in 30 min -> one message, pause 30 min
         R.hc("rm", address, timeout=30)
         rc = recover.start_control(R, name)
         log(f"{name} had finished: restarted (rc {rc})")
         if rc == 0 and name != "orchestrator": tell(f"WATCHDOG: {name} had finished; restarted it")
+
+def _tg(text):
+    import telegram; return telegram.send(text)
+
+def control_tick(ts):
+    """#890: heartbeat on the live control sessions (orchestrator/inbox/inspector/executor): error, approval, frozen -> Telegram + a note. Read-only."""
+    import control_health as CH
+    def get(addr): return R.hc_json("get", addr, "--json") or {}
+    def note(role, text): R.hc("send", role, text, timeout=30)
+    CH.tick(ts, CH.IO(get=get, read=lambda a, n: R.hc("read", a, "--lines", str(n), timeout=30)[1], tell=note, tg=_tg, log=log), time.time(), R.CFG)
 
 def qwin_tick(ts):
     if not BO.due("qwin"): return                        # #842: a failing job waits 2, 4, 8 ... 60 min
@@ -677,6 +690,7 @@ def tick():
         step("check_intake", check_intake, ts)
         all_ts = (step("all_windows", R.hc_json, "ls", "--all", "--json") or {}).get("terminals", []) or ts
         step("check_control", check_control, all_ts)
+        step("control_tick", control_tick, ts)  # #890
         step("cleanup", cleanup, all_ts)
         rts = step("run_rows", run_rows, ts) or ts   # #289: + the ONE poller's cloud lanes as virtual run-<n> rows
         step("sweep_tick", sweep_tick, all_ts)  # #492
