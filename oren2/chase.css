@@ -1,0 +1,12 @@
+/* ARCADE chase (#665) */
+.field.trk{background:linear-gradient(#1d0e46 0 40%,#2f8f3a 40%)}
+.road{position:absolute;left:3%;right:3%;top:42%;height:130px;direction:ltr;background:repeating-linear-gradient(90deg,rgba(255,255,255,.12) 0 40px,transparent 40px 80px),#c8925a;border-top:5px solid #fff;border-bottom:5px solid #fff}
+.road .fl{position:absolute;right:0;top:0;bottom:0;width:30px;font-size:34px;background:repeating-conic-gradient(#fff 0 25%,#1a0b3d 0 50%) 0 0/20px 20px;display:flex;align-items:center;justify-content:center}
+.run{position:absolute;bottom:20px;width:44px;height:90px;transition:none}
+.run .rh{position:absolute;top:0;left:9px;width:26px;height:26px;border-radius:50%;background:#f1c27d}
+.run .rb{position:absolute;top:26px;left:7px;width:30px;height:38px;border-radius:6px}
+.run .rl{position:absolute;top:62px;width:10px;height:26px;background:#1a0b3d;transform-origin:top}.run .rl.a{left:10px}.run .rl.b{left:24px}
+.run.me .rb{background:#3d8bff}.run.him .rb{background:#ff4b5c}.run.him{bottom:34px}
+.run .rl.a{transform:rotate(18deg)}.run .rl.b{transform:rotate(-18deg)}.run.s2 .rl.a{transform:rotate(-18deg)}.run.s2 .rl.b{transform:rotate(18deg)}
+.rungo{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);font-size:34px;padding:16px 56px;z-index:4}
+@media (max-width:760px){.road{height:110px}.run{transform:scale(.85);transform-origin:bottom}.rungo{font-size:30px;padding:14px 44px}}

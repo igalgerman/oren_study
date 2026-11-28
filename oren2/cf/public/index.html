@@ -1700,10 +1700,6 @@ if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pick
 const RH_M=['read','try','alone'],RH_W=[10,25,45];
 function readHelp(){const st=save.set||{},r=st.rh&&typeof st.rh==='object'?st.rh:{};return {m:RH_M.includes(r.m)?r.m:'try',w:RH_W.includes(+r.w)?+r.w:25,slow:r.slow===1,ans:r.ans!==0,hi:r.hi!==0,auto:st.autoRead!==0};}
 const AUTO={cur:'',gen:0,seen:-1,at:0,scr:0,wait:false};
-/* #617: quiet(fn) redraws a screen for a change that came from ANOTHER device (sync): no speech is cut, and the redrawn
-   screen's line is not read aloud again; only Oren's own taps (and an explicit parent message) make this device speak */
-let QUIET=0;
-function quiet(fn){const w=AUTO.wait,at=AUTO.at;QUIET++;try{fn();}finally{QUIET--;AUTO.cur=sayNow;AUTO.seen=AUTO.gen;AUTO.wait=w;AUTO.at=at;}}
 setInterval(()=>{if(sayNow!==AUTO.cur||AUTO.gen!==AUTO.seen){AUTO.cur=sayNow;AUTO.seen=AUTO.gen;AUTO.at=Date.now();if(AUTO.at-AUTO.scr<200)AUTO.at=AUTO.scr;/* #398: a line the new screen said itself right after the switch counts, it is not cut */AUTO.wait=!!sayNow;return;}
   if(!AUTO.wait||Date.now()-AUTO.at<300)return;AUTO.wait=false;
   if(window.__fast||window.__noAuto||(window.__autoSaid||0)>=AUTO.at||(save.set&&save.set.autoRead===0)||!$('#sPar').hidden||$('#hud').hidden)return;
@@ -1788,7 +1784,7 @@ function addGems(n,fromEl){save.gems=(save.gems|0)+n;
 const app=$('#app');let backTo=null,curWorld=null;
 const wipeEl=$('#wipe');wipeEl.innerHTML='<i></i>'.repeat(70);
 function wipe(){if(window.__fast||RM())return;sfx.whoosh();wipeEl.hidden=false;[...wipeEl.children].forEach((c,i)=>{const r=i/10|0,col=i%10;c.style.animation='none';void c.offsetWidth;c.style.animation='';c.style.animationDelay=((r+col)*22)+'ms';});clearTimeout(wipe.t);wipe.t=setTimeout(()=>wipeEl.hidden=true,720);}
-function setScreen(id,w,back){if(!QUIET){SQ.scr++;hush();AUTO.scr=Date.now();if(window.HELP)HELP.stop();}document.body.classList.toggle('inpar',id==='sPar');document.body.classList.remove('act');window.__noAuto=0;/* leaving a screen stops any reading aloud; the new screen may speak right after */['sStart','sHome','sMap','sWorld','sLearn','sPlay','sKing','sStudio','sTeach','sTable','sFinal','sTal','sPar'].forEach(s=>$('#'+s).hidden=s!==id);$('#hud').hidden=id==='sStart';$('#hudMid').innerHTML='';/* #8: no stale label from the last screen */$('#ov').hidden=true;{const dl=$('#dlg');if(!dl.hidden){dl.hidden=true;dl.innerHTML='';}}/* #356: a story dialog belongs to the screen it was opened on */
+function setScreen(id,w,back){SQ.scr++;hush();AUTO.scr=Date.now();if(window.HELP)HELP.stop();document.body.classList.toggle('inpar',id==='sPar');document.body.classList.remove('act');window.__noAuto=0;/* leaving a screen stops any reading aloud; the new screen may speak right after */['sStart','sHome','sMap','sWorld','sLearn','sPlay','sKing','sStudio','sTeach','sTable','sFinal','sTal','sPar'].forEach(s=>$('#'+s).hidden=s!==id);$('#hud').hidden=id==='sStart';$('#hudMid').innerHTML='';/* #8: no stale label from the last screen */$('#ov').hidden=true;{const dl=$('#dlg');if(!dl.hidden){dl.hidden=true;dl.innerHTML='';}}/* #356: a story dialog belongs to the screen it was opened on */
   if(app.dataset.w!==(w||'meadow')){app.dataset.w=w||'meadow';bgW=app.dataset.w;paintBG(performance.now());}setTheme(THEME_OF[app.dataset.w]||'map');
   pauseOff();if(!ACTIVE_S.includes(id)&&id!=='sStart'&&id!=='sPar')herePut(null);backTo=back||null;$('#btnBack').style.visibility=back?'visible':'hidden';$('#btnBack').innerHTML=back===showMap||(back&&back.home)?ICON.home:ICON.back;$('#screens').scrollTop=0;play=null;stopSpeed();updateGems();wipe();evScreen(id);emit('screen',id,back);pzSync();}
 $('#btnSay').innerHTML=ICON.say;$('#btnMusic').innerHTML=ICON.music;$('#icoStart').innerHTML=ICON.play;
@@ -2530,7 +2526,7 @@ function showFinal(){setScreen('sFinal','final',showMap);$('#hudMid').innerHTML=
 
 updateGems();cloudInit();
 const BUS={};function emit(e,...a){(BUS[e]||[]).forEach(f=>{try{f(...a);}catch(x){console.error(x);}});}
-window.OREN={readHelp,mathSpeechList,hatsBack,get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evBuf:()=>EV.buf.slice(),evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,famStale:()=>FAM.sf&&FAM.sf>FAM.upT?FAM.upT||((save.now||{}).t|0)||FAM.sf:0,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,celebrate,bigCelebration,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,quiet,dev:DEV,kidDev,parMark,parBusy:()=>FAM.on&&parRecent()&&(save.now||{}).dv!==DEV,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
+window.OREN={readHelp,mathSpeechList,hatsBack,get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evBuf:()=>EV.buf.slice(),evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,famStale:()=>FAM.sf&&FAM.sf>FAM.upT?FAM.upT||((save.now||{}).t|0)||FAM.sf:0,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,celebrate,bigCelebration,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,dev:DEV,kidDev,parMark,parBusy:()=>FAM.on&&parRecent()&&(save.now||{}).dv!==DEV,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
   set sayNow(v){sayNow=v;AUTO.gen++;},get sayNow(){return sayNow;},hud:html=>{$('#hudMid').innerHTML=html;document.body.classList.toggle('act',!document.body.classList.contains('inpar')&&/class="chip"/.test(html));},resetAll:keep=>{const snd=save.snd;save=blank();save.snd=snd;Object.assign(save,keep||{});persist();renderStart();},on:(e,f)=>{(BUS[e]=BUS[e]||[]).push(f);},emit,blank};
 window.__oren4={MK,mistakeKind,TF,TFC,tfFillQ,COIN,GC,qSpeech,GT,HANDS,renderAudio,THEMES,RAW,setTheme,get mus(){return mus;},WORLDS,ALLLV,ALLU,hintHTML,hintData,uniq,colInit,colNeedBorrow,digs,qkey,bubbleOpts,storyFor,teachCheck,HEROES,get play(){return play;},get save(){return save;},startLevel,finishLevel,playLevel,showMap,showWorld,kingdom,studio,teacher,playSpeed,setFast:v=>{window.__fast=v;},mergeIn,migrateOld,lp};
 /* #44 a finished task is not reopened */
@@ -3251,6 +3247,19 @@ body:has(#dlg:not([hidden])) .toast{top:74px;bottom:auto}
 .rink .mallet::after{content:"";position:absolute;inset:28%;border-radius:50%;background:rgba(255,255,255,.55)}
 .rink .mallet.me{background:radial-gradient(circle at 35% 30%,#ffb347,#ff7a00)}
 .rink .mallet.cpu{background:radial-gradient(circle at 35% 30%,#b48cff,#6a3ad8)}
+
+/* ARCADE chase (#665) */
+.field.trk{background:linear-gradient(#1d0e46 0 40%,#2f8f3a 40%)}
+.road{position:absolute;left:3%;right:3%;top:42%;height:130px;direction:ltr;background:repeating-linear-gradient(90deg,rgba(255,255,255,.12) 0 40px,transparent 40px 80px),#c8925a;border-top:5px solid #fff;border-bottom:5px solid #fff}
+.road .fl{position:absolute;right:0;top:0;bottom:0;width:30px;font-size:34px;background:repeating-conic-gradient(#fff 0 25%,#1a0b3d 0 50%) 0 0/20px 20px;display:flex;align-items:center;justify-content:center}
+.run{position:absolute;bottom:20px;width:44px;height:90px;transition:none}
+.run .rh{position:absolute;top:0;left:9px;width:26px;height:26px;border-radius:50%;background:#f1c27d}
+.run .rb{position:absolute;top:26px;left:7px;width:30px;height:38px;border-radius:6px}
+.run .rl{position:absolute;top:62px;width:10px;height:26px;background:#1a0b3d;transform-origin:top}.run .rl.a{left:10px}.run .rl.b{left:24px}
+.run.me .rb{background:#3d8bff}.run.him .rb{background:#ff4b5c}.run.him{bottom:34px}
+.run .rl.a{transform:rotate(18deg)}.run .rl.b{transform:rotate(-18deg)}.run.s2 .rl.a{transform:rotate(-18deg)}.run.s2 .rl.b{transform:rotate(18deg)}
+.rungo{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);font-size:34px;padding:16px 56px;z-index:4}
+@media (max-width:760px){.road{height:110px}.run{transform:scale(.85);transform-origin:bottom}.rungo{font-size:30px;padding:14px 44px}}
 
 /* ===== reading: 🔊 + lit-up words ===== */
 .rdb{display:inline-grid;place-items:center;width:34px;height:34px;padding:0;margin-inline-end:8px;font-size:18px;line-height:1;background:#fff;border-radius:50%;box-shadow:0 0 0 2px rgba(0,0,0,.12),0 3px 0 rgba(0,0,0,.18);vertical-align:middle;cursor:pointer}
@@ -5626,7 +5635,7 @@ function finish(id,score,stars,extra){if(cur){cur.stop();cur=null;}T.setKey(null
 /* #351 difficulty: a level 0..CAP per game (not the record). 3 stars -> one step up, 1 star -> one step down; wider numbers (1-20) only after 3 good rounds in a row */
 const CAP=4;
 const tune=id=>{const a=A(),l=brk?0:Math.max(0,Math.min(CAP,(a.lv||{})[id]|0)),w=!brk&&((a.gr||{})[id]|0)>=3;/* #428 a break round: the calm base level */
-  return {lv:l,wide:w,max:w?20:10,line:w?50:l>=2?20:10,sp:[.035*(1+l*.08),.056*(1+l*.08)],spawn:950-l*40,stay:2400-l*150,gap:1100-l*60,meter:.055*(1+l*.1),zone:34-l*2,rivalT:60000-l*3500,grav:.0003*(1+l*.08),vmax:.6*(1+l*.06),flip:.29-l*.01,pk:.8*(1+l*.06),ai:.42*(1+l*.08)};};/* pinball (#667): gravity + speed cap grow only up to CAP, bigger flippers when easier */
+  return {lv:l,wide:w,max:w?20:10,line:w?50:l>=2?20:10,sp:[.035*(1+l*.08),.056*(1+l*.08)],spawn:950-l*40,stay:2400-l*150,gap:1100-l*60,meter:.055*(1+l*.1),zone:34-l*2,rivalT:60000-l*3500,chT:16000-l*700,chGap:.3-l*.01,grav:.0003*(1+l*.08),vmax:.6*(1+l*.06),flip:.29-l*.01,pk:.8*(1+l*.06),ai:.42*(1+l*.08)};};/* pinball (#667): gravity + speed cap grow only up to CAP, bigger flippers when easier */
 const adapt=(id,stars)=>{const a=A();a.lv=a.lv||{};a.gr=a.gr||{};const l=tune(id).lv;
   if(stars>=3){a.lv[id]=Math.min(CAP,l+1);a.gr[id]=(a.gr[id]|0)+1;}else{a.gr[id]=0;if(stars<=1)a.lv[id]=Math.max(0,l-1);}};
 const COLS=[['#ff4b5c','אֲדֻמִּים'],['#3d8bff','כְּחֻלִּים'],['#ffd23f','צְהֻבִּים'],['#3cd070','יְרֻקִּים']];
@@ -5755,6 +5764,8 @@ function start(id){T.setKey(null);RUN[id]();}
 let brk=null;
 function brkEnd(){const n=brk&&brk.next;brk=null;if(n)n();}
 function breakRound(id,next){id=G(id)?id:GAMES[0].id;brk={next:next||O.showMap,id};start(id);}
+/* pack games (chase.js) join the hall through this small kit */
+T.arcReg=(g,fn)=>{if(!G(g.id)){GAMES.push(g);RUN[g.id]=fn;}};T.arcKit={frame,countdown,finish,tune,setCur:c=>{cur=c;}};
 T.arcBreak=breakRound;T.arcGames=GAMES;
 /* #668 a pack file adds its own cabinet: T.arcPack.add(gameInfo, run) (airhockey.js) */
 T.arcPack={add:(gm,fn)=>{if(G(gm.id))return;GAMES.push(gm);RUN[gm.id]=fn;T.addChoices&&T.addChoices([gm.n]);},frame,countdown,finish,tune,setCur:c=>{cur=c;}};
@@ -5853,6 +5864,31 @@ function pinball(){const K=T.arcKit,F=K.frame('pinball');const t=K.tune('pinball
   K.setCur({stop:()=>{alive=false;},finish:sc=>{if(sc!=null)score=sc;done();},hit:()=>{flip(0);flip(1);},setBall:(x,y,vx,vy)=>{b={x,y,vx,vy};},get ball(){return b;},geo,get score(){return score;},get balls(){return balls;}});
   K.countdown(F,()=>{launch();last=performance.now();end=last+D(75000);requestAnimationFrame(loop);});}
 T.arcAdd(GM,pinball);T.addSay&&T.addSay(['לְחַץ עַל הַצַּד הַשְּׂמָאלִי אוֹ הַיְּמָנִי כְּדֵי לְהַכּוֹת בַּכַּדּוּר.']);
+})();
+
+/* ===== 🏃 ARCADE pack: catch the runner before the finish line (#665). One main action: tap / Space / click the big button to run ===== */
+(()=>{'use strict';const O=window.OREN,T=window.TAL;if(!O||!T||!T.arcReg)return;const {h}=O,sfx=O.sfx,D=O.D;const K=T.arcKit;
+const RULE='תְּפֹס אֶת הָרַצָּץ לִפְנֵי קַו הַסִּיּוּם! לְחַץ עַל "רוּץ!" שׁוּב וָשׁוּב.';
+T.addSay&&T.addSay([RULE,'תְּפַסְתָּ אוֹתוֹ!','הוּא הִגִּיעַ לַסִּיּוּם. עוֹד פַּעַם!']);T.addChoices&&T.addChoices(['תְּפֹס אֶת הָרַצָּץ']);
+const R=3,STEP=.03;
+function chase(){const F=K.frame('chase');const t=K.tune('chase');let k=0,caught=0,me=0,rn=0,alive=true,running=false,last=0;
+  F.field.classList.add('trk');
+  const man=cls=>h('div','run '+cls,'<i class="rh"></i><i class="rb"></i><i class="rl a"></i><i class="rl b"></i>');
+  const road=h('div','road','<span class="fl">🏁</span>');const you=man('me'),him=man('him');road.append(him,you);
+  const go=h('button','bigbtn gold rungo','🏃 <span>רוּץ!</span>');const msg=h('div','kmsg','');F.field.append(road,msg,go);
+  const put=()=>{you.style.left=(me*86)+'%';him.style.left=(rn*86)+'%';};
+  const round=()=>{me=0;rn=t.chGap;put();msg.textContent='';msg.className='kmsg';running=true;last=performance.now();F.time(`🏃 ${k+1}/${R}`);F.rule('🏃 תְּפֹס אֶת הָרַצָּץ לִפְנֵי קַו הַסִּיּוּם!',RULE);requestAnimationFrame(loop);};
+  function step(){if(!running||!alive)return;me=Math.min(1,me+STEP);you.classList.toggle('s2');sfx.pop(2);put();check();}
+  function check(){if(!running)return;if(me>=rn){running=false;caught++;F.score(caught);msg.textContent='תְּפַסְתָּ אוֹתוֹ! 🎉';msg.className='kmsg win';sfx.win();next();}
+    else if(rn>=1){running=false;msg.textContent='הוּא הִגִּיעַ לַסִּיּוּם. עוֹד פַּעַם!';sfx.no();next();}}
+  const next=()=>setTimeout(()=>{if(!alive||!road.isConnected)return;k++;if(k>=R)done();else round();},D(1300));
+  const loop=now=>{if(!alive||!road.isConnected){alive=false;return;}if(!running)return;if(O.paused){last=now;requestAnimationFrame(loop);return;}const dt=Math.min(50,now-last);last=now;rn=Math.min(1,rn+dt*(1-t.chGap)/D(t.chT));him.classList.toggle('s2',Math.floor(now/160)%2===0);put();check();if(running)requestAnimationFrame(loop);};
+  go.onpointerdown=e=>{e.preventDefault();step();};go.onclick=e=>{if(e.detail===0)step();};/* keyboard Enter on the button */
+  T.setKey(e=>{if(e.key===' '||e.key==='Enter'||e.key.startsWith('Arrow')){e.preventDefault();step();}});
+  function done(){if(!alive)return;alive=false;running=false;const st=caught>=3?3:caught>=2?2:1;K.finish('chase',caught,st,` מִתּוֹךְ ${R}`);}
+  K.setCur({stop:()=>{alive=false;running=false;},finish:sc=>{if(sc!=null)caught=sc;done();},hit:()=>{step();},get score(){return caught;}});
+  F.rule('🏃 תְּפֹס אֶת הָרַצָּץ לִפְנֵי קַו הַסִּיּוּם!',RULE);K.countdown(F,round);}
+T.arcReg({id:'chase',n:'תְּפֹס אֶת הָרַצָּץ',e:'🏃',c:'#ff5a5f',d:'רָצִים לַסִּיּוּם'},chase);
 })();
 
 /* ===== READING: "קוֹדֶם אַתָּה, אַחַר כָּךְ אֲנִי" =====
