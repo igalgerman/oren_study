@@ -41,6 +41,7 @@ import argparse, calendar, hashlib, importlib, json, re, shutil, subprocess, sys
 from pathlib import Path
 
 HERE = Path(__file__).parent
+SRC_HASH = hashlib.md5(Path(__file__).read_bytes()).hexdigest()   # #127: the content this running copy was loaded from
 sys.path.insert(0, str(HERE))
 import ghauth     # #363: GitHub App token for the bots
 import runner as R   # config, gh(), select(), hc paths
@@ -657,9 +658,9 @@ def loop(once):
             now = stamps()
             if now != st:                     # #300: a merged fix (any tools/runner file): reload ALL, in dependency order, then watchdog.py
                 reload_all(log)
-                old = getattr(W, "tick", None)
+                old = getattr(W, "SRC_HASH", None)
                 W = reload_self(W)
-                if getattr(W, "tick", None) is not old: log("reloaded watchdog.py")   # #127: only when its own functions really changed
+                if getattr(W, "SRC_HASH", None) != old: log("reloaded watchdog.py")   # #127: only when its own functions really changed
                 st = now                      # only after a clean reload: a failed one is retried next tick
             W.tick()
             _net["tick"] = 0

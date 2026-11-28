@@ -9,7 +9,7 @@ W.tick = lambda: calls.append("old")
 W.log = lambda m: calls.append(m)
 real_reload = importlib.reload
 def fake_reload(mod):
-    if mod is W: mod.tick = lambda: calls.append("new"); return mod
+    if mod is W: mod.tick = lambda: calls.append("new"); mod.SRC_HASH = "changed"; return mod
     return real_reload(mod)
 importlib.reload = fake_reload
 st = os.stat(W.__file__); n = [0]
@@ -39,3 +39,32 @@ got = real_wd.reload_self(main_mod)
 assert got.tick() == "new", "reload_self returned the stale cached watchdog module"
 sys.modules["watchdog"] = real_wd; sys.path.remove(d)
 print("ok watchdog main-module function change is picked up")
+
+# #127 Acceptance 2: log "reloaded watchdog.py" only when watchdog.py's own content changed
+import hashlib as _h
+def run_loop(touch_name):
+    """One loop pass where `touch_name` (a runner file) gets a new mtime; hash of watchdog.py as given. -> log lines"""
+    out = []; W2 = real_wd
+    W2.log = lambda m: out.append(m)
+    W2.tick = lambda: None
+    W2.reload_all = lambda log: None
+    W2.reload_self = lambda W: (setattr(W, "SRC_HASH", W.SRC_HASH if touch_name != "watchdog.py" else "x"), W)[1]
+    base = W2.stamps(); k = [0]
+    def stamps():
+        k[0] += 1
+        if k[0] == 1: return base
+        return {**base, touch_name: base.get(touch_name, 0) + 5}
+    W2.stamps = stamps
+    n = [0]
+    def sleep(_):
+        n[0] += 1
+        if n[0] > 1: raise SystemExit
+    W2.time.sleep = sleep
+    try: W2.loop(False)
+    except SystemExit: pass
+    return [l for l in out if l == "reloaded watchdog.py"]
+orig = (real_wd.log, real_wd.tick, real_wd.reload_all, real_wd.reload_self, real_wd.stamps, real_wd.SRC_HASH)
+assert run_loop("stats.py") == [], "another runner file changed: no 'reloaded watchdog.py'"
+assert run_loop("watchdog.py") == ["reloaded watchdog.py"], "watchdog.py changed: exactly one line"
+real_wd.log, real_wd.tick, real_wd.reload_all, real_wd.reload_self, real_wd.stamps, real_wd.SRC_HASH = orig
+print("ok reloaded-watchdog log only on a real change")
