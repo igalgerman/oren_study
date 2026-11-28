@@ -843,10 +843,10 @@ def remote_worker_prompt(n, lane, bug=False, retry=False):
         base += "This is a BUG: follow docs/agents/skills/diagnosing-bugs.md, then tdd: reproduce it with a failing test, then fix it; say the root cause in the PR body.\n"
     if retry:                                    # #137: an earlier cloud session died without a RESULT comment
         base += (f"An earlier cloud session for this issue ended without a RESULT comment: if lane/{n} exists on GitHub, "
-                 f"continue from it (`git fetch {REMOTE} lane/{n}` and check it out) instead of starting over.\n")
+                 f"continue from it (`git fetch {REMOTE} lane/{n}` and check it out; its draft PR may already exist, do not open a second one) instead of starting over.\n")
     return base + REBUILD + (f"Work on branch lane/{n} (create it from {BRANCH}). Follow the worker rules in FLOW.md: run the tests you touched, commit "
                    f"(after `python3 build_talents.py` in oren2/, WITH the rebuilt oren2/index.html and oren2/cf/public/index.html (CI is red when they differ from a fresh build, #503)), `git push -u {REMOTE} lane/{n}`, and open a PR to {BRANCH} "
-                   f"with `gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Fixes #{n}` (if you may only push claude/* branches, use your claude/* branch instead; the runner finds the PR by `Fixes #{n}`). Never deploy, never force-push, never push to {BRANCH}.\n"
+                   f"with `gh pr create --draft --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Fixes #{n}` (#747: push the branch and open this DRAFT PR right after your first green commit, so a dead session does not lose the work; keep pushing to it; at the very end mark it ready with `gh pr ready <PR>`, or `gh api -X POST repos/{REPO}/pulls/<PR>/ccr/ready_for_review` if GraphQL is refused) (if you may only push claude/* branches, use your claude/* branch instead; the runner finds the PR by `Fixes #{n}`). Never deploy, never force-push, never push to {BRANCH}.\n"
                    f"You have no terminal the owner can see, so report ONLY through an issue comment (that line on its own line): "
                    f"if blocked post `RESULT: STUCK <why>`; if you need the owner post `QUESTION: <short question, with options>` and stop.\n"
                    f"LAST STEP (mandatory), after the PR is open: post `gh issue comment {n} --repo {REPO} --body \"RESULT: DONE <PR url>\"`. "
@@ -950,13 +950,14 @@ def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=N
 class Refused(Exception):
     """#137: the cloud refused to start a session (CLI error, usage limit, no network): run locally or wait, never STUCK."""
 
-def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None, comment=None):
+def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None, comment=None, has_draft=None):
     """Start the cloud worker and wait for its comment. Returns the marker line (`RESULT: ...` / `QUESTION: ...`) like agent() does.
     on_start(start result) keeps the session id (#134: FIX points are sent back to this session).
+    #747: has_draft() true (lane/<n> already has a draft PR but no RESULT) = resume at worker: the new session continues on that branch.
     #137: a refused start raises Refused; a session silent for timeout_s (died without RESULT) -> comment() + ONE new session, then STUCK."""
     urls = []
     for attempt in (1, 2):
-        s = start(n, remote_worker_prompt(n, lane, bug, retry=attempt > 1), CFG.get("main_checkout", "."))
+        s = start(n, remote_worker_prompt(n, lane, bug, retry=attempt > 1 or bool(has_draft and has_draft())), CFG.get("main_checkout", "."))
         if not s.get("ok"):
             raise Refused(s.get("error", "?"))
         if on_start: on_start(s)
@@ -1902,6 +1903,27 @@ def find_pr(n):
     """Open PR number of issue n: lane/<n>, or a cloud worker's claude/* PR (#246, remote.pr_for)."""
     return remote.pr_for(n, run=run)[0]
 
+def draft_pr(n):
+    """#747: number of the DRAFT PR on lane/<n> (a worker that died early left it), else None."""
+    rc, out = gh("pr", "list", "--head", f"lane/{n}", "--state", "open", "--json", "number,isDraft")
+    try: prs = json.loads(out) if rc == 0 and out.strip() else []
+    except ValueError: return None
+    return next((p["number"] for p in prs if p.get("isDraft")), None)
+
+def ensure_pr_ready(n):
+    """#747: the worker said DONE: mark its draft PR ready, or open the PR from the pushed branch when it never did
+    ('DONE but no open PR' cannot happen). Returns the PR number or None (no pushed branch / gh failed)."""
+    d = draft_pr(n)
+    if d:
+        gh("pr", "ready", str(d)); return d
+    pr = find_pr(n)
+    if pr: return pr
+    rc, out = run(["git", "ls-remote", "--heads", REMOTE, f"lane/{n}"], cwd=CFG.get("main_checkout", "."))
+    if rc or not out.strip(): return None
+    rc, out = gh("pr", "create", "--base", BRANCH, "--head", f"lane/{n}", "--title", f"#{n} (opened by the runner)",
+                 "--body", f"Fixes #{n}\n\nOpened by the runner: the worker said DONE and pushed lane/{n} but opened no PR.")
+    return find_pr(n) if rc == 0 else None
+
 def branch_of(n):
     """#246: head branch of issue n's open PR (lane/<n> when there is none)."""
     return remote.pr_for(n, run=run)[1] or f"lane/{n}"
@@ -2219,7 +2241,7 @@ def process_locked(issue, where="local"):
             try:
                 res = remote_worker(n, lane, "bug" in issue["labels"], rstart, lambda: fresh_remote().status(n, since=started),
                                     poll_sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over,
-                                    comment=lambda b: gh("issue", "comment", str(n), "--body", b))
+                                    comment=lambda b: gh("issue", "comment", str(n), "--body", b), has_draft=lambda: draft_pr(n))
                 remote_question(res)
                 out = res
             except Refused as e:                         # #137: local lane free -> run here; else give the issue back, it waits
@@ -2265,7 +2287,7 @@ def process_locked(issue, where="local"):
         for rnd in range(1, FIX_ROUNDS + 2):
             tfail = tfail0 and rnd == 1
             if step in ("resolve", "merge"): break
-            pr = find_pr(n)
+            pr = find_pr(n) if step else ensure_pr_ready(n)      # #747: DONE -> ready / opened by the runner
             if not pr: raise Blocked("worker said DONE but no open PR for #%d (lane/%d, the RESULT line's PR, or a PR body 'Fixes #%d')" % (n, n, n))
             reviewed["sha"] = gh("pr", "view", str(pr), "--json", "headRefOid", "-q", ".headRefOid")[1].strip()   # #185: the head the reviewer sees; the merge must match it
             if rnd == 1 and step == "fix":         # #264: the head's red VERDICT is known: fix first, then review

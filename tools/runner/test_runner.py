@@ -1659,3 +1659,27 @@ finally: r.stat = _old_stat
 assert _ev713 == [("parked", {"model": "sonnet", "effort": "medium", "colour": "purple"}),
                   ("review_pass", {"model": "sonnet", "effort": "medium", "colour": "purple"})], _ev713
 assert "stat_purple(n, lane, extra, me)" in inspect.getsource(r.process_locked)
+
+# #747: draft PR early; a draft PR without RESULT = resume at worker; DONE without PR -> the runner opens it
+_p = r.remote_worker_prompt(7, "pack")
+assert "--draft" in _p and "first green commit" in _p and "gh pr ready" in _p
+_tasks = []
+def _fs(n, task, cwd): _tasks.append(task); return {"ok": True, "session": "s", "url": "u"}
+r.remote_worker(7, "pack", False, _fs, lambda: {"state": "done", "line": "RESULT: DONE"}, lambda s: None, lambda: 0, 60, 30, has_draft=lambda: 5)
+assert "continue from it" in _tasks[-1] and "draft PR" in _tasks[-1]            # draft PR exists -> continue on lane/7
+r.remote_worker(7, "pack", False, _fs, lambda: {"state": "done", "line": "RESULT: DONE"}, lambda s: None, lambda: 0, 60, 30, has_draft=lambda: None)
+assert "continue from it" not in _tasks[-1]                                      # no draft -> fresh start
+_sv = (r.gh, r.run, r.find_pr)
+try:
+    _g = []
+    r.gh = lambda *a, **k: (_g.append(a), (0, json.dumps([{"number": 5, "isDraft": True}]) if a[:2] == ("pr", "list") else ""))[1]
+    assert r.draft_pr(7) == 5 and r.ensure_pr_ready(7) == 5 and ("pr", "ready", "5") in _g     # DONE + draft -> marked ready
+    _g.clear(); _made = []
+    r.gh = lambda *a, **k: (_g.append(a), (0, "[]") if a[:2] == ("pr", "list") else (0, ""))[1]
+    r.find_pr = lambda n: 9 if any(x[:2] == ("pr", "create") for x in _g) else None
+    r.run = lambda cmd, **k: (0, "abc\trefs/heads/lane/7\n")
+    assert r.ensure_pr_ready(7) == 9 and any(x[:2] == ("pr", "create") and "Fixes #7" in x[-1] for x in _g)   # DONE, pushed, no PR -> runner opens it
+    _g.clear(); r.find_pr = lambda n: None; r.run = lambda cmd, **k: (0, "")
+    assert r.ensure_pr_ready(7) is None and not any(x[:2] == ("pr", "create") for x in _g)    # nothing pushed -> still blocked
+finally: r.gh, r.run, r.find_pr = _sv
+print("ok #747 draft PR resume + runner opens PR")
