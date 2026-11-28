@@ -46,6 +46,53 @@ const { chromium } = require('playwright');
     ok('problem log counts and merges', iss.e === 2 && iss.v === 2, JSON.stringify(iss));
     await ctx.close();
   }
+  // #662: the wardrobe: 6 groups with 4+ options, some won with stars, the same hero on every screen, saved + synced
+  {
+    const W = require('./walk');
+    const ctx = await b.newContext(L.VIEWPORT);
+    await ctx.addInitScript(() => { try { if (!sessionStorage.w662) { localStorage.clear(); sessionStorage.w662 = 1; } } catch (e) {} window.__fast = true; window.__noFamily = true; });
+    const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
+    await p.goto(L.URL); await L.noCoach(p);
+    const NIK = /[\u05B0-\u05C7]/;
+    const gr = await p.evaluate(() => window.OREN.WARD.map(g => ({ k: g.k, he: g.he, n: Math.max(...g.parts.map(x => x.opts.length)), lock: g.parts.some(x => x.opts.some(o => o.at)) })));
+    ok('#662 wardrobe: hair, face, skin, clothes, shoes, accessories, each with 4+ options', ['hair', 'face', 'skin', 'clothes', 'shoes', 'acc'].every(k => gr.some(g => g.k === k && g.n >= 4)), JSON.stringify(gr));
+    ok('#662 group names have nikud', gr.every(g => NIK.test(g.he)), JSON.stringify(gr.map(g => g.he)));
+    ok('#662 some options are won by playing', gr.some(g => g.lock));
+    await p.evaluate(() => { const O = window.OREN; O.save.story.intro = 1; O.studio(false); });
+    await p.locator('#sStudio .wcat').first().waitFor({ timeout: 4000 }).catch(() => {});
+    ok('#662 studio: one button per group, big picture options', await p.locator('#sStudio .wcat').count() === 6 && await p.locator('#sStudio .wopt').count() >= 4);
+    const look0 = await p.evaluate(() => window.OREN.AV());
+    await p.locator('#sStudio .wopt:not(.lock)').nth(1).click();
+    const look1 = await p.evaluate(() => window.OREN.AV());
+    ok('#662 one tap on an option changes the hero', look0 !== look1);
+    // a locked option: no change with 0 stars, works when the stars are there
+    const lk = await p.evaluate(() => { const O = window.OREN; let r = null;
+      for (const g of O.WARD) for (const pt of g.parts) for (const o of pt.opts) if (o.at && !r) r = { g: g.k, part: pt.key, k: o.k, at: o.at };
+      return r; });
+    await p.evaluate(g => document.querySelectorAll('#sStudio .wcat')[g].click(), await p.evaluate(k => window.OREN.WARD.findIndex(g => g.k === k), lk.g));
+    const before = await p.evaluate(pt => window.OREN.save.av[pt], lk.part);
+    await p.locator('#sStudio .wopt.lock').first().click();
+    ok('#662 a locked option does not change the hero and shows a lock', await p.evaluate(pt => window.OREN.save.av[pt], lk.part) === before && await p.locator('#sStudio .wopt.lock .wlk').count() > 0);
+    const got = await p.evaluate(([part, k]) => { const O = window.OREN, c = O.avOpen(part, k); O.WORLDS.forEach(w => w.levels.forEach(l => { O.save.s[l.id] = 3; })); return [c, O.avOpen(part, k)]; }, [lk.part, lk.k]);
+    ok('#662 a locked option opens when the stars are won', got[0] === false && got[1] === true, JSON.stringify(got));
+    // the same hero on every screen
+    await p.evaluate(() => { const O = window.OREN; O.save.av.hs = 'spiky'; O.save.av.face = 'grin'; O.save.av.acc = 'glasses'; O.save.av.shoe = 'red'; O.persist(); });
+    const sel = { home: '#sHome .hpair .hav svg', kingdom: '.kmine .ti svg', studio: '#sStudio .pv .a svg' };
+    const w = await W.walkScreens(Object.keys(sel), async id => { await p.evaluate(id => { const O = window.OREN; if (id === 'home') { window.TAL.S().prof = { an: 'cat', col: '#3a8fc4', love: 'art' }; O.showMap(); } else if (id === 'kingdom') O.kingdom(); else O.studio(false); }, id); await L.sleep(150); },
+      async id => (await p.evaluate(s => { const e = document.querySelector(s), d = document.createElement('div'); d.innerHTML = window.OREN.AV(); return !!e && e.outerHTML === d.firstChild.outerHTML; }, sel[id])) || 'hero differs from AV()');
+    res.push(W.walkLine('#662 the hero looks the same on every screen', w));
+    // saved and synced
+    await p.evaluate(() => window.OREN.persist()); await L.sleep(300);
+    await p.reload(); await p.waitForFunction(() => window.OREN && window.OREN.save);
+    const sv = await p.evaluate(() => window.OREN.save.av);
+    ok('#662 the look is saved over a reload', sv.hs === 'spiky' && sv.face === 'grin' && sv.acc === 'glasses' && sv.shoe === 'red', JSON.stringify(sv));
+    const sy = await p.evaluate(() => { const O = window.OREN; O.save.av.hs = 'short'; O.save.avT = 10; O.mergeIn({ av: { hs: 'long', face: 'wow' }, avT: 20 }); const a = O.save.av.hs + '/' + O.save.av.face; O.mergeIn({ av: { hs: 'curly' }, avT: 5 }); return [a, O.save.av.hs]; });
+    ok('#662 the look syncs (newer wins, older ignored)', sy[0] === 'long/wow' && sy[1] === 'long', JSON.stringify(sy));
+    const say = await p.evaluate(() => window.OREN.WARD_SAY);
+    ok('#662 the kid lines have nikud', Array.isArray(say) && say.length >= 2 && say.every(t => NIK.test(t)), JSON.stringify(say));
+    ok('no page errors (wardrobe)', !errs.length, errs.join(' | '));
+    await ctx.close();
+  }
   // #350: a real crash keeps the message AND its first stack line (file:line:col), so the next one is findable
   {
     const ctx = await b.newContext(L.VIEWPORT);
