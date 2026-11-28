@@ -25,7 +25,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: tools/ci
+          sparse-checkout: |
+            tools/ci
+            tools/runner
       - id: plan
         env:
           GH_TOKEN: ${{ github.token }}
@@ -138,7 +140,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: tools/ci
+          sparse-checkout: |
+            tools/ci
+            tools/runner
       - env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
