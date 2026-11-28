@@ -811,11 +811,15 @@ _ps = [r.remote_worker_prompt(64, "pack"), r.worker_prompt(64, "pack"), r.remote
        r.remote_fix_prompt(64, "FIX x"), r.ci_fix_prompt(64, []), r.resolve_prompt(64, []), r.remote_resolve_prompt(64, []),
        r.remote_resolve_prompt(64, [], ci=True), r.tester.prompt(64, 557, "T1", "u")]
 for _p in _ps: assert r.NO_MERGE in _p, _p[:80]
+# #808: no cloud prompt may make the owner's phone ask for an approval (Artifact tool, screenshots on public GitHub)
+for _p in _ps: assert r.remote.NO_APPROVAL in _p, _p[:80]
+assert "Artifact" in r.remote.NO_APPROVAL and "RESULT" in r.remote.NO_APPROVAL and "VERDICT" in r.remote.NO_APPROVAL and "public GitHub" in r.remote.NO_APPROVAL
 assert "gh pr merge" in r.NO_MERGE and "Bash(gh pr merge:*)" in r.DENY_TOOLS
 _sent = []
 r.remote_resume(64, "pack", False, "s1", "yes", lambda s, t: _sent.append(t) or {"ok": True}, None,
                 lambda: {"state": "done", "line": "RESULT: DONE x"}, lambda s: None, lambda: 0)
 assert _sent and r.NO_MERGE in _sent[0], "#557: the answer relay to the resumed session forbids merging"
+assert r.remote.NO_APPROVAL in _sent[0], "#808: the answer relay carries the no-approval rule"
 _ag = _src.split("def agent(", 1)[1].split("\ndef ", 1)[0]
 assert '"--disallowedTools", *DENY_TOOLS' in _ag
 # the orchestrator's hand merge goes through the same guard: tools/runner/merge.py <pr>
