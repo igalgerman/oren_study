@@ -857,6 +857,12 @@ g = r.governor(_u(20, 4, week=39, week_reset_h=24 * 3), [], _now, _G); assert g[
 g = r.governor(_u(5, 1, week=80, week_reset_h=24 * 3), [], _now, _G); assert g["lanes"] == 4 and g["week_projected"] > 99, g
 # 2 days in: 45% -> ~157% ahead -> cap 4; 20% -> ~70% behind -> 8
 assert r.governor(_u(5, 1, week=45, week_reset_h=24 * 5), [], _now, _G)["lanes"] == 4
+# #698 week hard stop: week >= week_stop -> no new run, even in a fresh 5h window; below it, or after the week reset, no stop
+_GW = {**_G, "week_stop": 97, "reserve": 0}   # #703 reserve off here: isolates the #698 stop
+g = r.governor(_u(5, 1, week=97, week_reset_h=20), [], _now, _GW); assert g["stop"] and "week 97%" in g["why"], g
+g = r.governor(_u(5, -1, week=98, week_reset_h=20), [], _now, _GW); assert g["stop"] and "week" in g["why"], g
+assert not r.governor(_u(5, 1, week=96.9, week_reset_h=20), [], _now, _GW)["stop"]
+assert not r.governor(_u(5, 1, week=99, week_reset_h=-1), [], _now, _GW)["stop"]
 assert r.governor(_u(5, 1, week=20, week_reset_h=24 * 5), [], _now, _G)["lanes"] == 8
 # first hours of a week: too early to project -> 5h rule only
 assert r.governor(_u(20, 4, week=1, week_reset_h=24 * 7 - 2), [], _now, _G)["lanes"] == 5
@@ -866,11 +872,30 @@ assert r.governor(_u(93, 1, week=39, week_reset_h=24 * 3), [], _now, _G)["stop"]
 t = r.governor_text(r.governor(_u(20, 4, week=39, week_reset_h=24 * 3), [], _now, _G))
 assert t.startswith("governor: 8 lanes, aim 90% (5h 20% -> ~") and " · week 39% -> ~68% at " in t and t.endswith(")"), t
 assert _time_mod.strftime("%a %H:%M", _time_mod.localtime(_now + 24 * 3 * 3600)) in t, t
-# stale / missing -> config remote_lanes
-assert r.governor(_u(20, 4, age=16 * 60), [], _now, _G)["lanes"] == 4
-assert r.governor(None, [], _now, _G)["lanes"] == 4 and not r.governor(None, [], _now, _G)["stop"]
-assert r.governor({"at": "junk"}, [], _now, _G)["lanes"] == 4
-assert "no fresh usage" in r.governor_text(r.governor(None, [], _now, _G))
+# #704 stale / missing reading: hold prev 30 min, then the floor (1); never remote_lanes (_G fallback 4 must not appear)
+_old = _u(20, 4, age=16 * 60)
+g = r.governor(_old, [], _now, _G, prev=6); assert g["lanes"] == 6 and g["why"] == "stale reading: hold" and g["stale_since"] == _now and not g["stop"], g
+g = r.governor(_old, [], _now + 29 * 60, _G, prev=6, stale_since=_now); assert g["lanes"] == 6 and g["why"] == "stale reading: hold", g
+g = r.governor(_old, [], _now + 30 * 60, _G, prev=6, stale_since=_now); assert g["lanes"] == 1 and g["why"] == "stale reading: floor" and not g["stop"], g
+g = r.governor(None, [], _now, _G, prev=2); assert g["lanes"] == 2 and g["why"] == "stale reading: hold", g
+g = r.governor({"at": "junk"}, [], _now, _G); assert g["lanes"] == 1 and g["why"] == "stale reading: floor", g          # nothing to hold: floor
+g = r.governor(_u(20, 4, week=98, week_reset_h=24, age=16 * 60), [], _now + 3600, _G, prev=6, stale_since=_now, ); assert g["lanes"] == 0 and g["stop"], g   # no budget: N_lo 0
+assert "stale reading" in r.governor_text(r.governor(None, [], _now, _G, prev=3))
+# 5h 15% frozen 45 min with busy lanes -> stale; shorter / idle / value changed -> not stale
+_fz = lambda n, busy=4, pct=15: [{"at": _now - 60 * m, "pct": pct, "reset": _iso(_now + 4 * 3600), "busy": busy} for m in range(n, -1, -5)]
+_uf = _u(15, 4)
+g = r.governor(_uf, _fz(45), _now, _G, prev=4); assert g["why"] == "stale reading: hold" and g["lanes"] == 4, g
+assert r.governor(_uf, _fz(40), _now, _G, prev=4)["why"] != "stale reading: hold"
+assert r.governor(_uf, _fz(45, busy=0), _now, _G, prev=4)["why"].startswith("pace")
+assert r.governor(_u(16, 4), _fz(45), _now, _G, prev=4)["why"].startswith("pace")
+assert r.governor(_u(15, 4, week=99.5), _fz(45), _now, _G, prev=4)["why"].startswith("limit hit")           # W >= 99: not stale
+_ur = {**_uf, "read_at": _iso(_now - 46 * 60)}; assert r.governor(_ur, _fz(45), _now, _G, prev=4)["why"] == "stale reading: hold"   # read_at wins
+assert r.governor({**_uf, "read_at": _iso(_now - 5 * 60)}, _fz(45), _now, _G, prev=4)["why"].startswith("pace")
+# week-only data (no five_h bucket) is not stale and never remote_lanes
+g = r.governor({"five_h_pct": None, "week_pct": 40, "week_reset": _iso(_now + 3 * 86400), "at": _iso(_now - 60)}, [], _now, _G, prev=3)
+assert g["why"] == "no 5h usage: week only" and g["lanes"] == 3 and not g["stop"] and "stale_since" not in g, g
+assert r.governor({"five_h_pct": None, "week_pct": 40, "at": _iso(_now - 60)}, [], _now, _G)["lanes"] == _G["min"]
+assert "fallback" not in r.GOV
 # pace from the last hour (same window): 10 pts in 1h with 5 busy lanes = 2%/h/lane -> 20% + 2*n*4 <= 90 -> 8
 _rs = _iso(_now + 4 * 3600)
 _h = [{"at": _now - 3600, "pct": 10, "reset": _rs, "busy": 5}, {"at": _now - 60, "pct": 20, "reset": _rs, "busy": 5}]
@@ -885,7 +910,7 @@ t = r.governor_text(r.governor(_u(20, 4), [], _now, _G)); assert t.startswith("g
 g = r.governor(_u(95, -0.05), [], _now, _G); assert not g["stop"] and g["lanes"] == r.governor(_u(0, 5), [], _now, _G)["lanes"] > 0 and g["pct"] == 0 and g["why"] == "new 5h window", g
 assert g["reset"] > _now and "new 5h window" in r.governor_text(g) and "STOP" not in r.governor_text(g), r.governor_text(g)
 g = r.governor(_u(95, 0.05), [], _now, _G); assert g["stop"] and "STOP" in r.governor_text(g)   # reset still ahead -> stop per governor_stop
-assert r.governor(_u(95, -0.05, age=16 * 60), [], _now, _G)["why"].startswith("no fresh usage")   # stale -> fallback unchanged
+assert r.governor(_u(95, -0.05, age=16 * 60), [], _now, _G)["why"].startswith("stale reading")   # stale -> floor (#704)
 # #269: on stop only express issues still start (below 100%); 100% -> nothing
 _ch = [{"number": 1, "labels": ["core"]}, {"number": 2, "labels": ["express", "core"]}]
 assert r.stop_filter(_ch, {"stop": False, "pct": 50}) == _ch
@@ -933,7 +958,7 @@ assert r.lane_gate(6, 4, _ws[1:]) == (6, None)                                  
 # the governor applies the rule (projection follows the held count); a stop / fallback is unchanged
 g = r.governor(_u(5, 1), [], _now, _G, prev=4, wins=_ws); assert g["lanes"] == 4 and "hold 4" in g["why"] and abs(g["projected"] - (5 + 3.5 * 4)) < 1e-9, g
 assert r.governor(_u(5, 1), [], _now, _G, prev=4, wins=_up)["lanes"] == 8
-assert r.governor(None, [], _now, _G, prev=2, wins=_ws)["lanes"] == 4
+assert r.governor(None, [], _now, _G, prev=2, wins=_ws)["lanes"] == 2          # #704 stale: hold
 # shown on the panel and dashboard (both print governor.json's text)
 t = r.eff_text(_ws); assert t == " · efficiency 1.00 merged/10% (last 0.75) · wasted 1 (last 3)", t
 assert r.eff_text([]) == "" and r.eff_text([{**_ws[2], "eff": None}]) == " · efficiency - · wasted 1", r.eff_text([{**_ws[2], "eff": None}])
@@ -1538,3 +1563,24 @@ assert v == "" and "403" in rv
 rv, v = r.remote_tester(7, 9, "T2", _tstart, lambda: {"state": "working"}, lambda s: None, iter(range(0, 10**6, 60)).__next__, 120, 60)
 assert v == "" and "no TEST line" in rv, rv
 print("ok #618 tester: level line in the review prompts, cloud tester session test-<n> with the level's model")
+
+# #703: the week is a hard bound; a hit limit stops everything and puts died runs back in the queue
+_Gw = {**_G, "stop": 99, "reserve": 5}
+_ex = {"number": 1, "labels": ["express"]}; _nx = {"number": 2, "labels": []}
+g = r.governor(_u(0, 4.8, week=100), [], _now, _Gw)                       # Sat 11:26: week 100
+assert g["stop"] and g["limit_hit"] and g["why"].startswith("limit hit") and "governor: 0 lanes" in r.governor_text(g), g
+assert r.stop_filter([_ex, _nx], g) == []
+g = r.governor(_u(10, 3, week=97.5), [], _now, _Gw); assert g["stop"] and not g["limit_hit"] and r.stop_filter([_ex, _nx], g) == [_ex], g
+g = r.governor(_u(10, 3, week=98), [], _now, _Gw); assert g["stop"] and r.stop_filter([_ex, _nx], g) == [], g
+g = r.governor(_u(10, 3, week=93), [], _now, _Gw); assert not g["stop"] and not g["limit_hit"]
+_h = lambda reset_h: {"at": _now - 600, "pct": 0, "busy": 3, "reset": _iso(_now + reset_h * 3600)}
+g = r.governor(_u(0, 4.9, week=96), [_h(4.7), _h(4.8)], _now, _Gw)        # Fri 20:30-21:16: 5h 0%, reset moving forward, lanes busy
+assert g["limit_hit"] and g["stop"] and g["why"].startswith("limit hit"), g
+g = r.governor(_u(0, 4.9, week=50), [_h(4.9), _h(4.9)], _now, _Gw); assert not g["limit_hit"], g       # reset steady: normal
+g = r.governor(_u(0, 4.9, week=50), [{**_h(4.7), "busy": 0}, _h(4.8)], _now, _Gw); assert not g["limit_hit"], g   # idle lanes
+_uw = {"five_h_pct": None, "week_pct": 100, "week_reset": _iso(_now + 3600), "at": _iso(_now - 60)}   # no 5h bucket
+g = r.governor(_uw, [], _now, _Gw); assert g["stop"] and g["limit_hit"], g
+g = r.governor({**_uw, "week_pct": 50}, [], _now, _Gw, prev=4); assert not g["stop"] and not g["limit_hit"] and g["lanes"] == 4, g
+assert r.limit_requeue("RESULT: STUCK cloud worker died twice without a RESULT line (a, b)", True)
+assert r.limit_requeue("", True) and not r.limit_requeue("RESULT: STUCK cloud worker died twice x", False) and not r.limit_requeue("RESULT: DONE", True)
+print("ok #703 governor: week hard bounds, limit_hit, week-only usage, died run goes back in the queue")

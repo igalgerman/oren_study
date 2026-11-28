@@ -2,8 +2,8 @@
 The WHOLE recovery after a restart (planned freeze #139, or a crash), in order:
   1. clears stale .runs/*.lock files (dead pid, or taken before this boot), starts Herdr if it is not running
   2. removes finished terminals left by the restart (by address, never by name)
-  3. layout: space 'oren' (control_space) holds the tabs orchestrator, inbox, inspector; worker windows go to herdr_space ('oren-workers')
-  4. starts orchestrator, inbox, inspector when missing (same commands as the watchdog's restart check, CONTROL below)
+  3. layout: space 'oren' (control_space) holds the tabs orchestrator, inbox, inspector, executor; worker windows go to herdr_space ('oren-workers')
+  4. starts orchestrator, inbox, inspector, executor when missing (same commands as the watchdog's restart check, CONTROL below)
   5. every open in-progress issue (local or cloud) whose runner is dead: a half-done merge in its worktree is reset to the pushed branch,
      in-progress is removed (ready-for-agent kept/added) so the runner restarts it; .runs/frozen is removed first
   6. starts the watchdog when missing (it starts the runner passes), then reports in ONE issue comment (recover_issue) and to the orchestrator
@@ -13,7 +13,7 @@ import json, os, shutil, sys, time
 from pathlib import Path
 
 TASK = "Oren recover"
-CONTROL = ("orchestrator", "inbox", "inspector")    # the 3 Claude sessions on the PC, tabs of 'oren' in this order
+CONTROL = ("orchestrator", "inbox", "inspector", "executor")    # the 4 Claude sessions on the PC, tabs of 'oren' in this order
 INBOX_PROMPT = ("You are the INBOX of the Oren game multi-agent system (repo igalgerman/oren_study). Read CLAUDE.md and FLOW.md. "
                 "The owner talks to you: a new idea -> /idea, a clear task -> /task, a bug -> /bug, a status question -> /status. "
                 "Write every new issue the way docs/agents/skills/writing-for-agents.md says. Propose each new issue's model label (docs/agents/models.md). "
@@ -22,15 +22,17 @@ INBOX_PROMPT = ("You are the INBOX of the Oren game multi-agent system (repo iga
 TRIAGE_STEPS = ("Run the mattpocock-skills:triage steps on every new ticket (#29): duplicate check per CLAUDE.md ('One backlog, no duplicates'), "
                 "labels per docs/agents/triage-labels.md, a P-level, an Acceptance list, one lane label (core/pack/review), 'Blocked by: #n' lines.")
 ORCH_PROMPT = "Read ORCHESTRATOR.md and continue as the orchestrator. Open the Oren lanes panel (/lanes)."
+EXECUTOR_PROMPT = r"Read C:\work\Oren_study\EXECUTOR.md and follow it."
 INSPECTOR_PROMPT = "You are the INSPECTOR of the Oren game multi-agent system. Read C:/work/Oren_study/INSPECTOR_HANDOFF.md first and follow it."
 
 # ---------- pure logic (test_recover.py) ----------
 def control_argv(name, main_checkout, plugin_dir, claude="claude", python="python", watchdog=""):
-    """-> (cwd, argv) of the program for orchestrator / inbox / inspector / watchdog."""
+    """-> (cwd, argv) of the program for orchestrator / inbox / inspector / executor / watchdog."""
     mc = str(main_checkout)
-    return {"orchestrator": (mc, [claude, "--remote-control", "oren-orchestrator", "--plugin-dir", str(plugin_dir), ORCH_PROMPT]),
+    return {"orchestrator": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-orchestrator", "--plugin-dir", str(plugin_dir), ORCH_PROMPT]),
             "inbox": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-inbox", INBOX_PROMPT]),
             "inspector": (str(Path(mc).parent), [claude, "--model", "opus", "--remote-control", "oren-inspector", INSPECTOR_PROMPT]),
+            "executor": (mc, [claude, "--model", "opus", "--remote-control", "oren-executor", EXECUTOR_PROMPT]),
             "watchdog": (mc, [python, str(watchdog)])}[name]
 
 def hc_run_args(name, cwd, argv, space_id=""):

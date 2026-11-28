@@ -317,4 +317,21 @@ finally: RN.subprocess.run, ghauth.token, G.time.sleep = real_sub, real_tok, rea
 assert (rc, out) == (0, "owner ok") and toks[0] == "ghs_app" and toks[1] != "ghs_app", toks
 G.LIMITED.unlink(missing_ok=True); G._clock = time.monotonic
 print("ok #469 runner.run switches to the owner login on the app's limit")
+# ---------- #726: a garbage log line never fails the refresh; a PermissionError on replace is retried ----------
+G.CALLS.write_text(f"e\n\n{NOW + 190}\n{NOW + 190} who cal\n12", encoding="utf-8")
+G.DIRTY.write_text("e\n\nxx y\nhalf\n", encoding="utf-8")
+c = G.refresh(fake_gh, now=NOW + 200)
+assert c and c["ts"] == NOW + 200, "refresh survives garbage lines in gh_calls.log / gh_dirty.log"
+kept = G._lines(G.CALLS)
+assert kept and all(l.split()[0].replace(".", "").isdigit() for l in kept) and "e" not in kept, kept
+assert G._dirty_since(0) == set(), "garbage dirty lines are skipped"
+real_replace, n_perm = G.os.replace, []
+def flaky(a, b):
+    if not n_perm: n_perm.append(1); raise PermissionError(13, "Access is denied")
+    return real_replace(a, b)
+G.os.replace, G.time.sleep = flaky, lambda s: None
+try: G._save({"ts": NOW + 300})
+finally: G.os.replace, G.time.sleep = real_replace, time.sleep
+assert n_perm and G.load()["ts"] == NOW + 300, "saved after one PermissionError"
+print("ok #726 garbage log lines and replace retry")
 print("ALL ghcache tests passed")

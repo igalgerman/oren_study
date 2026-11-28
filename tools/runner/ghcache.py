@@ -161,12 +161,18 @@ def top_report(t0, t1):
         rows.append(f"{time.strftime('%H:%M', time.localtime(m))}  {sum(n for n, _, _ in per)}  " + " · ".join(f"{w} {n} {c}" for n, w, c in per))
     return "\n".join(rows)
 
+def _ts_ok(line, since):
+    try: return float(line.split()[0]) >= since
+    except (IndexError, ValueError): return False
+
 def _dirty_since(ts):
     out = set()
     for l in _lines(DIRTY):
         try: t, what = l.split(" ", 1)
         except ValueError: continue
-        if float(t) >= ts: out.add(what.strip())
+        try: ok = float(t) >= ts
+        except ValueError: continue                                      # #726: a torn line is skipped
+        if ok: out.add(what.strip())
     return out
 
 # ---------- the cache ----------
@@ -178,7 +184,11 @@ def _save(c):
     RUNS.mkdir(parents=True, exist_ok=True)
     tmp = CACHE.with_suffix(".tmp")
     tmp.write_text(json.dumps(c, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, CACHE)
+    for i in range(5):                                                  # #726: Windows WinError 5 while a reader holds the file
+        try: os.replace(tmp, CACHE); return
+        except PermissionError:
+            if i == 4: raise
+            time.sleep(0.2)
 
 def _usable(now):
     c = load()
@@ -261,7 +271,7 @@ def refresh(run, now=None, run_owner=None):
     c["rate"] = _rate(run) or c["rate"]
     if run_owner: c["rate_owner"] = _rate(run_owner) or dict(prev.get("rate_owner") or {})
     _save(c)
-    keep = [l for l in _lines(CALLS) if l.strip() and float(l.split()[0]) >= now - KEEP_CALLS]     # trim the logs
+    keep = [l for l in _lines(CALLS) if _ts_ok(l, now - KEEP_CALLS)]     # trim the logs (#726: garbage lines are dropped)
     try:
         CALLS.write_text("".join(x + "\n" for x in keep), encoding="utf-8")
         DIRTY.write_text("".join(x + "\n" for x in _lines(DIRTY)[-200:]), encoding="utf-8")

@@ -98,7 +98,7 @@ SHOTSJS=r'''/* #462 session screenshots, the session review page and the weekly 
    A batch may carry sh:[{i,d}] = up to 8 small JPEG data URLs, each linked to event i of that session; they go into the SAME evlog row
    (columns sh = the JSON, si = their event ids, ns = how many): still one D1 write per batch. Caps: 30 per session and 100 per day, the
    oldest dropped (the pages show only those; the hourly prune clears rows with none left), deleted after 14 days.
-   GET /api/log/review?day=YYYY-MM-DD = the day's sessions as timelines with their screenshots (owner only: the DIAG_KEY as ?key=, the
+   GET /api/log/review?day=YYYY-MM-DD = the day's sessions as timelines with their screenshots (owner only: the DIAG_KEY or LOG_READ_KEY (#675) as ?key=, the
    x-admin-key header, or the cookie the page sets after one ?key= visit). GET /api/log/digest?days=7 = the 5 places Oren got stuck most
    (wrong answers, 30 s silences, errors) as text with a screenshot link each (&fmt=json for JSON); same key. Never linked from the game. */
 const SHOT_SES=30,SHOT_DAY=100,SHOT_DAYS=14,SHOT_MAX=8,SHOT_LEN=60000,SHOT_RE=/^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/;
@@ -113,9 +113,10 @@ const keptOf=(list,k)=>k>0?list.slice(-k):[];
 async function shotPrune(env,now){const R=((await env.DB.prepare('SELECT id,sid,at,tz,ns FROM evlog WHERE ns>0').all()).results)||[];const Q=shotQuota(R,now);
  const drop=R.filter(r=>Q.get(r.id)===0).map(r=>r.id);
  for(let k=0;k<drop.length;k+=90){const ids=drop.slice(k,k+90);await env.DB.prepare('UPDATE evlog SET sh=NULL,si=NULL,ns=0 WHERE id IN ('+ids.map(()=>'?').join(',')+')').bind(...ids).run();}}
-async function evAuth(req,u,env){if(!env.DIAG_KEY)return false;const c=/(?:^|;\s*)dk=([^;]+)/.exec(req.headers.get('cookie')||'');
+/* #675 every log read: the parent key (DIAG_KEY) or the separate read token for the automated readers (LOG_READ_KEY, a Pages secret) */
+async function evAuth(req,u,env){const c=/(?:^|;\s*)dk=([^;]+)/.exec(req.headers.get('cookie')||'');
  let k=req.headers.get('x-admin-key')||u.searchParams.get('key')||'';if(!k&&c)try{k=decodeURIComponent(c[1]);}catch(e){}
- return !!k&&(await sha(k))===(await sha(env.DIAG_KEY));}
+ if(!k)return false;const h=await sha(k);for(const s of [env.DIAG_KEY,env.LOG_READ_KEY])if(s&&h===(await sha(s)))return true;return false;}
 const hx=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
 const hm=(t,tz,sec)=>new Date(t-tz*6e4).toISOString().slice(11,sec?19:16);
 const KL={ss:'session start',se:'session end',scr:'screen',mis:'mission opened',q:'question',ans:'answer',help:'help used',pop:'popup',err:'error',cerr:'console error',cwarn:'warning',idle:'no answer for 30 s',sync:'sync failed',retry:'retry'};
@@ -232,10 +233,12 @@ async function diag(req,env,u){
  return J(L.sort((a,b)=>b.at-a.at).slice(0,20).map(out));}
 /* /api/log (#348): the game's event log. POST {fam,sid,tz,ev:[{i,t,k,...}]} = one batch = ONE D1 row (table evlog); D1 only, never KV
    (1k writes a day): no D1 = 503 and the game keeps the batch. Events keep only numbers and short strings (no objects).
+   #675 EVERY GET under /api/log needs a key (x-admin-key header, ?key= or the review cookie): the parent key DIAG_KEY or the read token
+   LOG_READ_KEY (Pages secret, for the automated readers: tools/playlog.py, inbox, inspector, dashboard); no key = 401 and no data.
    GET /api/log/summary?days=7 = a daily summary (play minutes, missions with right/wrong, help, popups, errors, voice Google/browser share);
-   &raw=N adds the newest N raw events (needs the x-admin-key header, like /api/diag). Raw batches older than 365 days are pruned
+   &raw=N adds the newest N raw events. Raw batches older than 365 days are pruned
    (#641; on a summary read, and on a batch at most once an hour).
-   #641 GET /api/log/raw (admin key): every raw event, paged. from/to (ms, event time), sid, k (kind), n (per page, max 5000).
+   #641 GET /api/log/raw (a key): every raw event, paged. from/to (ms, event time), sid, k (kind), n (per page, max 5000).
    With from: oldest first, the next page is &after=<next>; without: newest first, the next page is &before=<next>. next = null on the last page. */
 const EVMAX=400,EVKEEP=365;let evPruneAt=0;
 function evClean(e){if(!e||typeof e!=='object'||Array.isArray(e)||typeof e.k!=='string'||!/^[a-z]{1,12}$/.test(e.k))return null;const o={};let n=0;
@@ -263,7 +266,7 @@ function evSummary(rows,days,now){const tz0=rows.length?+rows[rows.length-1].tz|
  return Object.values(D).sort((a,b)=>a.day<b.day?1:-1).map(d=>{d.sessions=Object.keys(d._s).length;delete d._s;d.min=Math.round(d.min*10)/10;
   const v=d.voice,n=v.google+v.browser+v.claude;v.share=n?Math.round(v.google/n*100)/100:null;
   for(const x of Object.values(d.missions)){x.ms=x._n?Math.round(x._ms/x._n):0;delete x._ms;delete x._n;}return d;});}
-async function evRaw(req,env,u){const key=req.headers.get('x-admin-key')||'';if(!env.DIAG_KEY||(await sha(key))!==(await sha(env.DIAG_KEY)))return J({error:'unauthorized'},401);
+async function evRaw(req,env,u){if(!(await evAuth(req,u,env)))return J({error:'unauthorized'},401);
  if(!env.DB)return J({error:'no db'},503);await evInit(env);
  const q=u.searchParams,num=k=>{const v=q.get(k);return v!=null&&v!==''&&isFinite(+v)?+v:null;};
  const from=num('from'),to=num('to'),sid=q.get('sid')||'',kk=q.get('k')||'',n=Math.max(1,Math.min(5000,Math.round(num('n')||5000))),asc=from!=null;
@@ -282,6 +285,7 @@ async function evRaw(req,env,u){const key=req.headers.get('x-admin-key')||'';if(
  if(!full&&scanned<3000)next=null;else if(!full)next=last+'.'+(asc?999999:0);/* scan cap: go on after the last row read */
  return J({ev:R,next});}
 async function evlog(req,env,u){const now=Date.now();
+ if(req.method==='GET'&&!(await evAuth(req,u,env)))return J({error:'unauthorized'},401);/* #675 no read of the play log without a key */
  if(u.pathname==='/api/log'){if(req.method!=='POST')return J({error:'method'},405);const t=await req.text();if(t.length>600000)return J({error:'too big'},413);let o;
   try{o=JSON.parse(t);if(!o||!isId(String(o.fam))||!/^[a-z0-9]{4,16}$/.test(String(o.sid))||!Array.isArray(o.ev)||!o.ev.length||o.ev.length>EVMAX)throw 0;}catch(e){return J({error:'bad request'},400);}
   if(JSON.stringify(o.ev).length>64000)return J({error:'too big'},413);const sh=shotClean(o.sh);/* #462 screenshots ride in this row */
@@ -294,7 +298,6 @@ async function evlog(req,env,u){const now=Date.now();
   return J({ok:true,n:ev.length,sh:sh.length});}
  if(u.pathname==='/api/log/summary'){if(req.method!=='GET')return J({error:'method'},405);
   const days=Math.max(1,Math.min(30,Math.round(+u.searchParams.get('days')||7))),raw=Math.max(0,Math.min(500,Math.round(+u.searchParams.get('raw')||0)));
-  if(raw){const key=req.headers.get('x-admin-key')||'';if(!env.DIAG_KEY||(await sha(key))!==(await sha(env.DIAG_KEY)))return J({error:'unauthorized'},401);}
   if(!env.DB)return J({error:'no db'},503);await evInit(env);await evPrune(env,now);
   const rows=((await env.DB.prepare('SELECT sid,at,tz,ev FROM evlog WHERE at>=? ORDER BY id').bind(now-(days+1)*864e5).all()).results)||[];
   const out={days:evSummary(rows,days,now)};
