@@ -235,6 +235,49 @@ const { chromium } = require('playwright');
       await p.screenshot({ path: path.join(process.env.SHOTDIR356, '1-world-story.png') }); }
     await ctx.close();
   }
+  // #356 (reopened, 28 Nov): a forward button in the top bar, always in the same place, on every screen that has a next step
+  // (the screen's own '▶ הַמְשֵׁךְ'); a tap does that step. A question screen has no next step (answering is the step): no forward there
+  {
+    const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    await ctx.addInitScript(() => { try { localStorage.clear(); } catch (e) {} window.__fast = true; window.__noFamily = true; window.__lessons = true; });
+    const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('dialog', d => d.dismiss());
+    await p.goto(L.URL); await L.noCoach(p);
+    await p.evaluate(() => { const O = window.OREN; O.save.story.intro = 1; O.save.set = Object.assign(O.save.set || {}, { brk: 0 }); window.TAL.S().prof = { an: 'cat', col: '#3a8fc4', love: 'art' }; });
+    const fwdAt = () => p.evaluate(() => { const e = document.getElementById('btnFwd'); if (!e || e.hidden || getComputedStyle(e).visibility === 'hidden') return null;
+      const r = e.getBoundingClientRect(); if (!r.width) return null; const x = r.x + r.width / 2, y = r.y + r.height / 2, t = document.elementFromPoint(x, y); return t && (t === e || e.contains(t)) ? { x: Math.round(x), y: Math.round(y) } : null; });
+    const backOn = () => p.evaluate(() => ['btnBack', 'btnHome'].some(id => { const e = document.getElementById(id); return e && !e.hidden && getComputedStyle(e).visibility !== 'hidden'; }));
+    const screen = () => p.evaluate(() => { const s = [...document.querySelectorAll('.screen')].find(x => !x.hidden); return s ? s.id : ''; });
+    const seen = [], miss = [], wrong = [], pos = new Set(), noBk = [];
+    const check = async (name, before, after) => { await before(); await L.sleep(250); const at = await fwdAt(); seen.push(name);
+      if (!(await backOn())) noBk.push(name); if (!at) { miss.push(name); return; } pos.add(at.x + ',' + at.y);
+      await p.mouse.click(at.x, at.y); await L.sleep(250); if (!(await after())) wrong.push(name + '→' + (await screen())); };
+    await check('journey', () => p.evaluate(() => window.OREN.showJourney()), async () => (await screen()) === 'sWorld');
+    await check('world', () => p.evaluate(() => { const O = window.OREN; O.save.story[O.WORLDS[0].id + '-in'] = 1; O.showWorld(O.WORLDS[0]); }), async () => (await screen()) !== 'sWorld');
+    await check('lesson card', () => p.evaluate(() => { document.querySelector('#ov').hidden = true; const T = window.TAL; T.openHub(); T.ACT['eng-abc'].run(() => T.openHub()); }),
+      () => p.evaluate(() => { const q = window.__quiz; return !document.querySelector('#sTal .lccard') || (q && q.i === 1); }));
+    await p.evaluate(() => { window.__lessons = false; });
+    await check('story', () => p.evaluate(() => { document.querySelector('#ov').hidden = true; const T = window.TAL; T.openHub(); T.ACT['story-0'].run(() => T.openHub()); }),
+      () => p.evaluate(() => !document.querySelector('#sTal .stgo') && !!document.querySelector('#sTal .chs')));
+    ok('#356 forward: every screen with a next step shows ‹ in the top bar (' + seen.join(', ') + ')', miss.length === 0, miss.join(', '));
+    ok('#356 forward: a tap does the next step', wrong.length === 0, wrong.join(', '));
+    ok('#356 forward: always in the same place', pos.size === 1, [...pos].join(' | '));
+    ok('#356 back is there too on each of them', noBk.length === 0, noBk.join(', '));
+    const q = await fwdAt(); ok('#356 forward: none on a question screen (answering is the step)', !q && (await backOn()), JSON.stringify(q));
+    await p.evaluate(() => { const T = window.TAL; T.openHub(); }); await L.sleep(150);
+    ok('#356 forward: none on the hub (no single next step)', !(await fwdAt()));
+    ok('no page errors (#356 forward)', !errs.length, errs.slice(0, 3).join(' | '));
+    if (process.env.SHOTDIR356) { const fs = require('fs'), path = require('path'); fs.mkdirSync(process.env.SHOTDIR356, { recursive: true });
+      const sh = async (n, f) => { await p.evaluate(f); await L.sleep(400); await p.screenshot({ path: path.join(process.env.SHOTDIR356, n) }); };
+      await sh('4-journey-forward.png', () => window.OREN.showJourney());
+      await sh('5-world-forward.png', () => window.OREN.showWorld(window.OREN.WORLDS[0]));
+      await sh('6-story-forward.png', () => { const T = window.TAL; T.openHub(); T.ACT['story-0'].run(() => T.openHub()); });
+      await p.evaluate(() => { window.__lessons = true; delete window.TAL.S().lc; });
+      await sh('7-lesson-forward.png', () => { const T = window.TAL; T.openHub(); T.ACT['eng-abc'].run(() => T.openHub()); });
+      await p.evaluate(() => { window.__lessons = false; });
+      await sh('8-question-no-forward.png', () => { const T = window.TAL; T.openHub(); T.ACT['read-first'].run(() => T.openHub()); });
+    }
+    await ctx.close();
+  }
   await b.close();
   L.finish('regressions', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message.split('\n')[0]); console.log('RESULT regressions 0 1'); process.exitCode = 1; });
