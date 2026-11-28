@@ -19,7 +19,7 @@ Script: `tools/runner/remote.py start|status|send` (test: `python tools/runner/t
   View: https://claude.ai/code/session_01...?from=cli&m=0
   Resume with: claude --teleport session_01...
   ```
-- Permission mode (#778): `remote.start_command()` always passes `--permission-mode bypassPermissions`. Without it the CLI forwards the owner's settings default (`auto`) to the cloud session and the auto classifier's approval asks go to the owner's phone (16 lanes = many asks). The hook `.claude/hooks/block-dangerous-git.sh` and the prompt rules still apply.
+- Permission mode (#778): `remote.start_command()` always passes `--permission-mode bypassPermissions`. Without it the CLI forwards the owner's settings default (`auto`) to the cloud session and the auto classifier's approval asks go to the owner's phone (16 lanes = many asks). The hook `.claude/hooks/guard.py` and the prompt rules still apply.
 - It needs a real terminal: piped output gives `--cloud requires an interactive terminal`; `--bg --cloud` and
   `-p --cloud "<new task>"` are refused. `remote.py start` therefore runs it in a herdr terminal (`remote-<n>`) and reads the screen.
 - The session starts from the **current commit of the cwd checkout** (it must be on GitHub). Start from the main checkout,
