@@ -44,6 +44,14 @@ f.state, f.screen = "working", "all good\n"; f.sms = 2
 run(f, ts, 195, st2, start=191); run(f, ts, 200, st2, start=196)
 assert len(f.tg_out) == 3 and "חזר לעבוד" in f.tg_out[2], f.tg_out
 
+# flapping: error, recovered, error again -> nothing at +10 min, one message at +60 min of the last send
+f, st = Fake(), {}; f.state, f.screen = "idle", LIMIT
+run(f, ts, 1, st); assert len(f.tg_out) == 1
+f.state, f.screen, f.sms = "working", "ok\n", 5; run(f, ts, 3, st, start=2); assert len(f.tg_out) == 2    # recovery message
+f.state, f.screen, f.sms = "idle", LIMIT, 6; run(f, ts, 10, st, start=4); assert len(f.tg_out) == 2, f.tg_out
+run(f, ts, 59, st, start=11); assert len(f.tg_out) == 2
+run(f, ts, 62, st, start=60); assert len(f.tg_out) == 3 and "x" not in f.tg_out[2].split("(")[-1][:1], f.tg_out
+
 # the stuck role is the inspector (nameless, found by label) -> the note goes to the orchestrator
 f, st = Fake(), {}; f.state, f.screen = "idle", "Usage limit reached\n"
 run(f, [ROW(None, {"name": "inspector"})], 2, st)

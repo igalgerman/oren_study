@@ -98,6 +98,8 @@ def _one(role, addr, io, now, r, sent, pats, dlg, appr_s, frozen_s):
         ep = r["ep"] = {"state": bad, "first": now, "alerted": False, "last": 0, "n": 0}
         if now - sent.get(f"{role}|{bad}", -RESEND_S) < RESEND_S: return        # flapping: the same role+state within 60 min stays quiet
         _alert(role, bad, ep, tail, io, now, sent, "")
+    elif not ep["alerted"] and now - sent.get(f"{role}|{bad}", 0) >= RESEND_S:   # a flapping episode that lasts: alert once the 60 min are over
+        _alert(role, bad, ep, tail, io, now, sent, "")
     elif ep["alerted"] and now - ep["last"] >= REMIND_S:
         ep["n"] += 1
         _alert(role, bad, ep, tail, io, now, sent, f" (x{ep['n'] + 1} since {hhmm(ep['first'])})")
