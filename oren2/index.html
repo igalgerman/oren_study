@@ -6025,7 +6025,9 @@ function remPanel(box,sec,re){const m=(T.S().set||{}).rem;
   const sb=h('button','pchip hmsgsend','📣 שלח');const upd=()=>{sb.disabled=!i.value.trim();};upd();
   i.oninput=upd;i.onkeydown=e=>{e.stopPropagation();if(e.key==='Enter')sb.click();};
   sb.onclick=()=>{const x=i.value.trim().slice(0,MSG_MAX);if(x)send(x);};
-  const g2=h('div','hmsgtype');g2.append(i,sb);f.appendChild(g2);s.appendChild(f);}
+  const g2=h('div','hmsgtype');g2.append(i,sb);f.appendChild(g2);s.appendChild(f);
+  /* #674: what an AI helper (MCP, docs/mcp-guide.md) sent or changed, newest first; shown only when there is something */
+  const ml=(T.S().set.mcpLog||[]).slice(-8).reverse();if(ml.length){const ai=h('div','pnote pmcplog','🤖 מה נשלח או שונה על ידי עוזר AI:');ml.forEach(x=>{const r=h('div','pstat');r.textContent=hm(x.t)+' · '+({send_message:'הודעה',send_reminder:'תזכורת',change_plan:'שינוי תוכנית',pause_today:'עצירה להיום',resume_today:'חזרה לרגיל'}[x.tool]||x.tool)+(x.x?' · '+x.x:'');ai.appendChild(r);});s.appendChild(ai);}}
 
 /* two big cards of other domains Oren did least today */
 const fresh=dm=>{if(dm==='math'||dm==='arcade')return true;const dt=((T.S().daily||{}).t)||[];return T.dailyPool().some(id=>H.domOf(id)===dm&&!dt.includes(id));};   /* #634 a domain with a mission he has not played today */

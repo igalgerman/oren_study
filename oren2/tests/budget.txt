@@ -61,3 +61,4 @@ voice-audit-2 150          # #406 the other half of the activities + #610 the ex
 music2-desktop 60         # #615 play games first (4 games played through, unlock after 3 good rounds) + the theory levels: ~31 s
 music2-phone 60           # same file on the phone viewport: ~30 s
 fullday 60                # #634 a simulated 60-minute day on home (~40 missions) + 3 mission checks + 3 flag rounds: ~16 s
+mcp 60                    # #674 MCP server on the worker: auth/revoke, every tool, writes logged, rate limits (worker + fake KV/D1, no browser): ~2 s
