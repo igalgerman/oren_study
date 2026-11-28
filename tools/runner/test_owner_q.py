@@ -33,6 +33,10 @@ class FakeGH:
         if a[:2] == ("issue", "pin"): self.issues[int(a[2])]["pinned"] = True; return 0, ""
         if a[:2] == ("issue", "view"):
             return 0, json.dumps({"comments": self.issues[int(a[2])]["comments"]})
+        if a[:2] == ("api", "graphql"):            # #800: owner_q.comments = GraphQL pages of self.page comments
+            n = int(next(x for x in a if x.startswith("n=")).split("=")[1]); cur = next((x[2:] for x in a if x.startswith("c=")), "")
+            cs = self.issues[n]["comments"]; i = int(cur or 0); j = i + getattr(self, "page", 100)
+            return 0, json.dumps({"data": {"repository": {"issue": {"comments": {"pageInfo": {"hasNextPage": j < len(cs), "endCursor": str(j)}, "nodes": cs[i:j]}}}}})
         if a[:2] == ("issue", "comment"):
             cs = self.issues[int(a[2])]["comments"]
             cs.append({"body": a[a.index("--body") + 1], "url": f"https://github.com/x/y/issues/{a[2]}#c{len(cs)}", "reactionGroups": []})
@@ -191,7 +195,19 @@ g4 = FakeGH(); OQ.STATE = tmp / "owner_q_merge.json"; OQ.GH = g4
 g4.issues[205] = {"title": OQ.TITLE, "comments": [dict(c) for c in qcs2]}; g4.issues[64] = {"title": "x", "comments": list(bot)}; g4.issues[65] = {"title": "y", "comments": []}
 assert OQ.merge_gate(64) == "closed" and OQ.merge_gate(65) == "none"
 g4.fail = True; OQ.STATE = tmp / "owner_q_merge2.json"
-assert OQ.merge_gate(64) == "error", "GitHub unreadable -> error (the runner refuses)"
+assert OQ.merge_gate(64, sleep=lambda s: None) == "error", "GitHub unreadable -> error (the runner refuses)"
+# #908: first read times out, second succeeds -> the gate is read (merge proceeds); timeouts grow, backoff between
+g4.fail = True; slept, secs = [], []
+_gr = OQ._gate_read
+def _flaky(n, s_):
+    secs.append(s_)
+    if len(secs) == 2: g4.fail = False
+    return _gr(n, s_)
+OQ._gate_read = _flaky
+assert OQ.merge_gate(64, sleep=slept.append) == "closed", "#908: a failed first read is retried"
+assert secs == [OQ.GATE_TRIES[0], OQ.GATE_TRIES[1]] and secs[1] > secs[0] and slept == [OQ.GATE_BACKOFF[0]], (secs, slept)
+OQ._gate_read = _gr; g4.fail = False
+print("ok owner_q #908 gate read retried with a longer timeout")
 print("ok owner_q #636 merge gate: gated + CLOSED never merges")
 
 # #630: a question names the issue(s) it gates (owner_q.py ask --gates 64): gate #64 opens on its answer, whatever its window
@@ -280,3 +296,64 @@ assert OQ.gate(65, [rec, fin], qcs) == [], "a record for another issue's questio
 assert OQ.merge_state(64, [rec], qcs2) == "closed" and OQ.merge_state(64, [rec, fin], qcs2) == "open" and OQ.merge_state(64, [rec, fin, und], qcs2) == "closed"
 assert OQ.record_answer(rec["body"]) is None, "the old record pattern never matches a chat record"
 print("ok owner_q #803 inspector chat gate")
+
+# ---- #897: an owner answer is written only as the App, also while the App is rate limited ----
+import remote as RM, ghauth, ghcache, subprocess as _sp
+K1, K2 = OQ.key_of("#677", "QUESTION: gate?"), OQ.key_of("#9", "QUESTION: max_core?")
+ghauth.token = lambda *a, **k: "APPTOK"
+used = []
+class _P:
+    def __init__(self, rc, out): self.returncode, self.stdout, self.stderr = rc, out, ""
+def _fake_run(cmd, env=None, **kw):
+    used.append((env or {}).get("GH_TOKEN", "OWNER-LOGIN"))
+    return _P(1, "API rate limit exceeded for installation. Retry-After: 1") if used[-1] == "APPTOK" else _P(0, "")
+_real_run, _real_sleep = _sp.run, time.sleep
+RM.subprocess.run = _fake_run; ghcache.time.sleep = lambda s: None
+os.environ["GH_TOKEN"] = "OWNERTOK"; os.environ.pop(RM.APP_ONLY, None)
+OQ._save({"issue": 205, "posted": []})
+try:
+    with ghcache.quick(5):
+        assert OQ.post_app(677, f"OWNER ANSWER (question window, owner-q:{K1}): yes\n<!-- owner-answer:{K1} -->") is False
+        assert OQ.post_app(677, "x", R.gh) is False and OQ.mark_answered(K2, "ok", R.gh) is False   # a caller's real gh is no fake: also App-only
+finally: RM.subprocess.run = _real_run; ghcache.time.sleep = _real_sleep
+assert used and set(used) == {"APPTOK"}, f"a write went out under another login: {used}"          # App rate limited: no owner-login write
+os.environ.pop("GH_TOKEN", None)
+# queued: nothing posted, the question is not open, not asked again, shown as answered-queued
+OQ._save({"issue": 205, "posted": []}); OQ.queue_answer(677, f"OWNER ANSWER (question window, owner-q:{K1}): yes\n<!-- owner-answer:{K1} -->", now=1000.0)
+OQ.queue_answer(205, f"ANSWERED owner-q:{K2} ok\n{OQ.MARK}", now=1000.0)
+assert OQ.queued_keys() == {K1, K2}
+g = FakeGH(); g.issues[205] = {"title": OQ.TITLE, "comments": [
+    {"body": OQ.body(K1, "#677", "QUESTION: gate?"), "author": {"login": "igalgerman"}}, {"body": OQ.body(K2, "#9", "QUESTION: max_core?"), "author": {"login": "igalgerman"}}]}
+assert OQ.open_list(g) == [], "answered, record queued: not open"
+n_before = len(g.issues[205]["comments"]); OQ._save({**OQ._state(), "posted": []})
+assert OQ._post("#677", "QUESTION: gate?", gh=g) == "" and len(g.issues[205]["comments"]) == n_before, "not asked again"
+import io, contextlib
+OQ.GH = g; buf = type('B', (io.StringIO,), {'reconfigure': lambda self, **k: None})()
+with contextlib.redirect_stdout(buf): OQ.main(["open"])
+assert "answered, record queued" in buf.getvalue() and K1 in buf.getvalue(), buf.getvalue()
+# alarm: nothing before 15 min, then ONE alarm to the orchestrator and the inspector
+told2, sent2 = [], []
+_hc_real = R.hc; R.hc = lambda *a, **kw: (sent2.append(a), (0, ""))[1]
+_t = time.time; time.time = lambda: 1000.0 + OQ.ALARM_S - 1
+OQ.answers_tick(told2.append, lambda *a, **k: (1, "limited")); assert told2 == [] and sent2 == []
+time.time = lambda: 1000.0 + OQ.ALARM_S + 1
+OQ.answers_tick(told2.append, lambda *a, **k: (1, "limited")); OQ.answers_tick(told2.append, lambda *a, **k: (1, "limited"))
+time.time = _t; R.hc = _hc_real
+assert len(told2) == 1 and told2[0].startswith("ALARM") and len(sent2) == 1 and sent2[0][:2] == ("send", "inspector"), (told2, sent2)
+# the next flush (App can write) posts the records, the queue empties
+OQ.flush_pending(lambda *a, **k: (0, "")); assert OQ._state()["pending_answers"] == [] and OQ.queued_keys() == set()
+# one-time repair: the owner-login record is posted again by the App, only for the given key; never twice
+OQ._save({"issue": 205, "posted": []}); rec677 = f"OWNER ANSWER (question window, owner-q:{K1}): yes\n<!-- owner-answer:{K1} -->"
+g = FakeGH(); g.issues[205] = {"title": OQ.TITLE, "comments": [{"body": OQ.body(K1, "#677", "QUESTION: gate?"), "author": {"login": "igalgerman"}}]}
+g.issues[677] = {"title": "x", "comments": [{"body": rec677, "author": {"login": "igalgerman"}, "createdAt": "2026-11-28T12:47:00Z"}]}
+assert OQ.repair([K1], g) == {K1: 1} and g.issues[677]["comments"][-1]["body"] == rec677 and len(g.issues[677]["comments"]) == 2
+g.issues[677]["comments"][-1]["author"] = {"login": "oren-study-bot"}
+assert OQ.repair([K1], g) == {} and len(g.issues[677]["comments"]) == 2, "already posted by the App: nothing to repair"
+# the ANSWERED line on the questions issue, written under the owner login (the max_core answer), is posted again too
+OQ._save({"issue": 205, "posted": []}); ans = f"ANSWERED owner-q:{K2} ok\n{OQ.MARK}"
+g = FakeGH(); g.issues[9] = {"title": "x", "comments": []}; g.issues[205] = {"title": OQ.TITLE, "comments": [{"body": OQ.body(K2, "#9", "QUESTION: max_core?"), "author": {"login": "igalgerman"}},
+                                                           {"body": ans, "author": {"login": "igalgerman"}, "createdAt": "2026-11-28T12:41:00Z"}]}
+assert OQ.answered_keys(g.issues[205]["comments"]) == set() and OQ.repair([K2], g) == {K2: 1} and g.issues[205]["comments"][-1]["body"] == ans
+g.issues[205]["comments"][-1]["author"] = {"login": "oren-study-bot"}
+assert OQ.answered_keys(g.issues[205]["comments"]) == {K2} and OQ.repair([K2], g) == {} and len(g.issues[205]["comments"]) == 3
+print("ok owner_q #897 owner answers are App-only, queued answers")

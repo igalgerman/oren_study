@@ -14,7 +14,7 @@ it is removed so claude uses the stored claude.ai login.
 State comes from GitHub (the CLI's agents/logs do not list cloud sessions)."""
 import json, os, re, shutil, subprocess, sys, tomllib
 from pathlib import Path
-import ghauth, ghcache, trust
+import ghauth, ghcache, trust, gitid
 
 HERE = Path(__file__).resolve().parent
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -28,7 +28,7 @@ RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # same as runner.
 APP_ONLY = "OREN_GH_APP_ONLY"   # #800: env marker: this gh call must run as the App bot, never fall back to the owner login
 
 def sh(cmd, env=None):
-    alt_env = None
+    alt_env = None; app_only = False
     if cmd and str(cmd[0]) in ("gh", "gh.exe"):
         import scrub; cmd, _ = scrub.scrub_cmd(cmd)      # #783: the kid's real name never reaches a GitHub write (canary writes through here)
         orig = dict(os.environ if env is None else env); orig.pop(ghauth.OWNER, None)
@@ -50,7 +50,7 @@ def sh(cmd, env=None):
             return 124, f"timed out after {to:.0f} s: {' '.join(map(str, cmd))[:120]}"
         return p.returncode, (p.stdout or "") + (p.stderr or "")
     return ghcache.call(list(map(str, cmd)), raw,       # #329: gh reads from the shared cache (panel, per-lane polls), rate limits retried
-                        alt=(lambda: raw(alt_env)) if alt_env is not None else None, who="app" if alt_env is not None else "owner")   # #469: app limited -> owner at once
+                        alt=(lambda: raw(alt_env)) if alt_env is not None else None, who="app" if alt_env is not None or app_only else "owner")   # #469: app limited -> owner at once
 
 def clean_env():
     return {k: v for k, v in os.environ.items() if k != TOKEN_VAR}
@@ -63,15 +63,25 @@ def parse_start(out):
     err = next((l for l in lines if "rror" in l or "fail" in l), lines[-1] if lines else "no output")
     return {"ok": False, "session": "", "url": "", "error": err}
 
+PERMISSION_MODE = "bypassPermissions"
+
+def start_command(model=None, effort=None):
+    """#778: the bash -c line of every cloud start ($0 = claude, $1 = task). The mode is explicit: without it the CLI forwards the
+    owner's settings default ('auto') to the cloud session and the classifier's asks land on the owner's phone (many lanes = many asks).
+    The cloud VM is the sandbox; the repo hook .claude/hooks/guard.py (#800) and the prompt rules (NO_MERGE) still apply."""
+    return (f'unset {TOKEN_VAR}; "$0" ' + (f"--model {model} " if model else "") + (f"--effort {effort} " if effort else "")
+            + f"--permission-mode {PERMISSION_MODE} " + '--cloud "$1"')
+
 def launch(n, task, cwd, run=sh, name=None, model=None, desk=False, effort=None):
     """#289: start a cloud session in a short-lived herdr terminal and return at once (no 180 s wait for its URL), so a
     watchdog tick can start one. -> {ok, error}. name: window name (default remote-<n>); desk (#306): label role=desk."""
+    task = gitid.prompt_prefix() + task                          # #889: every cloud session sets the noreply e-mail first
     task = re.sub(r"[ \t]*[\r\n]+[ \t]*", " ", task.replace('"', "'")).strip()   # #390: cmd.exe cuts argv at a newline                             # double quotes break the Windows argv to bash ('file not found')
     labels = ["--label", "role=desk"] if desk else ["--label", f"issue={n}", "--label", "role=remote"]
     name = name or f"remote-{n}"
     run([HC, "rm", name])                                        # leftover finished terminal of an earlier start
     rc, out = run([HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), *labels,
-                   BASH, "-c", f'unset {TOKEN_VAR}; "$0" ' + (f"--model {model} " if model else "") + (f"--effort {effort} " if effort else "") + '--cloud "$1"', CLAUDE, task])   # model: #303
+                   BASH, "-c", start_command(model, effort), CLAUDE, task])   # model: #303
     if rc:
         return {"ok": False, "session": "", "url": "", "error": out.strip()[:300] or f"hc run exit {rc}"}
     return {"ok": True, "session": "", "url": "", "error": "", "name": name}
@@ -164,6 +174,18 @@ def status(n, run=sh, since=None, now=None):
         log_line(f"#{n} {BY_PR}: PR #{st['pr'].get('number')} quiet {QUIET_MIN}+ min")
     return st
 
+def life(n, run=sh):
+    """#841: signature of the cloud session's signs of life: the issue's comment count + the heads of lane/<n> and claude/github-issue-<n>-* branches
+    (a new commit or branch changes it). Raises when GitHub cannot be read (the caller treats that as no news)."""
+    rc, out = run(["gh", "issue", "view", str(n), "--repo", REPO, "--json", "comments"])
+    if rc != 0: raise OSError(f"gh issue view: {out[:100]}")
+    sig = [len(json.loads(out).get("comments", []))]
+    for pre in (f"lane/{n}", f"claude/github-issue-{n}-"):
+        rc, out = run(["gh", "api", f"repos/{REPO}/git/matching-refs/heads/{pre}"])
+        if rc != 0: raise OSError(f"gh api refs: {out[:100]}")
+        sig += sorted((x.get("ref", ""), (x.get("object") or {}).get("sha", "")) for x in json.loads(out or "[]"))
+    return json.dumps(sig)
+
 PR_URL = re.compile(r"/pull/(\d+)")
 
 def fixes(body, n):
@@ -213,7 +235,7 @@ def answer_after_question(comments):
     A later RESULT/QUESTION line, or a `Runner: started` (a resumed run used it), means nothing waits."""
     import owner_q                                   # lazy: owner_q imports runner, which imports this module
     comments = trust.only(comments)                  # #800: QUESTION lines from trusted authors only; answer records from the App bot only
-    bodies = [((c.get("body") or "").strip(), trust.is_bot(c)) for c in comments]
+    bodies = [((c.get("body") or "").strip(), trust.answer_ok(c)) for c in comments]
     q = max((i for i, (b, _) in enumerate(bodies) if (m := MARK.search(b)) and m[0].strip().startswith("QUESTION:")), default=-1)
     if q < 0: return ""
     out = []
@@ -298,6 +320,18 @@ def where(n):
     try: return (RUNS / str(n) / "where").read_text().strip()
     except OSError: return ""
 
+def lane_dates(nums, run=sh):
+    """#911: the last commit date of lane/<n> for every n in ONE call (a GraphQL query with an alias per lane), not one REST call per lane.
+    -> {n: iso date}; a lane with no branch or an unreadable answer is missing."""
+    if not nums: return {}
+    o, r = REPO.split("/", 1)
+    q = "query($o:String!,$r:String!){repository(owner:$o,name:$r){" + " ".join(
+        f'l{n}:ref(qualifiedName:"refs/heads/lane/{n}"){{target{{... on Commit{{committedDate}}}}}}' for n in nums) + "}}"
+    rc, out = run(["gh", "api", "graphql", "-f", f"query={q}", "-f", f"o={o}", "-f", f"r={r}"])
+    try: repo = json.loads(out)["data"]["repository"]
+    except (ValueError, KeyError, TypeError): return {}
+    return {n: ((repo.get(f"l{n}") or {}).get("target") or {}).get("committedDate", "") for n in nums if (repo.get(f"l{n}") or {}).get("target")} if rc == 0 else {}
+
 def cloud(run=sh, now=None):
     """All open issues labelled cloud, plus in-progress ones whose run is remote (.runs/<n>/where, #236)."""
     import time
@@ -315,12 +349,12 @@ def cloud(run=sh, now=None):
     allp = json.loads(out) if rc == 0 and out.strip() else []
     prs = {p["headRefName"]: p for p in allp}
     rows = []
+    prof = {i["number"]: prs.get(f"lane/{i['number']}") or next((p for p in allp if fixes(p.get("body"), i["number"])), None) for i in issues}   # #246: claude/* head
+    dates = lane_dates([n for n, p in prof.items() if not p], run)       # #911: one call for all lanes without a PR
     for i in sorted(issues, key=lambda i: i["number"]):
-        pr = prs.get(f"lane/{i['number']}") or next((p for p in allp if fixes(p.get("body"), i["number"])), None)   # #246: claude/* head
+        pr = prof[i["number"]]
         commit = max((c.get("committedDate", "") for c in (pr or {}).get("commits") or []), default="")
-        if not pr:
-            rc, out = run(["gh", "api", f"repos/{REPO}/branches/lane/{i['number']}", "--jq", ".commit.commit.committer.date"])
-            commit = out.strip() if rc == 0 else ""
+        if not pr: commit = dates.get(i["number"], "")
         rows.append(cloud_lane(i, pr, commit, now, manual=not (RUNS / str(i["number"])).is_dir(),
                                waiting=waiting_core(i["number"]), since=run_since(i["number"])))
     return rows

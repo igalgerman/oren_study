@@ -7,6 +7,7 @@ from pathlib import Path
 _CFG = tomllib.loads((Path(__file__).resolve().parent / "config.toml").read_text(encoding="utf-8"))
 OWNER = _CFG.get("owner_login", "igalgerman")
 BOTS = tuple(_CFG.get("bot_logins", ["oren-study-bot", "oren-study-bot[bot]"]))
+SINCE = str(_CFG.get("trust_since", "2026-11-28T12:28:45Z"))   # before this the owner login also wrote ANSWERED lines / answer records
 
 def login(c):
     """The author login of a comment/issue/PR dict ('' when missing)."""
@@ -18,6 +19,12 @@ def login(c):
 
 def is_bot(c): return login(c) in BOTS
 def ok(c): return login(c) == OWNER or is_bot(c)
+def old_owner(c):
+    """Grandfather: a comment by the owner login created strictly before `trust_since` (ISO UTC; no createdAt = not old)."""
+    return login(c) == OWNER and isinstance(c, dict) and bool(c.get("createdAt")) and str(c["createdAt"]) < SINCE
+def answer_ok(c):
+    """Who may write an ANSWERED line / owner-answer record: the App bot, or the owner login before `trust_since`."""
+    return is_bot(c) or old_owner(c)
 def only(items): return [c for c in items or [] if ok(c)]
 def bots(items): return [c for c in items or [] if is_bot(c)]
 def hidden(items): return len(items or []) - len(only(items))

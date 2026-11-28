@@ -109,7 +109,7 @@ def answered_keys(comments):
     done = set()
     for c in trust.only(comments):                  # #800: only trusted authors; ANSWERED lines only from the App bot
         b = c.get("body") or ""
-        if trust.is_bot(c): done |= set(re.findall(r"(?m)^\s*ANSWERED owner-q:([0-9a-f]{12})", b))
+        if trust.answer_ok(c): done |= set(re.findall(r"(?m)^\s*ANSWERED owner-q:([0-9a-f]{12})", b))
         m = KEY_RE.search(b)
         if m and owner_reacted(c): done.add(m[1])
     return done
@@ -154,7 +154,8 @@ def gate(n, issue_comments, question_comments):
     for c in trust.only(question_comments):
         b = c.get("body") or ""; m = KEY_RE.search(b)
         if m and (re.search(rf"\*\*#{n}\*\*", b) or n in gates_of(b)): keys[m[1]] = c   # #630: or it gates #n
-    for c in trust.bots(issue_comments):             # #800: an answer record counts only from the App bot
+    for c in issue_comments or []:                   # #800: an answer record counts only from the App bot (or the owner login before trust_since)
+        if not trust.answer_ok(c): continue
         r = record_answer(c.get("body"))
         if r and r[0] in keys: out.append(r[1])
     for k, v in chat_states(issue_comments).items():   # #803: a chat answer counts only with the bot's final marker and no undo
@@ -173,11 +174,27 @@ def merge_state(n, issue_comments, question_comments):
     if not qs: return "none"
     return "open" if gate(n, issue_comments, qs) else "closed"
 
-def merge_gate(n):
-    """#636: merge_state of issue n read from GitHub (the questions issue + issue n)."""
-    with ghcache.quick(QUICK_S):
+GATE_TRIES = (QUICK_S, 3 * QUICK_S, 6 * QUICK_S)   # #908: a read that times out (PC at 100% CPU) is retried with a longer timeout
+GATE_BACKOFF = (5, 15)                              # seconds to wait before retry 2 and 3
+
+def _gate_read(n, secs):
+    with ghcache.quick(secs):
         q = find_issue(); qcs = comments(q) if q else None
         ics = comments(n) if qcs is not None else None
+    return ics, qcs
+
+def gate_read(n, tries=None, backoff=None, sleep=time.sleep):
+    """#908: (issue comments, question comments) of issue n; a failed read is retried with a longer timeout and backoff. (None, ...) = still unreadable."""
+    tries, backoff = tries or GATE_TRIES, GATE_BACKOFF if backoff is None else backoff
+    for i, secs in enumerate(tries):
+        ics, qcs = _gate_read(n, secs)
+        if ics is not None and qcs is not None: break
+        if i + 1 < len(tries): sleep(backoff[min(i, len(backoff) - 1)] if backoff else 0)
+    return ics, qcs
+
+def merge_gate(n, **kw):
+    """#636: merge_state of issue n read from GitHub (the questions issue + issue n). #908: reads retried before 'error'."""
+    ics, qcs = gate_read(n, **kw)
     return merge_state(n, ics, qcs)
 
 def open_questions(comments):
@@ -222,12 +239,34 @@ def find_issue(gh=None):
     s["issue"] = n; _save(s)
     return n
 
+_CQ = ("query($o:String!,$r:String!,$n:Int!,$c:String){repository(owner:$o,name:$r){issue(number:$n){comments(first:100,after:$c){"
+       "pageInfo{hasNextPage endCursor} nodes{body createdAt url author{login} reactionGroups{content users(first:20){totalCount nodes{login}}}}}}}}")
+MAX_PAGES = 30
+
+def _api(*args):
+    return R.run(["gh", *args])        # args start with "api"
+
 def comments(n, gh=None):
-    gh = gh or GH
-    rc, out = gh("issue", "view", str(n), "--json", "comments")
-    if rc: return None
-    try: return json.loads(out).get("comments", [])
-    except ValueError: return None
+    """All comments of issue n, oldest first, with author login, url and the reacting users (`gh issue view --json comments` has no
+    reaction logins, so every owner thumbs-up was invisible). GraphQL, first:100 + after-cursor loop. None when unreadable.
+    A test fake gh is called as gh('api', 'graphql', ...); the real one runs plain `gh api`."""
+    call = gh or GH
+    if call is R.gh: call = _api                      # the real gh wrapper appends --repo, which `gh api` does not know
+    owner, name = R.REPO.split("/", 1)
+    out, cur = [], ""
+    for _ in range(MAX_PAGES):
+        args = ["graphql", "-f", f"query={_CQ}", "-f", f"o={owner}", "-f", f"r={name}", "-F", f"n={int(n)}"] + (["-f", f"c={cur}"] if cur else [])
+        with ghcache.gate_read():                      # #911: a gate read may use the owner login when the app is limited
+            rc, txt = call("api", *args)
+        if rc: return None
+        try:
+            c = json.loads(txt)["data"]["repository"]["issue"]["comments"]
+            out += c["nodes"]; page = c["pageInfo"]
+        except (ValueError, KeyError, TypeError): return None
+        if not page.get("hasNextPage"): return out
+        cur = page.get("endCursor") or ""
+        if not cur: return None
+    return None                                      # absurdly long: refuse rather than decide on a partial list
 
 def post(window, question, tail="", gh=None, gates=()):
     """Post the question once per window+question. -> comment url when posted now, '' when already there, None when gh failed:
@@ -250,7 +289,7 @@ def _post(window, question, tail="", gh=None, gates=()):
     gh = gh or GH
     key = key_of(window, question or tail[-600:])
     s = _state()
-    if key in s.get("posted", []): return ""
+    if key in s.get("posted", []) or key in queued_keys(): return ""     # #897: answered, record queued: never asked again
     n = find_issue(gh)
     if not n: return None
     cs = comments(n, gh)
@@ -267,30 +306,64 @@ def open_list(gh=None):
     with ghcache.quick(QUICK_S):
         n = find_issue(gh)
         cs = comments(n, gh) if n else None
-    return None if cs is None else [{**q, "issue": n} for q in open_questions(cs)]
+    if cs is None: return None
+    qk = queued_keys()                                # #897: answered, record queued: not open (no popup, no second ask)
+    return [{**q, "issue": n} for q in open_questions(cs) if q["key"] not in qk]
 
 def mark_answered(key, answer="", gh=None):
-    gh = gh or GH
+    """#800: the ANSWERED line is written by the App bot only (gh=None; a test passes a fake gh). True = posted now; False = queued
+    (flush_pending retries) or no questions issue. Never under the owner login."""
     with ghcache.quick(QUICK_S):
         n = find_issue(gh)
-        return bool(n) and post_app(n, f"ANSWERED owner-q:{key} {answer}".strip() + "\n" + MARK, gh)
+        return bool(n) and post_or_queue(n, f"ANSWERED owner-q:{key} {answer}".strip() + "\n" + MARK, gh)
 
 def post_app(n, text, gh=None):
     """#800: an owner-answer record / ANSWERED line is written ONLY by the App bot. gh=None: R.gh as the App with no owner fallback
-    (no App token -> False, the caller queues it); a test passes a fake gh."""
+    (no App token -> False, the caller queues it); a test passes a fake gh.
+    #897: R.gh itself (a caller's `gh`) is NOT a fake: it falls back to the owner login on an App rate limit (#469), so it too goes the App-only way."""
+    if gh is R.gh: gh = None
     if gh is not None: return gh("issue", "comment", str(n), "--body", R.redact(text))[0] == 0
     env = {**os.environ, remote.APP_ONLY: "1"}
     return remote.sh(["gh", "issue", "comment", str(n), "--repo", R.REPO, "--body", R.redact(text)], env=env)[0] == 0
 
-def queue_answer(n, text):
+def queue_answer(n, text, now=None):
     s = _state(); p = s.setdefault("pending_answers", [])
-    if {"n": n, "text": text} not in p: p.append({"n": n, "text": text})
+    if not any(x.get("n") == n and x.get("text") == text for x in p): p.append({"n": n, "text": text, "at": time.time() if now is None else now})
     s["pending_answers"] = p[-50:]; _save(s)
+
+QUEUE_KEY_RE = re.compile(r"owner-q:([0-9a-f]{12})|owner-answer:([0-9a-f]{12})")
+ALARM_S = 15 * 60                                     # #897: a queued answer record older than this -> one alarm
+
+def queued_keys():
+    """#897: keys of the owner answers whose record waits in pending_answers (the owner HAS answered; the App has not posted it yet)."""
+    return {m[1] or m[2] for p in _state().get("pending_answers", []) for m in QUEUE_KEY_RE.finditer(p.get("text", ""))}
 
 def post_or_queue(n, text, gh=None):
     """#800: App post, or queue (flush_pending retries, answers_tick alarms) when the App token is missing. -> True when posted now."""
     if post_app(n, text, gh): return True
     queue_answer(n, text); return False
+
+def repair(keys, gh=None):
+    """#897, one-time: re-post, as the App, the answer records that were written under the owner login after `trust_since` (the #800 rule ignores
+    them). Only the given keys; the record text is copied from the owner-login comment on each issue, so the owner's words stay exact.
+    -> {key: number of issues re-posted}; a record already there from the App is not posted twice."""
+    out = {}
+    q = find_issue(gh); qcs = comments(q, gh) if q else None
+    if qcs is None: return out
+    for k in keys:                                   # the ANSWERED line lives in the questions issue itself (#205), not on the asking issue
+        line = re.compile(rf"(?m)^\s*ANSWERED owner-q:{k}\b")
+        if any(trust.is_bot(c) and line.search(c.get("body") or "") for c in qcs): continue
+        src = next((c for c in qcs if trust.login(c) == trust.OWNER and not trust.answer_ok(c) and line.search(c.get("body") or "")), None)
+        if src: post_or_queue(q, src["body"], gh); out[k] = out.get(k, 0) + 1
+    # the issues to repair: the one the question was asked from (`**#n**` in its comment) and the ones it gates (`--gates`)
+    issues = {int(m[1]) for c in trust.only(qcs) for m in [re.search(r"\*\*#(\d+)\*\*", c.get("body") or "")] if m and any(k in (c.get("body") or "") for k in keys)}
+    for n in sorted(issues | {x for c in qcs if any(k in (c.get("body") or "") for k in keys) for x in gates_of(c.get("body") or "")}):
+        cs = comments(n, gh) or []
+        for k in keys:
+            if any(trust.is_bot(c) and f"<!-- owner-answer:{k} -->" in (c.get("body") or "") for c in cs): continue
+            src = next((c for c in cs if trust.login(c) == trust.OWNER and not trust.answer_ok(c) and f"<!-- owner-answer:{k} -->" in (c.get("body") or "")), None)
+            if src: post_or_queue(n, src["body"], gh); out[k] = out.get(k, 0) + 1
+    return out
 
 def new_answers(cs, seen):
     """Pure: comments after the first `seen` without the tool's marks (MARK, question key, ANSWERED line) = the owner's replies."""
@@ -299,11 +372,17 @@ def new_answers(cs, seen):
 
 def answers_tick(tell, gh=None):
     """Watchdog: the owner replied in the questions issue -> tell the orchestrator (reply + open questions) so it relays the answer."""
+    flush_pending(gh)                                # gh=None here: queued answer records go out as the App only (#800), never via R.gh's owner fallback
     gh = gh or GH
-    flush_pending(gh)
-    if _state().get("pending_answers") and not _state().get("answers_alarm"):    # #800: an answer record cannot be posted (no App token)
-        tell("ALARM: an owner answer record is queued: the GitHub App token is missing, nothing is posted under another login (#800).")
-        s = _state(); s["answers_alarm"] = True; _save(s)
+    now = time.time(); s = _state(); late = [p for p in s.get("pending_answers", []) if now - p.get("at", now) >= ALARM_S and not p.get("alarmed")]
+    for p in s.get("pending_answers", []): p.setdefault("at", now)          # records queued by an older runner get their clock now
+    if late:                                         # #897: ONE alarm per record, to the orchestrator and the inspector
+        msg = f"ALARM: an owner answer record has waited {ALARM_S // 60}+ min in the queue ({len(late)}): the GitHub App cannot write (token missing or rate limited). Nothing is posted under the owner login (#800, #897); the question is not asked again."
+        tell(msg)
+        try: R.hc("send", "inspector", msg, timeout=30)
+        except Exception: pass
+        for p in late: p["alarmed"] = True
+    _save(s)
     with ghcache.quick(QUICK_S):
         n = find_issue(gh)
         cs = comments(n, gh) if n else None
@@ -328,14 +407,16 @@ def main(argv):
     if argv == ["open"]:
         qs = open_list()
         if qs is None: print("could not read GitHub (gh)"); return 1
-        print("\n".join(f"{q['key']}  {q['window']}  {q['text']}  {q['url']}" for q in qs) or "no open questions"); return 0
+        rows = [f"{q['key']}  {q['window']}  {q['text']}  {q['url']}" for q in qs] + [f"{k}  answered, record queued (the App posts it when it can write)" for k in sorted(queued_keys())]   # #897
+        print("\n".join(rows) or "no open questions"); return 0
     if len(argv) in (2, 3) and argv[0] == "answered":
         ok = mark_answered(argv[1], argv[2] if len(argv) == 3 else "")
-        print("marked answered" if ok else "could not mark (gh)"); return 0 if ok else 1
+        print("marked answered" if ok else "could not mark now (no App token or gh failed): queued, the watchdog posts it as the App"); return 0 if ok else 1
+    if len(argv) >= 2 and argv[0] == "repair":              # #897: python3 tools/runner/owner_q.py repair KEY KEY (the two 28 Nov answers)
+        done = repair([k for k in argv[1:] if re.fullmatch(r"[0-9a-f]{12}", k)]); print(f"re-posted as the App (or queued): {done or 'nothing to repair'}"); return 0
     if len(argv) == 2 and argv[0] == "gate":
         n = int(argv[1].lstrip("#"))
-        with ghcache.quick(QUICK_S):
-            q = find_issue(); qcs = comments(q) if q else None; ics = comments(n)
+        ics, qcs = gate_read(n)                              # #908: retried with a longer timeout
         if qcs is None or ics is None: print("could not read GitHub (gh)"); return 2
         got = gate(n, ics, qcs)
         wait = [k for k, v in chat_states(ics).items() if not v["final"] and not v["undo"] and k not in {x for x in answered_keys(qcs)}]
