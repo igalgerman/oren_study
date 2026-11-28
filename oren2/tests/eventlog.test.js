@@ -54,6 +54,11 @@ function fakeD1() {
       ok('#675 summary: the read token gives the same summary as the parent key', JSON.stringify(await (await f('/api/log/summary?days=7', RK)).json()) === JSON.stringify(await (await f('/api/log/summary?days=7', H)).json()));
       ok('#675 no secrets set = every read refused (an empty key never matches)', (await f('/api/log/summary', { headers: { 'x-admin-key': '' } }, { ...env, DIAG_KEY: undefined, LOG_READ_KEY: undefined })).status === 401
         && (await f('/api/log/summary', RK, { ...env, LOG_READ_KEY: '' })).status === 401); }
+    // #715 the read token is read-only: summary 200, but a write or delete with it is refused and stores nothing
+    { const RK = { headers: { 'x-admin-key': 'rd-key-675' } }, n0 = rows().length;
+      ok('#715 LOG_READ_KEY reads /api/log/summary (200)', (await f('/api/log/summary?days=7', RK)).status === 200);
+      const bad = []; for (const mt of ['DELETE', 'PUT', 'PATCH']) for (const pth of ['/api/log', '/api/log/summary', '/api/log/raw']) { const r = await f(pth, { method: mt, headers: { 'x-admin-key': 'rd-key-675' } }); if (r.status < 400) bad.push(mt + ' ' + pth + ' ' + r.status); }
+      ok('#715 LOG_READ_KEY is refused on any write (DELETE/PUT/PATCH on every log path fail, nothing stored or removed)', !bad.length && rows().length === n0, bad.join(', ') + ' ' + rows().length + '/' + n0); }
     const s = await (await f('/api/log/summary?days=7', H)).json(); const d = s.days && s.days[0];
     ok('summary: one day with sessions, events and play minutes', s.days.length === 1 && d.sessions === 1 && d.events === 13 && d.min > 0.2 && d.min < 0.4, JSON.stringify(d));
     ok('summary: right/wrong per mission, questions and answer time', d.missions['add-0'] && d.missions['add-0'].open === 1 && d.missions['add-0'].q === 2 && d.missions['add-0'].right === 1 && d.missions['add-0'].wrong === 1 && d.missions['add-0'].ms === 3000 && d.right === 1 && d.wrong === 1, JSON.stringify(d.missions));
