@@ -173,6 +173,18 @@ def status(n, run=sh, since=None, now=None):
         log_line(f"#{n} {BY_PR}: PR #{st['pr'].get('number')} quiet {QUIET_MIN}+ min")
     return st
 
+def life(n, run=sh):
+    """#841: signature of the cloud session's signs of life: the issue's comment count + the heads of lane/<n> and claude/github-issue-<n>-* branches
+    (a new commit or branch changes it). Raises when GitHub cannot be read (the caller treats that as no news)."""
+    rc, out = run(["gh", "issue", "view", str(n), "--repo", REPO, "--json", "comments"])
+    if rc != 0: raise OSError(f"gh issue view: {out[:100]}")
+    sig = [len(json.loads(out).get("comments", []))]
+    for pre in (f"lane/{n}", f"claude/github-issue-{n}-"):
+        rc, out = run(["gh", "api", f"repos/{REPO}/git/matching-refs/heads/{pre}"])
+        if rc != 0: raise OSError(f"gh api refs: {out[:100]}")
+        sig += sorted((x.get("ref", ""), (x.get("object") or {}).get("sha", "")) for x in json.loads(out or "[]"))
+    return json.dumps(sig)
+
 PR_URL = re.compile(r"/pull/(\d+)")
 
 def fixes(body, n):
