@@ -158,7 +158,7 @@ assert rc.live_roles([by_argv, dict(by_tab, state="finished")]) == {"inspector"}
 deps, log = mk_open([by_argv, by_argv2, by_tab, T("executor", "live", "t:9"), T("watchdog", "live", "t:1")])
 assert rc.open_oren(deps) == [] and log["start"] == [], log
 with tempfile.TemporaryDirectory() as d:
-    deps, log = mk(d, [by_argv, by_tab, T("inbox", "live", "t:2"), T("watchdog", "live", "t:3")], [])
+    deps, log = mk(d, [by_argv, by_tab, T("inbox", "live", "t:2"), T("executor", "live", "t:4"), T("watchdog", "live", "t:3")], [])
     rc.recover(deps)
     assert log["start"] == [], log["start"]
 # the watchdog's restart check: a finished 'inspector' with a live hand-started twin (name null) is left alone
