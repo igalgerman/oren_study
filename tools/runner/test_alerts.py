@@ -85,3 +85,16 @@ ts = [{"name": "issue-5", "status": "idle", "state": "live"}]
 W.check_windows(ts); W.check_windows(ts); assert len(told) == 1, told
 scr["v"] = "x\n● QUESTION: second?\n"; W.check_windows(ts); assert len(told) == 2 and "second?" in told[1], told
 print("test_alerts: ok")
+# IDLE ALARM and the #225 nudge go through alerts: identical ones merge, and the route follows presence (#844)
+told.clear(); W.R.CFG["alert_repeat_minutes"] = 180
+W._alarm.update(last=0.0, sent={}); W.alarms_once = lambda now: ["PR #31 quiet"]; W.load_finish_state = lambda: {}
+W.pick_alarms = lambda al, sent, fin, f, now: (al, sent, fin); W.save_finish_state = lambda f: None
+W.alarm_tick(); assert len(told) == 1 and told[0].startswith("IDLE ALARM"), told
+W._alarm["last"] = 0.0; W.alarm_tick(); assert len(told) == 1, told                  # identical IDLE ALARM merged
+n = W.alarm("WAITING-REVIEW", "prs-7", "WATCHDOG (#225): you are idle while PRs wait for review: #7"); assert n == "told"
+n = W.alarm("WAITING-REVIEW", "prs-7", "WATCHDOG (#225): you are idle while PRs wait for review: #7"); assert n == "suppressed"
+assert len(told) == 2, told
+# orchestrator not reachable -> Hebrew Telegram instead of tell
+tg = []; A._telegram = lambda t, silent=False: tg.append(t); A.state_of = lambda n: "gone"; told.clear()
+W.alarm("WAITING-REVIEW", "prs-8", "WATCHDOG (#225): idle while PRs wait: #8"); assert told == [] and len(tg) == 1 and "WAITING-REVIEW" in tg[0], (told, tg)
+print("test_alerts: ok (idle + #225 routing)")
