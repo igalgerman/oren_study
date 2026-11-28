@@ -432,6 +432,12 @@ assert r.model_of(["model:sonnet", "model:opus"]) == "opus"                     
 assert r.reviewer_model(["model:opus"]) == "opus"
 assert r.reviewer_model(["model:haiku"]) == "sonnet" and r.reviewer_model([]) == "sonnet" and r.reviewer_model(["model:fable"]) == "sonnet"
 assert r.model_name(["model:fable"]) == "fable" and r.model_name([]) == "sonnet"
+# #713: effort label -> level; default medium; never below medium; most capable wins
+assert r.effort_of([]) == "medium" and r.effort_of(["pack", "P1"]) == "medium"
+assert r.effort_of(["effort:high"]) == "high" and r.effort_of(["effort:xhigh", "model:opus"]) == "xhigh"
+assert r.effort_of(["effort:medium", "effort:high"]) == "high"
+assert r.effort_of(["effort:low"]) == "medium" and r.effort_of(["effort:bogus"]) == "medium"
+assert r.raise_effort("low") == "medium" and r.raise_effort(None) == "medium" and r.raise_effort("max") == "max"
 print("ok model labels")
 
 # #133: remote lanes (local_lanes / remote_lanes), remote worker start, results from GitHub
@@ -728,8 +734,8 @@ _src = (r.HERE / "runner.py").read_text(encoding="utf-8")
 _ci = _src.split("def ci_integrate", 1)[1].split("def find_pr_merged", 1)[0]
 assert '"--auto"' in _ci and "auto_refused_clean" in _ci and "disable_auto(pr, log)" in _ci and "FileLock" not in _ci
 _proc = _src.split("verdict = \"\"; red = \"\"", 1)[1]
-assert _proc.index('stat(n, lane, "review_pass")') < _proc.index("ci_integrate(")
-_fix = _proc.split('stat(n, lane, "review_fix")', 1)[0].rsplit("if kind != \"fix\":", 1)[1]
+assert _proc.index('stat(n, lane, "review_pass", **me)') < _proc.index("ci_integrate(")
+_fix = _proc.split('stat(n, lane, "review_fix", **me)', 1)[0].rsplit("if kind != \"fix\":", 1)[1]
 assert "disable_auto(pr, log)" in _fix
 assert '"--auto"' not in _src.split("def ci_integrate", 1)[0]                                 # nothing marks a PR before the review
 print("ok #185 auto-merge after PASS")
@@ -1003,7 +1009,7 @@ _ends = iter([False, True])
 assert r.wait_remote(lambda: next(_seq), lambda s: _t.__setitem__(0, _t[0] + s), lambda: _t[0], 3600, 30, ended=lambda: next(_ends))["state"] == "ended" and _t[0] == 30
 assert r.wait_remote(lambda: {"state": "done", "line": "RESULT: DONE x"}, lambda s: None, lambda: 0, 100, 30, ended=lambda: True)["state"] == "done"
 # remote_worker / remote_review / remote_fix raise Ended instead of waiting 3 h
-_ok = lambda *a: {"ok": True, "session": "s", "url": "u"}
+_ok = lambda *a, **k: {"ok": True, "session": "s", "url": "u"}
 for _f in (lambda: r.remote_worker(7, "pack", False, _ok, lambda: {"state": "working"}, lambda s: None, lambda: 0, ended=lambda: True),
            lambda: r.remote_review(7, 9, "", _ok, lambda: {"state": "working"}, lambda s: None, lambda: 0, ended=lambda: True),
            lambda: r.remote_fix(7, "s", "fix", lambda *a: {"ok": True}, _ok, lambda: {"state": "working"}, lambda s: None, lambda: 0, ended=lambda: True)):
@@ -1154,7 +1160,7 @@ r.set_where = lambda n, w: _wh.append(w); r.set_labels = lambda n, add=(), remov
 r.remove_worktree = lambda *a, **k: None; r.close_windows = lambda n: None
 r.block = lambda *a, **k: _did.append("block"); r.issue_over = lambda n, since: False
 r.record_refusal = lambda n, err, now=None: _did.append(("refused", err)) or True
-r.remote.start = lambda *a: {"ok": False, "error": "Error: Cloud session create failed: limit"}
+r.remote.start = lambda *a, **k: {"ok": False, "error": "Error: Cloud session create failed: limit"}
 r.agent = lambda *a, **k: (_did.append("agent"), ("out", "RESULT: STUCK test stop"))[1]
 try:
     r.local_lane_free = lambda n: False
@@ -1300,7 +1306,7 @@ _sent, _starts, _lab = [], [], []
 r.gh = lambda *a, **k: (0, ""); r.run = lambda *a, **k: (0, ""); r.stat = lambda *a, **k: None; r.set_where = lambda *a: None
 r.issue_over = lambda n, since: False; r.tell_orchestrator = lambda t: None
 r.set_labels = lambda n, add=(), remove=(): _lab.append((tuple(add), tuple(remove)))
-r.remote.start = lambda *a: _starts.append(a) or {"ok": True, "session": "x", "url": "u"}
+r.remote.start = lambda *a, **k: _starts.append(a) or {"ok": True, "session": "x", "url": "u"}
 r.remote.send = lambda s, t: _sent.append((s, t)) or {"ok": True}
 r.remote.status = lambda n, since=None: {"state": "question", "line": "QUESTION: and blue?"}
 _oq.post = lambda *a, **k: ""
@@ -1584,3 +1590,14 @@ g = r.governor({**_uw, "week_pct": 50}, [], _now, _Gw, prev=4); assert not g["st
 assert r.limit_requeue("RESULT: STUCK cloud worker died twice without a RESULT line (a, b)", True)
 assert r.limit_requeue("", True) and not r.limit_requeue("RESULT: STUCK cloud worker died twice x", False) and not r.limit_requeue("RESULT: DONE", True)
 print("ok #703 governor: week hard bounds, limit_hit, week-only usage, died run goes back in the queue")
+
+# #713: PURPLE hold/merge-safe stat events (a hold must not crash, must say "parked")
+_ev713 = []
+_old_stat = r.stat; r.stat = lambda n, lane, event, **x: _ev713.append((event, x))
+try:
+    r.stat_purple(5, "pack", "hold", {"model": "sonnet", "effort": "medium"})
+    r.stat_purple(5, "pack", "merge-safe", {"model": "sonnet", "effort": "medium"})
+finally: r.stat = _old_stat
+assert _ev713 == [("parked", {"model": "sonnet", "effort": "medium", "colour": "purple"}),
+                  ("review_pass", {"model": "sonnet", "effort": "medium", "colour": "purple"})], _ev713
+assert "stat_purple(n, lane, extra, me)" in inspect.getsource(r.process_locked)

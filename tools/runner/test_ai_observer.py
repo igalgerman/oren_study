@@ -212,11 +212,19 @@ assert len(starts) == n0 + 1 and not A.load_state().get("proven")
 TR = {"created_at": "2026-11-27T17:30:00Z", "body": "no problems"}
 A.relay(told.append, lambda s: None, t0 + 18 * 3600, gh=GH(), api=API([FB, TR]))
 assert A.load_state().get("proven") is True
-for k in range(1, 6): A.relay(told.append, lambda s: None, t0 + 18 * 3600 + k * 3600, gh=GH(), api=API([]))
-assert len(starts) == n0 + 1, starts                                              # off for good
+for k in range(1, 3): A.relay(told.append, lambda s: None, t0 + 18 * 3600 + k * 3600, gh=GH(), api=API([]))
+assert len(starts) == n0 + 1, starts                                              # off while the trigger is < 3 h old (#689)
 np = len(posts)
 A.relay(told.append, lambda s: None, t0 + 30 * 3600, gh=GH(), api=API([]))       # trigger silent again 3 h+: owner note again
 assert len(posts) == np + 1 and "silent since " + time.strftime("%H:%M", time.localtime(t0 + 17.5 * 3600)) in posts[-1][1], posts
+# #689: proven once, then the trigger stops: trigger_seen 4 h old -> the fallback runs again; 1 h old -> not; fallback 30 min ago -> not
+A.STATE = tmp / "ai_observer.689.json"; starts.clear(); A.LAUNCH = LAUNCH()
+iso = lambda e: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(e))
+A.save_state({"proven": True, "trigger_seen": iso(t0 - 4 * 3600)}); assert A.fallback(t0, lambda s: None) and len(starts) == 1
+assert not A.fallback(t0 + 30 * 60, lambda s: None) and len(starts) == 1              # at most once per FALLBACK_MIN
+A.save_state({"proven": True, "trigger_seen": iso(t0 - 3600)}); assert not A.fallback(t0, lambda s: None) and len(starts) == 1
+A.save_state({"proven": True, "trigger_seen": iso(t0 - 4 * 3600), "fallback_at": t0 - 30 * 60}); assert not A.fallback(t0, lambda s: None)
+print("ok #689 fallback runs again when the trigger is silent")
 # a failed cloud start is retried at the next relay (not an hour later)
 A.STATE = tmp / "ai_observer.525b.json"; starts.clear(); A.LAUNCH = LAUNCH(ok=False)
 A.relay(told.append, lambda s: None, t0, gh=NOISSUE, api=API([]))
