@@ -582,7 +582,7 @@ _src0 = (r.HERE / "runner.py").read_text(encoding="utf-8")
 assert _src0.count("pregen_cmd()") == 2 and "(popen or subprocess.Popen)(pregen_cmd()" in _src0
 assert "pre = start_pregen(log) if dep.startswith(\"deployed\") else \"\"" in _src0 and "{dep}.{pregen_note(pre)}" in _src0
 _src = (r.HERE / "runner.py").read_text(encoding="utf-8")
-_blk = _src.split('with FileLock("integrate", wait=True, note=f"#{n} deploy"):\n            stat(n, lane, "merged")', 1)[1].split("\n        m = sync_main", 1)[0]
+_blk = _src.split('with FileLock("integrate", wait=True, note=f"#{n} deploy"):\n            stat(n, lane, "merged"', 1)[1].split("\n        m = sync_main", 1)[0]
 assert "pregen.js" not in _src.split("def deploy_text", 1)[1].split("def pregen_cmd", 1)[0] and "start_pregen(log)" in _blk
 print("ok pregen outside the merge lock")
 # #166: merge straight on green; update the branch only on a real conflict; lock only around `gh pr merge`
