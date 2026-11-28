@@ -207,4 +207,49 @@ with tempfile.TemporaryDirectory() as d:
     assert rc.ensure_handoff(live, tpl) is True and live.read_bytes() == tpl.read_bytes()
     live.write_text("live state", encoding="utf-8")
     assert rc.ensure_handoff(live, tpl) is False and live.read_bytes() == b"live state"
+
+# #923: refresh. busy_reason, same argv for phone chats, handoff first words, no --continue/--resume
+q_run = "| id | mode | status | task | result |\n|---|---|---|---|---|\n| 1 | haiku | running | x | |\n"
+q_idle = "| id | mode | status | task | result |\n|---|---|---|---|---|\n| 1 | haiku | done | x | ok |\n"
+assert rc.busy_reason("inbox", "working") and rc.busy_reason("inbox", "blocked") and not rc.busy_reason("inbox", "done")
+assert rc.busy_reason("executor", "done", q_run) and not rc.busy_reason("executor", "done", q_idle)
+assert not rc.busy_reason("inbox", "done", q_run)
+assert rc.busy_reason("inbox", "done", "", "2 background tasks running") and not rc.busy_reason("inbox", "done", "", "idle")
+for r in rc.CONTROL:
+    cwd, argv = rc.control_argv(r, "C:/m", "C:/m/p", model_dir="C:/m/md")
+    i = argv.index("--remote-control"); assert argv[i + 1] == f"oren-{r}"
+    assert argv[-1].startswith(f"Read your handoff (python tools/runner/handoff.py show {r}) and continue as the {r}."), argv[-1]
+    assert not ({"--continue", "--resume"} & set(argv))
+    assert "--name" in rc.hc_run_args(r, cwd, argv) and rc.hc_run_args(r, cwd, argv)[rc.hc_run_args(r, cwd, argv).index("--name") + 1] == r
+    assert rc.hc_run_args(r, cwd, argv)[-1] == argv[-1]
+assert "handoff.py show inspector" in rc.INSPECTOR_PROMPT
+
+def fake(role, status="done", queue=q_idle, write=True, tmp=None, clock_step=60):
+    ev = []; clk = [1000.0]; live = Path(tmp) / f"{role}-state.md"; live.write_text("old", encoding="utf-8"); os.utime(live, (1, 1))
+    def hc(*a):
+        ev.append(a)
+        if a[0] == "send" and write: live.write_text("new", encoding="utf-8"); os.utime(live, (5, 5))
+        return 0, ""
+    def sleep(n): clk[0] += clock_step
+    qf = Path(tmp) / "queue.md"; qf.write_text(queue, encoding="utf-8")
+    d = dict(hc=hc, find=lambda r: {"address": "t:9", "status": status}, start=lambda r: ev.append(("start", r)) or 0, live_file=live,
+             queue=qf, patterns=[], wait_min=5, now=lambda: clk[0], sleep=sleep, tell=lambda to, t: ev.append(("tell", to, t)),
+             log=lambda m: ev.append(("log", m)), state_file=Path(tmp) / "handoff.json")
+    return d, ev
+
+with tempfile.TemporaryDirectory() as tmp:
+    d, ev = fake("executor", queue=q_run, tmp=tmp); r, _ = rc.refresh("executor", d)
+    assert r == 4 and not [e for e in ev if e[0] in ("send", "kill", "rm", "keep", "start")], ev
+    d, ev = fake("inbox", status="working", tmp=tmp); assert rc.refresh("inbox", d)[0] == 4
+    d, ev = fake("inbox", tmp=tmp); r, _ = rc.refresh("inbox", d)
+    cmds = [e[0] for e in ev]
+    assert r == 0 and cmds.index("send") < cmds.index("keep") < cmds.index("kill") < cmds.index("rm") < cmds.index(("start", "inbox")[0]), ev
+    assert ("keep", "t:9", "--off") in ev and ("kill", "t:9") in ev and ("rm", "t:9") in ev and ("start", "inbox") in ev
+    assert any(e[0] == "send" and "HANDOFF NOW" in e[2] for e in ev)
+    assert ("tell", "inspector", "REFRESH: inbox restarted fresh from its handoff") in ev
+    assert json.loads(Path(tmp, "handoff.json").read_text())["inbox"] == 1000.0
+    d, ev = fake("inspector", tmp=tmp); rc.refresh("inspector", d)
+    assert ("tell", "orchestrator", "REFRESH: inspector restarted fresh from its handoff") in ev
+    d, ev = fake("inbox", write=False, tmp=tmp); r, _ = rc.refresh("inbox", d)
+    assert r == 3 and not [e for e in ev if e[0] in ("kill", "rm", "keep", "start")] and any(e[0] == "tell" and e[1] == "inspector" for e in ev), ev
 print("ok")

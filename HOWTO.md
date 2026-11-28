@@ -30,3 +30,5 @@ How to open them: Claude app on the phone → **Code** → the session named *Ga
 If a session ended, the PC starts a new one by itself and the links in the pinned issue change.
 
 בטלפון (גם כשהמחשב כבוי): באפליקציית Claude, בלשונית Code, פתח את "Game inbox (cloud)" כדי לכתוב משימה חדשה, או את "Game ask (cloud)" כדי לשאול מה קורה ומה מחכה לך. הקישורים נמצאים גם בנושא המוצמד "Cloud desks: phone links".
+
+Short control session contexts (#923): to give a control session a fresh start, run `python tools/runner/recover.py refresh <role>` (orchestrator, inbox, inspector or executor). It refuses while the role is busy.
