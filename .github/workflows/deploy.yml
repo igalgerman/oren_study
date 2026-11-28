@@ -138,8 +138,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: oren2/ci
+          sparse-checkout: |
+            oren2/ci
+            tools/runner
+      - name: Names list present (#876)
+        env:
+          PRIVATE_NAMES: ${{ secrets.PRIVATE_NAMES }}
+        run: python3 tools/runner/scrub.py require || echo "::error::PRIVATE_NAMES secret is empty, the name scrub replaces nothing (#876)"
       - env:
+          PRIVATE_NAMES: ${{ secrets.PRIVATE_NAMES }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           SHA: ${{ needs.plan.outputs.sha }}
@@ -158,6 +165,7 @@ jobs:
       issues: write
     steps:
       - env:
+          PRIVATE_NAMES: ${{ secrets.PRIVATE_NAMES }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

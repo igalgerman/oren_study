@@ -22,10 +22,18 @@ INBOX_PROMPT = ("You are the INBOX of the Oren game multi-agent system (repo iga
 TRIAGE_STEPS = ("Run the mattpocock-skills:triage steps on every new ticket (#29): duplicate check per CLAUDE.md ('One backlog, no duplicates'), "
                 "labels per docs/agents/triage-labels.md, a P-level, an Acceptance list, one lane label (core/pack/review), 'Blocked by: #n' lines.")
 ORCH_PROMPT = "Read ORCHESTRATOR.md and continue as the orchestrator. Open the Oren lanes panel (/lanes)."
-EXECUTOR_PROMPT = r"Read C:\work\Oren_study\EXECUTOR.md and follow it."
+EXECUTOR_PROMPT = "Read docs/roles/EXECUTOR.md and follow it."   # cwd = the main checkout
 INSPECTOR_PROMPT = "You are the INSPECTOR of the Oren game multi-agent system. Read C:/work/Oren_study/INSPECTOR_HANDOFF.md first and follow it."
 
 # ---------- pure logic (test_recover.py) ----------
+def ensure_handoff(path, template):
+    """Create the live inspector handoff from the repo template only when it is missing (never overwrites). -> True when created."""
+    p = Path(path)
+    if p.exists(): return False
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(Path(template).read_bytes())
+    return True
+
 def control_argv(name, main_checkout, plugin_dir, claude="claude", python="python", watchdog=""):
     """-> (cwd, argv) of the program for orchestrator / inbox / inspector / executor / watchdog."""
     mc = str(main_checkout)
@@ -56,16 +64,24 @@ def _labels(t):
 def _argv(t):
     fg = t.get("foreground") if isinstance(t.get("foreground"), dict) else {}
     a = fg.get("argv") or t.get("foreground_argv") or t.get("argv") or t.get("command") or t.get("cmd") or []
-    return a.split() if isinstance(a, str) else [str(x) for x in a]
+    a = a.split() if isinstance(a, str) else [str(x) for x in a]
+    return [w for x in a for w in x.split()]   # #820: one argv string 'claude --remote-control oren-x' too
+
+def _role(x, roles):
+    """#820: 'inspector' or 'oren-inspector' -> 'inspector' when it is a role, else None."""
+    x = str(x or "").strip()
+    x = x[5:] if x.startswith("oren-") else x
+    return x if x in roles else None
 
 def control_role(t, roles=CONTROL):
     """#331: the control role (orchestrator/inbox/inspector) a terminal is, matched by name, by '--remote-control oren-<role>' in its
     foreground argv, by its tab ('where' ending in '/ <role>') or by label name=<role> (#332). A hand-started session has no name. -> role or None"""
-    if t.get("name") in roles: return t["name"]
-    if _labels(t).get("name") in roles: return _labels(t)["name"]
+    if _role(t.get("name"), roles): return _role(t["name"], roles)
+    if _role(_labels(t).get("name"), roles): return _role(_labels(t)["name"], roles)
     a = _argv(t)
-    for i, x in enumerate(a[:-1]):
-        if x == "--remote-control" and a[i + 1].startswith("oren-") and a[i + 1][5:] in roles: return a[i + 1][5:]
+    for i, x in enumerate(a):
+        v = x.split("=", 1)[1] if x.startswith("--remote-control=") else a[i + 1] if x == "--remote-control" and i + 1 < len(a) else None
+        if v and v.startswith("oren-") and _role(v, roles): return _role(v, roles)
     tab = str(t.get("where") or "").rsplit("/", 1)
     if len(tab) == 2 and tab[1].strip() in roles: return tab[1].strip()
     return None
@@ -201,6 +217,9 @@ def start_control(R, name, space_id=None):
     """Start orchestrator / inbox / inspector (in 'oren') or the watchdog. Used by recover and by the watchdog's restart check."""
     if space_id is None: space_id = pick_space(spaces(R), control_space(R)) if name in CONTROL else ""
     mc = R.CFG.get("main_checkout", str(R.ROOT))
+    if name == "inspector":
+        try: ensure_handoff(R.CFG.get("inspector_handoff", "C:/work/Oren_study/INSPECTOR_HANDOFF.md"), Path(mc) / "docs" / "roles" / "INSPECTOR_HANDOFF.template.md")
+        except OSError as e: print("handoff not created:", e)
     cwd, argv = control_argv(name, mc, Path(mc) / "tools" / "mods" / "oren-lanes", shutil.which("claude") or "claude",
                              sys.executable, R.HERE / "watchdog.py")
     rc, out = R.hc(*hc_run_args(name, cwd, argv, space_id), timeout=60)

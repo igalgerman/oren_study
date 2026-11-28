@@ -42,6 +42,12 @@ assert " run " in f"{first} " and "--name remote-143" in first and "--cloud" in 
 assert "unset CLAUDE_CODE_OAUTH_TOKEN" in first, first
 assert start_cmd[-1] == "do it", "task passed as its own argument"
 assert any("wait" in c[0] for c in f.calls), "waits for the start command to end"
+# #778: every cloud start has an explicit permission mode (else the owner's 'auto' default sends approval asks to his phone)
+bash_line = start_cmd[start_cmd.index("-c") + 1]
+assert "--permission-mode bypassPermissions" in bash_line and bash_line.endswith('--cloud "$1"'), bash_line
+assert r.start_command("opus", "high") == ('unset CLAUDE_CODE_OAUTH_TOKEN; "$0" --model opus --effort high '
+                                           '--permission-mode bypassPermissions --cloud "$1"'), r.start_command("opus", "high")
+assert r.start_command() == 'unset CLAUDE_CODE_OAUTH_TOKEN; "$0" --permission-mode bypassPermissions --cloud "$1"'
 # terminal could not even start -> refused
 f = Fake(("run", 1, "hc: no server"))
 s = r.start(143, "do it", cwd="C:/x", run=f)

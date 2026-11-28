@@ -63,6 +63,15 @@ def parse_start(out):
     err = next((l for l in lines if "rror" in l or "fail" in l), lines[-1] if lines else "no output")
     return {"ok": False, "session": "", "url": "", "error": err}
 
+PERMISSION_MODE = "bypassPermissions"
+
+def start_command(model=None, effort=None):
+    """#778: the bash -c line of every cloud start ($0 = claude, $1 = task). The mode is explicit: without it the CLI forwards the
+    owner's settings default ('auto') to the cloud session and the classifier's asks land on the owner's phone (many lanes = many asks).
+    The cloud VM is the sandbox; the repo hook .claude/hooks/guard.py (#800) and the prompt rules (NO_MERGE) still apply."""
+    return (f'unset {TOKEN_VAR}; "$0" ' + (f"--model {model} " if model else "") + (f"--effort {effort} " if effort else "")
+            + f"--permission-mode {PERMISSION_MODE} " + '--cloud "$1"')
+
 def launch(n, task, cwd, run=sh, name=None, model=None, desk=False, effort=None):
     """#289: start a cloud session in a short-lived herdr terminal and return at once (no 180 s wait for its URL), so a
     watchdog tick can start one. -> {ok, error}. name: window name (default remote-<n>); desk (#306): label role=desk."""
@@ -71,7 +80,7 @@ def launch(n, task, cwd, run=sh, name=None, model=None, desk=False, effort=None)
     name = name or f"remote-{n}"
     run([HC, "rm", name])                                        # leftover finished terminal of an earlier start
     rc, out = run([HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), *labels,
-                   BASH, "-c", f'unset {TOKEN_VAR}; "$0" ' + (f"--model {model} " if model else "") + (f"--effort {effort} " if effort else "") + '--cloud "$1"', CLAUDE, task])   # model: #303
+                   BASH, "-c", start_command(model, effort), CLAUDE, task])   # model: #303
     if rc:
         return {"ok": False, "session": "", "url": "", "error": out.strip()[:300] or f"hc run exit {rc}"}
     return {"ok": True, "session": "", "url": "", "error": "", "name": name}
@@ -213,7 +222,7 @@ def answer_after_question(comments):
     A later RESULT/QUESTION line, or a `Runner: started` (a resumed run used it), means nothing waits."""
     import owner_q                                   # lazy: owner_q imports runner, which imports this module
     comments = trust.only(comments)                  # #800: QUESTION lines from trusted authors only; answer records from the App bot only
-    bodies = [((c.get("body") or "").strip(), trust.is_bot(c)) for c in comments]
+    bodies = [((c.get("body") or "").strip(), trust.answer_ok(c)) for c in comments]
     q = max((i for i, (b, _) in enumerate(bodies) if (m := MARK.search(b)) and m[0].strip().startswith("QUESTION:")), default=-1)
     if q < 0: return ""
     out = []

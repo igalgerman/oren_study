@@ -360,7 +360,8 @@ def privacy_tick(now=None, cache=None, gh=None):
     whose title or new comment holds the kid's name are rewritten through the scrub (cloud sessions write with their own gh)."""
     import scrub, ghcache
     now = now or time.time()
-    if not scrub.names(): scrub.warn_once(now, say=tell); return 0
+    try: scrub.require()
+    except RuntimeError: scrub.warn_once(now, say=tell); return 0     # #876: loud, one alarm per hour (a day before)
     if not scrub.sweep_due(now): return 0
     gh = gh or R.gh
     def title(kind, n, text): return gh(kind, "edit", str(n), "--title", text)[0] == 0
@@ -679,7 +680,7 @@ def tick():
         for name, fn in (("observer_tick", observer_tick), ("ai_observer_tick", ai_observer_tick), ("nightly_tick", nightly_tick),
                          ("parked_tick", parked_tick), ("due_tick", due_tick), ("garden_tick", garden_tick),   # #282 #241 #187
                          ("issues_stuck_tick", issues_stuck_tick), ("desks_tick", desks_tick), ("canary_tick", canary_tick),   # #280 #330
-                         ("sync_tick", sync_tick), ("alarm_tick", alarm_tick), ("trends_tick", trends_tick), ("ai_tick", ai_tick), ("usage_tick", usage_tick), ("usage_alarm_tick", usage_alarm_tick),
+                         ("sync_tick", sync_tick), ("alarm_tick", alarm_tick), ("trends_tick", trends_tick), ("ai_tick", ai_tick), ("usage_tick", usage_tick), ("usage_alarm_tick", usage_alarm_tick), ("merges_tick", merges_tick), ("interaction_limit_tick", interaction_limit_tick),
                          ("lock_tick", lock_tick), ("orch_idle_tick", orch_idle_tick)):
             step(name, fn)
 
@@ -1014,6 +1015,24 @@ def usage_alarm_tick():
     if time.time() - _ualarm["last"] < 300: return
     _ualarm["last"] = time.time()
     import usage_alarms; importlib.reload(usage_alarms); usage_alarms.tick(tell, log)
+
+_merges = {"last": 0.0}
+def merges_tick():
+    """#851: every 5 min, from the gh cache: one `merged` event in stats.jsonl per merged PR of the last 7 days that has none yet (auto-merge, by hand)."""
+    if time.time() - _merges["last"] < 300: return
+    _merges["last"] = time.time()
+    import stats, ghcache; importlib.reload(stats)
+    c = ghcache.load()
+    if not c: return
+    new = stats.record_merges(c.get("prs") or [], days=7)
+    if new: log(f"stats: {len(new)} merged event(s) recorded for PRs the runner did not merge: " + ", ".join(f"#{e['issue']} ({e['by']})" for e in new))
+
+_ilimit = {"last": 0.0}
+def interaction_limit_tick():
+    """#829: hourly, read each public repo's interaction-limits expiry; alarm 14 days before (daily) or at once when gone."""
+    if time.time() - _ilimit["last"] < 3600: return
+    _ilimit["last"] = time.time()
+    import interaction_limit; importlib.reload(interaction_limit); interaction_limit.tick(tell, log)
 
 def trends_tick():
     """#155: hourly patterns over 24 h (repeated BLOCKED reasons, finish/fix rates); reloaded so merged fixes apply."""

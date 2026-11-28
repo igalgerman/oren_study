@@ -1,0 +1,20 @@
+/* ===== arcade runner (#666): own art, CSS only ===== */
+.field.runf{background:linear-gradient(#7fd3ff,#d8f5ff 62%,#8ee08a 62%);overflow:hidden;direction:ltr;touch-action:manipulation}
+.rn-ground{position:absolute;left:0;right:0;bottom:0;height:20%;background:#6bc46a;border-top:6px solid #4ea84f}
+.rn-me{position:absolute;left:18%;bottom:18%;width:44px;height:64px;margin-left:-22px;transition:height .12s}
+.rn-me .rh{position:absolute;left:6px;top:0;width:32px;height:32px;border-radius:50%;background:#ff7a59;box-shadow:inset -6px -4px 0 rgba(0,0,0,.12)}
+.rn-me .rh:after{content:"";position:absolute;right:6px;top:11px;width:7px;height:7px;border-radius:50%;background:#1a0b3d;box-shadow:-11px 0 #1a0b3d}
+.rn-me .rb{position:absolute;left:10px;top:28px;width:24px;height:26px;border-radius:10px;background:#ffb02e}
+.rn-me .rl{position:absolute;top:50px;width:9px;height:14px;border-radius:4px;background:#1a0b3d;animation:rnleg .3s infinite alternate}
+.rn-me .rl.a{left:11px}.rn-me .rl.b{left:24px;animation-delay:.15s}
+@keyframes rnleg{to{transform:translateY(-4px)}}
+.rn-me.duck{height:38px;transform:translateY(0)}.rn-me.duck .rb{top:16px;height:18px}.rn-me.duck .rl{top:30px}.rn-me.duck .rh{top:-4px;left:10px;width:28px;height:28px}
+.rn-me.oops{animation:rnoops .5s}@keyframes rnoops{25%{transform:rotate(-14deg)}75%{transform:rotate(12deg)}}
+.rn-i{position:absolute;margin-left:-20px}
+.rn-i.rock{bottom:18%;width:40px;height:30px;border-radius:50% 50% 8px 8px;background:#9aa0aa;box-shadow:inset -6px -5px 0 rgba(0,0,0,.18)}
+.rn-i.bar{bottom:calc(18% + 40px);width:70px;height:12px;border-radius:6px;background:#7a4a24;box-shadow:0 -8px 0 -2px #3cb04a}
+.rn-i.star{bottom:calc(18% + 8px);font-size:30px}.rn-i.star.hi{bottom:calc(18% + 54px)}.rn-i.got{animation:rngot .25s forwards}
+@keyframes rngot{to{transform:translateY(-30px) scale(1.6);opacity:0}}
+.rn-pad{display:flex;gap:14px;justify-content:center;padding:10px 0}
+.rn-pad .bigbtn{min-width:140px;min-height:64px;font-size:24px}
+@media (max-width:760px){.rn-pad .bigbtn{min-width:46%;min-height:76px}}
