@@ -22,5 +22,20 @@ try:
     p = lane(7, root); assert p.returncode == 0 and (t / "wt-7" / "x.txt").exists(), p.stderr  # stale registration + leftover branch: still works
     assert git("rev-parse", "--abbrev-ref", "HEAD", cwd=t / "wt-7") == "lane/7"
     print("ok #302 lane.sh leftovers")
+    # #974: lane/<n> checked out in ANOTHER worktree (hand work)
+    git("worktree", "add", "-q", "-b", "lane/8", str(t / "hand"), "origin/main", cwd=root); git("push", "-q", "origin", "lane/8", cwd=t / "hand")
+    p = lane(8, root); assert p.returncode == 0 and (t / "wt-8" / "x.txt").exists(), p.stderr   # clean + pushed: detached, lane continues
+    assert git("rev-parse", "--abbrev-ref", "HEAD", cwd=t / "hand") == "HEAD" and git("rev-parse", "--abbrev-ref", "HEAD", cwd=t / "wt-8") == "lane/8"
+    git("worktree", "remove", "--force", str(t / "wt-8"), cwd=root); git("worktree", "remove", "--force", str(t / "hand"), cwd=root)
+    for why in ("dirty", "unpushed"):
+        git("worktree", "add", "-q", "-f", str(t / "hand"), "lane/8", cwd=root)
+        if why == "dirty": (t / "hand" / "x.txt").write_text("changed")
+        else: (t / "hand" / "y.txt").write_text("y"); git("add", "y.txt", cwd=t / "hand"); git("commit", "-qm", "y", cwd=t / "hand")
+        p = lane(8, root); assert p.returncode != 0 and not (t / "wt-8").exists(), why           # blocks, nothing changed
+        msgs = [l for l in p.stderr.splitlines() if l.strip()]
+        assert len(msgs) == 1 and "hand" in msgs[0], (why, p.stderr)                            # ONE message naming the path
+        assert git("rev-parse", "--abbrev-ref", "HEAD", cwd=t / "hand") == "lane/8"            # not detached, not deleted
+        git("worktree", "remove", "--force", str(t / "hand"), cwd=root)
+    print("ok #974 lane.sh branch checked out elsewhere")
 finally:
     shutil.rmtree(t, ignore_errors=True)
