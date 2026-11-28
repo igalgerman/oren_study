@@ -362,6 +362,10 @@ def night_report_if_due(tell, log, hour=None, now=None, data=parked_data):
     st["parked_day"] = time.strftime("%Y-%m-%d", time.localtime(now)); save_state(st)
     import alerts
     text = parked.night_report(*d, now) + "\n" + models_line_now(now) + "\n" + alerts.night_line()      # #844: alarm count per rule
+    try:
+        import progress_alarm; k = progress_alarm.count(now=now)
+        if k: text += f"\nNo-progress alarms in 24 h: {k} (#891)"
+    except Exception: pass
     tell(text); log(text[:300])
     return text
 

@@ -260,6 +260,7 @@ def text(m):
     d = m["last_deploy"]
     if m.get("privacy"): lines.append(m["privacy"])                     # #783: privacy scrub: on (N names) | no names file · ALARM
     if m.get("github"): lines.append(m["github"])                     # #329: calls/min, graphql/core left, alarm < 20%
+    if m.get("progress"): lines.append(m["progress"])                  # #891: NEEDS-ATTENTION: no progress Nh
     if m.get("canary"): lines.append("Canary: " + m["canary"])          # #330: flow ok HH:MM | NEEDS-ATTENTION ...
     if m.get("usage"): lines.append(m["usage"])                         # #708: usage per entity (top rows, NEEDS-ATTENTION)
     import alerts; lines += alerts.lines()                            # #844: alarms the orchestrator could not get
@@ -546,7 +547,7 @@ def page(m):
             f'<title>Oren game: status {hhmm(now)}</title><style>{CSS}</style></head><body><main>'
             f'<h1>Oren game: work status</h1><div class="sub">Updated {time.strftime("%a %d %b %H:%M", time.localtime(now))} (Israel time). '
             f'For fresh numbers run tools\\dashboard.cmd again.</div>'
-            f'{top}<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}{" · " + e(m["governor"]) if m.get("governor") else ""}</div>{pc_div(m.get('privacy'), e)}{f'<div class="sub">{e(m["github"])}</div>' if m.get("github") else ""}{f'<div class="sub">Canary: {e(m["canary"])}</div>' if m.get("canary") else ""}{pc_div(m.get('pc'), e)}{f'<pre class="sub"{chr(32)}style="white-space:pre-wrap">{e(m["usage"])}</pre>' if m.get("usage") else ""}{qcard}{needs}{bottom}{timeline}{cloud}{_health_card(m)}{_ai_card(m)}'
+            f'{top}<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}{" · " + e(m["governor"]) if m.get("governor") else ""}</div>{pc_div(m.get('privacy'), e)}{f'<div class="sub">{e(m["github"])}</div>' if m.get("github") else ""}{f'<div class="sub">{e(m["progress"])}</div>' if m.get("progress") else ""}{f'<div class="sub">Canary: {e(m["canary"])}</div>' if m.get("canary") else ""}{pc_div(m.get('pc'), e)}{f'<pre class="sub"{chr(32)}style="white-space:pre-wrap">{e(m["usage"])}</pre>' if m.get("usage") else ""}{qcard}{needs}{bottom}{timeline}{cloud}{_health_card(m)}{_ai_card(m)}'
             f'<h2 class="more">More details</h2><div class="sub">Everything else is here. Click a line to open it.</div>'
             f'{lists}{recent}{truth}{charts}{speed}{_ov_card(m)}{how}</main></body></html>')
 
@@ -757,6 +758,8 @@ def gather():
     except Exception: m["usage"] = ""
     try: m["canary"] = json.loads((R.RUNS / "canary.json").read_text(encoding="utf-8")).get("text", "")   # #330 (written by canary.py)
     except Exception: m["canary"] = ""
+    try: m["progress"] = json.loads((R.RUNS / "progress_alarm.json").read_text(encoding="utf-8")).get("text", "")   # #891
+    except Exception: m["progress"] = ""
     import pcload; m["pc"] = pc_line(pcload.load(), now)    # #293 (written by the watchdog)
     m["voice"] = ci_voice() if ci else None                # #400
     return m
