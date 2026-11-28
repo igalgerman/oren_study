@@ -1,5 +1,6 @@
 """#717 stats.py --models audit on a fixed event list. Run: python3 tools/runner/test_stats.py"""
-import sys; from pathlib import Path
+import sys, os, tempfile; from pathlib import Path
+os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-"); os.environ["OREN_TEST"] = "1"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import stats as S
 
@@ -33,7 +34,7 @@ assert S.models_report([]).startswith("no runs yet")
 print("test_stats ok")
 
 # fix round: the runner records the PR size on merge, and the audit reads it (OVER must fire on that path)
-import json, os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-"); os.environ["OREN_TEST"] = "1"
+import json
 sys.argv.append("--dry-run")
 import runner as R
 files = [{"path": "tools/runner/a.py", "additions": 20, "deletions": 5}, {"path": "oren2/index.html", "additions": 900, "deletions": 3},
