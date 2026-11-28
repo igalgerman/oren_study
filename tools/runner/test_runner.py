@@ -1538,3 +1538,24 @@ assert v == "" and "403" in rv
 rv, v = r.remote_tester(7, 9, "T2", _tstart, lambda: {"state": "working"}, lambda s: None, iter(range(0, 10**6, 60)).__next__, 120, 60)
 assert v == "" and "no TEST line" in rv, rv
 print("ok #618 tester: level line in the review prompts, cloud tester session test-<n> with the level's model")
+
+# #703: the week is a hard bound; a hit limit stops everything and puts died runs back in the queue
+_Gw = {**_G, "stop": 99, "reserve": 5}
+_ex = {"number": 1, "labels": ["express"]}; _nx = {"number": 2, "labels": []}
+g = r.governor(_u(0, 4.8, week=100), [], _now, _Gw)                       # Sat 11:26: week 100
+assert g["stop"] and g["limit_hit"] and g["why"].startswith("limit hit") and "governor: 0 lanes" in r.governor_text(g), g
+assert r.stop_filter([_ex, _nx], g) == []
+g = r.governor(_u(10, 3, week=97.5), [], _now, _Gw); assert g["stop"] and not g["limit_hit"] and r.stop_filter([_ex, _nx], g) == [_ex], g
+g = r.governor(_u(10, 3, week=98), [], _now, _Gw); assert g["stop"] and r.stop_filter([_ex, _nx], g) == [], g
+g = r.governor(_u(10, 3, week=93), [], _now, _Gw); assert not g["stop"] and not g["limit_hit"]
+_h = lambda reset_h: {"at": _now - 600, "pct": 0, "busy": 3, "reset": _iso(_now + reset_h * 3600)}
+g = r.governor(_u(0, 4.9, week=96), [_h(4.7), _h(4.8)], _now, _Gw)        # Fri 20:30-21:16: 5h 0%, reset moving forward, lanes busy
+assert g["limit_hit"] and g["stop"] and g["why"].startswith("limit hit"), g
+g = r.governor(_u(0, 4.9, week=50), [_h(4.9), _h(4.9)], _now, _Gw); assert not g["limit_hit"], g       # reset steady: normal
+g = r.governor(_u(0, 4.9, week=50), [{**_h(4.7), "busy": 0}, _h(4.8)], _now, _Gw); assert not g["limit_hit"], g   # idle lanes
+_uw = {"five_h_pct": None, "week_pct": 100, "week_reset": _iso(_now + 3600), "at": _iso(_now - 60)}   # no 5h bucket
+g = r.governor(_uw, [], _now, _Gw); assert g["stop"] and g["limit_hit"], g
+g = r.governor({**_uw, "week_pct": 50}, [], _now, _Gw); assert not g["stop"] and not g["limit_hit"] and g["lanes"] == 4, g
+assert r.limit_requeue("RESULT: STUCK cloud worker died twice without a RESULT line (a, b)", True)
+assert r.limit_requeue("", True) and not r.limit_requeue("RESULT: STUCK cloud worker died twice x", False) and not r.limit_requeue("RESULT: DONE", True)
+print("ok #703 governor: week hard bounds, limit_hit, week-only usage, died run goes back in the queue")
