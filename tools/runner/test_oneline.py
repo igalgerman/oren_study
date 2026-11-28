@@ -42,7 +42,7 @@ print("ok agent")
 # ---- phone push (qwin, #390): no window any more; one hc send line to a long-lived idle session ----
 q = {"key": "c984ed", "window": "#205", "source": "issue-205", "text": "לבחור? 1. כן 2. לא"}
 m = QW.push_message(q)
-assert "\n" not in m and "\r" not in m and "PushNotification" in m and "qwin.py answer c984ed" in m, m
+assert "\n" not in m and "\r" not in m and "PushNotification" in m and "qwin.py answer" not in m, m   # #803
 assert not hasattr(QW, "open_window")
 print("ok phone push line")
 

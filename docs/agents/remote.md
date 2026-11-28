@@ -61,9 +61,9 @@ Same limits as local: 2 fix rounds, then blocked. The local worktree is made onl
 1. The session posts `QUESTION: <question, options>` on the issue and stops. The runner sees it within one poll (60 s).
 2. `park_remote`: labels `blocked` + `ready-for-human` (lane freed, `in-progress` dropped), a `Parked (cloud)` comment, the question in the
    pinned 'Questions for the owner' issue (window `remote-<n>`: question page + phone push, panel, dashboard 'needs you'), and the orchestrator is told.
-3. The owner answers: on the question page or the phone push (qwin posts `OWNER ANSWER ...` on the issue), through the orchestrator, or in the questions issue (the orchestrator records it with `qwin.py answer`). #608: a plain comment on the issue is never an answer (every session posts as the owner's account).
+3. The owner answers: on the question page or the phone push (qwin posts `OWNER ANSWER ...` on the issue), through the orchestrator, or in the questions issue (the watchdog records it; the inspector chat uses `qwin.py chat-answer`, #803). #608: a plain comment on the issue is never an answer (every session posts as the owner's account).
 4. Every watchdog tick `resume_answered()` finds parked cloud issues (`.runs/<n>/where` = remote) whose last QUESTION has an answer
-   (`remote.answer_after_question`: a later owner_q answer record `<!-- owner-answer:KEY -->`, written only by `qwin.py answer`; #608), stores it in
+   (`remote.answer_after_question`: a later owner_q answer record `<!-- owner-answer:KEY -->`, written only by the watchdog; #608), stores it in
    `.runs/<n>/answer.json`, removes `blocked` + `ready-for-human` and comments `Runner: ...`.
 5. The next runner pass starts the issue again (always remote): `remote_resume` sends the answer to the saved session
    (`remote.json`); no session or the send fails -> a new cloud session that reads the thread and continues `lane/<n>`. Then review/merge as usual.
