@@ -176,6 +176,14 @@ const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout:
     await A.evaluate(() => { window.__fast = true; });
     ok('a mission done on the phone: the laptop on a mission screen stays there (no redraw to another screen)', r.scr === r.was && !r.kid.length, JSON.stringify(r));
     ok('... and does not speak or cut its speech', !r.said && !r.cancels, JSON.stringify(r)); }
+  // ---------- #679 what he showed: the open parent day tab updates by itself; a parent edit right after never drops it ----------
+  await B.evaluate(() => window.TAL.parentPanel('day')); await sleep(400);
+  await A.evaluate(() => { window.OREN.save.set = window.OREN.save.set || {}; window.OREN.save.set.show = []; window.BW.show(); window.OREN.famNow(); }); await sleep(600);
+  await B.evaluate(() => window.HEALTH.reply(3));   /* the parent edits set (a ready message) before his panel pulled the creation */
+  ok('#679 the open parent day tab shows the creation by itself (live pull, no reopen)', await until(B, () => document.querySelectorAll('#sPar .bwshows .bwshow-row').length === 1, null, 10000));
+  await pullA(); await sleep(600);
+  { const n = x => x.evaluate(() => (window.OREN.save.set.show || []).length);
+    ok('#679 a parent edit to set right after he showed does not drop the creation (kept on both devices)', await n(A) === 1 && await n(B) === 1, (await n(A)) + ' ' + (await n(B))); }
   ok('no page errors', !errs.length, errs.join(' | '));
   await b.close(); srv.close();
   console.log(res.join('\n')); const f = res.filter(x => x.startsWith('FAIL')).length; console.log('RESULT kidcmd', res.length - f, f); process.exit(f ? 1 : 0);

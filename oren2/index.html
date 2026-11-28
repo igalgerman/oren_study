@@ -1246,11 +1246,13 @@ function mergeIn(o){if(!o||typeof o!=='object')return;
   if(window.DAYLOG&&(o.alog||o.now)){save.alog=save.alog||{};window.DAYLOG.merge(save,o);}/* the heartbeat (save.now) comes even without a day log (#352) */
   for(const [k,v] of Object.entries(o.time||{})){save.time=save.time||{};save.time[k]=Math.max(save.time[k]|0,v|0);}
   for(const [k,v] of Object.entries(o.st||{})){save.st=save.st||{};const c=save.st[k]||{a:0,o:0};save.st[k]={a:Math.max(c.a|0,v.a|0),o:Math.max(c.o|0,v.o|0)};}
-  {const clean=JSON.stringify(save.set||{})===lastSetJ,mine=(save.set||{}).pc;
+  {const clean=JSON.stringify(save.set||{})===lastSetJ,mine=(save.set||{}).pc,mineShow=(save.set||{}).show;
   if(o.set&&(+o.setT||0)>(+save.setT||0)){save.set=o.set;save.setT=o.setT;lastSetJ=JSON.stringify(save.set);}
   /* #614: the parent's commands (set.pc) are a list, not one setting: both copies are joined by id. With the whole set newer-wins, a later
      save from another copy (a second tab or phone, or Oren's device answering a message) dropped a skip that copy had not seen yet */
-  const pc=pcJoin(mine,(o.set||{}).pc);if(save.set&&pc.length&&JSON.stringify(pc)!==JSON.stringify(save.set.pc||[])){const took=JSON.stringify(save.set)===lastSetJ;save.set.pc=pc;if(clean||took)lastSetJ=JSON.stringify(save.set);}}
+  const pc=pcJoin(mine,(o.set||{}).pc);if(save.set&&pc.length&&JSON.stringify(pc)!==JSON.stringify(save.set.pc||[])){const took=JSON.stringify(save.set)===lastSetJ;save.set.pc=pc;if(clean||took)lastSetJ=JSON.stringify(save.set);}
+  /* #679: what he showed (set.show) is a list too: joined by id, so a parent edit to set never drops it (and the answer r stays) */
+  const sh=showJoin(mineShow,(o.set||{}).show);if(save.set&&sh.length&&JSON.stringify(sh)!==JSON.stringify(save.set.show||[])){const took=JSON.stringify(save.set)===lastSetJ;save.set.show=sh;if(clean||took)lastSetJ=JSON.stringify(save.set);}}
   for(const x of (o.iss||[])){if(!x||!x.d||!x.k)continue;save.iss=save.iss||[];const e=save.iss.find(y=>y.d===x.d&&y.k===x.k);if(e)e.n=Math.max(e.n|0,x.n|0);else save.iss.push(x);}if(save.iss)save.iss=save.iss.sort((a,b)=>a.d<b.d?-1:1).slice(-30);
   for(const k of ['prof','last'])if(o[k]&&!save[k])save[k]=o[k];
   for(const m of ['dom','rw','coach','cnt','tg','pcA','pcU','pk','pkx','hb'])for(const [k,v] of Object.entries(o[m]||{})){save[m]=save[m]||{};save[m][k]=Math.max(+save[m][k]||0,+v||0);}
@@ -1264,6 +1266,7 @@ function mergeIn(o){if(!o||typeof o!=='object')return;
 function hatsBack(){const P={helmet:20,crown:60,wizard:120};let g=0;for(const [k,v] of Object.entries(P))if(save.owned&&save.owned[k]&&!(save.hb&&save.hb[k])){save.hb=save.hb||{};save.hb[k]=1;g+=v;}
   if(g)save.gems=(save.gems|0)+g;if(save.av&&save.av.hat)delete save.av.hat;return g;}
 var lastSetJ='';
+function showJoin(a,b){const m=new Map();for(const c of [...(a||[]),...(b||[])])if(c&&c.i){const e=m.get(c.i);if(!e)m.set(c.i,c);else if(c.r&&!e.r)m.set(c.i,Object.assign({},e,{r:c.r}));}return [...m.values()].sort((x,y)=>(+x.t||0)-(+y.t||0)).slice(-5);}
 function pcJoin(a,b){const m=new Map();for(const c of [...(a||[]),...(b||[])])if(c&&c.i&&!m.has(c.i))m.set(c.i,c);return [...m.values()].sort((x,y)=>(+x.t||0)-(+y.t||0)).slice(-40);}
 /* problem log for the parent panel: one entry per kind per day with a count (synced with the family) */
 function logIssue(k,m){try{if(kidSave||window.__fast)return;const d=today();save.iss=save.iss||[];let e=save.iss.find(x=>x.d===d&&x.k===k);if(!e){e={d,k,n:0};save.iss.push(e);save.iss=save.iss.slice(-30);}e.n++;if(m)e.m=String(m).slice(0,200);try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}}catch(e){}}/* local only: goes to the family save with the next normal save (no retry loops) */
@@ -5174,7 +5177,7 @@ function nowTop(el){const DL=window.DAYLOG,PD=window.PDAY;el.innerHTML=DL?DL.now
 /* while the parent panel is open: pull the family save every 30 s so the day view follows Oren live, also from another house;
    #612: and at once when the phone screen is opened again (a locked phone runs no timers) */
 let parLive=0;
-const parPull=()=>{O.parMark&&O.parMark();return Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(!parentOn||$('#sPar').hidden)return;if(window.PDAY&&curTab==='day')window.PDAY.refresh();if(window.HEALTH&&window.HEALTH.remRefresh)window.HEALTH.remRefresh();});};
+const parPull=()=>{O.parMark&&O.parMark();return Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(!parentOn||$('#sPar').hidden)return;if(window.PDAY&&curTab==='day')window.PDAY.refresh();if(window.HEALTH&&window.HEALTH.remRefresh)window.HEALTH.remRefresh();if(curTab==='day'&&window.BW&&window.BW.parentShows){const old=document.querySelector('#sPar .bwshows'),nw=window.BW.parentShows();if(old&&nw)old.replaceWith(nw);else if(old)old.remove();else if(nw){const pb=document.querySelector('#sPar .pbody'),pc=pb&&pb.querySelector('.bwpic');if(pc)pc.after(nw);else if(pb)pb.insertBefore(nw,pb.querySelector(':scope > .btnrow'));}}});};
 function parLiveOn(){if(parLive)return;parLive=setInterval(()=>{if(!parentOn||$('#sPar').hidden){clearInterval(parLive);parLive=0;return;}parPull();},window.__parPull||30000);}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&parentOn&&!$('#sPar').hidden){parPull();parLiveOn();}});
 const sec=(box,t,html)=>{const d=h('section','psec',`<h3>${t}</h3>`);if(html)d.insertAdjacentHTML('beforeend',html);box.appendChild(d);return d;};

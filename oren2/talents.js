@@ -1065,7 +1065,7 @@ function nowTop(el){const DL=window.DAYLOG,PD=window.PDAY;el.innerHTML=DL?DL.now
 /* while the parent panel is open: pull the family save every 30 s so the day view follows Oren live, also from another house;
    #612: and at once when the phone screen is opened again (a locked phone runs no timers) */
 let parLive=0;
-const parPull=()=>{O.parMark&&O.parMark();return Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(!parentOn||$('#sPar').hidden)return;if(window.PDAY&&curTab==='day')window.PDAY.refresh();if(window.HEALTH&&window.HEALTH.remRefresh)window.HEALTH.remRefresh();});};
+const parPull=()=>{O.parMark&&O.parMark();return Promise.resolve(O.famPull&&O.famPull()).then(()=>{if(!parentOn||$('#sPar').hidden)return;if(window.PDAY&&curTab==='day')window.PDAY.refresh();if(window.HEALTH&&window.HEALTH.remRefresh)window.HEALTH.remRefresh();if(curTab==='day'&&window.BW&&window.BW.parentShows){const old=document.querySelector('#sPar .bwshows'),nw=window.BW.parentShows();if(old&&nw)old.replaceWith(nw);else if(old)old.remove();else if(nw){const pb=document.querySelector('#sPar .pbody'),pc=pb&&pb.querySelector('.bwpic');if(pc)pc.after(nw);else if(pb)pb.insertBefore(nw,pb.querySelector(':scope > .btnrow'));}}});};
 function parLiveOn(){if(parLive)return;parLive=setInterval(()=>{if(!parentOn||$('#sPar').hidden){clearInterval(parLive);parLive=0;return;}parPull();},window.__parPull||30000);}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&parentOn&&!$('#sPar').hidden){parPull();parLiveOn();}});
 const sec=(box,t,html)=>{const d=h('section','psec',`<h3>${t}</h3>`);if(html)d.insertAdjacentHTML('beforeend',html);box.appendChild(d);return d;};
