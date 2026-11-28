@@ -165,6 +165,8 @@ function start(id){T.setKey(null);RUN[id]();}
 let brk=null;
 function brkEnd(){const n=brk&&brk.next;brk=null;if(n)n();}
 function breakRound(id,next){id=G(id)?id:GAMES[0].id;brk={next:next||O.showMap,id};start(id);}
+/* a pack file adds its own game here (runner.js) */
+T.arcKit={frame,countdown,finish,tune,setCur:c=>{cur=c;}};T.arcAdd=(gm,fn)=>{if(!G(gm.id))GAMES.push(gm);RUN[gm.id]=fn;};
 T.arcBreak=breakRound;T.arcGames=GAMES;
 window.TAL_arcade=openArcade;T.arcade=openArcade;
 window.__arc={open:openArcade,start,brk:breakRound,get inBreak(){return !!brk;},get brkId(){return brk?brk.id:null;},get cur(){return cur;},finish:sc=>cur&&cur.finish(sc),hit:()=>cur&&cur.hit(),state:()=>A(),tune,q:id=>qGen(tune(id))};
