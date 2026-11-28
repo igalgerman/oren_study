@@ -14,6 +14,8 @@ for need in ("open AND closed", "## Acceptance", "ready-for-agent", "P0", "pack"
 for need in ("tier-1", "tier-2", "tier-3", "unsure", "one-line reason"):   # #437: the inbox picks the tier and says why
     assert need in p, need
 a = D.prompt("ask", 777)
+for need in ("effort:", "split", "600 lines"):   # #718: the inbox sets model + effort and splits big tasks
+    assert need in p, need
 assert "#777" in a and "READ-ONLY" in a and "Hebrew" in a and "PING" in a, a
 assert "20 min" in a                                   # tells the owner when the status is old (PC off)
 assert '"' not in p and '"' not in a                   # remote.start turns " into ' (Windows argv)

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { expect, test } from 'claude-code/testing'
 
 import {
-  finishedRuns, parseBlockers, parseWindows, usageJson, parseGov, parseConfig, parseEvents, panel, statusLine, laneStep, eta, quietArgv,
+  finishedRuns, parseBlockers, parseWindows, usageJson, planJson, parseGov, parseConfig, parseEvents, panel, statusLine, laneStep, eta, quietArgv,
 } from './lanes'
 import type { PanelIn, Pr } from './lanes'
 
@@ -35,13 +35,38 @@ test('windows and finished runs', () => {
 
 test('usage.json for the governor (#239), governor and config parsing', () => {
   const u = usageJson([{ kind: 'five_hour', percentUsed: 23.4, resetsAt: '2026-11-25T19:00:00Z' }, { kind: 'seven_day', percentUsed: 41, resetsAt: '2026-11-27T07:00:00Z' }], Date.parse('2026-11-25T15:00:00Z'))
-  expect(u).toEqual({ five_h_pct: 23.4, five_h_reset: '2026-11-25T19:00:00Z', week_pct: 41, week_reset: '2026-11-27T07:00:00Z', at: '2026-11-25T15:00:00.000Z' })
+  expect(u).toEqual({ five_h_pct: 23.4, five_h_reset: '2026-11-25T19:00:00Z', week_pct: 41, week_reset: '2026-11-27T07:00:00Z',
+    buckets: [{ kind: 'five_hour', pct: 23.4, reset: '2026-11-25T19:00:00Z' }, { kind: 'seven_day', pct: 41, reset: '2026-11-27T07:00:00Z' }],
+    read_at: '2026-11-25T15:00:00.000Z', at: '2026-11-25T15:00:00.000Z' })
   expect(usageJson([], 0)).toBe(null)
   expect(parseGov('{"lanes": 4, "stop": false, "projected": 90}')!.lanes).toBe(4)
   expect(parseGov('junk')).toBe(null)
   expect(parseConfig('local_lanes = 0\nremote_lanes = 6\nexpress_lanes = 2\nmax_core = 3\ngovernor_target = 99')).toEqual({ local: 0, remote: 6, express: 2, maxCore: 3, goal: 99 })
   expect(parseConfig('')).toEqual({ local: 3, remote: 0, express: 0, maxCore: 1, goal: 99 })
   expect(parseEvents('{"ts": 2, "issue": 1, "event": "b"}\ngarbage\n{"ts": 1, "issue": 1, "event": "a"}').map(e => e.event)).toEqual(['a', 'b'])
+})
+
+test('#706 week-only limits are written; read_at moves only on change; a Fable bucket is kept', () => {
+  const wk = [{ kind: 'seven_day', percentUsed: 30, resetsAt: '2026-12-01T00:00:00Z' }, { kind: 'seven_day_fable', percentUsed: 12 }]
+  const u1 = usageJson(wk, Date.parse('2026-11-28T10:00:00Z'))!
+  expect(u1.five_h_pct).toBe(null)
+  expect(u1.week_pct).toBe(30)
+  expect(u1.buckets.find(b => b.kind === 'seven_day_fable')).toEqual({ kind: 'seven_day_fable', pct: 12, reset: null })
+  const u2 = usageJson(wk, Date.parse('2026-11-28T10:05:00Z'), u1)!
+  expect(u2.read_at).toBe(u1.read_at)
+  expect(u2.at).toBe('2026-11-28T10:05:00.000Z')
+  const u3 = usageJson([{ ...wk[0], percentUsed: 31 }, wk[1]], Date.parse('2026-11-28T10:10:00Z'), u2)!
+  expect(u3.read_at).toBe('2026-11-28T10:10:00.000Z')
+})
+
+test('#706 plan read keeps only subscriptionType', () => {
+  const out = JSON.stringify({ loggedIn: true, email: 'x@y.z', orgName: 'secret', token: 'sk-abc', subscriptionType: 'ultra' })
+  const p = planJson(out, Date.parse('2026-11-28T10:00:00Z'))!
+  expect(p).toEqual({ plan: 'ultra', at: '2026-11-28T10:00:00.000Z' })
+  expect(JSON.stringify(p)).not.toMatch('secret')
+  expect(JSON.stringify(p)).not.toMatch('sk-abc')
+  expect(planJson('junk', 0)).toBe(null)
+  expect(planJson('{"loggedIn":false}', 0)).toBe(null)
 })
 
 test('#296 one lane list: an issue with a PR is a lane, never in UP NEXT; no issue in two sections', () => {
@@ -181,7 +206,7 @@ test('#330 the panel shows the canary line (.runs/canary.json text), red on NEED
   expect(panel(base({ canary: 'NEEDS-ATTENTION: canary #401 step pr late (30 min)' })).canary!.tone).toBe('red')
 })
 
-import { fromCache, GH_CACHE } from './lanes'
+import { fromCache, GH_CACHE, modeRecord } from './lanes'
 
 test('#329 the panel reads GitHub only from the shared cache (.runs/gh_cache.json), never when stale', () => {
   const L = (...n: string[]) => n.map(name => ({ name }))
@@ -215,4 +240,14 @@ test('#437 UP NEXT shows the tier and sorts express, P0, tier, bug, P1..P3', () 
   expect(p.issues.next).toEqual([5, 3, 4, 2, 1])
   expect(p.next.find(r => r.text.includes('#1 '))!.text).toMatch(/^P1 T2 #1 /)
   expect(p.next.find(r => r.text.includes('#2 '))!.text).toMatch(/^P2 #2 /)
+})
+
+test('#712 the panel shows the owner mode and the Mode button cycles normal -> fast -> save -> normal', () => {
+  expect(panel(base()).mode).toEqual({ text: 'mode: normal', tone: 'dim' })
+  expect(panel(base()).modeNext).toBe('fast')
+  const g = { override: { mode: 'fast', until_reset: true } }
+  expect(panel(base({ gov: g as never })).mode).toEqual({ text: 'mode: FAST until reset', tone: 'amber' })
+  expect(panel(base({ gov: g as never })).modeNext).toBe('save')
+  expect(panel(base({ gov: { override: { mode: 'save' } } as never })).modeNext).toBe('normal')
+  expect(modeRecord('fast', 1000)).toEqual({ mode: 'fast', set: 1000, until: 1000 + 10800, until_reset: false })
 })

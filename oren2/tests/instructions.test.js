@@ -39,7 +39,12 @@ const {chromium}=require('playwright');
   ['friend: two choices',()=>window.TOPIC.open(),'#ov','.tpch span'],
   ['friend: practice topics',()=>window.TOPIC.grid(),'#ov','.tpt b'],
   ['friend: finish the path first?',()=>{const T=window.TAL;T.S().set.noDaily=0;const d=T.dailyEnsure();d.t=['math','math','math'];d.done=[1,0,0];d.ch='math';window.TOPIC.nudge();},'#ov','.bigbtn span,.tpany'],
-  ['rest: something else now',()=>window.HEALTH.showTopic('read'),'.hlock','.hcards b,.hone span:last-child'],
+  ['mind: how do I feel',()=>window.TAL.ACT['mind-feel'].run(()=>window.OREN.showMap()),'#sTal','.face span'],
+  ['mind: gratitude jar',()=>window.TAL.ACT['mind-jar'].run(()=>window.OREN.showMap()),'#sTal','.thb span:last-child'],
+  ['mind: calm sounds',()=>window.TAL.ACT['mind-sounds'].run(()=>window.OREN.showMap()),'#sTal','.ambb span:last-child'],
+  ['art: mix colours',()=>window.TAL.ACT['art-mix'].run(()=>window.OREN.showMap()),'#sTal','.mixb span'],
+  ['music: piano (free or song)',()=>window.TAL.ACT['mus-piano'].run(()=>window.OREN.showMap()),'#sTal','.pmode span:last-child'],
+ ['rest: something else now',()=>window.HEALTH.showTopic('read'),'.hlock','.hcards b,.hone span:last-child'],
  ];
  for(const [name,go,root,sel] of CH){
    await p.evaluate(()=>{const O=window.OREN;document.querySelectorAll('.hlock').forEach(x=>x.remove());document.body.classList.remove('hlocked');document.querySelector('#ov').hidden=true;O.showMap();});await reset();

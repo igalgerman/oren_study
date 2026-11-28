@@ -7,8 +7,8 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  const p=await ctx.newPage();const errs=[];p.on('pageerror',e=>errs.push(e.message));p.on('console',m=>{if(m.type()==='error'&&!/fonts|ERR_|Failed to load/.test(m.text()))errs.push('console: '+m.text());});
  await p.goto(L.URL);await L.noCoach(p);await sleep(500);
  await p.evaluate(()=>{const O=window.OREN,T=window.TAL;O.save.story.intro=1;T.S().prof={an:'cat',col:'#3a8fc4',love:'art'};window.TAL_arcade(()=>O.showMap());});await sleep(400);
- ok('arcade hall with 7 cabinets',await p.locator('.cab').count()===7);ok('no tickets or prize shop',await p.locator('.prize,.tkbig').count()===0&&!/🎟|פְּרָסִים/.test(await p.textContent('#sTal')));await L.shot(p,{path:L.SHOTDIR+`/arc-${tag}-hall.png`,fullPage:true});
- const ids=['balloon','soccer','basket','swim','mole','frog','chase'];
+ ok('arcade hall with 9 cabinets (air hockey #668, pinball #667, chase)',await p.locator('.cab').count()===9);ok('no tickets or prize shop',await p.locator('.prize,.tkbig').count()===0&&!/🎟|פְּרָסִים/.test(await p.textContent('#sTal')));await L.shot(p,{path:L.SHOTDIR+`/arc-${tag}-hall.png`,fullPage:true});
+ const ids=['balloon','soccer','basket','swim','mole','frog','hockey','pinball','chase'];
  for(const id of ids){const e0=errs.length;
    await p.evaluate(id=>window.__arc.start(id),id);await sleep(700);await L.shot(p,{path:L.SHOTDIR+`/arc-${tag}-${id}.png`});
    // play by hooks until result overlay appears
@@ -25,10 +25,29 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  // real click soccer corner
  await p.evaluate(()=>{document.querySelector('#ov').hidden=true;window.__arc.start('soccer');});await sleep(300);await p.locator('.corner').first().click();await sleep(90);ok('soccer kick by click resolves',await p.evaluate(()=>!!document.querySelector('.kmsg').textContent||document.querySelector('.tm').textContent.includes('2/')));
  await p.evaluate(()=>{document.querySelector('#ov').hidden=true;});
+ // #668 air hockey: real mouse + keys move the mallet, the puck never passes the cap, the computer is slow, a round plays to its end
+ await p.evaluate(()=>{document.querySelector('#ov').hidden=true;window.__fast=false;window.__arc.start('hockey');});await sleep(4200);
+ const rk=await p.locator('.rink').boundingBox();
+ await p.mouse.move(rk.x+rk.width*.2,rk.y+rk.height*.9);await p.mouse.move(rk.x+rk.width*.8,rk.y+rk.height*.7,{steps:8});await sleep(900);
+ const mv=await p.evaluate(()=>{const s=window.__arc.cur.state();return {mx:s.m.x/s.W,my:s.m.y/s.Hh};});
+ ok('hockey: mouse moves the mallet (lower half only)',mv.mx>.6&&mv.my>.5,JSON.stringify(mv));
+ await p.keyboard.press('ArrowLeft');await p.keyboard.press('ArrowLeft');await sleep(600);
+ ok('hockey: arrow keys move the mallet',await p.evaluate(mx=>window.__arc.cur.state().m.tx/window.__arc.cur.state().W<mx,mv.mx));
+ await L.shot(p,{path:L.SHOTDIR+`/arc-${tag}-hockey-play.png`});
+ const sp=await p.evaluate(()=>{const c=window.__arc.cur,s=c.state();let mx=0;s.puck.vx=9;s.puck.vy=-9;for(let i=0;i<400;i++){c.step(8);mx=Math.max(mx,Math.hypot(s.puck.vx,s.puck.vy));}return {mx,cap:s.CAPV};});
+ ok('hockey: puck speed never above the cap',sp.mx<=sp.cap*1.0001,JSON.stringify(sp));
+ const hk=await p.evaluate(()=>{const a=window.__arc.state();a.lv={hockey:999};const hi=window.__arc.tune('hockey');a.lv={};return {hi,lo:window.__arc.tune('hockey')};});
+ ok('hockey: hard cap on puck and computer speed, calm base lower',hk.hi.pk<=1.1&&hk.hi.ai<=.6&&hk.lo.pk<hk.hi.pk&&hk.lo.pk<=.8&&hk.lo.ai<hk.hi.ai,JSON.stringify(hk));
+ // play to the end by hooks (puck rolled into the computer's goal 5 times)
+ let wonRound=false;for(let k=0;k<300;k++){if(await p.evaluate(()=>!document.querySelector('#ov').hidden)){wonRound=true;break;}await p.evaluate(()=>window.__arc.hit());await sleep(150);}
+ ok('hockey: a round plays to its end and shows the result',wonRound&&/5:\d/.test(await p.textContent('#ov')),(await p.textContent('#ov')).slice(0,80));
+ await p.evaluate(()=>{const a=window.__arc.state();window.__fast=true;a.lv={hockey:3};document.querySelector('#ov').hidden=true;window.__arc.start('hockey');});await sleep(300);await p.evaluate(()=>window.__arc.finish(0));
+ ok('hockey: bad round makes the next one easier',await p.evaluate(()=>window.__arc.tune('hockey').lv===2));
+ await p.evaluate(()=>{document.querySelector('#ov').hidden=true;});
  // #351: calm base speed, hard cap, ease after a bad round (caps written here, not read from the game)
  const CAP={balloonSp:.075,spawn:700,stay:1700,gap:800,meter:.08,zoneMin:24,rivalT:44000};
- const huge=await p.evaluate(()=>{const a=window.__arc.state();['balloon','soccer','basket','swim','mole','frog'].forEach(id=>{a.best[id]=99999;});a.lv={balloon:999,soccer:999,basket:999,swim:999,mole:999,frog:999};a.gr={};
-   const ts={};['balloon','soccer','basket','swim','mole','frog'].forEach(id=>ts[id]=window.__arc.tune(id));const qs=[...Array(300)].map(()=>window.__arc.q('swim'));return {ts,qmax:Math.max(...qs.map(q=>Math.max(q.ans,...(q.txt.match(/\d+/g)||[]).map(Number)))),x:qs.some(q=>/×/.test(q.txt))};});
+ const huge=await p.evaluate(()=>{const a=window.__arc.state();['balloon','soccer','basket','swim','mole','frog','hockey'].forEach(id=>{a.best[id]=99999;});a.lv={balloon:999,soccer:999,basket:999,swim:999,mole:999,frog:999};a.gr={};
+   const ts={};['balloon','soccer','basket','swim','mole','frog','hockey'].forEach(id=>ts[id]=window.__arc.tune(id));const qs=[...Array(300)].map(()=>window.__arc.q('swim'));return {ts,qmax:Math.max(...qs.map(q=>Math.max(q.ans,...(q.txt.match(/\d+/g)||[]).map(Number)))),x:qs.some(q=>/×/.test(q.txt))};});
  const T=huge.ts,t=Object.assign({},T.frog,{sp:T.balloon.sp,spawn:T.balloon.spawn,stay:T.mole.stay,gap:T.mole.gap,meter:T.basket.meter,zone:T.basket.zone,rivalT:T.swim.rivalT,max:Math.max(...Object.values(T).map(x=>x.max))});
  ok('balloon rise speed capped at huge best',t.sp[1]<=CAP.balloonSp&&t.spawn>=CAP.spawn,JSON.stringify(t));
  ok('mole speed capped at huge best',t.stay>=CAP.stay&&t.gap>=CAP.gap,JSON.stringify(t));

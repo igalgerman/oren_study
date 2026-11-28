@@ -60,8 +60,8 @@ def page(data):
             if q.get("other"):
                 body += ('<div>אחר:<input class="t" type="text"%s></div>'
                          % ("" if q.get("multi") else ' data-single="1"'))
-        parts.append('<div class="card" id="c_%s"><div class="q">%s</div>%s<div class="err">צריך לענות על השאלה הזו</div></div>'
-                     % (qid, e(q["text"]), body))
+        parts.append('<div class="card" id="c_%s"><div class="q">%s</div>%s%s<div class="err">צריך לענות על השאלה הזו</div></div>'
+                     % (qid, e(q["text"]), ('<details><summary>עוד</summary><p style="white-space:pre-wrap">%s</p></details>' % e(q["details"])) if q.get("details") else "", body))
     intro = "<p>%s</p>" % e(data["intro"]) if data.get("intro") else ""
     title = e(data.get("title", "שאלות"))
     return ('<!doctype html><html dir="rtl" lang="he"><head><meta charset="utf-8">'

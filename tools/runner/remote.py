@@ -28,6 +28,7 @@ RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # same as runner.
 def sh(cmd, env=None):
     alt_env = None
     if cmd and str(cmd[0]) in ("gh", "gh.exe"):
+        import scrub; cmd, _ = scrub.scrub_cmd(cmd)      # #783: the kid's real name never reaches a GitHub write (canary writes through here)
         orig = dict(os.environ if env is None else env); orig.pop(ghauth.OWNER, None)
         env = ghauth.apply(cmd, dict(os.environ if env is None else env))   # #363: the App token
         if env.get("GH_TOKEN") and env.get("GH_TOKEN") != orig.get("GH_TOKEN"): alt_env = orig   # #469: same call as the owner
@@ -58,7 +59,7 @@ def parse_start(out):
     err = next((l for l in lines if "rror" in l or "fail" in l), lines[-1] if lines else "no output")
     return {"ok": False, "session": "", "url": "", "error": err}
 
-def launch(n, task, cwd, run=sh, name=None, model=None, desk=False):
+def launch(n, task, cwd, run=sh, name=None, model=None, desk=False, effort=None):
     """#289: start a cloud session in a short-lived herdr terminal and return at once (no 180 s wait for its URL), so a
     watchdog tick can start one. -> {ok, error}. name: window name (default remote-<n>); desk (#306): label role=desk."""
     task = re.sub(r"[ \t]*[\r\n]+[ \t]*", " ", task.replace('"', "'")).strip()   # #390: cmd.exe cuts argv at a newline                             # double quotes break the Windows argv to bash ('file not found')
@@ -66,19 +67,24 @@ def launch(n, task, cwd, run=sh, name=None, model=None, desk=False):
     name = name or f"remote-{n}"
     run([HC, "rm", name])                                        # leftover finished terminal of an earlier start
     rc, out = run([HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), *labels,
-                   BASH, "-c", f'unset {TOKEN_VAR}; "$0" ' + (f"--model {model} " if model else "") + '--cloud "$1"', CLAUDE, task])   # model: #303
+                   BASH, "-c", f'unset {TOKEN_VAR}; "$0" ' + (f"--model {model} " if model else "") + (f"--effort {effort} " if effort else "") + '--cloud "$1"', CLAUDE, task])   # model: #303
     if rc:
         return {"ok": False, "session": "", "url": "", "error": out.strip()[:300] or f"hc run exit {rc}"}
     return {"ok": True, "session": "", "url": "", "error": "", "name": name}
 
-def start(n, task, cwd, run=sh, name=None, model=None):
+def start(n, task, cwd, run=sh, name=None, model=None, effort=None):
     """cwd must be a checkout whose current commit is on GitHub (e.g. the main checkout): the session starts there.
-    name (#306): a session that is not an issue's worker (the cloud desks) -> window <name>, label role=desk."""
-    s = launch(n, task, cwd, run, name, model, desk=bool(name))
+    name (#306): a session that is not an issue's worker (the cloud desks) -> window <name>, label role=desk.
+    effort (#713): `--effort <level>`; a start refused with it is tried once more without it (logged)."""
+    s = launch(n, task, cwd, run, name, model, desk=bool(name), effort=effort)
     if not s["ok"]: return s
     name = s["name"]
     run([HC, "wait", name, "--timeout", "180", "--json"])
-    return parse_start(run([HC, "read", name, "--lines", "200"])[1])
+    res = parse_start(run([HC, "read", name, "--lines", "200"])[1])
+    if not res["ok"] and effort:
+        log_line(f"#{n}: cloud start refused with --effort {effort} ({res['error'][:120]}); retrying without it")
+        return start(n, task, cwd, run, name if name != f"remote-{n}" else None, model)
+    return res
 
 def send(session, text, run=sh):
     rc, out = run([CLAUDE, "-p", "--cloud", session, "--output-format", "json", text], env=clean_env())

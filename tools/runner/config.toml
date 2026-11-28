@@ -5,15 +5,12 @@ branch = "main"
 model = "sonnet"
 local_lanes = 0                 # #133: worker windows on this PC (owner 26 Nov: 0, the PC froze; all workers in the cloud)
 remote_lanes = 6                # #133: cloud sessions (tools/runner/remote.py); a local lane busy + a remote slot free -> the worker runs in the cloud
-# #239 usage governor: the cloud lane count follows the 5h window (panel writes .runs/usage.json); usage missing or > 15 min old -> remote_lanes
-governor_target = 99            # aim: 5h usage at its reset close to this % (owner 26 Nov 14:30: was 90)
-governor_min = 8               # owner 28 Nov: temporary until the new governor (many lanes now)
-governor_max = 16              # owner 28 Nov: Ultra plan, temporary until the new governor
-governor_stop = 99              # 5h at/above this %: no new run (owner 26 Nov 14:10: was 93)
-governor_reserve = 5            # #703: ceiling C = 99 - reserve; week >= C: only express runs (705 makes it the owner reserve)
-governor_pace = 3.5             # 5h % per hour per busy cloud lane when the last hour has too few samples
-governor_week_cap = 8           # week projected above governor_week_target at its reset (ahead) -> at most this many cloud lanes
-governor_week_target = 99       # #274: aim for the week % at the weekly reset; projected below (behind) -> governor_max lanes; the 5h stop still wins
+# #239/#705 usage governor: cloud lanes follow the remaining WEEK budget evenly, re-planned every pass (panel writes .runs/usage.json); the 5h window is only a cap
+governor_stop = 99              # 5h at/above this %: no new run (week-only plan: no 5h stop)
+governor_reserve = 5            # owner reserve %: week ceiling C = 99 - reserve, released over the last governor_reserve_release_h hours
+governor_reserve_release_h = 12
+governor_5h_cap = 97            # lanes never plan the 5h window past this % (a cap, not a goal)
+governor_ceiling = 16           # sanity ceiling against bugs only
 governor_week_stop = 97         # #698 owner 28 Nov: week at/above this %: no new run (runs in flight finish) until the weekly reset
 express_lanes = 2               # #72: extra lanes for issues labelled express (owner-approved), on top of the local + remote lanes (26 Nov: 2, two express P0s at once)
 max_core = 5                    # owner 27 Nov: 3 -> 5 (23 core issues waited while lanes were free; #262 auto-resolve, #503 build check)
@@ -56,3 +53,11 @@ ci_timeout_minutes = 60
 github_app_id = 5939551
 github_app_installation_id = 186191764
 github_app_key = "C:/Users/97254/.oren/app.pem"
+
+# #710 usage alarms (usage_alarms.py): each rule fires at most once per usage_alarm_every_h hours
+usage_alarm_every_h = 3
+usage_underuse_pct = 94         # UNDERUSE: week + (b*N_hi + b0)*H below this = budget left over even at full speed
+usage_idle_min = 60             # IDLE: need > 0 while busy lanes < lanes for longer than this
+usage_behind_ratio = 0.5        # BEHIND: actual burn over usage_behind_h below this share of need
+usage_behind_h = 3
+usage_overuse_pct = 100         # OVERUSE: projected week % at the reset at or above this
