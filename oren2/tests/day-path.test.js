@@ -38,11 +38,23 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  await p.locator('#sTal .dall .dcard',{hasText:'אַבָּא'}).click();await sleep(300);
  const d3=await p.evaluate(()=>{const d=window.TAL.S().daily;return {t:d.t,ch:d.ch,lead:window.TAL.TOG.find(a=>'tog:'+a.k===d.t[0]).lead};});
  ok('"together" from something else: an Oren-led together step + 2 surprises + the English scene (#424)',d3.ch==='tog'&&/^tog:/.test(d3.t[0])&&d3.lead===1&&d3.t.length===4&&d3.t[3]==='en-day',JSON.stringify(d3));
- // --- together screen ---
- await p.locator('#sHome .bigbtn.huge').click({force:true});await sleep(300);
+ // --- together screen (#657: the pick opens it at once) ---
+ ok('#657 something else: a pick opens that topic at once (the together screen, no home stop)',await p.locator('#sTal .tspec').count()===1&&await p.locator('#sHome').isHidden());
  const ts=await p.evaluate(()=>({kid:document.querySelector('#sTal .tspec .lsent').textContent,par:document.querySelector('#sTal .tpar').textContent,btn:[...document.querySelectorAll('#sTal .tspec .bigbtn')].map(b=>b.textContent)}));
  ok('together screen: kid text with nikud, parent line without nikud, one "we finished" button',/[ְ-ּ]/.test(ts.kid)&&ts.par.startsWith('להורה:')&&!/[ְ-ּ]/.test(ts.par)&&ts.btn.length===1&&ts.btn[0].includes('סִיַּמְנוּ'),JSON.stringify(ts));
  await p.locator('#sTal .tspec .bigbtn').click();await sleep(300);ok('finishing returns home with the step done',await p.evaluate(()=>window.TAL.S().daily.done[0]===1&&!document.querySelector('#sHome').hidden));
+ // --- #657 something else: text + voice, pick -> open, close -> the pick is first on the path ---
+ await home();await sleep(200);
+ await p.evaluate(()=>window.TAL.otherDay());await sleep(300);
+ const say=await p.evaluate(()=>{const t=(document.querySelector('#sTal .sub')||{}).textContent||'';return {t,nik:/[\u05B0-\u05BC]/.test(t),voice:String(window.OREN.sayNow||'').length>0};});
+ ok('#657 the something-else screen says what happens (text + voice, nikud)',/מַתְחִילִים/.test(say.t)&&say.nik&&say.voice,JSON.stringify(say));
+ const t0=await p.evaluate(()=>window.TAL.S().daily.t.length);
+ await p.locator('#sTal .dall .dcard').nth(0).click();await sleep(400);
+ const op=await p.evaluate(()=>{const d=window.TAL.S().daily,i=d.done.findIndex(x=>!x);return {home:!document.querySelector("#sHome").hidden,len:d.t.length,first:d.t[i]};});
+ ok('#657 pick -> that topic is open at once (not home), its mission is the first open one',!op.home&&op.len>t0&&!!op.first,JSON.stringify(op));
+ await home();await sleep(300);
+ const cl=await p.evaluate(()=>{const d=window.TAL.S().daily,i=d.done.findIndex(x=>!x);return {home:!document.querySelector('#sHome').hidden,first:d.t[i]};});
+ ok('#657 pick -> close -> it stays the first mission of the path',cl.home&&cl.first===op.first,JSON.stringify({cl,op}));
  // --- parent: "I have time now" ---
  await p.click('#sHome .parbtn');await p.fill('#pw1','abcd');await p.fill('#pw2','abcd');await p.keyboard.press('Enter');await sleep(300);
  await p.locator('.pchoice .ucard.tog').click();await sleep(200);
