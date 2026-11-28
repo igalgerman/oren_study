@@ -921,7 +921,7 @@ def live_proof(base="https://oren-game.pages.dev"):
     ok True = `LIVE: ...` seen on production; ok False = a check failed (the issue stays open); ok None = could not run (closes, line says so)."""
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     try:
-        rc, out = run([sys.executable, str(ROOT / "tools/ci/deploy_ci.py"), "smoke", base], timeout=300)
+        rc, out = run([sys.executable, str(ROOT / "oren2/ci/deploy_ci.py"), "smoke", base], timeout=300)
     except Exception as e:
         return None, f"LIVE: not checked ({day}): the automatic check could not run: {str(e)[:120]}"
     if rc == 0: return True, f"LIVE: production smoke ok on {base} ({day}): page loads, save round trip, D1 bound, voice status"
@@ -1359,9 +1359,30 @@ def human_without_question(issues):
 def polish_title(lane):
     return f"Polish backlog ({lane})"
 
+def is_decided(note):
+    return note.strip().lower().startswith("decided:")
+
+def decided_notes(notes):
+    """#901: the `decided: <option> (rule)` notes of a PASS-NOTES line (each becomes ONE owner notice, never a polish line)."""
+    return [x.strip() for x in (notes or "").split(";") if is_decided(x)]
+
 def polish_lines(notes, pr):
-    """'a; b' -> one backlog line per note, each with the PR number."""
-    return [f"- {x.strip()} (PR #{pr})" for x in notes.split(";") if x.strip()]
+    """'a; b' -> one backlog line per note, each with the PR number (decided: notes are owner notices, not polish)."""
+    return [f"- {x.strip()} (PR #{pr})" for x in notes.split(";") if x.strip() and not is_decided(x)]
+
+def notice_text(n, pr, note):
+    return f"Owner notice (#901, decided by rule, issue #{n}, PR #{pr}): {note} - override = a new issue (the old choice stays until it lands; /undo for a quick revert)."
+
+def post_decided(n, pr, notes):
+    """#901: every `decided:` note -> one notice line on the issue + one Telegram line (the weekly round list; kind `notice` once #895 exists)."""
+    out = []
+    for note in decided_notes(notes):
+        t = redact(notice_text(n, pr, note)); out.append(t)
+        gh("issue", "comment", str(n), "--body", t)
+        try:
+            import telegram; telegram.send(t)
+        except Exception: pass
+    return out
 
 def last_line(text, prefix):
     hits = [l.strip() for l in text.splitlines() if l.strip().startswith(prefix)]
@@ -1841,8 +1862,10 @@ TEST_LEVELS = ("Test level (#618): just before the VERDICT line, one line `TEST:
 def review_colours(round1=""):
     colours = ("Verdict colours (the last line, exactly one): `VERDICT: PASS` (GREEN, nothing to say); "
                "`VERDICT: PASS-NOTES <note>; <note>` (BLUE: nothing wrong for Oren or the parent, only polish such as naming, small cleanup, extra test idea, comment wording; one line, notes split by `;`); "
-               "`VERDICT: PURPLE <question in one line> merge-safe` or `... hold` (PURPLE: a real product/design choice only the owner can make, e.g. what Oren sees or hears or what the parent can do, the code works; "
-               "merge-safe = merge now and ask, hold = park until he answers; never for code style); "
+               "`VERDICT: PURPLE <question in one line> merge-safe` or `... hold` (PURPLE only for the owner-only kinds of CLAUDE.md 'Owner load' (#901): money or paid limits, "
+               "secrets/keys/logins, the kid's privacy, irreversible deletes, a click only his account can make; merge-safe = merge now and ask, hold = park until he answers; "
+               "never for a design choice and never for code style). A reversible kid-facing design choice with a recommended option is NOT PURPLE: take the recommended one "
+               "and write `VERDICT: PASS-NOTES decided: <option taken> (rule), other options: <a>, <b>` (use commas inside an option list); it merges as usual and goes to the owner's weekly round as a notice; "
                "`VERDICT: FIX <points>` (RED). Judge against the issue's `## Acceptance` list (#186). RED ONLY for: a missed Acceptance point, wrong behaviour for Oren or the parent, "
                "a failing or missing test for the change, security, data loss, a broken build. "
                "Justify each RED point in one line. Everything else is a BLUE note, never FIX.\n" + TEST_LEVELS)
@@ -2283,7 +2306,7 @@ def find_pr_merged(n):
 def deploy_main(log):
     """After CI merges (#74): bring the integrate checkout to main, deploy ONCE (skipped when this sha is already deployed).
     #503: no rebuild + push to main here (that push raced other merges and ended runs BLOCKED): each PR carries its rebuilt
-    index.html files and CI (tools/ci/buildcheck.py) is red when they differ from a fresh build; deploy.sh builds from sources."""
+    index.html files and CI (oren2/ci/buildcheck.py) is red when they differ from a fresh build; deploy.sh builds from sources."""
     run(["git", "fetch", "-q", REMOTE], cwd=ROOT, log=log)
     if not (INTEG / ".git").exists():
         run(["git", "worktree", "prune"], cwd=ROOT); run(["git", "worktree", "add", "-B", "integrate", str(INTEG), f"{REMOTE}/{BRANCH}"], cwd=ROOT, log=log)
@@ -2526,7 +2549,7 @@ def process_locked(issue, where="local"):
             if kind == "pass":
                 stat(n, lane, "review_pass", **me)
             if kind == "notes":                    # BLUE: merge now, notes go to the rolling polish issue
-                stat(n, lane, "review_pass", **me, colour="blue"); post_polish(n, lane, pr, text)
+                stat(n, lane, "review_pass", **me, colour="blue"); post_polish(n, lane, pr, text); post_decided(n, pr, text)
             if kind == "purple":                   # PURPLE: owner question; merge-safe merges, hold parks
                 stat_purple(n, lane, extra, me)
                 ask_owner(n, pr, text, extra)
@@ -2603,7 +2626,7 @@ def process_locked(issue, where="local"):
                                         ended=over, task=rereview_prompt(n, pr, reviewed["sha"], new), backoff=time.sleep)
             (d / "rereview.out").write_text(redact(rv), encoding="utf-8")
             kind_, text_, extra_ = parse_verdict(verdict)
-            if kind_ == "notes": post_polish(n, lane, pr, text_)
+            if kind_ == "notes": post_polish(n, lane, pr, text_); post_decided(n, pr, text_)
             if kind_ == "purple":
                 ask_owner(n, pr, text_, extra_)
                 if extra_ != "merge-safe": raise Parked(f"owner question: {text_[:200]}")

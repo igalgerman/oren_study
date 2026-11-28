@@ -24,11 +24,14 @@ worker/reviewer PURPLE/cloud QUESTION:/intake/orchestrator). The watchdog calls 
   - #803 third channel, the chat with the inspector: `qwin.py chat-answer <key> "<answer>" --quote "<his exact words>"` runs only when
     its process tree goes back to the live inspector terminal (is_inspector); it writes a bot record `via=inspector-chat`, nothing
     else. The watchdog confirms it on Telegram (undo `בטל` within 10 min, `אשר` = at once) and only then (final marker) it is in force
+    #907: the chain is walked by opening each process, so a shell that Git Bash replaced (exited, still held) does not end
+    it; a parent created after its child (a reused pid) or one that cannot be opened ends it.
   - #894 a page that died (crash, kill, 24 h timeout) while its question is open is restarted by tick (backoff 1/2/5/10 min); a question
     "answered" but still open 10 min later gets its page again; `qwin.py page <key>` starts / prints the page (the ping says so);
     a reply that is a question back (ends with '?', names no option) is never an answer: relayed, the question stays open
 Usage: python tools/runner/qwin.py page <key>   (start or show the page of an open question)
 Usage: python tools/runner/qwin.py chat-answer <key> "<answer>" --quote "<quote>"   (the old `answer` CLI is gone, #803)
+       python tools/runner/qwin.py whoami   (#907 read-only self-test: the chain and the verdict, posts nothing)
 """
 import json, os, re, signal, subprocess, sys, time
 from pathlib import Path
@@ -412,7 +415,7 @@ def session_of(n):
     except ValueError: bodies = []
     return next((m[0].rsplit("/", 1)[-1] for b in reversed(bodies) for m in [re.search(r"https://claude\.ai/code/session_\w+", b or "")] if m), "")
 
-def answer(key, text, from_page=False, from_tg=False, tg=0, records=True):
+def answer(key, text, from_page=False, from_tg=False, tg=0, records=True, via=""):
     """Relay the owner's answer: comment on the source issue, ANSWERED in the questions issue, tell the orchestrator,
     and a cloud worker (remote-<n>) gets it in its session. -> dict of what was done."""
     st = load()
@@ -423,9 +426,9 @@ def answer(key, text, from_page=False, from_tg=False, tg=0, records=True):
                                       "gates": q.get("gates", [])}
                                      for q in OQ.open_list() or [] if q["key"] == key), {})
     n, src, done = info.get("issue", 0), info.get("source", ""), {}
-    if n and records: done["issue"] = _app_post(n, OQ.answer_body(key, text))      # #800: the record is written only by the App bot; queued when it cannot
+    if n and records: done["issue"] = _app_post(n, OQ.answer_body(key, text, via))      # #800: the record is written only by the App bot; queued when it cannot
     for g in [g for g in info.get("gates", []) if g != n and records]:     # #630: the record also on each issue the question gates
-        done.setdefault("gates", {})[g] = _app_post(g, OQ.answer_body(key, text))
+        done.setdefault("gates", {})[g] = _app_post(g, OQ.answer_body(key, text, via))
     done["answered"] = OQ.mark_answered(key, text)
     resumes = src.startswith("remote-") and n and R.where_of(n) == "remote"   # #135: runner-managed: the watchdog resumes the session from the issue comment
     if src.startswith("remote-") and n and not resumes:
@@ -475,29 +478,58 @@ def is_inspector(chain_pids, terminals, inspector_dir):
     pid = _term_pid(t)
     return bool(pid) and pid in set(chain_pids or [])
 
-def chain_pids(limit=16):
-    """Our own parent-process chain on Windows (ctypes Toolhelp snapshot, at most `limit` steps); [] elsewhere or on any failure."""
-    if os.name != "nt": return []
+def walk_chain(start, query, limit=32):
+    """Pure (#907): the parent chain from `start` -> [(pid, info)], info = query(pid) = {'ppid', 'ctime', ...} or None.
+    It goes through a parent that has exited but is still held by its own parent (Git Bash replaces a shell that way, and a
+    snapshot of running processes misses it). It stops at a parent that cannot be opened, at a missing creation time, and
+    at a parent created after its child (a reused pid). At most `limit` steps."""
+    out, seen, pid, child_ct = [], set(), start, None
+    while pid and len(out) < limit and pid not in seen:
+        info = query(pid)
+        if not info or not info.get("ctime"): break
+        if child_ct is not None and not info["ctime"] < child_ct: break
+        out.append((pid, info)); seen.add(pid); child_ct, pid = info["ctime"], info.get("ppid")
+    return out
+
+def _proc(pid):
+    """Windows: {'ppid','ctime','alive','name'} for a pid, also for an exited process that is still held; None when it
+    cannot be opened. ppid is the pid of the process that created it (NtQueryInformationProcess), ctime its creation time."""
+    import ctypes
+    from ctypes import wintypes
+    class PBI(ctypes.Structure):
+        _fields_ = [("ExitStatus", ctypes.c_void_p), ("PebBaseAddress", ctypes.c_void_p), ("AffinityMask", ctypes.c_void_p),
+                    ("BasePriority", ctypes.c_void_p), ("UniqueProcessId", ctypes.c_void_p), ("InheritedFromUniqueProcessId", ctypes.c_void_p)]
+    k, nt = ctypes.WinDLL("kernel32"), ctypes.WinDLL("ntdll")
+    k.OpenProcess.restype, k.OpenProcess.argtypes = wintypes.HANDLE, [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    k.CloseHandle.argtypes = [wintypes.HANDLE]
+    k.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+    k.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    k.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+    nt.NtQueryInformationProcess.argtypes = [wintypes.HANDLE, wintypes.ULONG, ctypes.c_void_p, wintypes.ULONG, ctypes.c_void_p]
+    nt.NtQueryInformationProcess.restype = ctypes.c_long
+    h = k.OpenProcess(0x1000, False, pid)                     # PROCESS_QUERY_LIMITED_INFORMATION
+    if not h: return None
     try:
-        import ctypes
-        from ctypes import wintypes
-        class PE(ctypes.Structure):
-            _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
-                        ("th32DefaultHeapID", ctypes.c_void_p), ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
-                        ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long), ("dwFlags", wintypes.DWORD),
-                        ("szExeFile", ctypes.c_wchar * 260)]
-        k = ctypes.windll.kernel32; k.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
-        snap = k.CreateToolhelp32Snapshot(2, 0); parent = {}
-        pe = PE(); pe.dwSize = ctypes.sizeof(PE); ok = k.Process32FirstW(snap, ctypes.byref(pe))
-        while ok:
-            parent[pe.th32ProcessID] = pe.th32ParentProcessID; ok = k.Process32NextW(snap, ctypes.byref(pe))
-        k.CloseHandle(snap)
-        out, pid = [], os.getpid()
-        for _ in range(limit):
-            if pid not in parent: break
-            out.append(pid); pid = parent[pid]
-        return out + [pid] if pid else out
+        pbi = PBI()
+        if nt.NtQueryInformationProcess(h, 0, ctypes.byref(pbi), ctypes.sizeof(pbi), None) != 0: return None
+        c, e, kt, ut = (wintypes.FILETIME() for _ in range(4))
+        if not k.GetProcessTimes(h, ctypes.byref(c), ctypes.byref(e), ctypes.byref(kt), ctypes.byref(ut)): return None
+        code = wintypes.DWORD(); k.GetExitCodeProcess(h, ctypes.byref(code))
+        buf, n = ctypes.create_unicode_buffer(1024), wintypes.DWORD(1024)
+        name = buf.value.replace("\\", "/").split("/")[-1] if k.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(n)) else ""
+        return {"ppid": pbi.InheritedFromUniqueProcessId or 0, "ctime": (c.dwHighDateTime << 32) | c.dwLowDateTime,
+                "alive": code.value == 259, "name": name}
+    finally: k.CloseHandle(h)
+
+def _chain_info(limit=32):
+    """Our own parent chain [(pid, info)] on Windows; [] elsewhere or on any failure."""
+    if os.name != "nt": return []
+    try: return walk_chain(os.getpid(), _proc, limit)
     except Exception: return []
+
+def chain_pids(limit=32):
+    """Our own parent-process chain on Windows (pids, walk_chain over _proc); [] elsewhere or on any failure."""
+    return [p for p, _ in _chain_info(limit)]
 
 def live_terminals():
     """hc ls --json, then hc get <t> --json for each live terminal -> list of merged dicts, or None when herdr is unreadable."""
@@ -520,6 +552,20 @@ def live_terminals():
 
 def _inspector_dir(): return Path(R.MAIN_CHECKOUT).parent
 def _chain(): return chain_pids()
+
+def whoami():
+    """#907 read-only self-test: the caller's parent chain, the inspector terminal herdr shows, and the verdict chat-answer
+    would give. It posts nothing, sends nothing and writes no log line. -> (0 inspector / 1 not, text)"""
+    chain, ts, d = _chain_info(), live_terminals(), _inspector_dir()
+    lines = ["parent chain (pid name parent):"]
+    lines += [f"  {p} {i.get('name') or '?'} {i.get('ppid')}{'' if i.get('alive', True) else ' (exited)'}" for p, i in chain]
+    ins = [t for t in ts or [] if t.get("state", "live") == "live" and recover.control_role(t) == "inspector"]
+    lines.append("herdr: unreadable" if ts is None else "inspector terminals: " + (", ".join(
+        f"{t.get('address') or t.get('name')} pid {_term_pid(t)} cwd {_term_cwd(t)}" for t in ins) or "none"))
+    lines.append(f"inspector folder: {d}")
+    ok = is_inspector([p for p, _ in chain], ts, d)
+    lines.append("verdict: INSPECTOR (chat-answer would run)" if ok else "verdict: NOT the inspector (chat-answer would refuse)")
+    return (0 if ok else 1), "\n".join(lines)
 
 def refuse(why):
     log(f"chat-answer REFUSED: {why}")
@@ -614,6 +660,8 @@ def main(argv):
     if len(argv) >= 3 and argv[0] == "chat-answer":
         quote = argv[argv.index("--quote") + 1] if "--quote" in argv[:-1] else ""
         rc, msg = chat_answer(argv[1], argv[2], quote); print(msg); return rc
+    if argv[:1] == ["whoami"]:
+        rc, msg = whoami(); print(msg); return rc
     if len(argv) == 2 and argv[0] == "page":
         rc, msg = page_cmd(argv[1]); print(msg); return rc
     print(__doc__); return 2

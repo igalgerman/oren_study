@@ -11,10 +11,10 @@ governor_stop = 99              # 5h at/above this %: no new run (week-only plan
 governor_reserve = 5            # owner reserve %: week ceiling C = 99 - reserve, released over the last governor_reserve_release_h hours
 governor_reserve_release_h = 12
 governor_5h_cap = 97            # lanes never plan the 5h window past this % (a cap, not a goal)
-governor_ceiling = 16           # sanity ceiling against bugs only
+governor_ceiling = 24           # sanity ceiling against bugs only (owner 28 Nov, #937: 16 -> 24)
 governor_week_stop = 97         # #698 owner 28 Nov: week at/above this %: no new run (runs in flight finish) until the weekly reset
 express_lanes = 4               # #72: extra lanes for issues labelled express (owner-approved), on top of the local + remote lanes (26 Nov: 2; owner 28 Nov #918: 4, speed)
-max_core = 5                    # owner 28 Nov: keep 5 until sync+rebuild-before-review lands
+max_core = 8                    # owner 28 Nov (#950): first keep 5 (#828), then "Yes, 8" in the chat
 worktree_prefix = "C:/work/Oren_study/wt-"
 bash = "C:/Program Files/Git/bin/bash.exe"   # Git Bash (not WSL's bash)
 extra_path = "/c/work/Oren_study/bin"        # python3 shim
@@ -74,3 +74,8 @@ bot_logins = ["oren-study-bot", "oren-study-bot[bot]"]
 owner_q_alarm_min = 10          # #912: a queued owner-answer record still stuck after this many minutes -> ONE alarm
 owner_q_archive_max = 100       # #912: more than this many comments in the pinned questions issue -> every answered question moves to the archive issue (also: answered and older than 30 days)
 trust_since = "2026-11-28T12:28:45Z"
+
+# #872 owner console mirror (console_mirror.py): open questions + notices go to the console API (D1, #869) on watchdog ticks (changed, and at least every 10 min).
+# keys + url: ~/.oren/console.json {"url", "push_key", "read_key"} (outside the repo). console_answers = false: mirror only (shadow); true: new D1 answers are pulled into qwin.answer.
+console_answers = false
+console_project = "oren"
