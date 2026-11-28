@@ -261,6 +261,7 @@ def text(m):
     if m.get("github"): lines.append(m["github"])                     # #329: calls/min, graphql/core left, alarm < 20%
     if m.get("canary"): lines.append("Canary: " + m["canary"])          # #330: flow ok HH:MM | NEEDS-ATTENTION ...
     if m.get("usage"): lines.append(m["usage"])                         # #708: usage per entity (top rows, NEEDS-ATTENTION)
+    import backoff; lines += backoff.lines()                           # #842: backoff: <job> next try HH:MM
     if m.get("pc"): lines.append(m["pc"])                               # #293: PC: CPU x% · RAM y% free (· ALARM)
     v = m.get("voice")                                                  # #400: kid sentences with no recording (after the last pregen)
     if v and v["n"]: lines.append(f"Voice: {v['text']} (first 20 in the deploy log)")
@@ -761,9 +762,11 @@ def gather():
 def ai_tick(log=print):
     """Watchdog hook: refresh the AI assessment when it is older than AI_EVERY_MIN (call it in a background thread)."""
     a = ai_load()
-    if a and time.time() - a.get("at", 0) < AI_EVERY_MIN * 60: return
+    if a and time.time() - a.get("at", 0) < AI_EVERY_MIN * 60: return None
     m = gather()
-    log("ai assessment " + ("refreshed" if ai_refresh(text(m) + "\n" + ov_text(m["ov"])) else "failed"))
+    ok = bool(ai_refresh(text(m) + "\n" + ov_text(m["ov"])))
+    log("ai assessment " + ("refreshed" if ok else "failed"))
+    return ok     # #842: the watchdog backs off while it fails
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8")

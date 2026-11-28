@@ -211,6 +211,8 @@ def push_message(q):
         "The owner answers on the page, in Telegram, or in the chat with the inspector (never record an answer yourself). "
         "Never ask him inside the terminal (no AskUserQuestion: Hebrew shows reversed there). Then go on with your own work.")
 
+OPEN_FAILS = [0]   # #842: count of pages that could not open; the watchdog backs off while it grows
+
 def start_page(q):
     """#368: write <key>.json and start ask.py ourselves -> pid (0 = could not start)."""
     DIR.mkdir(parents=True, exist_ok=True)
@@ -218,7 +220,7 @@ def start_page(q):
     (DIR / f"{q['key']}.json").write_text(json.dumps(page_data(q), ensure_ascii=False), encoding="utf-8")
     try: return _spawn([sys.executable, ASK, (DIR / f"{q['key']}.json").as_posix(), "--timeout-min", "1440"],
                        str(base) + ".out", str(base) + ".log")
-    except Exception as e: log(f"could not start ask.py for {q['key']}: {e}"); return 0
+    except Exception as e: OPEN_FAILS[0] += 1; log(f"could not start ask.py for {q['key']}: {e}"); return 0
 
 def page_url(key):
     try: return next((l.strip() for l in (DIR / f"{key}.log").read_text(encoding="utf-8").splitlines() if l.startswith("http")), "")
