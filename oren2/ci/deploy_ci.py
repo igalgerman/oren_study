@@ -10,8 +10,19 @@
 import json, os, secrets, subprocess, sys, time, urllib.error, urllib.request
 
 UA = {"user-agent": "oren-deploy-smoke"}
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "runner"))
-import scrub   # #783: the kid's name never reaches a GitHub write; in Actions the names come from env PRIVATE_NAMES (a secret)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "runner"))
+try:
+    import scrub   # #783: the kid's name never reaches a GitHub write; in Actions the names come from env PRIVATE_NAMES (a secret)
+except ImportError:   # game-only checkout (#794): no tools/ tree; same rule, stdlib only: env PRIVATE_NAMES (comma list) -> the kid
+    import re
+    class scrub:
+        @staticmethod
+        def scrub_cmd(cmd):
+            ns = [n.strip() for n in os.environ.get("PRIVATE_NAMES", "").split(",") if n.strip()]
+            if not ns: return list(cmd), 0
+            rx = re.compile("|".join(re.escape(n) for n in sorted(ns, key=len, reverse=True)), re.I)
+            out = [rx.sub(lambda m: "הילד" if re.search("[\u0590-\u05ff]", m.group(0)) else "the kid", c) for c in cmd]
+            return out, sum(a != b for a, b in zip(cmd, out))
 
 def parse(out):
     """deploy.sh prints progress lines first and 'ok <url>' last (#50); it warns 'D1 not bound' (#109)."""
