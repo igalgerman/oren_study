@@ -234,6 +234,110 @@ const path = require('path');
   const ld = await (await f('/api/tts/listen/data?marks')).json();
   ok('listen data: queue, votes, marks', ld.choose[0].w === 'אחדות' && ld.sample.length === 1 && ld.votes['אחדות'].v === 'אחאדות' && ld.votes['אחדות'].half[0] === 'אחדות' && ld.votes['אחדות'].note === 'כמעט' && ld.marks.length === 2 && ld.marks[0].w[0] === 'שלום' && ld.marks[0].note === 'הטעמה' && !ld.marks[0].ok && ld.marks[1].ok === true && !!ld.sid);
   env.SAVES.put = put0;
+  // #885 owner console in the Claude chat: /mcp + OAuth (email code), one-time card code, sort/collapse (fake D1 + fake mail API)
+  { const { DatabaseSync } = require('node:sqlite'); const sq = new DatabaseSync(':memory:');
+    const st = sql => { let a = []; return { bind(...x) { a = x; return this; }, async run() { const r = sq.prepare(sql).run(...a); return { meta: { last_row_id: Number(r.lastInsertRowid), changes: r.changes } }; }, async all() { return { results: sq.prepare(sql).all(...a) }; }, async first() { return sq.prepare(sql).get(...a) || null; } }; };
+    const cenv = { DB: { prepare: st, exec: async q => { sq.exec(q); } }, CONSOLE_SIGN_KEY: 'sign-1', CONSOLE_OWNER_EMAIL: 'owner@secret.example', CONSOLE_MAIL_KEY: 'mailkey-secret' };
+    const mails = []; let mailOk = true; const keepFetch = globalThis.fetch;
+    globalThis.fetch = async (u, o) => { mails.push({ u: String(u), o }); return new Response('{}', { status: mailOk ? 200 : 500 }); };
+    const w = (u, o, e) => m.default.fetch(new Request('https://oren.test' + u, o), e || cenv);
+    const form = o => ({ method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(o).toString() });
+    const b64u = b => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const verifier = 'v'.repeat(50), challenge = b64u(require('crypto').createHash('sha256').update(verifier).digest());
+    const lastCode = () => /: (\d{6})/.exec(JSON.parse(mails[mails.length - 1].o.body).subject)[1];
+    const RU = 'https://claude.ai/api/mcp/auth_callback';
+    const mcp = (tok, method, params, e) => w('/mcp', { method: 'POST', headers: { 'content-type': 'application/json', ...(tok ? { authorization: 'Bearer ' + tok } : {}) }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) }, e);
+    // metadata + 401 with WWW-Authenticate
+    const pr = await (await w('/.well-known/oauth-protected-resource')).json(), as = await (await w('/.well-known/oauth-authorization-server')).json();
+    ok('console oauth: metadata (protected resource, S256, registration)', pr.resource === 'https://oren.test/mcp' && as.code_challenge_methods_supported[0] === 'S256' && !!as.registration_endpoint && !!as.token_endpoint);
+    const r401 = await mcp(null, 'ping'); ok('console /mcp: no token -> 401 with WWW-Authenticate', r401.status === 401 && /resource_metadata=/.test(r401.headers.get('www-authenticate')));
+    ok('console /mcp: bad token -> 401', (await mcp('nope', 'ping')).status === 401);
+    ok('console /mcp: no CONSOLE_SIGN_KEY -> 401, authorize off', (await mcp('x', 'ping', {}, { ...cenv, CONSOLE_SIGN_KEY: undefined })).status === 401 && (await w('/oauth/register', { method: 'POST', body: '{}' }, { ...cenv, CONSOLE_SIGN_KEY: undefined })).status === 503);
+    // registration + authorize page: one button, no address field
+    ok('console oauth: registration refuses a bad redirect', (await w('/oauth/register', { method: 'POST', body: JSON.stringify({ redirect_uris: ['http://evil.example/cb'] }) })).status === 400);
+    const cl = await (await w('/oauth/register', { method: 'POST', body: JSON.stringify({ redirect_uris: [RU] }) })).json();
+    const authz = async () => { const p = await (await w('/oauth/authorize?' + new URLSearchParams({ response_type: 'code', client_id: cl.client_id, redirect_uri: RU, code_challenge: challenge, code_challenge_method: 'S256', state: 'st1' }))).text(); return /name="txn" value="(\w+)"/.exec(p); };
+    { const p = await (await w('/oauth/authorize?' + new URLSearchParams({ response_type: 'code', client_id: cl.client_id, redirect_uri: RU, code_challenge: challenge, code_challenge_method: 'S256' }))).text();
+      ok('console oauth: authorize page = one button "שלח לי קוד", no address field, no address', /שלח לי קוד/.test(p) && !/type="(email|text)"/.test(p) && !/<input(?![^>]*hidden)/.test(p) && !p.includes('secret.example')); }
+    ok('console oauth: unknown redirect_uri refused', (await w('/oauth/authorize?' + new URLSearchParams({ response_type: 'code', client_id: cl.client_id, redirect_uri: 'https://evil.example/', code_challenge: challenge, code_challenge_method: 'S256' }))).status === 400);
+    const send = async txn => w('/oauth/authorize', form({ txn, step: 'send' })), check = (txn, code) => w('/oauth/authorize', form({ txn, step: 'check', code }));
+    // wrong code, then the 6th attempt with the right one
+    { const txn = (await authz())[1]; const s = await send(txn); const bodyS = await s.text();
+      ok('console oauth: code mailed to the secret address via the mail API; never shown', mails.length === 1 && /api\.resend\.com/.test(mails[0].u) && JSON.parse(mails[0].o.body).to[0] === 'owner@secret.example' && mails[0].o.headers.authorization === 'Bearer mailkey-secret' && !bodyS.includes('secret.example') && !bodyS.includes(lastCode()));
+      ok('console oauth: the code is stored hashed only', !JSON.stringify(sq.prepare('SELECT * FROM con_txn').all()).includes(lastCode()));
+      const good = lastCode(), bad = good === '000000' ? '111111' : '000000';
+      for (let i = 0; i < 5; i++) await check(txn, bad);
+      const six = await check(txn, good); ok('console oauth: the 6th attempt is refused even with the right code', six.status === 403 && sq.prepare('SELECT used FROM con_txn WHERE id=?').get(txn).used === 0); }
+    // expired code
+    { const txn = (await authz())[1]; await send(txn); sq.prepare('UPDATE con_txn SET code_exp=? WHERE id=?').run(Date.now() - 1, txn);
+      ok('console oauth: an expired code is refused', (await check(txn, lastCode())).status === 403); }
+    // good login: code -> redirect with auth code -> token (PKCE)
+    mails.length = 0; sq.exec('DELETE FROM con_mail');
+    const txn = (await authz())[1]; await send(txn);
+    const wrong = await check(txn, lastCode() === '123456' ? '654321' : '123456'); ok('console oauth: wrong code -> error page, no redirect', wrong.status === 200 && /קוד שגוי/.test(await wrong.text()));
+    const good = await check(txn, lastCode()); const loc = new URL(good.headers.get('location') || 'https://x.test/');
+    ok('console oauth: right code redirects to the registered uri with code + state', good.status === 302 && loc.origin + loc.pathname === RU && loc.searchParams.get('state') === 'st1' && !!loc.searchParams.get('code'));
+    ok('console oauth: a used code cannot be used again', (await check(txn, lastCode())).status === 400);
+    const tk = o => w('/oauth/token', form({ client_id: cl.client_id, redirect_uri: RU, ...o }));
+    ok('console oauth: token refuses a wrong PKCE verifier', (await tk({ grant_type: 'authorization_code', code: loc.searchParams.get('code'), code_verifier: 'w'.repeat(50) })).status === 400);
+    ok('console oauth: ...and the auth code is burnt by that try', (await tk({ grant_type: 'authorization_code', code: loc.searchParams.get('code'), code_verifier: verifier })).status === 400);
+    const t2 = (await authz())[1]; await send(t2); const l2 = new URL((await check(t2, lastCode())).headers.get('location'));
+    const tok = await (await tk({ grant_type: 'authorization_code', code: l2.searchParams.get('code'), code_verifier: verifier })).json();
+    ok('console oauth: token issued (30 days), only hashes in D1', !!tok.access_token && tok.expires_in === 30 * 86400 && !JSON.stringify(sq.prepare('SELECT * FROM con_tokens').all()).includes(tok.access_token));
+    ok('console /mcp: valid token -> initialize + ping', (await (await mcp(tok.access_token, 'initialize', {})).json()).result.serverInfo.name === 'oren-console' && (await mcp(tok.access_token, 'ping')).status === 200);
+    const rf = await (await tk({ grant_type: 'refresh_token', refresh_token: tok.refresh_token })).json();
+    ok('console oauth: refresh gives a new token, the old refresh token is dead', !!rf.access_token && (await tk({ grant_type: 'refresh_token', refresh_token: tok.refresh_token })).status === 400);
+    sq.prepare('UPDATE con_tokens SET exp=? WHERE kind=?').run(Date.now() - 1, 'access'); ok('console /mcp: an expired token -> 401', (await mcp(rf.access_token, 'ping')).status === 401);
+    sq.exec('DELETE FROM con_tokens'); const t3 = (await authz())[1]; await send(t3); const l3 = new URL((await check(t3, lastCode())).headers.get('location'));
+    const T = (await (await tk({ grant_type: 'authorization_code', code: l3.searchParams.get('code'), code_verifier: verifier })).json()).access_token;
+    ok('console oauth: a new CONSOLE_SIGN_KEY revokes every token', (await mcp(T, 'ping')).status === 200 && (await mcp(T, 'ping', {}, { ...cenv, CONSOLE_SIGN_KEY: 'sign-2' })).status === 401);
+    // code-request limit: 5 per hour
+    { sq.exec('DELETE FROM con_mail'); let st6; for (let i = 0; i < 6; i++) st6 = (await send((await authz())[1])).status; ok('console oauth: at most 5 code requests per hour (the 6th -> 429)', st6 === 429 && sq.prepare('SELECT COUNT(*) n FROM con_mail').get().n === 5);
+      sq.exec('DELETE FROM con_mail'); mailOk = false; ok('console oauth: mail API failure -> an error page, nothing leaked', (await send((await authz())[1])).status === 502); mailOk = true; }
+    // ----- the card + tools -----
+    const call = async (name, args, tok0) => (await (await mcp(tok0 || T, 'tools/call', { name, arguments: args })).json()).result;
+    const now = Date.now(), H = 36e5;
+    const push = (repo, key, o) => sq.prepare('INSERT INTO questions(repo,key,project,issue,gates,text_he,options,recommended,asked_at) VALUES(?,?,?,?,?,?,?,?,?)').run(repo, key, o.project, o.issue || null, JSON.stringify(o.gates || []), o.text || 'שאלה ' + key, JSON.stringify(o.options || ['כן', 'לא']), o.rec === undefined ? 'כן' : o.rec, o.at);
+    push('igalgerman/a', 'old', { project: 'oren', at: now - 5 * H }); push('igalgerman/a', 'new', { project: 'oren', at: now - 1 * H });
+    push('igalgerman/a', 'gate2', { project: 'oren', at: now - 2 * H, gates: [1, 2] }); push('igalgerman/a', 'gate1', { project: 'oren', at: now - 9 * H, gates: [1] });
+    push('igalgerman/c', 'p3', { project: 'learn', at: now - 3 * H, options: [], rec: null });
+    const tl = (await (await mcp(T, 'tools/list')).json()).result.tools, vis = n => tl.find(t => t.name === n)._meta.ui.visibility;
+    ok('console tools: answer_question is app-only, never offered to the model; show_questions is for both', vis('answer_question').join() === 'app' && vis('refresh_questions').join() === 'app' && vis('show_questions').includes('model') && tl.filter(t => t._meta.ui.visibility.includes('model')).map(t => t.name).join() === 'show_questions');
+    const sh = await call('show_questions', {});
+    const order = sh.structuredContent.questions.map(q => q.key);
+    ok('console card: count in the title and text fallback "מחכה לך (5)"', sh.content[0].text === 'מחכה לך (5)' && sh.structuredContent.count === 5);
+    const srt = (await import('data:text/javascript,' + encodeURIComponent('export default ' + /function conSortCollapse[\s\S]*?(?=\nfunction conRows)/.exec(require('fs').readFileSync(path.join(L.ROOT, 'cf', 'tools', 'console_part.js'), 'utf8'))[0]))).default;
+    const sv = srt(sh.structuredContent.questions, now); const keys = a => a.map(q => q.key).join();
+    ok('console sort: most gated first, then oldest (one pure function)', keys(sv.open) === 'gate2,gate1,old,p3,new', keys(sv.open));
+    ok('console sort: grouped by project with a count per group, project list for the filter', sv.groups.length === 2 && sv.groups[0].project === 'oren' && sv.groups[0].count === 4 && sv.groups[1].project === 'learn' && sv.projects.join() === 'oren,learn');
+    push('igalgerman/d', 'z', { project: 'third', at: now }); ok('console projects: a third project appears with no code change', (await call('show_questions', {})).structuredContent.questions.some(q => q.project === 'third'));
+    ok('console sort: answered collapses to one line and leaves the count', (() => { const a = sh.structuredContent.questions.map(q => q.key === 'old' ? { ...q, answer: 'כן', answered_at: now, via: 'x' } : q); const x = srt(a, now); return x.count === 4 && x.answered[0].line === '✓ נענה: כן' && !x.open.some(q => q.key === 'old'); })());
+    ok('console card: a long-answered question drops off the card', srt([{ repo: 'r', key: 'k', answered_at: now - 3 * 864e5, answer: 'a', gates: [] }], now).answered.length === 0);
+    // one-time codes
+    const rr = async () => (await (await mcp(T, 'resources/read', { uri: 'ui://console/questions.html' })).json()).result.contents[0];
+    const c1 = await rr(), c2 = await rr(); const code1 = /__CODE__="([0-9a-f]{48})"/.exec(c1.text)[1], code2 = /__CODE__="([0-9a-f]{48})"/.exec(c2.text)[1];
+    ok('console card: ui:// resource, RTL Hebrew, fresh code on every render', c1.mimeType === 'text/html;profile=mcp-app' && /dir="rtl"/.test(c1.text) && /מחכה לך/.test(c1.text) && code1 !== code2 && /viewport/.test(c1.text) && /overflow-x:hidden/.test(c1.text));
+    ok('console card: ⭐ מומלץ, details fold, free-text only without options are in the card script', /⭐ מומלץ/.test(c1.text) && /פרטים נוספים/.test(c1.text) && /textarea/.test(c1.text) && /setInterval\(/.test(c1.text) && /30000/.test(c1.text));
+    const wire = [JSON.stringify(tl), JSON.stringify(sh), JSON.stringify(await call('refresh_questions', {})), JSON.stringify(await (await mcp(T, 'tools/list')).json())];
+    ok('console code: the card code is in no tool text, structuredContent or tools/list', wire.every(x => !x.includes(code1) && !x.includes(code2)));
+    const ans = (code, o) => call('answer_question', { repo: 'igalgerman/a', key: 'new', answer: 'כן', code, ...o });
+    const cnt = () => sq.prepare('SELECT COUNT(*) n FROM questions WHERE answered_at IS NOT NULL').get().n;
+    { const r1 = await ans(); ok('console answer: a missing code writes nothing, plain error', r1.isError && cnt() === 0 && !/[0-9a-f]{48}/.test(JSON.stringify({ c: r1.content, s: r1.structuredContent })));
+      ok('console answer: a wrong code writes nothing', (await ans('f'.repeat(48))).isError && cnt() === 0);
+      sq.prepare('UPDATE con_otc SET exp=? WHERE hash=(SELECT hash FROM con_otc LIMIT 1)').run(Date.now() - 1); const left = sq.prepare('SELECT COUNT(*) n FROM con_otc').get().n;
+      ok('console answer: an expired code writes nothing', left >= 1 && (await (async () => { sq.exec('DELETE FROM con_otc'); return ans(code1); })()).isError && cnt() === 0); }
+    const c3 = await rr(); const code3 = /__CODE__="(\w+)"/.exec(c3.text)[1];
+    const bad = await ans(code3, { answer: 'אולי' }); ok('console answer: an answer outside the options writes nothing (and burns the code)', bad.isError && cnt() === 0);
+    const c4 = /__CODE__="(\w+)"/.exec((await rr()).text)[1];
+    const g1 = await ans(c4); ok('console answer: a valid call writes via=chat-card, first wins', !g1.isError && JSON.stringify(sq.prepare("SELECT answer,via FROM questions WHERE key='new'").get()) === '{"answer":"כן","via":"chat-card"}');
+    ok('console answer: returns a fresh code to the card only (_meta), not in text or structuredContent', /^[0-9a-f]{48}$/.test(g1._meta.code) && !JSON.stringify([g1.content, g1.structuredContent]).includes(g1._meta.code));
+    const g2 = await ans(g1._meta.code, { answer: 'לא' }); ok('console answer: a second answer gets "כבר נענה (via, time)" and the first stays', g2.isError && /^כבר נענה \(chat-card, /.test(g2.content[0].text) && sq.prepare("SELECT answer FROM questions WHERE key='new'").get().answer === 'כן' && !!g2._meta.code);
+    ok('console answer: a used code cannot be replayed', (await ans(g1._meta.code, { key: 'old' })).isError && cnt() === 1);
+    const fr = await ans(g2._meta.code, { repo: 'igalgerman/c', key: 'p3', answer: 'טקסט חופשי' }); ok('console answer: free text works when a question has no options', !fr.isError && sq.prepare("SELECT answer FROM questions WHERE key='p3'").get().answer === 'טקסט חופשי');
+    ok('console /mcp: unknown tool and method are plain errors', (await (await mcp(T, 'tools/call', { name: 'x' })).json()).error.code === -32602 && (await (await mcp(T, 'nope')).json()).error.code === -32601);
+    ok('console /api/mcp (#674) is untouched: a console token is not its token', (await w('/api/mcp', { method: 'POST', headers: { authorization: 'Bearer ' + T }, body: '{}' })).status === 401);
+    { const sq2 = sq.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name LIKE 'con_%'").get().n; await cenv.DB.exec(require('fs').readFileSync(path.join(L.ROOT, 'cf', 'migrations', '0003_console_auth.sql'), 'utf8')); await cenv.DB.exec(require('fs').readFileSync(path.join(L.ROOT, 'cf', 'migrations', '0002_console.sql'), 'utf8')); ok('console schema: the migrations are idempotent', sq.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name LIKE 'con_%'").get().n === sq2); }
+    globalThis.fetch = keepFetch; }
   globalThis.fetch = realFetch;
   // offline mode: /sw.js served, registered by the website page; in the service worker /api/save is never cached
   const sw = await f('/sw.js'); const swt = await sw.text();
@@ -375,4 +479,4 @@ const path = require('path');
     ok('console: no key configured -> 403', (await m.default.fetch(new Request('https://oren.test/api/console/questions', { headers: { 'x-console-key': 'x' } }), { ...cenv, CONSOLE_READ_KEY: undefined })).status === 403); }
   globalThis.fetch = realFetch;
   L.finish('worker', res);
-})().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT worker 0 1'); process.exitCode = 1; });
+})().catch(e => { console.log('FAIL crashed — ' + e.stack); console.log('RESULT worker 0 1'); process.exitCode = 1; });

@@ -94,7 +94,7 @@ def pull(qs, c, st):
     for r in d.get("questions", []):
         k = r.get("key")
         if r.get("repo") != R.REPO or k in done or k not in open_keys or not r.get("answer"): continue
-        via = r.get("via") if r.get("via") in ("console", "telegram") else "console"
+        via = r.get("via") if r.get("via") in ("console", "telegram", "chat-card") else "console"
         res = QW.answer(k, r["answer"], via=via)
         if not res.get("question_back"): done.add(k)      # a question back is no answer: it stays open
         log(f"answer for {k} pulled from the console (via {via})")

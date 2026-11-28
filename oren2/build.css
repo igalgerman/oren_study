@@ -51,3 +51,11 @@
 .bwpic{margin:14px auto 6px;text-align:center}
 .bwpic svg{width:min(240px,70vw);height:auto;display:block;margin:0 auto;shape-rendering:crispEdges;box-shadow:0 4px 0 rgba(0,0,0,.18)}
 .bwcap{font-weight:700;margin-top:6px}
+
+/* #679 show Dad or Mom */
+.bwshow{display:flex;gap:8px;align-items:center;justify-content:center;margin:6px auto;padding:8px 16px;min-height:44px;border:0;border-radius:22px;background:#fff;font:inherit;font-weight:800;font-size:17px;cursor:pointer;box-shadow:0 3px 0 rgba(0,0,0,.18)}
+.bwshow.sent{opacity:.6}
+.bwshows{margin:10px auto;text-align:center}
+.bwshow-row{margin:10px auto}
+.bwshow-row svg{width:min(160px,50vw);height:auto;display:block;margin:0 auto;shape-rendering:crispEdges;box-shadow:0 4px 0 rgba(0,0,0,.18)}
+.bwreply{display:flex;gap:8px;justify-content:center;margin-top:6px}

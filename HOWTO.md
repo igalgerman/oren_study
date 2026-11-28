@@ -33,3 +33,7 @@ If a session ended, the PC starts a new one by itself and the links in the pinne
 בטלפון (גם כשהמחשב כבוי): באפליקציית Claude, בלשונית Code, פתח את "Game inbox (cloud)" כדי לכתוב משימה חדשה, או את "Game ask (cloud)" כדי לשאול מה קורה ומה מחכה לך. הקישורים נמצאים גם בנושא המוצמד "Cloud desks: phone links".
 
 Short control session contexts (#923): to give a control session a fresh start, run `python tools/runner/recover.py refresh <role>` (orchestrator, inbox, inspector or executor). It refuses while the role is busy.
+
+## Console in the Claude chat (#885)
+Project 'קונסולה' instructions (claude.ai): "זו הקונסולה שלי. בפתיחת כל שיחה, וכל פעם שאני כותב 'שאלות', הפעל את הכלי show_questions והצג את הכרטיס. אל תענה על שאלה במקומי, אל תנחש תשובה ואל תקרא ל-answer_question. כתוב עברית קצרה."
+Secrets (Cloudflare Pages > oren-game): CONSOLE_OWNER_EMAIL, CONSOLE_MAIL_KEY (Resend API key), CONSOLE_SIGN_KEY (`openssl rand -hex 32`). Connector URL: https://oren-game.pages.dev/mcp
