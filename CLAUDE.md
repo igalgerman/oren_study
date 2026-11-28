@@ -74,3 +74,8 @@ Single-context: `GLOSSARY.md` + `docs/adr/` at the repo root (created lazily). S
 - Overlaps an open issue (same screen or same files)? Add `Blocked by: #n` so they run one after the other, never in parallel.
 - Everything that touches the core gets the `core` label (at most `max_core` core issues run at once, see tools/runner/config.toml; 5 since 27 Nov).
 - A worker does only its own issue. Something else found? Open a new issue (after the check above), don't fix it on the side.
+
+## Where things go (#956)
+- `projects.toml` is the registry: per project its repo, kind, paths, test, labels. It is the only place that names a repo; no hard-coded repo names in tools (CI: `tools/test_projects.py`).
+- File every issue, PR and owner question through `python3 tools/file.py issue|pr|question --title ... --body ... [--path <file> | --project <name>]`. The registry picks the repo (files under `oren2/` -> game, `tools/` -> infra, unknown -> infra + warning), runs the duplicate check and adds the standard labels. Sessions do not use raw `gh issue create -R ...`.
+- Adding a project = one `[project.<name>]` block in `projects.toml`; the dashboard lists it with no code change.

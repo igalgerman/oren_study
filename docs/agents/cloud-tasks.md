@@ -67,3 +67,6 @@ HANDOFF-INSPECTOR:
 HANDOFF-ORCHESTRATOR:
 <short handoff for the next orchestrator session: state, open threads, what to do first>
 ```
+
+## Where things go (#956)
+File issues, PRs and questions with `python3 tools/file.py issue|pr|question` (the registry `projects.toml` decides the repo). Never raw `gh issue create -R`.
