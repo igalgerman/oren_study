@@ -39,7 +39,7 @@ parent-phone 60            # same file on the phone viewport: ~18 s
 resume-desktop 60          # #44 reloads mid-level, mid-quiz and while paused + timed rounds paused 2 s: ~37 s
 resume-phone 60            # same file on the phone viewport
 build 60                  # #64 building world: two viewports + 3 small pages, place/remove/unlock/merge/parent picture: ~15 s
-instructions-desktop 90   # every activity's instruction (~50 s) + #266 the 16 choice screens (each clip in the pregen list) name their choices: ~69 s
+instructions-desktop 100   # every activity instruction (~50 s) + #266 the 21 choice screens (each clip in the pregen list) name their choices: ~75 s
 qa-fix-desktop 60          # #267 adds the hands-on checks (clock drag, pizza taps, carry/borrow board, times array) + #439 ten-frame lessons/hint/fill, coins, mistake hints (~4 s): ~19 s
 qa-fix-phone 60            # same file on the phone viewport: ~19 s
 listen-desktop 60         # #389 listen first: real voice timing (question end, 2 s rest, the 4 s cap) + #408 the four friend reactions: ~25 s + #435 answers read and lit (a second page, 5 activities, ~8 s): ~33 s
