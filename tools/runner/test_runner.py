@@ -1816,6 +1816,43 @@ _s1 = _rm.life(7, _fake_gh); _cn[0] = 2; assert _rm.life(7, _fake_gh) != _s1
 try: _rm.life(7, lambda c: (1, "err")); assert False
 except OSError: pass
 print("ok #841 remote.life")
+# ---- #814: split guards in merge_block: GAME PR commit e-mails; the one source of truth (before / hold / after the flip)
+import json as _j, tempfile as _tf, subprocess as _sub
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "split"))
+import guards as _G
+_NE = _G.C.neutral_email(); _OT = "someone" + "@" + "example.org"
+_runs = _tf.mkdtemp(prefix="flip-test-"); _old_runs = os.environ.get("RUNNER_RUNS"); os.environ["RUNNER_RUNS"] = _runs
+def _pr(files, body="Fixes #50", head="lane/50", labels=()):
+    return _j.dumps({"isDraft": False, "labels": [{"name": l} for l in labels], "body": body, "headRefName": head, "files": [{"path": f} for f in files]})
+_saved = (r.gh, r.GATE); r.GATE = lambda n: "none"
+def _mb(js): r.gh = lambda *a, **k: (0, js); return r.merge_block(50)
+GAMEF, INFRAF = ["oren2/talents.js", "FLOW.md"], ["FLOW.md", "tools/runner/runner.py"]
+# 1 before the flip: INFRA is the source, game-tree PRs merge
+assert _mb(_pr(GAMEF)) == "" and _mb(_pr(INFRAF)) == ""
+# 2 during the flip: game-tree merges are held, infra-only PRs are not
+_G.set_hold(True, _runs); assert "flip is in progress" in _mb(_pr(GAMEF)) and _mb(_pr(INFRAF)) == ""
+_G.set_hold(False, _runs); assert _mb(_pr(GAMEF)) == ""                                  # the flip script cleared it
+# 3 after the flip: a NEW INFRA PR that changes the game tree is refused; infra-only still merges
+_G.set_flipped([50], _runs); assert _mb(_pr(GAMEF, body="Fixes #77", head="lane/77")).startswith("the game tree now lives in the game repo") and _mb(_pr(INFRAF, body="Fixes #77", head="lane/77")) == ""
+# 4 after the flip: an in-flight PR of an issue routed to INFRA before it, and the --back PR, are allowed
+assert _mb(_pr(GAMEF)) == "" and _mb(_pr(["oren2/x.js"], body="", head="back/abc123")) == ""
+assert _mb(_pr(["oren2/docs/STATUS.md", "tools/split/game_CLAUDE.md"], body="Fixes #77", head="lane/77")) == ""    # docs and the shared INFRA-owned files stay in INFRA
+# the label guards still come first
+assert "no-automerge" in _mb(_pr(INFRAF, labels=["no-automerge"]))
+# GAME PR (repo=): commits with another author/committer e-mail are refused with the count only
+def _game(commits):
+    def f(cmd, **k):
+        return (0, _j.dumps({"isDraft": False, "labels": []})) if cmd[:3] == ["gh", "pr", "view"] else (0, _j.dumps(commits))
+    _run0 = r.run; r.run = f
+    try: return r.merge_block(3, repo="o/learn-quest")
+    finally: r.run = _run0
+_c = lambda a, k: {"commit": {"author": {"email": a}, "committer": {"email": k}}}
+assert _game([_c(_NE, _NE), _c(_NE, _NE)]) == ""
+_w = _game([_c(_NE, _NE), _c(_OT, _NE), _c(_NE, _OT)]); assert _w.startswith("2 commit(s)") and _OT not in _w
+r.gh, r.GATE = _saved
+if _old_runs is None: os.environ.pop("RUNNER_RUNS", None)
+else: os.environ["RUNNER_RUNS"] = _old_runs
+print("ok #814 split guards in merge_block")
 
 # #901: reversible design choices are decided by rule (PASS-NOTES decided:), PURPLE only for the owner-only kinds
 for _p in (r.review_prompt(7, 9), r.remote_review_prompt(7, 9)):

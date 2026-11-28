@@ -7,9 +7,10 @@ sys.path.insert(0, str(ROOT / "tools" / "runner"))
 import ghcache
 
 # callables that end in R.run / remote.sh (both scrub) or scrub it themselves
-OK_CALLEES = {"run", "gh", "GH", "_gh", "sh", "_sh", "scrub_cmd", "R.run", "R.gh", "remote.sh", "R.run_"}
+OK_CALLEES = {"run", "gh", "GH", "_gh", "sh", "_sh", "scrub_cmd", "R.run", "R.gh", "remote.sh", "R.run_", "RUN", "E.RUN"}   # RUN = tools/split gh_run, which scrubs
 # file -> reason; a write list in these files may bypass the wrapper
 ALLOW = {
+    "tools/split/game_settings.py": "owner-run repo settings (PATCH/PUT settings, no issue/PR text)",
     "tools/runner/ghauth.py": "mints the App installation token (POST access_tokens): no issue/PR text",
 }
 
