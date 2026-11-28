@@ -23,3 +23,19 @@ except SystemExit: pass
 calls = [c for c in calls if not (c.startswith("reloaded ") and c != "reloaded watchdog.py")]   # #300: the other modules are reloaded first
 assert calls == ["watchdog started", "old", "reloaded watchdog.py", "new"], calls
 print("ok watchdog self-reload")
+
+# #127 (reopened): the running process was __main__ and a cached stale 'watchdog' module made reload_self a no-op.
+import types, tempfile, textwrap
+d = tempfile.mkdtemp(prefix="wd-test-"); f = os.path.join(d, "watchdog.py")
+open(f, "w").write("def tick(): return 'old'\n")
+sys.path.insert(0, d)
+real_wd = sys.modules.pop("watchdog")                 # the real one is restored below
+stale = importlib.import_module("watchdog"); assert stale.tick() == "old"   # something imported it earlier
+open(f, "w").write("def tick(): return 'new'\n")
+os.utime(f, (time.time() + 10, time.time() + 10))
+importlib.invalidate_caches()
+main_mod = types.ModuleType("__main__")               # the running loop's W: the __main__ copy
+got = real_wd.reload_self(main_mod)
+assert got.tick() == "new", "reload_self returned the stale cached watchdog module"
+sys.modules["watchdog"] = real_wd; sys.path.remove(d)
+print("ok watchdog main-module function change is picked up")

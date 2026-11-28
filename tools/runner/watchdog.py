@@ -615,8 +615,10 @@ def stamps(here=None):
     return out
 
 def reload_self(W):
-    """Load the newest watchdog.py (main() runs as __main__ the first time)."""
-    return importlib.reload(W) if W.__name__ == "watchdog" else importlib.import_module("watchdog")
+    """Load the newest watchdog.py (main() runs as __main__ the first time). #127: import_module returns a CACHED
+    'watchdog' (stale) when anything imported it before, so an already-loaded copy is always reloaded."""
+    m = sys.modules.get("watchdog")
+    return importlib.reload(m) if m is not None else importlib.import_module("watchdog")
 
 def parse_args(argv):
     """#229: unknown flags (and --help) end here, before the loop."""
@@ -655,7 +657,9 @@ def loop(once):
             now = stamps()
             if now != st:                     # #300: a merged fix (any tools/runner file): reload ALL, in dependency order, then watchdog.py
                 reload_all(log)
-                W = reload_self(W); log("reloaded watchdog.py")
+                old = getattr(W, "tick", None)
+                W = reload_self(W)
+                if getattr(W, "tick", None) is not old: log("reloaded watchdog.py")   # #127: only when its own functions really changed
                 st = now                      # only after a clean reload: a failed one is retried next tick
             W.tick()
             _net["tick"] = 0
