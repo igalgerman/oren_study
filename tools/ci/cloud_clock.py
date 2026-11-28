@@ -5,9 +5,11 @@ POSTs the API trigger of #853 with the prompt from docs/agents/cloud-tasks.md. N
 A failed trigger: the job ends red with ONE line and ONE comment on #528 (the ai-observer issue), not repeated within 6 h."""
 import json, os, sys, time, urllib.request, urllib.error
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "runner"))
+import repos
 import cloud_trigger as T
 
-REPO, ISSUE = "igalgerman/oren_study", 528
+REPO, ISSUE = repos.INFRA, 528
 FAIL_MARK = "<!-- cloud-clock-failed #857 -->"
 REPEAT_H = 6
 PROMPTS = {

@@ -29,6 +29,7 @@ def test_no_hardcoded_repo():
     for root in roots:
         for f in root.rglob("*"):
             if not f.is_file() or ".runs" in f.parts or "node_modules" in f.parts or f.suffix in (".png", ".pyc", ".ico", ".jpg"): continue
+            if "split" in f.relative_to(ROOT).parts or f.name == "move_to_data.py": continue     # the repo-split and data-move tools name the repos on purpose
             if f.name == "config.toml" or (f.name.startswith("test_") and f.name != "test_garden.py") or f.name == "gh_cache.json": continue     # config = the one place; tests hold fake data
             try: text = f.read_text(encoding="utf-8")
             except (UnicodeDecodeError, OSError): continue

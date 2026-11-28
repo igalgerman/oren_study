@@ -5,7 +5,7 @@ Owner OKs / preview days are named separately (not counted: nobody can measure t
 import json, os, re, subprocess, sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import stats
+import stats, repos
 
 RUNS = Path(os.environ.get("RUNNER_RUNS") or Path(__file__).resolve().parent / ".runs")
 LOG = RUNS / "eta.jsonl"
@@ -124,7 +124,7 @@ def summary_line(events=None, path=LOG):
 def load_issues():
     """issue number -> {number, state, labels, body}; REST (GraphQL is off in cloud sessions), PRs left out."""
     try:
-        out = subprocess.run(["gh", "api", "-X", "GET", "repos/igalgerman/oren_study/issues", "-f", "state=all", "-f", "per_page=100", "--paginate", "--jq",
+        out = subprocess.run(["gh", "api", "-X", "GET", f"repos/{repos.INFRA}/issues", "-f", "state=all", "-f", "per_page=100", "--paginate", "--jq",
                               '.[] | select(has("pull_request")|not) | {number, state, labels, body}'], capture_output=True, text=True, timeout=120, check=True).stdout
         return {i["number"]: i for i in map(json.loads, out.splitlines()) if i}
     except Exception: return {}

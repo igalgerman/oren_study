@@ -20,7 +20,7 @@ assert "--label" in F.plan("question", "game", "t", "b", reg=reg)["cmd"]
 BASELINE = {   # file -> max count of 'igalgerman/oren_study' (#926/#792 removes these)
     "tools/runner/config.toml": 1, "tools/runner/test_canary.py": 1, "tools/runner/test_ghcache.py": 2, "tools/runner/test_remote.py": 6, "tools/runner/test_runner.py": 1, "tools/runner/remote.py": 99, "tools/runner/nightly.py": 99, "tools/runner/recover.py": 99,
     "tools/runner/stats.py": 99, "tools/runner/interaction_limit.py": 99, "tools/runner/ai_observer.py": 99, "tools/runner/desks.py": 99,
-    "tools/runner/ghcache.py": 99, "tools/setup/setup.ps1": 99, "tools/test_garden.py": 99, "tools/test_projects.py": 99,
+    "tools/runner/ghcache.py": 99, "tools/setup/setup.ps1": 99, "tools/test_garden.py": 99, "tools/test_projects.py": 99, "tools/split/export.py": 1, "tools/split/game_settings.py": 1,
 }
 EXT = {".py", ".js", ".sh", ".ps1", ".cmd", ".toml", ".yml", ".yaml"}
 bad = []
