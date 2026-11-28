@@ -66,7 +66,8 @@ def _gh(*a, **kw):
 _gh_real = _gh
 def _app_post(n, text):
     """#800: App-bot post or queue; a fake `_gh` (tests) is used as the App."""
-    with R.ghcache.quick(OQ.QUICK_S): return OQ.post_or_queue(n, text, _gh if _gh is not _gh_real else None)
+    with R.ghcache.quick(OQ.LONG_S): return OQ.post_or_queue(n, text,   # #912: answer-record write, longer timeout
+          _gh if _gh is not _gh_real else None)
 def _run(cmd, **kw): return R.run(cmd, **kw)
 def _herdr_ok(): return Path(R.HERDR_APP).exists()
 def _spawn(cmd, out, err):
