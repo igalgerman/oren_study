@@ -406,7 +406,8 @@ def total_lanes():
 GOV = {"target": float(CFG.get("governor_target", 99)), "min": int(CFG.get("governor_min", 2)), "max": int(CFG.get("governor_max", 16)),
        "stop": float(CFG.get("governor_stop", 99)), "pace": float(CFG.get("governor_pace", 3.5)), "week_cap": int(CFG.get("governor_week_cap", 4)),
        "week_target": float(CFG.get("governor_week_target", 99)), "week_stop": float(CFG.get("governor_week_stop", 97)),
-       "stale_s": 15 * 60, "fallback": REMOTE_LANES}
+       "stale_s": 15 * 60, "fallback": REMOTE_LANES,
+       "reserve": float(CFG.get("governor_reserve", 5))}     # #703: ceiling C = 99 - reserve (705 makes the reserve the owner's)
 def _ts(iso):
     try: return datetime.fromisoformat(str(iso).replace("Z", "+00:00")).timestamp()
     except Exception: return None
@@ -474,8 +475,12 @@ def governor(usage, hist, now, g=None, prev=None, wins=None):
     (not in the first 8 h of a week: too early to project); #698 week >= week_stop (97) -> no new run until the week resets; usage missing or older than 15 min -> config remote_lanes."""
     g = {**GOV, **(g or {})}
     at = _ts((usage or {}).get("at"))
-    if not usage or at is None or now - at > g["stale_s"] or usage.get("five_h_pct") is None:
+    if not usage or at is None or now - at > g["stale_s"]:
         return {"lanes": g["fallback"], "stop": False, "pct": None, "projected": None, "reset": None, "week_projected": None, "why": "no fresh usage: config remote_lanes"}
+    if usage.get("five_h_pct") is None:                  # #703: no 5h bucket: the week alone decides the stop (no fake 5h stop)
+        gv = {"lanes": g["fallback"], "stop": False, "pct": None, "projected": None, "reset": None, "week_projected": None,
+              "week_pct": None if usage.get("week_pct") is None else float(usage["week_pct"]), "why": "no 5h usage: config remote_lanes"}
+        return week_gate(gv, g)
     pct = float(usage["five_h_pct"]); reset = _ts(usage.get("five_h_reset")) or now
     fresh = reset < now                                  # #269: the reset is past -> a new 5h window until the panel writes a new number
     if fresh:
@@ -502,12 +507,38 @@ def governor(usage, hist, now, g=None, prev=None, wins=None):
     if fresh: why = "new 5h window"
     if wk is not None and wreset is not None and wreset > now and float(wk) >= g.get("week_stop", 101):
         stop = True; why = f"week {float(wk):.0f}% >= {g['week_stop']:.0f}%: no new run until the weekly reset"   # #698 week hard stop
-    return {"lanes": lanes, "stop": stop, "pct": pct, "projected": proj(lanes), "reset": reset, "target": g["target"],
-            "week_pct": None if wk is None else float(wk), "week_projected": wproj, "week_reset": wreset, "why": why}
+    gv = {"lanes": lanes, "stop": stop, "pct": pct, "projected": proj(lanes), "reset": reset, "target": g["target"],
+          "week_pct": None if wk is None else float(wk), "week_projected": wproj, "week_reset": wreset, "why": why}
+    gv["now"] = now
+    return week_gate(gv, g, stalled_5h(usage, hist))
+
+def stalled_5h(usage, hist):
+    """#703: 5h reads 0% while its reset time moved forward on 2 passes in a row (3 readings, lanes busy) = nothing is being counted."""
+    try:
+        if float(usage["five_h_pct"]) != 0: return False
+        rows = [h for h in (hist or [])[-2:]]
+        if len(rows) < 2 or any(h.get("pct") != 0 or not h.get("busy") for h in rows): return False
+        a, b, c = _ts(rows[0].get("reset")), _ts(rows[1].get("reset")), _ts(usage.get("five_h_reset"))
+        return None not in (a, b, c) and a < b < c
+    except (TypeError, ValueError): return False
+
+def week_gate(gv, g, stalled=False):
+    """Pure (#703): hard bounds on the week. W >= 99: no new run (express too); W >= C (99 - reserve): only express, and only while W < 98.
+    limit_hit = W >= 99 or a stalled 5h counter; it stops everything and puts died runs back in the queue. `hard` = survives a 5h reset."""
+    W, C = gv.get("week_pct"), 99 - g.get("reserve", 5)
+    if gv.get("week_reset") is not None and gv["week_reset"] <= (gv.get("now") or time.time()): W = None     # reading is from before the weekly reset (#698)
+    gv["limit_hit"] = bool((W is not None and W >= 99) or stalled)
+    gv["hard"] = gv["limit_hit"] or (W is not None and W >= C)
+    if gv["limit_hit"]:
+        gv["stop"] = True
+        gv["why"] = f"limit hit: week {W:.0f}% >= 99%, no new run" if W is not None and W >= 99 else "limit hit: 5h 0% and its reset keeps moving forward, nothing is counted"
+    elif W is not None and W >= C:
+        gv["stop"] = True; gv["why"] = f"week {W:.0f}% >= {C:.0f}%: only express runs"
+    return gv
 
 def governor_text(gv):
     """'governor: N lanes, aim T% (5h X% -> ~Y% at HH:MM · week A% -> ~B% at Sat 17:00)' (local time; the week part when it can be projected)."""
-    if gv["pct"] is None: return f"governor: {gv['lanes']} lanes ({gv['why']})"
+    if gv["pct"] is None: return f"governor: {0 if gv['stop'] else gv['lanes']} lanes ({gv['why']})" + (" · STOP" if gv["stop"] else "")
     s = (f"governor: {0 if gv['stop'] else gv['lanes']} lanes, aim {gv.get('target', GOV['target']):.0f}% "
          f"(5h {gv['pct']:.0f}% -> ~{min(100, gv['projected']):.0f}% at {time.strftime('%H:%M', time.localtime(gv['reset']))}")
     if gv.get("week_projected") is not None:
@@ -521,9 +552,14 @@ def governor_now(now=None):
     try:
         gv = json.loads((RUNS / "governor.json").read_text(encoding="utf-8"))
         if now - gv["at"] < 15 * 60:
-            return {"lanes": int(gv["lanes"]), "stop": bool(gv["stop"] and not (gv.get("reset") and gv["reset"] <= now)), "pct": gv.get("pct")}
+            return {"lanes": int(gv["lanes"]), "stop": bool(gv["stop"] and (gv.get("hard") or not (gv.get("reset") and gv["reset"] <= now))), "pct": gv.get("pct"),
+                    "week_pct": gv.get("week_pct"), "limit_hit": bool(gv.get("limit_hit"))}
     except Exception: pass
-    return {"lanes": REMOTE_LANES, "stop": False, "pct": None}
+    return {"lanes": REMOTE_LANES, "stop": False, "pct": None, "week_pct": None, "limit_hit": False}
+
+def limit_requeue(res, limit_hit):
+    """Pure (#703): a worker that died without a RESULT line while the limit was hit goes back to the queue, not BLOCKED."""
+    return bool(limit_hit) and (not res or res.startswith("RESULT: STUCK cloud worker died"))
 
 def pass_choice(issues, local_lanes, remote_lanes, gv, core_held_n, locked, where=None):
     """#279: what a runner pass starts now -> [(issue, 'local'|'remote')] (before the open-PR lookup). The ONE lane check, shared by
@@ -544,9 +580,11 @@ def pass_now(issues, gv=None):
 def stop_filter(chosen, gv):
     """Pure (#269): on a governor stop only owner-approved 'express' issues still start, and only below 100%.
     #450: the canary (express too, for its own lane) never starts on a stop."""
+    W = gv.get("week_pct")
+    if (W is not None and W >= 99) or gv.get("limit_hit"): return []          # #703: a used-up week / hit limit: nothing starts, express too
     if not gv["stop"]: return chosen
     ok = lambda c: "express" in c.get("labels", []) and "canary" not in c.get("labels", [])
-    return [c for c in chosen if ok(c)] if (gv.get("pct") or 0) < 100 else []
+    return [c for c in chosen if ok(c)] if (gv.get("pct") or 0) < 100 and (W is None or W < 98) else []
 
 def governor_pass(remote_busy, now=None):
     """Read .runs/usage.json, keep a sample in .runs/usage_hist.jsonl, write .runs/governor.json. Returns the governor dict; never raises."""
@@ -1972,6 +2010,11 @@ def process_locked(issue, where="local"):
             out, res = agent(f"issue-{n}", worker_prompt(n, lane, bug="bug" in issue["labels"]), wt, WORKER_TOOLS if lane != "review" else REVIEW_LANE_TOOLS,
                              d / "worker1.log", "RESULT:", n, "worker", wm, over=over)
         (d / "worker1.out").write_text(redact(out), encoding="utf-8")
+        if limit_requeue(res, governor_now().get("limit_hit")):
+            stat(n, lane, "waiting", why="limit hit")
+            set_labels(n, add=["ready-for-agent"], remove=["in-progress"])
+            gh("issue", "comment", str(n), "--body", "Runner: limit hit, back in the queue (the worker died without a RESULT line while the usage limit was hit).")
+            return "WAITING: limit hit, back in the queue"
         if not res.startswith("RESULT: DONE"):
             raise Blocked(res or "worker gave no RESULT line")
         stat(n, lane, "worker_done", where=where)
