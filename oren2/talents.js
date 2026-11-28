@@ -214,7 +214,7 @@ function dailyEnsure(){const s=S();if(s.daily&&s.daily.d===today()){const d=s.da
   const plan=S().set.plan;let t=[];
   if(plan&&plan.length){const used=new Set();t=plan.map(sp=>{if(sp==='math')return 'math';if(String(sp).startsWith('act:')){const aid=sp.slice(4);if(ACT[aid]&&dailyPool().includes(aid)&&!used.has(aid)){used.add(aid);return aid;}sp='any';}const pool=dailyPool().filter(id=>!used.has(id)&&(sp==='any'||ACT[id].b.id===sp));const id=pool.length?fitPick([...used],pool):pick(dailyPool().filter(x=>!used.has(x)));used.add(id);return id||'math';}).concat(cr);}
   s.daily={d:today(),t,done:t.map(()=>0),claimed:0,ch:t.length?'plan':0,cr:t.length?[]:cr};O.persist();return s.daily;}
-function dailyMark(id){const d=dailyEnsure();const i=d.t.indexOf(id);if(i>=0&&!d.done[i]){d.done[i]=1;}}
+function dailyMark(id){const d=dailyEnsure();(d.q=d.q||[]).includes(id)||d.q.push(id);/* #634 #811 q = missions not to offer again today: played (also outside the path) or quit fast */const i=d.t.indexOf(id);if(i>=0&&!d.done[i]){d.done[i]=1;}}
 O.on('levelDone',(lv)=>{if(!lv||lv.type==='train')return;S().last={id:'math',d:today()};const d=dailyEnsure();const i=d.t.findIndex((x,k)=>x==='math'&&!d.done[k]);if(i>=0){d.done[i]=1;O.persist();}});
 /* ---------- map integration ---------- */
 O.on('map',m=>{const rs=m.querySelector('.reset');if(rs)rs.remove();if(window.TAL_noHome)return;m.querySelectorAll('.hello,.statline').forEach(e=>e.remove());m.querySelectorAll('.topbar .tool').forEach(t=>{if(/הַמַּמְלָכָה|הַגִּבּוֹר שֶׁלִּי/.test(t.textContent))t.remove();});});
@@ -381,7 +381,7 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
   if(help.band!=='read'&&window.FRIEND&&FRIEND.readFirst){O.sayNow=T.spk(FRIEND.READFIRST);FRIEND.readFirst();}else O.sayNow=STORY_SAY;}   /* read to him: no "try alone first" */
 T.addSay([STORY_SAY]);T.storyScreen=storyScreen;T.READ_HELP=READ_HELP;T.helpOf=helpOf;T.storyHelp=storyHelp;window.__story={get ss(){return SS;}};
 function readStory(k,back){const st=STORIES[k];storyScreen({act:'story-'+k,id:'story-'+k,title:st.t,name:st.t,tp:T.plainHe(st.t),goal:st.goal,spr:st.spr.map(x=>ALLSPR(x)),lines:st.s,hw:st.hw,
-  q:st.q.map(([pr,a,ds])=>({pr,a,ds})),back,qback:()=>openStories(back)});}
+  q:st.q.map(([pr,a,ds])=>({pr,a,ds})),back,qback:back&&back.home?back:()=>openStories(back)});}/* #832: a story that is a path step goes on along the path; from the building or 'something else' it goes to the list */
 function openStories(back){O.setScreen('sTal','final',back);T.hudT('סִפּוּרֵי עֶרֶב');const s=$('#sTal');s.innerHTML='';s.appendChild(h('div','whead',`<span class="gd">${X.moon}</span><h1>סִפּוּרֵי עֶרֶב</h1>`));
   const g=h('div','acts');STORIES.forEach((st,k)=>{const n=(T.S().tl['story-'+k]||{}).s|0;const c=h('button','actc',`<span class="ai">${ALLSPR(st.spr[0])}</span><span class="an">${st.t}</span><span class="st">${[0,1,2].map(j=>j<n?SPR.star:SPR.starOff).join('')}</span>`);c.onclick=()=>readStory(k,()=>openStories(back));g.appendChild(c);});s.appendChild(g);}
 T.STORIES=STORIES;T.readStory=readStory;
@@ -1395,7 +1395,7 @@ function choose(dm,first,quiet){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.
   const isEn=x=>!!(ACT[x]&&ACT[x].b&&ACT[x].b.id==='eng'),noEn=a=>dm==='b:eng'?a:a.filter(x=>!isEn(x)||x===first);st=noEn(st);
   if(!st.length)st=['math'];
   /* a domain that rested yesterday: the path starts with it, where Oren stopped (once a day) */
-  if(!bonus&&!d.rv&&window.HEALTH){d.rv=1;const rv=window.HEALTH.review().find(x=>!d.t.includes(x)&&!st.includes(x));if(rv&&!isEn(rv))st=[rv].concat(st);}
+  if(!bonus&&!d.rv&&window.HEALTH){d.rv=1;const rv=window.HEALTH.review().find(x=>!d.t.includes(x)&&!(d.q||[]).includes(x)&&!st.includes(x));if(rv&&!isEn(rv))st=[rv].concat(st);}
   /* #358 variety: a mission that would repeat the kind is swapped for the engine's next pick in this domain, then in the others */
   st=T.vary(d.t,st,()=>{let ex=[];[dm,...wpick(doms().filter(x=>x.id!==gid(dm)),9).map(o=>o.id)].forEach(id=>{if(id!=='tog')ex=ex.concat(noEn(stepsOf(id,3,new Set([...d.t,...(d.q||[]),...st,...ex]))).filter(x=>!ex.includes(x)));});return ex;});
   /* #424 one short English scene per path, once a day, while English is on for him */

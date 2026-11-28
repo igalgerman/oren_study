@@ -102,6 +102,31 @@ def finished_control(ts):
     return [(r, t["address"]) for t in ts
             if t.get("state") in FINISHED and t.get("address") and (r := control_role(t)) and r not in live]
 
+def present_roles(ts):
+    """#935: control roles that have any terminal row at all (live or finished). A tab the owner closed has no row."""
+    return {r for t in ts if (r := control_role(t))}
+
+def missing_control(ts):
+    """#935: control roles with no terminal in `hc ls --all` (closed by hand). Found like finished_control: by name, label, argv or tab. -> [role]"""
+    have = present_roles(ts)
+    return [r for r in CONTROL if r not in have]
+
+def control_plan(state, ts, now, grace=2, window=600):
+    """#935, pure: what the watchdog starts this tick. state = {role: {"miss": n, "started": t}} (kept in .runs/control_state.json).
+    A role missing in `grace` consecutive checks, or finished (no live twin), is started ONCE per tick, and not again for `window` s
+    after a start (it counts as present/starting). -> ([(role, address or None, why)], new state)"""
+    st = {r: dict(v) for r, v in (state or {}).items() if r in CONTROL}
+    miss, fin, out, seen = set(missing_control(ts)), {}, [], set()
+    for r, a in finished_control(ts): fin.setdefault(r, []).append(a)   # two finished rows of one role = one start
+    for r in CONTROL:
+        e = st.setdefault(r, {})
+        e["miss"] = e.get("miss", 0) + 1 if r in miss else 0
+        starting = now - e.get("started", 0) < window
+        if starting or r in seen: continue
+        if r in fin: out.append((r, fin[r], "finished")); seen.add(r); e["started"] = now
+        elif e["miss"] >= grace: out.append((r, [], "closed")); seen.add(r); e["started"] = now; e["miss"] = 0
+    return out, st
+
 def stale_locks(runs, alive, boot):
     """Remove lock files whose pid is dead or that were taken before this boot (a reused pid is not ours). -> removed names."""
     gone = []

@@ -406,6 +406,31 @@ assert not ok_i([10], [{**INS, "foreground": {"argv": ["claude"], "pid": 10}, "n
 assert not ok_i([10], [{**INS, "foreground": {"argv": ["python", "--remote-control", "oren-inspector"], "pid": 10}}])   # not claude
 assert not ok_i([10], [{**INS, "cwd": "C:/work/other"}])                          # wrong cwd
 assert not ok_i([10], None) and not ok_i([10], [])                                # herdr unreadable
+# #907 walk_chain over a fake process table {pid: {ppid, ctime}}: the inspector's claude is pid 10 (INS), another session's is 20
+def table(rows): return lambda pid: rows.get(pid)
+pids = lambda rows, start=1: [p for p, _ in QW.walk_chain(start, table(rows))]
+plain = {1: {"ppid": 2, "ctime": 900}, 2: {"ppid": 3, "ctime": 800}, 3: {"ppid": 10, "ctime": 700}, 10: {"ppid": 99, "ctime": 100}, 99: {"ppid": 0, "ctime": 50}}
+assert pids(plain) == [1, 2, 3, 10, 99] and ok_i(pids(plain), [INS, other])
+# a shell that Git Bash replaced (exited, still held by its parent): it is in the table, so the walk goes on to claude
+helper = {1: {"ppid": 2, "ctime": 900}, 2: {"ppid": 3, "ctime": 890}, 3: {"ppid": 4, "ctime": 880, "alive": False},
+          4: {"ppid": 5, "ctime": 870}, 5: {"ppid": 10, "ctime": 860}, 10: {"ppid": 99, "ctime": 100}}
+assert 10 in pids(helper) and ok_i(pids(helper), [INS, other])
+# a parent that cannot be opened (gone): the walk ends there, the pid is never in the chain -> refused
+dead = {1: {"ppid": 2, "ctime": 900}, 2: {"ppid": 10, "ctime": 800}, 9: {"ppid": 10, "ctime": 700}}
+assert pids(dead) == [1, 2] and not ok_i(pids(dead), [INS, other])
+# a reused pid: the recorded parent pid now belongs to a process created AFTER the child -> the walk stops before it
+reuse = {1: {"ppid": 2, "ctime": 900}, 2: {"ppid": 10, "ctime": 800}, 10: {"ppid": 99, "ctime": 850}}
+assert pids(reuse) == [1, 2] and not ok_i(pids(reuse), [INS, other])
+assert pids({1: {"ppid": 10, "ctime": 900}, 10: {"ppid": 0, "ctime": 900}}) == [1]    # the same creation time is not earlier
+assert pids({1: {"ppid": 10, "ctime": 900}, 10: {"ppid": 0, "ctime": 0}}) == [1]      # no creation time: not verified
+assert pids({1: {"ppid": 1, "ctime": 900}}) == [1] and pids({}) == []                  # a loop; nothing at all
+# another session (its own claude 20): refused, also through a replaced shell
+others = {1: {"ppid": 2, "ctime": 900}, 2: {"ppid": 3, "ctime": 880, "alive": False}, 3: {"ppid": 20, "ctime": 870},
+          20: {"ppid": 7, "ctime": 300}, 7: {"ppid": 0, "ctime": 10}}
+assert 20 in pids(others) and 10 not in pids(others) and not ok_i(pids(others), [INS, other])
+assert len(QW.walk_chain(1, lambda p: {"ppid": p + 1, "ctime": 10 ** 6 - p})) == 32   # at most 32 steps
+assert QW.walk_chain(1, lambda p: {"ppid": p + 1, "ctime": 10 ** 6 - p}, limit=3)[-1][0] == 3
+if os.name != "nt": assert QW.chain_pids() == [] and QW._chain_info() == []
 # live_terminals: hc ls --json, then hc get per live terminal
 _calls = []
 def _fh(*a, **kw):
@@ -453,6 +478,16 @@ rc, msg = QW.chat_answer(key, "כן", "הוא אמר כן")
 assert rc != 0 and not g3.calls, g3.calls
 assert len([l for l in chat_log if "REFUSED" in l]) == 1 and len([p for p in sent() if "נדחתה" in p["text"]]) == 1, (chat_log, sent())
 chain[0] = [10]
+# #907 whoami: the chain, the inspector terminal, the verdict; it posts, sends and logs nothing (both verdicts)
+g3.calls.clear(); FakeTG.calls.clear(); chat_log.clear(); real_ci = QW._chain_info
+for ch, want in (([(5, {"ppid": 10, "name": "python.exe"}), (10, {"ppid": 1, "name": "claude.exe"})], 0),
+                 ([(5, {"ppid": 20, "name": "python.exe"}), (20, {"ppid": 1, "name": "claude.exe", "alive": False})], 1)):
+    QW._chain_info = lambda ch=ch: ch
+    rc, out = QW.whoami()
+    assert rc == want and "claude.exe" in out and "pid 10" in out and ("verdict: INSPECTOR" in out) == (want == 0), out
+    assert QW.main(["whoami"]) == want
+assert "(exited)" in out and not g3.calls and not sent() and not chat_log, (g3.calls, sent(), chat_log)
+QW._chain_info = real_ci
 # a missing / empty / too long --quote is refused (no gh call)
 for q in (None, "", "  ", "x" * 501): assert QW.chat_answer(key, "כן", q)[0] != 0 and not g3.calls
 assert QW.main(["chat-answer", key, "כן"]) != 0 and QW.main(["answer", key, "כן"]) == 2     # no --quote; the old `answer` CLI refuses
@@ -591,3 +626,45 @@ try:
 finally:
     real._kill(pid)
 print("ok qwin real ask.py page")
+
+# ---------- #872: console mirror (fake HTTP) ----------
+import console_mirror as CM
+CM.STATE = tmp / "console_mirror.json"; CM.log = lambda m: None
+CM.CONF = tmp / "console.json"; CM.CONF.write_text(json.dumps({"url": "https://c.test", "push_key": "pk", "read_key": "rk"}))
+Q1 = {"key": "aaaaaaaaaaaa", "window": "#5", "source": "issue-5", "text": "לאשר? 1) כן (מומלץ) 2) לא", "gates": [5], "at": "2026-11-28T10:00:00Z"}
+NOTE = {"key": "bbbbbbbbbbbb", "window": "ai-observer", "source": "ai-observer", "text": "PR #7 waits for your merge", "gates": [], "at": ""}
+class FakeNet:
+    def __init__(self): self.calls, self.fail, self.rows = [], False, []
+    def __call__(self, method, url, key, body=None):
+        self.calls.append((method, url.split("test")[1], key, body))
+        if self.fail: return 0, {}
+        return 200, ({"questions": self.rows} if method == "GET" else {"ok": True})
+net = FakeNet(); CM.http = net
+answers = []
+CM.QW.answer = lambda k, t, **kw: answers.append((k, t, kw)) or {}
+OQ.open_list = lambda gh=None: [dict(Q1), dict(NOTE)]
+CM.tick(now=1000, answers=False)
+posts = [c for c in net.calls if c[0] == "POST"]
+q = next(c for c in posts if c[1] == "/api/console/question")
+assert q[2] == "pk" and q[3]["key"] == Q1["key"] and q[3]["repo"] == R.REPO and q[3]["issue"] == 5 and q[3]["gates"] == [5]
+assert q[3]["options"] == ["כן (מומלץ)", "לא"] and q[3]["recommended"] == "כן" and q[3]["text_he"] and q[3]["asked_at"] > 0, q
+assert [c for c in posts if c[1] == "/api/console/notice"][0][3]["text_he"].startswith("PR #7"), posts
+# shadow: no pull; unchanged within 10 min: no push; notice never twice
+net.calls.clear(); net.rows = [{"repo": R.REPO, "key": Q1["key"], "answer": "כן", "via": "console"}]
+CM.tick(now=1100, answers=False)
+assert net.calls == [] and answers == [], (net.calls, answers)
+CM.tick(now=1000 + CM.EVERY_S + 1, answers=False)
+assert [c[1] for c in net.calls] == ["/api/console/question"], net.calls     # the refresh; the notice is not sent again
+# true: the D1 answer -> one qwin.answer with via; a second tick -> none
+net.calls.clear(); CM.tick(now=1200, answers=True); CM.tick(now=1300, answers=True)
+assert answers == [(Q1["key"], "כן", {"via": "console"})], answers
+# already answered another way (question no longer open) -> no record
+answers.clear(); st = CM._load(); st["pulled"] = []; CM._save(st)
+OQ.open_list = lambda gh=None: [dict(NOTE)]
+CM.tick(now=1400, answers=True); assert answers == [], answers
+# an API failure: tick returns True, never raises, retried next tick (digest not stored)
+OQ.open_list = lambda gh=None: [dict(Q1, key="cccccccccccc")]; net.fail = True
+assert CM.tick(now=2000, answers=True) is True
+net.fail = False; net.calls.clear(); assert CM.tick(now=2001, answers=False) is False
+assert any(c[3] and c[3].get("key") == "cccccccccccc" for c in net.calls)
+print("ok qwin console mirror")
