@@ -37,7 +37,7 @@ async function run(name,wi,extras){
   await p.reload();await p.evaluate(()=>window.__oren4.setFast(true));
   await shot('start');await p.click('#btnStart');await sleep(150);
   if(wi===0){await dlgThrough();if(await p.locator('#sStudio').isHidden())log.push('studio not shown after intro');await shot('studio');await overflow('studio');
-    await p.locator('.orow').nth(2).locator('.sw').nth(1).click();await p.locator('.orow').nth(4).locator('.hatb').nth(2).click();await p.locator('#sStudio .bigbtn').last().click();await sleep(100);}
+    await p.locator('#sStudio .wopt:not(.lock)').nth(1).click();await p.locator('#sStudio .hatb').nth(2).click();await p.locator('#sStudio .bigbtn').last().click();await sleep(100);}
   if(await p.locator('#sMap').isHidden())log.push('map not shown');await shot('map');await overflow('map');
   const nLv=await p.evaluate(wi=>window.__oren4.WORLDS[wi].levels.length,wi);
   await p.evaluate(()=>document.querySelectorAll('.wcard2').forEach(c=>{c.hidden=false;}));/* G5: 0-star worlds are hidden tiles (#98) */await p.locator('.wcard2').nth(wi).click();await sleep(100);await dlgThrough();

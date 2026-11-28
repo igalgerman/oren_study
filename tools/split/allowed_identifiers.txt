@@ -1,0 +1,7 @@
+# #814 / #791: technical identifiers that may keep the kid's name (folder, site address, repo names). ONE list for the
+# export verify step (tools/split/export.py) and the name check of #791. One per line, case-insensitive; '#' = comment.
+oren2
+oren-game
+oren_study
+oren-study
+oren-lanes

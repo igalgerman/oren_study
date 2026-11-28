@@ -15,6 +15,11 @@ never the paid API, never `claude -p` on the PC). Config: `ai_observer_where = "
   `Daily retro <date>` exists 2 h after `retro_hour` (window `cloud-retro`). A fallback run starts its comment / issue body
   with the line `<!-- fallback #525 -->`, so it never counts as proof that the trigger works.
 
+#857 (Actions clock): `.github/workflows/cloud-clock.yml` POSTs the API trigger of #853 (`tools/ci/cloud_clock.py`) every hour
+(observer) and nightly 20:41 UTC (retro), plus workflow_dispatch; a failed trigger = red job + one comment on #528 (not again within
+6 h). The PC fallback above now starts only after 2 h (`FALLBACK_SILENT_H`) without an observer comment on #528. About 750 Actions
+minutes a month (each run is billed 1 min).
+
 Two scheduled tasks (fresh session per run, created once; manage them at claude.ai/code -> Scheduled):
 - `Oren AI observer (hourly)`: every hour. Prompt: "Follow docs/agents/cloud-tasks.md, section AI observer, in igalgerman/oren_study."
 - `Oren nightly retro`: daily 22:41 Asia/Jerusalem (before `retro_hour` 23). Prompt: "... section Nightly retro ...".
@@ -67,3 +72,6 @@ HANDOFF-INSPECTOR:
 HANDOFF-ORCHESTRATOR:
 <short handoff for the next orchestrator session: state, open threads, what to do first>
 ```
+
+## Where things go (#956)
+File issues, PRs and questions with `python3 tools/file.py issue|pr|question` (the registry `projects.toml` decides the repo). Never raw `gh issue create -R`.

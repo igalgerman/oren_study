@@ -9,6 +9,17 @@ if [ -e "$wt" ] && ! git -C "$wt" rev-parse --is-inside-work-tree >/dev/null 2>&
 fi
 git -C "$root" fetch -q "$remote"
 git -C "$root" worktree prune                      # #302: a deleted wt-<n> folder still registered blocks its branch
+# #974: lane/<n> checked out in ANOTHER worktree (hand work) makes 'worktree add' fail. Clean + pushed: detach it. Dirty/unpushed: stop, one message. Nothing is deleted.
+other=""; cur=""
+while IFS= read -r line; do
+  case "$line" in "worktree "*) cur="${line#worktree }";; "branch refs/heads/lane/$name") other="$cur";; esac
+done < <(git -C "$root" worktree list --porcelain)
+if [ -n "$other" ] && [ "$other" != "$wt" ]; then
+  if [ -n "$(git -C "$other" status --porcelain)" ] || [ -z "$(git -C "$other" branch -r --contains HEAD 2>/dev/null)" ]; then
+    echo "lane.sh: lane/$name is checked out in $other with uncommitted or unpushed work. Commit and push it (or remove that worktree), then retry." >&2; exit 1
+  fi
+  git -C "$other" checkout -q --detach
+fi
 if git -C "$root" rev-parse -q --verify "refs/remotes/$remote/lane/$name" >/dev/null; then
   git -C "$root" worktree add -B "lane/$name" "$wt" "$remote/lane/$name"
 elif git -C "$root" rev-parse -q --verify "refs/heads/lane/$name" >/dev/null; then

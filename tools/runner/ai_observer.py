@@ -224,6 +224,7 @@ def relay(tell, log, now, gh=None, api=None):
 # ---------- #525: the triggers never ran (no ai-observer issue at all on 27 Nov) ----------
 FALLBACK_MARK = "<!-- fallback #525 -->"   # the first line of a comment made by the runner's own fallback run (not the trigger)
 OWNER_SILENT_H, FALLBACK_MIN = 3, 60
+FALLBACK_SILENT_H = 2   # #857: the PC fallback runs only when no observer line (trigger or Actions clock) was posted on #528 for 2 h
 FALLBACK_PROMPT = ("Follow docs/agents/cloud-tasks.md, section AI observer, in {repo}. This is the runner's fallback "
                    f"run (#525: the scheduled task does not run): make the first line of your comment exactly {FALLBACK_MARK}")
 TELEGRAM = None     # text -> Telegram message; tests swap in a fake (None = telegram.send)
@@ -269,12 +270,12 @@ def owner_note(now):
     return True
 
 def fallback(now, log):
-    """While the last trigger-made comment (state 'trigger_seen') is missing or older than OWNER_SILENT_H h (#689: not a sticky
+    """While the last trigger-made comment (state 'trigger_seen') is missing or older than FALLBACK_SILENT_H h (#857, was 3; #689: not a sticky
     'proven' flag), start the observer prompt as a cloud job every FALLBACK_MIN (remote.launch from the watchdog: returns at
     once, takes no runner lane). A failed start is retried at the next relay."""
     st = load_state()
     seen = _epoch(st.get("trigger_seen"))
-    if (seen and now - seen < OWNER_SILENT_H * 3600) or now - st.get("fallback_at", 0) < FALLBACK_MIN * 60: return False
+    if (seen and now - seen < FALLBACK_SILENT_H * 3600) or now - st.get("fallback_at", 0) < FALLBACK_MIN * 60: return False
     if LAUNCH: launch = LAUNCH
     else:
         import remote; launch = remote.launch

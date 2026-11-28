@@ -122,6 +122,7 @@ export const register: Register = on => {
             now, open: open ?? [], closed, prs, wins: windows, cloud, events: parseEvents(await readText(`${RUNS}/stats.jsonl`)), where,
             gov: parseGov(await readText(`${RUNS}/governor.json`)) as Gov | null, limits, questions, questionIssue, pc, refusedAt, desks: parseGov(await readText(`${RUNS}/desks.json`))?.text ?? '',   // #306
             canary: [parseGov(await readText(`${RUNS}/progress_alarm.json`))?.text, parseGov(await readText(`${RUNS}/canary.json`))?.text].filter(Boolean).join(' · '),   // #330 + #891 (no-progress alarm)
+            control: parseGov(await readText(`${RUNS}/control_health.json`))?.text ?? '',   // #890
             cfg: parseConfig(await readText(CONFIG)),
           }),
           errors, updatedAt: now,
@@ -167,6 +168,7 @@ export const register: Register = on => {
         {p.pc ? row(p.pc) : null}
         {p.desks ? row(p.desks) : null}
         {p.canary ? row(p.canary) : null}
+        {p.control ? row(p.control) : null}
         {d.errors.map(s => row({ text: s, tone: 'dim' }))}
         {head(p.lanesHead)}
         {row(p.starts)}

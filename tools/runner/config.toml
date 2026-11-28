@@ -61,6 +61,8 @@ github_app_id = 5939551
 github_app_installation_id = 186191764
 github_app_key = "C:/Users/97254/.oren/app.pem"
 
+alert_repeat_minutes = 180      # #844: the same watchdog alarm (rule + subject) at most once per this many minutes; the next one carries a count
+
 # #710 usage alarms (usage_alarms.py): each rule fires at most once per usage_alarm_every_h hours
 usage_alarm_every_h = 3
 usage_underuse_pct = 94         # UNDERUSE: week + (b*N_hi + b0)*H below this = budget left over even at full speed
@@ -76,6 +78,12 @@ bot_logins = ["oren-study-bot", "oren-study-bot[bot]"]
 owner_q_alarm_min = 10          # #912: a queued owner-answer record still stuck after this many minutes -> ONE alarm
 owner_q_archive_max = 100       # #912: more than this many comments in the pinned questions issue -> every answered question moves to the archive issue (also: answered and older than 30 days)
 trust_since = "2026-11-28T12:28:45Z"
+
+# #890 control-session heartbeat (control_health.py): error screen / approval prompt / frozen session -> Telegram + inspector note
+control_health = true           # false = off
+control_approval_min = 3        # a blocked status or a permission dialog held this long
+control_frozen_min = 30         # status working AND the screen unchanged this long
+control_error_patterns = ["limit reached", "usage limit", "rate.?limit", "overloaded", "api error", "please run /login", "(login|session|token|authentication) (has )?expired", "invalid api key", "credit balance is too low"]   # regexes on the last 12 screen lines
 
 # #872 owner console mirror (console_mirror.py): open questions + notices go to the console API (D1, #869) on watchdog ticks (changed, and at least every 10 min).
 # keys + url: ~/.oren/console.json {"url", "push_key", "read_key"} (outside the repo). console_answers = false: mirror only (shadow); true: new D1 answers are pulled into qwin.answer.

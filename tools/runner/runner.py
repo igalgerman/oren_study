@@ -435,13 +435,30 @@ def unreadable_gate(why):
     """Pure (#908): True when merge_block's refusal only means 'the gate could not be read' (never a reason to BLOCK)."""
     return why.startswith("cannot read the owner gate")
 
-def merge_block(pr, log=None):
-    """#636: the one guard before any merge (runner and tools/runner/merge.py): draft, blocked / no-automerge / owner-merge, owner gate."""
-    js = gh("pr", "view", str(pr), "--json", "isDraft,labels,body", log=log)[1]
+def _split_guards():
+    sys.path.insert(0, str(HERE.parent / "split"))
+    import guards; return guards
+
+def merge_block(pr, log=None, repo=None):
+    """#636: the one guard before any merge (runner and tools/runner/merge.py): draft, blocked / no-automerge / owner-merge, owner gate.
+    #814: a GAME PR (repo=) also needs neutral commit e-mails; an INFRA PR that changes the game tree is held during the flip and
+    refused after it (tools/split/guards.py)."""
+    if repo and repo != REPO:
+        js = run(["gh", "pr", "view", str(pr), "--repo", repo, "--json", "isDraft,labels"], log=log)[1]
+        why = merge_refusal(js)
+        if why: return why
+        rc, out = run(["gh", "api", f"repos/{repo}/pulls/{pr}/commits", "--paginate"], log=log)
+        try: commits = json.loads(out) if rc == 0 else None
+        except ValueError: commits = None
+        return _split_guards().commit_refusal(commits) if commits is not None else "cannot read the PR commits"
+    js = gh("pr", "view", str(pr), "--json", "isDraft,labels,body,files,headRefName", log=log)[1]
     why = merge_refusal(js)
     if why: return why
-    try: body = json.loads(js or "{}").get("body") or ""
+    try: d = json.loads(js or "{}")
     except ValueError: return "cannot read PR body"
+    body = d.get("body") or ""
+    why = _split_guards().tree_refusal([f.get("path", "") for f in d.get("files") or []], body, d.get("headRefName") or "")
+    if why: return why
     return gate_refusal(body, GATE)
 
 def needs_branch_update(mergeable):

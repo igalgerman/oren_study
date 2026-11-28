@@ -658,6 +658,9 @@ assert [c[1] for c in net.calls] == ["/api/console/question"], net.calls     # t
 # true: the D1 answer -> one qwin.answer with via; a second tick -> none
 net.calls.clear(); CM.tick(now=1200, answers=True); CM.tick(now=1300, answers=True)
 assert answers == [(Q1["key"], "כן", {"via": "console"})], answers
+# #885: an answer tapped on the chat card (via=chat-card) is pulled with that via
+answers.clear(); st = CM._load(); st["pulled"] = []; CM._save(st); net.rows = [{"repo": R.REPO, "key": Q1["key"], "answer": "לא", "via": "chat-card"}]
+CM.tick(now=1250, answers=True); assert answers == [(Q1["key"], "לא", {"via": "chat-card"})], answers
 # already answered another way (question no longer open) -> no record
 answers.clear(); st = CM._load(); st["pulled"] = []; CM._save(st)
 OQ.open_list = lambda gh=None: [dict(NOTE)]
