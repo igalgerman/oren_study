@@ -8,7 +8,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import remote, ghcache, ghauth, pcload, tester, trust   # pcload: #293 PC load watch; tester: #618
+import remote, ghcache, ghauth, pcload, tester, trust, scrub   # pcload: #293 PC load watch; tester: #618
 ROOT = HERE.parent.parent                      # repo checkout (tools/runner/../..)
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # #229: tests point this at a temp dir
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -1362,6 +1362,7 @@ def run(cmd, cwd=None, env=None, input=None, log=None, timeout=None):
     e["PATH"] = CFG["extra_path"].replace("/c/", "C:/", 1) + os.pathsep + e["PATH"]
     cap = ghcache.tick_cap(); timeout = tick_timeout(timeout)
     is_gh = bool(cmd) and str(cmd[0]) == "gh"
+    if is_gh: cmd, input = scrub.scrub_cmd(cmd, input)   # #783: the kid's real name never reaches a GitHub write (titles, bodies, comments)
     orig = dict(e); orig.pop(ghauth.OWNER, None)
     ghauth.apply(cmd, e)                                 # #363: gh runs as the GitHub App (own rate limits); claude/git keep the owner login
     alt_env = orig if is_gh and e.get("GH_TOKEN") and e.get("GH_TOKEN") != orig.get("GH_TOKEN") else None   # #469: same call as the owner

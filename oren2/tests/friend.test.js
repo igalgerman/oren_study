@@ -33,12 +33,15 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
     return p.evaluate(() => { window.__fast = true; return speechSynthesis.log.slice(); }); };
   const V = t => p.evaluate(t => (window.__fullSpell ? window.__fullSpell(t) : t).replace(/[\u0591-\u05C7]/g, ''), t);   // how a line sounds in the voice log
   const has = async (s, t) => { const v = await V(t); return s.some(x => x.replace(/[\u0591-\u05C7]/g, '').includes(v)); };
-  let s = await said(() => p.evaluate(() => window.TAL_step(1)), 900);
+  let claimed = false;   /* #767 the friend claims the screen's auto-read at once, so a slow machine cannot say the question before him and again after */
+  let s = await said(() => p.evaluate(() => { window.__claim = false; let v = window.__autoSaid; Object.defineProperty(window, '__autoSaid', { configurable: true, get: () => v, set: x => { if (x > Date.now() + 1000) window.__claim = true; v = x; } }); window.TAL_step(1); }), 900);
   const w = await p.evaluate(() => window.FRIEND.word || '');
   ok('"first letter": the picture\'s word is said', !!w && await has(s, w), JSON.stringify({ w, s }));
   const ii = await V(KN.first.intro), nq = x => x.replace(/[\u0591-\u05C7]/g, '');
   ok('#53 first time in a new kind of task: the friend says what to do (once, saved)', s.some(x => nq(x).includes(ii)) && await p.evaluate(() => !!window.OREN.save.frk.first), JSON.stringify(s));
   ok('#53 ...then the question, never two sentences before it (the goal waits this time)', s.length >= 2 && nq(s[0]).includes(ii) && /באיזו אות/.test(nq(s[s.length - 1])) && !s.slice(0, -1).some(x => /באיזו אות/.test(nq(x))), JSON.stringify(s));
+  claimed = await p.evaluate(() => !!window.__claim);
+  ok('#767 the question is said once, after the friend\'s sentence (the auto-read was claimed at step start)', claimed && s.filter(x => /באיזו אות/.test(nq(x))).length === 1, JSON.stringify({ claimed, s }));
   ok('#53 it never blocks: the answers are on the screen at once', await p.evaluate(() => !!document.querySelector('#sTal .chs .chb')));
   ok('step start: the friend ties it to the day\'s story', s.some(x => /בוא|מתחילים|עוד צעד/.test(x.replace(/[\u0591-\u05C7]/g, ''))), JSON.stringify(s));
   const ui = await p.evaluate(() => { const f = document.querySelector('.frc'), pb = document.querySelector('#hudMid #frPath');
