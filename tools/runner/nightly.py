@@ -191,7 +191,8 @@ def build_prompt(now):
                          trends=trends_summary(now), observer=_read(R.RUNS / "ai_observer.last").strip() or "(none)", transcripts=transcripts(now))
 
 def command():
-    return [shutil.which("claude") or "claude", "-p", "--model", MODEL, "--no-session-persistence",
+    m, eff = R.floors("retro", MODEL)    # #714
+    return [shutil.which("claude") or "claude", "-p", "--model", m, "--effort", eff, "--no-session-persistence",
             "--tools", "Read,Grep,Glob,Bash", "--allowedTools", *TOOLS]
 
 def ask_claude(prompt):

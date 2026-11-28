@@ -80,9 +80,25 @@ def effort_of(labels):
     found = [e for e in _EFFORTS if f"effort:{e}" in labels]
     return raise_effort(found[-1] if found else None)
 
-def with_effort(start, effort):
-    """#713: a cloud `start` that adds --effort to every session of this run."""
+def with_effort(start, effort, model=None):
+    """#713: a cloud `start` that adds --effort (and, #714, a fixed --model unless the call gives one) to every session of this run."""
+    if model: return lambda *a, **k: start(*a, effort=effort, **{"model": model, **k})
     return lambda *a, **k: start(*a, effort=effort, **k)
+
+STATUS_ROLES = {"dashboard_ai", "summary"}   # #714: the only roles that may run on Haiku (pure status/summary steps)
+
+def floors(role, model, effort=None, labels=()):
+    """#714: the owner's quality floors in ONE place -> (model, effort) a step may run with.
+    Effort never below medium. Reviewer always opus: medium, high when the issue is model:opus or effort:high|xhigh.
+    Haiku only for STATUS_ROLES; any other role on haiku is raised to sonnet."""
+    eff = raise_effort(effort)
+    if role == "reviewer":
+        high = "model:opus" in labels or "effort:high" in labels or "effort:xhigh" in labels
+        want = "high" if high else "medium"
+        if _EFFORTS.index(eff) < _EFFORTS.index(want): eff = want
+        return "opus", eff
+    if model in (None, "haiku") and role not in STATUS_ROLES: model = "sonnet"
+    return model or "haiku", eff
 
 def fix_model(rnd, wm):
     """#303: the last fix round (FIX_ROUNDS) uses Opus; a stronger model (fable) stays."""
@@ -96,8 +112,8 @@ def red_escalation(n, reviews):
             f"For the orchestrator: decide (fix by hand, split, or close). All reviews of #{n}:\n\n" + "\n\n".join(parts))
 
 def reviewer_model(labels):
-    """Reviewer: opus when the issue is model:opus, else sonnet."""
-    return "opus" if "model:opus" in labels else "sonnet"
+    """Reviewer: always opus (#714, via floors)."""
+    return floors("reviewer", None, None, labels)[0]
 
 def blockers(body):
     """Issue numbers in 'Blocked by: #1, #2' lines."""
@@ -2030,8 +2046,12 @@ def process_locked(issue, where="local"):
     set_where(n, where)
     log = d / "run.log"
     wt = Path(CFG["worktree_prefix"] + str(n))
-    wm, rm = model_of(issue["labels"]), reviewer_model(issue["labels"])
+    wm = floors("worker", model_of(issue["labels"]))[0]
     eff = effort_of(issue["labels"]); rstart = with_effort(remote.start, eff)   # #713
+    rm, reff = floors("reviewer", None, eff, issue["labels"])                   # #714: reviewer opus, medium (high for model:opus / effort:high)
+    rstart_rev = with_effort(remote.start, reff, rm)
+    rstart_test = with_effort(remote.start, floors("tester", "sonnet")[1])      # #714: tester medium
+    resolver = lambda k: floors("resolver", "opus" if k >= 2 else "sonnet")     # #714: sonnet medium; opus medium on the 2nd failure of the same conflict
     me = {"model": model_name(issue["labels"]), "effort": eff}                  # #713: every step event says which model + effort ran
     started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")      # remote: only issue comments after this count as the cloud worker's report
     try:
@@ -2125,7 +2145,7 @@ def process_locked(issue, where="local"):
             if tester.parse_result(hi.get("test", ""))[0] != "pass":   # #618: never merge a T1+ head without a TEST: PASS (auto-resume, #295)
                 since = utc()
                 go, level, ttext = fresh_tester().gate(hi.get("review") or red0 or "", lambda lv: remote_tester(
-                    n, pr, lv, rstart, lambda: fresh_tester().status(pr, since=since), poll_sleep, time.time, 5400, 60, ended=over))
+                    n, pr, lv, rstart_test, lambda: fresh_tester().status(pr, since=since), poll_sleep, time.time, 5400, 60, ended=over))
                 if go == "blocked": raise Blocked(f"tester ({level}): {ttext[:300]}")
                 stat(n, lane, "test_pass" if go == "merge" and level != "T0" else "test_skip" if go == "merge" else "test_fail", level=level, **me)
                 if go == "fix": step, red0 = "fix", ttext                # the #303 FIX loop below, round 1 = this fail
@@ -2139,11 +2159,11 @@ def process_locked(issue, where="local"):
                 rv = verdict = red0 or f"VERDICT: FIX see the last VERDICT comment on PR #{pr}"
             elif where == "remote":                  # #134: the reviewer is a cloud session too; its VERDICT is a PR comment
                 since = utc()
-                rv, verdict = remote_review(n, pr, red, rstart, lambda: fresh_remote().review_status(pr, since=since), poll_sleep, time.time, 3600, 60, ended=over,
+                rv, verdict = remote_review(n, pr, red, rstart_rev, lambda: fresh_remote().review_status(pr, since=since), poll_sleep, time.time, 3600, 60, ended=over,
                                             task=remote_review_prompt(n, pr, red), backoff=time.sleep)
             else:
                 rv, verdict = agent(f"review-{n}" + ("" if rnd == 1 else f"-{rnd}"), review_prompt(n, pr, red), wt, READ_TOOLS,
-                                    d / f"review{rnd}.log", "VERDICT:", n, "reviewer", rm, over=over, effort=eff)
+                                    d / f"review{rnd}.log", "VERDICT:", n, "reviewer", rm, over=over, effort=reff)
             if not (rnd == 1 and step == "fix"): (d / f"review{rnd}.out").write_text(redact(rv), encoding="utf-8")
             kind, text, extra = parse_verdict(verdict)
             if kind == "pass":
@@ -2157,7 +2177,7 @@ def process_locked(issue, where="local"):
             if kind in ("pass", "notes", "purple"):  # #618: review -> test (T1+, cloud tester on the preview) -> merge
                 since = utc()
                 go, level, ttext = fresh_tester().gate(rv or verdict, lambda lv: remote_tester(
-                    n, pr, lv, rstart, lambda: fresh_tester().status(pr, since=since), poll_sleep, time.time, 5400, 60, ended=over))
+                    n, pr, lv, rstart_test, lambda: fresh_tester().status(pr, since=since), poll_sleep, time.time, 5400, 60, ended=over))
                 if go == "merge":
                     stat(n, lane, "test_pass" if level != "T0" else "test_skip", level=level, **me); break
                 if go == "blocked": raise Blocked(f"tester ({level}): {ttext[:300]}")
@@ -2205,10 +2225,10 @@ def process_locked(issue, where="local"):
             stat(n, lane, "resolve", **me, where=where)
             if where == "remote":                        # #289: a cloud lane resolves in the cloud too (never a local worker)
                 since = utc()
-                r_ = remote_task(n, remote_resolve_prompt(n, files, branch_of(n), ci=kind["ci"]), rstart,
+                r_ = remote_task(n, remote_resolve_prompt(n, files, branch_of(n), ci=kind["ci"]), with_effort(remote.start, resolver(rounds[0])[1], resolver(rounds[0])[0]),
                                  lambda: fresh_remote().status(n, since=since), poll_sleep, time.time, 3 * 3600, 60, ended=over)
                 return r_.startswith("RESULT: DONE")
-            o, r_ = agent(f"issue-{n}-resolve{rounds[0]}", ci_fix_prompt(n, files, branch_of(n)) if kind["ci"] else resolve_prompt(n, files, branch_of(n)), wt, WORKER_TOOLS, d / f"resolve{rounds[0]}.log", "RESULT:", n, "worker", wm, over=over, effort=eff)
+            o, r_ = agent(f"issue-{n}-resolve{rounds[0]}", ci_fix_prompt(n, files, branch_of(n)) if kind["ci"] else resolve_prompt(n, files, branch_of(n)), wt, WORKER_TOOLS, d / f"resolve{rounds[0]}.log", "RESULT:", n, "worker", resolver(rounds[0])[0], over=over, effort=resolver(rounds[0])[1])
             return r_.startswith("RESULT: DONE")
         outcome = integrate_with_resolve(integrate, resolve, 2)
         if outcome[0] == "failed" and outcome[1] == 8:            # #344: new code after the PASS -> one quick cloud re-review of the new head, never STUCK for it
@@ -2217,7 +2237,7 @@ def process_locked(issue, where="local"):
             if not new: raise Blocked(integrate_failure(outcome[1], outcome[2]))
             stat(n, lane, "rereview")
             since = utc()
-            rv, verdict = remote_review(n, pr, "", rstart, lambda: fresh_remote().review_status(pr, since=since), poll_sleep, time.time, 3600, 60,
+            rv, verdict = remote_review(n, pr, "", rstart_rev, lambda: fresh_remote().review_status(pr, since=since), poll_sleep, time.time, 3600, 60,
                                         ended=over, task=rereview_prompt(n, pr, reviewed["sha"], new), backoff=time.sleep)
             (d / "rereview.out").write_text(redact(rv), encoding="utf-8")
             kind_, text_, extra_ = parse_verdict(verdict)

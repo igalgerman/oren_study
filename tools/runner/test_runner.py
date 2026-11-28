@@ -430,7 +430,17 @@ assert r.model_of(["model:bogus"]) == "sonnet"
 assert r.model_of(["model:fable"]) == "claude-fable-5-2"
 assert r.model_of(["model:sonnet", "model:opus"]) == "opus"                      # most capable wins if two labels
 assert r.reviewer_model(["model:opus"]) == "opus"
-assert r.reviewer_model(["model:haiku"]) == "sonnet" and r.reviewer_model([]) == "sonnet" and r.reviewer_model(["model:fable"]) == "sonnet"
+assert r.reviewer_model(["model:haiku"]) == r.reviewer_model([]) == r.reviewer_model(["model:fable"]) == "opus"   # #714: always opus
+# #714: floors(role, model, effort, labels) table
+assert r.floors("reviewer", "sonnet", None, []) == ("opus", "medium")
+assert r.floors("reviewer", "sonnet", "low", []) == ("opus", "medium")
+assert r.floors("reviewer", "sonnet", "medium", ["model:opus"]) == ("opus", "high")
+assert r.floors("reviewer", "sonnet", None, ["effort:xhigh"]) == ("opus", "high")
+assert r.floors("worker", "sonnet", "low") == ("sonnet", "medium")
+assert r.floors("worker", "haiku", "high") == ("sonnet", "high") and r.floors("resolver", "haiku")[0] == "sonnet"
+assert r.floors("dashboard_ai", "haiku", None) == ("haiku", "medium") and "dashboard_ai" in r.STATUS_ROLES
+assert r.floors("resolver", "sonnet") == ("sonnet", "medium") and r.floors("resolver", "opus") == ("opus", "medium")
+assert r.floors("tester", None)[0] == "sonnet"
 assert r.model_name(["model:fable"]) == "fable" and r.model_name([]) == "sonnet"
 # #713: effort label -> level; default medium; never below medium; most capable wins
 assert r.effort_of([]) == "medium" and r.effort_of(["pack", "P1"]) == "medium"

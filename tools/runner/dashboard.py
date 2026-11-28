@@ -703,11 +703,11 @@ AI_PROMPT = ("You audit an automatic software-work pipeline for its owner (a par
 
 def ai_refresh(numbers, model=None):
     """Ask Claude (no tools, no saved session) for the assessment; store it with time and model. -> dict or None."""
-    model = model or R.CFG.get("ai_model", "haiku")
+    model, effort = R.floors("dashboard_ai", model or R.CFG.get("ai_model", "haiku"))   # #714: Haiku allowed (status summary), effort medium
     claude = shutil.which("claude") or "claude"
     try:
         # the prompt goes on stdin: --tools takes a list and would swallow a prompt argument after it
-        p = subprocess.run([claude, "-p", "--model", model, "--no-session-persistence", "--tools", ""], input=AI_PROMPT + numbers,
+        p = subprocess.run([claude, "-p", "--model", model, "--effort", effort, "--no-session-persistence", "--tools", ""], input=AI_PROMPT + numbers,
                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180, creationflags=R.no_window())
     except (OSError, subprocess.TimeoutExpired):
         return None

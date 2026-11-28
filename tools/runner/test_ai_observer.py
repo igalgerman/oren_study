@@ -55,7 +55,7 @@ OQ.GH = fake_gh
 fc = A.RUN = FakeClaude("OBSERVER: #50 waits for a colour choice -> owner: choose blue or green\nOBSERVER: #51 red check -> worker: fix")
 assert A.run_once(told.append, logs.append, now=10**6) == ["OBSERVER: #50 waits for a colour choice -> owner: choose blue or green", "OBSERVER: #51 red check -> worker: fix"]
 cmd, kw = fc.calls[0]
-assert cmd[1:6] == ["-p", "--model", "sonnet", "--no-session-persistence", "--tools"] and kw["timeout"] == 600 and "OBSERVER:" in kw["input"]
+assert cmd[1:8] == ["-p", "--model", "sonnet", "--effort", "medium", "--no-session-persistence", "--tools"] and kw["timeout"] == 600 and "OBSERVER:" in kw["input"]
 assert "Bash(gh:*)" in cmd and "Bash(python tools/runner/remote.py status:*)" in cmd and "Bash(gh issue comment:*)" in cmd[cmd.index("--disallowedTools"):]
 assert "Edit" not in cmd and "Write" not in cmd
 assert "#51 red check" in A.LAST.read_text(encoding="utf-8") and len(told) == 1 and "#50" in told[0] and "#51" in told[0]
@@ -271,3 +271,8 @@ assert A.close_wrong_owner_q(gh_old) == 0 and len(marks) == 1                   
 A.STATE = tmp / "ai_observer.603b.json"
 assert A.close_wrong_owner_q(lambda *a, **kw: (1, "boom")) is None and not A.load_state().get("owner_q_cleaned")   # gh error: retried later
 print("ok #603 owner questions only when the owner is the doer")
+
+# #714: the observer's command line carries --effort medium (sonnet)
+_c = A.command()
+assert _c[_c.index("--effort") + 1] == "medium" and _c[_c.index("--model") + 1] == "sonnet", _c
+print("ok #714 observer effort")
