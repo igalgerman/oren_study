@@ -40,6 +40,6 @@ Data 25-28 Nov: above 600 lines the first-time rate is 22% Sonnet / 38% Opus. An
 
 Helpers (sub-agents): a worker MAY start its own helpers for independent read-only work (search, screenshots, a content check), Haiku or Sonnet, never more expensive than the worker, at most 2 at a time, only when it saves real time. Writing code stays with the worker.
 
-Reviewers: always Opus.
+Reviewers: always Opus, medium; high for design/UI/UX, security, save, sync (`model:opus` or `effort:high` issues). Floors live in `runner.floors()` (#714).
 
 Cost rule: a redo costs more than Opus; split big tasks first, then pick the table's model.

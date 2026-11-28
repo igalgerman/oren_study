@@ -30,7 +30,9 @@ def parse_level(text):
     return hits[-1] if hits and hits[-1] in LEVELS else DEFAULT
 
 def needs_test(level): return level != "T0"
-def model_for(level): return "opus" if level == "T3" else "sonnet"
+def model_for(level):
+    """T1/T2 Sonnet, T3 Opus; effort medium (#714: runner.floors, via with_effort in the runner)."""
+    return "opus" if level == "T3" else "sonnet"
 def session_name(n): return f"test-{n}"
 def preview_url(pr): return f"https://pr-{pr}.oren-game.pages.dev"   # .github/workflows/preview.yml deploys branch pr-<n>
 
