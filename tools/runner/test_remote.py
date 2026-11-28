@@ -305,3 +305,23 @@ assert not any("wait" == c[0][1] for c in f.calls)
 f = Fake(("run --bg", 3, "name_taken"))
 assert r.launch(262, "x", cwd=".", run=f, name="resolve-262") == {"ok": False, "session": "", "url": "", "error": "name_taken"}
 print("ok #289 launch")
+
+# #713: --effort in the argv; a start refused with it retries once without it
+ran = []
+def _run(args, **k): ran.append(args); return (0, CREATED)
+r.start(7, "t", ".", run=_run, effort="high")
+cmd = next(a for a in ran if "--bg" in a)
+assert "--effort high" in " ".join(cmd), cmd
+ran.clear(); r.start(7, "t", ".", run=_run)
+assert "--effort" not in " ".join(next(a for a in ran if "--bg" in a))
+ran.clear(); r.launch(7, "t", ".", run=_run, effort="xhigh")
+assert "--effort xhigh" in " ".join(next(a for a in ran if "--bg" in a))
+ran.clear()
+def _run2(args, **k):
+    ran.append(args)
+    if "read" in args: return (0, CREATED if "--effort" not in " ".join([a for a in ran if "--bg" in a][-1]) else "Error: unknown option '--effort'")
+    return (0, "")
+s = r.start(7, "t", ".", run=_run2, effort="high")
+bgs = [" ".join(a) for a in ran if "--bg" in a]
+assert s["ok"] and len(bgs) == 2 and "--effort" in bgs[0] and "--effort" not in bgs[1], bgs
+print("ok remote effort")

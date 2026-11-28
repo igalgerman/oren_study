@@ -54,6 +54,11 @@ function fakeD1() {
       ok('#675 summary: the read token gives the same summary as the parent key', JSON.stringify(await (await f('/api/log/summary?days=7', RK)).json()) === JSON.stringify(await (await f('/api/log/summary?days=7', H)).json()));
       ok('#675 no secrets set = every read refused (an empty key never matches)', (await f('/api/log/summary', { headers: { 'x-admin-key': '' } }, { ...env, DIAG_KEY: undefined, LOG_READ_KEY: undefined })).status === 401
         && (await f('/api/log/summary', RK, { ...env, LOG_READ_KEY: '' })).status === 401); }
+    // #715 the read token is read-only: summary 200, but a write or delete with it is refused and stores nothing
+    { const RK = { headers: { 'x-admin-key': 'rd-key-675' } }, n0 = rows().length;
+      ok('#715 LOG_READ_KEY reads /api/log/summary (200)', (await f('/api/log/summary?days=7', RK)).status === 200);
+      const bad = []; for (const mt of ['DELETE', 'PUT', 'PATCH']) for (const pth of ['/api/log', '/api/log/summary', '/api/log/raw']) { const r = await f(pth, { method: mt, headers: { 'x-admin-key': 'rd-key-675' } }); if (r.status < 400) bad.push(mt + ' ' + pth + ' ' + r.status); }
+      ok('#715 LOG_READ_KEY is refused on any write (DELETE/PUT/PATCH on every log path fail, nothing stored or removed)', !bad.length && rows().length === n0, bad.join(', ') + ' ' + rows().length + '/' + n0); }
     const s = await (await f('/api/log/summary?days=7', H)).json(); const d = s.days && s.days[0];
     ok('summary: one day with sessions, events and play minutes', s.days.length === 1 && d.sessions === 1 && d.events === 13 && d.min > 0.2 && d.min < 0.4, JSON.stringify(d));
     ok('summary: right/wrong per mission, questions and answer time', d.missions['add-0'] && d.missions['add-0'].open === 1 && d.missions['add-0'].q === 2 && d.missions['add-0'].right === 1 && d.missions['add-0'].wrong === 1 && d.missions['add-0'].ms === 3000 && d.right === 1 && d.wrong === 1, JSON.stringify(d.missions));
@@ -133,6 +138,16 @@ function fakeD1() {
     ok('#641 session start is the first event of the session and has the screen size', raw[raw.length - 1] && raw[raw.length - 1].k === 'ss' && ss.scw > 0 && ss.sch > 0, JSON.stringify(ss)); }
   { const ms = K('mis')[0] || {};
     ok('#641 mission start says why it was picked (the tap and screen that opened it, or auto)', ms.auto === 1 || (!!ms.tg && !!ms.via), JSON.stringify(ms)); }
+  // #730 mission ends: mdone / mskip / mleft, each written once (DAYLOG end paths)
+  { const r = await p.evaluate(() => { const O = window.OREN, DL = window.DAYLOG; const ids = window.TAL.dailyPool().slice(0, 4); if (DL.cur()) DL.end('b'); const n0 = O.evBuf().length;
+      DL.begin(ids[0]); DL.end('c', 3); DL.end('c', 3);      /* done (2nd end ignored) */
+      DL.begin(ids[1]); DL.end('k');                         /* skipped */
+      DL.begin(ids[2]); DL.cur().n = 2; DL.end('q');         /* left in the middle */
+      DL.begin(ids[3]); DL.end('q');                         /* opened and closed at once = left */
+      DL.begin(ids[0]); DL.end('p'); DL.begin(ids[1]); DL.end('b');   /* parent skip and break: no event */
+      return { ids, ev: O.evBuf().slice(n0).filter(e => /^m(done|skip|left)$/.test(e.k)).map(e => [e.k, e.m, typeof e.sec]) }; });
+    ok('#730 mdone, mskip, mleft: one event per mission end, with mission id and seconds; parent skip and break write none',
+      JSON.stringify(r.ev) === JSON.stringify([['mdone', r.ids[0], 'number'], ['mskip', r.ids[1], 'number'], ['mleft', r.ids[2], 'number'], ['mleft', r.ids[3], 'number']]), JSON.stringify(r)); }
   ok('session end on page hide', K('se').length === 1 && K('se')[0].dur >= 0);
   ok('screen changes with time spent', K('scr').some(e => e.s === 'sPlay') && K('scr').every(e => typeof e.ms === 'number'), JSON.stringify(K('scr').slice(0, 3)));
   ok('answers carry the time to answer and the question id', K('ans').length === 3 && K('ans').every(e => e.ms >= 0 && e.q && e.m === q0.m), JSON.stringify(K('ans')));

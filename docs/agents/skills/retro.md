@@ -9,6 +9,9 @@ disable-model-invocation: true
 
 The user has asked for a **retrospective**. You are suggesting improvements to the coding agent's **environment** to improve future runs.
 
+**Play data never goes to GitHub.** the play log, play numbers, the kid's answers or words, session recordings and per-day summaries are written ONLY to the private data folder of `tools/playlog.py` (its `HOME`), never to an issue, PR, comment, label, commit or file in this repo. A finding posted to GitHub is a conclusion about the game, as a task or proposal ('make mission X easier'), with no raw numbers, answers, minutes per day or quoted words of the kid. Cloud sessions post only the conclusion line (the detail can be recomputed with the read key). CI: `tools/ci/test_no_playdata_to_github.py` (#786).
+The retro posts only conclusions (no numbers, answers, minutes, kid words) and writes any detail only to the private data folder.
+
 ## Steps
 
 1. Call the Skill tool with `writing-for-agents` for the writing style guide.

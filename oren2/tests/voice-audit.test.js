@@ -136,7 +136,7 @@ const INIT = () => {
       all(path610.auto) && all(path610.top) && path610.card1.join(' ').includes(path610.want[0]) && helped(path610.help) && helped(path610.readHelp);
   }
   if (HALF === 1) { await ev(`(()=>{document.querySelector('#ov').hidden=true;window.TAL_arcade(()=>{});})()`, 400);
-    for (const g of ['balloon', 'soccer', 'basket', 'swim', 'mole', 'frog']) { await ev(`(()=>{window.TAL_arcade(()=>{});window.__arc.start('${g}');})()`, 400); await ev(`window.__arc.finish(9)`, 200); } }
+    for (const g of ['balloon', 'soccer', 'basket', 'swim', 'mole', 'frog', 'hockey']) { await ev(`(()=>{window.TAL_arcade(()=>{});window.__arc.start('${g}');})()`, 400); await ev(`window.__arc.finish(9)`, 200); } }
   await sleep(500);
 
   // check every clip

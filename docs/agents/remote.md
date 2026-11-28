@@ -71,10 +71,10 @@ qwin does not send the answer itself for these issues (no double send); a cloud 
 
 ## Cloud desks: inbox + ask from the phone (#306)
 `tools/runner/desks.py` (called by the watchdog every minute, in a thread; test `test_desks.py`). Two long-lived cloud sessions:
-`Oren inbox (cloud)` (creates issues from the owner's Hebrew/English messages, one backlog, no duplicates) and
-`Oren ask (cloud)` (read-only status answers in Hebrew). Their prompts are `desks.prompt()`.
-- ONE pinned issue `Oren cloud: phone links + live status` (label `manual`): the two session links + `dashboard.py --text`,
-  body edited in place every `status_minutes` (10; 0 = off). Nothing is committed. The ask session reads it.
+`Game inbox (cloud)` (creates issues from the owner's Hebrew/English messages, one backlog, no duplicates) and
+`Game ask (cloud)` (read-only status answers in Hebrew). Their prompts are `desks.prompt()`.
+- ONE pinned issue `Cloud desks: phone links` (label `manual`, found by its marker `<!-- desks #306 -->`, not by title): ONLY the two session links + an 'updated' line (#785: no status text, no titles),
+  body edited in place every `status_minutes` (10; 0 = off). Nothing is committed. The ask session answers from the issue/PR lists; the live panel is on the PC.
 - Keep-alive: a desk without a session is started (`remote.start(..., name="desk-<role>")`, window `desk-<role>`, label `role=desk`);
   every `desk_probe_hours` (12) a short `PING` goes to it (`remote.send`); no `ok` from the send = ended -> a new session, links updated.
   A refused start is retried after 30 min. State: `.runs/desks_state.json`; panel/dashboard line: `.runs/desks.json` (`cloud desks: inbox ok · ask down`).
@@ -90,3 +90,14 @@ qwin does not send the answer itself for these issues (no double send); a cloud 
   counts as running for `conflicts.RESOLVE_WAIT_MIN` = 40 min while the head does not move) and the resolve / red-CI fix inside a
   cloud lane's flow (`runner.remote_task`). Local `run-<n>` lanes (`local_lanes`) keep their local worker.
 - The orchestrator's reviews and fixes: `runner.py <n> --cloud-review` / `runner.py <n> --cloud-fix="<points>"` (ORCHESTRATOR.md).
+
+## Play log key for cloud sessions (#715)
+- Cloud sessions (runner lanes, reviews, scheduled tasks) read the play log with the environment variable `LOG_READ_KEY`: set it in
+  the Claude Code cloud environment (claude.ai/code > the environment > edit > environment variables), same value as the Cloudflare
+  Pages secret `LOG_READ_KEY` (project oren-game) and the PC's `.env`. The owner sets it; no session ever sees or writes the value.
+- It is **read-only**: `oren2/cf/tools/make_worker.py` accepts it for GET under `/api/log` only; every write is refused
+  (`oren2/tests/eventlog.test.js`).
+- Use `python3 tools/playlog.py day YYYY-MM-DD` (reads the variable first, then `.env`) or `GET /api/log/summary` with header
+  `x-admin-key: $LOG_READ_KEY`. Never print, log, commit or post the key. Not set: `playlog.py` prints the single line
+  `LOG_READ_KEY missing in the cloud environment` and stops (no 401 loop); report that line, do not ask for the key.
+- Comments and issues get aggregates only (counts, ids, times), never raw events or kid answers.

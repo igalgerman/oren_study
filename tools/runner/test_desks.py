@@ -14,24 +14,41 @@ for need in ("open AND closed", "## Acceptance", "ready-for-agent", "P0", "pack"
 for need in ("tier-1", "tier-2", "tier-3", "unsure", "one-line reason"):   # #437: the inbox picks the tier and says why
     assert need in p, need
 a = D.prompt("ask", 777)
+for need in ("effort:", "split", "600 lines"):   # #718: the inbox sets model + effort and splits big tasks
+    assert need in p, need
 assert "#777" in a and "READ-ONLY" in a and "Hebrew" in a and "PING" in a, a
-assert "20 min" in a                                   # tells the owner when the status is old (PC off)
+assert "do not use it for status" in a and "issue and PR lists" in a   # #785: no pinned-body status source
+assert "live panel is on the PC" in a
 assert '"' not in p and '"' not in a                   # remote.start turns " into ' (Windows argv)
 
 # ---- one line for the panel / dashboard ----
 assert D.desk_line({}) == "cloud desks: inbox down · ask down"
 assert D.desk_line({"inbox": {"session": "s1", "ok": True}, "ask": {"session": "s2", "ok": False}}) == "cloud desks: inbox ok · ask down"
 
-# ---- the pinned issue body: links + live status ----
+# ---- the pinned issue body: only the two links + updated line (#785) ----
 st = {"inbox": {"session": "s1", "url": "https://claude.ai/code/s1", "ok": True},
       "ask": {"session": "s2", "url": "https://claude.ai/code/s2", "ok": True}}
-b = D.issue_body(st, "Open issues: 5\nRunning: #9", 0)
+b = D.issue_body(st, 0)
 assert "https://claude.ai/code/s1" in b and "https://claude.ai/code/s2" in b
-assert D.INBOX_TITLE in b and D.ASK_TITLE in b
-assert "Open issues: 5" in b and "1970-01-01T00:00:00Z" in b and D.MARK in b
-assert "```" not in "Open issues: 5"                   # status sits in one code block
-assert len(D.issue_body(st, "x" * 100000, 0)) < 60000   # GitHub body limit 65536
-assert "(no status yet)" in D.issue_body({}, None, 0)
+assert D.INBOX_TITLE in b and D.ASK_TITLE in b and "1970-01-01T00:00:00Z" in b and D.MARK in b
+assert "```" not in b and "Live status" not in b
+SECRET = "Fix SECRET-TITLE stuck: SECRET-REASON"
+assert "SECRET" not in D.issue_body(st, 0)
+assert not hasattr(D, "status_text")                   # the dashboard call is gone from desks.py
+
+# ---- find by marker, not by title (#785) ----
+for title in ("Oren cloud: phone links + live status", D.TITLE):
+    assert D.pick_issue([{"number": 5, "title": "x", "body": "other"}, {"number": 317, "title": title, "body": D.MARK + "\nbody"}]) == 317
+assert D.pick_issue([{"number": 5, "body": "x"}]) == 0   # none -> find_issue would create ONE
+assert D.pick_issue([{"number": 9, "body": ""}], number=9) == 9
+calls_gh = []
+_gh = D.R.gh
+D.R.gh = lambda *a, **k: calls_gh.append(a) or (0, json.dumps([{"number": 317, "body": D.MARK}]))
+assert D.find_issue() == 317 and not any(c[:2] == ("issue", "create") for c in calls_gh)
+D.R.gh = _gh
+
+# ---- no kid name in titles / constants (#785) ----
+for t in (D.TITLE, D.INBOX_TITLE, D.ASK_TITLE): assert "oren" not in t.lower(), t
 
 # ---- tick: starts missing desks, publishes every status_minutes, probes and restarts ----
 class World:
@@ -46,7 +63,7 @@ class World:
             return {"ok": True, "session": f"session_{k}", "url": f"https://claude.ai/code/session_{k}", "error": ""}
         def probe(session): self.probes.append(session); return self.probe_ok
         return dict(now=now, state=self.state, save=lambda s: None, start=start, probe=probe,
-                    status_text=lambda: "Open issues: 3", find_issue=lambda: self.issue,
+                    find_issue=lambda: self.issue,
                     edit=lambda n, body: self.edits.append((n, body)) or 0, log=self.logs.append,
                     status_minutes=10, probe_hours=12)
 
@@ -55,7 +72,7 @@ D.tick(w.d(1000))
 assert [r for r, _ in w.starts] == ["inbox", "ask"], w.starts
 assert "#777" in w.starts[1][1]                        # the ask prompt names the status issue
 assert w.state["issue"] == 777 and w.state["inbox"]["ok"] and w.state["ask"]["session"] == "session_2"
-assert len(w.edits) == 1 and w.edits[0][0] == 777 and "session_1" in w.edits[0][1] and "Open issues: 3" in w.edits[0][1]
+assert len(w.edits) == 1 and w.edits[0][0] == 777 and "session_1" in w.edits[0][1] and "Open issues" not in w.edits[0][1]
 
 D.tick(w.d(1000 + 5 * 60))                             # 5 min later: nothing due
 assert len(w.starts) == 2 and len(w.edits) == 1 and w.probes == []

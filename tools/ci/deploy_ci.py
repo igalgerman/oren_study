@@ -10,6 +10,8 @@
 import json, os, secrets, subprocess, sys, time, urllib.error, urllib.request
 
 UA = {"user-agent": "oren-deploy-smoke"}
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "runner"))
+import scrub   # #783: the kid's name never reaches a GitHub write; in Actions the names come from env PRIVATE_NAMES (a secret)
 
 def parse(out):
     """deploy.sh prints progress lines first and 'ok <url>' last (#50); it warns 'D1 not bound' (#109)."""
@@ -121,10 +123,10 @@ def tour_issue(env, run=subprocess.run):
     found = run(["gh", "issue", "list", "--state", "open", "--search", f'in:title "{a["title"]}"', "--json", "number", "--jq", ".[0].number"],
                 capture_output=True, text=True).stdout.strip()
     if found:
-        run(["gh", "issue", "comment", found, "--body", "The tour failed again on a rerun: " + env.get("REPRO", "?")]); return a, found
+        run(scrub.scrub_cmd(["gh", "issue", "comment", found, "--body", "The tour failed again on a rerun: " + env.get("REPRO", "?")])[0]); return a, found
     cmd = ["gh", "issue", "create", "--title", a["title"], "--body", a["body"]]
     for l in a["labels"]: cmd += ["--label", l]
-    run(cmd); return a, ""
+    run(scrub.scrub_cmd(cmd)[0]); return a, ""
 
 def _append(var, text):
     p = os.environ.get(var)

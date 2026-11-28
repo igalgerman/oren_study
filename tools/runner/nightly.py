@@ -38,6 +38,7 @@ LANES = ("core", "pack", "review")
 
 PROMPT = """You are the NIGHTLY RETRO of the Oren study automatic flow ({date}). Read-only: you change NOTHING.
 Follow docs/agents/skills/retro.md for the DAY below, then docs/agents/skills/handoff.md for the two handoffs. Repo: {repo}.
+Play data never goes to GitHub (#786): RETRO lines are conclusions about the game only, no play numbers, answers, minutes or kid words; detail goes only to the private data folder (never to GitHub).
 Every proposal must point to a concrete moment (a log line, an issue #n, a time HH:MM). No evidence -> leave it out.
 Output exactly this, nothing else:
 RETRO: <proposal, one line> | EVIDENCE: <log line / #n / HH:MM>
@@ -102,6 +103,13 @@ def parse(out):
     insp = out[hi + 18:ho if ho > hi else len(out)].strip() if hi >= 0 else ""
     orch = out[ho + 21:hi if hi > ho else len(out)].strip() if ho >= 0 else ""
     return props[:MAX_PROPOSALS], insp, orch
+
+def models_line_now(now=None):
+    """#717: the nightly MODELS: line (stats.jsonl + labels only, no Claude)."""
+    try:
+        import stats
+        return stats.models_line(stats.models_data(stats.read_events(R.RUNS / "stats.jsonl"), stats.issue_labels(), now), now)
+    except Exception as e: return f"MODELS: unavailable ({e!r})"
 
 def retro_body(props, date):
     lines = [f"Nightly retro (#219) of {date}, following docs/agents/skills/retro.md. Ranked proposals, each with its evidence. "
@@ -184,7 +192,8 @@ def build_prompt(now):
                          trends=trends_summary(now), observer=_read(R.RUNS / "ai_observer.last").strip() or "(none)", transcripts=transcripts(now))
 
 def command():
-    return [shutil.which("claude") or "claude", "-p", "--model", MODEL, "--no-session-persistence",
+    m, eff = R.floors("retro", MODEL)    # #714
+    return [shutil.which("claude") or "claude", "-p", "--model", m, "--effort", eff, "--no-session-persistence", "--output-format", "json",
             "--tools", "Read,Grep,Glob,Bash", "--allowedTools", *TOOLS]
 
 def ask_claude(prompt):
@@ -193,7 +202,8 @@ def ask_claude(prompt):
     except subprocess.TimeoutExpired: return False, f"timeout after {TIMEOUT_S // 60} min"
     except OSError as e: return False, f"could not start claude: {e!r}"
     if p.returncode: return False, f"claude exit {p.returncode}: {((p.stderr or '') + (p.stdout or '')).strip()[:200]}"
-    return True, p.stdout or ""
+    import usage_entities as UE
+    return True, UE.unwrap(p.stdout or "", "retro", MODEL)
 
 def gh(*args):
     return GH(["gh", *args, "--repo", R.REPO]) if args[0] != "api" else GH(["gh", *args])
@@ -234,6 +244,14 @@ def orchestrator_handoff_pr(text, date, log):
     log(f"handoff: PR {url or 'failed: ' + out[:120]}")
     return url
 
+def usage_tell(tell):
+    """#708: one `USAGE:` line, the top 5 entities of the day (from .runs/usage_by_entity.json)."""
+    try:
+        import usage_entities as UE
+        t = UE.load()
+        if t: tell(UE.usage_line(t["rows"]))
+    except Exception: pass
+
 def run_once(tell=print, log=print, now=None):
     """One nightly retro + handoff. -> parsed result or None when claude failed."""
     now = now or time.time(); date = time.strftime("%Y-%m-%d", time.localtime(now))
@@ -248,6 +266,7 @@ def run_once(tell=print, log=print, now=None):
     pr = orchestrator_handoff_pr(orch, date, log) if orch else None
     tell(f"NIGHTLY RETRO {date}: {len(props)} proposal(s)" + (f" in {url}" if url else "") + (f"; handoff PR {pr}" if pr else "")
          + ". Turn the accepted ones into tickets.")
+    usage_tell(tell)
     return res
 
 RELAY_MIN, MISSING_H = 10, 2
@@ -304,6 +323,7 @@ def cloud_retro(tell, log, hour, now):
     pr = orchestrator_handoff_pr(orch, date, log) if orch else None
     tell(f"NIGHTLY RETRO {date} (cloud task): {len(props)} proposal(s) in {found.get('url') or '#' + str(found.get('number'))}"
          + (f"; handoff PR {pr}" if pr else "") + ". Turn the accepted ones into tickets.")
+    usage_tell(tell)
     return True
 
 def retro_if_due(tell, log, hour=None, now=None, where=None):
@@ -340,7 +360,7 @@ def night_report_if_due(tell, log, hour=None, now=None, data=parked_data):
     d = data()
     if d is None: log("night report: GitHub unreadable"); return None
     st["parked_day"] = time.strftime("%Y-%m-%d", time.localtime(now)); save_state(st)
-    text = parked.night_report(*d, now)
+    text = parked.night_report(*d, now) + "\n" + models_line_now(now)
     tell(text); log(text[:300])
     return text
 

@@ -17,6 +17,8 @@ print("ok level")
 # who tests: T0 nobody; T1/T2 Sonnet; T3 Opus with two browsers
 assert not T.needs_test("T0") and all(T.needs_test(l) for l in ("T1", "T2", "T3"))
 assert T.model_for("T1") == T.model_for("T2") == "sonnet" and T.model_for("T3") == "opus"
+import runner as _R
+assert _R.floors("tester", T.model_for("T3"), "low") == ("opus", "medium") and _R.floors("tester", T.model_for("T1")) == ("sonnet", "medium")   # #714
 assert T.session_name(618) == "test-618"
 assert T.preview_url(640) == "https://pr-640.oren-game.pages.dev"
 print("ok roles")
@@ -64,6 +66,22 @@ assert (step, level) == ("fix", "T3") and red.startswith("VERDICT: FIX") and "pa
 step, _, why = T.gate("TEST: T1", lambda l: ("tester posted nothing in 60 min", ""))
 assert step == "blocked" and "60 min" in why, why
 print("ok gate")
+
+# #746: sync / speech / home-redraw code in the diff raises the level to T3, whatever the reviewer wrote
+def d(path, line, sign="+"): return f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n{sign}{line}\n"
+for line in ("O.on('synced',()=>limCheck());", "if(x)emit('synced');", "async function famPull(){", "function say(t,lang){", "function hush(){",
+             "O.hush&&O.hush();", "O.quiet(home);", "window.OREN.famNow()", "mergeIn(snap.data());"):
+    assert T.touches_t3(d("oren2/talents.js", line)), line
+assert T.touches_t3(d("oren2/talents.js", "O.hush();", "-")), "a removed line counts"
+assert T.touches_t3(d("oren2/cf/functions/api/save/[id].js", "x"))
+assert not T.touches_t3(d("oren2/talents.js", "const a = 1;")) and not T.touches_t3("") and not T.touches_t3(None)
+assert not T.touches_t3(d("oren2/cf/public/index.html", "function say(t){")), "the built copy alone does not count"
+assert T.raise_level("T0", d("oren2/talents.js", "O.hush();")) == "T3" and T.raise_level("T1", "") == "T1"
+ran = []
+def tester2(l): ran.append(l); return ("ok", "TEST: PASS")
+assert T.gate("TEST: T0\nVERDICT: PASS", tester2, d("oren2/index.html", "emit('synced');"))[:2] == ("merge", "T3") and ran == ["T3"]
+assert T.gate("TEST: T0\nVERDICT: PASS", tester2, "")[:2] == ("merge", "T0") and ran == ["T3"]
+print("ok t3 rule")
 
 # after deploy: a tour fail opens a P0 bug with the repro; it undoes the last merge only when the tour passed on the previous deploy
 a = T.tour_fail_actions("parent-live: panel did not update", "abc1234def", "Fix the skip button (#614)", prev="pass")

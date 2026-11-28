@@ -14,6 +14,7 @@ import trends as T          # stuck reasons from runner.log
 import remote as RM         # cloud lanes (#136)
 import parked as PK         # #282: batch members, manual, later
 import stuck as SK          # #280: leftovers = open issues with no live state
+import usage_entities as UE   # #708: usage per entity
 import tester as TS         # #618: bugs found by the tester vs by the owner
 
 OUT = R.RUNS / "dashboard.html"
@@ -256,8 +257,10 @@ def text(m):
              f"Average: build {S.fmt(m['avg_build'])}, review {S.fmt(m['avg_review'])}, start to merge {S.fmt(m['avg_merge'])}",
              f"Bugs found by the tester: {m['bug_sources']['tester']} · reported by the owner from the live game: {m['bug_sources']['owner']}"]
     d = m["last_deploy"]
+    if m.get("privacy"): lines.append(m["privacy"])                     # #783: privacy scrub: on (N names) | no names file · ALARM
     if m.get("github"): lines.append(m["github"])                     # #329: calls/min, graphql/core left, alarm < 20%
     if m.get("canary"): lines.append("Canary: " + m["canary"])          # #330: flow ok HH:MM | NEEDS-ATTENTION ...
+    if m.get("usage"): lines.append(m["usage"])                         # #708: usage per entity (top rows, NEEDS-ATTENTION)
     if m.get("pc"): lines.append(m["pc"])                               # #293: PC: CPU x% · RAM y% free (· ALARM)
     v = m.get("voice")                                                  # #400: kid sentences with no recording (after the last pregen)
     if v and v["n"]: lines.append(f"Voice: {v['text']} (first 20 in the deploy log)")
@@ -540,7 +543,7 @@ def page(m):
             f'<title>Oren game: status {hhmm(now)}</title><style>{CSS}</style></head><body><main>'
             f'<h1>Oren game: work status</h1><div class="sub">Updated {time.strftime("%a %d %b %H:%M", time.localtime(now))} (Israel time). '
             f'For fresh numbers run tools\\dashboard.cmd again.</div>'
-            f'{top}<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}{" · " + e(m["governor"]) if m.get("governor") else ""}</div>{f'<div class="sub">{e(m["github"])}</div>' if m.get("github") else ""}{f'<div class="sub">Canary: {e(m["canary"])}</div>' if m.get("canary") else ""}{pc_div(m.get('pc'), e)}{qcard}{needs}{bottom}{timeline}{cloud}{_health_card(m)}{_ai_card(m)}'
+            f'{top}<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}{" · " + e(m["governor"]) if m.get("governor") else ""}</div>{pc_div(m.get('privacy'), e)}{f'<div class="sub">{e(m["github"])}</div>' if m.get("github") else ""}{f'<div class="sub">Canary: {e(m["canary"])}</div>' if m.get("canary") else ""}{pc_div(m.get('pc'), e)}{f'<pre class="sub"{chr(32)}style="white-space:pre-wrap">{e(m["usage"])}</pre>' if m.get("usage") else ""}{qcard}{needs}{bottom}{timeline}{cloud}{_health_card(m)}{_ai_card(m)}'
             f'<h2 class="more">More details</h2><div class="sub">Everything else is here. Click a line to open it.</div>'
             f'{lists}{recent}{truth}{charts}{speed}{_ov_card(m)}{how}</main></body></html>')
 
@@ -703,15 +706,15 @@ AI_PROMPT = ("You audit an automatic software-work pipeline for its owner (a par
 
 def ai_refresh(numbers, model=None):
     """Ask Claude (no tools, no saved session) for the assessment; store it with time and model. -> dict or None."""
-    model = model or R.CFG.get("ai_model", "haiku")
+    model, effort = R.floors("dashboard_ai", model or R.CFG.get("ai_model", "haiku"))   # #714: Haiku allowed (status summary), effort medium
     claude = shutil.which("claude") or "claude"
     try:
         # the prompt goes on stdin: --tools takes a list and would swallow a prompt argument after it
-        p = subprocess.run([claude, "-p", "--model", model, "--no-session-persistence", "--tools", ""], input=AI_PROMPT + numbers,
+        p = subprocess.run([claude, "-p", "--model", model, "--effort", effort, "--no-session-persistence", "--output-format", "json", "--tools", ""], input=AI_PROMPT + numbers,
                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180, creationflags=R.no_window())
     except (OSError, subprocess.TimeoutExpired):
         return None
-    out = (p.stdout or "").strip()
+    out = UE.unwrap(p.stdout or "", "dashboard-ai", model).strip()
     if p.returncode or not out: return None
     data = {"at": time.time(), "model": model, "text": out[:3000]}
     AI_FILE.write_text(json.dumps(data), encoding="utf-8")
@@ -744,8 +747,11 @@ def gather():
     except Exception: m["pr_conflicts"] = []
     m["governor"] = governor_line()                         # #239
     import ghcache; m["github"] = ghcache.dashboard_line()  # #329
+    import scrub; m["privacy"] = scrub.status_line()        # #783
     try: m["desks"] = json.loads((R.RUNS / "desks.json").read_text(encoding="utf-8")).get("text", "")   # #306 (written by desks.py)
     except Exception: m["desks"] = ""
+    try: m["usage"] = UE.text(UE.load())                                     # #708 (written by the watchdog's usage_tick)
+    except Exception: m["usage"] = ""
     try: m["canary"] = json.loads((R.RUNS / "canary.json").read_text(encoding="utf-8")).get("text", "")   # #330 (written by canary.py)
     except Exception: m["canary"] = ""
     import pcload; m["pc"] = pc_line(pcload.load(), now)    # #293 (written by the watchdog)
