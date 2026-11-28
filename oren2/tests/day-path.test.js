@@ -169,6 +169,52 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
   ok('ship: saved and restored on reload',rs.s.n===2&&rs.s.x.length===1&&rs.shp===2&&rs.shx===1,JSON.stringify(rs));await ctx2.close();
   const mg=await p.evaluate(()=>{const O=window.OREN;O.mergeIn({v:4,t:(+O.save.t||0)+1e6,ship:{n:5,x:['fish'],d:'2000-01-02'}});return window.SHIP.get().n;});
   ok('ship: family merge takes the newest save',mg===5,String(mg));}
+ // --- #664 the bag: 12 artifacts won at the end of the path (one per two ship pieces), one tap uses one, the effect shows at once on home ---
+ {const W=require('./walk');
+  await p.evaluate(()=>{const O=window.OREN;delete O.save.bag;delete O.save.ship;window.__said=[];const sy=O.say;if(!window.__bagSay){window.__bagSay=1;O.say=(t,...a)=>{window.__said.push(String(t||''));return sy.call(O,t,...a);};}document.querySelector('#ov').hidden=true;O.showMap();});await sleep(200);
+  ok('bag: 12 artifacts, each with a name, an effect and a line',await p.evaluate(()=>{const A=window.BAG.ARTS;return A.length===12&&new Set(A.map(a=>a.id)).size===12&&A.every(a=>a.e&&a.n&&a.t&&a.m);}));
+  ok('bag: no artifact yet -> no bag button on home',await p.locator('#sHome .bgbtn').count()===0);
+  const old=await p.evaluate(()=>{const O=window.OREN,r=[];for(const v of [undefined,'x',{h:'a',fx:5},null,{h:['nope','lamp','lamp'],fx:{id:'hat',d:'x'}}]){if(v===undefined)delete O.save.bag;else O.save.bag=v;O.showMap();r.push(Array.isArray(window.BAG.get().h)&&!window.BAG.fxNow());}return {r,h:window.BAG.get().h};});
+  ok('bag: an old or broken save is an empty (or cleaned) bag, no crash',old.r.every(Boolean)&&old.h.length===1&&old.h[0]==='lamp',JSON.stringify(old));
+  await p.evaluate(()=>{delete window.OREN.save.bag;delete window.OREN.save.ship;});
+  const fin=async()=>{await p.evaluate(()=>{const T=window.TAL,O=window.OREN;delete T.S().daily;T.chooseDay('math');const d=T.S().daily;d.done=d.t.map(()=>1);d.sg=1;O.save.gems=0;document.querySelector('#ov').hidden=true;O.showMap();});await sleep(150);
+    await p.locator('#sHome .bigbtn.huge',{hasText:'סוֹף הַסִּפּוּר'}).click({force:true});await sleep(250);};
+  await fin();
+  const w1=await p.evaluate(()=>({h:window.BAG.get().h,card:!!document.querySelector('#ov .qwin .bgnew'),txt:(document.querySelector('#ov .qwin .bgnew')||{}).textContent,said:window.__said.join('|')}));
+  ok('bag: the first path wins artifact 1, shown with a small surprise (gift box + pop) and spoken',w1.h.join()==='lamp'&&w1.card&&w1.txt.includes('פָּנָס קֶסֶם')&&w1.said.includes('חֵפֶץ חָדָשׁ בַּתִּיק'),JSON.stringify(w1).slice(0,300));
+  await p.locator('#ov .bigbtn').click();await sleep(250);
+  await p.evaluate(()=>{window.OREN.save.ship.d='2000-01-01';});await fin();
+  ok('bag: the second path (ship piece 2) wins nothing, no card',await p.evaluate(()=>window.BAG.get().h.length===1&&!document.querySelector('#ov .qwin .bgnew')));
+  await p.locator('#ov .bigbtn').click();await sleep(250);
+  await p.evaluate(()=>{window.OREN.save.ship.d='2000-01-01';});await fin();
+  ok('bag: the third path (ship piece 3) wins artifact 2',await p.evaluate(()=>window.BAG.get().h.join()==='lamp,rainbow'));
+  await p.locator('#ov .bigbtn').click();await sleep(250);await p.evaluate(()=>{document.querySelector('#ov').hidden=true;window.OREN.showMap();});await sleep(150);
+  ok('bag: the bag button shows on home once he has an artifact',await p.locator('#sHome .bgbtn').count()===1);
+  await p.locator('#sHome .bgbtn').click();await sleep(200);
+  const bg=await p.evaluate(()=>({slots:document.querySelectorAll('#ov .bgs').length,won:document.querySelectorAll('#ov .bgs.won').length,other:document.querySelectorAll('#ov input,#ov select,#ov textarea').length,ttl:document.querySelector('#ov h2').textContent,x:!!document.querySelector('#ov .bgx')}));
+  ok('bag: one bag screen, 12 slots (2 won), a close button, nothing else',bg.slots===12&&bg.won===2&&bg.other===0&&bg.x&&/[ְ-ּ]/.test(bg.ttl),JSON.stringify(bg));
+  await p.evaluate(()=>{window.__said=[];});await p.locator('#ov .bgs.lock').first().click();await sleep(150);
+  ok('bag: a slot not won yet says to keep going, the bag stays open',await p.evaluate(()=>!document.querySelector('#ov').hidden&&window.__said.some(x=>x.includes('עוֹד לֹא מָצָאנוּ'))));
+  await p.evaluate(()=>{window.__said=[];});await p.locator('#ov .bgs.won[data-id="lamp"]').click();await sleep(250);
+  const u1=await p.evaluate(()=>({ov:document.querySelector('#ov').hidden,home:!document.querySelector('#sHome').hidden,fx:!!document.querySelector('#sHome .bgfx.bgm-glow'),save:window.OREN.save.bag.fx,said:window.__said.join('|')}));
+  ok('bag: one tap uses it at once: the bag closes, the effect shows on home, the friend says it',u1.ov&&u1.home&&u1.fx&&u1.save.id==='lamp'&&u1.said.includes('הַבַּיִת מֵאִיר'),JSON.stringify(u1));
+  ok('bag: the effect never takes a tap (the path button still works under it)',await p.evaluate(()=>getComputedStyle(document.querySelector('#sHome .bgfx')).pointerEvents==='none'));
+  // every artifact: usable, a visible effect, one at a time, spoken (walks all 12)
+  await p.evaluate(()=>{window.OREN.save.bag.h=window.BAG.ARTS.map(a=>a.id);});
+  const w=await W.walkScreens(await p.evaluate(()=>window.BAG.ARTS.map(a=>a.id)),async id=>{await p.evaluate(()=>{window.__said=[];window.OREN.showMap();});await p.locator('#sHome .bgbtn').click();await sleep(80);await p.locator('#ov .bgs.won[data-id="'+id+'"]').click();await sleep(120);},
+    async id=>p.evaluate(id=>{const a=window.BAG.art(id),fx=document.querySelectorAll('#sHome .bgfx'),n=document.querySelectorAll('#sHome .bgfx .bgp').length;
+      const shown=a.m==='hop'?!!document.querySelector('#sHome .bghop'):a.m==='pulse'?true:fx.length===1&&fx[0].dataset.id===id&&(a.m==='glow'||n>0);
+      return shown&&window.OREN.save.bag.fx.id===id&&window.__said.some(x=>x.includes(a.t))?true:'no effect or voice';},id));
+  res.push(W.walkLine('bag: every artifact can be used, shows an effect and is spoken',w));
+  await sleep(100);ok('bag: the compass makes the big button pulse',await p.evaluate(()=>{window.BAG.use('compass');return new Promise(r=>setTimeout(()=>r(!!document.querySelector('#sHome .bgpulse')||!document.querySelector('#sHome .bigbtn.huge')),100));}));
+  ok('bag: the effect lasts the day only, and the choice is saved',await p.evaluate(()=>{const O=window.OREN,s=window.BAG.get();const a=!!window.BAG.fxNow();s.fx.d='2000-01-01';const b=!!window.BAG.fxNow();return a&&!b;}));
+  const kt=await p.evaluate(()=>{const B=window.BAG,L=new Set(window.TAL.choiceList()),sp=window.TAL.spk,all=B.says();return {n:all.length,miss:all.filter(x=>!L.has(sp(x))),nonik:all.filter(x=>!/[ְ-ּ]/.test(x)),names:B.ARTS.filter(a=>!L.has(window.TAL.lab?window.TAL.lab(a.n):a.n)).length};});
+  ok('bag: kid text has nikud and every sentence is in the pregen list',kt.n>=27&&!kt.miss.length&&!kt.nonik.length,JSON.stringify(kt).slice(0,300));
+  const saved=await p.evaluate(()=>{window.OREN.save.bag.h=['lamp','rainbow'];window.OREN.persist();return localStorage.getItem('oren4-v1');});
+  const ctx3=await b.newContext(L.VIEWPORT);await ctx3.addInitScript(s=>{try{if(!sessionStorage.getItem('k')){localStorage.clear();localStorage.setItem('oren4-v1',s);sessionStorage.setItem('k','1');}}catch(e){};window.__fast=true;window.__noFamily=true;},saved);
+  const p3=await ctx3.newPage();p3.on('pageerror',e=>errs.push(e.message));await p3.goto(L.URL);await p3.waitForFunction(()=>window.TAL&&window.TAL.S&&window.BAG);await sleep(300);
+  ok('bag: saved and restored on reload',await p3.evaluate(()=>window.BAG.get().h.join()==='lamp,rainbow'),'');await ctx3.close();
+  ok('bag: family merge takes the newest save',await p.evaluate(()=>{const O=window.OREN;O.mergeIn({v:4,t:(+O.save.t||0)+1e6,bag:{h:['lamp','rainbow','kite']}});return window.BAG.get().h.join()==='lamp,rainbow,kite';}));}
  // --- #392 tap a built piece on home: the friend says what it is and how he earned it; a story door shows the item that opens it ---
  {await p.evaluate(()=>{const O=window.OREN;O.save.ship={n:5,x:['fish'],d:'2000-01-02'};window.__said=[];const sy=O.say;O.say=(t,...a)=>{window.__said.push(String(t||''));return sy.call(O,t,...a);};document.querySelector('#ov').hidden=true;O.showMap();});await sleep(200);
   const ln=await p.evaluate(()=>{const S=window.SHIP,L=new Set(window.TAL.choiceList()),sp=window.TAL.spk,NK=/[ְ-ּ]/;
