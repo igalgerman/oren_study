@@ -226,6 +226,27 @@ async function playingNoRows(b, errs) { const KV2 = new Map(), s2 = serve(KV2); 
     await B.evaluate(() => document.querySelector('#sPar .pdweek').scrollIntoView()); await sleep(200); await B.screenshot({ path: path.join(L.SHOTDIR, 'pday-week-phone.png') });
     await A.evaluate(() => window.TAL.parentPanel('day')); await sleep(300); await A.screenshot({ path: path.join(L.SHOTDIR, 'pday-learn-desktop.png'), fullPage: true });
     await A.evaluate(() => document.querySelector('#sPar .pdweek').scrollIntoView()); await sleep(200); await A.screenshot({ path: path.join(L.SHOTDIR, 'pday-week-desktop.png') }); }
+  // ---------- #660 a fixture day: summary on top, details on tap, same numbers ----------
+  { const fx = await A.evaluate(ids => { const D = window.DAYLOG, O = window.OREN; const d = (() => { const y = new Date(); y.setDate(y.getDate() - 2); return y.getFullYear() + '-' + String(y.getMonth() + 1).padStart(2, '0') + '-' + String(y.getDate()).padStart(2, '0'); })();
+      D.add(d, [600, ids.r, 3, 4, 4, 0, 'c', { sc: 300 }]); D.add(d, [620, ids.e, 0, 1, 5, 2, 'q', { sc: 180 }]); D.add(d, [640, ids.c, 1, 3, 3, 1, 'c', { sc: 90, ez: 'h' }]); D.add(d, [650, ids.c, 0, 0, 0, 0, 'k']);
+      O.persist(); O.famNow(); return { d, hard: D.nameOf(ids.e), hard2: D.nameOf(ids.c) }; }, ids); await sleep(800);
+    await B.evaluate(d => { window.PDAY.vd = d; window.TAL.parentPanel('day'); }, fx.d); await sleep(400);
+    const r = await B.evaluate(() => { const v = document.querySelector('#sPar .pday'), sm = v.querySelector('.dlsum'), dt = v.querySelector('details.dldet');
+      return { sum: sm ? sm.textContent : '', open: dt ? dt.open : null, rows: [...v.querySelectorAll('.dllog .dlrow')].map(x => x.textContent), top: !!sm && !!dt && (sm.compareDocumentPosition(dt) & 4) > 0 }; });
+    ok('#660 the day has a short summary above the details', r.top && /2 משימות הושלמו/.test(r.sum) && /1 יצא באמצע/.test(r.sum) && /דילג על 1/.test(r.sum), r.sum);
+    ok('#660 the summary numbers match the lines: 8 of 12 right (4+1+3 of 4+5+3), help ×3', /8 מתוך 12 נכון/.test(r.sum) && /עזרה ×3/.test(r.sum), r.sum);
+    ok('#660 what was hard: the half-right mission and the one he said was hard', r.sum.includes(fx.hard) && r.sum.includes(fx.hard2) && /קשה לו/.test(r.sum), r.sum);
+    ok('#660 details on tap: closed on another day, the lines in time order with minutes, left-in-the-middle and what he skipped',
+      r.open === false && r.rows.length === 4 && /5 דק׳/.test(r.rows[0]) && /3 דק׳/.test(r.rows[1]) && /יצא באמצע/.test(r.rows[1]) && /היה לו קשה/.test(r.rows[1]) && /אמר: היה קשה/.test(r.rows[2]) && /2 דק׳/.test(r.rows[2]), JSON.stringify(r.rows));
+    await B.locator('#sPar details.dldet > summary').click(); await sleep(200);
+    ok('#660 a tap opens the details', await B.evaluate(() => document.querySelector('#sPar details.dldet').open && document.querySelector('#sPar .dllog .dlrow').offsetHeight > 0));
+    { const t = await B.evaluate(() => { window.PDAY.vd = null; window.TAL.parentPanel('day'); const v = document.querySelector('#sPar'), dt = v.querySelector('details.dldet'), n = k => v.querySelectorAll('.dllog .dlrow.dl-' + k).length, sm = (v.querySelector('.dlsum') || {}).textContent || '';
+        const g = re => { const m = re.exec(sm); return m ? +m[1] : 0; };
+        return { open: dt && dt.open, done: n('c'), sdone: /משימה אחת הושלמה/.test(sm) ? 1 : g(/(\d+) משימות הושלמו/), left: n('q'), sleft: g(/(\d+) יצא באמצע/), sm }; });
+      ok('#660 today stays open (live rows + skip buttons) and the summary counts equal the lines (no contradiction)', t.open === true && t.done > 0 && t.done === t.sdone && t.left === t.sleft, JSON.stringify(t)); }
+    if (process.env.SHOTS) { await B.evaluate(d => { window.PDAY.vd = d; window.TAL.parentPanel('day'); }, fx.d); await sleep(300); await B.screenshot({ path: path.join(L.SHOTDIR, 'pday-sum-phone.png'), fullPage: true }); await A.evaluate(d => { window.PDAY.vd = d; window.TAL.parentPanel('day'); }, fx.d); await sleep(300); await A.screenshot({ path: path.join(L.SHOTDIR, 'pday-sum-desktop.png'), fullPage: true }); }
+    await B.evaluate(() => { window.PDAY.vd = null; window.TAL.parentPanel('day'); }); await sleep(300); }
+
   await playingNoRows(b, errs);
   ok('no page errors', !errs.length, errs.join(' | '));
   await b.close(); srv.close(); L.finish('pday', res);
