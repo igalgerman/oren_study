@@ -14,6 +14,15 @@
   - Reviewers: GREEN/BLUE/PURPLE/RED (#149); every RED comes with the concrete fix.
   - Inspector: watch trends and the checkers themselves; fix the system end to end, verify it in real runs.
 
+## Owner load (owner, 28 Nov 2026; audit `reports/10-owner-load.md`, #906)
+- Only these reach the owner (KEEP): money or paid limits, secrets/keys/logins, the kid's privacy, irreversible deletes, clicks only his account can make, and the merge OK of a Tier R / `owner-merge` PR after its Opus review. Everything else the agents decide by a written rule and say what they decided.
+- A reversible kid-facing design choice with a recommended option: take the recommended one (Simplicity first), build and merge it, and list it in the weekly owner round as a notice he can override (an override is a new issue). This is the agents' decision, not his approval; it never covers a KEEP item.
+- Tuning (lanes, `max_core`, governor numbers) follows the config rules; the orchestrator decides inside the bounds; `config.toml` stays his override.
+- Every manual step for the owner is one item in the owner to-do list (#895: project, repo, at most three short Hebrew steps, a done check), never only free text in an issue. Before asking for a setting, secret or login, read its state by API first; already done = no ask.
+- Observer and watchdog findings never go to the owner questions; the orchestrator checks and handles them.
+- One decision = one question (Hebrew, English original folded). Never ask again because an answer seems lost: fix the record and alarm the inspector.
+- Tests of the question channel never ask the real owner (test chat, test key).
+
 ## Simplicity first
 - Keep everything simple. Do not complicate things that don't need it.
 - Do not add a feature, option, button or setting unless it was asked for or is clearly needed. No features "just to add".
