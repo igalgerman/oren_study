@@ -335,10 +335,8 @@ const storyHelp=lv=>{const r=O.readHelp?O.readHelp():{m:'try',w:25};
   if(r.m==='read')return {band:'read',line:0,all:0,wrong:['line','all']};
   if(r.m==='alone')return {band:'alone',line:null,all:null,wrong:['line','all']};
   const b=helpOf(lv);return b.all==null?b:Object.assign({},b,{line:b.line&&r.w,all:b.band==='low'?Math.round(r.w*.4):r.w});};
-/* #731 story chapters: n lines -> [[from,to],...]; up to 4 lines stay one chapter, longer ones are cut in pieces of at most 3 lines; a chapter's reading time (a slow reader, 2 s a word) stays under STORY_CHAPTER_S */
-T.STORY_CHAPTER_S=240;
+/* #731 story chapters: n lines -> [[from,to],...]; up to 4 lines stay one chapter, longer ones are cut in pieces of at most 3 lines */
 T.storyChapters=n=>{if(n<=4)return [[0,n]];const k=Math.ceil(n/3),out=[];let a=0;for(let i=0;i<k;i++){const b=a+Math.ceil((n-a)/(k-i));out.push([a,b]);a=b;}return out;};
-T.storyChapterSecs=lines=>lines.reduce((t,l)=>t+String(l).replace(/<[^>]+>/g,' ').split(/\s+/).filter(Boolean).length*2,0);
 const STORY_SAY='קְרָא אֶת הַסִּפּוּר, וְאַחַר כָּךְ עוֹנִים עַל שְׁאֵלוֹת.';
 const storyLv=()=>{try{const R=window.READBANK2;return R&&R.level?R.level('story')|0||1:1;}catch(e){return 1;}};
 let SS=null;   /* the story being played: {id, t0, lv, help, wrong, heard, log} */
@@ -351,7 +349,7 @@ const stoks=line=>String(line||'').replace(/<[^>]+>/g,' ').split(/\s+/).map(swd)
 /* every word of every story (bedtime + the story bank), for the voice pregen: a tapped word is said alone */
 T.storyWordList=()=>{const out=new Set([HW_T]);const R=window.READBANK2;[...STORIES,...((R&&R.stories)||[])].forEach(st=>{st.s.forEach(l=>stoks(l).forEach(w=>out.add(w)));(st.hw||[]).forEach(x=>out.add(x[0]));});return [...out];};
 T.HW_T=HW_T;
-function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), title (html), name (quiz title), tp (plain title), goal, spr:[html,html], lines:[html], vl:[vocalized lines, when lines may lack nikud], hw:[[word, picture]] (#420), q:[{pr, say, a, ds}], back, qback, end(err, heard): after the last question (#360)} */
+function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), title (html), name (quiz title), tp (plain title), goal, spr:[html,html], lines:[html], vl:[vocalized lines, when lines may lack nikud], hw:[[word, picture]] (#420), q:[{pr, say, a, ds}], back (a path story: on to the next mission, #731), end(err, heard): after the last question (#360)} */
   const lv=storyLv(),help=storyHelp(lv);const ss=SS={id:o.id,t0:Date.now(),lv,help,wrong:false,heard:false,log:{t:o.tp,g:o.goal||'',lv,r:'a'}};
   if(window.DAYLOG&&DAYLOG.note)DAYLOG.note(o.act,ss.log);
   const shows=k=>(ss.wrong&&help.wrong.includes(k))||(help[k]!=null&&Date.now()-ss.t0>=D(help[k]*1000));
@@ -374,14 +372,14 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
   const peek=wrap=>{const s=wrap.parentNode,say0=O.sayNow;O.hush();wrap.hidden=true;const box=h('div','stpeek');s.appendChild(box);O.sayNow='';
     const bk=h('button','bigbtn stback',ICON.play+'<span>הַמְשֵׁךְ</span>');bk.onclick=()=>{T.readStop&&T.readStop();box.remove();wrap.hidden=false;O.sayNow=say0;};
     page(box,bk);s.scrollTop=0;};
-  const questions=()=>{O.hush();T.readStop&&T.readStop();quiz({id:o.id,title:o.name,bg:'final',back:o.qback||o.back,n:o.q.length,
+  const questions=()=>{O.hush();T.readStop&&T.readStop();quiz({id:o.id,title:o.name,bg:'final',back:o.back,n:o.q.length,
     gen:i=>{const q=o.q[i];/* the index, not a counter: "again" restarts at 0 (#350) */const opts=shuffle([q.a,...q.ds]);return {pr:`<div class="sent">${q.pr}</div>`,opts,ans:opts.indexOf(q.a),cls:'tx',say:q.say,key:q.pr};},
     onWrong:()=>{ss.wrong=true;},end:err=>{if(o.end)o.end(err,ss.heard);},side:{lbl:'📖 <span>לַסִּפּוּר</span>',open:peek}});};
   O.setScreen('sTal','final',o.back);T.hudT('סִפּוּר');const s=$('#sTal');s.innerHTML='';
   /* #420: "words we will meet": 2-3 hard words of the story with a picture, a tap says the word */
   if(o.hw&&o.hw.length){const c=h('div','sthw',`<div class="sthwt">${HW_T}</div>`);const r=h('div','sthwr');
     o.hw.forEach(([w,pic])=>{const b=h('button','hwt',`<span class="hwp">${pic}</span><span class="hww">${w}</span>`);b.type='button';b.onclick=()=>{O.sfx.pop(1);O.say(w);};r.appendChild(b);});c.appendChild(r);s.appendChild(c);}
-  /* #731 chapters: a long story is read in chapters of about 3 lines (<= STORY_CHAPTER_S each); the one button of a chapter is "continue", the last one leads to the questions */
+  /* #731 chapters: a long story is read in chapters of about 3 lines; the one button of a chapter is "continue", the last one leads to the questions */
   const ch=T.storyChapters(o.lines.length);
   const chapter=k=>{if(k){s.querySelectorAll('.story,.strow,.sthw').forEach(x=>x.remove());T.readStop&&T.readStop();O.hush();}
     const go=h('button','bigbtn stgo',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=k<ch.length-1?()=>chapter(k+1):questions;page(s,go,ch[k]);s.scrollTop=0;};
@@ -389,7 +387,7 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
   if(help.band!=='read'&&window.FRIEND&&FRIEND.readFirst){O.sayNow=T.spk(FRIEND.READFIRST);FRIEND.readFirst();}else O.sayNow=STORY_SAY;}   /* read to him: no "try alone first" */
 T.addSay([STORY_SAY]);T.storyScreen=storyScreen;T.READ_HELP=READ_HELP;T.helpOf=helpOf;T.storyHelp=storyHelp;window.__story={get ss(){return SS;}};
 function readStory(k,back){const st=STORIES[k];storyScreen({act:'story-'+k,id:'story-'+k,title:st.t,name:st.t,tp:T.plainHe(st.t),goal:st.goal,spr:st.spr.map(x=>ALLSPR(x)),lines:st.s,hw:st.hw,
-  q:st.q.map(([pr,a,ds])=>({pr,a,ds})),back});}   /* #731: after the questions the mission goes on (back), it does not drop him in the stories list to pick the next one */
+  q:st.q.map(([pr,a,ds])=>({pr,a,ds})),back});}   /* #731: after the questions go back where the story was opened from (the list, or the next path mission), never to a list that offers one more story */
 function openStories(back){O.setScreen('sTal','final',back);T.hudT('סִפּוּרֵי עֶרֶב');const s=$('#sTal');s.innerHTML='';s.appendChild(h('div','whead',`<span class="gd">${X.moon}</span><h1>סִפּוּרֵי עֶרֶב</h1>`));
   const g=h('div','acts');STORIES.forEach((st,k)=>{const n=(T.S().tl['story-'+k]||{}).s|0;const c=h('button','actc',`<span class="ai">${ALLSPR(st.spr[0])}</span><span class="an">${st.t}</span><span class="st">${[0,1,2].map(j=>j<n?SPR.star:SPR.starOff).join('')}</span>`);c.onclick=()=>readStory(k,()=>openStories(back));g.appendChild(c);});s.appendChild(g);}
 T.STORIES=STORIES;T.readStory=readStory;
