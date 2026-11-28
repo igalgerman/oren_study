@@ -68,7 +68,7 @@ PERMISSION_MODE = "bypassPermissions"
 def start_command(model=None, effort=None):
     """#778: the bash -c line of every cloud start ($0 = claude, $1 = task). The mode is explicit: without it the CLI forwards the
     owner's settings default ('auto') to the cloud session and the classifier's asks land on the owner's phone (many lanes = many asks).
-    The cloud VM is the sandbox; the repo hook block-dangerous-git.sh and the prompt rules (NO_MERGE) still apply."""
+    The cloud VM is the sandbox; the repo hook .claude/hooks/guard.py (#800) and the prompt rules (NO_MERGE) still apply."""
     return (f'unset {TOKEN_VAR}; "$0" ' + (f"--model {model} " if model else "") + (f"--effort {effort} " if effort else "")
             + f"--permission-mode {PERMISSION_MODE} " + '--cloud "$1"')
 
