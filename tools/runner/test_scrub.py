@@ -91,8 +91,8 @@ print("ok R.run with a fake gh")
 # ---------- 5: no names file: ONE warning per day ----------
 (T / "home" / "private_names.txt").unlink()
 said = []; t0 = 1_800_000_000
-assert S.warn_once(t0, said.append) and not S.warn_once(t0 + 3600, said.append) and said == ["privacy scrub: no names file"]
-assert S.warn_once(t0 + 86400 * 2, said.append) and len(said) == 2, "a new day warns again"
+assert S.warn_once(t0, said.append) and not S.warn_once(t0 + 1800, said.append) and said == ["privacy scrub: no names file"]
+assert S.warn_once(t0 + 86400 * 2, said.append) and len(said) == 2, "an hour later it warns again"
 assert "no names file" in (Path(os.environ["RUNNER_RUNS"]) / "privacy_scrub.log").read_text(encoding="utf-8")
 (T / "home" / "private_names.txt").write_text(f"{LAT}\n{HEB}\n", encoding="utf-8")
 print("ok warning once a day")
@@ -131,4 +131,16 @@ assert ("issue", "edit", "8", "--title", "the kid here") in calls and any(c[:3] 
 assert W.privacy_tick(now + 60, cache2, fake_gh) == 0, "once per 10 min"
 assert "sweep fixed 2" in S.status_line()
 print("ok sweep")
+# #876: require() is loud when the list is empty and never shows names
+import subprocess
+try: S.require([]); raise SystemExit("require([]) must raise")
+except RuntimeError as e: assert "PRIVATE_NAMES" in str(e)
+assert S.require(["Secretname"]) == 1
+env = {k: v for k, v in os.environ.items() if k not in ("PRIVATE_NAMES", "PRIVATE_NAMES_FILE")}
+nofile = str(T / "none.txt")
+r = subprocess.run([sys.executable, str(Path(S.__file__)), "require"], env={**env, "PRIVATE_NAMES_FILE": nofile}, capture_output=True, text=True)
+assert r.returncode != 0 and "PRIVATE_NAMES" in r.stderr, r
+r = subprocess.run([sys.executable, str(Path(S.__file__)), "require"], env={**env, "PRIVATE_NAMES_FILE": nofile, "PRIVATE_NAMES": "Secretname,שםסודי"}, capture_output=True, text=True)
+assert r.returncode == 0 and "Secretname" not in r.stdout + r.stderr and "שםסודי" not in r.stdout + r.stderr, r
+print("ok require")
 print("all scrub tests ok")

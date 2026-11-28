@@ -808,7 +808,7 @@ def pass_choice(issues, local_lanes, remote_lanes, gv, core_held_n, locked, wher
 def pass_now(issues, gv=None):
     """#279: pass_choice with this PC's live inputs (governor, cloud refusal pause, PC load, core slots, issue locks)."""
     gv = gv or governor_now()
-    return pass_choice(issues, local_lanes_now(pcload.alarmed(RUNS)), lanes_now(gv["lanes"], refusal_state(), time.time()), gv,
+    return pass_choice(issues, local_lanes_now(pcload.alarmed(RUNS)), lanes_now(gv["lanes"], refusal_state(), time.time(), dead_state()), gv,
                        core_held(), lambda n: FileLock(f"issue-{n}").held_by_other())
 
 def stop_filter(chosen, gv):
@@ -1033,10 +1033,12 @@ def fresh_self():
     """#364: this runner's own helpers (issue_over) as runner.py is on disk now."""
     return fresh(sys.modules[__name__], log_line)
 
-def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=None):
+def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=None, life=None, dead_s=None):
     """Pure loop (#133): poll the GitHub-based status until it is done/stuck/question. Returns that status dict, or {'state': 'timeout'}.
-    ended() True (#234: issue closed / lane PR merged elsewhere) -> {'state': 'ended'}."""
-    start = clock()
+    ended() True (#234: issue closed / lane PR merged elsewhere) -> {'state': 'ended'}.
+    #841: life() = a signature of the session's signs of life (comments, branch heads); it and the status unchanged for dead_s -> {'state': 'dead', 'minutes': n}.
+    A life() that fails is no news either way (never counts as death)."""
+    start = clock(); sig = None; seen = start
     while True:
         try: st = get_status()
         except subprocess.TimeoutExpired: st = {}         # #284: a gh timeout under load: just poll again
@@ -1046,12 +1048,22 @@ def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=N
             return {"state": "ended", "line": "", "pr": st.get("pr")}
         if clock() - start >= timeout_s:
             return {"state": "timeout", "line": "", "pr": st.get("pr")}
+        if life and dead_s:
+            try: cur = (st.get("state"), (st.get("pr") or {}).get("number"), life())
+            except Exception: cur = None
+            if cur is not None and cur != sig: sig, seen = cur, clock()
+            elif cur is not None and clock() - seen >= dead_s:
+                return {"state": "dead", "line": "", "pr": st.get("pr"), "minutes": int((clock() - seen) // 60)}
         sleep(poll_s)
 
 class Refused(Exception):
     """#137: the cloud refused to start a session (CLI error, usage limit, no network): run locally or wait, never STUCK."""
 
-def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None, comment=None, has_draft=None):
+class Dead(Exception):
+    """#841: the cloud session showed no sign of life for `minutes`: the caller puts the issue back in the queue."""
+    def __init__(self, url, minutes): super().__init__(f"{url} silent {minutes} min"); self.url, self.minutes = url, minutes
+
+def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None, comment=None, has_draft=None, life=None, dead_s=None):
     """Start the cloud worker and wait for its comment. Returns the marker line (`RESULT: ...` / `QUESTION: ...`) like agent() does.
     on_start(start result) keeps the session id (#134: FIX points are sent back to this session).
     #747: has_draft() true (lane/<n> already has a draft PR but no RESULT) = resume at worker: the new session continues on that branch.
@@ -1063,8 +1075,11 @@ def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3
             raise Refused(s.get("error", "?"))
         if on_start: on_start(s)
         urls.append(s.get("url", "") or "?")
-        st = wait_remote(get_status, sleep, clock, timeout_s, poll_s, ended)
+        st = wait_remote(get_status, sleep, clock, timeout_s, poll_s, ended, life, dead_s)
         if st["state"] == "ended": raise Ended("cloud worker")
+        if st["state"] == "dead":
+            if comment: comment(f"Runner: the cloud session {urls[-1]} showed no sign of life for {st['minutes']} min (no comment, commit, branch or status change); back in the queue.")
+            raise Dead(urls[-1], st["minutes"])
         if st["state"] != "timeout":
             return st["line"]
         if attempt == 1 and comment:
@@ -1083,9 +1098,48 @@ def remote_paused(state, now):
 def note_due(state, now):
     return now - state.get("noted", -REFUSE_PAUSE_S) >= REFUSE_PAUSE_S
 
-def lanes_now(remote_lanes, state, now):
-    """Remote slots for this pass: none while a refused start is less than an hour old (no retry storm)."""
-    return 0 if remote_paused(state, now) else remote_lanes
+def lanes_now(remote_lanes, state, now, dead=None):
+    """Remote slots for this pass: none while a refused start is less than an hour old (no retry storm), nor while dead lanes pause starts (#841)."""
+    return 0 if remote_paused(state, now) or dead_paused(dead or {}, now) else remote_lanes
+
+# #841: dead cloud sessions. 2+ within DEAD_WINDOW_S -> no new cloud starts for DEAD_WINDOW_S, one alert per DEAD_NOTE_S.
+DEAD_MINUTES = int(CFG.get("dead_minutes", 20))
+DEAD_WINDOW_S = 1800
+DEAD_NOTE_S = 3 * 3600
+
+def dead_state():
+    try: return json.loads((RUNS / "dead_lanes.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError): return {}
+
+def dead_paused(state, now):
+    return now < state.get("until", 0)
+
+def dead_why(state, now):
+    n = len([t for t in state.get("times", []) if now - t < DEAD_WINDOW_S])
+    return f"dead lanes: {n}" if dead_paused(state, now) and n else ""
+
+def note_dead(state, now):
+    """Pure: one more dead session at `now` -> (new state, dead count in the last 30 min, send the alert?)."""
+    times = [t for t in state.get("times", []) if now - t < DEAD_WINDOW_S] + [now]
+    new = {**state, "times": times}
+    if len(times) >= 2: new["until"] = now + DEAD_WINDOW_S
+    alert = len(times) >= 2 and now - state.get("noted", -DEAD_NOTE_S) >= DEAD_NOTE_S
+    if alert: new["noted"] = now
+    return new, len(times), alert
+
+def record_dead(n, now=None):
+    """Remember a dead session; at 2 in 30 min pause starts (the pass logs `dead lanes: N`) and tell Telegram + the orchestrator once per 3 h."""
+    now = time.time() if now is None else now
+    st, count, alert = note_dead(dead_state(), now)
+    RUNS.mkdir(parents=True, exist_ok=True)
+    (RUNS / "dead_lanes.json").write_text(json.dumps(st), encoding="utf-8")
+    if alert:
+        msg = f"dead lanes: {count} cloud sessions silent {DEAD_MINUTES}+ min within 30 min (last #{n}); no new cloud starts for 30 min"
+        try:
+            import telegram; telegram.send(msg)
+        except Exception: pass
+        tell_orchestrator(msg)
+    return count
 
 def record_refusal(n, error, now=None):
     """Remember the refusal (pauses cloud starts for an hour); one orchestrator note + watchdog.log line per hour. -> True when noted."""
@@ -2357,9 +2411,19 @@ def process_locked(issue, where="local"):
             try:
                 res = remote_worker(n, lane, "bug" in issue["labels"], rstart, lambda: fresh_remote().status(n, since=started),
                                     poll_sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over,
-                                    comment=lambda b: gh("issue", "comment", str(n), "--body", b), has_draft=lambda: draft_pr(n))
+                                    comment=lambda b: gh("issue", "comment", str(n), "--body", b), has_draft=lambda: draft_pr(n),
+                                    life=lambda: remote.life(n), dead_s=DEAD_MINUTES * 60)
                 remote_question(res)
                 out = res
+            except Dead as e:                            # #841: silent cloud session: one auto-resume, back to the queue (a draft PR is kept: the next run continues on it)
+                k = _count(n, "resumes")
+                if k >= AUTO_RESUMES: raise Blocked(f"cloud worker silent {e.minutes} min ({e.url}); already auto-resumed {k} times")
+                _resume_file(n, "resumes").parent.mkdir(parents=True, exist_ok=True)
+                _resume_file(n, "resumes").write_text(str(k + 1))
+                record_dead(n)
+                stat(n, lane, "waiting", why="dead session")
+                set_labels(n, add=["ready-for-agent"], remove=["in-progress"])
+                return f"WAITING: cloud session silent {e.minutes} min, back in the queue (auto-resume {k + 1}/{AUTO_RESUMES})"
             except Refused as e:                         # #137: local lane free -> run here; else give the issue back, it waits
                 if refusal_pauses(str(e)): record_refusal(n, str(e))   # #293: not when the PC was the cause
                 if pcload.alarmed(RUNS) or not local_lane_free(n):      # #293: no new local work while the PC is overloaded
@@ -2756,6 +2820,8 @@ def run_pass():
     for r in (gv.get("ai") or {}).get("raise", []):          # #707: raises only add model:/effort: labels above the inbox ones
         for i in issues:
             if i["number"] == r["issue"]: i["labels"] += [f"model:{r['model']}"] * bool(r.get("model")) + [f"effort:{r['effort']}"] * bool(r.get("effort"))
+    dw = dead_why(dead_state(), time.time())      # #841: dead cloud sessions pause cloud starts
+    if dw: gv["why"] = dw; log_line(f"{now()} {dw}: no new cloud starts")
     pairs = pass_now(issues, gv)                  # #279: the same lane check as the watchdog (#137 refusal pause, #293 PC load, #269 stop)
     wmap = {c["number"]: w for c, w in pairs}
     chosen = [c for c, _ in pairs]

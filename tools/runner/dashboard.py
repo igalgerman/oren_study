@@ -139,7 +139,8 @@ def model(issues, prs, events, now, log_text="", cloud=(), qnums=frozenset()):
         "last_deploy": max(deploys, key=lambda e: e["ts"]) if deploys else None,
         "fc": fc,
         "fc_p0": forecast(by_prio["P0"], p0_closed, [], now, history_h) if by_prio["P0"] else None, "p0_open": by_prio["P0"],
-        "truth": {"started": started, "by_runner": by_runner, "fixes": fixes, "passes": passes, "red_escalated": red_esc,
+        "truth": {"started": started, "by_runner": by_runner, "merged_by": S.merged_by([e for e in events if e.get("issue") not in can], now),   # #851
+                  "by_runner": by_runner, "fixes": fixes, "passes": passes, "red_escalated": red_esc,
                   "canary": sum(within(m, 24) for m in can_merged),
                   "deploys_ok": sum(1 for d in deploys if d["ts"] > now - 86400 and d.get("ok")),
                   "deploys_fail": sum(1 for d in deploys if d["ts"] > now - 86400 and d.get("ok") is False),
@@ -252,7 +253,7 @@ def text(m):
              f"Forecast (estimate, {m['history_h']:.0f} h of history): " + fc_text(fc, m["now"], "all open issues"),
              "  " + (fc_text(m["fc_p0"], m["now"], f"the {m['p0_open']} open P0") if m["fc_p0"] else "no open P0"),
              f"Runner (24 h): started {tr['started']}, finished by itself {tr['by_runner']} ({pct(tr['by_runner'], tr['started'])}); "
-             f"PRs not finished by the runner (by hand, or it crashed after merging) ≈ {max(0, m['merged_24h'] - tr['by_runner'])}; reviews sent back {tr['fixes']} of {tr['fixes'] + tr['passes']}; "
+             f"PRs not finished by the runner (by hand, or it crashed after merging) ≈ {max(0, m['merged_24h'] - tr['by_runner'])} (recorded: auto-merge {tr['merged_by'].get('auto', 0)}, by hand {tr['merged_by'].get('hand', 0)}); reviews sent back {tr['fixes']} of {tr['fixes'] + tr['passes']}; "
              f"to the orchestrator after 3 RED reviews: {tr.get('red_escalated', 0)}; canary PRs merged {tr.get('canary', 0)} (not counted above)",
              f"Average: build {S.fmt(m['avg_build'])}, review {S.fmt(m['avg_review'])}, start to merge {S.fmt(m['avg_merge'])}",
              f"Bugs found by the tester: {m['bug_sources']['tester']} · reported by the owner from the live game: {m['bug_sources']['owner']}"]
@@ -261,6 +262,7 @@ def text(m):
     if m.get("github"): lines.append(m["github"])                     # #329: calls/min, graphql/core left, alarm < 20%
     if m.get("canary"): lines.append("Canary: " + m["canary"])          # #330: flow ok HH:MM | NEEDS-ATTENTION ...
     if m.get("usage"): lines.append(m["usage"])                         # #708: usage per entity (top rows, NEEDS-ATTENTION)
+    import backoff; lines += backoff.lines()                           # #842: backoff: <job> next try HH:MM
     if m.get("pc"): lines.append(m["pc"])                               # #293: PC: CPU x% · RAM y% free (· ALARM)
     v = m.get("voice")                                                  # #400: kid sentences with no recording (after the last pregen)
     if v and v["n"]: lines.append(f"Voice: {v['text']} (first 20 in the deploy log)")
@@ -761,9 +763,11 @@ def gather():
 def ai_tick(log=print):
     """Watchdog hook: refresh the AI assessment when it is older than AI_EVERY_MIN (call it in a background thread)."""
     a = ai_load()
-    if a and time.time() - a.get("at", 0) < AI_EVERY_MIN * 60: return
+    if a and time.time() - a.get("at", 0) < AI_EVERY_MIN * 60: return None
     m = gather()
-    log("ai assessment " + ("refreshed" if ai_refresh(text(m) + "\n" + ov_text(m["ov"])) else "failed"))
+    ok = bool(ai_refresh(text(m) + "\n" + ov_text(m["ov"])))
+    log("ai assessment " + ("refreshed" if ok else "failed"))
+    return ok     # #842: the watchdog backs off while it fails
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8")

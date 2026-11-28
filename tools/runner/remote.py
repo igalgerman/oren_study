@@ -63,6 +63,15 @@ def parse_start(out):
     err = next((l for l in lines if "rror" in l or "fail" in l), lines[-1] if lines else "no output")
     return {"ok": False, "session": "", "url": "", "error": err}
 
+PERMISSION_MODE = "bypassPermissions"
+
+def start_command(model=None, effort=None):
+    """#778: the bash -c line of every cloud start ($0 = claude, $1 = task). The mode is explicit: without it the CLI forwards the
+    owner's settings default ('auto') to the cloud session and the classifier's asks land on the owner's phone (many lanes = many asks).
+    The cloud VM is the sandbox; the repo hook .claude/hooks/guard.py (#800) and the prompt rules (NO_MERGE) still apply."""
+    return (f'unset {TOKEN_VAR}; "$0" ' + (f"--model {model} " if model else "") + (f"--effort {effort} " if effort else "")
+            + f"--permission-mode {PERMISSION_MODE} " + '--cloud "$1"')
+
 def launch(n, task, cwd, run=sh, name=None, model=None, desk=False, effort=None):
     """#289: start a cloud session in a short-lived herdr terminal and return at once (no 180 s wait for its URL), so a
     watchdog tick can start one. -> {ok, error}. name: window name (default remote-<n>); desk (#306): label role=desk."""
@@ -71,7 +80,7 @@ def launch(n, task, cwd, run=sh, name=None, model=None, desk=False, effort=None)
     name = name or f"remote-{n}"
     run([HC, "rm", name])                                        # leftover finished terminal of an earlier start
     rc, out = run([HC, "run", "--bg", "--outlive-parent", "--name", name, "--cwd", str(cwd), *labels,
-                   BASH, "-c", f'unset {TOKEN_VAR}; "$0" ' + (f"--model {model} " if model else "") + (f"--effort {effort} " if effort else "") + '--cloud "$1"', CLAUDE, task])   # model: #303
+                   BASH, "-c", start_command(model, effort), CLAUDE, task])   # model: #303
     if rc:
         return {"ok": False, "session": "", "url": "", "error": out.strip()[:300] or f"hc run exit {rc}"}
     return {"ok": True, "session": "", "url": "", "error": "", "name": name}
@@ -163,6 +172,18 @@ def status(n, run=sh, since=None, now=None):
         st["state"], st["line"] = "done", f"RESULT: DONE {st['pr'].get('url', '')} ({BY_PR})"
         log_line(f"#{n} {BY_PR}: PR #{st['pr'].get('number')} quiet {QUIET_MIN}+ min")
     return st
+
+def life(n, run=sh):
+    """#841: signature of the cloud session's signs of life: the issue's comment count + the heads of lane/<n> and claude/github-issue-<n>-* branches
+    (a new commit or branch changes it). Raises when GitHub cannot be read (the caller treats that as no news)."""
+    rc, out = run(["gh", "issue", "view", str(n), "--repo", REPO, "--json", "comments"])
+    if rc != 0: raise OSError(f"gh issue view: {out[:100]}")
+    sig = [len(json.loads(out).get("comments", []))]
+    for pre in (f"lane/{n}", f"claude/github-issue-{n}-"):
+        rc, out = run(["gh", "api", f"repos/{REPO}/git/matching-refs/heads/{pre}"])
+        if rc != 0: raise OSError(f"gh api refs: {out[:100]}")
+        sig += sorted((x.get("ref", ""), (x.get("object") or {}).get("sha", "")) for x in json.loads(out or "[]"))
+    return json.dumps(sig)
 
 PR_URL = re.compile(r"/pull/(\d+)")
 
