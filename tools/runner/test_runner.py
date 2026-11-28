@@ -1506,24 +1506,33 @@ assert r.remote.fixes("Fixes #7", 7) and not r.remote.fixes("Fixes #70", 7)
 _saved = {k: getattr(r, k) for k in ("gh",)}
 try:                                                                                   # the DONE step with a fake gh: always closes
     _calls = []
-    def _lab(names):
+    def _lab(names, comments=()):
         _calls.clear()
         def g(*a, **k):
             _calls.append(a)
-            if a[:2] == ("issue", "view"): return 0, json.dumps({"labels": [{"name": x} for x in names]})
+            if a[:2] == ("issue", "view"): return 0, json.dumps({"labels": [{"name": x} for x in names], "comments": [{"body": c} for c in comments]})
             return 0, ""
         return g
-    for _names in (["pack", "later"], ["pack"]):                                       # also an issue that had 'later'
-        r.gh = _lab(_names); assert r.finish_issue(7, "Merged.") is True
-        assert ("issue", "close", "7", "--comment", "Merged.") in _calls, _calls
-        assert not any(a[:2] == ("issue", "comment") for a in _calls), _calls
+    closes = lambda: ("issue", "close", "7", "--comment", "Merged.") in _calls
+    # #744: no LIVE line and no proof -> stays open; a LIVE comment line -> closes; docs/tooling exempt
+    r.gh = _lab(["pack"]); assert r.finish_issue(7, "Merged.") is False and not any(a[:2] == ("issue", "close") for a in _calls), _calls
+    r.gh = _lab(["pack"], ["LIVE seen ok"]); assert r.finish_issue(7, "Merged.") is False      # not a `LIVE:` line
+    r.gh = _lab(["pack", "later"], ["x\nLIVE: kid screen seen on production 2026-11-28"]); assert r.finish_issue(7, "Merged.") is True and closes(), _calls
+    r.gh = _lab(["pack", "tooling"]); assert r.finish_issue(7, "Merged.") is True and closes(), _calls
+    # automatic proof: ok -> LIVE line goes into the close comment; none (could not run) -> closes with the 'not checked' line; failed -> open + back to a worker
+    r.gh = _lab(["pack"]); assert r.finish_issue(7, "Merged.", live=(True, "LIVE: smoke ok")) is True
+    assert ("issue", "close", "7", "--comment", "Merged.\nLIVE: smoke ok") in _calls, _calls
+    r.gh = _lab(["pack"]); assert r.finish_issue(7, "Merged.", live=(None, "LIVE: not checked: no network")) is True
+    r.gh = _lab(["pack"]); assert r.finish_issue(7, "Merged.", live=(False, "LIVE check FAILED")) is False
+    assert not any(a[:2] == ("issue", "close") for a in _calls) and any("ready-for-agent" in a for a in _calls), _calls
+    assert r.has_live_line(["a", "LIVE: x"]) and not r.has_live_line(["live: x", "LIVE:"])
 finally:
     for k, v in _saved.items(): setattr(r, k, v)
 _src = open(r.__file__, encoding="utf-8").read()
-assert 'finish_issue(n, f"Merged to' in _src and 'gh("issue", "close", str(n), "--comment", f"Merged to' not in _src   # the run's DONE step uses it
+assert 'finish_issue(n, f"Merged to' in _src and 'gh("issue", "close", str(n), "--comment", f"Merged to' not in _src and "live=live_proof()" in _src   # the run's DONE step uses it
 _i = _src.index('finish_issue(n, f"Merged to')
 assert _src.rindex("deploy_main(log)", 0, _i) < _i                                     # closes only after the merge + deploy step
-print("ok #652 close on merge + deploy, no later rule")
+print("ok #652 close on merge + deploy, #744 only with a LIVE line")
 assert _pregen_popens == [], _pregen_popens          # #325: no test path launched the real pregen.js
 print("ok #325 no real pregen under tests")
 
