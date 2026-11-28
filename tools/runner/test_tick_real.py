@@ -39,7 +39,7 @@ assert not errors(), errors()
 #    start() without name=). The next tick reloads them before any step runs.
 real_start = remote.start
 del stats.finish_rate
-remote.start = lambda n, task, cwd, run=None: {"ok": False}
+remote.start = lambda n, task, cwd, run=None, **k: {"ok": False}
 for m in (stats, remote): m._loaded_mtime = 0            # "the file changed after this module was loaded"
 logs.clear(); tick()
 assert hasattr(stats, "finish_rate"), "stale stats.py not reloaded by the tick"
