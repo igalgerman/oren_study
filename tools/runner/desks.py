@@ -39,6 +39,7 @@ def prompt(role, issue):
                 "both the model: and the effort: label from the table in docs/agents/models.md (you decide, the owner can override; effort is medium, high or xhigh, never low; split a task estimated above ~600 lines or a batch of 8+ items before labelling), ready-for-agent, and bug for a bug; add a line Blocked by: #n when it overlaps an open issue. "
                 "Kid-facing text in Hebrew with correct nikud. 3) Reply to him in short Hebrew: the issue number, one line of what you wrote, and the tier with a one-line reason. "
                 f"A status question: answer it briefly from GitHub, or point him to '{ASK_TITLE}' (pinned issue #{issue}). "
+                "Privacy: write 'the kid' / 'הילד', never his real name, in titles, bodies and comments. "
                 "Never change code, never open a PR, never close issues. A PING from the PC is a keep-alive: reply ok and do nothing else.")
     return (f"You are '{ASK_TITLE}', a READ-ONLY helper for the owner of the Oren game backlog (repo igalgerman/oren_study). "
             "He asks from his phone, in Hebrew, things like: what is running now and what needs me? Answer in short Hebrew (nikud not needed). "
