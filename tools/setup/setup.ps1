@@ -85,10 +85,12 @@ function Add-Result([string]$Step, [string]$Name, [string]$Status, [string]$Hint
   Write-Host ("{0,-7} {1}: {2} {3}" -f $Status, $Step, $Name, $Hint)
 }
 function Have([string]$cmd) { return [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
-function Winget-Or-Page([string]$Id, [string]$Page, [string]$Name, [string]$Step) {
+function Winget-Or-Page([string]$Id, [string]$Page, [string]$Name, [string]$Step, [scriptblock]$Probe = $null) {
   if ($Install -and $Id -and (Have 'winget')) {
     & winget install --id $Id -e --silent --accept-package-agreements --accept-source-agreements | Out-Null
-    Add-Result $Step $Name 'FIXED' "installed $Id (open a new shell so PATH updates)"
+    if ($LASTEXITCODE -ne 0) { Add-Result $Step $Name 'MISSING' "winget install $Id failed (exit $LASTEXITCODE): download $Page"; return }
+    if ($Probe -and -not (& $Probe)) { Add-Result $Step $Name 'MISSING' "installed $Id but it is not on PATH yet: open a new shell and rerun"; return }
+    Add-Result $Step $Name 'FIXED' "installed $Id"
   } else { Add-Result $Step $Name 'MISSING' "install it (rerun with -Install) or download: $Page" }
 }
 function Path-Check([string]$Key, [string]$Path) {
@@ -99,22 +101,21 @@ function Path-Check([string]$Key, [string]$Path) {
 
 function Step-Tools {
   $s = '1 tools'
-  if (Have 'git') { Add-Result $s 'git' 'OK' } else { Winget-Or-Page 'Git.Git' 'https://git-scm.com/download/win' 'git' $s }
+  if (Have 'git') { Add-Result $s 'git' 'OK' } else { Winget-Or-Page 'Git.Git' 'https://git-scm.com/download/win' 'git' $s { Have 'git' } }
   if (Have 'gh') {
     & gh auth status 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) { Add-Result $s 'gh' 'OK' } else { Add-Result $s 'gh' 'MISSING' 'run: gh auth login' }
-  } else { Winget-Or-Page 'GitHub.cli' 'https://cli.github.com' 'gh' $s }
+  } else { Winget-Or-Page 'GitHub.cli' 'https://cli.github.com' 'gh' $s { Have 'gh' } }
   if (Have 'node') {
     $v = (& node --version) -replace '^v', ''
-    if ([int]($v -split '\.')[0] -ge 22) { Add-Result $s 'node' 'OK' "v$v" } else { Winget-Or-Page 'OpenJS.NodeJS' 'https://nodejs.org' 'node (>= 22)' $s }
-  } else { Winget-Or-Page 'OpenJS.NodeJS' 'https://nodejs.org' 'node (>= 22)' $s }
+    if ([int]($v -split '\.')[0] -ge 22) { Add-Result $s 'node' 'OK' "v$v" } else { Winget-Or-Page 'OpenJS.NodeJS' 'https://nodejs.org' 'node (>= 22)' $s { Have 'node' } }
+  } else { Winget-Or-Page 'OpenJS.NodeJS' 'https://nodejs.org' 'node (>= 22)' $s { Have 'node' } }
   if (Have 'claude') { Add-Result $s 'claude' 'OK' } else { Add-Result $s 'claude' 'MISSING' 'run: npm install -g @anthropic-ai/claude-code' }
   $py = Join-Path $env:USERPROFILE 'miniforge3\python.exe'
-  if (Test-Path $py) { Add-Result $s 'python' 'OK' $py } else { Winget-Or-Page 'CondaForge.Miniforge3' 'https://conda-forge.org/download/' 'miniforge python 3.12' $s }
-  foreach ($k in 'hc') {
-    if ($cfg[$k] -and (Path-Check $k $cfg[$k])) {
-      if (Test-Path -LiteralPath $cfg[$k]) { Add-Result $s 'herdr core' 'OK' } else { Add-Result $s 'herdr core' 'MISSING' 'install herdr core (herdr download page); config.toml key hc' }
-    }
+  if (Test-Path $py) { Add-Result $s 'python' 'OK' $py } else { Winget-Or-Page 'CondaForge.Miniforge3' 'https://conda-forge.org/download/' 'miniforge python 3.12' $s { Test-Path $py } }
+  $hc = $(if ($cfg.hc) { $cfg.hc } else { Join-Path $env:LOCALAPPDATA 'Programs\herdr-core\hc.exe' })
+  if (Path-Check 'hc' $hc) {
+    if (Test-Path -LiteralPath $hc) { Add-Result $s 'herdr core' 'OK' } else { Add-Result $s 'herdr core' 'MISSING' "install herdr core (https://herdr.dev, expected $hc; config.toml key hc)" }
   }
   $app = Join-Path $env:LOCALAPPDATA 'Programs\herdr-app\herdr-app.exe'
   if (Test-Path $app) { Add-Result $s 'herdr app' 'OK' } else { Add-Result $s 'herdr app' 'MISSING' "install the herdr app (expected $app)" }
@@ -183,7 +184,6 @@ function Step-Herdr {
 function Step-Tasks {
   $s = '5 scheduled tasks'
   $py = Join-Path $env:USERPROFILE 'miniforge3\python.exe'
-  $pyw = Join-Path $env:USERPROFILE 'miniforge3\pythonw.exe'
   foreach ($t in @(@('Oren recover', 'tools\recover.cmd'), @('Oren beatcheck', 'tools\runner\beatcheck.py'))) {
     & schtasks /Query /TN $t[0] 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) { Add-Result $s $t[0] 'OK'; continue }
@@ -197,14 +197,52 @@ function Step-Tasks {
 foreach ($k in 'main_checkout', 'github_app_key', 'bash', 'inspector_handoff', 'worktree_prefix') { if ($cfg[$k]) { [void](Path-Check $k $cfg[$k]) } }
 Step-Tools; Step-Folders; Step-Repo; Step-Herdr; Step-Tasks
 
-# 6 verify: re-check, one summary
+# 6 verify: a second pass re-checks everything from scratch; the summary and the exit code come from it
+function Verify-All {
+  $v = New-Object System.Collections.ArrayList
+  function V([string]$n, [bool]$ok, [string]$hint) { [void]$v.Add([pscustomobject]@{ Name = $n; Ok = $ok; Hint = $hint }) }
+  foreach ($t in 'git', 'gh', 'node', 'claude') { V $t (Have $t) "install $t (step 1)" }
+  if (Have 'node') { V 'node >= 22' ([int]((& node --version) -replace '^v', '' -split '\.')[0] -ge 22) 'install node 22 or newer' }
+  $py = Join-Path $env:USERPROFILE 'miniforge3\python.exe'
+  V 'python' (Test-Path $py) "install miniforge python 3.12 ($py)"
+  $hc = $(if ($cfg.hc) { $cfg.hc } else { Join-Path $env:LOCALAPPDATA 'Programs\herdr-core\hc.exe' })
+  V 'herdr core' (Test-Path -LiteralPath $hc) "install herdr core ($hc)"
+  $app = Join-Path $env:LOCALAPPDATA 'Programs\herdr-app\herdr-app.exe'
+  V 'herdr app' (Test-Path $app) "install the herdr app ($app)"
+  $bin = ConvertFrom-MsysPath $(if ($cfg.extra_path) { $cfg.extra_path } else { "$root/bin" })
+  foreach ($d in @($root, $bin, (Join-Path $env:USERPROFILE '.oren'))) { V "folder $d" (Test-Path -LiteralPath $d) 'rerun setup.ps1' }
+  $shim = Join-Path $bin 'python3'
+  V 'python3 shim' ((Test-Path -LiteralPath $shim) -and ([IO.File]::ReadAllText($shim) -eq (Get-ShimContent $py))) "rerun setup.ps1 ($shim)"
+  if (Have 'git') {
+    foreach ($e in (Get-RepoDirs $cfg $Repo $root).GetEnumerator()) {
+      $dir = $e.Value
+      $git = Test-Path -LiteralPath (Join-Path $dir '.git')
+      V "checkout $($e.Key)" $git "clone it: git clone $(Get-RepoUrl $e.Key) $dir"
+      if ($git) {
+        V "origin $($e.Key)" (-not (Get-RemoteFix ([string](& git -C $dir remote get-url origin 2>$null)) $e.Key)) 'rerun setup.ps1 (origin URL)'
+        V "autocrlf $($e.Key)" ((& git -C $dir config --local core.autocrlf) -eq 'false') 'rerun setup.ps1'
+      }
+    }
+  }
+  foreach ($t in 'Oren recover', 'Oren beatcheck') { & schtasks /Query /TN $t 2>&1 | Out-Null; V "task $t" ($LASTEXITCODE -eq 0) 'rerun setup.ps1 (task install; may need administrator)' }
+  $sp = @()
+  if (Test-Path $app) { try { $sp = @(((& $app ls) | ConvertFrom-Json).spaces | ForEach-Object { $_.name }) } catch { $sp = @() } }
+  foreach ($w in @($(if ($cfg.control_space) { $cfg.control_space } else { 'oren' }), $(if ($cfg.herdr_space) { $cfg.herdr_space } else { 'oren-workers' }))) {
+    V "space $w" ($sp -contains $w) "create the herdr space '$w' by hand"
+  }
+  return $v
+}
 Write-Host ''
-Write-Host '6 verify: summary'
-$results | Group-Object Status | ForEach-Object { Write-Host ("  {0,-8} {1}" -f $_.Name, $_.Count) }
-$missing = @($results | Where-Object { $_.Status -eq 'MISSING' })
+Write-Host '6 verify: re-checking everything'
+$checks = @(Verify-All)
+$checks | ForEach-Object { Write-Host ("{0,-7} {1}" -f $(if ($_.Ok) { 'OK' } else { 'MISSING' }), $_.Name) }
+# MISSING items from the steps that the second pass cannot see (paths of another user, failed clone) stay MISSING too
+$stepMissing = @($results | Where-Object { $_.Status -eq 'MISSING' -and $_.Step -eq 'paths' })
+$missing = @($checks | Where-Object { -not $_.Ok }) + $stepMissing
+Write-Host ("summary: {0} OK, {1} FIXED, {2} MISSING" -f @($checks | Where-Object { $_.Ok }).Count, @($results | Where-Object { $_.Status -eq 'FIXED' }).Count, $missing.Count)
 if ($missing.Count -gt 0) {
   Write-Host 'MISSING:'
-  $missing | ForEach-Object { Write-Host ("  - {0}: {1} -> {2}" -f $_.Step, $_.Name, $_.Hint) }
+  $missing | ForEach-Object { Write-Host ("  - {0} -> {1}" -f $_.Name, $_.Hint) }
   exit 1
 }
 if (-not (@($results | Where-Object { $_.Status -eq 'FIXED' }).Count)) { Write-Host 'nothing to do' }
