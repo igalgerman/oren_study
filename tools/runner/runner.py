@@ -8,7 +8,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import remote, ghcache, ghauth, pcload, tester, trust, scrub   # pcload: #293 PC load watch; tester: #618
+import repos, remote, ghcache, ghauth, pcload, tester, trust, scrub   # pcload: #293 PC load watch; tester: #618
 ROOT = HERE.parent.parent                      # repo checkout (tools/runner/../..)
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # #229: tests point this at a temp dir
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -903,6 +903,12 @@ def live_proof(base="https://oren-game.pages.dev"):
     if "FAIL" in (out or ""): return False, f"LIVE check FAILED on {base} ({day}): " + (out or "").strip()[-300:]
     return None, f"LIVE: not checked ({day}): the automatic check could not run (rc {rc})"
 
+def merged_proof(n):
+    """#792: ' PR: <full URL>' when issue n's merged PR is in another repo (GAME). The INFRA issue is closed by the runner with this proof line;
+    a bare #5 on an INFRA issue would point at INFRA #5, so the reference is always the full URL."""
+    num, _, rp = remote.pr_where(n, run=run, state="merged")
+    return f" PR: {repos.pr_ref(rp, num)}" if num and rp != REPO else ""
+
 def finish_issue(n, text, live=None):
     """#652 + #744: the run's DONE step closes issue n after the merge + deploy, but only with a `LIVE: ...` line on the issue
     (written by the runner's automatic check, `live` = (ok, line) from live_proof, or already there from the deploy tour / a tester).
@@ -937,7 +943,7 @@ def remote_worker_prompt(n, lane, bug=False, retry=False):
     """Task for a cloud worker (#133): no herdr, no local paths. It reports through an issue comment (the runner polls GitHub)."""
     base = (f"You are an unattended worker for GitHub issue #{n} in repo {REPO} (lane: {lane}). If its title starts with 'Batch:', follow "
             f"its 'How to work' section: independent members (different files) may go to sub-agents (Agent tool); you integrate, test once "
-            f"and open ONE PR with a 'Fixes #m' line per member. Read CLAUDE.md and FLOW.md, then the issue "
+            f"and open ONE PR with a 'Fixes {FIXES_M}' line per member. Read CLAUDE.md and FLOW.md, then the issue "
             f"(`python3 tools/runner/view.py issue {n}` (trusted authors only)). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
             f"{ACCEPT}\n" + owner_gate(n) + SPEC)
     if bug:
@@ -947,7 +953,7 @@ def remote_worker_prompt(n, lane, bug=False, retry=False):
                  f"continue from it (`git fetch {REMOTE} lane/{n}` and check it out; its draft PR may already exist, do not open a second one) instead of starting over.\n")
     return base + REBUILD + (f"Work on branch lane/{n} (create it from {BRANCH}). Follow the worker rules in FLOW.md: run the tests you touched, commit "
                    f"(after `python3 build_talents.py` in oren2/, WITH the rebuilt oren2/index.html and oren2/cf/public/index.html (CI is red when they differ from a fresh build, #503)), `git push -u {REMOTE} lane/{n}`, and open a PR to {BRANCH} "
-                   f"with `gh pr create --draft --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Fixes #{n}` (#747: push the branch and open this DRAFT PR right after your first green commit, so a dead session does not lose the work; keep pushing to it; at the very end mark it ready with `gh pr ready <PR>`, or `gh api -X POST repos/{REPO}/pulls/<PR>/ccr/ready_for_review` if GraphQL is refused) (if you may only push claude/* branches, use your claude/* branch instead; the runner finds the PR by `Fixes #{n}`). Never deploy, never force-push, never push to {BRANCH}.\n"
+                   f"with `gh pr create --draft --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Fixes {fixes_ref(n)}` (#747: push the branch and open this DRAFT PR right after your first green commit, so a dead session does not lose the work; keep pushing to it; at the very end mark it ready with `gh pr ready <PR>`, or `gh api -X POST repos/{REPO}/pulls/<PR>/ccr/ready_for_review` if GraphQL is refused) (if you may only push claude/* branches, use your claude/* branch instead; the runner finds the PR by `Fixes #{n}`). Never deploy, never force-push, never push to {BRANCH}.\n"
                    f"You have no terminal the owner can see, so report ONLY through an issue comment (that line on its own line): "
                    f"if blocked post `RESULT: STUCK <why>`; if you need the owner post `QUESTION: <short question, with options>` and stop.\n"
                    f"LAST STEP (mandatory), after the PR is open: post `gh issue comment {n} --repo {REPO} --body \"RESULT: DONE <PR url>\"`. "
@@ -1445,8 +1451,24 @@ def remove_worktree(wt, log=None):
     if wt.exists() and not (wt / ".git").exists():       # half-made worktree (no checkout): leftovers only, safe now the junction is gone
         shutil.rmtree(wt, ignore_errors=True)
 
+in_repo, cur_repo = repos.in_repo, repos.pr_repo   # #792: `with in_repo(r):` PR commands of this thread go to r (the PR's repo); issues stay in INFRA
+
 def gh(*args, **kw):
-    return run(["gh", *args, "--repo", REPO], **kw)
+    """gh in INFRA (issues, labels); `gh pr ...` / `gh run ...` go to the repo of this lane's PR (INFRA unless find_pr found it in GAME)."""
+    return run(["gh", *args, "--repo", cur_repo() if args and args[0] in ("pr", "run") else REPO], **kw)
+
+def fixes_ref(n):
+    """#792: what a worker writes after Fixes/Closes in its PR body: the bare #n in one-repo mode; with a GAME repo the full ref
+    (a bare #n in a GAME PR points at a GAME number). The runner closes the INFRA issue itself after merge + deploy; `Closes` is a bonus."""
+    return repos.closes_ref(n).split(" ", 1)[1] if repos.GAME else f"#{n}"
+
+FIXES_M = fixes_ref('m')
+GATE_CHECK = {"game": "tests"}   # #792: a GAME PR merges on its `tests` check; INFRA keeps its (tiny) `tools` check = all checks as today
+
+def gate_checks(checks, repo):
+    """Pure (#792): the checks that decide the merge. GAME: only the `tests` check (none yet -> 'none', never green by default); else all."""
+    if repos.GAME and repo == repos.GAME: return [c for c in checks or [] if c.get("name") == GATE_CHECK["game"]]
+    return list(checks or [])
 
 def now():
     return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
@@ -1723,7 +1745,7 @@ def launch_self():
 def worker_prompt(n, lane, review_text=None, bug=False):
     base = (f"You are an unattended worker for GitHub issue #{n} in repo {REPO} (lane: {lane}). If its title starts with 'Batch:', follow "
             f"its 'How to work' section: independent members (different files) may go to sub-agents (Agent tool); you integrate, test once "
-            f"and open ONE PR with a 'Fixes #m' line per member. Read CLAUDE.md and FLOW.md, then the issue "
+            f"and open ONE PR with a 'Fixes {FIXES_M}' line per member. Read CLAUDE.md and FLOW.md, then the issue "
             f"(`python3 tools/runner/view.py issue {n}` (trusted authors only)). Work only inside this worktree (your cwd). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
             f"{ACCEPT}\n" + owner_gate(n) + SPEC)
     if lane == "review":
@@ -1736,7 +1758,7 @@ def worker_prompt(n, lane, review_text=None, bug=False):
     steps = (REBUILD + "Steps: 1) implement; 2) python3 build_talents.py (in oren2/, PATH already has python3); " + PC_TESTS + "3) for each changed screen take screenshots (skip them when no oren2/ file changed) at phone 390x844 and desktop 1366x768 into "
              f"C:/work/Oren_study/shots/{n}/ and LOOK at them (simple, one main action, Hebrew with nikud); 4) commit, WITH the rebuilt oren2/index.html "
              f"and oren2/cf/public/index.html (CI is red when they differ from a fresh build, #503; not node_modules, package*.json, tests/.tmp); 5) `git push -u {REMOTE} lane/{n}`; 6) open a PR to {BRANCH} with "
-             f"`gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Closes #{n}` (use the mattpocock-skills:pr skill to write the PR body; skip if a PR already exists). "
+             f"`gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Closes {fixes_ref(n)}` (use the mattpocock-skills:pr skill to write the PR body; skip if a PR already exists). "
              "Never deploy, never force-push. If blocked or the issue is unclear, stop and say why. "
              "The very last line of your final message must be `RESULT: DONE` or `RESULT: STUCK <why>`.")
     if review_text:
@@ -1767,9 +1789,9 @@ def review_colours(round1=""):
 def review_prompt(n, pr, round1=""):
     colours = review_colours(round1)
     return (f"You are a fresh, read-only reviewer for PR #{pr} (issue #{n}) in {REPO}. You may not edit files. Read CLAUDE.md, the issue "
-            f"(`gh issue view {n} --repo {REPO}`), the diff (`gh pr diff {pr} --repo {REPO}`, ignore the built index.html files) and the screenshots in "
+            f"(`gh issue view {n} --repo {REPO}`), the diff (`gh pr diff {pr} --repo {cur_repo()}`, ignore the built index.html files) and the screenshots in "
             f"C:/work/Oren_study/shots/{n}/ (look at them; none expected when no oren2/ file changed). Check: correctness vs the issue, simplicity (one main action per screen), Hebrew with correct "
-            "nikud, facts correct, no unrelated changes. Use the mattpocock-skills:code-review skill (Standards = CLAUDE.md + FLOW.md, Spec = the issue), then post ONE comment with `gh pr comment " + f"{pr} --repo {REPO} --body-file <file>` (write the file under "
+            "nikud, facts correct, no unrelated changes. Use the mattpocock-skills:code-review skill (Standards = CLAUDE.md + FLOW.md, Spec = the issue), then post ONE comment with `gh pr comment " + f"{pr} --repo {cur_repo()} --body-file <file>` (write the file under "
             "oren2/tests/.tmp/; this is the only file you may write, via the Bash echo/redirect). Print the same comment as your output. "
             + owner_gate(n) + NO_MERGE + " " + colours)
 
@@ -1777,9 +1799,9 @@ def remote_review_prompt(n, pr, round1=""):
     """#134: task for a cloud reviewer session. No terminal: the verdict is read from its PR comment."""
     return (f"You are a fresh, read-only reviewer for PR #{pr} (issue #{n}) in {REPO}, running unattended in a cloud session. Change NO files, "
             f"make no commits, push nothing, open nothing. Read CLAUDE.md, FLOW.md, the issue with its comments (`python3 tools/runner/view.py issue {n}` (trusted authors only)) "
-            f"and the diff (`gh pr diff {pr} --repo {REPO}`, ignore the built index.html files). Check: correctness vs the issue, simplicity (one main action "
+            f"and the diff (`gh pr diff {pr} --repo {cur_repo()}`, ignore the built index.html files). Check: correctness vs the issue, simplicity (one main action "
             "per screen), Hebrew with correct nikud, facts correct, no unrelated changes, tests for the change. Use the code-review skill if you have it "
-            f"(Standards = CLAUDE.md + FLOW.md, Spec = the issue). Then post ONE comment on the PR (`gh pr comment {pr} --repo {REPO} --body-file <file>`, "
+            f"(Standards = CLAUDE.md + FLOW.md, Spec = the issue). Then post ONE comment on the PR (`gh pr comment {pr} --repo {cur_repo()} --body-file <file>`, "
             "file in your scratch dir). The runner reads ONLY that comment: put the verdict on its own line starting with VERDICT: (no backticks). "
             + owner_gate(n) + NO_MERGE + " " + review_colours(round1))
 
@@ -1788,7 +1810,7 @@ REVIEW_START_RETRY_S = (60, 300)                   # #322: waits before the 2nd 
 def rereview_prompt(n, pr, old, new):
     """#344: one quick cloud re-review after the head moved past the PASS with more than merges of main."""
     return (remote_review_prompt(n, pr) + f"\nThis is a quick re-review: the PR passed review at {old}; its head is now {new}. Check only the commits after "
-            f"{old[:7]} (`gh api repos/{REPO}/compare/{old}...{new}`), not the whole PR again: a RED only if those commits broke something or miss the issue.")
+            f"{old[:7]} (`gh api repos/{cur_repo()}/compare/{old}...{new}`), not the whole PR again: a RED only if those commits broke something or miss the issue.")
 
 POLL_S = 60
 
@@ -2008,8 +2030,10 @@ def migrate_human():
     return moved
 
 def find_pr(n):
-    """Open PR number of issue n: lane/<n>, or a cloud worker's claude/* PR (#246, remote.pr_for)."""
-    return remote.pr_for(n, run=run)[0]
+    """Open PR number of issue n: lane/<n>, or a cloud worker's claude/* PR (#246, remote.pr_for). #792: remembers the PR's repo for this thread."""
+    num, _, rp = remote.pr_where(n, run=run)
+    if num: repos.set_pr_repo(rp)
+    return num
 
 def draft_pr(n):
     """#747: number of issue n's open DRAFT PR (lane/<n> or a claude/* branch, via find_pr; a worker that died early left it), else None."""
@@ -2122,11 +2146,15 @@ def ci_integrate(n, wt, log, over=None, sha=""):
     """CI-based integrate (#74): update the lane with main, push, wait for the PR checks, `gh pr merge --squash`. -> (rc, out) like integrate.sh:
     0 merged (or already merged), 2 conflict, 4 no PR, 5 push failed, 6 CI red after one rerun, 7 CI timeout / merge failed (blocked, real reason in out),
     8 the head moved after the review with more than merges of main (#344: process() re-reviews the new head)."""
-    pr, br = remote.pr_for(n, run=run)                           # #246: the head may be a cloud worker's claude/* branch
+    pr, br, prrepo = remote.pr_where(n, run=run)                 # #246: the head may be a cloud worker's claude/* branch; #792: the PR may be in GAME
     if not pr:
         mpr, _ = remote.pr_for(n, run=run, state="merged")       # #344: already merged (by hand / auto-merge) = done, not blocked
         if mpr: return 0, "PR #%s already merged" % mpr
         return 4, "no open PR for issue #%d" % n
+    with in_repo(prrepo):                                        # #792: every PR call below (view, checks, merge, runs) goes to the PR's repo
+        return _ci_integrate(n, wt, log, over, sha, pr, br)
+
+def _ci_integrate(n, wt, log, over, sha, pr, br):
     if not sha: return 7, f"PR #{pr}: no reviewed head sha, refusing to merge"
     why = merge_block(pr, log)
     if why:                                                      # #185/#636: never a draft / no-automerge / blocked / owner-merge PR, nor a CLOSED owner gate
@@ -2140,13 +2168,13 @@ def ci_integrate(n, wt, log, over=None, sha=""):
             time.sleep(20)                                           # let GitHub start the new run
     why = {"merge": ""}
     def get_checks():
-        try: return json.loads(gh("pr", "checks", str(pr), "--json", "name,bucket", log=log)[1] or "[]")
+        try: return gate_checks(json.loads(gh("pr", "checks", str(pr), "--json", "name,bucket", log=log)[1] or "[]"), cur_repo())   # #792: GAME gate = `tests`
         except ValueError: return []
     def stamp():
-        return run(["gh", "run", "list", "--repo", REPO, "--branch", br, "--limit", "1", "--json", "databaseId,status,attempt", "-q", ".[0]|[.databaseId,.status,.attempt]|join(\":\")"], log=log)[1].strip()
+        return run(["gh", "run", "list", "--repo", cur_repo(), "--branch", br, "--limit", "1", "--json", "databaseId,status,attempt", "-q", ".[0]|[.databaseId,.status,.attempt]|join(\":\")"], log=log)[1].strip()
     def rerun():
-        rid = run(["gh", "run", "list", "--repo", REPO, "--branch", br, "--limit", "1", "--json", "databaseId", "-q", ".[0].databaseId"], log=log)[1].strip()
-        if rid.isdigit(): run(["gh", "run", "rerun", rid, "--failed", "--repo", REPO], log=log)
+        rid = run(["gh", "run", "list", "--repo", cur_repo(), "--branch", br, "--limit", "1", "--json", "databaseId", "-q", ".[0].databaseId"], log=log)[1].strip()
+        if rid.isdigit(): run(["gh", "run", "rerun", rid, "--failed", "--repo", cur_repo()], log=log)
     def refused():
         return merge_block(pr, log)
     def merge():                                                 # #185: no lock: GitHub merges atomically; the deploy keeps its own lock
@@ -2276,6 +2304,7 @@ def process(issue, where="local"):
         return "BLOCKED: already running"
 
 def process_locked(issue, where="local"):
+    repos.set_pr_repo(None)                                 # #792: a new run starts with no PR repo (the lane thread may have run another issue)
     n = issue["number"]; lane = lane_of(issue["labels"])
     d = RUNS / str(n); d.mkdir(parents=True, exist_ok=True)
     set_where(n, where)
@@ -2522,7 +2551,7 @@ def process_locked(issue, where="local"):
         pre = start_pregen(log) if dep.startswith("deployed") else ""    # #175: after the lock, in the background; #301: never blocks
         m = sync_main(log)                       # result logged (review of #47)
         if m: log_line(m)
-        if not finish_issue(n, f"Merged to {BRANCH}, tests green, {dep}.{pregen_note(pre)}", live=live_proof()):
+        if not finish_issue(n, f"Merged to {BRANCH}, tests green, {dep}.{pregen_note(pre)}{merged_proof(n)}", live=live_proof()):
             log_line(f"#{n}: not closed (no LIVE line or the live check failed)")
         set_labels(n, remove=["in-progress"])
         remove_worktree(wt, log)

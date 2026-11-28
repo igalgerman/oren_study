@@ -11,6 +11,7 @@ class _NoPregenPopen(_real_popen):                 # #325: fail if any test path
         super().__init__(args, *a, **k)
 _sp.Popen = _NoPregenPopen
 import sys; sys.argv.append("--dry-run")
+import repos; _GAME = repos.GAME; repos.GAME = ""   # #792: this suite is the one-repo mode (game_repo unset); two-repo cases: test_repos.py
 import runner as r
 def I(n, labels, t=None): return {"number": n, "labels": labels, "createdAt": t or f"2026-01-{n:02d}"}
 R = "ready-for-agent"
@@ -774,10 +775,10 @@ def _ci_int(pr_json, auto_rc=(0, "ok"), sha="abc123"):
         if a[:2] == ("pr", "checks"): return 0, '[{"name":"tests","bucket":"pass"}]'
         if a[:2] == ("pr", "merge") and "--auto" in a: return auto_rc
         return 0, ""
-    saved = r.gh, r.run, r.remote.pr_for, r.time.sleep
-    r.gh, r.run, r.remote.pr_for, r.time.sleep = g, (lambda *a, **k: (0, "")), (lambda n, run=None, state="open": (251, "claude/x")), (lambda s: None)
+    saved = r.gh, r.run, r.remote.pr_for, r.remote.pr_where, r.time.sleep
+    r.gh, r.run, r.remote.pr_for, r.remote.pr_where, r.time.sleep = g, (lambda *a, **k: (0, "")), (lambda n, run=None, state="open": (251, "claude/x")), (lambda n, run=None, state="open", repo=None: (251, "claude/x", r.REPO)), (lambda s: None)
     try: res = r.ci_integrate(185, "wt", None, None, sha)
-    finally: r.gh, r.run, r.remote.pr_for, r.time.sleep = saved
+    finally: r.gh, r.run, r.remote.pr_for, r.remote.pr_where, r.time.sleep = saved
     return res, calls
 _ok = '{"isDraft":false,"labels":[]}'
 _res, _c = _ci_int(_ok)
@@ -1458,21 +1459,22 @@ def _ci_race(merge_out, final_state):
         if a[:2] == ("pr", "merge") and "--auto" in a: return 1, "auto-merge is not allowed"
         if a[:2] == ("pr", "merge") and "--squash" in a: st["merged"] = True; return 1, merge_out
         return 0, ""
-    saved = r.gh, r.run, r.remote.pr_for, r.time.sleep
-    r.gh, r.run, r.remote.pr_for, r.time.sleep = g, (lambda *a, **k: (0, "")), (lambda n, run=None, state="open": (104, "lane/104")), (lambda s: None)
+    saved = r.gh, r.run, r.remote.pr_for, r.remote.pr_where, r.time.sleep
+    r.gh, r.run, r.remote.pr_for, r.remote.pr_where, r.time.sleep = g, (lambda *a, **k: (0, "")), (lambda n, run=None, state="open": (104, "lane/104")), (lambda n, run=None, state="open", repo=None: (104, "lane/104", r.REPO)), (lambda s: None)
     try: return r.ci_integrate(104, "wt", None, None, "abc")
-    finally: r.gh, r.run, r.remote.pr_for, r.time.sleep = saved
+    finally: r.gh, r.run, r.remote.pr_for, r.remote.pr_where, r.time.sleep = saved
 assert _ci_race("Pull request #104 was already merged", "MERGED")[0] == 0
 _res = _ci_race("GraphQL: Head branch was modified. Review and try the merge again.", "OPEN")
 assert _res[0] == 7 and "Head branch was modified" in _res[1], _res                     # the real gh text is in the reason
 print("ok #302 merge failures")
 # #344: no open PR but a merged one -> rc 0; no PR at all -> still 4
 def _ci_nopr(merged):
-    saved = r.gh, r.run, r.remote.pr_for
+    saved = r.gh, r.run, r.remote.pr_for, r.remote.pr_where
     r.gh, r.run = (lambda *a, **k: (0, "")), (lambda *a, **k: (0, ""))
+    r.remote.pr_where = lambda n, run=None, state="open", repo=None: (None, None, None)
     r.remote.pr_for = lambda n, run=None, state="open": (345, "x") if (state == "merged" and merged) else (None, None)
     try: return r.ci_integrate(344, "wt", None, None, "abc")
-    finally: r.gh, r.run, r.remote.pr_for = saved
+    finally: r.gh, r.run, r.remote.pr_for, r.remote.pr_where = saved
 assert _ci_nopr(True)[0] == 0 and "already merged" in _ci_nopr(True)[1]
 assert _ci_nopr(False)[0] == 4
 print("ok #344 already merged PR is done")

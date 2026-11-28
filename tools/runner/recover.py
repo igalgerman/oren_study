@@ -10,11 +10,12 @@ The WHOLE recovery after a restart (planned freeze #139, or a crash), in order:
 Also (#27, also with --open): herdr's sound setting from sounds.py (blocked and done sound different).
 Usage: python recover.py [--install | --open]   (--open = tools/orchestrator.cmd, #25: steps 1-4 + watchdog only)"""
 import json, os, shutil, sys, time
+import repos
 from pathlib import Path
 
 TASK = "Oren recover"
 CONTROL = ("orchestrator", "inbox", "inspector", "executor")    # the 4 Claude sessions on the PC, tabs of 'oren' in this order
-INBOX_PROMPT = ("You are the INBOX of the Oren game multi-agent system (repo igalgerman/oren_study). Read CLAUDE.md and FLOW.md. "
+INBOX_PROMPT = ("You are the INBOX of the Oren game multi-agent system (repo " + repos.INFRA + "). Read CLAUDE.md and FLOW.md. "
                 "The owner talks to you: a new idea -> /idea, a clear task -> /task, a bug -> /bug, a status question -> /status. "
                 "Write every new issue the way docs/agents/skills/writing-for-agents.md says. Set both the model: and the effort: label on every new issue from the table in docs/agents/models.md (you decide, the owner can override), and split a task estimated above ~600 lines or a batch of 8+ items first. "
                 "Run the mattpocock-skills:triage steps on every new issue (#29): duplicate check per CLAUDE.md, labels per docs/agents/triage-labels.md, "

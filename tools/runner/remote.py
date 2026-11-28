@@ -14,13 +14,13 @@ it is removed so claude uses the stored claude.ai login.
 State comes from GitHub (the CLI's agents/logs do not list cloud sessions)."""
 import json, os, re, shutil, subprocess, sys, tomllib
 from pathlib import Path
-import ghauth, ghcache, trust
+import ghauth, ghcache, repos, trust
 
 HERE = Path(__file__).resolve().parent
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
 HC = CFG.get("hc", "hc")
 BASH = CFG.get("bash", "bash")
-REPO = CFG.get("repo", "igalgerman/oren_study")
+REPO = repos.INFRA   # #792: INFRA (backlog); GAME PRs: repos.GAME. Names live only in config.toml
 CLAUDE = shutil.which("claude") or "claude"
 TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # same as runner.py: .runs/<n>/where says local|remote
@@ -175,46 +175,76 @@ def status(n, run=sh, since=None, now=None):
 
 PR_URL = re.compile(r"/pull/(\d+)")
 
-def fixes(body, n):
-    """#246: the PR body says Fixes/Closes/Resolves #n (not #n0); #453: or Refs #n (a PR that must not close its issue)."""
-    return bool(re.search(rf"\b(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?|refs?)\s+#{n}(?!\d)", body or "", re.I))
+def fixes(body, n, repo=None):
+    """#246: the PR body says Fixes/Closes/Resolves #n (not #n0); #453: or Refs #n (a PR that must not close its issue).
+    #792: or the full ref `<infra>#n`. A bare #n counts only for a PR in INFRA (repo None or INFRA): in a GAME PR it names a GAME number."""
+    full = re.escape(REPO) + "#" if REPO else None
+    pre = (r"(?:" + full + r")" if full else "") + (r"|#" if repo in (None, REPO) else "")
+    pre = pre.lstrip("|")
+    if not pre: return False
+    return bool(re.search(rf"\b(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?|refs?)\s+(?:{pre}){n}(?!\d)", body or "", re.I))
 
 def _json(rc, out, default):
     try: return json.loads(out) if rc == 0 and out.strip() else default
     except ValueError: return default
 
-def find_pr(n, run=sh, state="open", line=None, fields="number,headRefName", since=None):
-    """#246: the PR of issue n (dict with `fields`, or None). Cloud sessions may only push claude/* branches, so:
-    lane/<n> first, else the PR URL in this run's RESULT: DONE line (line=None: read from the issue), else a PR whose body says Fixes/Closes #n.
-    state = open | merged | all. since (ISO UTC, #264): a PR found by lane/<n> or the Fixes line must be opened at/after it
-    (an earlier run's PR is not this run's); the RESULT line's PR always counts."""
+def find_pr_repo(n, run=sh, state="open", line=None, fields="number,headRefName", since=None, repo=None):
+    """#792: (PR dict or None, repo it lives in). Like find_pr (#246) but in BOTH repos (INFRA, then GAME when game_repo is set).
+    repo=<name>: look in that one repo only (the issue's route, #793: one lookup = one repo); None = both (crash recovery).
+    lane/<n> in both repos at once = ValueError (which one is the work?). The RESULT line's PR URL names its repo."""
+    where = [repo] if repo else repos.both(REPO)
     fl = fields + (",createdAt" if since and "createdAt" not in fields.split(",") else "")
     def fresh(p):
         if not since: return True
         ok = p.get("createdAt", "") >= since
         if "createdAt" not in fields.split(","): p.pop("createdAt", None)
         return ok
-    prs = [p for p in _json(*run(["gh", "pr", "list", "--repo", REPO, "--head", f"lane/{n}", "--state", state, "--json", fl]), []) if fresh(p)]
-    if prs: return prs[0]
+    hits = [(p, rp) for rp in where for p in [next((p for p in _json(*run(["gh", "pr", "list", "--repo", rp, "--head", f"lane/{n}", "--state", state, "--json", fl]), []) if fresh(p)), None)] if p]
+    if len(hits) > 1: raise ValueError(f"lane/{n} has a PR in both repos: {', '.join(rp for _, rp in hits)}")
+    if hits: return hits[0]
     if line is None:
         rc, out = run(["gh", "issue", "view", str(n), "--repo", REPO, "--json", "comments"])
         line = state_from([c.get("body", "") for c in current_run(_json(rc, out, {}).get("comments", []))], None)["line"]
-    m = PR_URL.search(line or "") if (line or "").startswith("RESULT: DONE") else None
-    if m:
-        p = _json(*run(["gh", "pr", "view", m[1], "--repo", REPO, "--json", fields + ("" if "state" in fields.split(",") else ",state")]), {})
+    rp = num = None
+    if (line or "").startswith("RESULT: DONE"):
+        m = re.search(r"github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)", line)
+        if m: rp, num = m[1], m[2]
+        elif PR_URL.search(line): rp, num = REPO, PR_URL.search(line)[1]     # no host in the line: INFRA, as before
+        if rp not in where: rp = num = None
+    if num:
+        p = _json(*run(["gh", "pr", "view", num, "--repo", rp, "--json", fields + ("" if "state" in fields.split(",") else ",state")]), {})
         if p.get("number") and (state == "all" or p.get("state", "").lower() == state):
             if "state" not in fields.split(","): p.pop("state", None)
-            return p
-    prs = _json(*run(["gh", "pr", "list", "--repo", REPO, "--state", state, "--limit", "100", "--json", fl + ",body"]), [])
-    p = next((p for p in prs if fixes(p.get("body"), n) and fresh(p)), None)
-    if p and "body" not in fields.split(","): p.pop("body", None)
-    return p
+            return p, rp
+    for rp in where:
+        prs = _json(*run(["gh", "pr", "list", "--repo", rp, "--state", state, "--limit", "100", "--json", fl + ",body"]), [])
+        p = next((p for p in prs if fixes(p.get("body"), n, rp) and fresh(p)), None)
+        if p:
+            if "body" not in fields.split(","): p.pop("body", None)
+            return p, rp
+    return None, None
 
-def pr_for(n, run=sh, state="open"):
-    """#246: (number, headRefName) of issue n's PR, or (None, None). Use the returned branch wherever lane/<n> was assumed."""
-    p = find_pr(n, run, state) or {}
-    return (p.get("number"), p.get("headRefName")) if p.get("number") else (None, None)
+def find_pr(n, run=sh, state="open", line=None, fields="number,headRefName", since=None, repo=None):
+    """#246: the PR of issue n (dict with `fields`, or None); #792: searched in both repos (find_pr_repo). Cloud sessions may only push
+    claude/* branches, so: lane/<n> first, else the PR URL in this run's RESULT: DONE line, else a PR whose body says Fixes/Closes #n
+    (GAME: the full ref). state = open | merged | all. since (ISO UTC, #264): a PR found by lane/<n> or the Fixes line must be opened
+    at/after it; the RESULT line's PR always counts."""
+    try: return find_pr_repo(n, run, state, line, fields, since, repo)[0]
+    except ValueError as e:
+        log_line(f"#{n}: {e}"); return None
 
+def pr_where(n, run=sh, state="open", repo=None):
+    """#792: (number, headRefName, repo) of issue n's PR, or (None, None, None)."""
+    try: p, rp = find_pr_repo(n, run, state, repo=repo)
+    except ValueError as e:
+        log_line(f"#{n}: {e}"); return None, None, None
+    return (p["number"], p.get("headRefName"), rp) if p and p.get("number") else (None, None, None)
+
+def pr_for(n, run=sh, state="open", repo=None):
+    """#246: (number, headRefName) of issue n's PR, or (None, None). Use the returned branch wherever lane/<n> was assumed.
+    #792: the PR may be in GAME; pr_where also returns the repo."""
+    num, br, _ = pr_where(n, run, state, repo)
+    return (num, br) if num else (None, None)
 
 def answer_after_question(comments):
     """Pure (#135): the owner's answer to the last QUESTION: line in the issue comments ('' = none yet).
@@ -242,9 +272,9 @@ def verdict_from(comments):
             return hits[-1].strip(), body
     return "", ""
 
-def review_status(pr, run=sh, since=None):
+def review_status(pr, run=sh, since=None, repo=None):
     """#134: the cloud reviewer's verdict comment on the PR -> {state: done|working, line, body}. since = ISO UTC start of this review round."""
-    rc, out = run(["gh", "pr", "view", str(pr), "--repo", REPO, "--json", "comments"])
+    rc, out = run(["gh", "pr", "view", str(pr), "--repo", repo or repos.pr_repo(), "--json", "comments"])   # #792: the PR's repo
     try:
         comments = [c.get("body", "") for c in trust.only(json.loads(out).get("comments", [])) if not since or c.get("createdAt", "") >= since] if rc == 0 else []
     except ValueError:

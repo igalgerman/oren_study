@@ -3,13 +3,14 @@ Deterministic (no AI): for each public repo read `gh api repos/<repo>/interactio
 14 days before the expiry, repeated once a day until renewed; a limit already gone (empty answer) is an immediate alarm.
 State: .runs/interaction_limit.json {sent: {repo: last alarm}}. Never renews anything itself."""
 import json, os, time, tomllib
+import repos
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")
 try: _C = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
 except Exception: _C = {}
-REPOS = list(_C.get("interaction_limit_repos", ["igalgerman/oren_study"]))   # add the GAME repo here once it exists
+REPOS = list(_C.get("interaction_limit_repos", repos.both() + ([repos.DATA] if repos.DATA else [])))   # #792: INFRA, GAME and DATA from config
 WARN_DAYS, EVERY_H, STATE = 14, 24, "interaction_limit.json"
 
 def command(repo):

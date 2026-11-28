@@ -272,7 +272,7 @@ def run_once(tell=print, log=print, now=None):
 RELAY_MIN, MISSING_H = 10, 2
 
 FALLBACK_MARK = "<!-- fallback #525 -->"   # #525: the first line of a retro issue made by the runner's fallback run (not the trigger)
-FALLBACK_PROMPT = ("Follow docs/agents/cloud-tasks.md, section Nightly retro, in igalgerman/oren_study, for the date {date} (use this "
+FALLBACK_PROMPT = ("Follow docs/agents/cloud-tasks.md, section Nightly retro, in {repo}, for the date {date} (use this "
                    "date, not today's, for the title and the day). This is the runner's fallback run (#525: the scheduled task does "
                    f"not run): make the first line of the issue body exactly {FALLBACK_MARK}")
 LAUNCH = None   # remote.launch; tests swap in a fake
@@ -289,7 +289,7 @@ def retro_fallback(date, log):
     if LAUNCH: launch = LAUNCH
     else:
         import remote; launch = remote.launch
-    r = launch(0, FALLBACK_PROMPT.format(date=date), R.CFG.get("main_checkout", str(R.ROOT)), name="cloud-retro", model=MODEL, desk=True)
+    r = launch(0, FALLBACK_PROMPT.format(date=date, repo=R.REPO), R.CFG.get("main_checkout", str(R.ROOT)), name="cloud-retro", model=MODEL, desk=True)
     ok = bool((r or {}).get("ok"))
     log(f"nightly retro (cloud): fallback cloud run for {date} " + ("started" if ok else "could not start: " + str((r or {}).get("error", ""))[:150]))
     return ok

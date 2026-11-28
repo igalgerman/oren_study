@@ -109,3 +109,7 @@ The watchdog (`tools/runner/interaction_limit.py`) reads `expires_at` hourly and
 1. When the alarm arrives, run in a terminal, once per public repo (renews for 6 months):
    `gh api -X PUT repos/<owner>/<repo>/interaction-limits -f limit=collaborators_only -f expiry=six_months`
 2. Write in the chat "חודש".
+
+## Three repos (#792)
+Repo names live ONLY in `tools/runner/config.toml` (`repo` = INFRA/backlog, `game_repo`, `data_repo`; read through `tools/runner/repos.py`). Unset `game_repo` = one-repo mode, as before.
+`remote.pr_where(n)` looks for `lane/<n>` in INFRA and GAME (both with a PR = error, nothing guessed); a PR in GAME merges there on its `tests` check, and the runner closes the INFRA issue itself with the GAME PR's full URL as proof (a bare `#5` on an INFRA issue is INFRA #5). Workers write `Fixes <infra>#n` (full ref). `ghcache` reads GAME's PRs in the same GraphQL call (no extra call a minute); dirty keys are per repo. Tests: `tools/runner/test_repos.py`.

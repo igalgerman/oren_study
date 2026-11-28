@@ -221,7 +221,7 @@ def relay(tell, log, now, gh=None, api=None):
 # ---------- #525: the triggers never ran (no ai-observer issue at all on 27 Nov) ----------
 FALLBACK_MARK = "<!-- fallback #525 -->"   # the first line of a comment made by the runner's own fallback run (not the trigger)
 OWNER_SILENT_H, OWNER_REPEAT_H, FALLBACK_MIN = 3, 12, 60
-FALLBACK_PROMPT = ("Follow docs/agents/cloud-tasks.md, section AI observer, in igalgerman/oren_study. This is the runner's fallback "
+FALLBACK_PROMPT = ("Follow docs/agents/cloud-tasks.md, section AI observer, in {repo}. This is the runner's fallback "
                    f"run (#525: the scheduled task does not run): make the first line of your comment exactly {FALLBACK_MARK}")
 OWNER_POST = None   # (window, question) -> owner_q.post; tests swap in a fake
 LAUNCH = None       # remote.launch; tests swap in a fake
@@ -250,7 +250,7 @@ def fallback(now, log):
     if LAUNCH: launch = LAUNCH
     else:
         import remote; launch = remote.launch
-    r = launch(0, FALLBACK_PROMPT, R.CFG.get("main_checkout", str(R.ROOT)), name="cloud-observer", model=MODEL, desk=True)
+    r = launch(0, FALLBACK_PROMPT.format(repo=R.REPO), R.CFG.get("main_checkout", str(R.ROOT)), name="cloud-observer", model=MODEL, desk=True)
     ok = bool((r or {}).get("ok"))
     if ok: st = load_state(); st["fallback_at"] = now; save_state(st)
     log("ai observer (cloud): fallback cloud run " + ("started" if ok else "could not start: " + str((r or {}).get("error", ""))[:150]))

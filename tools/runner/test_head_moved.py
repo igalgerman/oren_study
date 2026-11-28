@@ -5,6 +5,7 @@ os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real prege
 import subprocess, sys
 from pathlib import Path
 sys.argv.append("--dry-run")
+import repos; repos.GAME = ""   # #792: this suite is the one-repo mode (game_repo unset); two-repo cases: test_repos.py
 import runner as r
 
 repo = Path(tempfile.mkdtemp(prefix="head-moved-"))
@@ -84,10 +85,10 @@ def ci(head, moved_once=False):
         if cmd[:2] == ["git", "fetch"]: return 0, ""
         if cmd[:1] == ["git"]: return real_run(cmd, cwd=repo)
         return 0, ""
-    saved = r.gh, r.run, r.remote.pr_for, r.time.sleep
-    r.gh, r.run, r.remote.pr_for, r.time.sleep = fake_gh, fake_run, (lambda n, run=None, state="open": (338, "claude/x")), (lambda s: None)
+    saved = r.gh, r.run, r.remote.pr_for, r.remote.pr_where, r.time.sleep
+    r.gh, r.run, r.remote.pr_for, r.remote.pr_where, r.time.sleep = fake_gh, fake_run, (lambda n, run=None, state="open": (338, "claude/x")), (lambda n, run=None, state="open", repo=None: (338, "claude/x", r.REPO)), (lambda s: None)
     try: return r.ci_integrate(344, str(repo), None, None, A), calls
-    finally: r.gh, r.run, r.remote.pr_for, r.time.sleep = saved
+    finally: r.gh, r.run, r.remote.pr_for, r.remote.pr_where, r.time.sleep = saved
 g("update-ref", f"refs/remotes/{MAIN}", m1)
 res, calls = ci(B)
 assert res[0] == 0, res

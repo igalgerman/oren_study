@@ -214,7 +214,7 @@ def merged_by(events, now=None, hours=24):
 def backfill(days=7, apply=False, run=None):
     """One time: `python3 stats.py --backfill [--apply]`. Without --apply it only prints how many events it would write (dry run)."""
     import subprocess
-    run = run or (lambda: subprocess.run(["gh", "pr", "list", "--repo", "igalgerman/oren_study", "--state", "merged", "--limit", "300",
+    run = run or (lambda: subprocess.run(["gh", "pr", "list", "--repo", __import__("repos").INFRA, "--state", "merged", "--limit", "300",
                   "--json", "number,title,body,headRefName,mergedAt,autoMergeRequest"], capture_output=True, text=True, timeout=120).stdout)
     new = record_merges(json.loads(run() or "[]"), days=days, dry=not apply)
     return f"backfill {days} days: {len(new)} merged events {'written' if apply else 'would be written (dry run; add --apply)'}"

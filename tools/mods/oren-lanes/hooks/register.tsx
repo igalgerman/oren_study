@@ -17,7 +17,8 @@ const OWNER_Q = 'C:/work/Oren_study/a/tools/runner/owner_q.py'
 // $.process.run has no hide-window option: every call goes through pythonw (no console) -> quiet.py (CREATE_NO_WINDOW child)
 const quietRun = ($: { process: { run: (argv: string[], init?: any) => Promise<any> } }, argv: string[], init?: any) =>
   $.process.run(quietArgv(argv), init)
-const ROOT = /^c:[\\/]+work[\\/]+oren_study([\\/]|$)/i
+// the checkout folder, derived from CONFIG (#792: no repo/folder name hardcoded here)
+const ROOT = new RegExp('^' + CONFIG.replace(/[\\/]+a[\\/]+tools[\\/].*$/i, '').split(/[\\/]+/).map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\\\/]+') + '([\\\\/]|$)', 'i')
 const DATA = { plugin: 'oren-lanes', key: 'data' } as const
 // an atom, so every refresh REDRAWS the pane (a plain $.state.get in render did not subscribe)
 const dataAtom = atom(DATA, null as OrenLanesData | null, { shape: 'data-3' })
