@@ -2,6 +2,7 @@
 import io, json, os, sys, tempfile, contextlib
 from pathlib import Path
 HOME = tempfile.mkdtemp(prefix="oren-home-"); os.environ["OREN_HOME"] = HOME
+os.environ["OREN_ENV"] = os.path.join(HOME, "no.env")   # #675: off unless a test writes it
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import playlog as P
 
@@ -61,6 +62,14 @@ out = io.StringIO()
 with contextlib.redirect_stdout(out): rc = P.main(["day", "2026-11-27"])
 ok("main: the key comes from ~/.oren/diag.key and is never printed", rc == 0 and seen.get("key") == "sekret-641" and "sekret" not in out.getvalue())
 ok("main: bad day = rc 2", P.main(["day", "27-11"]) == 2)
+# #675 the automated read token: LOG_READ_KEY from the local .env (never committed, never printed) wins over the parent key
+Path(os.environ["OREN_ENV"]).write_text('# local secrets\nTELEGRAM_X=1\nLOG_READ_KEY="rd-675-secret"\n', encoding="utf-8")
+seen.clear(); out = io.StringIO()
+with contextlib.redirect_stdout(out): rc = P.main(["day", "2026-11-27"])
+ok("#675 main: the read token from .env is sent, not the parent key, and never printed", rc == 0 and seen.get("key") == "rd-675-secret" and "rd-675" not in out.getvalue(), str(seen))
+Path(os.environ["OREN_ENV"]).write_text("LOG_READ_KEY=\n", encoding="utf-8"); seen.clear()
+with contextlib.redirect_stdout(io.StringIO()): rc = P.main(["day", "2026-11-27"])
+ok("#675 main: an empty LOG_READ_KEY falls back to ~/.oren/diag.key", rc == 0 and seen.get("key") == "sekret-641", str(seen))
 
 print("RESULT playlog " + (f"{len(fails)} FAILED" if fails else "ok"))
 sys.exit(1 if fails else 0)
