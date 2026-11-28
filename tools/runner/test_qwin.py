@@ -406,6 +406,9 @@ class GH3:
         if a[:2] == ("issue", "comment"):
             self.c.setdefault(int(a[2]), []).append({"body": a[a.index("--body") + 1], "author": {"login": "oren-study-bot"}, "reactionGroups": []}); return 0, "u\n"
         if a[:2] == ("issue", "view"): return 0, json.dumps({"comments": self.c.get(int(a[2]), [])})
+        if a[:2] == ("api", "graphql"):          # #824: owner_q.comments reads GraphQL (-F n=<issue>)
+            n = int(a[a.index("-F") + 1].split("=", 1)[1])
+            return 0, json.dumps({"data": {"repository": {"issue": {"comments": {"nodes": self.c.get(n, []), "pageInfo": {"hasNextPage": False}}}}}})
         return 0, ""
 g3 = GH3(); QW._gh = g3; OQ.GH = g3
 srv3 = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeTG); threading.Thread(target=srv3.serve_forever, daemon=True).start()
