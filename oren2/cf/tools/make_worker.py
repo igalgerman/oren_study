@@ -584,11 +584,13 @@ async function list(req,env){
  if(req.method!=='POST')return J({error:'method'},405);
  let L;try{L=await req.json();if(!Array.isArray(L)||L.length>QMAX)throw 0;}catch(e){return J({error:'bad request'},400);}
  const seen=new Set();L=L.map(qClean).filter(c=>c!=null&&!seen.has(qId(c))&&seen.add(qId(c)));await kvPut(env,'ttsall',JSON.stringify(L));return J({ok:true,n:L.length});}
+/*MCP_PART*/
 export default{async fetch(req,env,ctx){const u=new URL(req.url);const p=u.pathname;
  if(ctx&&ctx.waitUntil&&(p==='/'||p==='/index.html'||p.startsWith('/api/save/')))ctx.waitUntil(qRun(env).catch(()=>{}));
  if(p==='/sw.js')return new Response(SW,{headers:{'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache'}});
  if(p.startsWith('/api/tts'))return tts(req,env,u).catch(e=>J({ok:false,why:String(e&&e.message||e).slice(0,200)},503));/* a failing KV write (daily limit) used to be Cloudflare error 1101 */
  if(p==='/api/log'||p.startsWith('/api/log/'))return evlog(req,env,u).catch(e=>J({error:'log',why:String(e&&e.message||e).slice(0,200)},503));
+ if(p==='/api/mcp')return mcp(req,env).catch(e=>J({error:'mcp'},503));
  if(p==='/api/diag')return diag(req,env,u).catch(e=>J({error:'diag',why:String(e&&e.message||e).slice(0,200)},503));
  const m=/^\\/api\\/save\\/([^/]+)$/.exec(p);if(m)return api(req,env,m[1]);
  if(p==='/manifest.webmanifest')return new Response(MAN,{headers:{'content-type':'application/manifest+json'}});
@@ -596,6 +598,7 @@ export default{async fetch(req,env,ctx){const u=new URL(req.url);const p=u.pathn
  if(p==='/'||p==='/index.html')return new Response(HTML,{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-cache','x-content-type-options':'nosniff','referrer-policy':'no-referrer'}});
  return new Response('Not found',{status:404});}};
 '''%(json.dumps(html,ensure_ascii=False),json.dumps(LISTEN,ensure_ascii=False),NUMJS,SHOTSJS,json.dumps(man,ensure_ascii=False),json.dumps(sw,ensure_ascii=False),i192,i512)
+js=js.replace('/*MCP_PART*/',(d/'tools'/'mcp_part.js').read_text(encoding='utf-8'))
 out=d/'dist';out.mkdir(exist_ok=True)
 (out/'_worker.js').write_text(js,encoding='utf-8')
 print('worker',len(js.encode()))
