@@ -403,7 +403,7 @@ def total_lanes():
     return LOCAL_LANES + REMOTE_LANES
 
 # #239 usage governor: cloud lane count follows the 5h window (the panel writes .runs/usage.json every refresh); #274: and the week
-GOV = {"target": float(CFG.get("governor_target", 99)), "min": int(CFG.get("governor_min", 2)), "max": int(CFG.get("governor_max", 8)),
+GOV = {"target": float(CFG.get("governor_target", 99)), "min": int(CFG.get("governor_min", 2)), "max": int(CFG.get("governor_max", 12)),
        "stop": float(CFG.get("governor_stop", 99)), "pace": float(CFG.get("governor_pace", 3.5)), "week_cap": int(CFG.get("governor_week_cap", 4)),
        "week_target": float(CFG.get("governor_week_target", 99)), "stale_s": 15 * 60, "fallback": REMOTE_LANES}
 def _ts(iso):
