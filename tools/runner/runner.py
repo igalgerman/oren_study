@@ -8,7 +8,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import remote, ghcache, ghauth, pcload, tester, trust, scrub   # pcload: #293 PC load watch; tester: #618
+import remote, ghcache, ghauth, pcload, tester, trust, scrub, gitid   # pcload: #293 PC load watch; tester: #618
 ROOT = HERE.parent.parent                      # repo checkout (tools/runner/../..)
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # #229: tests point this at a temp dir
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -1544,6 +1544,11 @@ PARK_MINUTES = int(CFG.get("park_minutes", 30))
 def tell_orchestrator(text):
     if USE_HERDR: hc("send", "orchestrator", text, timeout=30)
 
+def tell_all(text):
+    """#889: orchestrator + inspector."""
+    tell_orchestrator(text)
+    if USE_HERDR: hc("send", "inspector", text, timeout=30)
+
 def live(name):
     return USE_HERDR and hc_json("get", name, "--json").get("state") == "live"
 
@@ -2036,6 +2041,8 @@ def block(n, why, log):
         tail = "\n".join(Path(log).read_text(encoding="utf-8").splitlines()[-20:])
     except OSError:
         pass
+    gh007 = gitid.alarm(why + "\n" + tail, RUNS, tell_all, n=n)   # #889: a rejected push for e-mail privacy is named, not 'push failed'
+    if gh007: why = gh007
     set_labels(n, add=stuck_labels(), remove=["in-progress"])
     try: (RUNS / str(n)).mkdir(parents=True, exist_ok=True); (RUNS / str(n) / "rung.blocked").write_text("1")   # #716: the next start goes one rung up
     except OSError: pass
@@ -2169,7 +2176,8 @@ def update_lane(wt, br, log):
             if run(["git", "commit", "-q", "-m", "Rebuild index.html after merging main (#594)"], cwd=wt, log=log)[0]:
                 return 7, "could not commit the rebuilt index.html after merging main", ""
     if run(["git", "rev-parse", "HEAD"], cwd=wt)[1] == run(["git", "rev-parse", f"{REMOTE}/{br}"], cwd=wt)[1]: return 0, "", ""
-    if run(["git", "push", "-q", REMOTE, f"HEAD:{br}"], cwd=wt, log=log)[0]: return 5, "push failed", ""
+    rc, pout = run(["git", "push", "-q", REMOTE, f"HEAD:{br}"], cwd=wt, log=log)
+    if rc: return 5, gitid.alarm(pout, RUNS, tell_all) or "push failed", ""   # #889: GH007 -> its own reason + one alarm per hour
     return 0, "", run(["git", "rev-parse", "HEAD"], cwd=wt)[1].strip()
 
 def ci_integrate(n, wt, log, over=None, sha=""):
@@ -2378,6 +2386,7 @@ def process_locked(issue, where="local"):
                         if not rc: break
                         remove_worktree(wt, log); run(["git", "branch", "-D", f"lane/{n}"], cwd=ROOT, log=log)
                     if rc: raise Blocked("lane.sh failed twice (see run.log)")
+                    gitid.set_email(wt, run, gitid.email())      # #889: repo-local noreply address in every worktree
                     br = branch_of(n)                            # #246: a cloud worker's PR on claude/*: the worktree takes that branch's work
                     if br != f"lane/{n}":
                         run(["git", "fetch", "-q", REMOTE, br], cwd=wt, log=log)

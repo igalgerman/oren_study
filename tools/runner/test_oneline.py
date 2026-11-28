@@ -66,7 +66,7 @@ got = []
 RM.start(7, "Do this.\nThen that.\n", ".", run=lambda a, **k: (got.append(a), (0, "Created cloud session https://claude.ai/code/session_ab"))[1])
 start_cmd = next(a for a in got if "--bg" in a)
 single(start_cmd)
-assert start_cmd[-1] == "Do this. Then that.", start_cmd[-1]
+assert start_cmd[-1].endswith("Do this. Then that."), start_cmd[-1]
 print("ok remote start")
 
 print("ok oneline")

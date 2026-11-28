@@ -14,7 +14,7 @@ it is removed so claude uses the stored claude.ai login.
 State comes from GitHub (the CLI's agents/logs do not list cloud sessions)."""
 import json, os, re, shutil, subprocess, sys, tomllib
 from pathlib import Path
-import ghauth, ghcache, trust
+import ghauth, ghcache, trust, gitid
 
 HERE = Path(__file__).resolve().parent
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -75,6 +75,7 @@ def start_command(model=None, effort=None):
 def launch(n, task, cwd, run=sh, name=None, model=None, desk=False, effort=None):
     """#289: start a cloud session in a short-lived herdr terminal and return at once (no 180 s wait for its URL), so a
     watchdog tick can start one. -> {ok, error}. name: window name (default remote-<n>); desk (#306): label role=desk."""
+    task = gitid.prompt_prefix() + task                          # #889: every cloud session sets the noreply e-mail first
     task = re.sub(r"[ \t]*[\r\n]+[ \t]*", " ", task.replace('"', "'")).strip()   # #390: cmd.exe cuts argv at a newline                             # double quotes break the Windows argv to bash ('file not found')
     labels = ["--label", "role=desk"] if desk else ["--label", f"issue={n}", "--label", "role=remote"]
     name = name or f"remote-{n}"
