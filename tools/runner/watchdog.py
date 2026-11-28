@@ -321,14 +321,28 @@ def sweep_tick(ts, now=None, seen=None, hc=None, say=None):
     if gone: say(f"sweep: removed {len(gone)} finished terminal(s) older than {SWEEP_MIN} min: " + " ".join(n for n, _ in gone[:20]))
     return len(gone)
 
-def check_control(ts):
-    """#140: a finished orchestrator / inbox / inspector terminal is removed (by address) and started again, same command as recover."""
-    import recover
-    for name, address in recover.finished_control(ts):
-        R.hc("rm", address, timeout=30)
+def check_control(ts, now=None):
+    """#140: a finished control terminal is removed (by address) and started again, same command as recover.
+    #935: a control role with NO terminal (tab closed by hand) is started after 2 checks in a row. One start per role per tick, and a role
+    just started counts as present for 10 min. Nothing starts while recover runs, while frozen, or when `hc ls` gave no rows (stale view)."""
+    import recover, freeze
+    now = now or time.time()
+    if not ts or freeze.is_frozen(R.RUNS): return
+    try:
+        if R.FileLock("recover").held_by_other(): return
+    except Exception: pass
+    f = R.RUNS / "control_state.json"
+    try: state = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError): state = {}
+    plan, state = recover.control_plan(state, ts, now)
+    try: f.write_text(json.dumps(state), encoding="utf-8")
+    except OSError: pass
+    for name, addrs, why in plan:
+        for a in addrs: R.hc("rm", a, timeout=30)
         rc = recover.start_control(R, name)
-        log(f"{name} had finished: restarted (rc {rc})")
-        if rc == 0 and name != "orchestrator": tell(f"WATCHDOG: {name} had finished; restarted it")
+        word = "had finished" if why == "finished" else "was closed (no tab)"
+        log(f"{name} {word}: restarted (rc {rc})")
+        if rc == 0 and name != "orchestrator": tell(f"WATCHDOG: {name} {word}; restarted it")
 
 def qwin_tick(ts):
     if not BO.due("qwin"): return                        # #842: a failing job waits 2, 4, 8 ... 60 min
