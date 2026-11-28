@@ -444,6 +444,35 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
   const st423 = await p.evaluate(() => { const O = window.OREN, T = window.TAL, F = window.FRIEND; O.save.en2 = {}; delete O.save.mixs; O.save.mix = { c: 1, s: 1 }; const d = T.dailyEnsure(); d.t = ['read-first', 'world-flag']; d.done = [0, 0]; d.bs = 0; O.persist();
     F.stepStart(1); const a = F._lead(''); O.showMap(); return { a, want: window.STORYMIX.wordSay('red') }; });
   ok('#423 the path step: the friend says the scene word after the opening line', st423.a.split('⁣').includes(st423.want), JSON.stringify(st423));
+  // --- #681 hero challenge: after 3 fast right answers in a row one offer per mission (yes / not now); a miss costs nothing; logged + parent row ---
+  const H = await p.evaluate(async () => { window.__hero = true; const O = window.OREN, T = window.TAL, F = window.FRIEND, sl = ms => new Promise(r => setTimeout(r, ms)); const out = {};
+    const mk = id => { let n = 0; T.quiz({ id, title: 't', n: 9, back: () => {}, gen: () => { n++; return { pr: 'שאלה ' + n, opts: ['א', 'ב', 'ג'], ans: n % 3, key: id + n }; } }); };
+    const W = () => window.__quiz.wrap, click = async (right, slow) => { const q = window.__quiz; if (slow) { /* the question has been open a long time */ } const w = q.wrap, r = q.ans; const bs = [...w.querySelectorAll('.chs .chb')]; await sl(30); const t0 = Date.now(); bs[right ? r : (r + 1) % 3].click(); await sl(200); };
+    const next = () => sl(1500);
+    const rows = id => (O.save.alog[O.today()].e || []).filter(e => e[1] === id && e[6] === 'h');
+    // A: 3 fast right -> offer (not before), "not now" -> normal level, no second offer
+    mk('hero-a'); await sl(100); out.offerEarly = !!W().querySelector('.frhero');
+    for (let k = 0; k < 3; k++) { await click(true); await next(); }
+    out.offerA = !!W().querySelector('.frhero'); out.btnsA = W().querySelectorAll('.frhero button').length; out.sayA = F.said.includes(F.HERO.ask);
+    W().querySelectorAll('.frhero button')[1].click(); await sl(200);
+    out.afterNo = !W().querySelector('.frhero') && !!W().querySelector('.chs');
+    for (let k = 0; k < 3; k++) { await click(true); await next(); } out.twice = !!W().querySelector('.frhero'); out.rowA = rows('hero-a').map(e => e[7]);
+    // B: slow right answers -> no offer
+    mk('hero-b'); await sl(100); for (let k = 0; k < 3; k++) { window.__quiz.wrap.querySelector('.tqc'); const qq = window.__quiz; await sl(30); /* make the question look old */ const cur = qq.wrap; cur.dispatchEvent(new Event('x')); const bs = [...qq.wrap.querySelectorAll('.chs .chb')]; const real = Date.now; Date.now = () => real() + 9000; bs[qq.ans].click(); Date.now = real; await sl(200); await next(); }
+    out.slowOffer = !!W().querySelector('.frhero'); out.rowB = rows('hero-b').length;
+    // C: yes -> hero round, a miss ends it without loss, back to the normal level
+    mk('hero-c'); await sl(100); for (let k = 0; k < 3; k++) { await click(true); await next(); }
+    W().querySelectorAll('.frhero button')[0].click(); await sl(200); out.heroOn = W().classList.contains('hero');
+    const g0 = (O.save.gems | 0); await click(false); out.missEnds = !W().classList.contains('hero'); await sl(2800);
+    out.afterMiss = !W().classList.contains('hero') && !!W().querySelector('.chs'); out.rowC = rows('hero-c').map(e => e[7]);
+    return out; });
+  ok('#681 no offer before 3 fast right answers; offered after them with two buttons (yes / not now), said aloud', !H.offerEarly && H.offerA && H.btnsA === 2 && H.sayA, JSON.stringify(H));
+  ok('#681 "not now": the normal question goes on, never a second offer in the same mission, logged as hr n', H.afterNo && !H.twice && JSON.stringify(H.rowA) === '[{"hr":"n"}]', JSON.stringify([H.afterNo, H.twice, H.rowA]));
+  ok('#681 slow right answers never trigger the offer', !H.slowOffer && !H.rowB);
+  ok('#681 "yes": a hero round; a miss ends it at once, back to the normal level with no loss, logged (hr y, 0 of 1)', H.heroOn && H.missEnds && H.afterMiss && JSON.stringify(H.rowC) === '[{"hr":"y","ok":0,"n":1}]', JSON.stringify([H.heroOn, H.missEnds, H.afterMiss, H.rowC]));
+  await p.evaluate(() => { window.__hero = false; });
+  const HV = await p.evaluate(() => { const D = window.DAYLOG; return [D.rowHTML([600, 'sci-float', 0, 0, 0, 0, 'h', { hr: 'y', ok: 2, n: 3 }]), D.rowHTML([601, 'sci-float', 0, 0, 0, 0, 'h', { hr: 'n' }]), window.FRIEND.speakList().includes(window.FRIEND.HERO.ask), window.FRIEND.HERO.ask, window.FRIEND.HERO.yes, window.FRIEND.HERO.no]; });
+  ok('#681 the parent view shows the answer and the round; kid text has nikud and is in the pregen list', /אתגר גיבורים: 2 מתוך 3/.test(HV[0]) && /דחה אתגר גיבורים/.test(HV[1]) && HV[2] && [HV[3], HV[4], HV[5]].every(t => NIK.test(t)), HV.slice(0, 2).join(' | '));
   // --- #663 the story comes across: opening, chase strip, one-tap "what happened" ---
   const st663 = await p.evaluate(async () => { const O = window.OREN, T = window.TAL, F = window.FRIEND, M = window.STORYMIX; window.__mixIntro = true; delete O.save.mixIntro;
     const d = T.dailyEnsure(); d.t = ['read-first', 'math']; d.done = [0, 0]; O.save.mix = { c: 2, s: 3 }; O.showMap(); await new Promise(r => setTimeout(r, 500));   // the map's own screen event first, then ONE stepStart on a fresh strip

@@ -3434,6 +3434,10 @@ body.fron #screens{padding-bottom:84px}
 .frtr .frto{min-width:84px;min-height:72px;font-size:30px;font-weight:800;justify-content:center}
 .frtr .frto.ok{background:#e6f6e6;border-color:#4fae4f}
 .frtr .frto.show{background:#fff6d6;border-color:#c98a00}
+.frhero{text-align:center}
+.frhero .frms svg{width:72px;height:72px;display:block;margin:0 auto 4px}
+.frhero .btnrow{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:8px}
+.tq.hero .tqc{border:4px solid #e0a800;box-shadow:0 0 14px #ffd54a}
 /* #663 the Mixer opening + the chase card (one button each) and the chapter icon on the path strip */
 .frpath{cursor:pointer;position:relative}.frpath .fpc{position:absolute;top:-7px;inset-inline-end:-5px;font-size:13px;line-height:1;background:#fffdf5;border:2px solid #2b2b3a;border-radius:999px;padding:0 1px}
 .frcc{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(40,36,70,.55);padding:12px}
@@ -4267,24 +4271,32 @@ function quiz(o){if(o.lesson&&window.LESSONS&&!o._ls){o._ls=1;return window.LESS
   const gen=()=>{const q=o.gen(qs.length);if(!pb||q.bank||q.key==null)return q;const c=[q];for(let j=0;j<24;j++){const x=o.gen(qs.length);if(x.key!=null&&!c.some(y=>y.key===x.key))c.push(x);}
     try{const fr=c.filter(x=>!seen.has(x.key)),nw=fr.filter(x=>!asked.has(x.key));const r=LN.pickItem(pb,(nw.length?nw:fr).map(x=>({k:x.key})));const x=r&&c.find(y=>y.key===r.item.k);if(x)return Object.assign(x,{bank:pb});}catch(e){}return q;};
   const nQ=o.n;while(qs.length<nQ&&t++<400){const q=gen();const k=q.key||(q.pr+'|'+q.ans);if(seen.has(k)||(asked.has(k)&&t<300))continue;seen.add(k);qs.push(fit(q));}
-  let i=0,err=0,gems=0,lock=false,tries=0,HB=null;const RA=o.readAns!=null?!!o.readAns:!READ_ACT.test(o.id);O.setScreen('sTal',o.bg||'valley',o.back);
+  let i=0,err=0,gems=0,lock=false,tries=0,HB=null;
+  /* #681 hero challenge (friend.js HERO): fast = right answers in a row on the first try in under 8 s; hero 0 not yet, 1 asked, 2 playing, 3 over; once per mission */
+  let fast=0,hero=0,hLeft=0,hok=0,hn=0,lv0=lv;const HR=()=>window.FRIEND&&window.FRIEND.HERO&&(window.__hero===true||(window.__hero!==false&&!navigator.webdriver))?window.FRIEND.HERO:null;/* off in automated browsers (suites answer fast) unless a test sets __hero=true */
+  const heroLog=y=>{try{const D=window.DAYLOG,d=new Date();if(D&&D.add)D.add(O.today(),[d.getHours()*60+d.getMinutes(),o.id,0,0,0,0,'h',y?{hr:'y',ok:hok,n:hn}:{hr:'n'}]);if(O.track)O.track('hero',{m:o.id,y:y?1:0,ok:hok,n:hn});O.persist();}catch(e){}};
+  const heroEnd=()=>{if(hero!==2)return;hero=3;if(ask){lv=lv0;for(let j=i+1;j<qs.length;j++)fit(qs[j]);}heroLog(1);wrap.classList.remove('hero');};
+  const heroStart=()=>{hero=2;hLeft=Math.min(HR().LEN,qs.length-i);if(ask){lv0=lv;lv=ADAPT[o.id];for(let j=i;j<qs.length;j++)fit(qs[j]);}};
+  const RA=o.readAns!=null?!!o.readAns:!READ_ACT.test(o.id);O.setScreen('sTal',o.bg||'valley',o.back);
   const bk=O.hereTake&&O.hereTake('tq:'+o.id);if(bk){i=Math.min(Math.max(0,bk.i|0),qs.length-1);err=bk.err|0;gems=bk.gems|0;}/* #44: reopened mid-quiz = the same place */
   const s=$('#sTal');s.innerHTML='';const wrap=h('div','tq');s.appendChild(wrap);if(o.lesson&&window.LESSONS)s.appendChild(window.LESSONS.againBtn(o.lesson,o.back,()=>quiz(o)));
-  const render=()=>{const q=qs[i];q._t=Date.now();dayQAdd(o.id,q.key||(q.pr+'|'+q.ans));tries=0;lock=false;if(O.hereProg)O.hereProg('tq:'+o.id,{i,err,gems});if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));const row=h('div','chs'+(q.ltr?' ltr':''));const ra=RA?ansSay(row,q.opts):'';
+  const render=()=>{const q=qs[i];q._t=Date.now();wrap.classList.toggle('hero',hero===2);dayQAdd(o.id,q.key||(q.pr+'|'+q.ans));tries=0;lock=false;if(O.hereProg)O.hereProg('tq:'+o.id,{i,err,gems});if(O.evQ)O.evQ(q.key||(plainHe(String(q.pr))+'|'+q.ans),{m:o.id});hudT(o.title,progressBar(i,qs.length));const tOps=q.opts.map(x=>plainHe(String(x))).filter(x=>/[א-ת]/.test(x));const row=h('div','chs'+(q.ltr?' ltr':''));const ra=RA?ansSay(row,q.opts):'';
     O.sayNow=(q.say||spoken(q.pr))+(ra||(!q.say&&tOps.length===q.opts.length&&!(O.readHelp&&!O.readHelp().ans)?'. '+tOps.join(', '):''));
     wrap.innerHTML='';const card=h('div','prq tqc',q.pr);if(q.play){const pb=h('button','hintbtn',ICON.say+`<span>${q.playLbl||'הַשְׁמַע'}</span>`);pb.onclick=q.play;card.appendChild(pb);}
     wrap.appendChild(card);window.__noAuto=0;if(window.FRIEND)window.FRIEND.question(q,card,{id:o.id,i});if(window.TAL.rdQ)window.TAL.rdQ(q,card,{read:/^(read-|story-|rb2-)/.test(o.id)});q.opts.forEach((op,k)=>{const b=h('button','chb '+(q.cls||''),op);b.onclick=()=>{if(!(O.tapTooSoon&&O.tapTooSoon()))pickA(k,b);};row.appendChild(b);});wrap.appendChild(row);
     const ex=h('div','hintbox');ex.hidden=true;wrap.appendChild(ex);card.classList.add('flashin');
     /* #54 one help button: clue, then the answer with its explanation (the question ends like after two mistakes) */
-    HB=window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,clue:q.clue,explain:q.explain,before:ex,skip:()=>skipQ(q),first:()=>i===0,reveal:()=>{if(lock)return;lock=true;err++;note(qs[i],false);if(window.FRIEND)window.FRIEND.onWrong({final:true,m:o.id});if(q.reveal)q.reveal(wrap.querySelector('.tqc'));setTimeout(next,D(4200));}}):null;if(o.side){const sb=h('button','bigbtn plain sm qside',o.side.lbl);sb.onclick=()=>o.side.open(wrap);wrap.appendChild(sb);}if(q.auto&&q.play)setTimeout(()=>{if(qs[i]===q)q.play();},D(350));};
+    HB=hero!==2&&window.HELP&&HELP.mc?HELP.mc(wrap,{row,ans:q.ans,clue:q.clue,explain:q.explain,before:ex,skip:()=>skipQ(q),first:()=>i===0,reveal:()=>{if(lock)return;lock=true;err++;note(qs[i],false);if(window.FRIEND)window.FRIEND.onWrong({final:true,m:o.id});if(q.reveal)q.reveal(wrap.querySelector('.tqc'));setTimeout(next,D(4200));}}):null;if(o.side){const sb=h('button','bigbtn plain sm qside',o.side.lbl);sb.onclick=()=>o.side.open(wrap);wrap.appendChild(sb);}if(q.auto&&q.play)setTimeout(()=>{if(qs[i]===q)q.play();},D(350));};
   /* #616 Oren skipped this question: not a failure (no wrong count, no level note, no gems); a bank item is due again in 1 day (#360), and it was asked today (dayQ) */
   const skipQ=q=>{if(lock||qs[i]!==q||!wrap.isConnected)return false;lock=true;if(q.bank&&window.LEARN)try{window.LEARN.seen(q.bank,q.bkey!=null?q.bkey:q.key,false,false);}catch(e){}if(window.HELP&&HELP.stop)HELP.stop();next();};
   const resolve=(q)=>{const ex=wrap.querySelector('.hintbox');if(q.explain){ex.hidden=false;ex.innerHTML=`<div class="cap">${q.explain}</div>`;}if(q.reveal)q.reveal(wrap.querySelector('.tqc'));};
-  function pickA(k,b){if(lock||b.disabled)return;const q=qs[i];if(O.evAns)O.evAns(k===q.ans,{m:o.id,tr:tries,x:k});if(!tries){note(q,k===q.ans);O.emit('tq',o.id,k===q.ans);if(q.bank&&window.LEARN)try{window.LEARN.seen(q.bank,q.bkey!=null?q.bkey:q.key,k===q.ans,false);}catch(e){}}
-    if(k===q.ans){if(window.TAL.rdA)window.TAL.rdA(q,tries,b);lock=true;if(window.FRIEND)window.FRIEND.onCorrect({tries,m:o.id});b.classList.add('ok');sfx.ok(i);const g=tries||(HB&&HB.step)?1:2;gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);resolve(q);setTimeout(next,D(q.explain||q.reveal?2300:1000));return;}
+  function pickA(k,b){if(lock||b.disabled)return;const q=qs[i];if(O.evAns)O.evAns(k===q.ans,{m:o.id,tr:tries,x:k});if(!tries)fast=(k===q.ans&&Date.now()-q._t<(HR()?HR().FAST:8000))?fast+1:0;
+    if(hero===2&&k!==q.ans){/* a miss in the hero round: no loss (no wrong count, no level note), the round ends, the answer is shown */hn++;lock=true;if(window.FRIEND)window.FRIEND.onWrong({final:true,m:o.id});b.classList.add('bad');sfx.no();wrap.querySelector('.chs').children[q.ans].classList.add('show');resolve(q);heroEnd();setTimeout(next,D(2600));return;}
+    if(!tries){if(hero!==2)note(q,k===q.ans);O.emit('tq',o.id,k===q.ans);if(q.bank&&window.LEARN)try{window.LEARN.seen(q.bank,q.bkey!=null?q.bkey:q.key,k===q.ans,false);}catch(e){}}
+    if(k===q.ans){if(window.TAL.rdA)window.TAL.rdA(q,tries,b);lock=true;if(window.FRIEND)window.FRIEND.onCorrect({tries,m:o.id});b.classList.add('ok');sfx.ok(i);const g=hero===2?3:tries||(HB&&HB.step)?1:2;if(hero===2){hok++;hn++;if(--hLeft<=0)setTimeout(heroEnd,0);}gems+=g;O.addGems(g,b);O.floatText(b,'+'+g);resolve(q);setTimeout(next,D(q.explain||q.reveal?2300:1000));return;}
     tries++;err++;b.classList.add('bad');b.disabled=true;sfx.no();if(o.onWrong)o.onWrong();const fin=tries>=2||q.opts.length<=2;if(window.FRIEND)window.FRIEND.onWrong({final:fin,m:o.id});
     if(fin){lock=true;const c=wrap.querySelector('.chs').children[q.ans];c.classList.add('show');if(HB&&HB.el.isConnected){HB.answer();if(q.reveal)q.reveal(wrap.querySelector('.tqc'));}else resolve(q);setTimeout(next,D(HB?4200:2600));}}
-  function next(){if(!wrap.isConnected)return;i++;if(i>=qs.length){KEY=null;if(ask)try{LN.done(ask);}catch(e){}if(o.end)try{o.end(err);}catch(e){}finishAct(o.id,err,qs.length,gems,o.back,()=>quiz(o),o.doneTitle);}else render();}
+  function next(){if(!wrap.isConnected)return;i++;if(i>=qs.length){heroEnd();KEY=null;if(ask)try{LN.done(ask);}catch(e){}if(o.end)try{o.end(err);}catch(e){}finishAct(o.id,err,qs.length,gems,o.back,()=>quiz(o),o.doneTitle);}else if(!hero&&fast>=(HR()?HR().STREAK:3)&&qs.length-i>=2&&HR()&&window.FRIEND.heroOffer){hero=1;lock=true;window.FRIEND.heroOffer(wrap,y=>{if(!wrap.isConnected)return;lock=false;if(y)heroStart();else heroLog(0);render();});}else render();}
   KEY=e=>{if(wrap.hidden)return;if(/^[1-9]$/.test(e.key)){const b=wrap.querySelector('.chs')&&wrap.querySelector('.chs').children[+e.key-1];if(b)b.click();}};
   window.__quiz={get keys(){return qs.map(q=>q.key||(q.pr+"|"+q.ans));},get ans(){return qs[i]&&qs[i].ans;},get i(){return i;},get wrap(){return wrap;}};
   render();}
@@ -6807,6 +6819,14 @@ function teach(next){const q=teachQ();if(!q)return next();O.save.frtch=pathKey()
       const t=good?TCH.thanks:TCH.gentle;c.querySelector('.frmt').textContent=t;anim(good?'joy':'sad');last=t;O.sfx.pop&&O.sfx.pop(good?3:1);voice(T.spk(t));
       setTimeout(()=>{if(c.isConnected)next();},D(3500));};row.appendChild(b);});
   c.appendChild(row);last=TCH.claim;voice(T.spk(TCH.claim)+GSEP+q.wrong+GSEP+T.spk(TCH.ask));FR.teaching=q;return c;}
+/* #681 hero challenge: after 3 fast right answers in a row (each first try, under 8 s) the quiz asks once per mission (talents.js quiz):
+   the friend offers a harder round (the next 3 questions: every choice back, one try, no help button). One tap: yes / not now.
+   A miss in the round just ends it, with no loss. The answer is a day-log line ('h', x.hr 'y'|'n', x.ok / x.n = the round). */
+const HERO={ask:'אַתָּה מַהֵר וְצוֹדֵק! רוֹצֶה אֶתְגָּר גִּבּוֹרִים? שְׁאֵלוֹת קָשׁוֹת יוֹתֵר.',yes:'כֵּן, אֲנִי מוּכָן!',no:'לֹא עַכְשָׁו',FAST:8000,STREAK:3,LEN:3};FR.HERO=HERO;
+T.addChoices&&T.addChoices([HERO.yes,HERO.no]);
+FR.heroOffer=(wrap,done)=>{wrap.innerHTML='';const c=h('div','frhero',`<div class="frms">${sprite()}</div><div class="frmt">${HERO.ask}</div>`),row=h('div','btnrow');
+  const y=h('button','bigbtn','<span>'+HERO.yes+'</span>'),n=h('button','bigbtn plain','<span>'+HERO.no+'</span>');
+  const go=a=>()=>{if(c._a)return;c._a=1;O.sfx.pop&&O.sfx.pop(a?3:1);done(a);};y.onclick=go(true);n.onclick=go(false);row.append(y,n);c.appendChild(row);wrap.appendChild(c);last=HERO.ask;voice(T.spk(HERO.ask));return c;};
 /* the next path math mission after a 'hard' answer: that level again, once */
 FR.ezRep=()=>{const S=O.save,z=S&&S.ez;if(!z||!z.rep)return null;const id=z.rep;z.rep=null;O.persist();return (O.ALLLV||[]).find(l=>l.id===id)||null;};
 /* #387: the end of a scene, a 2 s picture of what changed in the story: the ship as the story has it, the scene's new piece
@@ -6879,7 +6899,7 @@ FR.oops=()=>{FR.mount();anim('sad');return talk(OOPS,{ms:3000});};
 const HB=()=>window.HELP&&HELP.BT;
 FR.voiceList=()=>{const hl=HB()?[HB().clue,HB().offer].flatMap(h=>[HB().elim,HB().again,...new Set(window.HELP_TEXTS||[])].map(c=>h+': '+c)):[];
   return [...new Set([...Object.values(EVENTS).map(e=>e.line),...KINDS.flatMap(k=>[k.intro,k.ok]),START,OOPS,RXL.hint,RXL.yday,LISTEN,
-    EZ.q,...games().map(BRK.ask),TCH.claim,TCH.ask,TCH.thanks,TCH.gentle,...hl,
+    EZ.q,HERO.ask,...games().map(BRK.ask),TCH.claim,TCH.ask,TCH.thanks,TCH.gentle,...hl,
     ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([,b])=>[b,b+' '+ALL])):[]),...chaseSays(),...(SM()?SM().SCRIPT.flatMap((ch,c)=>ch.sc.map((_,i)=>chaseSay(c+1,i+1))):[])])];};
 FR.speakList=()=>[...new Set([...FR.voiceList(),...(window.SHIP&&SHIP.carrySay?SHIP.PIECES.map((_,i)=>SHIP.carrySay(i)):[]),...(window.GOALS?window.GOALS.speakList():[]),RXL.back,READFIRST,FIRST,LAST,ALL,
   ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([a])=>[a,FIRST+' '+a,LAST+' '+a])):[]),...(SM()?SM().speakList():[]),...chaseSays(),
@@ -12568,6 +12588,7 @@ window.GOALS=G;
    save.alog[day].e = [[min, id, stars, ok, n, helped, o], ...]   min = minutes after midnight when it started,
      ok/n = right on the first try / questions, o: 'c' done · 'q' left in the middle · 'x' opened and closed at once (only for Oren's "again" list) · 's' a path step he did not reach · 'b' stopped for a break
      · 'f' his answer to 'easy or hard?' at the end of a scene (#411, x.ez 'e' easy · 'h' hard)
+     · 'h' his answer to the friend's hero challenge (#681, x.hr 'y' took it · 'n' not now; x.ok / x.n = right / questions of the round)
      · 'p' skipped by the parent (#359, x.pc = the command id; hidden when that command was undone: save.pcU[id])
      · 'k' Oren skipped the activity himself (#616); x.sk = his skips in it (any line: questions skipped, shown "דילג ×N"; the day's count for the parent's limit)
    x (optional object): a story's {t, g, lv, r} (#355); lg = what he learned, on a finished line (#414, goals.js); any activity: lv = his level when it started (learning engine), ra = taps on read-aloud (#359; shown "9 הקראות", #612)
@@ -12640,7 +12661,7 @@ DL.nameOf=id=>{if(id==='math')return 'מסע החשבון';
   if(/^lv:/.test(id)){const lv=O.ALLLV.find(l=>l.id===id.slice(3));return lv?`${plain(lv.u.name)} (${plain(lv.w.name)})`:'חשבון';}
   const a=T.ACT[id];return a?plain(a.name):id;};
 DL.domOf=id=>{if(id==='math'||/^lv:/.test(id))return 'חשבון';const a=T.ACT[id];if(!a||!a.b)return '';const g=(T.GROUPS||[]).find(x=>x.ids.includes(a.b.id));return g?GN()[g.id]:plain(a.b.name);};
-const ICO={c:'✓',q:'✗',s:'⏭',b:'⏸',p:'⏭',k:'⏭',f:'💬'},WHY={c:'',q:'יצא באמצע',s:'לא הגיע',b:'הפסקה',p:'דילג (הורה)',k:'',f:''};
+const ICO={c:'✓',q:'✗',s:'⏭',b:'⏸',p:'⏭',k:'⏭',f:'💬',h:'🦸'},WHY={c:'',q:'יצא באמצע',s:'לא הגיע',b:'הפסקה',p:'דילג (הורה)',k:'',f:'',h:''};
 /* a bank story's own quiz line (rb2-st-N) repeats its 'story-new' line: not shown */
 const undone=e=>e[6]==='p'&&e[7]&&(O.realSave.pcU||{})[e[7].pc];
 DL.rows=d=>{const L=((O.realSave.alog||{})[d]||{}).e||[];return L.filter(e=>e[6]!=='x'&&!/^rb2-st-/.test(e[1])&&!undone(e)).sort((a,b)=>a[0]-b[0]);};
@@ -12657,7 +12678,7 @@ DL.sumHTML=rows=>{const r=DL.sum(rows);const a=[];if(r.done)a.push(r.done===1?'�
 DL.rowHTML=e=>{const [m,id,st,ok,n,hp,o,x]=e;const sx=x&&typeof x==='object'?x:null;
   if(id==='newday')return `<div class="prow dlrow dl-p"><span class="pn"><b class="dli">🌅</b> ${hhmm(m)} · יום חדש</span><span class="pc">מסלול חדש (הורה)</span></div>`;   /* #648 */
   const story=sx&&sx.t;
-  const res=[sx&&sx.sc?`${Math.max(1,Math.round(sx.sc/60))} דק׳`:'',st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`✓ ${ok} · ✗ ${n-ok}`:'',sx&&sx.lv?'רמה '+(sx.lv|0):'',hp?`עזרה ×${hp}`:'',sx&&sx.sk?`דילג ×${sx.sk|0}`:'',story?(sx.r==='l'?'האזין להקראה':'קרא לבד'):'',sx&&sx.ra?(sx.ra===1?'הקראה אחת':`${sx.ra} הקראות`):'',DL.hard(e)&&!(sx&&sx.ez==='h')?'היה לו קשה':'',sx&&sx.ez?(sx.ez==='h'?'אמר: היה קשה 😣':'אמר: היה קל 😀'):'',WHY[o]].filter(Boolean).join(' · ');
+  const res=[sx&&sx.sc?`${Math.max(1,Math.round(sx.sc/60))} דק׳`:'',st&&o==='c'?'⭐'.repeat(Math.min(3,st)):'',n?`✓ ${ok} · ✗ ${n-ok}`:'',sx&&sx.lv?'רמה '+(sx.lv|0):'',hp?`עזרה ×${hp}`:'',sx&&sx.sk?`דילג ×${sx.sk|0}`:'',story?(sx.r==='l'?'האזין להקראה':'קרא לבד'):'',sx&&sx.ra?(sx.ra===1?'הקראה אחת':`${sx.ra} הקראות`):'',DL.hard(e)&&!(sx&&sx.ez==='h')?'היה לו קשה':'',sx&&sx.hr?(sx.hr==='y'?`אתגר גיבורים: ${sx.ok|0} מתוך ${sx.n|0}`:'דחה אתגר גיבורים'):'',sx&&sx.ez?(sx.ez==='h'?'אמר: היה קשה 😣':'אמר: היה קל 😀'):'',WHY[o]].filter(Boolean).join(' · ');
   const name=story?`${plain(sx.t)}${sx.g?` <span class="dlgoal">🎯 ${plain(sx.g)}</span>`:''}`:DL.nameOf(id);
   return `<div class="prow dlrow dl-${o}"><span class="pn"><b class="dli">${ICO[o]||''}</b> ${o==='s'?'':hhmm(m)+' · '}${name} <small>${DL.domOf(id)}</small></span><span class="pc">${res}</span></div>`;};
 /* the top line of the summary: playing now / last played */
@@ -12928,7 +12949,7 @@ const W3={math:'🧮 חשבון',readg:'📖 קריאה',eng:'🔤 אנגלית'
 const top3=id=>{id=String(id||'');if(/^(en|eng)-/.test(id))return 'eng';const t=topOf(id);return t==='math'||t==='readg'?t:null;};
 P.week=d=>{const [y,m,dd]=d.split('-').map(Number);const ks=[...Array(7)].map((_,i)=>dayKey(new Date(y,m-1,dd-6+i)));
   const tm=T.S().time||{};const mins=ks.map(k=>Math.round((tm[k]|0)/60));const c={math:0,readg:0,eng:0};let n=0;
-  ks.forEach(k=>DL.rows(k).forEach(e=>{if('pxsf'.includes(e[6]))return;const t=top3(e[1]);if(t){c[t]++;n++;}}));
+  ks.forEach(k=>DL.rows(k).forEach(e=>{if('pxsfh'.includes(e[6]))return;const t=top3(e[1]);if(t){c[t]++;n++;}}));
   if(!n&&!mins.some(x=>x))return null;const sh=n?{math:c.math/n*100,readg:c.readg/n*100,eng:c.eng/n*100}:null;return {k:ks,m:mins,sh};};
 const WCOL={math:'#3a8fc4',readg:'#c0392b',eng:'#8e44ad'};
 function weekSec(box,d,sec){const w=P.week(d);if(!w)return;const mx=Math.max(1,...w.m);

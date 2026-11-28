@@ -211,6 +211,14 @@ function teach(next){const q=teachQ();if(!q)return next();O.save.frtch=pathKey()
       const t=good?TCH.thanks:TCH.gentle;c.querySelector('.frmt').textContent=t;anim(good?'joy':'sad');last=t;O.sfx.pop&&O.sfx.pop(good?3:1);voice(T.spk(t));
       setTimeout(()=>{if(c.isConnected)next();},D(3500));};row.appendChild(b);});
   c.appendChild(row);last=TCH.claim;voice(T.spk(TCH.claim)+GSEP+q.wrong+GSEP+T.spk(TCH.ask));FR.teaching=q;return c;}
+/* #681 hero challenge: after 3 fast right answers in a row (each first try, under 8 s) the quiz asks once per mission (talents.js quiz):
+   the friend offers a harder round (the next 3 questions: every choice back, one try, no help button). One tap: yes / not now.
+   A miss in the round just ends it, with no loss. The answer is a day-log line ('h', x.hr 'y'|'n', x.ok / x.n = the round). */
+const HERO={ask:'אַתָּה מַהֵר וְצוֹדֵק! רוֹצֶה אֶתְגָּר גִּבּוֹרִים? שְׁאֵלוֹת קָשׁוֹת יוֹתֵר.',yes:'כֵּן, אֲנִי מוּכָן!',no:'לֹא עַכְשָׁו',FAST:8000,STREAK:3,LEN:3};FR.HERO=HERO;
+T.addChoices&&T.addChoices([HERO.yes,HERO.no]);
+FR.heroOffer=(wrap,done)=>{wrap.innerHTML='';const c=h('div','frhero',`<div class="frms">${sprite()}</div><div class="frmt">${HERO.ask}</div>`),row=h('div','btnrow');
+  const y=h('button','bigbtn','<span>'+HERO.yes+'</span>'),n=h('button','bigbtn plain','<span>'+HERO.no+'</span>');
+  const go=a=>()=>{if(c._a)return;c._a=1;O.sfx.pop&&O.sfx.pop(a?3:1);done(a);};y.onclick=go(true);n.onclick=go(false);row.append(y,n);c.appendChild(row);wrap.appendChild(c);last=HERO.ask;voice(T.spk(HERO.ask));return c;};
 /* the next path math mission after a 'hard' answer: that level again, once */
 FR.ezRep=()=>{const S=O.save,z=S&&S.ez;if(!z||!z.rep)return null;const id=z.rep;z.rep=null;O.persist();return (O.ALLLV||[]).find(l=>l.id===id)||null;};
 /* #387: the end of a scene, a 2 s picture of what changed in the story: the ship as the story has it, the scene's new piece
@@ -283,7 +291,7 @@ FR.oops=()=>{FR.mount();anim('sad');return talk(OOPS,{ms:3000});};
 const HB=()=>window.HELP&&HELP.BT;
 FR.voiceList=()=>{const hl=HB()?[HB().clue,HB().offer].flatMap(h=>[HB().elim,HB().again,...new Set(window.HELP_TEXTS||[])].map(c=>h+': '+c)):[];
   return [...new Set([...Object.values(EVENTS).map(e=>e.line),...KINDS.flatMap(k=>[k.intro,k.ok]),START,OOPS,RXL.hint,RXL.yday,LISTEN,
-    EZ.q,...games().map(BRK.ask),TCH.claim,TCH.ask,TCH.thanks,TCH.gentle,...hl,
+    EZ.q,HERO.ask,...games().map(BRK.ask),TCH.claim,TCH.ask,TCH.thanks,TCH.gentle,...hl,
     ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([,b])=>[b,b+' '+ALL])):[]),...chaseSays(),...(SM()?SM().SCRIPT.flatMap((ch,c)=>ch.sc.map((_,i)=>chaseSay(c+1,i+1))):[])])];};
 FR.speakList=()=>[...new Set([...FR.voiceList(),...(window.SHIP&&SHIP.carrySay?SHIP.PIECES.map((_,i)=>SHIP.carrySay(i)):[]),...(window.GOALS?window.GOALS.speakList():[]),RXL.back,READFIRST,FIRST,LAST,ALL,
   ...(SM()?SM().SCRIPT.flatMap(ch=>ch.sc.flatMap(([a])=>[a,FIRST+' '+a,LAST+' '+a])):[]),...(SM()?SM().speakList():[]),...chaseSays(),

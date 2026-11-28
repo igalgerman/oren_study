@@ -250,7 +250,7 @@ const W3={math:'🧮 חשבון',readg:'📖 קריאה',eng:'🔤 אנגלית'
 const top3=id=>{id=String(id||'');if(/^(en|eng)-/.test(id))return 'eng';const t=topOf(id);return t==='math'||t==='readg'?t:null;};
 P.week=d=>{const [y,m,dd]=d.split('-').map(Number);const ks=[...Array(7)].map((_,i)=>dayKey(new Date(y,m-1,dd-6+i)));
   const tm=T.S().time||{};const mins=ks.map(k=>Math.round((tm[k]|0)/60));const c={math:0,readg:0,eng:0};let n=0;
-  ks.forEach(k=>DL.rows(k).forEach(e=>{if('pxsf'.includes(e[6]))return;const t=top3(e[1]);if(t){c[t]++;n++;}}));
+  ks.forEach(k=>DL.rows(k).forEach(e=>{if('pxsfh'.includes(e[6]))return;const t=top3(e[1]);if(t){c[t]++;n++;}}));
   if(!n&&!mins.some(x=>x))return null;const sh=n?{math:c.math/n*100,readg:c.readg/n*100,eng:c.eng/n*100}:null;return {k:ks,m:mins,sh};};
 const WCOL={math:'#3a8fc4',readg:'#c0392b',eng:'#8e44ad'};
 function weekSec(box,d,sec){const w=P.week(d);if(!w)return;const mx=Math.max(1,...w.m);
