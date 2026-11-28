@@ -163,3 +163,18 @@ def api(cmd): return 0, json.dumps([{"body": "OBSERVER: no problems", "created_a
 st0 = AO.load_state(); AO.relay(lambda m: told.append(m), lambda m: None, 1e9, gh=lambda *a, **k: (0, '[{"number": 1}]'), api=api)
 assert AO.load_state().get("cloud_seen", "") == "", "an untrusted observer comment must not count"
 print("ok trust #800")
+
+# #979: gh spells the App bot `app/oren-study-bot`; only app/<configured bot> is accepted, nothing else new
+APP = "app/oren-study-bot"
+assert T.ok(c("x", APP)) and T.is_bot(c("x", APP)) and T.ok(c("x", APP, rest=True)) and T.login(c("x", APP)) == BOT
+assert not T.ok(c("x", "app/mallory")) and not T.ok(c("x", "app/" + OWN)) and not T.ok(c("x", "app/")) and not T.ok(c("x", "app/app/" + BOT))
+assert not T.ok(c("x", "oren-study-bot2")) and not T.is_bot(c("x", "App/oren-study-bot"))
+d979 = {"number": 9, "title": "t", "body": "BOT-BODY", "author": {"login": APP, "is_bot": True}, "comments": []}
+assert "BOT-BODY" in V.render(d979)
+iss = [{"number": 1, "labels": ["ready-for-agent"], "author": {"login": APP}},                      # gh shape
+       {"number": 2, "labels": ["ready-for-agent"], "user": {"login": APP}},                        # cache/REST shape
+       {"number": 3, "labels": ["ready-for-agent"], "author": {"login": "app/mallory"}}]
+out = R.untrusted_not_ready(iss)
+assert out[0]["labels"] == ["ready-for-agent"] and out[1]["labels"] == ["ready-for-agent"] and out[2]["labels"] == []
+assert T.answer_ok(c("x", APP, LATE)) and T.answer_ok(c("x", APP, EARLY)) and not T.answer_ok(c("x", "app/mallory", LATE))
+assert T.answer_ok(c("x", OWN, EARLY)) and not T.answer_ok(c("x", OWN, LATE)) and not T.answer_ok(c("x", "app/" + OWN, EARLY))
