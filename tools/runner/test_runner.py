@@ -1815,3 +1815,21 @@ _s1 = _rm.life(7, _fake_gh); _cn[0] = 2; assert _rm.life(7, _fake_gh) != _s1
 try: _rm.life(7, lambda c: (1, "err")); assert False
 except OSError: pass
 print("ok #841 remote.life")
+
+# #901: reversible design choices are decided by rule (PASS-NOTES decided:), PURPLE only for the owner-only kinds
+for _p in (r.review_prompt(7, 9), r.remote_review_prompt(7, 9)):
+    assert "PASS-NOTES decided:" in _p and "NOT PURPLE" in _p and "never for a design choice" in _p, _p
+    for _k in ("money", "secrets/keys/logins", "privacy", "irreversible deletes", "click only his account"): assert _k in _p, _k
+    assert "a real product/design choice only the owner can make" not in _p
+_dn = "decided: voice B (rule), other options: A, C"
+assert r.parse_verdict(f"VERDICT: PASS-NOTES {_dn}; rename x") == ("notes", f"{_dn}; rename x", "")
+assert r.decided_notes(f"rename x; {_dn}") == [_dn] and r.decided_notes("rename x") == []
+assert r.polish_lines(f"{_dn}; rename x", 9) == ["- rename x (PR #9)"]                 # a decided note is no polish line
+_calls = []; _g0 = r.gh; r.gh = lambda *a, **k: (_calls.append(a), (0, ""))[1]
+import telegram as _tg; _t0 = _tg.send; _sent = []; _tg.send = lambda t, reply_to=0: _sent.append(t)
+try:
+    assert len(r.post_decided(7, 9, f"{_dn}; rename x")) == 1 and len(_calls) == 1 and len(_sent) == 1   # one decided: line -> one notice
+    assert "voice B" in _sent[0] and "other options: A, C" in _sent[0] and "#7" in _sent[0]
+    assert r.post_decided(7, 9, "rename x") == [] and len(_sent) == 1
+finally: r.gh = _g0; _tg.send = _t0
+print("ok #901 decided notices")
