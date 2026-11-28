@@ -57,7 +57,8 @@ def model_for(level):
 def session_name(n): return f"test-{n}"
 def preview_url(pr): return f"https://pr-{pr}.oren-game.pages.dev"   # .github/workflows/preview.yml deploys branch pr-<n>
 
-def prompt(n, pr, level, url, repo=remote.REPO):
+def prompt(n, pr, level, url, repo=None):
+    repo = repo or remote.repos.pr_repo()          # #792: the PR may be in GAME
     two = ("This is T3: use two browsers at once, the kid on the laptop (1366x768) and the parent on the phone (390x844), "
            "same test family, and play every kid <-> parent step across them. " if level == "T3" else "")
     tour = "".join(f"\n  {i}. {t}" for i, t in enumerate(TOUR, 1))
@@ -88,7 +89,7 @@ def result_from(comments):
 
 def status(pr, run=remote.sh, since=None):
     """The tester's result comment on the PR since this round -> {state: done|working, line, body} (like remote.review_status)."""
-    rc, out = run(["gh", "pr", "view", str(pr), "--repo", remote.REPO, "--json", "comments"])
+    rc, out = run(["gh", "pr", "view", str(pr), "--repo", remote.repos.pr_repo(), "--json", "comments"])
     try: comments = [c.get("body", "") for c in trust.only(json.loads(out).get("comments", [])) if not since or c.get("createdAt", "") >= since] if rc == 0 else []
     except ValueError: comments = []
     line, body = result_from(comments)

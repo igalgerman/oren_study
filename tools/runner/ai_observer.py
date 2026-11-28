@@ -225,7 +225,7 @@ def relay(tell, log, now, gh=None, api=None):
 FALLBACK_MARK = "<!-- fallback #525 -->"   # the first line of a comment made by the runner's own fallback run (not the trigger)
 OWNER_SILENT_H, FALLBACK_MIN = 3, 60
 FALLBACK_SILENT_H = 2   # #857: the PC fallback runs only when no observer line (trigger or Actions clock) was posted on #528 for 2 h
-FALLBACK_PROMPT = ("Follow docs/agents/cloud-tasks.md, section AI observer, in igalgerman/oren_study. This is the runner's fallback "
+FALLBACK_PROMPT = ("Follow docs/agents/cloud-tasks.md, section AI observer, in {repo}. This is the runner's fallback "
                    f"run (#525: the scheduled task does not run): make the first line of your comment exactly {FALLBACK_MARK}")
 TELEGRAM = None     # text -> Telegram message; tests swap in a fake (None = telegram.send)
 TODO_ADD = None     # (**item) -> owner to-do list (#895); None until the list exists
@@ -279,7 +279,7 @@ def fallback(now, log):
     if LAUNCH: launch = LAUNCH
     else:
         import remote; launch = remote.launch
-    r = launch(0, FALLBACK_PROMPT, R.CFG.get("main_checkout", str(R.ROOT)), name="cloud-observer", model=MODEL, desk=True)
+    r = launch(0, FALLBACK_PROMPT.format(repo=R.REPO), R.CFG.get("main_checkout", str(R.ROOT)), name="cloud-observer", model=MODEL, desk=True)
     ok = bool((r or {}).get("ok"))
     if ok: st = load_state(); st["fallback_at"] = now; save_state(st)
     log("ai observer (cloud): fallback cloud run " + ("started" if ok else "could not start: " + str((r or {}).get("error", ""))[:150]))

@@ -646,7 +646,7 @@ def merge_deploys(events, ci_events, ci=True):
 
 def ci_deploys(n=8):
     """The last `n` deploys of the deploy workflow, read from GitHub; [] if gh fails."""
-    rc, out = R.run(["gh", "api", f"repos/{R.REPO}/deployments?environment=production&per_page={n}", "--jq", "[.[].statuses_url]"])
+    rc, out = R.run(["gh", "api", f"repos/{R.repos.deploy_repo()}/deployments?environment=production&per_page={n}", "--jq", "[.[].statuses_url]"])
     if rc: return []
     st = []
     for u in json.loads(out or "[]"):
@@ -664,10 +664,10 @@ def voice_missing(statuses):
 
 def ci_voice(n=3):
     """#400: the voice-missing status of the newest production deploy that has one (pregen runs after the deploy); None if gh fails."""
-    rc, out = R.run(["gh", "api", f"repos/{R.REPO}/deployments?environment=production&per_page={n}", "--jq", "[.[].sha]"])
+    rc, out = R.run(["gh", "api", f"repos/{R.repos.deploy_repo()}/deployments?environment=production&per_page={n}", "--jq", "[.[].sha]"])
     if rc: return None
     for sha in json.loads(out or "[]"):
-        rc, o = R.run(["gh", "api", f"repos/{R.REPO}/commits/{sha}/statuses?per_page=100"])
+        rc, o = R.run(["gh", "api", f"repos/{R.repos.deploy_repo()}/commits/{sha}/statuses?per_page=100"])
         v = None if rc else voice_missing(json.loads(o or "[]"))
         if v: return v
     return None

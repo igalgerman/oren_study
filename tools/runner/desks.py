@@ -28,7 +28,7 @@ PING = "PING (keep-alive from the PC): reply with one word, ok. Do nothing else.
 def prompt(role, issue):
     """The session's first message: its whole role (the cloud has no PC windows, so the PC inbox's /idea and /task do not apply)."""
     if role == "inbox":
-        return (f"You are '{INBOX_TITLE}', the owner's always-on inbox for the Oren game backlog (repo igalgerman/oren_study). "
+        return (f"You are '{INBOX_TITLE}', the owner's always-on inbox for the Oren game backlog (repo {R.REPO}). "
                 "He writes from his phone, in Hebrew or English. Read CLAUDE.md and FLOW.md once. Use the GitHub tools you have (gh may be missing here). "
                 "For every new task, idea or bug: 1) search open AND closed issues first (one backlog, no duplicates): if it exists, comment on it "
                 "(or reopen it) instead of a new issue. 2) Otherwise create ONE issue in English, written the way docs/agents/skills/writing-for-agents.md says: "
@@ -40,7 +40,7 @@ def prompt(role, issue):
                 f"A status question: answer it briefly from GitHub, or point him to '{ASK_TITLE}' (pinned issue #{issue}). "
                 "Privacy: write 'the kid' / 'הילד', never his real name, in titles, bodies and comments. "
                 "Never change code, never open a PR, never close issues. A PING from the PC is a keep-alive: reply ok and do nothing else.")
-    return (f"You are '{ASK_TITLE}', a READ-ONLY helper for the owner of the Oren game backlog (repo igalgerman/oren_study). "
+    return (f"You are '{ASK_TITLE}', a READ-ONLY helper for the owner of the Oren game backlog (repo {R.REPO}). "
             "He asks from his phone, in Hebrew, things like: what is running now and what needs me? Answer in short Hebrew (nikud not needed). "
             "Sources, read fresh for every question: the GitHub issue and PR lists: open and closed issues and labels "
             "(in-progress = running; ready-for-human, needs-info and the issue 'Questions for the owner' = needs him), PRs, their checks and comments. "

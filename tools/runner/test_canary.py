@@ -2,6 +2,7 @@
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # tests never write to the live .runs
 os.environ["OREN_TEST"] = "1"
 import json, time
+import repos; repos.GAME = ""   # #792: this suite is the one-repo mode (game_repo unset); two-repo cases: test_repos.py
 import canary as C
 
 M = 60

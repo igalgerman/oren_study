@@ -14,7 +14,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OREN = ROOT / "oren2"
-REPO = "igalgerman/oren_study"
+import tomllib
+_CFG = tomllib.loads((Path(__file__).resolve().parent / "runner" / "config.toml").read_text(encoding="utf-8"))   # #792: the names live only in config
+REPO = _CFG["repo"]
+RUNS_REPO = _CFG.get("game_repo") or REPO   # suite times come from the GAME repo's tests workflow (INFRA in one-repo mode)
 DAY = 86400
 WINDOW_D, WEEK_D, SLOWER, QUAR_D, EVERY_D = 30, 7, 0.30, 2, 7
 TITLE = "Test trim proposal ("
@@ -138,19 +141,19 @@ def gh_bytes(path):
 def ci_rows(now, cache=ROOT / "tools" / "runner" / ".runs" / "garden", max_runs=150):
     """Rows from the times-* artifacts of the tests workflow (newest max_runs runs of the last 30 days). Cached by artifact id."""
     since = time.strftime("%Y-%m-%d", time.gmtime(now - WINDOW_D * DAY))
-    rc, out = gh("api", f"repos/{REPO}/actions/workflows/tests.yml/runs?per_page=100&created=>={since}", "--paginate", "--jq", ".workflow_runs[] | [.id, .created_at] | @tsv")
+    rc, out = gh("api", f"repos/{RUNS_REPO}/actions/workflows/tests.yml/runs?per_page=100&created=>={since}", "--paginate", "--jq", ".workflow_runs[] | [.id, .created_at] | @tsv")
     runs = [ln.split("\t") for ln in (out or "").splitlines() if "\t" in ln][:max_runs] if not rc else []
     cache.mkdir(parents=True, exist_ok=True)
     rows, used = [], 0
     for rid, created in runs:
         at = calendar.timegm(time.strptime(created[:19], "%Y-%m-%dT%H:%M:%S"))
-        rc, arts = gh("api", f"repos/{REPO}/actions/runs/{rid}/artifacts", "--jq", '.artifacts[] | select(.name | startswith("times-")) | .id')
+        rc, arts = gh("api", f"repos/{RUNS_REPO}/actions/runs/{rid}/artifacts", "--jq", '.artifacts[] | select(.name | startswith("times-")) | .id')
         ids = (arts or "").split() if not rc else []
         used += bool(ids)
         for aid in ids:
             f = cache / f"{aid}.tsv"
             if not f.exists():
-                z = gh_bytes(f"repos/{REPO}/actions/artifacts/{aid}/zip")
+                z = gh_bytes(f"repos/{RUNS_REPO}/actions/artifacts/{aid}/zip")
                 if not z: continue
                 try: f.write_text(zipfile.ZipFile(io.BytesIO(z)).read("times.tsv").decode("utf-8"), encoding="utf-8")
                 except (zipfile.BadZipFile, KeyError): continue

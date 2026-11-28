@@ -27,12 +27,8 @@ OWNER_MIN_PCT = 50         # #911: a bot uses the owner login only above this % 
 STALE_LIMITED = 600        # #911: a read of a limited app is answered from a cache up to this old (s) instead of the owner login
 ROLLUP_FINAL = ("SUCCESS", "FAILURE", "ERROR")   # #911: a PR's cached check rollup is final (the real `gh pr checks` decides)
 
-def _repo():
-    try:
-        import tomllib
-        return tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8")).get("repo", "igalgerman/oren_study")
-    except Exception: return "igalgerman/oren_study"
-REPO = _repo()
+import repos
+REPO, GAME = repos.INFRA, repos.GAME      # #792: INFRA (backlog) and GAME (game PRs; "" = one-repo mode), from config.toml only
 
 # ---------- rate limit -> retry ----------
 _RL = re.compile(r"rate limit|abuse detection", re.I)
@@ -128,6 +124,7 @@ def write_target(cmd):
     """The issue/PR number a write touches ('' = no issue/PR data: labels, workflow runs; 'new' = a created issue/PR: only lists change;
     '*' = unknown, #911: only when no number can be found in the command)."""
     if len(cmd) > 1 and cmd[1] in ("label", "run"): return ""
+    pre = "g:" if GAME and any(GAME in str(a) for a in cmd) else ""       # #792: GAME PR 5 and INFRA issue 5 are two things
     if len(cmd) > 2 and cmd[1] in ("issue", "pr") and cmd[2] == "create": return "new"
     if len(cmd) > 2 and cmd[1] in ("issue", "pr"):
         skip = False
@@ -135,12 +132,12 @@ def write_target(cmd):
             a = str(a)
             if skip: skip = False; continue
             if a.startswith("-"): skip = "=" not in a and a not in ("--squash", "--auto", "--merge", "--rebase", "--admin", "--delete-branch", "--web", "--disable-auto"); continue
-            if a.lstrip("#").isdigit(): return a.lstrip("#")
+            if a.lstrip("#").isdigit(): return pre + a.lstrip("#")
     m = next((re.search(r"/(?:issues|pulls)/(\d+)", a) for a in cmd if re.search(r"/(?:issues|pulls)/(\d+)", a)), None)
-    if m: return m[1]
+    if m: return pre + m[1]
     if len(cmd) > 2 and cmd[1] == "api" and any(re.search(r"/(?:issues|pulls)$", str(a)) for a in cmd): return "new"   # POST .../issues
     nums = {m2 for a in cmd for m2 in re.findall(r"(?:^|[=\s])(?:number|issueNumber|prNumber|n)=(\d+)$", str(a))}
-    return nums.pop() if len(nums) == 1 else "*"
+    return pre + nums.pop() if len(nums) == 1 else "*"
 
 def _append(path, line):
     try:
@@ -154,15 +151,17 @@ def caller_of(cmd):
 
 def endpoint_of(cmd):
     """Endpoint of a gh call with numbers/ids replaced and no query string (#848): 'repos/{o}/{r}/issues/{n}/comments';
-    `gh issue list` -> 'issue list'. Never a token, never a query value. No spaces (one log field)."""
+    `gh issue list` -> 'issue list'. Never a token, never a query value. No spaces (one log field).
+    #792: a call on the GAME repo ends in '@game' (`ghcache.py top` shows calls per repo)."""
     try:
+        tag = "@game" if GAME and any(GAME in str(x) for x in cmd) else ""
         if len(cmd) > 2 and cmd[1] == "api":
             a = next((x for x in cmd[2:] if x == "graphql" or re.match(r"/?(repos|user|orgs|search|rate_limit|app|installation)", x)), "")
             if a == "graphql": return "graphql"
             parts = a.split("?")[0].strip("/").split("/")
             if len(parts) >= 3 and parts[0] == "repos": parts[1:3] = ["{o}", "{r}"]
-            return "/".join("{n}" if re.fullmatch(r"\d+", x) else "{sha}" if re.fullmatch(r"[0-9a-f]{40}", x) else x for x in parts)[:120] or "api"
-        return "_".join(str(x) for x in cmd[1:3] if not str(x).startswith("-"))[:40]
+            return ("/".join("{n}" if re.fullmatch(r"\d+", x) else "{sha}" if re.fullmatch(r"[0-9a-f]{40}", x) else x for x in parts)[:120] or "api") + tag
+        return "_".join(str(x) for x in cmd[1:3] if not str(x).startswith("-"))[:40] + tag
     except Exception: return ""
 
 def note_call(now=None, who="app", caller=None, endpoint=""):
@@ -244,16 +243,17 @@ def _usable(now, max_age=None):
     return c if c and now - c.get("ts", 0) <= (MAX_AGE if max_age is None else max_age) else None
 
 _COMMENTS = "comments(last:20){totalCount nodes{body createdAt url author{login}}}"   # #911: no reaction users (owner_q.comments reads them itself), the last 20 only (more -> comments_cut -> real gh)
-_Q = ("query($o:String!,$r:String!,$oc:String,$cc:String,$wo:Boolean!,$wc:Boolean!,$full:Boolean!){repository(owner:$o,name:$r){"
+_PRS = (" prs:pullRequests(first:100,orderBy:{field:UPDATED_AT,direction:DESC})@include(if:$full){nodes{number url title headRefName body state isDraft"
+      " mergedAt createdAt updatedAt closedAt labels(first:30){nodes{name}} mergeable autoMergeRequest{enabledAt} closingIssuesReferences(first:5){nodes{number}} headRefOid commits(last:1){nodes{commit{committedDate statusCheckRollup{state}}}} comments(last:20){totalCount nodes{body createdAt url author{login}}}}}"   # #911: headRefOid for the CI wait; slim comments
+      " openPrs:pullRequests(states:OPEN)@include(if:$full){totalCount}"
+      " refs(refPrefix:\"refs/heads/lane/\",first:100,orderBy:{field:TAG_COMMIT_DATE,direction:DESC})@include(if:$full){pageInfo{hasNextPage} nodes{name target{... on Commit{committedDate}}}}")
+_GAME_Q = ' game:repository(owner:$go,name:$gr)@include(if:$hg){' + _PRS + '}'     # #792: the GAME repo's PRs in the SAME query: no second call a minute
+_Q = ("query($o:String!,$r:String!,$oc:String,$cc:String,$wo:Boolean!,$wc:Boolean!,$full:Boolean!,$go:String!,$gr:String!,$hg:Boolean!){repository(owner:$o,name:$r){"
       "open:issues(states:OPEN,first:100,after:$oc,orderBy:{field:CREATED_AT,direction:DESC})@include(if:$wo){totalCount pageInfo{hasNextPage endCursor}"
       " nodes{number title body url state createdAt updatedAt closedAt labels(first:30){nodes{name}} " + _COMMENTS + "}}"
       " closed:issues(states:CLOSED,first:100,after:$cc,orderBy:{field:UPDATED_AT,direction:DESC})@include(if:$wc){totalCount pageInfo{hasNextPage endCursor}"
       " nodes{number title url state createdAt updatedAt closedAt labels(first:30){nodes{name}}}}"
-      " prs:pullRequests(first:100,orderBy:{field:UPDATED_AT,direction:DESC})@include(if:$full){nodes{number url title headRefName body state isDraft"
-      " mergedAt createdAt updatedAt closedAt labels(first:30){nodes{name}} mergeable autoMergeRequest{enabledAt} closingIssuesReferences(first:5){nodes{number}} headRefOid commits(last:1){nodes{commit{committedDate statusCheckRollup{state}}}} comments(last:20){totalCount nodes{body createdAt url author{login}}}}}"   # #911: headRefOid for the CI wait; slim comments
-      " openPrs:pullRequests(states:OPEN)@include(if:$full){totalCount}"
-      " refs(refPrefix:\"refs/heads/lane/\",first:100,orderBy:{field:TAG_COMMIT_DATE,direction:DESC})@include(if:$full){pageInfo{hasNextPage} nodes{name target{... on Commit{committedDate}}}}"
-      "} rateLimit{cost remaining}}")   # #911: the cost of every refresh is logged
+      " " + _PRS + "}" + _GAME_Q + " rateLimit{cost remaining}}")   # #911: the cost of every refresh is logged
 
 def _flat(node):
     d = dict(node)
@@ -271,7 +271,8 @@ def _flat(node):
 
 def _query(run, full, open_cur=None, closed_cur=None, want_open=True, want_closed=True):
     o, r = REPO.split("/", 1)
-    cmd = ["gh", "api", "graphql", "-f", f"query={_Q}", "-f", f"o={o}", "-f", f"r={r}",
+    go, gr = (GAME or "x/x").split("/", 1)
+    cmd = ["gh", "api", "graphql", "-f", f"query={_Q}", "-f", f"o={o}", "-f", f"r={r}", "-f", f"go={go}", "-f", f"gr={gr}", "-F", f"hg={str(bool(GAME and full)).lower()}",
            "-F", f"wo={str(want_open).lower()}", "-F", f"wc={str(want_closed).lower()}", "-F", f"full={str(full).lower()}"]
     if open_cur: cmd += ["-f", f"oc={open_cur}"]
     if closed_cur: cmd += ["-f", f"cc={closed_cur}"]
@@ -281,7 +282,7 @@ def _query(run, full, open_cur=None, closed_cur=None, want_open=True, want_close
         data = json.loads(out)["data"]
         cost = (data.get("rateLimit") or {}).get("cost")
         if cost is not None: _append(CALLS, f"{time.time():.0f} cost refresh graphql_cost={cost}")   # #911: measured, `ghcache.py top` shows it
-        return data["repository"]
+        return {**data["repository"], "game": data.get("game")} if data.get("game") else data["repository"]   # #792: GAME's PRs ride in the same call
     except (ValueError, KeyError, TypeError): raise RuntimeError(f"gh graphql: unexpected answer {out.strip()[:200]}")
 
 def refresh_costs(minutes=60, now=None):
@@ -367,6 +368,11 @@ def refresh(run, now=None, run_owner=None):
          "prs_complete": len((repo.get("prs") or {}).get("nodes") or []) < 100,
          "lanes": {n["name"]: (n.get("target") or {}).get("committedDate", "") for n in refs.get("nodes") or []},
          "lanes_complete": not (refs.get("pageInfo") or {}).get("hasNextPage"), "rate": dict(prev.get("rate") or {})}
+    if GAME and repo.get("game"):                                       # #792: GAME's PRs ride in the same query; PR numbers are GAME's own (they restart at 1)
+        g = repo["game"]; gn = (g.get("prs") or {}).get("nodes") or []; gr = g.get("refs") or {}
+        c["game"] = {"prs": [_flat(p) for p in gn], "open_prs": (g.get("openPrs") or {}).get("totalCount", 0), "prs_complete": len(gn) < 100,
+                     "lanes": {n["name"]: (n.get("target") or {}).get("committedDate", "") for n in gr.get("nodes") or []},
+                     "lanes_complete": not (gr.get("pageInfo") or {}).get("hasNextPage")}
     c["rate"] = _rate(run) or c["rate"]
     if run_owner: c["rate_owner"] = _rate(run_owner) or dict(prev.get("rate_owner") or {})
     _save(c)
@@ -420,6 +426,12 @@ def _pr_list(c, o):
     complete = c.get("prs_complete") or (state == "open" and sum(p.get("state") == "OPEN" for p in c["prs"]) >= c.get("open_prs", 0))
     return items[:limit] if complete or o.get("head") or len(items) >= limit else None   # --head lane/<n>: its PR is recent
 
+def _section(c, repo):
+    """#792: the cached data of one repo: INFRA = the top level, GAME = c['game'] (PRs and lane refs only; no issues). None = not cached."""
+    if repo == REPO: return c
+    if GAME and repo == GAME and c.get("game"): return {**c["game"], "open": [], "closed": [], "open_complete": True, "closed_total": 0}
+    return None
+
 def answer(cmd, now=None, max_age=None):
     """(0, json text) when the cache can answer this read exactly enough, else None (-> real gh). max_age: #911 a staler cache is fine."""
     if len(cmd) < 3 or cmd[0] != "gh" or is_write(cmd): return None
@@ -428,18 +440,26 @@ def answer(cmd, now=None, max_age=None):
     if not c: return None
     dirty = _dirty_since(c["ts"])
     if cmd[1] == "api":
-        m = re.fullmatch(rf"repos/{re.escape(REPO)}/branches/lane/(\d+)", str(cmd[2]))
-        if not m or cmd[3:] != ["--jq", ".commit.commit.committer.date"] or {m[1], "*"} & dirty: return None
-        if m[1] in c.get("lanes", {}): return 0, c["lanes"][m[1]] + "\n"
-        return (1, "gh: Branch not found (HTTP 404)") if c.get("lanes_complete") else None
+        m = re.fullmatch(r"repos/([^/]+/[^/]+)/branches/lane/(\d+)", str(cmd[2]))
+        sec = _section(c, m[1]) if m else None
+        if not m or sec is None or cmd[3:] != ["--jq", ".commit.commit.committer.date"]: return None
+        key = m[2] if m[1] == REPO else "g:" + m[2]
+        if {key, "*"} & dirty: return None
+        if m[2] in sec.get("lanes", {}): return 0, sec["lanes"][m[2]] + "\n"
+        return (1, "gh: Branch not found (HTTP 404)") if sec.get("lanes_complete") else None
     if cmd[1] not in ("issue", "pr") or cmd[2] not in ("list", "view"): return None
     o = _parse(cmd[3:])
-    if o is None or "json" not in o or o.get("repo", REPO) != REPO: return None
+    if o is None or "json" not in o: return None
+    repo = o.get("repo", REPO)
+    sec = _section(c, repo) if cmd[1] == "pr" or repo == REPO else None           # #792: GAME: PRs only (the backlog is INFRA)
+    if sec is None: return None
+    pre = "" if repo == REPO else "g:"                                           # dirty keys per (repo, number)
+    c = sec
     fields = o["json"].split(",")
     if cmd[2] == "view":
         if len(o["pos"]) != 1 or not o["pos"][0].lstrip("#").isdigit(): return None
         n = int(o["pos"][0].lstrip("#"))
-        if {str(n), "*"} & dirty: return None
+        if {pre + str(n), "*"} & dirty: return None
         pool = c["prs"] if cmd[1] == "pr" else c["open"] + c["closed"]
         it = next((x for x in pool if x["number"] == n), None)
         got = _pick([it], fields) if it else None
@@ -449,13 +469,14 @@ def answer(cmd, now=None, max_age=None):
     got = _pick(items, fields) if items is not None else None
     return (0, json.dumps(got, ensure_ascii=False)) if got is not None else None
 
-def pr_rollup(n, now=None):
+def pr_rollup(n, now=None, repo=None):
     """#911: the cached check rollup of PR n: 'SUCCESS'|'FAILURE'|'ERROR'|'PENDING'|'EXPECTED'|'' (no checks yet), None when the cache cannot tell
     (stale, PR missing, or a write touched it since the last refresh)."""
     now = time.time() if now is None else now
     c = _usable(now)
-    if not c or {str(n), "*"} & _dirty_since(c["ts"]): return None
-    p = next((x for x in c["prs"] if x["number"] == n), None)
+    sec = _section(c, repo or REPO) if c else None                     # #792: GAME PR 5 and INFRA PR 5 are two rollups
+    if not c or sec is None or {("" if (repo or REPO) == REPO else "g:") + str(n), "*"} & _dirty_since(c["ts"]): return None
+    p = next((x for x in sec["prs"] if x["number"] == n), None)
     if not p: return None
     r = p.get("statusCheckRollup") or []
     return (r[0].get("state") or "") if r else ""

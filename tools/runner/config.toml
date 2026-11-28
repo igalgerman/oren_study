@@ -1,5 +1,7 @@
 # Issue runner config. Edit here when the repo moves.
-repo = "igalgerman/oren_study"   # gh --repo
+repo = "igalgerman/oren_study"   # INFRA: backlog + runner (gh --repo); #796 renames it sw-factory: change ONLY this line
+game_repo = "igalgerman/learn-quest"    # #792: GAME repo, game PRs open here; unset/empty = one-repo mode
+data_repo = "igalgerman/family-vault"   # #792: DATA repo (private)
 remote = "origin"
 branch = "main"
 model = "sonnet"

@@ -6,6 +6,8 @@ _login = trust.login
 trust.login = lambda c: _login(c) or (("oren-study-bot" if re.match(r"\s*(OWNER ANSWER|ANSWERED)", c.get("body") or "") or "owner-answer:" in (c.get("body") or "") else "igalgerman") if isinstance(c, dict) else "")
 import json
 import remote as r
+import repos
+_GAME = repos.GAME; repos.GAME = ""   # #792: the older sections below run in one-repo mode (game_repo unset); the two-repo cases are in test_repos.py
 import owner_q as OQ   # #608: the owner answer record
 
 class Fake:
