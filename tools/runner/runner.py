@@ -406,7 +406,8 @@ def total_lanes():
 GOV = {"target": float(CFG.get("governor_target", 99)), "min": int(CFG.get("governor_min", 2)), "max": int(CFG.get("governor_max", 16)),
        "stop": float(CFG.get("governor_stop", 99)), "pace": float(CFG.get("governor_pace", 3.5)), "week_cap": int(CFG.get("governor_week_cap", 4)),
        "week_target": float(CFG.get("governor_week_target", 99)), "week_stop": float(CFG.get("governor_week_stop", 97)),
-       "stale_s": 15 * 60, "fallback": REMOTE_LANES,
+       "stale_s": 15 * 60, "frozen_s": 45 * 60, "hold_s": 30 * 60,    # #704: stale reading -> hold, then the floor (never remote_lanes)
+      
        "reserve": float(CFG.get("governor_reserve", 5))}     # #703: ceiling C = 99 - reserve (705 makes the reserve the owner's)
 def _ts(iso):
     try: return datetime.fromisoformat(str(iso).replace("Z", "+00:00")).timestamp()
@@ -468,18 +469,48 @@ def eff_fields(wins):
     return {"eff": cur and cur["eff"], "wasted": cur["wasted"] if cur else 0,
             "eff_last": last and last["eff"], "wasted_last": last["wasted"] if last else None}
 
-def governor(usage, hist, now, g=None, prev=None, wins=None):
+def stale_reading(usage, hist, now, g):
+    """Pure (#704): True when the usage reading cannot be trusted: no/old file (older than stale_s), or the 5h value unchanged for frozen_s
+    while lanes are busy and the week < 99. `read_at` (last time a value changed, written by the panel) when the file has it, else the
+    samples in usage_hist. A missing five_h bucket is NOT stale."""
+    at = _ts((usage or {}).get("at"))
+    if not usage or at is None or now - at > g["stale_s"]: return True
+    if usage.get("five_h_pct") is None: return False
+    try:
+        if usage.get("week_pct") is not None and float(usage["week_pct"]) >= 99: return False
+    except (TypeError, ValueError): pass
+    recent = [h for h in (hist or []) if now - h.get("at", 0) <= g["frozen_s"] + 3600]
+    busy = bool(recent) and all(h.get("busy", 0) > 0 for h in recent if now - h.get("at", 0) <= g["frozen_s"])
+    ra = _ts(usage.get("read_at"))
+    if ra is not None: return busy and now - ra >= g["frozen_s"]
+    since = None
+    for h in sorted(recent, key=lambda h: h["at"], reverse=True):      # newest first: how long has the value been the same?
+        if h.get("pct") != float(usage["five_h_pct"]) or h.get("reset") != usage.get("five_h_reset"): break
+        since = h["at"]
+    return busy and since is not None and now - since >= g["frozen_s"]
+
+def governor(usage, hist, now, g=None, prev=None, wins=None, stale_since=None):
     """Pure (#239): usage.json dict (or None) + samples + now -> {lanes, stop, pct, projected, reset, week_pct, week_projected, week_reset, why}.
     Most remote lanes in [min, max] whose projection at the 5h reset stays <= target (min when even that is above); 5h >= stop -> no new run;
     #274 week: projected week % at its reset (linear at the pace so far) below week_target -> max lanes, above -> at most week_cap
-    (not in the first 8 h of a week: too early to project); #698 week >= week_stop (97) -> no new run until the week resets; usage missing or older than 15 min -> config remote_lanes."""
+    (not in the first 8 h of a week: too early to project); #698 week >= week_stop (97) -> no new run until the week resets;
+    #704 stale reading (stale_reading) -> hold prev for hold_s from `stale_since` (returned in the dict, pass it back), then N_lo
+    (1 while the week is below week_stop, else 0); never the config remote_lanes."""
     g = {**GOV, **(g or {})}
-    at = _ts((usage or {}).get("at"))
-    if not usage or at is None or now - at > g["stale_s"]:
-        return {"lanes": g["fallback"], "stop": False, "pct": None, "projected": None, "reset": None, "week_projected": None, "why": "no fresh usage: config remote_lanes"}
-    if usage.get("five_h_pct") is None:                  # #703: no 5h bucket: the week alone decides the stop (no fake 5h stop)
-        gv = {"lanes": g["fallback"], "stop": False, "pct": None, "projected": None, "reset": None, "week_projected": None,
-              "week_pct": None if usage.get("week_pct") is None else float(usage["week_pct"]), "why": "no 5h usage: config remote_lanes"}
+    if stale_reading(usage, hist, now, g):
+        since = stale_since or now
+        wk = None
+        try:
+            if usage and usage.get("week_pct") is not None and (_ts(usage.get("week_reset")) or now + 1) > now: wk = float(usage["week_pct"])
+        except (TypeError, ValueError): pass
+        n_lo = 0 if wk is not None and wk >= g["week_stop"] else 1
+        holding = prev is not None and now - since < g["hold_s"]
+        gv = {"lanes": prev if holding else n_lo, "stop": n_lo == 0, "pct": None, "projected": None, "reset": None, "week_projected": None,
+              "week_pct": wk, "stale_since": since, "why": "stale reading: hold" if holding else "stale reading: floor"}
+        return week_gate(gv, g)
+    if usage.get("five_h_pct") is None:                  # #703: no 5h bucket: the week alone decides the stop (no fake 5h stop); not stale (#704)
+        gv = {"lanes": prev if prev is not None else g["min"], "stop": False, "pct": None, "projected": None, "reset": None, "week_projected": None,
+              "week_pct": None if usage.get("week_pct") is None else float(usage["week_pct"]), "why": "no 5h usage: week only"}
         return week_gate(gv, g)
     pct = float(usage["five_h_pct"]); reset = _ts(usage.get("five_h_reset")) or now
     fresh = reset < now                                  # #269: the reset is past -> a new 5h window until the panel writes a new number
@@ -604,12 +635,15 @@ def governor_pass(remote_busy, now=None):
     wins = gov_windows(hist, events, now)
     try: prev = int(json.loads((RUNS / "governor.json").read_text(encoding="utf-8"))["lanes"])
     except Exception: prev = None
-    gv = governor(usage, hist, now, prev=prev, wins=wins)
+    try: stale_since = json.loads((RUNS / "governor.json").read_text(encoding="utf-8")).get("stale_since")
+    except Exception: stale_since = None
+    gv = governor(usage, hist, now, prev=prev, wins=wins, stale_since=stale_since)
     if DRY: return gv
     try:
         RUNS.mkdir(exist_ok=True)
-        if gv["pct"] is not None:                    # #245: 16 h of samples = the current and the last two 5h windows
-            hist = [h for h in hist if now - h.get("at", 0) < 16 * 3600] + [{"at": now, "pct": gv["pct"], "reset": usage.get("five_h_reset"), "busy": remote_busy, "lanes": gv["lanes"], "week": usage.get("week_pct")}]
+        sp = gv["pct"] if gv["pct"] is not None else (usage or {}).get("five_h_pct")     # #704: samples go on while stale (the frozen check needs them)
+        if sp is not None:                           # #245: 16 h of samples = the current and the last two 5h windows
+            hist = [h for h in hist if now - h.get("at", 0) < 16 * 3600] + [{"at": now, "pct": float(sp), "reset": usage.get("five_h_reset"), "busy": remote_busy, "lanes": gv["lanes"], "week": usage.get("week_pct")}]
             (RUNS / "usage_hist.jsonl").write_text("".join(json.dumps(h) + "\n" for h in hist), encoding="utf-8")
             wins = gov_windows(hist, events, now)
         (RUNS / "governor.json").write_text(json.dumps({**gv, **eff_fields(wins), "text": governor_text(gv) + eff_text(wins), "at": now}), encoding="utf-8")

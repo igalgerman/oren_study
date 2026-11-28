@@ -71,5 +71,14 @@ Path(os.environ["OREN_ENV"]).write_text("LOG_READ_KEY=\n", encoding="utf-8"); se
 with contextlib.redirect_stdout(io.StringIO()): rc = P.main(["day", "2026-11-27"])
 ok("#675 main: an empty LOG_READ_KEY falls back to ~/.oren/diag.key", rc == 0 and seen.get("key") == "sekret-641", str(seen))
 
+# #715 cloud sessions: LOG_READ_KEY from the environment wins, is never printed; none anywhere = one clear line, no request
+os.environ["LOG_READ_KEY"] = "env-715-secret"; seen.clear(); out = io.StringIO()
+with contextlib.redirect_stdout(out): rc = P.main(["day", "2026-11-27"])
+ok("#715 main: LOG_READ_KEY from the environment is sent first and never printed", rc == 0 and seen.get("key") == "env-715-secret" and "env-715" not in out.getvalue(), str(seen))
+del os.environ["LOG_READ_KEY"]; (Path(HOME) / "diag.key").unlink(); seen.clear(); out = io.StringIO()
+with contextlib.redirect_stdout(out): rc = P.main(["day", "2026-11-27"])
+ok("#715 main: no key at all in the cloud = ONE line 'LOG_READ_KEY missing in the cloud environment', rc 2, no request",
+   rc == 2 and out.getvalue().startswith("LOG_READ_KEY missing in the cloud environment") and len(out.getvalue().strip().splitlines()) == 1 and not seen, out.getvalue())
+
 print("RESULT playlog " + (f"{len(fails)} FAILED" if fails else "ok"))
 sys.exit(1 if fails else 0)
