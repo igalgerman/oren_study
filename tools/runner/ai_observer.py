@@ -2,13 +2,13 @@
 `claude -p --model sonnet` in a background thread (never two at once, hard timeout 10 min) with read-only tools.
 It reads issues/PRs/cloud lanes/logs/the merge lock and reports at most 5 lines `OBSERVER: <what is wrong, #n> -> <fix, who>`
 (or 'no problems'). Python then: writes .runs/ai_observer.last, sends NEW findings to the orchestrator (the same issue + text start
-not again within 6 h), and posts a finding for the OWNER in the 'Questions for the owner' issue (#193) when that issue exists.
+not again within 6 h), and never posts to the owner questions (#899): findings go to the orchestrator only.
 The AI observer never edits, merges, labels or comments by itself.
 #289: `ai_observer_where = "cloud"` (default): the check runs as an hourly CLOUD scheduled task (docs/agents/cloud-tasks.md, the
 subscription, no claude on the PC). It posts its lines as a comment on the open issue labelled `ai-observer` ('AI observer (cloud)');
 the watchdog only relays the newest comment (REST `gh api .../comments?since=`) when unseen, through the same path (.last file, 6 h repeat filter, orchestrator, #193).
 Silent for SILENT_H h -> one note to the orchestrator.
-#525: no trigger-made comment for 3 h -> one owner note (owner_q, Telegram), every 12 h at most; until one is seen the watchdog
+#525: no trigger-made comment for 3 h -> one owner to-do item (Telegram notice once per 24 h until the list exists, #899) unless a known reason explains it; until one is seen the watchdog
 starts the observer prompt itself as an hourly cloud job (remote.launch, window cloud-observer; its comment starts FALLBACK_MARK). "local" = the old headless run on the PC.
 Usage: python tools/runner/ai_observer.py   (one local run now, prints the findings)
 """
@@ -112,6 +112,10 @@ def for_owner(finding):
     orchestrator that only mentions the owner ('orchestrator: ... or ask the owner') is no owner question."""
     return "->" in finding and bool(OWNER_DOER.search(finding.split("->", 1)[1]))
 
+def owner_merge(finding):
+    """#899: a finding that asks the owner to merge a PR. The watchdog shows an owner-only PR once (#542); never the observer."""
+    return for_owner(finding) and bool(re.search(r"\bmerge\b.*#\d+", finding.split("->", 1)[1], re.I))
+
 def close_wrong_owner_q(gh=None):
     """#603, once: open owner_q questions from window ai-observer whose fix has no owner doer -> marked answered (closed).
     -> number closed, None when gh failed (tried again at the next relay)."""
@@ -160,11 +164,8 @@ def report(ok, out, tell, log, now, head="AI OBSERVER (hourly, read-only):"):
     new, st["sent"] = fresh(found, st.get("sent", {}), now)
     save_state(st)
     log(f"ai observer: {len(found)} finding(s), {len(new)} new")
-    if new: tell(head + "\n" + "\n".join(new))
-    owner = [f for f in new if for_owner(f)]
-    if owner and owner_issue():
-        import owner_q as OQ
-        for f in owner: OQ.post("ai-observer", "QUESTION: " + re.sub(r"^OBSERVER:\s*", "", f))
+    new = [f for f in new if not owner_merge(f)]                    # #899: 'owner: merge #n' is the watchdog's job (#542)
+    if new: tell(head + "\n" + "\n".join(new))                    # #899: findings go to the orchestrator ONLY, never owner_q
     return found
 
 CLOUD_TITLE, CLOUD_LABEL = "AI observer (cloud)", "ai-observer"
@@ -205,6 +206,8 @@ def relay(tell, log, now, gh=None, api=None):
     newest = max(_epoch(last.get("created_at")) if last else 0, _epoch(st.get("cloud_seen")))
     st.setdefault("relay_since", now)                               # the first relay is no 'silent' alarm
     trig = [c.get("created_at") or "" for c in readable if FALLBACK_MARK not in (c.get("body") or "")]   # #525: made by the trigger
+    fb = [c.get("created_at") or "" for c in readable if FALLBACK_MARK in (c.get("body") or "")]
+    if fb: st["fallback_seen"] = max([st.get("fallback_seen", "")] + fb)
     if trig:
         st["proven"] = True; st["trigger_seen"] = max([st.get("trigger_seen", "")] + trig)
     save_state(st)
@@ -220,24 +223,49 @@ def relay(tell, log, now, gh=None, api=None):
 
 # ---------- #525: the triggers never ran (no ai-observer issue at all on 27 Nov) ----------
 FALLBACK_MARK = "<!-- fallback #525 -->"   # the first line of a comment made by the runner's own fallback run (not the trigger)
-OWNER_SILENT_H, OWNER_REPEAT_H, FALLBACK_MIN = 3, 12, 60
+OWNER_SILENT_H, FALLBACK_MIN = 3, 60
 FALLBACK_PROMPT = ("Follow docs/agents/cloud-tasks.md, section AI observer, in igalgerman/oren_study. This is the runner's fallback "
                    f"run (#525: the scheduled task does not run): make the first line of your comment exactly {FALLBACK_MARK}")
-OWNER_POST = None   # (window, question) -> owner_q.post; tests swap in a fake
+TELEGRAM = None     # text -> Telegram message; tests swap in a fake (None = telegram.send)
+TODO_ADD = None     # (**item) -> owner to-do list (#895); None until the list exists
+WEEK_STOP = None    # () -> governor week stop is on; tests swap in a fake
 LAUNCH = None       # remote.launch; tests swap in a fake
+NOTICE_H = 24
+
+def week_stop():
+    if WEEK_STOP: return bool(WEEK_STOP())
+    try:
+        gv = R.governor_now(); wk = gv.get("week_pct")
+        return bool(gv.get("stop") and wk is not None and wk >= R.GOV["week_stop"])
+    except Exception: return False
+
+def known_reason(st, now):
+    """#899: why the cloud observer is quiet without anything being broken: the governor week stop, or the #525 fallback ran lately."""
+    if week_stop(): return "week stop"
+    if now - _epoch(st.get("fallback_seen")) < OWNER_SILENT_H * 3600: return "fallback ran"
+    return ""
 
 def owner_note(now):
-    """No trigger-made comment for OWNER_SILENT_H h (or none ever since the watchdog started relaying) -> ONE note to the owner
-    through owner_q (#193; qwin also sends it to Telegram, #440), at most every OWNER_REPEAT_H h."""
+    """#899: no trigger-made comment for OWNER_SILENT_H h (or none since the watchdog started relaying) AND no known reason (week stop,
+    the #525 fallback ran) -> ONE owner to-do item (kind step, check trigger-seen); until the to-do list exists, one Telegram notice,
+    at most every NOTICE_H h. Never owner_q (#205), never a new key per tick."""
     st = load_state()
     since = _epoch(st.get("trigger_seen")) or st.get("relay_since", now)
-    if now - since < OWNER_SILENT_H * 3600 or now - st.get("owner_told", 0) < OWNER_REPEAT_H * 3600: return False
-    q = (f"QUESTION: cloud AI observer silent since {time.strftime('%H:%M', time.localtime(since))} - "
-         "log in again (/login) or check claude.ai/code -> Scheduled")
-    if OWNER_POST: OWNER_POST(f"ai-observer-{int(now)}", q)          # the window carries the time: a repeat is a new key, never deduped away
+    if now - since < OWNER_SILENT_H * 3600 or known_reason(st, now): return False
+    text = (f"cloud AI observer silent since {time.strftime('%H:%M', time.localtime(since))} - "
+            "log in again (/login) or check claude.ai/code -> Scheduled")
+    if TODO_ADD:
+        if st.get("todo_for") == st.get("trigger_seen", ""): return False   # one item per silence; a new trigger comment re-arms it
+        if not TODO_ADD(kind="step", check="trigger-seen", key="ai-observer-silent", text=text): return False
+        st = load_state(); st["todo_for"] = st.get("trigger_seen", "")
     else:
-        import owner_q as OQ; OQ.post(f"ai-observer-{int(now)}", q)   # None = queued: owner_q posts it later, still told once
-    st = load_state(); st["owner_told"] = now; save_state(st)
+        if now - st.get("owner_told", 0) < NOTICE_H * 3600: return False
+        send = TELEGRAM
+        if not send:
+            import telegram; send = telegram.send
+        if not send(text): return False                             # not sent: the next tick tries again
+        st = load_state(); st["owner_told"] = now
+    save_state(st)
     return True
 
 def fallback(now, log):

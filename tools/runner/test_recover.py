@@ -192,11 +192,33 @@ calls = []
 W.R.hc = lambda *a, **k: (calls.append(a), (0, ""))[1]
 W.log = lambda m: None; W.tell = lambda t: calls.append(("tell", t))
 rc.start_control = lambda R, name, sid=None: (calls.append(("start", name)), 0)[1]
+W.R.RUNS = Path(tempfile.mkdtemp(prefix="ctl-"))
 W.check_control([T("inbox", "finished", "t:9"), T("orchestrator", "live", "t:1")])
 assert calls[0] == ("rm", "t:9") and calls[1] == ("start", "inbox"), calls
-calls.clear()   # #332: finished 'inspector' row + live unnamed inspector (label name=inspector, status done) -> no rm, no restart
+W.R.RUNS = Path(tempfile.mkdtemp(prefix="ctl-")); calls.clear()   # #332: finished 'inspector' row + live unnamed inspector (label name=inspector, status done) -> no rm, no restart
 W.check_control([T("inspector", "finished", "t:4"), {"name": "", "state": "live", "status": "done", "address": "t:7", "labels": {"name": "inspector"}}])
 assert calls == [], calls
+# #935: two finished rows of one role -> ONE start; a role missing from hc ls -> start only at the 2nd check; none within the window
+W.R.RUNS = Path(tempfile.mkdtemp(prefix="ctl-"))
+W.R.FileLock = lambda n: type("L", (), {"held_by_other": lambda self: False})()
+starts = lambda: [c for c in calls if c[0] == "start"]
+LIVE = [T("orchestrator", "live", "t:1"), T("inbox", "live", "t:2"), T("executor", "live", "t:3")]
+INS = {"name": "", "state": "live", "where": "Oren control / inspector"}   # found by its tab label, not by name
+calls.clear(); W.check_control([T("orchestrator", "finished", "t:7"), T("orchestrator", "finished", "t:8")] + LIVE[1:] + [INS], now=1000)
+assert starts() == [("start", "orchestrator")] and ("rm", "t:7") in calls and ("rm", "t:8") in calls, calls
+calls.clear(); W.check_control([T("orchestrator", "finished", "t:9")] + LIVE[1:] + [INS], now=1060)
+assert starts() == [], calls                     # no double start within the window
+W.R.RUNS = Path(tempfile.mkdtemp(prefix="ctl-")); calls.clear()
+W.check_control(LIVE, now=1000); assert starts() == [], calls                 # missing once: no start
+W.check_control(LIVE, now=1030); assert starts() == [("start", "inspector")], calls   # missing twice: one start
+assert any(c[0] == "tell" and "inspector" in c[1] for c in calls), calls
+W.check_control(LIVE, now=1060); W.check_control(LIVE, now=1090); assert len(starts()) == 1, calls   # starting: counts as present
+calls.clear(); W.check_control(LIVE, now=1700); W.check_control(LIVE, now=1730); assert starts() == [("start", "inspector")], calls   # gone after the window
+calls.clear(); W.R.RUNS = Path(tempfile.mkdtemp(prefix="ctl-"))
+lab = LIVE + [INS]
+W.check_control(lab, now=1); W.check_control(lab, now=31); assert calls == [], calls
+W.check_control([], now=99); W.check_control([], now=129); assert calls == [], calls   # empty hc ls = stale view, never start
+assert rc.missing_control(lab) == [] and rc.missing_control(LIVE) == ["inspector"]
 # #863: role files live in the repo; ensure_handoff creates the live file only when missing
 repo = Path(__file__).resolve().parents[2]
 assert "docs/roles/EXECUTOR.md" in rc.EXECUTOR_PROMPT and (repo / "docs/roles/EXECUTOR.md").is_file()
@@ -253,3 +275,22 @@ with tempfile.TemporaryDirectory() as tmp:
     d, ev = fake("inbox", write=False, tmp=tmp); r, _ = rc.refresh("inbox", d)
     assert r == 3 and not [e for e in ev if e[0] in ("kill", "rm", "keep", "start")] and any(e[0] == "tell" and e[1] == "inspector" for e in ev), ev
 print("ok")
+
+# #944: the REAL start_control (used by recover and the watchdog restart) passes tools/mods/oren-model to inspector/inbox/executor
+import importlib, types
+_rc2 = importlib.reload(importlib.import_module("recover"))
+sys.modules["gitid"] = types.SimpleNamespace(set_email=lambda mc, run: None)
+_rc2.ensure_handoff = lambda live, tpl: False
+for _role in ("inspector", "inbox", "executor", "orchestrator"):
+    _seen = []
+    _R = types.SimpleNamespace(CFG={"main_checkout": "C:/work/Oren_study/a"}, ROOT=Path("C:/work/Oren_study/a"), HERE=Path("C:/work/Oren_study/a/tools/runner"),
+                               run=lambda *a, **k: (0, ""), hc=lambda *a, **k: (_seen.append(list(a)), (0, "ok"))[1])
+    assert _rc2.start_control(_R, _role, space_id="") == 0
+    _argv = _seen[0]
+    _model = str(Path("C:/work/Oren_study/a") / "tools" / "mods" / "oren-model")
+    if _role == "orchestrator":
+        assert _model not in _argv and str(Path("C:/work/Oren_study/a") / "tools" / "mods" / "oren-lanes") in _argv, _argv
+    else:
+        _i = _argv.index("--plugin-dir"); assert _argv[_i + 1] == _model, (_role, _argv)
+        assert _argv.index("oren-" + _role) < _i, _argv
+print("ok #944 start_control loads oren-model for inspector/inbox/executor")

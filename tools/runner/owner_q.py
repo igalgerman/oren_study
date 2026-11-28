@@ -7,6 +7,7 @@ Usage:
                                                                 # #630: --gates = the issues whose owner gate this answer opens
   python tools/runner/owner_q.py open                           # open questions: key, window, text, url
   python tools/runner/owner_q.py answered <KEY> "<answer>"       # mark answered (after relaying the answer)
+  python tools/runner/owner_q.py archive [--apply]               # #912: move answered questions older than a month out of the pinned issue (dry-run without --apply)
   python tools/runner/owner_q.py gate <#n>                      # #608: the owner's answers for issue n (exit 0 = gate open, 1 = closed)
 A PR whose issue is owner-gated (an owner question about it exists) never merges while that gate is CLOSED (#636, merge_gate).
 """
@@ -24,13 +25,18 @@ STATE = R.RUNS / "owner_q.json"
 GH = R.gh             # tests swap in a fake gh
 KEY_RE = re.compile(r"<!-- owner-q:([0-9a-f]{12}) -->")
 MARK = "<!-- owner_q -->"  # #211: every post of this tool (same GitHub account as the owner) -> never counted as his answer
-QUICK_S = 10        # #469: an owner question never waits longer than this on GitHub (a limit -> other identity, else queued)
+QUICK_S = 10        # #469: an owner question never waits longer than this on GitHub (a limit -> other identity, else queued); UI only (panel, dashboard)
+LONG_S = 60         # #912: gate / open reads and answer-record writes wait this long per try (a PC at 100% CPU is slow, not down)
+CACHE_TTL = 60      # #912: the #205 comments are read from GitHub at most once per this many seconds (our own writes make it dirty)
+CACHE = R.RUNS / "owner_q_comments.json"
 ANSWER_RE = re.compile(r"<!-- owner-answer:([0-9a-f]{12}) -->")   # #608: the record qwin.answer writes on the asking issue
 CHAT_RE = re.compile(r"<!-- owner-answer:([0-9a-f]{12}) via=inspector-chat -->")   # #803: the chat answer record (never matches ANSWER_RE)
 FINAL_RE = re.compile(r"<!-- owner-answer-final:([0-9a-f]{12}) -->")              # #803: written by the watchdog when the chat answer is in force
 UNDO_RE = re.compile(r"<!-- owner-answer-undo:([0-9a-f]{12}) -->")                # #803: the owner's undo (Telegram)
 CHAT_STATE = R.RUNS / "qwin_chat.json"                                             # #803: Telegram confirmation state (qwin.py)
 GATES_RE = re.compile(r"<!-- gates: ([#\d ,]+) -->")   # #630: the issues this question gates (any window)
+ARCH_REACT_RE = re.compile(r"<!-- archived-reaction:(\S+) -->")   # #912: written by archive() when the owner had reacted to the moved question
+ARCH_TITLE = "Questions for the owner (archive "
 OPT_RE = re.compile(r"^\s*[❯>›]?\s*(\d+[.)]\s+\S.*)$")
 
 def key_of(window, question):
@@ -114,9 +120,11 @@ def answered_keys(comments):
         if m and owner_reacted(c): done.add(m[1])
     return done
 
-def answer_body(key, text):
-    """#608: the owner's answer as recorded on the asking issue (only qwin.answer writes it): the one thing that counts as him."""
-    return f"OWNER ANSWER (question window, owner-q:{key}): {text}\n<!-- owner-answer:{key} -->"
+def answer_body(key, text, via=""):
+    """#608: the owner's answer as recorded on the asking issue (only qwin.answer writes it): the one thing that counts as him.
+    #872: `via` (console|telegram) is named in the visible line only; the marker, and so the gate, stay the same."""
+    v = f" via {via}" if via else ""
+    return f"OWNER ANSWER (question window, owner-q:{key}{v}): {text}\n<!-- owner-answer:{key} -->"
 
 def chat_answer_body(key, text, quote):
     """#803: the inspector-chat answer record. Not an `owner-answer` record (ANSWER_RE needs no `via=`): it counts only with the final marker."""
@@ -142,7 +150,7 @@ def chat_states(issue_comments):
 def record_answer(body):
     """Pure (#608): (key, answer text) of an owner_q answer record, else None. Free comment text never is one."""
     m = ANSWER_RE.search(body or "")
-    a = re.match(r"^OWNER ANSWER \(question window, owner-q:([0-9a-f]{12})\):\s*(.*)", (body or "").strip(), re.S)
+    a = re.match(r"^OWNER ANSWER \(question window, owner-q:([0-9a-f]{12})(?: via [\w-]+)?\):\s*(.*)", (body or "").strip(), re.S)
     if not (m and a and a[1] == m[1]): return None
     return m[1], ANSWER_RE.sub("", a[2]).strip()
 
@@ -161,6 +169,7 @@ def gate(n, issue_comments, question_comments):
     for k, v in chat_states(issue_comments).items():   # #803: a chat answer counts only with the bot's final marker and no undo
         if k in keys and v["final"] and not v["undo"]: out.append(f"{v['answer']} (inspector chat)")
     for c in keys.values():
+        if trust.is_bot(c) and (m := ARCH_REACT_RE.search(c.get("body") or "")): out.append(f"reaction {m[1]}")   # #912: the owner's reaction, copied when the question moved to an archive issue
         out += [f"reaction {g.get('content', '')}" for g in c.get("reactionGroups") or [] if trust.OWNER in {u.get('login') for u in (g.get('users') or {}).get('nodes') or []}]   # #800: owner login only
     return out
 
@@ -174,12 +183,12 @@ def merge_state(n, issue_comments, question_comments):
     if not qs: return "none"
     return "open" if gate(n, issue_comments, qs) else "closed"
 
-GATE_TRIES = (QUICK_S, 3 * QUICK_S, 6 * QUICK_S)   # #908: a read that times out (PC at 100% CPU) is retried with a longer timeout
+GATE_TRIES = (LONG_S, LONG_S, LONG_S)               # #908/#912: a read that times out (PC at 100% CPU) is retried, 3 tries, never quick()
 GATE_BACKOFF = (5, 15)                              # seconds to wait before retry 2 and 3
 
 def _gate_read(n, secs):
     with ghcache.quick(secs):
-        q = find_issue(); qcs = comments(q) if q else None
+        qcs = question_comments()
         ics = comments(n) if qcs is not None else None
     return ics, qcs
 
@@ -246,10 +255,37 @@ MAX_PAGES = 30
 def _api(*args):
     return R.run(["gh", *args])        # args start with "api"
 
+def _cache_load():
+    try: return json.loads(CACHE.read_text(encoding="utf-8"))
+    except Exception: return {}
+
+def _cached(n, now=None):
+    """#912: the cached comments of issue n when younger than CACHE_TTL and no write of ours touched n since; else None."""
+    e = _cache_load().get(str(n)); now = time.time() if now is None else now
+    if not e or CACHE_TTL <= 0 or not (0 <= now - e["ts"] < CACHE_TTL): return None
+    if {str(n), "*"} & ghcache._dirty_since(e["ts"]): return None
+    return e["comments"]
+
+def _store(n, cs, now=None):
+    c = _cache_load(); ts = time.time() if now is None else now
+    c[str(n)] = {"ts": int(ts * 1000) / 1000, "comments": cs}        # ms floor: the dirty log has 3 decimals
+    try: R.RUNS.mkdir(parents=True, exist_ok=True); CACHE.write_text(json.dumps(c), encoding="utf-8")
+    except OSError: pass
+
+def touch(n):
+    """#912: our own write to issue n (post, answer record, ANSWERED line, archive move): the next read of n is fresh (also in other processes)."""
+    ghcache.mark_dirty(str(n))
+    c = _cache_load()
+    if c.pop(str(n), None) is not None:
+        try: CACHE.write_text(json.dumps(c), encoding="utf-8")
+        except OSError: pass
+
 def comments(n, gh=None):
     """All comments of issue n, oldest first, with author login, url and the reacting users (`gh issue view --json comments` has no
     reaction logins, so every owner thumbs-up was invisible). GraphQL, first:100 + after-cursor loop. None when unreadable.
     A test fake gh is called as gh('api', 'graphql', ...); the real one runs plain `gh api`."""
+    hit = _cached(n)
+    if hit is not None: return hit                    # #912: 60 s cache (the App-token GraphQL query runs at most once a minute per issue)
     call = gh or GH
     if call is R.gh: call = _api                      # the real gh wrapper appends --repo, which `gh api` does not know
     owner, name = R.REPO.split("/", 1)
@@ -263,10 +299,22 @@ def comments(n, gh=None):
             c = json.loads(txt)["data"]["repository"]["issue"]["comments"]
             out += c["nodes"]; page = c["pageInfo"]
         except (ValueError, KeyError, TypeError): return None
-        if not page.get("hasNextPage"): return out
+        if not page.get("hasNextPage"): _store(n, out); return out
         cur = page.get("endCursor") or ""
         if not cur: return None
     return None                                      # absurdly long: refuse rather than decide on a partial list
+
+def question_comments(gh=None):
+    """#912: the question comments the gate reads: the pinned issue plus its archive issues (answered questions moved out of it).
+    None when unreadable."""
+    q = find_issue(gh)
+    cs = comments(q, gh) if q else None
+    if cs is None: return None
+    for a in _state().get("archives", []):
+        more = comments(a, gh)
+        if more is None: return None
+        cs = cs + more
+    return cs
 
 def post(window, question, tail="", gh=None, gates=()):
     """Post the question once per window+question. -> comment url when posted now, '' when already there, None when gh failed:
@@ -298,12 +346,13 @@ def _post(window, question, tail="", gh=None, gates=()):
         s = _state(); s.setdefault("posted", []).append(key); _save(s); return ""
     rc, out = gh("issue", "comment", str(n), "--body", R.redact(body(key, window, question, tail, gates, hebrew_of(question))))
     if rc: return None
+    touch(n)
     s = _state(); s["posted"] = (s.get("posted", []) + [key])[-500:]; _save(s)
     return (out or "").strip().splitlines()[-1] if (out or "").strip() else f"https://github.com/{R.REPO}/issues/{n}"
 
 def open_list(gh=None):
     gh = gh or GH
-    with ghcache.quick(QUICK_S):
+    with ghcache.quick(LONG_S):                       # #912: not quick()
         n = find_issue(gh)
         cs = comments(n, gh) if n else None
     if cs is None: return None
@@ -313,7 +362,7 @@ def open_list(gh=None):
 def mark_answered(key, answer="", gh=None):
     """#800: the ANSWERED line is written by the App bot only (gh=None; a test passes a fake gh). True = posted now; False = queued
     (flush_pending retries) or no questions issue. Never under the owner login."""
-    with ghcache.quick(QUICK_S):
+    with ghcache.quick(LONG_S):                       # #912: answer-record write, longer timeout
         n = find_issue(gh)
         return bool(n) and post_or_queue(n, f"ANSWERED owner-q:{key} {answer}".strip() + "\n" + MARK, gh)
 
@@ -322,9 +371,12 @@ def post_app(n, text, gh=None):
     (no App token -> False, the caller queues it); a test passes a fake gh.
     #897: R.gh itself (a caller's `gh`) is NOT a fake: it falls back to the owner login on an App rate limit (#469), so it too goes the App-only way."""
     if gh is R.gh: gh = None
-    if gh is not None: return gh("issue", "comment", str(n), "--body", R.redact(text))[0] == 0
-    env = {**os.environ, remote.APP_ONLY: "1"}
-    return remote.sh(["gh", "issue", "comment", str(n), "--repo", R.REPO, "--body", R.redact(text)], env=env)[0] == 0
+    if gh is not None: ok = gh("issue", "comment", str(n), "--body", R.redact(text))[0] == 0
+    else:
+        env = {**os.environ, remote.APP_ONLY: "1"}
+        ok = remote.sh(["gh", "issue", "comment", str(n), "--repo", R.REPO, "--body", R.redact(text)], env=env)[0] == 0
+    if ok: touch(n)                                   # #912: the next read of n is fresh
+    return ok
 
 def queue_answer(n, text, now=None):
     s = _state(); p = s.setdefault("pending_answers", [])
@@ -332,7 +384,7 @@ def queue_answer(n, text, now=None):
     s["pending_answers"] = p[-50:]; _save(s)
 
 QUEUE_KEY_RE = re.compile(r"owner-q:([0-9a-f]{12})|owner-answer:([0-9a-f]{12})")
-ALARM_S = 15 * 60                                     # #897: a queued answer record older than this -> one alarm
+ALARM_S = int(R.CFG.get("owner_q_alarm_min", 10)) * 60   # #897/#912: a queued answer record still stuck after this (config.toml, default 10 min) -> one alarm
 
 def queued_keys():
     """#897: keys of the owner answers whose record waits in pending_answers (the owner HAS answered; the App has not posted it yet)."""
@@ -365,6 +417,80 @@ def repair(keys, gh=None):
             if src: post_or_queue(n, src["body"], gh); out[k] = out.get(k, 0) + 1
     return out
 
+# ---------- #912: archive answered questions out of the pinned issue ----------
+ARCHIVE_DAYS = 30
+def archive_max(): return int(R.CFG.get("owner_q_archive_max", 100))
+
+def _cid(c):
+    m = re.search(r"issuecomment-(\d+)", c.get("url") or "")
+    return m[1] if m else ""
+
+def _iso(t):
+    try: return int(time.mktime(time.strptime(t, "%Y-%m-%dT%H:%M:%SZ"))) - time.timezone
+    except (TypeError, ValueError): return 0
+
+def archive_plan(cs, now=None):
+    """Pure: which comments of the questions issue move out. A question that is answered (ANSWERED line or the owner's reaction) and older
+    than ARCHIVE_DAYS moves, with its ANSWERED lines; when the issue has more than archive_max() comments, every answered one moves.
+    -> [{key, month, comments: [comment, ...]}] oldest first. Open questions and the owner's own free comments never move."""
+    now = time.time() if now is None else now
+    done = answered_keys(cs); big = len(cs) > archive_max(); out = {}
+    for c in trust.only(cs):
+        b = c.get("body") or ""; m = KEY_RE.search(b)
+        if m and m[1] in done and not b.lstrip().startswith("ANSWERED"):
+            t = _iso(c.get("createdAt"))
+            if big or (t and now - t >= ARCHIVE_DAYS * 86400):
+                out[m[1]] = {"key": m[1], "month": (c.get("createdAt") or "")[:7] or time.strftime("%Y-%m", time.localtime(now)), "comments": [c]}
+    for c in trust.only(cs):
+        b = c.get("body") or ""
+        for k in out:
+            if b.lstrip().startswith("ANSWERED") and re.search(rf"owner-q:{k}\b", b): out[k]["comments"].append(c)
+    return sorted((v for v in out.values() if _cid(v["comments"][0])), key=lambda v: v["comments"][0].get("createdAt") or "")
+
+def archive(apply=False, gh=None, now=None):
+    """#912: dry-run by default (-> the plan, nothing written). apply=True: post each moved question (and its ANSWERED lines) into the issue
+    'Questions for the owner (archive YYYY-MM)' (label manual, not pinned; created when missing), THEN delete the originals from the pinned issue.
+    State follows: `archives` lists the archive issues (gate reads them too), `seen` drops by the moved comments, `posted` keys stay (never asked again).
+    A question the owner reacted to keeps that reaction as a hidden marker in the archived copy. -> dict(plan=[...], moved=n)."""
+    gh = gh or GH
+    q = find_issue(gh); cs = comments(q, gh) if q else None
+    if cs is None: return {"plan": [], "moved": 0, "error": "unreadable"}
+    plan = archive_plan(cs, now)
+    res = {"plan": [{"key": p["key"], "month": p["month"], "comments": len(p["comments"])} for p in plan], "moved": 0}
+    if not apply or not plan: return res
+    s = _state(); arch = dict(s.get("archive_by_month", {})); removed_idx = set()
+    for p in plan:
+        month = p["month"]; n = arch.get(month)
+        if not n:
+            rc, out = gh("issue", "create", "--title", f"{ARCH_TITLE}{month})", "--label", "manual", "--body",
+                         "Archive of answered owner questions moved out of the pinned issue (#912). Not pinned; the gate still reads it.")
+            m = re.search(r"/issues/(\d+)", out or "")
+            if rc or not m: continue
+            n = arch[month] = int(m[1])
+            s = _state(); s["archive_by_month"] = arch; s["archives"] = sorted(set(s.get("archives", [])) | {n}); _save(s)
+        ok = True
+        for c in p["comments"]:
+            body = c.get("body") or ""
+            if c is p["comments"][0]:
+                react = next((g.get("content") for g in c.get("reactionGroups") or [] if trust.OWNER in {u.get("login") for u in (g.get("users") or {}).get("nodes") or []}), "")
+                if react: body += f"\n<!-- archived-reaction:{react} -->"
+            rc, _ = gh("issue", "comment", str(n), "--body", R.redact(body)); ok = ok and rc == 0
+        touch(n)
+        if not ok: continue                           # never delete an original whose copy is not there
+        for c in p["comments"]:
+            rc, _ = (_api if gh is R.gh else gh)("api", "-X", "DELETE", f"repos/{R.REPO}/issues/comments/{_cid(c)}")
+            if rc == 0: removed_idx.add(id(c)); res["moved"] += 1
+    if removed_idx:
+        touch(q)
+        gone = sum(1 for i, c in enumerate(cs[:s.get("seen", len(cs))]) if id(c) in removed_idx)
+        s = _state(); s["seen"] = max(0, s.get("seen", len(cs)) - gone); _save(s)
+    return res
+
+def archive_tick(gh=None, now=None):
+    """Watchdog: archive for real only after the owner's OK for the first move (`owner_q.py archive --apply` sets archive_ok); before that nothing moves."""
+    if not _state().get("archive_ok"): return None
+    return archive(True, gh, now)
+
 def new_answers(cs, seen):
     """Pure: comments after the first `seen` without the tool's marks (MARK, question key, ANSWERED line) = the owner's replies."""
     tool = lambda b: MARK in b or KEY_RE.search(b) or b.lstrip().startswith("ANSWERED")
@@ -374,6 +500,8 @@ def answers_tick(tell, gh=None):
     """Watchdog: the owner replied in the questions issue -> tell the orchestrator (reply + open questions) so it relays the answer."""
     flush_pending(gh)                                # gh=None here: queued answer records go out as the App only (#800), never via R.gh's owner fallback
     gh = gh or GH
+    try: archive_tick(gh)                            # #912: no-op until the owner's OK for the first move
+    except Exception: pass
     now = time.time(); s = _state(); late = [p for p in s.get("pending_answers", []) if now - p.get("at", now) >= ALARM_S and not p.get("alarmed")]
     for p in s.get("pending_answers", []): p.setdefault("at", now)          # records queued by an older runner get their clock now
     if late:                                         # #897: ONE alarm per record, to the orchestrator and the inspector
@@ -383,7 +511,7 @@ def answers_tick(tell, gh=None):
         except Exception: pass
         for p in late: p["alarmed"] = True
     _save(s)
-    with ghcache.quick(QUICK_S):
+    with ghcache.quick(LONG_S):
         n = find_issue(gh)
         cs = comments(n, gh) if n else None
     if cs is None: return
@@ -412,6 +540,10 @@ def main(argv):
     if len(argv) in (2, 3) and argv[0] == "answered":
         ok = mark_answered(argv[1], argv[2] if len(argv) == 3 else "")
         print("marked answered" if ok else "could not mark now (no App token or gh failed): queued, the watchdog posts it as the App"); return 0 if ok else 1
+    if argv[:1] == ["archive"]:                              # #912: dry-run unless --apply (the first --apply needs the owner's OK)
+        apply = "--apply" in argv
+        if apply: s = _state(); s["archive_ok"] = True; _save(s)
+        r = archive(apply); print(json.dumps(r, ensure_ascii=False)); return 0 if "error" not in r else 1
     if len(argv) >= 2 and argv[0] == "repair":              # #897: python3 tools/runner/owner_q.py repair KEY KEY (the two 28 Nov answers)
         done = repair([k for k in argv[1:] if re.fullmatch(r"[0-9a-f]{12}", k)]); print(f"re-posted as the App (or queued): {done or 'nothing to repair'}"); return 0
     if len(argv) == 2 and argv[0] == "gate":
