@@ -20,6 +20,7 @@ bash = "C:/Program Files/Git/bin/bash.exe"   # Git Bash (not WSL's bash)
 extra_path = "/c/work/Oren_study/bin"        # python3 shim
 main_checkout = "C:/work/Oren_study/a"   # fast-forwarded after each integrate and every sync_minutes by the watchdog
 sync_minutes = 3
+# game_checkout = "C:/work/Oren_study/game"   # #854: local GAME checkout; set it to start the mirror (tools/split/mirror.py); unset = mirror off
 stuck_hours = 2
 dead_minutes = 20               # #841: a cloud session with no sign of life (comment, commit, branch, status change) this long goes back to the queue
 park_minutes = 30               # a worker/reviewer waiting for the owner this long: issue parked (blocked + ready-for-human), lane freed, windows stay open
