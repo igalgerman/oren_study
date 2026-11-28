@@ -122,6 +122,12 @@ def fix_rung(rnd, model, effort):
     if rnd >= FIX_ROUNDS and cur[0] != MODEL_IDS["fable"] and _rung_index(*cur) < 3 and cur[1] != "max": cur = LADDER[3]
     return cur
 
+def apply_shift(shift, model, effort, lane):
+    """#719: the governor's budget shift (0 or +1, #711) at the start of a worker run: +1 and a core task move one rung up the ladder
+    (sonnet medium -> high -> opus medium ...); 0 changes nothing; never lowers (no negative shift). Floors are applied by the caller."""
+    if shift != 1 or lane != "core": return model, effort
+    return next_rung(model, effort)
+
 def read_rung(n):
     """#716: the last (model, effort) a run of issue n used, when that run ended blocked (rung + rung.blocked files); else None."""
     try:
@@ -673,6 +679,54 @@ def governor(usage, hist, now, g=None, prev=None, wins=None, stale_since=None, b
           "projected": None if pct is None else pct + g["k"] * g["b"] * max(lanes, busy) * h5, "week_projected": None}
     return week_gate(gv, g, stalled_5h(usage, hist) if mode == "5h+week" else False)
 
+def parse_for(txt):
+    """Pure (#712): '3h' / '90m' / '2' (hours) -> seconds; anything else -> None."""
+    import re
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)([hm]?)", str(txt or "").strip().lower())
+    return None if not m or float(m.group(1)) <= 0 else float(m.group(1)) * (60 if m.group(2) == "m" else 3600)
+
+def override_make(mode, now, dur_s=3 * 3600, until_reset=False):
+    """Pure (#712): the .runs/override.json record for `fast|normal|save|<N>`; None for a bad mode. lanes N = an int >= 0."""
+    mode = str(mode).strip().lower()
+    if mode in ("fast", "normal", "save"): ov = {"mode": mode}
+    elif mode.isdigit(): ov = {"mode": "lanes", "n": int(mode)}
+    else: return None
+    return {**ov, "set": now, "until": None if until_reset else now + (dur_s or 3 * 3600), "until_reset": bool(until_reset)}
+
+def override_apply(gv, ov, now):
+    """Pure (#712, proposal 3.3): the owner's override moves ONLY the lane count, inside the core's bounds: never above N_hi, never below N_lo,
+    never past a stop (week >= week_stop, hard bounds #703) and never a change of model or effort. fast = N_hi; save = 0.6 x N_week; lanes N = N;
+    normal = no change. Expired (`until` passed, or `until_reset` and the week reset passed) -> (gv, 'expired'). -> (gv, None|'expired')."""
+    if not isinstance(ov, dict) or ov.get("mode") not in ("fast", "normal", "save", "lanes"): return gv, None
+    wr = gv.get("week_reset")
+    if (ov.get("until") is not None and ov["until"] <= now) or (ov.get("until_reset") and wr is not None and wr <= now): return gv, "expired"
+    gv = {**gv, "override": {"mode": ov["mode"], "n": ov.get("n"), "until": ov.get("until") if not ov.get("until_reset") else wr, "until_reset": bool(ov.get("until_reset"))}}
+    if ov["mode"] == "normal" or gv.get("stop") or gv.get("n_hi") is None: return gv, None
+    hi, lo = int(gv["n_hi"]), int(gv.get("n_lo") or 0)
+    want = {"fast": hi, "save": int(round(0.6 * max(0.0, gv.get("n_week") or 0.0))), "lanes": ov.get("n") or 0}[ov["mode"]]
+    n = max(lo, min(int(want), hi))
+    if n != gv["lanes"]: gv["why"] = f"override {override_text(gv['override'])}: {gv['lanes']} -> {n} lanes; " + gv["why"]
+    gv["lanes"] = n
+    return gv, None
+
+def override_text(o):
+    """'FAST until 14:05' / 'lanes 4 until reset' (panel + governor line)."""
+    name = f"lanes {o.get('n')}" if o.get("mode") == "lanes" else str(o.get("mode")).upper()
+    until = "reset" if o.get("until_reset") else f"{datetime.fromtimestamp(o['until']).astimezone():%H:%M}" if o.get("until") else "?"
+    return f"{name} until {until}"
+
+def override_step(gv, now):
+    """Read .runs/override.json and apply it; an expired one is deleted and logged ('back to normal'). Never raises."""
+    f = RUNS / "override.json"
+    try: ov = json.loads(f.read_text(encoding="utf-8"))
+    except Exception: return gv
+    gv, ex = override_apply(gv, ov, now)
+    if ex and not DRY:
+        try: f.unlink()
+        except OSError: pass
+        log_line(f"{datetime.fromtimestamp(now).astimezone():%Y-%m-%d %H:%M:%S} governor: override {ov.get('mode')} expired, back to normal")
+    return gv
+
 def budget_shift(need, b, n_hi):
     """Pure (#711): budget pressure p = need / (b * N_hi) and the shift for workers above the floors: +1 when p > 1 (more budget than the
     lanes can burn), else 0. A tight budget (p < 1) only lowers the lane count (N_week); there is no -1, nothing is ever made cheaper."""
@@ -711,6 +765,7 @@ def governor_text(gv):
     s = f"governor: {n} lanes: {gv['why']}"
     if gv.get("b") is not None: s += f" · b̂ {gv['b']:.2f}%/h" + ("" if gv.get("fit") else " (prior)")
     if gv.get("pct") is not None: s += f" · 5h {gv['pct']:.0f}% (cap {gv.get('target', GOV['cap_5h']):.0f}%)"
+    if gv.get("override"): s += " · mode " + override_text(gv["override"])
     if gv.get("p") is not None: s += f" · p {gv['p']:.2f} budget: " + ("behind, shift +1" if gv.get("shift") else "tight, fewer lanes")
     return s + (" · STOP" if gv["stop"] else "")
 
@@ -728,9 +783,9 @@ def governor_now(now=None):
         gv = json.loads((RUNS / "governor.json").read_text(encoding="utf-8"))
         if now - gv["at"] < 15 * 60:
             return {"lanes": int(gv["lanes"]), "stop": bool(gv["stop"] and (gv.get("hard") or not (gv.get("reset") and gv["reset"] <= now))), "pct": gv.get("pct"),
-                    "week_pct": gv.get("week_pct"), "limit_hit": bool(gv.get("limit_hit"))}
+                    "week_pct": gv.get("week_pct"), "limit_hit": bool(gv.get("limit_hit")), "shift": 1 if gv.get("shift") == 1 else 0}
     except Exception: pass
-    return {"lanes": REMOTE_LANES, "stop": False, "pct": None, "week_pct": None, "limit_hit": False}
+    return {"lanes": REMOTE_LANES, "stop": False, "pct": None, "week_pct": None, "limit_hit": False, "shift": 0}
 
 def limit_requeue(res, limit_hit):
     """Pure (#703): a worker that died without a RESULT line while the limit was hit goes back to the queue, not BLOCKED."""
@@ -786,6 +841,7 @@ def governor_pass(remote_busy, now=None, ready=None, models=None):
     try: prev_mode = json.loads((RUNS / "governor.json").read_text(encoding="utf-8")).get("mode")
     except Exception: prev_mode = None
     gv = governor(usage, hist, now, prev=prev, wins=wins, stale_since=stale_since, busy=remote_busy, ready=ready)
+    gv = override_step(gv, now)      # #712: the owner's mode, inside the core's bounds; the AI step reads gv['override']
     if DRY: return gv
     try:                                             # #707: the AI step decides inside the core's bounds; any failure -> the core alone
         import ai_governor as AG
@@ -824,11 +880,43 @@ def assign_where(chosen, local_busy, remote_busy, local_lanes, remote_lanes):
 ACCEPT = ("Build exactly the issue's `## Acceptance` list (every point, with the tests it names) and nothing in its `Out of scope` (#186). "
           "New tests: add the test to an existing suite unless a new one is clearly needed; give it a budget line in oren2/tests/budget.txt (#187).")
 
-def finish_issue(n, text):
-    """#652 (owner 27 Nov): the run's DONE step closes issue n after the merge + deploy, also one labelled `later`
-    (no hold for live checks; reopen if a problem shows up)."""
-    gh("issue", "close", str(n), "--comment", text)
-    return True
+LIVE_RE = re.compile(r"^\s*LIVE:\s*\S", re.M)
+LIVE_EXEMPT = {"docs", "tooling"}     # #744: docs and tooling issues close without a LIVE line
+
+def has_live_line(comments):
+    """#744 (pure): True when one comment has a line `LIVE: <what was seen on production, with the date>`."""
+    return any(LIVE_RE.search(c or "") for c in comments)
+
+def live_proof(base="https://oren-game.pages.dev"):
+    """#744: the automatic live check, run by the runner itself after the deploy (never the owner). -> (ok, line):
+    ok True = `LIVE: ...` seen on production; ok False = a check failed (the issue stays open); ok None = could not run (closes, line says so)."""
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    try:
+        rc, out = run([sys.executable, str(ROOT / "tools/ci/deploy_ci.py"), "smoke", base], timeout=300)
+    except Exception as e:
+        return None, f"LIVE: not checked ({day}): the automatic check could not run: {str(e)[:120]}"
+    if rc == 0: return True, f"LIVE: production smoke ok on {base} ({day}): page loads, save round trip, D1 bound, voice status"
+    if "FAIL" in (out or ""): return False, f"LIVE check FAILED on {base} ({day}): " + (out or "").strip()[-300:]
+    return None, f"LIVE: not checked ({day}): the automatic check could not run (rc {rc})"
+
+def finish_issue(n, text, live=None):
+    """#652 + #744: the run's DONE step closes issue n after the merge + deploy, but only with a `LIVE: ...` line on the issue
+    (written by the runner's automatic check, `live` = (ok, line) from live_proof, or already there from the deploy tour / a tester).
+    No line and no proof: the issue stays open. A failed check keeps it open and sends it back to a worker. docs/tooling issues are exempt.
+    Returns True when closed."""
+    rc, out = gh("issue", "view", str(n), "--json", "labels,comments")
+    try: d = json.loads(out); labels = {l["name"] for l in d["labels"]}; comments = [c.get("body", "") for c in d.get("comments", [])]
+    except (ValueError, KeyError, TypeError): return False
+    if labels & LIVE_EXEMPT: return gh("issue", "close", str(n), "--comment", text)[0] == 0
+    if not has_live_line(comments):
+        if live is None: return False
+        ok, line = live
+        if ok is False:
+            gh("issue", "comment", str(n), "--body", redact(line + "\nThe issue stays open: a worker fixes it."))
+            set_labels(n, add=["ready-for-agent"], remove=["in-progress"])
+            return False
+        text += "\n" + line
+    return gh("issue", "close", str(n), "--comment", text)[0] == 0
 
 def owner_gate(n):
     """#608: we share the owner's GitHub account, so only the owner_q record is him; every worker and reviewer prompt says so."""
@@ -852,10 +940,10 @@ def remote_worker_prompt(n, lane, bug=False, retry=False):
         base += "This is a BUG: follow docs/agents/skills/diagnosing-bugs.md, then tdd: reproduce it with a failing test, then fix it; say the root cause in the PR body.\n"
     if retry:                                    # #137: an earlier cloud session died without a RESULT comment
         base += (f"An earlier cloud session for this issue ended without a RESULT comment: if lane/{n} exists on GitHub, "
-                 f"continue from it (`git fetch {REMOTE} lane/{n}` and check it out) instead of starting over.\n")
+                 f"continue from it (`git fetch {REMOTE} lane/{n}` and check it out; its draft PR may already exist, do not open a second one) instead of starting over.\n")
     return base + REBUILD + (f"Work on branch lane/{n} (create it from {BRANCH}). Follow the worker rules in FLOW.md: run the tests you touched, commit "
                    f"(after `python3 build_talents.py` in oren2/, WITH the rebuilt oren2/index.html and oren2/cf/public/index.html (CI is red when they differ from a fresh build, #503)), `git push -u {REMOTE} lane/{n}`, and open a PR to {BRANCH} "
-                   f"with `gh pr create --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Fixes #{n}` (if you may only push claude/* branches, use your claude/* branch instead; the runner finds the PR by `Fixes #{n}`). Never deploy, never force-push, never push to {BRANCH}.\n"
+                   f"with `gh pr create --draft --repo {REPO} --base {BRANCH} --head lane/{n}` whose body contains `Fixes #{n}` (#747: push the branch and open this DRAFT PR right after your first green commit, so a dead session does not lose the work; keep pushing to it; at the very end mark it ready with `gh pr ready <PR>`, or `gh api -X POST repos/{REPO}/pulls/<PR>/ccr/ready_for_review` if GraphQL is refused) (if you may only push claude/* branches, use your claude/* branch instead; the runner finds the PR by `Fixes #{n}`). Never deploy, never force-push, never push to {BRANCH}.\n"
                    f"You have no terminal the owner can see, so report ONLY through an issue comment (that line on its own line): "
                    f"if blocked post `RESULT: STUCK <why>`; if you need the owner post `QUESTION: <short question, with options>` and stop.\n"
                    f"LAST STEP (mandatory), after the PR is open: post `gh issue comment {n} --repo {REPO} --body \"RESULT: DONE <PR url>\"`. "
@@ -959,13 +1047,14 @@ def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=N
 class Refused(Exception):
     """#137: the cloud refused to start a session (CLI error, usage limit, no network): run locally or wait, never STUCK."""
 
-def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None, comment=None):
+def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None, comment=None, has_draft=None):
     """Start the cloud worker and wait for its comment. Returns the marker line (`RESULT: ...` / `QUESTION: ...`) like agent() does.
     on_start(start result) keeps the session id (#134: FIX points are sent back to this session).
+    #747: has_draft() true (lane/<n> already has a draft PR but no RESULT) = resume at worker: the new session continues on that branch.
     #137: a refused start raises Refused; a session silent for timeout_s (died without RESULT) -> comment() + ONE new session, then STUCK."""
     urls = []
     for attempt in (1, 2):
-        s = start(n, remote_worker_prompt(n, lane, bug, retry=attempt > 1), CFG.get("main_checkout", "."))
+        s = start(n, remote_worker_prompt(n, lane, bug, retry=attempt > 1 or bool(has_draft and has_draft())), CFG.get("main_checkout", "."))
         if not s.get("ok"):
             raise Refused(s.get("error", "?"))
         if on_start: on_start(s)
@@ -1356,6 +1445,11 @@ def gh(*args, **kw):
 
 def now():
     return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+
+def pr_diff(pr):
+    """#746: the PR's unified diff (tester.raise_level looks for sync/speech/home-redraw code in it); '' when unreadable."""
+    rc, out = gh("pr", "diff", str(pr))
+    return out if rc == 0 else ""
 
 def pr_size(text):
     """Pure (#717): `gh pr view --json files` output -> {"lines": additions+deletions, "files": count}, the built index.html copies left out; {} when unreadable."""
@@ -1893,9 +1987,10 @@ def resume_lookup(n):
     """#264: pr_resume_info of issue n's open PR (lane/<n> or claude/*, #249 helper), or None."""
     pr = find_pr(n)
     if not pr: return None
-    rc, out = gh("pr", "view", str(pr), "--json", "number,state,mergeable,headRefOid,commits,comments")
+    rc, out = gh("pr", "view", str(pr), "--json", "number,state,isDraft,mergeable,headRefOid,commits,comments")
     try: pj = json.loads(out) if rc == 0 else {}
     except ValueError: return None
+    if pj.get("isDraft"): return None                 # #747: a draft PR has no RESULT yet: resume at worker (new session continues on the branch), never review
     return pr_resume_info(pj) if pj.get("state", "OPEN") == "OPEN" else None
 
 def migrate_human():
@@ -1910,6 +2005,28 @@ def migrate_human():
 def find_pr(n):
     """Open PR number of issue n: lane/<n>, or a cloud worker's claude/* PR (#246, remote.pr_for)."""
     return remote.pr_for(n, run=run)[0]
+
+def draft_pr(n):
+    """#747: number of issue n's open DRAFT PR (lane/<n> or a claude/* branch, via find_pr; a worker that died early left it), else None."""
+    pr = find_pr(n)
+    if not pr: return None
+    rc, out = gh("pr", "view", str(pr), "--json", "isDraft")
+    try: return pr if rc == 0 and json.loads(out).get("isDraft") else None
+    except (ValueError, AttributeError): return None
+
+def ensure_pr_ready(n):
+    """#747: the worker said DONE: mark its draft PR ready, or open the PR from the pushed branch when it never did
+    ('DONE but no open PR' cannot happen). Returns the PR number or None (no pushed branch / gh failed)."""
+    d = draft_pr(n)
+    if d:
+        gh("pr", "ready", str(d)); return d
+    pr = find_pr(n)
+    if pr: return pr
+    rc, out = run(["git", "ls-remote", "--heads", REMOTE, f"lane/{n}"], cwd=CFG.get("main_checkout", "."))
+    if rc or not out.strip(): return None
+    rc, out = gh("pr", "create", "--base", BRANCH, "--head", f"lane/{n}", "--title", f"#{n} (opened by the runner)",
+                 "--body", f"Fixes #{n}\n\nOpened by the runner: the worker said DONE and pushed lane/{n} but opened no PR.")
+    return find_pr(n) if rc == 0 else None
 
 def branch_of(n):
     """#246: head branch of issue n's open PR (lane/<n> when there is none)."""
@@ -2166,17 +2283,24 @@ def process_locked(issue, where="local"):
         wm, eff = next_rung(*read_rung(n)); upgrade = "blocked restart"
         try: (RUNS / str(n) / "rung.blocked").unlink()
         except OSError: pass
+    shift = 0
+    if not upgrade:                                                             # #719: an upgraded task keeps its rung; else budget shift +1 (behind pace) raises a core worker
+        shift = governor_now().get("shift", 0)
+        m2, e2 = apply_shift(shift, wm, eff, lane)
+        m2, e2 = floors("worker", m2, e2, issue["labels"])
+        if (m2, e2) != (wm, eff): wm, eff, upgrade = m2, e2, "budget shift +1"
+        else: shift = 0
     write_rung(n, wm, eff)
     rstart = with_effort(remote.start, eff, wm if upgrade else None)           # #713
     rm, reff = floors("reviewer", None, reff0, issue["labels"])                   # #714: reviewer opus, medium (high for model:opus / effort:high)
     rstart_rev = with_effort(remote.start, reff, rm)
     rstart_test = with_effort(remote.start, floors("tester", "sonnet")[1])      # #714: tester medium
     resolver = lambda k: floors("resolver", "opus" if k >= 2 else "sonnet")     # #714: sonnet medium; opus medium on the 2nd failure of the same conflict
-    me = {"model": model_name(issue["labels"]), "effort": eff}                  # #713: every step event says which model + effort ran
+    me = {"model": wm, "effort": eff}                  # #713: every step event says which model + effort ran
     started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")      # remote: only issue comments after this count as the cloud worker's report
     try:
-        stat(n, lane, "start", model=model_name(issue["labels"]), effort=eff, where=where, code_mode=code_mode(n))
-        set_labels(n, add=["in-progress"]); gh("issue", "comment", str(n), "--body", f"Runner: started ({lane} lane, {where}, worker {model_name(issue['labels'])}, effort {eff}, reviewer {rm}).")
+        stat(n, lane, "start", model=wm, effort=eff, where=where, code_mode=code_mode(n), shift=shift)
+        set_labels(n, add=["in-progress"]); gh("issue", "comment", str(n), "--body", f"Runner: started ({lane} lane, {where}, worker {wm}, effort {eff}, reviewer {rm}" + (", shift +1" if shift else "") + ").")
         if upgrade: gh("issue", "comment", str(n), "--body", f"Runner: upgraded to {rung_name(wm, eff)} ({upgrade}).")
         run(["git", "fetch", "-q", REMOTE], cwd=ROOT, log=log)
         def prep_worktree():
@@ -2228,7 +2352,7 @@ def process_locked(issue, where="local"):
             try:
                 res = remote_worker(n, lane, "bug" in issue["labels"], rstart, lambda: fresh_remote().status(n, since=started),
                                     poll_sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over,
-                                    comment=lambda b: gh("issue", "comment", str(n), "--body", b))
+                                    comment=lambda b: gh("issue", "comment", str(n), "--body", b), has_draft=lambda: draft_pr(n))
                 remote_question(res)
                 out = res
             except Refused as e:                         # #137: local lane free -> run here; else give the issue back, it waits
@@ -2266,7 +2390,8 @@ def process_locked(issue, where="local"):
             if tester.parse_result(hi.get("test", ""))[0] != "pass":   # #618: never merge a T1+ head without a TEST: PASS (auto-resume, #295)
                 since = utc()
                 go, level, ttext = fresh_tester().gate(hi.get("review") or red0 or "", lambda lv: remote_tester(
-                    n, pr, lv, rstart_test, lambda: fresh_tester().status(pr, since=since), poll_sleep, time.time, 5400, 60, ended=over))
+                    n, pr, lv, rstart_test, lambda: fresh_tester().status(pr, since=since), poll_sleep, time.time, 5400, 60, ended=over),
+                    diff=pr_diff(pr))
                 if go == "blocked": raise Blocked(f"tester ({level}): {ttext[:300]}")
                 stat(n, lane, "test_pass" if go == "merge" and level != "T0" else "test_skip" if go == "merge" else "test_fail", level=level, **me)
                 if go == "fix": step, red0, tfail0 = "fix", ttext, True  # the #303 FIX loop below, round 1 = this fail
@@ -2274,7 +2399,7 @@ def process_locked(issue, where="local"):
         for rnd in range(1, FIX_ROUNDS + 2):
             tfail = tfail0 and rnd == 1
             if step in ("resolve", "merge"): break
-            pr = find_pr(n)
+            pr = ensure_pr_ready(n)      # #747: DONE (also on resume) -> draft marked ready / PR opened by the runner
             if not pr: raise Blocked("worker said DONE but no open PR for #%d (lane/%d, the RESULT line's PR, or a PR body 'Fixes #%d')" % (n, n, n))
             reviewed["sha"] = gh("pr", "view", str(pr), "--json", "headRefOid", "-q", ".headRefOid")[1].strip()   # #185: the head the reviewer sees; the merge must match it
             if rnd == 1 and step == "fix":         # #264: the head's red VERDICT is known: fix first, then review
@@ -2299,7 +2424,8 @@ def process_locked(issue, where="local"):
             if kind in ("pass", "notes", "purple"):  # #618: review -> test (T1+, cloud tester on the preview) -> merge
                 since = utc()
                 go, level, ttext = fresh_tester().gate(rv or verdict, lambda lv: remote_tester(
-                    n, pr, lv, rstart_test, lambda: fresh_tester().status(pr, since=since), poll_sleep, time.time, 5400, 60, ended=over))
+                    n, pr, lv, rstart_test, lambda: fresh_tester().status(pr, since=since), poll_sleep, time.time, 5400, 60, ended=over),
+                    diff=pr_diff(pr))
                 if go == "merge":
                     stat(n, lane, "test_pass" if level != "T0" else "test_skip", level=level, **me); break
                 if go == "blocked": raise Blocked(f"tester ({level}): {ttext[:300]}")
@@ -2391,7 +2517,8 @@ def process_locked(issue, where="local"):
         pre = start_pregen(log) if dep.startswith("deployed") else ""    # #175: after the lock, in the background; #301: never blocks
         m = sync_main(log)                       # result logged (review of #47)
         if m: log_line(m)
-        finish_issue(n, f"Merged to {BRANCH}, tests green, {dep}.{pregen_note(pre)}")
+        if not finish_issue(n, f"Merged to {BRANCH}, tests green, {dep}.{pregen_note(pre)}", live=live_proof()):
+            log_line(f"#{n}: not closed (no LIVE line or the live check failed)")
         set_labels(n, remove=["in-progress"])
         remove_worktree(wt, log)
         close_windows(n)
@@ -2473,7 +2600,19 @@ def do_freeze():
                         find_pr, lambda n, b: gh("issue", "comment", str(n), "--body", b), remote, time.sleep, time.time)
     print(res["message"]); return 0 if not res["open"] else 1
 
+def do_override():
+    """#712: runner.py --lanes-mode fast|normal|save|<N> [--for 3h|--until-reset] -> .runs/override.json."""
+    a = sys.argv; i = a.index("--lanes-mode")
+    mode = a[i + 1] if i + 1 < len(a) else ""
+    dur = parse_for(a[a.index("--for") + 1]) if "--for" in a and a.index("--for") + 1 < len(a) else 3 * 3600
+    ov = override_make(mode, time.time(), dur, "--until-reset" in a) if dur else None
+    if not ov: print("usage: runner.py --lanes-mode fast|normal|save|<N> [--for 3h|--until-reset]"); return 2
+    RUNS.mkdir(exist_ok=True)
+    (RUNS / "override.json").write_text(json.dumps(ov), encoding="utf-8")
+    print("override written:", override_text({**ov, "until": ov["until"]})); return 0
+
 def main():
+    if "--lanes-mode" in sys.argv: return do_override()
     if "--freeze" in sys.argv or "--unfreeze" in sys.argv: return do_freeze()
     import freeze
     if freeze.is_frozen(RUNS) and not DRY:
