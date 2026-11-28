@@ -2,8 +2,8 @@
 The WHOLE recovery after a restart (planned freeze #139, or a crash), in order:
   1. clears stale .runs/*.lock files (dead pid, or taken before this boot), starts Herdr if it is not running
   2. removes finished terminals left by the restart (by address, never by name)
-  3. layout: space 'oren' (control_space) holds the tabs orchestrator, inbox, inspector; worker windows go to herdr_space ('oren-workers')
-  4. starts orchestrator, inbox, inspector when missing (same commands as the watchdog's restart check, CONTROL below)
+  3. layout: space 'oren' (control_space) holds the tabs orchestrator, inbox, inspector, executor; worker windows go to herdr_space ('oren-workers')
+  4. starts orchestrator, inbox, inspector, executor when missing (same commands as the watchdog's restart check, CONTROL below)
   5. every open in-progress issue (local or cloud) whose runner is dead: a half-done merge in its worktree is reset to the pushed branch,
      in-progress is removed (ready-for-agent kept/added) so the runner restarts it; .runs/frozen is removed first
   6. starts the watchdog when missing (it starts the runner passes), then reports in ONE issue comment (recover_issue) and to the orchestrator
@@ -13,7 +13,7 @@ import json, os, shutil, sys, time
 from pathlib import Path
 
 TASK = "Oren recover"
-CONTROL = ("orchestrator", "inbox", "inspector")    # the 3 Claude sessions on the PC, tabs of 'oren' in this order
+CONTROL = ("orchestrator", "inbox", "inspector", "executor")    # the 4 Claude sessions on the PC, tabs of 'oren' in this order
 INBOX_PROMPT = ("You are the INBOX of the Oren game multi-agent system (repo igalgerman/oren_study). Read CLAUDE.md and FLOW.md. "
                 "The owner talks to you: a new idea -> /idea, a clear task -> /task, a bug -> /bug, a status question -> /status. "
                 "Write every new issue the way docs/agents/skills/writing-for-agents.md says. Propose each new issue's model label (docs/agents/models.md). "
@@ -22,15 +22,17 @@ INBOX_PROMPT = ("You are the INBOX of the Oren game multi-agent system (repo iga
 TRIAGE_STEPS = ("Run the mattpocock-skills:triage steps on every new ticket (#29): duplicate check per CLAUDE.md ('One backlog, no duplicates'), "
                 "labels per docs/agents/triage-labels.md, a P-level, an Acceptance list, one lane label (core/pack/review), 'Blocked by: #n' lines.")
 ORCH_PROMPT = "Read ORCHESTRATOR.md and continue as the orchestrator. Open the Oren lanes panel (/lanes)."
+EXECUTOR_PROMPT = r"Read C:\work\Oren_study\EXECUTOR.md and follow it."
 INSPECTOR_PROMPT = "You are the INSPECTOR of the Oren game multi-agent system. Read C:/work/Oren_study/INSPECTOR_HANDOFF.md first and follow it."
 
 # ---------- pure logic (test_recover.py) ----------
 def control_argv(name, main_checkout, plugin_dir, claude="claude", python="python", watchdog=""):
-    """-> (cwd, argv) of the program for orchestrator / inbox / inspector / watchdog."""
+    """-> (cwd, argv) of the program for orchestrator / inbox / inspector / executor / watchdog."""
     mc = str(main_checkout)
-    return {"orchestrator": (mc, [claude, "--remote-control", "oren-orchestrator", "--plugin-dir", str(plugin_dir), ORCH_PROMPT]),
+    return {"orchestrator": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-orchestrator", "--plugin-dir", str(plugin_dir), ORCH_PROMPT]),
             "inbox": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-inbox", INBOX_PROMPT]),
             "inspector": (str(Path(mc).parent), [claude, "--model", "opus", "--remote-control", "oren-inspector", INSPECTOR_PROMPT]),
+            "executor": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-executor", EXECUTOR_PROMPT]),
             "watchdog": (mc, [python, str(watchdog)])}[name]
 
 def hc_run_args(name, cwd, argv, space_id=""):
@@ -56,16 +58,16 @@ def _argv(t):
     a = fg.get("argv") or t.get("foreground_argv") or t.get("argv") or t.get("command") or t.get("cmd") or []
     return a.split() if isinstance(a, str) else [str(x) for x in a]
 
-def control_role(t):
+def control_role(t, roles=CONTROL):
     """#331: the control role (orchestrator/inbox/inspector) a terminal is, matched by name, by '--remote-control oren-<role>' in its
     foreground argv, by its tab ('where' ending in '/ <role>') or by label name=<role> (#332). A hand-started session has no name. -> role or None"""
-    if t.get("name") in CONTROL: return t["name"]
-    if _labels(t).get("name") in CONTROL: return _labels(t)["name"]
+    if t.get("name") in roles: return t["name"]
+    if _labels(t).get("name") in roles: return _labels(t)["name"]
     a = _argv(t)
     for i, x in enumerate(a[:-1]):
-        if x == "--remote-control" and a[i + 1].startswith("oren-") and a[i + 1][5:] in CONTROL: return a[i + 1][5:]
+        if x == "--remote-control" and a[i + 1].startswith("oren-") and a[i + 1][5:] in roles: return a[i + 1][5:]
     tab = str(t.get("where") or "").rsplit("/", 1)
-    if len(tab) == 2 and tab[1].strip() in CONTROL: return tab[1].strip()
+    if len(tab) == 2 and tab[1].strip() in roles: return tab[1].strip()
     return None
 
 def live_roles(ts):
