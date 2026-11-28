@@ -1,4 +1,4 @@
-# Unit test for the build check (#503): python3 tools/ci/test_buildcheck.py
+# Unit test for the build check (#503): python3 oren2/ci/test_buildcheck.py
 # A fresh build_talents.py on the checked-out tree must leave the built files unchanged (else CI is red).
 import os, subprocess, sys, tempfile, pathlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -25,5 +25,5 @@ print("ok stale build is red")
 
 # the tests workflow runs the check on every PR and push to main
 wf = (pathlib.Path(__file__).parents[2] / ".github" / "workflows" / "tests.yml").read_text()
-assert "tools/ci/buildcheck.py" in wf, "tests.yml must run tools/ci/buildcheck.py"
+assert "oren2/ci/buildcheck.py" in wf, "tests.yml must run oren2/ci/buildcheck.py"
 print("ok tests.yml runs the build check")
