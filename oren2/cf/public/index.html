@@ -387,6 +387,13 @@ body.act #gemc,body.act #btnHome,body.act .hud-mid .chip,body.act .tpill{display
 .sw.sel,.hatb.sel{outline:4px solid var(--ink);outline-offset:2px}
 .hatb{position:relative;width:58px;height:54px;display:grid;place-items:center;background:var(--paper);box-shadow:inset -3px -3px 0 rgba(0,0,0,.12),0 3px 0 rgba(0,0,0,.2)}
 .hatb svg{width:40px}
+.wcats{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.wcat{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 8px;background:var(--paper);font-family:var(--read);font-size:17px;box-shadow:inset -3px -3px 0 rgba(0,0,0,.12),0 3px 0 rgba(0,0,0,.2)}
+.wcat svg{width:38px}.wcat.sel,.wopt.sel{outline:4px solid var(--ink);outline-offset:2px}
+.wopts{justify-content:center}
+.wopt{position:relative;width:76px;height:96px;display:grid;place-items:center;background:var(--paper);box-shadow:inset -3px -3px 0 rgba(0,0,0,.12),0 3px 0 rgba(0,0,0,.2)}
+.wopt svg{width:56px}.wopt.lock svg{filter:grayscale(1) brightness(1.15);opacity:.55}
+.wlk{position:absolute;right:4px;bottom:4px}.wlk svg{width:26px;filter:none;opacity:1}
 /* TEACHER */
 .tch{display:flex;flex-direction:column;align-items:center;gap:14px;width:min(900px,100%)}
 .tabs{display:flex;gap:8px}
@@ -611,17 +618,35 @@ const SPR={
 const COLORS=['#e4572e','#f28c28','#e9b949','#7cc35f','#3cb371','#3cc8bb','#3a8fc4','#6c6fd1','#b065c9','#e0609a'];
 
 /* avatar */
-const HAIR={lightbrown:'#8b6843',brown:'#5b3a1e',black:'#1f1f24',blond:'#e2b74a',red:'#b5502a'};
-const SKIN={light:'#f6d2a8',tan:'#e0a878',brown:'#9a6440'};
-const SHIRT={black:'#26292f',navy:'#1f2e4d',red:'#e4572e',blue:'#3a8fc4',green:'#4fae4f',purple:'#8e6fd1',orange:'#f28c28'};
+const HAIR={lightbrown:'#8b6843',brown:'#5b3a1e',black:'#1f1f24',blond:'#e2b74a',red:'#b5502a',pink:'#d9609a',blue:'#3a8fc4'};
+const SKIN={light:'#f6d2a8',tan:'#e0a878',brown:'#9a6440',dark:'#6b4429'};
+const SHIRT={black:'#26292f',navy:'#1f2e4d',red:'#e4572e',blue:'#3a8fc4',green:'#4fae4f',purple:'#8e6fd1',orange:'#f28c28',gold:'#e9b949'};
 const PANTS={olive:'#5f6b3c',jeans:'#2f5d8a',khaki:'#b59b6b',black:'#2a2d33'};
 const OREN_LOOK={hair:'lightbrown',skin:'light',shirt:'black',pants:'olive'};
 /* #426: no hats (rewards are only stars + gems; gems build the kingdom). The hero keeps 3 empty rows on top so its size stays the same. */
 const HAT0=['..........','..........','..........'];
 const PETS={cat:{n:'פִּיקְסֶל',s:()=>SPR.cat},dog:{n:'בְּלוֹקִי',s:()=>SPR.dog},dragon:{n:'נִיצוֹץ',s:()=>SPR.dragon},owl:{n:'נוֹצִי',s:()=>SPR.owl},turtle:{n:'אִטִּי',s:()=>SPR.turtle}};
 const HERO=['..HhHhHH..','.HHHhHHHH.','.HHHHHHHHH','HSSSSSSSSH','SSSSSSSSSS','SSWESSWESS','SSWESSWESS','SQSSSSSSQS','.SSSMMSSS.','..SSSSSS..','.TTTTTTTT.','TTTTTTTTTU','STTTLLTTUS','STTLLLLTUS','.TTTTTTTU.','.PPPBBPPP.','.PPP..PPP.','.FFF..FFF.'];
-function avatarSVG(av){av=av||{};const H=HAIR[av.hair]||HAIR.lightbrown,S2=SKIN[av.skin]||SKIN.light,T=SHIRT[av.shirt]||SHIRT.black,P=PANTS[av.pants]||PANTS.jeans;const dark=av.shirt==='black'||av.shirt==='navy';
-  return sprite([...HAT0,...HERO],Object.assign({H,h:shade(H,.16),S:S2,W:'#ffffff',E:'#5a3a22',K:'#1d2631',Q:'#f2a7a0',M:'#b35d4c',T,U:dark?shade(T,.18):shade(T,-.25),L:dark?'#f1f1f1':'#fffaf0',P,B:shade(P,-.3),F:'#2b2f36'}));}
+/* #662 the wardrobe: 6 groups, every option one tap; `at` = stars needed (won by playing). One hero drawing (avatarSVG) for every screen. */
+const SHOES={black:'#2b2f36',red:'#e4572e',blue:'#3a8fc4',gold:'#e9b949'};
+const HAIRTOP={short:HAT0,spiky:['.H..H..H..','.HH.HH.HH.','.HHHHHHHHH'],long:HAT0,curly:['...hHhH...','.HhHHhHHh.','HHhHHHhHHH']};
+const FACES={smile:{},grin:{7:'SQSMSSMSQS',8:'.SSMMMMSS.'},wow:{8:'.SSSKKSSS.'},tongue:{8:'.SSMMMMSS.',9:'..SSQQSS..'}};
+const ACCS={none:{},glasses:{4:'SSKKSSKKSS',5:'SKWEKKWEKS',6:'SSKKSSKKSS'},scarf:{9:'.CCCCCCCC.'},badge:{11:'TTYYTTTTTU',12:'STYYLLTTUS'}};
+const LONGHAIR={4:'HSSSSSSSSH',5:'HSWESSWESH',6:'HSWESSWESH',7:'HQSSSSSSQH',8:'HSSSMMSSSH',9:'.HSSSSSSH.'};
+const opt=(k,at)=>at?{k,at}:{k};
+const WARD=[
+ {k:'hair',he:'שֵׂעָר',parts:[{key:'hs',opts:[opt('short'),opt('spiky'),opt('long',3),opt('curly',8)]},{key:'hair',opts:[opt('lightbrown'),opt('brown'),opt('black'),opt('blond'),opt('red'),opt('pink',12),opt('blue',20)]}]},
+ {k:'face',he:'פָּנִים',parts:[{key:'face',opts:[opt('smile'),opt('grin'),opt('wow',4),opt('tongue',6)]}]},
+ {k:'skin',he:'צֶבַע עוֹר',parts:[{key:'skin',opts:[opt('light'),opt('tan'),opt('brown'),opt('dark')]}]},
+ {k:'clothes',he:'בְּגָדִים',parts:[{key:'shirt',opts:[opt('black'),opt('navy'),opt('red'),opt('blue'),opt('green'),opt('purple'),opt('orange'),opt('gold',10)]},{key:'pants',opts:[opt('olive'),opt('jeans'),opt('khaki'),opt('black')]}]},
+ {k:'shoes',he:'נַעֲלַיִם',parts:[{key:'shoe',opts:[opt('black'),opt('red'),opt('blue',5),opt('gold',12)]}]},
+ {k:'acc',he:'קִשּׁוּטִים',parts:[{key:'acc',opts:[opt('none'),opt('glasses'),opt('scarf',4),opt('badge',9)]}]}];
+const WARD_SAY=['בְּחַר אֵיךְ הַגִּבּוֹר שֶׁלְּךָ יִרְאֶה.','עוֹד קְצָת כּוֹכָבִים, וְזֶה שֶׁלְּךָ!'];
+const avOpen=(part,k)=>{for(const g of WARD)for(const p of g.parts)if(p.key===part){const o=p.opts.find(x=>x.k===k);return !!o&&(!o.at||totalStars()>=o.at);}return false;};
+function avatarSVG(av){av=av||{};const H=HAIR[av.hair]||HAIR.lightbrown,S2=SKIN[av.skin]||SKIN.light,T=SHIRT[av.shirt]||SHIRT.black,P=PANTS[av.pants]||PANTS.jeans,F=SHOES[av.shoe]||SHOES.black;const dark=av.shirt==='black'||av.shirt==='navy';
+  const hs=HAIRTOP[av.hs]?av.hs:'short',ov=Object.assign({},hs==='long'?LONGHAIR:{},FACES[av.face]||{},ACCS[av.acc]||{});
+  const body=HERO.map((r,i)=>ov[i]||r);
+  return sprite([...HAIRTOP[hs],...body],Object.assign({H,h:shade(H,.16),S:S2,W:'#ffffff',E:'#5a3a22',K:'#1d2631',Q:'#f2a7a0',M:'#b35d4c',T,U:dark?shade(T,.18):shade(T,-.25),L:dark?'#f1f1f1':'#fffaf0',P,B:shade(P,-.3),F,Y:'#f2c230',C:'#e4572e'}));}
 const AV=()=>avatarSVG(save.av);
 const PET=()=>(PETS[save.av.pet]||PETS.cat);
 
@@ -1219,6 +1244,7 @@ function mergeIn(o){if(!o||typeof o!=='object')return;
   for(const k of ['ans','ok','trains'])save[k]=Math.max(save[k]|0,o[k]|0);
   for(const [k,v] of Object.entries(o.sp||{}))save.sp[k]=Math.max(save.sp[k]|0,v|0);
   for(const k of Object.keys(o.owned||{}))save.owned[k]=1;
+  if(o.av&&typeof o.av==='object'&&(+o.avT||0)>(+save.avT||0)){save.av=Object.assign({},save.av,o.av);save.avT=+o.avT;}/* #662 the look syncs, newest change wins */
   for(const [k,v] of Object.entries(o.tl||{})){save.tl=save.tl||{};const c=save.tl[k]||{s:0,n:0};save.tl[k]={s:Math.max(c.s|0,v.s|0),n:Math.max(c.n|0,v.n|0),b:Math.max(c.b|0,v.b|0)};}
   for(const m of ['code','wr','m2','cz'])for(const [k,v] of Object.entries(o[m]||{})){save[m]=save[m]||{};save[m][k]=Math.max(save[m][k]|0,v|0);}
   if(o.en2&&window.ENGLISH2)window.ENGLISH2.merge(save,o);
@@ -1834,19 +1860,22 @@ function story(panels,done){const box=$('#dlg');let i=0,tw=0;
 
 /* ---------- AVATAR STUDIO (Oren designs his hero) ---------- */
 function studio(first,back){setScreen('sStudio','meadow',first?null:(back||showMap));
-  $('#hudMid').innerHTML=`<div class="chip">הַגִּבּוֹר שֶׁלִּי</div>`;sayNow='בחר איך הגיבור שלך ייראה.';
-  const s=$('#sStudio');
+  $('#hudMid').innerHTML=`<div class="chip">הַגִּבּוֹר שֶׁלִּי</div>`;sayNow=WARD_SAY[0];
+  const s=$('#sStudio');let cat=0;
   const render=()=>{s.innerHTML='';const wrap=h('div','studio');
     const pv=h('div','pv',`<div class="a bob">${AV()}</div><div class="p bob" style="animation-delay:-1s">${PET().s()}</div>`);
+    const tabs=h('div','wcats');
+    WARD.forEach((g,i)=>{const b=h('button','wcat'+(i===cat?' sel':''),`<span>${avatarSVG(save.av)}</span><b>${g.he}</b>`);b.onclick=()=>{cat=i;sfx.pop(1);render();};tabs.appendChild(b);});
     const rows=h('div','orows');
-    const sw=(title,map,key)=>{const r=h('div','orow',`<h4>${title}</h4>`);for(const [k,c] of Object.entries(map)){const b=h('button','sw'+(save.av[key]===k?' sel':''));b.style.background=c;b.setAttribute('aria-label',k);b.onclick=()=>{save.av[key]=k;sfx.pop(2);persist();render();};r.appendChild(b);}return r;};
-    rows.append(sw('שֵׂעָר',HAIR,'hair'));if(first)rows.append(sw('צֶבַע עוֹר',SKIN,'skin'));rows.append(sw('חֻלְצָה',SHIRT,'shirt'));/* #8: few rows (pants dropped; skin on the first visit); #426: no hats */
+    for(const pt of WARD[cat].parts){const r=h('div','orow wopts');
+      for(const o of pt.opts){const open=!o.at||totalStars()>=o.at;const b=h('button','wopt'+(save.av[pt.key]===o.k||(!save.av[pt.key]&&o===pt.opts[0])?' sel':'')+(open?'':' lock'),`${avatarSVG(Object.assign({},save.av,{[pt.key]:o.k}))}${open?'':`<i class="wlk">${SPR.lock}</i>`}`);b.setAttribute('aria-label',o.k);
+        b.onclick=()=>{if(!open){b.classList.remove('shake');void b.offsetWidth;b.classList.add('shake');sfx.no();say(WARD_SAY[1]);return;}save.av[pt.key]=o.k;save.avT=Date.now();sfx.pop(2);persist();render();};r.appendChild(b);}
+      rows.appendChild(r);}
     const pr=h('div','orow','<h4>חָבֵר לַמַּסָּע</h4>');
-    for(const [k,p] of Object.entries(PETS)){const b=h('button','hatb'+(save.av.pet===k?' sel':''),p.s());b.title=plain(p.n);b.onclick=()=>{save.av.pet=k;sfx.pop(3);persist();render();};pr.appendChild(b);}
-    rows.append(pr);
+    for(const [k,p] of Object.entries(PETS)){const b=h('button','hatb'+(save.av.pet===k?' sel':''),p.s());b.title=plain(p.n);b.onclick=()=>{save.av.pet=k;save.avT=Date.now();sfx.pop(3);persist();render();};pr.appendChild(b);}
     const nm=h('div','lcap',`הֶחָבֵר שֶׁלְּךָ: ${PET().n}`);
     const go=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=()=>back?back():showMap(first);
-    const col=h('div','');col.style.cssText='display:flex;flex-direction:column;align-items:center;gap:10px';col.append(pv,nm);wrap.append(col,rows);s.append(wrap,go);};
+    const col=h('div','');col.style.cssText='display:flex;flex-direction:column;align-items:center;gap:10px';col.append(pv,nm,pr);const right=h('div','');right.style.cssText='display:flex;flex-direction:column;gap:12px;align-items:center';right.append(tabs,rows);wrap.append(col,right);s.append(wrap,go);};
   render();}
 
 /* ---------- MAP ---------- */
@@ -2526,7 +2555,7 @@ function showFinal(){setScreen('sFinal','final',showMap);$('#hudMid').innerHTML=
 
 updateGems();cloudInit();
 const BUS={};function emit(e,...a){(BUS[e]||[]).forEach(f=>{try{f(...a);}catch(x){console.error(x);}});}
-window.OREN={readHelp,mathSpeechList,hatsBack,get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evBuf:()=>EV.buf.slice(),evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,famStale:()=>FAM.sf&&FAM.sf>FAM.upT?FAM.upT||((save.now||{}).t|0)||FAM.sf:0,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,celebrate,bigCelebration,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,dev:DEV,kidDev,parMark,parBusy:()=>FAM.on&&parRecent()&&(save.now||{}).dv!==DEV,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
+window.OREN={WARD,WARD_SAY,avOpen,readHelp,mathSpeechList,hatsBack,get save(){return save;},pathLevel:id=>{pathLv=id;},persist,known,hereBegin,hereProg,hereTake,pauseOn,pauseOff,get paused(){return paused();},track,evFlush,evBuf:()=>EV.buf.slice(),evMission,evQ,evAns,tapTooSoon,evSnap,evlog:()=>{let kept=0;try{kept=(JSON.parse(localStorage.getItem(EV.k)||'null')||{ev:[]}).ev.length;}catch(e){}return {n:EV.n,drop:EV.drop,buf:EV.buf.length,first:(EV.buf[0]||{}).tg,last:(EV.buf[EV.buf.length-1]||{}).tg,kept,sid:EV.sid};},famNow,famStale:()=>FAM.sf&&FAM.sf>FAM.upT?FAM.upT||((save.now||{}).t|0)||FAM.sf:0,sfx,RAW,tone,noise,NT,audio,get A(){return A;},musicStart,musicStop,setTheme,duck,say,hush,sprite,SPR,AV,PET,PETS,GUARD,h,$,rand,pick,shuffle,setScreen,showMap,burst,rain,celebrate,bigCelebration,center,addGems,updateGems,floatText,ICON,D,RM,graphemes,story,today,dayStreak,masteredCount,WORLDS,ALLLV,ALLU,stars,totalStars,mergeIn,castle,revealedFor,pts,startLevel,kingdom,settleSet:()=>{lastSetJ=JSON.stringify(save.set||{});},get family(){return FAM.on?FAM.id:null;},famPull,dev:DEV,kidDev,parMark,parBusy:()=>FAM.on&&parRecent()&&(save.now||{}).dv!==DEV,parentPlay,skipLevel,get isParentPlay(){return !!kidSave;},get realSave(){return kidSave||save;},showJourney,showWorld,unlocked,studio,sayLang:(t,l,slow)=>say(t,l,slow),get heVoice(){return heVoice;},setVoicePref,
   set sayNow(v){sayNow=v;AUTO.gen++;},get sayNow(){return sayNow;},hud:html=>{$('#hudMid').innerHTML=html;document.body.classList.toggle('act',!document.body.classList.contains('inpar')&&/class="chip"/.test(html));},resetAll:keep=>{const snd=save.snd;save=blank();save.snd=snd;Object.assign(save,keep||{});persist();renderStart();},on:(e,f)=>{(BUS[e]=BUS[e]||[]).push(f);},emit,blank};
 window.__oren4={MK,mistakeKind,TF,TFC,tfFillQ,COIN,GC,qSpeech,GT,HANDS,renderAudio,THEMES,RAW,setTheme,get mus(){return mus;},WORLDS,ALLLV,ALLU,hintHTML,hintData,uniq,colInit,colNeedBorrow,digs,qkey,bubbleOpts,storyFor,teachCheck,HEROES,get play(){return play;},get save(){return save;},startLevel,finishLevel,playLevel,showMap,showWorld,kingdom,studio,teacher,playSpeed,setFast:v=>{window.__fast=v;},mergeIn,migrateOld,lp};
 /* #44 a finished task is not reopened */

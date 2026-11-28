@@ -200,13 +200,12 @@ const { chromium } = require('playwright');
   r = await p.evaluate(() => { const bg = e => getComputedStyle(e).backgroundColor; const f = document.querySelector('.jb:not(.back)'), m = document.querySelector('.jb.back'); return { f: bg(f), m: bg(m) }; });
   ok('#8 frog: "−1" is quieter than the forward jumps (not yellow)', r.m !== 'rgb(255, 210, 63)' && r.m !== r.f, JSON.stringify(r));
   await p.evaluate(() => { if (window.__arc.cur) window.__arc.cur.stop(); document.querySelector('#ov').hidden = true; });
-  // studio: four rows; the first visit has skin and no hats, later visits hats and no skin; pants gone
-  const studioRows = first => p.evaluate(f => { window.OREN.save.gems = 0; window.OREN.studio(f, () => {}); return [...document.querySelectorAll('#sStudio .orow h4')].map(e => e.textContent); }, first);
-  const s1 = await studioRows(true), s2 = await studioRows(false);
-  ok('#8 studio: 4 rows, first visit hair/skin/shirt/friend', s1.length === 4 && s1.includes('צֶבַע עוֹר') && !s1.includes('כּוֹבַע') && !s1.includes('מִכְנָסַיִם'), s1.join());
-  ok('#8/#426 studio: 3 rows later (no skin, no hats)', s2.length === 3 && !s2.includes('כּוֹבַע') && !s2.includes('צֶבַע עוֹר') && !s2.includes('מִכְנָסַיִם'), s2.join());
-  r = await p.evaluate(() => ({ sw: Math.min(...[...document.querySelectorAll('#sStudio .sw')].map(e => e.getBoundingClientRect().width)) }));
-  if (L.variant === 'phone') ok('#8 studio: colour swatches >= 44px on the phone', r.sw >= 43.5, String(r.sw));
+  // studio (#662): 6 group buttons, big picture options, no hat row, nothing to buy
+  const studioCats = first => p.evaluate(f => { window.OREN.save.gems = 0; window.OREN.studio(f, () => {}); return [...document.querySelectorAll('#sStudio .wcat b')].map(e => e.textContent); }, first);
+  const s1 = await studioCats(true), s2 = await studioCats(false);
+  ok('#662 studio: the same 6 groups on the first visit and later, no hat group', s1.length === 6 && s1.join() === s2.join() && !s1.includes('כּוֹבַע'), s1.join());
+  r = await p.evaluate(() => ({ sw: Math.min(...[...document.querySelectorAll('#sStudio .wopt')].map(e => e.getBoundingClientRect().width)) }));
+  if (L.variant === 'phone') ok('#8 studio: option pictures >= 44px on the phone', r.sw >= 43.5, String(r.sw));
   // reading: the music note "תָּו" is never a picture to guess
   ok('#8 read-first: "תָּו" has no picture (the note looked like other things)', await p.evaluate(() => !window.READBANK2.words.some(w => w.pic === 'note')));
   // a home mission that asks "how many" ends with "tell dad or mom", so "done" fits
@@ -232,7 +231,7 @@ const { chromium } = require('playwright');
   ok('#426 kingdom: no badges button, no badge wall', !r.btn.some(t => /תַּגִּים/.test(t)) && r.btn.some(t => /הַגִּבּוֹר/.test(t)) && r.wall === 'undefined', JSON.stringify(r));
   await L.shot(p, { path: require('path').join(L.SHOTDIR, `426-kingdom-${L.variant}.png`) });
   await p.evaluate(() => window.OREN.studio(false, () => {})); await L.sleep(200);
-  r = await p.evaluate(() => ({ rows: [...document.querySelectorAll('#sStudio .orow h4')].map(x => x.textContent), price: document.querySelectorAll('#sStudio .pr').length }));
+  r = await p.evaluate(() => ({ rows: [...document.querySelectorAll('#sStudio .wcat b')].map(x => x.textContent), price: document.querySelectorAll('#sStudio .pr').length }));
   ok('#426 studio: no hat row, nothing to buy', !r.rows.some(t => /כּוֹבַע/.test(t)) && r.price === 0 && r.rows.length >= 2, JSON.stringify(r));
   await L.shot(p, { path: require('path').join(L.SHOTDIR, `426-studio-${L.variant}.png`) });
   r = await p.evaluate(() => { const T = window.TAL; T.parentPanel('full'); return /תגים/.test(document.querySelector('#sPar').textContent); });
