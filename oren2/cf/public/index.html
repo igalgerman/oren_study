@@ -6630,7 +6630,7 @@ FR.inStep=()=>!!cur;FR.lead=t=>{lead=t;};FR._lead=t=>{const x=lead;if(t!=null)le
    - the opening (once, save.mixIntro): the Mixer's picture + 3 short spoken lines (about 15 s), one button 'let's go' that also skips it;
    - the strip in the top bar shows the chapter's icon next to the chase; one tap opens the chase card: where we are, what happened
      (the closing lines of the scenes played in this chapter) and what comes next, read aloud, one button to go on. */
-const MIXI=['זֶה הַמְּבַלְבֵּל! הוּא קָטָן וְצוֹחֵק, וְהוּא מְבַלְבֵּל אֶת הַכֹּל.','הוּא בָּרַח בְּסִירָה, וַאֲנַחְנוּ מַפְלִיגִים אַחֲרָיו.','כָּל מִשִּׂימָה שֶׁתִּפְתֹּר מְקָרֶבֶת אוֹתָנוּ אֵלָיו.'];
+const MIXI=['זֶה הַמְּבַלְבֵּל! הוּא קָטָן וְצוֹחֵק, וְהוּא מְבַלְבֵּל אֶת הַכֹּל.','הוּא בָּרַח לַיָּם, וַאֲנַחְנוּ בּוֹנִים סְפִינָה כְּדֵי לְהַגִּיעַ אֵלָיו.','כָּל מִשִּׂימָה שֶׁתִּפְתֹּר מְקָרֶבֶת אוֹתָנוּ אֵלָיו.'];
 const MIXGO='יוֹצְאִים!',CH_ICON=['⚓','🕰️','🔤','🍎','💬','💡','🥖','🌙','📚','🌫️','🏝️','🎉'];
 const CHT='הַמַּסָּע',CHW='מָה הָיָה:',CHN='עַכְשָׁו:',CHX='הַמְשֵׁךְ';
 const chaseSays=()=>[...MIXI,MIXI.join(' '),MIXGO,CHT,CHW,CHN];
@@ -6658,10 +6658,12 @@ const PATHBAR={render(){let b=$('#frPath');const d=cur&&daily();
   document.body.classList.toggle('frpon',!!(d&&d.d===cur.d));if(!d||d.d!==cur.d){if(b)b.remove();return;}
   const mid=$('#hudMid');if(!mid)return;if(!b){b=h('div','frpath');b.id='frPath';b.setAttribute('role','button');b.onclick=ev=>{ev.stopPropagation();FR.openChase();};}if(b.parentNode!==mid)mid.appendChild(b);
   const q=quest();const o=d.bs|0,t=d.t.slice(o),dn=d.done.slice(o),n=t.length,k=dn.filter(Boolean).length;
-  b.setAttribute('aria-label',`${k}/${n}`);{const M=SM(),ci=M?M.pos().c:0;let c=b.querySelector('.fpc');if(ci){if(!c){c=h('span','fpc');b.insertBefore(c,b.firstChild);}c.textContent=CH_ICON[ci-1];}}
+  b.setAttribute('aria-label',`${k}/${n}`);
   /* #393 the hero chases the Mixer: one step closer per finished mission, the last one catches him (same size as the old dots) */
   const sp=b.querySelector('.fpt');if(!sp){b.innerHTML=`<span class="fpq">${q.e}</span><span class="fpt"><span class="fph">${O.AV()}</span><span class="fpm">${O.SPR.mixer}</span></span>`;}
-  const tr=b.querySelector('.fpt');tr.style.setProperty('--n',n);tr.style.setProperty('--k',Math.min(k,n));tr.dataset.k=Math.min(k,n);tr.classList.toggle('caught',k>=n);}};
+  const tr=b.querySelector('.fpt');tr.style.setProperty('--n',n);tr.style.setProperty('--k',Math.min(k,n));tr.dataset.k=Math.min(k,n);tr.classList.toggle('caught',k>=n);
+  /* #663 the chapter icon: after the strip is built (the template above runs once and would wipe it) */
+  {const M=SM(),ci=M?M.pos().c:0;let c=b.querySelector('.fpc');if(ci){if(!c){c=h('span','fpc');b.insertBefore(c,b.firstChild);}c.textContent=CH_ICON[ci-1];}b.tabIndex=0;b.title=CHT;b.onkeydown=ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();FR.openChase();}};}}};
 
 /* the top bar is rewritten by every screen: keep the strip in it while inside a step */
 (()=>{const mid=$('#hudMid');if(mid)new MutationObserver(()=>{const b=$('#frPath');if(cur&&(!b||b.parentNode!==mid))PATHBAR.render();}).observe(mid,{childList:true});})();
