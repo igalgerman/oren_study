@@ -1,5 +1,5 @@
 """Timing stats from .runs/stats.jsonl. `python stats.py` prints a short report."""
-import json, os, sys, time
+import calendar, json, os, sys, time
 from pathlib import Path
 
 LOG = Path(os.environ.get("RUNNER_RUNS") or Path(__file__).resolve().parent / ".runs") / "stats.jsonl"   # #229
@@ -46,10 +46,10 @@ def compute(events, now=None):
     return {"issues": issues, "totals": totals}
 
 def finish_rate(events, now=None):
-    """#148: -> (finished, started) in the last 24 h: distinct issues the runner merged by itself / started."""
+    """#148: -> (finished, started) in the last 24 h: distinct issues the runner merged by itself / started (#851: events by auto/hand are not the runner's)."""
     now = time.time() if now is None else now
     ev = [e for e in events if e.get("ts", 0) > now - 86400]
-    return (len({e["issue"] for e in ev if e.get("event") == "merged"}), len({e["issue"] for e in ev if e.get("event") == "start"}))
+    return (len({e["issue"] for e in ev if e.get("event") == "merged" and e.get("by", "runner") == "runner"}), len({e["issue"] for e in ev if e.get("event") == "start"}))
 
 def fmt(s):
     if s is None: return "-"
@@ -155,5 +155,70 @@ def issue_labels():
         return {i["number"]: [x["name"] for x in i.get("labels", [])] for i in c.get("open", []) + c.get("closed", [])}
     except Exception: return {}
 
+# ---------- #851: every merged PR gets one `merged` event, also auto-merge and merges by hand ----------
+import re
+_CLOSES = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)", re.I)
+RUNNER_SLACK = 6 * 3600     # a runner `merged` event without a PR number covers a PR of its issue merged within this time
+
+def _epoch(iso):
+    try: return int(calendar.timegm(time.strptime(iso, "%Y-%m-%dT%H:%M:%SZ")))
+    except (TypeError, ValueError): return 0
+
+def pr_issue(pr):
+    """Pure: the issue a PR is for: `Closes/Fixes #n` in the body, else the branch lane/<n> or claude/github-issue-<n>-..., else the title's #n; 0 if unknown."""
+    m = _CLOSES.search(pr.get("body") or "")
+    if m: return int(m.group(1))
+    m = re.match(r"(?:lane/|claude/github-issue-)(\d+)", pr.get("headRefName") or "")
+    if m: return int(m.group(1))
+    m = re.search(r"#(\d+)", pr.get("title") or "")
+    return int(m.group(1)) if m else 0
+
+def merge_events(prs, events, now=None, days=7):
+    """Pure: the `merged` events still missing for the merged PRs of the last `days`: [{ts, issue, lane, event, pr, by, merged_at}].
+    Recorded already = an event with this `pr`, or a runner event (no `pr`) of the same issue within RUNNER_SLACK of the merge.
+    by: runner (the runner's own event covers it; never written again), auto (GitHub auto-merge was on), hand (anything else)."""
+    now = time.time() if now is None else now
+    have = {e["pr"] for e in events if e.get("event") == "merged" and "pr" in e}
+    runner = [e for e in events if e.get("event") == "merged" and "pr" not in e]
+    out = []
+    for p in sorted(prs, key=lambda p: p.get("mergedAt") or ""):
+        at = _epoch(p.get("mergedAt"))
+        if not at or at < now - days * 86400 or p.get("number") in have: continue
+        n = pr_issue(p)
+        if any(e.get("issue") == n and abs(e.get("ts", 0) - at) <= RUNNER_SLACK for e in runner): continue
+        lane = next((e.get("lane") for e in events if e.get("issue") == n and e.get("lane")), "")
+        out.append({"ts": at, "issue": n, "lane": lane, "event": "merged", "pr": p["number"], "by": "auto" if p.get("autoMergeRequest") else "hand",
+                    "merged_at": p["mergedAt"]})
+        have.add(p["number"])
+    return out
+
+def record_merges(prs, now=None, days=7, path=LOG, dry=False):
+    """Append the missing events to stats.jsonl (dry: only count); -> the list. Safe to call every minute."""
+    new = merge_events(prs, read_events(path), now, days)
+    if new and not dry:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write("".join(json.dumps(e) + "\n" for e in new))
+    return new
+
+def merged_by(events, now=None, hours=24):
+    """-> {by: distinct merged PRs/issues in the last `hours`}; an event without `by` is the runner's."""
+    now = time.time() if now is None else now
+    seen = {}
+    for e in events:
+        if e.get("event") == "merged" and e.get("ts", 0) > now - hours * 3600:
+            seen[e.get("pr") or ("i", e.get("issue"), e.get("ts"))] = e.get("by", "runner")
+    c = {}
+    for b in seen.values(): c[b] = c.get(b, 0) + 1
+    return c
+
+def backfill(days=7, apply=False, run=None):
+    """One time: `python3 stats.py --backfill [--apply]`. Without --apply it only prints how many events it would write (dry run)."""
+    import subprocess
+    run = run or (lambda: subprocess.run(["gh", "pr", "list", "--repo", "igalgerman/oren_study", "--state", "merged", "--limit", "300",
+                  "--json", "number,title,body,headRefName,mergedAt,autoMergeRequest"], capture_output=True, text=True, timeout=120).stdout)
+    new = record_merges(json.loads(run() or "[]"), days=days, dry=not apply)
+    return f"backfill {days} days: {len(new)} merged events {'written' if apply else 'would be written (dry run; add --apply)'}"
+
 if __name__ == "__main__":
-    print(models_report(read_events(), issue_labels()) if "--models" in sys.argv else report(read_events()))
+    if "--backfill" in sys.argv: print(backfill(apply="--apply" in sys.argv))
+    else: print(models_report(read_events(), issue_labels()) if "--models" in sys.argv else report(read_events()))
