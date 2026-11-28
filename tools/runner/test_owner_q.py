@@ -214,3 +214,25 @@ assert rc == 0 and "OPEN" in out.getvalue(), out.getvalue()
 assert OQ.merge_state(64, [], [{"body": gb, "reactionGroups": []}]) == "closed", "#630+#636: an unanswered --gates 64 question gates the merge"
 assert OQ.merge_state(64, [{"body": OQ.answer_body(GK, "approve")}], [{"body": gb, "reactionGroups": []}]) == "open"
 print("ok owner_q #630 gate opens on an answered question that gates #n, whatever its window")
+
+# #696 every owner question is Hebrew and whole: an English text gets a short Hebrew version (the English original stays
+# in the comment for the agents); a Hebrew text is left alone; a failed translation keeps the original; a multi-line
+# question is read back in full (it was cut at the first line).
+g5 = FakeGH(); OQ.STATE = tmp / "owner_q_he.json"; OQ.GH = g5
+told = []
+OQ.TRANSLATE = lambda t: (told.append(t), "הסוכן הקבוע לא רץ. התחבר מחדש.")[1]
+OQ.post("#696a", "QUESTION: the hourly task does not run - re-login")
+c = posts(g5)[-1]["body"]
+assert told == ["the hourly task does not run - re-login"], told
+qa = OQ.open_questions([{"body": c, "url": "u"}])[0]
+assert qa["text"] == "הסוכן הקבוע לא רץ. התחבר מחדש.", qa
+assert "the hourly task does not run - re-login" in c, c                                # the original stays for the agents
+OQ.post("#696b", "QUESTION: איזה צבע? 1) ירוק 2) כחול"); assert len(told) == 1, told        # Hebrew: no translation
+OQ.TRANSLATE = lambda t: None                                                           # translator down: original kept, still posted
+OQ.post("#696c", "QUESTION: still english")
+assert OQ.open_questions([{"body": posts(g5)[-1]["body"], "url": "u"}])[0]["text"] == "still english"
+long_q = "שורה ראשונה.\nשורה שנייה ארוכה.\nשורה שלישית?"
+OQ.post("#696d", "QUESTION: " + long_q)
+assert OQ.open_questions([{"body": posts(g5)[-1]["body"], "url": "u"}])[0]["text"] == long_q, "whole text, not cut"
+OQ.TRANSLATE = None
+print("ok owner_q #696 Hebrew question, whole text")

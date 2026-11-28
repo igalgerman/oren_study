@@ -10,7 +10,7 @@ Usage:
   python tools/runner/owner_q.py gate <#n>                      # #608: the owner's answers for issue n (exit 0 = gate open, 1 = closed)
 A PR whose issue is owner-gated (an owner question about it exists) never merges while that gate is CLOSED (#636, merge_gate).
 """
-import hashlib, json, re, sys
+import hashlib, json, os, re, shutil, subprocess, sys
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -46,15 +46,40 @@ def gates_of(b):
     m = GATES_RE.search(b or "")
     return [int(x) for x in re.findall(r"\d+", m[1])] if m else []
 
-def body(key, window, question, tail="", gates=()):
+HE = re.compile(r"[א-ת]"); LAT = re.compile(r"[A-Za-z]")
+TRANSLATE = None      # text -> Hebrew text or None; tests swap in a fake (default: one short call to a cheap model)
+
+def is_hebrew(t):
+    return len(HE.findall(t or "")) >= len(LAT.findall(t or ""))
+
+def _claude_hebrew(text):
+    """#696: one short plain Hebrew version of an English text (haiku, no tools); None when it fails or under tests."""
+    if os.environ.get("OREN_TEST"): return None
+    try:
+        p = subprocess.run([shutil.which("claude") or "claude", "-p", "--model", "haiku", "--no-session-persistence"],
+                           input="Write this text for a parent in short, plain Hebrew (no nikud). Keep every option, number and #issue as is. "
+                                 "Output only the Hebrew text.\n\n" + text, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=90, stdin=None, cwd=str(R.ROOT))
+    except (OSError, subprocess.TimeoutExpired): return None
+    out = (p.stdout or "").strip()
+    return out if p.returncode == 0 and out and is_hebrew(out) else None
+
+def hebrew_of(question):
+    """#696: the question as Hebrew; a Hebrew text stays; no translation possible -> None (the original is shown)."""
+    q = re.sub(r"^QUESTION:\s*", "", question or "").strip()
+    return None if not q or is_hebrew(q) else (TRANSLATE or _claude_hebrew)(q)
+
+def body(key, window, question, tail="", gates=(), he=None):
     """The comment text (parent-facing: Hebrew without nikud)."""
     ref = issue_ref(window)
     head = f"**{ref}**" + (f" (חלון `{window}`)" if window and window != ref else "") if ref else f"חלון `{window}`"
     q = re.sub(r"^QUESTION:\s*", "", question).strip() or ("(מחכה לתשובה) " + (tail.strip().splitlines() or [""])[-1].strip())
     opts = options_of(question, tail)
+    orig = f"\n\n<details><summary>English original</summary>\n\n{q}\n\n</details>" if he else ""
+    if he: q = he
     g = f"<!-- gates: {' '.join(f'#{n}' for n in gates)} -->" if gates else ""
     return (f"{MARK}<!-- owner-q:{key} -->{g}\n{head}\n\n**שאלה:** {q}\n"
-            + ("".join(f"\n- {o}" for o in opts) + "\n" if opts else "")
+            + ("".join(f"\n- {o}" for o in opts) + "\n" if opts else "") + orig
             + "\nענה כאן בתגובה (או לאורקסטרטור). אחרי שהתשובה הועברה: `ANSWERED owner-q:" + key + "`")
 
 def answered_keys(comments):
@@ -117,7 +142,7 @@ def open_questions(comments):
         b = c.get("body") or ""
         m = KEY_RE.search(b)
         if not m or m[1] in done or b.lstrip().startswith("ANSWERED"): continue
-        q = re.search(r"\*\*שאלה:\*\*\s*(.*)", b); w = re.search(r"\*\*(#\d+)\*\*|חלון `([^`]+)`", b)
+        q = re.search(r"\*\*שאלה:\*\*\s*(.*?)(?=\n\n- |\n\n<details>|\n\nענה כאן|\Z)", b, re.S); w = re.search(r"\*\*(#\d+)\*\*|חלון `([^`]+)`", b)
         src = re.search(r"חלון `([^`]+)`", b)                       # #220: the asking window (remote-<n> gets its answer sent)
         window = (w[1] or w[2]) if w else ""
         out.append({"key": m[1], "window": window, "source": src[1] if src else window,
@@ -184,7 +209,7 @@ def _post(window, question, tail="", gh=None, gates=()):
     if cs is None: return None
     if any(KEY_RE.search(c.get("body") or "") and key in c["body"] for c in cs):
         s = _state(); s.setdefault("posted", []).append(key); _save(s); return ""
-    rc, out = gh("issue", "comment", str(n), "--body", R.redact(body(key, window, question, tail, gates)))
+    rc, out = gh("issue", "comment", str(n), "--body", R.redact(body(key, window, question, tail, gates, hebrew_of(question))))
     if rc: return None
     s = _state(); s["posted"] = (s.get("posted", []) + [key])[-500:]; _save(s)
     return (out or "").strip().splitlines()[-1] if (out or "").strip() else f"https://github.com/{R.REPO}/issues/{n}"
