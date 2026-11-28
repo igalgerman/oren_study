@@ -21,6 +21,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 import runner as R
+import trust
 
 EVERY_H = 6
 GAP_MIN = int(R.CFG.get("canary_minutes", 60))   # #538: never two canary runs closer than this
@@ -271,7 +272,7 @@ def _check(run, st, now, say, log, stopped=gov_stop):
     verdict = ""
     if pr:
         pv = _json(*run(["gh", "pr", "view", str(pr["number"]), "--repo", R.REPO, "--json", "comments"]), {})
-        verdict = remote.verdict_from([c.get("body", "") for c in pv.get("comments", [])])[0]
+        verdict = remote.verdict_from([c.get("body", "") for c in trust.only(pv.get("comments", []))])[0]
     advance(r, steps_done(issue, pr, verdict), now)
     if "start" not in r["at"] and stopped(): r["held"] = now
     if "close" in r["at"]:

@@ -1,5 +1,8 @@
 # Unit test for ghcache.py (#329: one GitHub reader + cache, retry on rate limit) with fakes: python tools/runner/test_ghcache.py
 import os, tempfile; os.environ["OREN_TEST"] = "1"; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
+import re, trust   # #800: old fixtures have no author: default them to the owner (explicit authors still count; test_trust.py covers the real rules)
+_login = trust.login
+trust.login = lambda c: _login(c) or (("oren-study-bot" if re.match(r"\s*(OWNER ANSWER|ANSWERED)", c.get("body") or "") or "owner-answer:" in (c.get("body") or "") else "igalgerman") if isinstance(c, dict) else "")
 import json, time
 from pathlib import Path
 import ghcache as G
@@ -117,12 +120,12 @@ assert json.loads(out)["comments"][0]["body"] == "VERDICT: PASS"
 
 # #637: comments keep url + reactionGroups (a thumbs-up answers an owner question); > 100 comments -> real gh (it pages)
 for sel in (G._COMMENTS, G._Q.split("prs:")[1]):
-    assert "url" in sel.split("comments(")[1] and "reactionGroups{content users{totalCount}}" in sel and "totalCount" in sel.split("comments(")[1], sel
+    assert "url" in sel.split("comments(")[1] and "reactionGroups{content users(first:20){totalCount nodes{login}}}" in sel and "totalCount" in sel.split("comments(")[1], sel
 import owner_q as OQ
 QB = "<!-- owner_q --><!-- owner-q:{k} -->\n**#{n}** חלון `remote-{n}`\n\n**שאלה:** q{n}?\n"
 QCS = [{"body": QB.format(k="47df330c6428", n=392), "createdAt": "2026-11-27T10:00:00Z", "author": {"login": "o"},
         "url": "https://github.com/x/issues/205#issuecomment-1", "reactionGroups": [{"content": "THUMBS_UP", "users": {"totalCount": 1}}]},
-       {"body": QB.format(k="3381e878897f", n=53), "createdAt": "2026-11-27T10:01:00Z", "author": {"login": "o"},
+       {"body": QB.format(k="3381e878897f", n=53), "createdAt": "2026-11-27T10:01:00Z", "author": {"login": "igalgerman"},
         "url": "https://github.com/x/issues/205#issuecomment-2", "reactionGroups": [{"content": "THUMBS_UP", "users": {"totalCount": 0}}]}]
 Q205 = {**OPEN[1], "number": 205, "title": "Questions for the owner", "comments": {"totalCount": 2, "nodes": QCS}}
 cc = G.load(); G._save({**cc, "open": cc["open"] + [G._flat(Q205)]})
