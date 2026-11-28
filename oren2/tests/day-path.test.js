@@ -208,6 +208,18 @@ const res=[];const ok=(n,c,i='')=>res.push((c?'PASS ':'FAIL ')+n+(i?' — '+i:''
  await fin(W[1]);
  const m3=await p.evaluate(()=>({scr:window.__scr.slice(),home:!document.querySelector('#sHome').hidden,end:!!document.querySelector('#sHome .bigbtn.huge')&&document.querySelector('#sHome .bigbtn.huge').textContent}));
  ok('#388 a 3-mission path is walked without seeing home; home comes at the end with the story ending',m3.home&&m3.scr.indexOf('sHome')===m3.scr.length-1&&/סוֹף הַסִּפּוּר/.test(m3.end||''),JSON.stringify(m3));
+ // --- #832: a story that is a path step: after its questions "continue" goes to the next path mission; from the building it goes to the stories list ---
+ const answerStory=async()=>{await p.evaluate(()=>{document.getElementById('ov').hidden=true;[...document.querySelectorAll('#sTal .bigbtn')].pop().click();});await sleep(200);
+   for(let n=0;n<12&&await p.evaluate(()=>document.getElementById('ov').hidden&&!!window.__quiz&&!!window.__quiz.wrap.isConnected);n++){await sleep(60);await p.evaluate(()=>{const q=window.__quiz;q.wrap.querySelectorAll('.chs .chb')[q.ans].click();});await sleep(250);}
+   await sleep(400);};
+ await p.evaluate(()=>{const T=window.TAL,O=window.OREN;window.__started=[];const a=window.__nx=T.dailyPool().find(id=>!/^(write-trace|math)$/.test(id)&&!/^story-/.test(id));const r=T.ACT[a].run;T.ACT[a].run=bk=>{window.__started.push(a);return r(bk);};
+   T.S().daily={d:O.today(),t:['story-0',a],done:[0,0],claimed:0,ch:'plan',cr:[]};O.showMap();window.TAL_step(0);});await sleep(400);
+ await answerStory();await p.evaluate(()=>{const b=document.querySelector('#ov .bigbtn:not(.plain)');if(b)b.click();});await sleep(600);
+ const s1=await p.evaluate(()=>({st:window.__started.slice(),nx:window.__nx,d:window.TAL.S().daily.done.slice(),list:!!document.querySelector('#sTal .acts .actc')&&/סִפּוּרֵי עֶרֶב/.test(document.querySelector('#hudT,.hudt')?.textContent||'')}));
+ ok('#832 a path story: continue after its questions starts the next path mission (not the stories list)',s1.st[0]===s1.nx&&s1.d[0]===1&&!s1.list,JSON.stringify(s1));
+ await p.evaluate(()=>{const O=window.OREN;document.getElementById('ov').hidden=true;O.showMap();window.TAL.ACT['story-0'].run(()=>window.OREN.showMap());});await sleep(400);
+ await answerStory();await p.evaluate(()=>{const b=document.querySelector('#ov .bigbtn:not(.plain)');if(b)b.click();});await sleep(600);
+ ok('#832 a story from the building: continue after its questions shows the stories list',await p.evaluate(()=>document.querySelectorAll('#sTal .acts .actc').length>=20));
  await p.evaluate(()=>{const T=window.TAL,O=window.OREN;T.S().daily={d:O.today(),t:[window.__started[0],window.__started[1]],done:[0,0],claimed:0,ch:'plan',cr:[]};O.showMap();});
  await p.locator('#sHome .bigbtn.huge').click({force:true});await sleep(300);await p.click('#btnBack');await sleep(300);
  ok('#388 the back button in a mission still goes home (step not done)',await p.evaluate(()=>!document.querySelector('#sHome').hidden&&window.TAL.S().daily.done[0]===0));
