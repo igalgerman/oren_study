@@ -218,6 +218,15 @@ calls.clear(); W.R.RUNS = Path(tempfile.mkdtemp(prefix="ctl-"))
 lab = LIVE + [INS]
 W.check_control(lab, now=1); W.check_control(lab, now=31); assert calls == [], calls
 W.check_control([], now=99); W.check_control([], now=129); assert calls == [], calls   # empty hc ls = stale view, never start
+# #935 (<= 2 min): a missing role is re-read after the grace INSIDE one call, so it restarts in one tick (grace 60 s), not after two long ticks
+W.R.RUNS = Path(tempfile.mkdtemp(prefix="ctl-")); calls.clear(); slept = []
+W.check_control(LIVE, now=5000, sleep=slept.append, reread=lambda: LIVE)
+assert slept == [60] and starts() == [("start", "inspector")], (slept, calls)
+calls.clear(); W.R.RUNS = Path(tempfile.mkdtemp(prefix="ctl-")); slept.clear()
+W.check_control(LIVE, now=5000, sleep=slept.append, reread=lambda: LIVE + [INS])   # tab came back during the grace: no start
+assert slept == [60] and starts() == [], calls
+calls.clear(); W.check_control(lab, now=9000, sleep=slept.append, reread=lambda: lab); assert slept == [60] and starts() == []   # live role: no sleep
+W.R.RUNS = Path(tempfile.mkdtemp(prefix="ctl-"))
 assert rc.missing_control(lab) == [] and rc.missing_control(LIVE) == ["inspector"]
 # #863: role files live in the repo; ensure_handoff creates the live file only when missing
 repo = Path(__file__).resolve().parents[2]
