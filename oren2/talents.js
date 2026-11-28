@@ -214,7 +214,8 @@ function dailyEnsure(){const s=S();if(s.daily&&s.daily.d===today()){const d=s.da
   const plan=S().set.plan;let t=[];
   if(plan&&plan.length){const used=new Set();t=plan.map(sp=>{if(sp==='math')return 'math';if(String(sp).startsWith('act:')){const aid=sp.slice(4);if(ACT[aid]&&dailyPool().includes(aid)&&!used.has(aid)){used.add(aid);return aid;}sp='any';}const pool=dailyPool().filter(id=>!used.has(id)&&(sp==='any'||ACT[id].b.id===sp));const id=pool.length?fitPick([...used],pool):pick(dailyPool().filter(x=>!used.has(x)));used.add(id);return id||'math';}).concat(cr);}
   s.daily={d:today(),t,done:t.map(()=>0),claimed:0,ch:t.length?'plan':0,cr:t.length?[]:cr};O.persist();return s.daily;}
-function dailyMark(id){const d=dailyEnsure();(d.q=d.q||[]).includes(id)||d.q.push(id);/* #634 #811 q = missions not to offer again today: played (also outside the path) or quit fast */const i=d.t.indexOf(id);if(i>=0&&!d.done[i]){d.done[i]=1;}}
+/* the finished mission is marked first: dailyEnsure may swap an open mission whose domain just hit its limit, and a played one must not be swapped out (it would repeat) */
+function dailyMark(id){const c=S().daily;if(c&&c.d===today()){const j=c.t.indexOf(id);if(j>=0)c.done[j]=1;}const d=dailyEnsure();(d.q=d.q||[]).includes(id)||d.q.push(id);/* #634 #811 q = missions not to offer again today: played (also outside the path) or quit fast */const i=d.t.indexOf(id);if(i>=0&&!d.done[i]){d.done[i]=1;}}
 O.on('levelDone',(lv)=>{if(!lv||lv.type==='train')return;S().last={id:'math',d:today()};const d=dailyEnsure();const i=d.t.findIndex((x,k)=>x==='math'&&!d.done[k]);if(i>=0){d.done[i]=1;O.persist();}});
 /* ---------- map integration ---------- */
 O.on('map',m=>{const rs=m.querySelector('.reset');if(rs)rs.remove();if(window.TAL_noHome)return;m.querySelectorAll('.hello,.statline').forEach(e=>e.remove());m.querySelectorAll('.topbar .tool').forEach(t=>{if(/הַמַּמְלָכָה|הַגִּבּוֹר שֶׁלִּי/.test(t.textContent))t.remove();});});
