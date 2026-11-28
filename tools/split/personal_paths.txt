@@ -1,0 +1,2 @@
+# #814: the personal list of #790 (documents and screenshots that move to DATA): glob patterns, repo-relative, one per line.
+# #790 fills this list; the export verify step fails when a file in the exported tree matches one of them.

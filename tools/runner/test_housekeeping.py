@@ -7,6 +7,7 @@ sys.argv.append("--dry-run")
 import runner as R
 import nightly as N
 import watchdog as W
+import alerts; alerts.state_of = lambda n: "live"   # #844: alarms go through alerts.py; the orchestrator counts as live, the tests fake W.tell
 
 NOW = 1_800_000_000.0
 iso = lambda t: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))

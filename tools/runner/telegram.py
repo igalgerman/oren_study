@@ -29,11 +29,12 @@ def call(method, params, timeout=20):
     except Exception: return None
     return d.get("result") if d.get("ok") else None
 
-def send(text, reply_to=0):
-    """-> the message_id, or 0 when not sent."""
+def send(text, reply_to=0, silent=False):
+    """-> the message_id, or 0 when not sent. silent = no notification sound (info-level alerts, #844)."""
     c = config()
     if not c: return 0
     p = {"chat_id": c[1], "text": text}
+    if silent: p["disable_notification"] = True
     if reply_to: p["reply_to_message_id"], p["allow_sending_without_reply"] = reply_to, True
     r = call("sendMessage", p)
     return (r or {}).get("message_id", 0) if isinstance(r, dict) else 0

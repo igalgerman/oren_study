@@ -173,6 +173,7 @@ export type PanelIn = {
   questionIssue?: number          // the pinned 'Questions for the owner' issue
   pc?: { text: string; alarm?: boolean } | null   // #293: .runs/pc.json when present
   desks?: string                  // #306: .runs/desks.json text, written by tools/runner/desks.py
+  control?: string                // #890: .runs/control_health.json text (NEEDS-ATTENTION: control session ...), written by control_health.py
   canary?: string                 // #330: .runs/canary.json text, written by tools/runner/canary.py
   refusedAt?: number              // .runs/remote_refused.json 'at' (epoch s)
   cfg: Cfg
@@ -354,6 +355,8 @@ export function panel(p: PanelIn): Panel {
   const desks: Row | null = p.desks ? { text: p.desks, tone: p.desks.includes('down') ? 'red' : 'dim' } : null   // #306
   const canary: Row | null = p.canary ? { text: p.canary, tone: p.canary.includes('NEEDS-ATTENTION') ? 'red' : 'dim' } : null   // #330
 
+  const control: Row | null = p.control ? { text: p.control, tone: 'red' } : null   // #890
+
   // forecast
   const p0 = (i: Issue) => labs(i).has('P0')
   const all = [...p.open, ...p.closed]
@@ -364,7 +367,7 @@ export function panel(p: PanelIn): Panel {
   const forecast: Row = { text: `Forecast: ${p0Text} · ${allText}`, tone: 'dim' }
 
   return {
-    header, needsYou, pc, desks, canary,
+    header, needsYou, pc, desks, canary, control,
     mode: { text: modeText(p.gov?.override, now), tone: p.gov?.override ? 'amber' : 'dim' }, modeNext: nextMode(p.gov?.override),   // #712
     lanesHead: `LANES ${lanes.length}/${cap}`, starts, lanes: laneRows,
     prs: prRow, next, nextMore: Math.max(0, nextAll.length - 5),

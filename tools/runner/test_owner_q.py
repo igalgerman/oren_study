@@ -10,6 +10,7 @@ sys.argv.append("--dry-run")
 import runner as R
 import owner_q as OQ
 import watchdog as W
+import alerts; alerts.state_of = lambda n: "live"   # #844: alarms go through alerts.py; the orchestrator counts as live, the tests fake W.tell
 
 tmp = Path(tempfile.mkdtemp())
 OQ.STATE = tmp / "owner_q.json"

@@ -189,7 +189,7 @@ assert "--name watchdog" not in cmd and "--name orchestrator" not in cmd   # sta
 sys.argv.append("--dry-run")
 import watchdog as W
 calls = []
-W.R.hc = lambda *a, **k: (calls.append(a), (0, ""))[1]
+W.R.hc = lambda *a, **k: (calls.append(a), (0, '{"state": "live"}' if a[:1] == ("get",) else ""))[1]   # #844: orchestrator live -> alarms are told
 W.log = lambda m: None; W.tell = lambda t: calls.append(("tell", t))
 rc.start_control = lambda R, name, sid=None: (calls.append(("start", name)), 0)[1]
 W.R.RUNS = Path(tempfile.mkdtemp(prefix="ctl-"))

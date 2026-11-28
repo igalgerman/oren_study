@@ -1,0 +1,34 @@
+# #857: the clock for the AI observer (hourly) and the night retro (once a night). Each run POSTs the API trigger of #853.
+# Actions minutes: ~720 observer runs + ~30 retro runs a month, each billed as 1 min = about 750 min/month.
+# The retro cron is 20:41 UTC = 22:41 Asia/Jerusalem in winter (23:41 in summer time; the retro task is idempotent per date).
+name: cloud-clock
+on:
+  schedule:
+    - cron: "17 * * * *"
+    - cron: "41 20 * * *"
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: observer or retro
+        default: observer
+permissions:
+  contents: read
+  issues: write
+jobs:
+  clock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the cloud session
+        env:
+          CLAUDE_TRIGGER_URL: ${{ secrets.CLAUDE_TRIGGER_URL }}
+          CLAUDE_TRIGGER_TOKEN: ${{ secrets.CLAUDE_TRIGGER_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          KIND: ${{ inputs.kind }}
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          echo "::add-mask::$CLAUDE_TRIGGER_URL"
+          echo "::add-mask::$CLAUDE_TRIGGER_TOKEN"
+          if [ "$SCHEDULE" = "41 20 * * *" ]; then KIND=retro; fi
+          python3 tools/ci/cloud_clock.py "${KIND:-observer}"

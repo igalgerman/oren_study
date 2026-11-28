@@ -41,6 +41,21 @@ def gh_writes(tree):
         if isinstance(n, ast.Constant) and isinstance(n.value, str) and "api.github.com" in n.value: hits.append(n.lineno)
     return sorted(set(hits))
 
+TRACKED_DEST = re.compile(r"\bROOT\b|\bREPO\b|MAIN_CHECKOUT|__file__|\bHERE\b|getcwd|Path\.cwd|^['\"f]|Path\(['\"]")   # a repo-relative path or a literal path
+PRIVATE_DEST = re.compile(r"HOME|\.oren|tempfile|tmp", re.I)
+
+def file_writes(tree):
+    """#790: line numbers of file writes (write_text/write_bytes/open w,a,x) whose target is a repo path (ROOT/HERE/__file__/cwd) or a literal path, and does not name the private folder (HOME, ~/.oren, a temp dir)."""
+    hits = []
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.Call): continue
+        f = n.func
+        if isinstance(f, ast.Attribute) and f.attr in ("write_text", "write_bytes"): target = ast.unparse(f.value)
+        elif isinstance(f, ast.Name) and f.id == "open" and n.args and len(n.args) > 1 and isinstance(n.args[1], ast.Constant) and set(str(n.args[1].value)) & set("wax"): target = ast.unparse(n.args[0])
+        else: continue
+        if TRACKED_DEST.search(target) and not PRIVATE_DEST.search(target): hits.append(n.lineno)
+    return hits
+
 def check(root):
     root = Path(root); bad = []
     for p in sorted((root / "tools").rglob("*.py")) if (root / "tools").is_dir() else []:
@@ -52,6 +67,8 @@ def check(root):
         if not (strict or reads_playlog(tree, src)) or r in ALLOW: continue
         for ln in gh_writes(tree):
             bad.append(f"{r}:{ln}: GitHub write in a module that reads play data" + ("" if strict else " (not in ALLOW)"))
+        for ln in file_writes(tree):
+            bad.append(f"{r}:{ln}: file write outside the private folder in a module that reads play data")
     for f in MARKER_FILES:
         p = root / f
         if not p.is_file() or MARKER not in p.read_text(encoding="utf-8", errors="replace"):
@@ -85,6 +102,9 @@ def selftest():
     with tempfile.TemporaryDirectory() as d:
         fixture(d, extra={"tools/bad.py": "import playlog\nimport runner as R\nR.gh('issue', 'comment', '1', '--body', 'x')\n"})
         assert check(d) == ["tools/bad.py:3: GitHub write in a module that reads play data (not in ALLOW)"], check(d)
+    with tempfile.TemporaryDirectory() as d:   # #790: play numbers into a tracked path
+        fixture(d, extra={"tools/bad.py": "import playlog\nfrom pathlib import Path\nPath('docs/day.md').write_text('x')\nopen('a.txt', 'w')\nPath(HOME / 'ok.json').write_text('x')\n"})
+        assert [b.split(": ")[0] for b in check(d)] == ["tools/bad.py:3", "tools/bad.py:4"], check(d)
     with tempfile.TemporaryDirectory() as d:
         fixture(d, extra={"tools/playlog.py": "x = ['git', 'push']\n", "tools/ok.py": "import runner as R\nR.gh('issue', 'comment', '1')\n"})
         assert [b.split(":")[0] for b in check(d)] == ["tools/playlog.py"], check(d)
