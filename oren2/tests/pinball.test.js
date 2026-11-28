@@ -18,6 +18,15 @@ const tag=L.variant==='phone'?'p':'d';const res=[];const ok=(n,c,i='')=>res.push
  const aL=await pr;ok('click on the left side lifts the left flipper',aL<0.45,'min angle '+aL);
  pr=minAng('r');await p.keyboard.press('ArrowRight');const aR=await pr;
  ok('arrow key lifts the right flipper',aR<0.45,'min angle '+aR);
+ // the hit-boxes are where the flippers are drawn: a ball dropped on each flipper's middle is hit by a flip and goes up
+ for(const [i,sd] of [[0,'l'],[1,'r']]){
+   const r=await p.evaluate(async([i,sd])=>{const c=window.__arc.cur,g=c.geo(),w=ms=>new Promise(r=>setTimeout(r,ms));const dir=i?-1:1;
+     const fb=document.querySelector('.pflip.'+sd).getBoundingClientRect(),fr=document.querySelector('.field.pin').getBoundingClientRect();
+     await w(400);const sg=g.L*.5,mx=g.px[i]+dir*Math.cos(.5)*sg;c.setBall(mx,g.py+Math.sin(.5)*sg-26,0,0);const s0=c.score;let vmin=9;
+     const key=i?'ArrowRight':'ArrowLeft';await w(60);document.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true}));
+     for(let k=0;k<20;k++){await w(16);vmin=Math.min(vmin,c.ball.vy);}
+     return {vmin,mx,drawnL:fb.left-fr.left,drawnR:fb.right-fr.left,px:g.px[i]};},[i,sd]);
+   ok(sd+' flipper: a flip under the ball sends it up (hit segment is where the flipper is drawn)',r.vmin<-.05&&r.mx>r.drawnL-2&&r.mx<r.drawnR+2,JSON.stringify(r));}
  // a round to its end by itself: no input, the 3 balls drain
  let n=0;for(;n<400;n++){if(await p.evaluate(()=>!document.querySelector('#ov').hidden))break;await sleep(150);}
  const r=await p.evaluate(()=>({ov:!document.querySelector('#ov').hidden,rec:(window.TAL.S().tl['arc-pinball']||{}).s|0}));

@@ -13,8 +13,8 @@ function pinball(){const K=T.arcKit,F=K.frame('pinball');const t=K.tune('pinball
   let b={x:0,y:0,vx:0,vy:0};
   const launch=()=>{b={x:W()*(.35+Math.random()*.3),y:R+4,vx:(Math.random()<.5?-1:1)*.08,vy:0};F.time('🎱 '+balls);};
   const geo=()=>{const w=W(),hh=H(),L=Math.max(70,w*t.flip);return {w,hh,L,py:hh-46,px:[w*.17,w*.83]};};
-  const ang=f=>f.side<0?f.th:f.th;/* th: -.45 (up) .. +.5 (down) */
-  const dirOf=(f)=>({x:f.side*Math.cos(f.th),y:Math.sin(f.th)});
+  /* th: -.45 (up) .. +.5 (down); the same direction as the drawing: left flipper points right, right flipper points left */
+  const dirOf=f=>({x:-f.side*Math.cos(f.th),y:Math.sin(f.th)});
   function flip(i){if(!alive)return;const f=fl[i];f.tgt=-.45;sfx.pop(3);setTimeout(()=>{f.tgt=.5;},200);}
   const side=e=>{const r=F.field.getBoundingClientRect();return e.clientX<r.left+r.width/2?0:1;};
   F.field.onpointerdown=e=>{e.preventDefault();flip(side(e));};
@@ -35,7 +35,7 @@ function pinball(){const K=T.arcKit,F=K.frame('pinball');const t=K.tune('pinball
     if(b.y>g.hh+R){balls--;sfx.no();if(balls<=0){done();return;}launch();}
     if(now>=end){done();return;}requestAnimationFrame(loop);}
   function done(){if(!alive)return;alive=false;const st=score>=12?3:score>=6?2:1;K.finish('pinball',score,st);}
-  K.setCur({stop:()=>{alive=false;},finish:sc=>{if(sc!=null)score=sc;done();},hit:()=>{flip(0);flip(1);},get score(){return score;},get balls(){return balls;}});
+  K.setCur({stop:()=>{alive=false;},finish:sc=>{if(sc!=null)score=sc;done();},hit:()=>{flip(0);flip(1);},setBall:(x,y,vx,vy)=>{b={x,y,vx,vy};},get ball(){return b;},geo,get score(){return score;},get balls(){return balls;}});
   K.countdown(F,()=>{launch();last=performance.now();end=last+D(75000);requestAnimationFrame(loop);});}
 T.arcAdd(GM,pinball);T.addSay&&T.addSay(['לְחַץ עַל הַצַּד הַשְּׂמָאלִי אוֹ הַיְּמָנִי כְּדֵי לְהַכּוֹת בַּכַּדּוּר.']);
 })();
