@@ -184,6 +184,24 @@ assert d.get("gates") == {64: True}, d
 assert any(a[:3] == ("issue", "comment", "64") and OQ.record_answer(a[-1]) == ("6"*12, "approve") for a in gh_calls), gh_calls
 print("ok qwin #630 answer recorded on the gated issue")
 
+# #897: the App is rate limited: the answer record and the ANSWERED line are queued (never posted under another login),
+# the question is answered-queued (no second ask), and the next flush posts them
+KEY7 = "7" * 12
+opened.append({"key": KEY7, "window": "#677", "source": "issue-677", "text": "שער?", "url": "u7", "gates": []})
+sent_as = []
+limited = [True]
+def app_gh(*a, **kw):
+    sent_as.append(a)
+    return (1, "API rate limit exceeded") if limited[0] and a[:2] == ("issue", "comment") else (0, "")
+QW._gh = app_gh
+OQ._save({"issue": 205, "posted": []})
+d = QW.answer(KEY7, "yes")
+assert d.get("issue") is False and KEY7 in OQ.queued_keys(), (d, OQ._state())      # the record is queued, not posted
+limited[0] = False
+OQ.flush_pending(app_gh)
+assert OQ._state()["pending_answers"] == [] and any(a[:3] == ("issue", "comment", "677") and OQ.record_answer(a[-1]) == (KEY7, "yes") for a in sent_as), sent_as
+print("ok qwin #897 App rate limited: answer queued, then posted by the flush")
+
 # #390: the push's result is checked on the pushing session's screen and logged once: Claude Code's 'Not sent' (or the
 # session's own PUSH-RESULT line) -> watchdog.log says so (second channel: Telegram, #440, once set up); ok -> logged too
 logged = []

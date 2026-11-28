@@ -36,6 +36,8 @@ recover_issue = 138              # #140: recover reports what it did in one comm
 observer_minutes = 10   # 0 = off
 ai_observer_minutes = 60   # #203: AI observer (ai_observer.py, headless Sonnet, read-only), findings to the orchestrator; 0 = off
 ai_observer_where = "cloud"     # #289: "cloud" = an hourly cloud scheduled task posts on the ai-observer issue, the watchdog relays it (no claude on the PC); "local" = headless run here
+progress_alarm_min = 60          # #891: ready work + no merge/PR/commit/close/RESULT this many minutes -> Telegram to the owner (progress_alarm.py)
+# progress_quiet_hours = "23-7"   # #891: local hours with no no-progress alarm (default: none)
 canary_minutes = 60              # #538: at most one canary run (canary.py) per this many minutes
 status_minutes = 10             # #306: cloud desks (desks.py): pinned links + live status every N min; keep-alive of the two cloud sessions; 0 = off
 desk_probe_hours = 12           # #306: a PING to each cloud desk this often; no answer -> a new session
