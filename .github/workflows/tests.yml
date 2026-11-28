@@ -97,6 +97,7 @@ jobs:
         if: hashFiles('tools/mods/oren-lanes/run-tests.mjs') != ''
         run: node tools/mods/oren-lanes/run-tests.mjs
       - name: Model status line tests
+        if: hashFiles('tools/mods/oren-model/run-tests.mjs') != ''
         run: node tools/mods/oren-model/run-tests.mjs
   tests:
     # The one required check: a PR is mergeable when this is green.
