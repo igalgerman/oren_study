@@ -192,6 +192,9 @@ const until = (pg, fn, arg, ms = 8000) => pg.waitForFunction(fn, arg, { timeout:
   ok('progress was saved before the pause (save kept, local copy written)', await A.evaluate(n => !!localStorage.getItem(Object.keys(localStorage).find(k => /oren4-save|oren4-s$/.test(k)) || 'x') || JSON.stringify(window.OREN.save).length >= n * 0.9, saveT0));
   await shot(A, 'pause-laptop-1366x768');
   await sleep(500); await A.evaluate(() => window.OREN.famNow()); await sleep(600);
+  await A.evaluate(() => { window.OREN.showMap(); window.__pzSeen = 0; const f = () => { if (!window.OREN.paused || !document.querySelector('.pzov.remote')) window.__pzSeen++; }; window.__pzIv = setInterval(f, 20); window.OREN.emit && window.OREN.emit('synced'); });
+  await sleep(1500);
+  ok('a sync / screen change (home redraw) never lifts the parent\'s pause (no flash)', (await A.evaluate(() => { clearInterval(window.__pzIv); return window.__pzSeen; })) === 0);
   ok('the panel shows "המשחק עצור ✓" after the device confirmed (it follows by itself)', await until(B, () => /המשחק עצור ✓/.test((document.querySelector('#sPar .hpzst') || {}).textContent || ''), null, 6000), await pzSec.textContent().catch(() => ''));
   await shot(B, 'panel-phone-390x844');
   ok('still not paused on the parent\'s phone', !(await B.evaluate(() => window.OREN.paused)));

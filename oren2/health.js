@@ -170,6 +170,7 @@ H.remRefresh=()=>{if(document.querySelector('#sPar .hpzst')){const m=(T.S().set|
 const pzOn=m=>!!(m&&m.to==='kid'&&m.on&&now()-m.t<REM_OLD);
 function pzCheck(){const m=(T.S().set||{}).pz,rm=document.querySelector('.pzov.remote');
   if(pzOn(m)){if(O.kidDev&&!O.kidDev(m))return;if(vis('#sPar'))return;
+    if(O.paused&&!rm)O.pauseOff();/* Oren's own pause becomes the parent's, so the parent's resume works */
     if(!O.paused){O.persist();O.pauseOn(1);}
     if(!m.ok){m.ok=1;O.persist();O.famNow&&O.famNow();}}
   else if(rm&&O.paused)O.pauseOff();}

@@ -1792,7 +1792,7 @@ const wipeEl=$('#wipe');wipeEl.innerHTML='<i></i>'.repeat(70);
 function wipe(){if(window.__fast||RM())return;sfx.whoosh();wipeEl.hidden=false;[...wipeEl.children].forEach((c,i)=>{const r=i/10|0,col=i%10;c.style.animation='none';void c.offsetWidth;c.style.animation='';c.style.animationDelay=((r+col)*22)+'ms';});clearTimeout(wipe.t);wipe.t=setTimeout(()=>wipeEl.hidden=true,720);}
 function setScreen(id,w,back){if(!QUIET){SQ.scr++;hush();AUTO.scr=Date.now();if(window.HELP)HELP.stop();}document.body.classList.toggle('inpar',id==='sPar');document.body.classList.remove('act');window.__noAuto=0;/* leaving a screen stops any reading aloud; the new screen may speak right after */['sStart','sHome','sMap','sWorld','sLearn','sPlay','sKing','sStudio','sTeach','sTable','sFinal','sTal','sPar'].forEach(s=>$('#'+s).hidden=s!==id);$('#hud').hidden=id==='sStart';$('#hudMid').innerHTML='';/* #8: no stale label from the last screen */$('#ov').hidden=true;{const dl=$('#dlg');if(!dl.hidden){dl.hidden=true;dl.innerHTML='';}}/* #356: a story dialog belongs to the screen it was opened on */
   if(app.dataset.w!==(w||'meadow')){app.dataset.w=w||'meadow';bgW=app.dataset.w;paintBG(performance.now());}setTheme(THEME_OF[app.dataset.w]||'map');
-  pauseOff();if(!ACTIVE_S.includes(id)&&id!=='sStart'&&id!=='sPar')herePut(null);backTo=back||null;$('#btnBack').style.visibility=back?'visible':'hidden';$('#btnBack').innerHTML=back===showMap||(back&&back.home)?ICON.home:ICON.back;$('#screens').scrollTop=0;play=null;stopSpeed();updateGems();wipe();evScreen(id);emit('screen',id,back);pzSync();}
+  if(!document.querySelector('.pzov.remote'))pauseOff();/* #659 the parent's pause stays over a screen change (a sync redraws home) */if(!ACTIVE_S.includes(id)&&id!=='sStart'&&id!=='sPar')herePut(null);backTo=back||null;$('#btnBack').style.visibility=back?'visible':'hidden';$('#btnBack').innerHTML=back===showMap||(back&&back.home)?ICON.home:ICON.back;$('#screens').scrollTop=0;play=null;stopSpeed();updateGems();wipe();evScreen(id);emit('screen',id,back);pzSync();}
 $('#btnSay').innerHTML=ICON.say;$('#btnMusic').innerHTML=ICON.music;$('#icoStart').innerHTML=ICON.play;
 if(!save.avOren){save.av=Object.assign({},save.av,OREN_LOOK);save.avOren=1;try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}}
 if(hatsBack())try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}
@@ -6152,6 +6152,7 @@ H.remRefresh=()=>{if(document.querySelector('#sPar .hpzst')){const m=(T.S().set|
 const pzOn=m=>!!(m&&m.to==='kid'&&m.on&&now()-m.t<REM_OLD);
 function pzCheck(){const m=(T.S().set||{}).pz,rm=document.querySelector('.pzov.remote');
   if(pzOn(m)){if(O.kidDev&&!O.kidDev(m))return;if(vis('#sPar'))return;
+    if(O.paused&&!rm)O.pauseOff();/* Oren's own pause becomes the parent's, so the parent's resume works */
     if(!O.paused){O.persist();O.pauseOn(1);}
     if(!m.ok){m.ok=1;O.persist();O.famNow&&O.famNow();}}
   else if(rm&&O.paused)O.pauseOff();}
