@@ -8,13 +8,13 @@ export const register: Register = on => {
   let effort: string | undefined
   let refreshFn: (() => Promise<void>) | undefined
 
-  on('turn.step', async ($, e: any, next) => {
+  on('turn.step', async function* ($, e: any, next) {
     if (e?.agentId === undefined) {
       if (typeof e?.model === 'string') model = e.model
       effort = typeof e?.effort === 'string' ? e.effort : undefined
       if (refreshFn) void refreshFn()
     }
-    return next(e)
+    return yield* next(e)
   })
 
   on('session.start', async ($, e, next) => {

@@ -15,6 +15,8 @@ const setup = (over: any = {}) => {
   }
   return { hooks, $, status, tick: () => tick }
 }
+const nextGen = async function* (e: any) { return e }
+const drain = async (g: any) => { let r = await g.next(); while (!r.done) r = await g.next(); return r.value }
 const wait = () => new Promise(r => setTimeout(r, 20))
 const R = 'C:/work/Oren_study/a/tools/runner/.runs'
 
@@ -22,7 +24,11 @@ test('turn.step returns next(e) unchanged, also for subagents and odd input', as
   const { hooks, $ } = setup()
   for (const e of [{ model: 'claude-opus-5-5', effort: 'high' }, { agentId: 'x', model: 'claude-haiku-5-5' }, {}, null as any]) {
     const same = { sentinel: 1 }
-    expect(await hooks['turn.step']($, e, async (x: any) => (x === e ? same : null))).toBe(same)
+    const chunks: any[] = []
+    const g = hooks['turn.step']($, e, async function* (x: any) { yield 'c'; return x === e ? same : null })
+    let r = await g.next()
+    while (!r.done) { chunks.push(r.value); r = await g.next() }
+    expect(r.value).toBe(same); expect(chunks).toEqual(['c'])
   }
 })
 
@@ -34,10 +40,10 @@ test('status shows model + usage, ignores subagent steps, and never throws', asy
   await hooks['session.start']($, { cwd: 'x' }, async (e: any) => e)
   await wait()
   expect(status[status.length - 1]).toBe('אני 3% מהשבוע · 5h 41% · שבוע 62%')   // no model yet
-  await hooks['turn.step']($, { model: 'claude-opus-5-5', effort: 'high' }, async (e: any) => e)
+  await drain(hooks['turn.step']($, { model: 'claude-opus-5-5', effort: 'high' }, nextGen))
   await wait()
   expect(status[status.length - 1]).toBe('Opus 5.5 high · אני 3% מהשבוע · 5h 41% · שבוע 62%')
-  await hooks['turn.step']($, { agentId: 'a', model: 'claude-haiku-5-5', effort: 'low' }, async (e: any) => e)
+  await drain(hooks['turn.step']($, { agentId: 'a', model: 'claude-haiku-5-5', effort: 'low' }, nextGen))
   await wait()
   expect(status[status.length - 1]).toMatch('Opus 5.5 high')
 })
