@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" font-family="sans-serif">
+<rect width="900" height="520" fill="#fff8e7"/>
+<text x="450" y="34" text-anchor="middle" font-size="24" font-weight="bold">עולם הקפיצות — Jump World (chapter 1)</text>
+<!-- sky + ground -->
+<rect x="20" y="50" width="860" height="260" rx="14" fill="#bfe6ff"/>
+<circle cx="820" cy="95" r="28" fill="#ffd54a"/>
+<ellipse cx="200" cy="100" rx="50" ry="18" fill="#fff"/><ellipse cx="520" cy="130" rx="60" ry="18" fill="#fff"/>
+<rect x="20" y="250" width="860" height="60" fill="#7ac74f"/>
+<rect x="20" y="290" width="860" height="20" fill="#8a5a2b"/>
+<!-- hero: round friendly blob (original) -->
+<ellipse cx="110" cy="228" rx="24" ry="22" fill="#ff8a65"/><circle cx="102" cy="222" r="4" fill="#222"/><circle cx="118" cy="222" r="4" fill="#222"/>
+<path d="M100 234 q10 8 20 0" stroke="#222" fill="none" stroke-width="3"/>
+<!-- jump arc -->
+<path d="M140 220 Q200 120 260 220" stroke="#e53935" stroke-dasharray="6 6" fill="none" stroke-width="3"/>
+<!-- bridge gap -->
+<rect x="300" y="250" width="110" height="60" fill="#bfe6ff"/>
+<text x="355" y="285" text-anchor="middle" font-size="14">gap = soft bounce back</text>
+<!-- mission doors -->
+<g><rect x="460" y="190" width="56" height="60" rx="8" fill="#7e57c2"/><text x="488" y="227" text-anchor="middle" font-size="26" fill="#fff">1</text></g>
+<g><rect x="610" y="190" width="56" height="60" rx="8" fill="#26a69a"/><text x="638" y="227" text-anchor="middle" font-size="26" fill="#fff">2</text></g>
+<g><rect x="760" y="190" width="56" height="60" rx="8" fill="#ef6c00"/><text x="788" y="227" text-anchor="middle" font-size="26" fill="#fff">3</text></g>
+<!-- floating coins/stars -->
+<g fill="#ffca28" stroke="#c79100"><circle cx="190" cy="150" r="11"/><circle cx="230" cy="150" r="11"/><circle cx="540" cy="170" r="11"/><circle cx="700" cy="170" r="11"/></g>
+<!-- controls -->
+<rect x="20" y="330" width="420" height="170" rx="14" fill="#fff" stroke="#999"/>
+<text x="40" y="360" font-size="16" font-weight="bold">Phone: big touch buttons</text>
+<rect x="40" y="380" width="80" height="80" rx="40" fill="#90caf9"/><text x="80" y="432" text-anchor="middle" font-size="40">◀</text>
+<rect x="140" y="380" width="80" height="80" rx="40" fill="#90caf9"/><text x="180" y="432" text-anchor="middle" font-size="40">▶</text>
+<rect x="320" y="380" width="100" height="100" rx="50" fill="#ffab91"/><text x="370" y="442" text-anchor="middle" font-size="22">JUMP</text>
+<rect x="460" y="330" width="420" height="170" rx="14" fill="#fff" stroke="#999"/>
+<text x="480" y="360" font-size="16" font-weight="bold">Desktop: ← → walk, Space / ↑ jump</text>
+<text x="480" y="395" font-size="15">• Stand at a numbered door → mission opens (same missions as today)</text>
+<text x="480" y="420" font-size="15">• Finish a mission → door turns gold, coins rain, hero cheers</text>
+<text x="480" y="445" font-size="15">• Coins = the existing rewards (nothing new to learn)</text>
+<text x="480" y="470" font-size="15">• Fall in a gap → bounce back to the edge. Never lose anything.</text>
+</svg>
