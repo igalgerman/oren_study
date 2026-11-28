@@ -857,6 +857,12 @@ g = r.governor(_u(20, 4, week=39, week_reset_h=24 * 3), [], _now, _G); assert g[
 g = r.governor(_u(5, 1, week=80, week_reset_h=24 * 3), [], _now, _G); assert g["lanes"] == 4 and g["week_projected"] > 99, g
 # 2 days in: 45% -> ~157% ahead -> cap 4; 20% -> ~70% behind -> 8
 assert r.governor(_u(5, 1, week=45, week_reset_h=24 * 5), [], _now, _G)["lanes"] == 4
+# #698 week hard stop: week >= week_stop -> no new run, even in a fresh 5h window; below it, or after the week reset, no stop
+_GW = {**_G, "week_stop": 97}
+g = r.governor(_u(5, 1, week=97, week_reset_h=20), [], _now, _GW); assert g["stop"] and "week 97%" in g["why"], g
+g = r.governor(_u(5, -1, week=98, week_reset_h=20), [], _now, _GW); assert g["stop"] and "week" in g["why"], g
+assert not r.governor(_u(5, 1, week=96.9, week_reset_h=20), [], _now, _GW)["stop"]
+assert not r.governor(_u(5, 1, week=99, week_reset_h=-1), [], _now, _GW)["stop"]
 assert r.governor(_u(5, 1, week=20, week_reset_h=24 * 5), [], _now, _G)["lanes"] == 8
 # first hours of a week: too early to project -> 5h rule only
 assert r.governor(_u(20, 4, week=1, week_reset_h=24 * 7 - 2), [], _now, _G)["lanes"] == 5
