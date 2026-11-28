@@ -118,6 +118,21 @@ const PHONE = L.variant === 'phone';
   ok('#421 home: the friend\'s sentence lights word by word', r.words > 1 && r.seen.length >= 2 && r.after === 0, JSON.stringify(r));
   // stories keep their own light (a tap on a line); the instruction light never runs at the same time
   ok('#421 the stories\' highlighter is the one used (T.readFollow in reading.js)', await p.evaluate(() => typeof window.TAL.readFollow === 'function'));
+  // ================= #836 "how do I feel" suggests a calm mission not played today =================
+  const feelReply = (played, quick) => p.evaluate(async ([played, quick]) => { const O = window.OREN, T = window.TAL, d = T.dailyEnsure(); d.t = played.slice(); d.done = played.map(() => 1); d.q = quick.slice(); O.persist();
+    T.ACT['mind-feel'].run(O.showMap); await new Promise(r => setTimeout(r, 100)); document.querySelector('#sTal .face').click(); await new Promise(r => setTimeout(r, 150));
+    const names = { 'mind-jar': 'צִנְצֶנֶת', 'mind-sounds': 'צְלִילִים', 'mind-breath': 'בּוּעָה', 'mind-scan': 'סְרִיקַת' }, said = document.querySelector('#sTal .lsent'), go = document.querySelector('#sTal .bigbtn:not(.plain)');
+    return { go: !!go, no: !!document.querySelector('#sTal .bigbtn.plain'), line: said ? said.textContent : '', named: said ? Object.keys(names).filter(k => said.textContent.includes(names[k])) : [] }; }, [played, quick]);
+  let fr = await feelReply([], []);
+  ok('#836 happy, nothing played: the gratitude jar as before, the line names it', fr.go && fr.named.join() === 'mind-jar', JSON.stringify(fr));
+  fr = await feelReply(['mind-jar'], []);
+  if (process.env.SHOTS) await L.shot(p, { path: L.SHOTDIR + `/836-feel-${L.variant}.png` });
+  ok('#836 happy, jar played today (path): another mission, the line names it, not the jar', fr.go && fr.named.length === 1 && fr.named[0] !== 'mind-jar', JSON.stringify(fr));
+  fr = await feelReply([], ['mind-jar', 'mind-sounds']);
+  ok('#836 happy, jar + sounds played (quick exits): a third one', fr.go && fr.named.length === 1 && !['mind-jar', 'mind-sounds'].includes(fr.named[0]), JSON.stringify(fr));
+  fr = await feelReply(['mind-jar', 'mind-sounds'], ['mind-breath', 'mind-scan']);
+  ok('#836 happy, all calm missions played today: no "let\'s try" button, only "not now"', !fr.go && fr.no && !fr.line, JSON.stringify(fr));
+  await p.evaluate(() => { const d = window.TAL.dailyEnsure(); d.t = []; d.done = []; d.q = []; window.OREN.showMap(); });
   ok('no page errors', !errs.length, errs.join(' | '));
   await b.close(); L.finish('feel', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT feel 0 1'); process.exitCode = 1; });

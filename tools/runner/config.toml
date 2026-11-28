@@ -73,6 +73,8 @@ usage_overuse_pct = 100         # OVERUSE: projected week % at the reset at or a
 owner_login = "igalgerman"
 bot_logins = ["oren-study-bot", "oren-study-bot[bot]"]
 # Before this time an ANSWERED line / owner-answer record written by the owner login still counts (PR #807 moved control lines to the App bot); after it only the bot counts.
+owner_q_alarm_min = 10          # #912: a queued owner-answer record still stuck after this many minutes -> ONE alarm
+owner_q_archive_max = 100       # #912: more than this many comments in the pinned questions issue -> every answered question moves to the archive issue (also: answered and older than 30 days)
 trust_since = "2026-11-28T12:28:45Z"
 
 # #872 owner console mirror (console_mirror.py): open questions + notices go to the console API (D1, #869) on watchdog ticks (changed, and at least every 10 min).

@@ -56,6 +56,8 @@ HANDOFF-ORCHESTRATOR:
 {stats}
 --- trends (24 h) ---
 {trends}
+--- ETA hit/miss (#951) ---
+{eta}
 --- ai_observer.last ---
 {observer}
 --- orchestrator / inspector transcripts (tails) ---
@@ -110,6 +112,12 @@ def models_line_now(now=None):
         import stats
         return stats.models_line(stats.models_data(stats.read_events(R.RUNS / "stats.jsonl"), stats.issue_labels(), now), now)
     except Exception as e: return f"MODELS: unavailable ({e!r})"
+
+def eta_line():
+    """#951: hit/miss of the ETAs eta.py gave."""
+    try:
+        import eta; return eta.summary_line()
+    except Exception as e: return f"ETA: unavailable ({e!r})"
 
 def retro_body(props, date):
     lines = [f"Nightly retro (#219) of {date}, following docs/agents/skills/retro.md. Ranked proposals, each with its evidence. "
@@ -189,7 +197,7 @@ def build_prompt(now):
     date = time.strftime("%Y-%m-%d", time.localtime(now))
     return PROMPT.format(date=date, repo=R.REPO, max=MAX_PROPOSALS, runner=today_lines(_read(R.RUNS / "runner.log"), date),
                          watchdog=today_lines(_read(R.RUNS / "watchdog.log"), date), stats=stats_today(_read(R.RUNS / "stats.jsonl"), now - 86400),
-                         trends=trends_summary(now), observer=_read(R.RUNS / "ai_observer.last").strip() or "(none)", transcripts=transcripts(now))
+                         trends=trends_summary(now), eta=eta_line(), observer=_read(R.RUNS / "ai_observer.last").strip() or "(none)", transcripts=transcripts(now))
 
 def command():
     m, eff = R.floors("retro", MODEL)    # #714
