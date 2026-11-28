@@ -190,4 +190,14 @@ assert calls[0] == ("rm", "t:9") and calls[1] == ("start", "inbox"), calls
 calls.clear()   # #332: finished 'inspector' row + live unnamed inspector (label name=inspector, status done) -> no rm, no restart
 W.check_control([T("inspector", "finished", "t:4"), {"name": "", "state": "live", "status": "done", "address": "t:7", "labels": {"name": "inspector"}}])
 assert calls == [], calls
+# #863: role files live in the repo; ensure_handoff creates the live file only when missing
+repo = Path(__file__).resolve().parents[2]
+assert "docs/roles/EXECUTOR.md" in rc.EXECUTOR_PROMPT and (repo / "docs/roles/EXECUTOR.md").is_file()
+tpl = repo / "docs/roles/INSPECTOR_HANDOFF.template.md"
+assert tpl.read_text(encoding="utf-8").rstrip().endswith("## UPDATE")
+with tempfile.TemporaryDirectory() as d:
+    live = Path(d) / "sub" / "H.md"
+    assert rc.ensure_handoff(live, tpl) is True and live.read_bytes() == tpl.read_bytes()
+    live.write_text("live state", encoding="utf-8")
+    assert rc.ensure_handoff(live, tpl) is False and live.read_bytes() == b"live state"
 print("ok")
