@@ -860,7 +860,7 @@ def _u(pct, reset_h, week=None, week_reset_h=24 * 6, age=60):
 def _ux(week, H, age=60): return {"five_h_pct": None, "week_pct": week, "week_reset": _iso(_now + H * 3600), "at": _iso(_now - age)}   # Ultra: week bucket only
 # #705 even pacing: 80h left, week 40%, 3 busy lanes, 9 ready -> need (94-40-0.3)/80-0.1 = 0.57 %/h -> ~3 lanes
 g = r.governor(_ux(40, 80), [], _now, _G, busy=3, ready=9); assert g["lanes"] == 3 and g["mode"] == "week-only" and abs(g["need"] - 0.5712) < 0.001 and g["n_hi"] == 12, g
-t = r.governor_text(g); assert t == "governor: 3 lanes: week 40%, behind pace (need 0.6%/h), 9 ready, reserve 5%", t
+t = r.governor_text(g); assert t == "governor: 3 lanes: week 40%, behind pace (need 0.6%/h), 9 ready, reserve 5% · b̂ 0.20%/h (prior)", t
 # ahead of pace -> fewer lanes; behind -> more
 lo = r.governor(_ux(80, 80), [], _now, _G, busy=3, ready=9)["lanes"]; hi = r.governor(_ux(20, 80), [], _now, _G, busy=3, ready=9)["lanes"]
 assert lo < 3 < hi, (lo, hi)
@@ -916,6 +916,20 @@ while _tt < _end:
     _hr = _dt.fromtimestamp(_tt).hour
     _W += (0.40 * _L + (0.15 if 8 <= _hr < 23 else 0)) * 0.25; _mx = max(_mx, _W); _tt += 900
 assert 97 <= _W <= 99.5 and _mx < 100, (_W, _mx)
+# #709 burn-rate fit: synthetic week, b = 0.40 per weighted lane-hour, b0 = 0.15 %/h, k = 8 5h-% per week-%
+_hs = []; _w = 30.0; _f = 0.0
+for _i in range(24):                                  # 6 h of 15-min passes
+    _m = {"sonnet": 1 + _i % 3, "opus": _i % 2}; _wl = r.weighted_lanes(_m)
+    _hs.append({"at": _now - (24 - _i) * 900, "week": _w, "pct": _f, "reset": "R", "models": _m, "wlanes": _wl})
+    _dw = (0.40 * _wl + 0.15) * 0.25; _w += _dw; _f += 8 * _dw
+assert r.weighted_lanes({"sonnet": 2, "opus": 1, "haiku": 20, "fable": 1}) == 2 + 2 + 1 + 4
+_ft = r.burn_fit(_hs, _now)
+assert _ft["fit"] and abs(_ft["b"] - 0.40) < 0.04 and abs(_ft["b0"] - 0.15) < 0.015 and abs(_ft["k"] - 8) < 0.8, _ft
+assert r.burn_fit(_hs[-6:], _now) == {"b": r.GOV["b"], "b0": r.GOV["b0"], "k": r.GOV["k"], "fit": False}      # < 2 h of data: the priors
+assert r.burn_fit([], _now)["fit"] is False and r.burn_fit(_hs, _now + 8 * 3600)["fit"] is False           # nothing in the last 6 h
+_gf = r.governor(_ux(40, 80), _hs, _now, {"stale_s": 900}, busy=3, ready=9); assert _gf["b"] == _ft["b"] and _gf["fit"], _gf       # governor() uses the fit
+assert f"b̂ {_ft['b']:.2f}%/h" in r.governor_text(_gf) and "(prior)" not in r.governor_text(_gf)
+print("ok #709 burn fit recovered", {k: round(v, 3) for k, v in _ft.items() if k != "fit"})
 print("ok #705 governor: even pacing, bounds, reserve release, week-only, kind change, replay ends", round(_W, 1))
 # #704 stale / missing reading: hold prev 30 min, then the floor (1); never remote_lanes (_G fallback 4 must not appear)
 _old = _u(20, 4, age=16 * 60)
