@@ -34,13 +34,14 @@ def ensure_handoff(path, template):
     p.write_bytes(Path(template).read_bytes())
     return True
 
-def control_argv(name, main_checkout, plugin_dir, claude="claude", python="python", watchdog=""):
+def control_argv(name, main_checkout, plugin_dir, claude="claude", python="python", watchdog="", model_dir=None):
     """-> (cwd, argv) of the program for orchestrator / inbox / inspector / executor / watchdog."""
     mc = str(main_checkout)
+    pd = ["--plugin-dir", str(model_dir)] if model_dir else []   # #850: the model + usage status line (not the orchestrator: it has oren-lanes)
     return {"orchestrator": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-orchestrator", "--plugin-dir", str(plugin_dir), ORCH_PROMPT]),
-            "inbox": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-inbox", INBOX_PROMPT]),
-            "inspector": (str(Path(mc).parent), [claude, "--model", "opus", "--remote-control", "oren-inspector", INSPECTOR_PROMPT]),
-            "executor": (mc, [claude, "--model", "opus", "--remote-control", "oren-executor", EXECUTOR_PROMPT]),
+            "inbox": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-inbox", *pd, INBOX_PROMPT]),
+            "inspector": (str(Path(mc).parent), [claude, "--model", "opus", "--remote-control", "oren-inspector", *pd, INSPECTOR_PROMPT]),
+            "executor": (mc, [claude, "--model", "opus", "--remote-control", "oren-executor", *pd, EXECUTOR_PROMPT]),
             "watchdog": (mc, [python, str(watchdog)])}[name]
 
 def hc_run_args(name, cwd, argv, space_id=""):
@@ -100,6 +101,31 @@ def finished_control(ts):
     live = live_roles(ts)
     return [(r, t["address"]) for t in ts
             if t.get("state") in FINISHED and t.get("address") and (r := control_role(t)) and r not in live]
+
+def present_roles(ts):
+    """#935: control roles that have any terminal row at all (live or finished). A tab the owner closed has no row."""
+    return {r for t in ts if (r := control_role(t))}
+
+def missing_control(ts):
+    """#935: control roles with no terminal in `hc ls --all` (closed by hand). Found like finished_control: by name, label, argv or tab. -> [role]"""
+    have = present_roles(ts)
+    return [r for r in CONTROL if r not in have]
+
+def control_plan(state, ts, now, grace=2, window=600):
+    """#935, pure: what the watchdog starts this tick. state = {role: {"miss": n, "started": t}} (kept in .runs/control_state.json).
+    A role missing in `grace` consecutive checks, or finished (no live twin), is started ONCE per tick, and not again for `window` s
+    after a start (it counts as present/starting). -> ([(role, address or None, why)], new state)"""
+    st = {r: dict(v) for r, v in (state or {}).items() if r in CONTROL}
+    miss, fin, out, seen = set(missing_control(ts)), {}, [], set()
+    for r, a in finished_control(ts): fin.setdefault(r, []).append(a)   # two finished rows of one role = one start
+    for r in CONTROL:
+        e = st.setdefault(r, {})
+        e["miss"] = e.get("miss", 0) + 1 if r in miss else 0
+        starting = now - e.get("started", 0) < window
+        if starting or r in seen: continue
+        if r in fin: out.append((r, fin[r], "finished")); seen.add(r); e["started"] = now
+        elif e["miss"] >= grace: out.append((r, [], "closed")); seen.add(r); e["started"] = now; e["miss"] = 0
+    return out, st
 
 def stale_locks(runs, alive, boot):
     """Remove lock files whose pid is dead or that were taken before this boot (a reused pid is not ours). -> removed names."""
@@ -217,11 +243,13 @@ def start_control(R, name, space_id=None):
     """Start orchestrator / inbox / inspector (in 'oren') or the watchdog. Used by recover and by the watchdog's restart check."""
     if space_id is None: space_id = pick_space(spaces(R), control_space(R)) if name in CONTROL else ""
     mc = R.CFG.get("main_checkout", str(R.ROOT))
+    import gitid
+    gitid.set_email(mc, R.run)                        # #889: control sessions commit with the noreply address (repo-local, shared by worktrees)
     if name == "inspector":
         try: ensure_handoff(R.CFG.get("inspector_handoff", "C:/work/Oren_study/INSPECTOR_HANDOFF.md"), Path(mc) / "docs" / "roles" / "INSPECTOR_HANDOFF.template.md")
         except OSError as e: print("handoff not created:", e)
     cwd, argv = control_argv(name, mc, Path(mc) / "tools" / "mods" / "oren-lanes", shutil.which("claude") or "claude",
-                             sys.executable, R.HERE / "watchdog.py")
+                             sys.executable, R.HERE / "watchdog.py", Path(mc) / "tools" / "mods" / "oren-model")
     rc, out = R.hc(*hc_run_args(name, cwd, argv, space_id), timeout=60)
     print(name, out.strip()[:200])
     return rc

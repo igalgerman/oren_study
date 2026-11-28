@@ -8,7 +8,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import remote, ghcache, ghauth, pcload, tester, trust, scrub   # pcload: #293 PC load watch; tester: #618
+import remote, ghcache, ghauth, pcload, tester, trust, scrub, gitid   # pcload: #293 PC load watch; tester: #618
 ROOT = HERE.parent.parent                      # repo checkout (tools/runner/../..)
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # #229: tests point this at a temp dir
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -288,7 +288,7 @@ def ci_verdict(checks):
 def failed_checks(checks):
     return [c.get("name", "?") for c in checks or [] if c.get("bucket") in ("fail", "cancel")]
 
-def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_reruns=1, stamp=None, max_stale=10, ended=None, mark=None, state=None, grace=4):
+def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_reruns=1, stamp=None, max_stale=10, ended=None, mark=None, state=None, grace=4, pending_poll_s=None):
     """Pure decision loop (#74): wait for the PR checks, then merge. Red -> rerun the failed jobs once (flaky), still red -> send back to the worker.
     stamp() = run id/status/attempt of the latest run: after a rerun, red is ignored until it changes (the old failed run is still shown for a while).
     merge() -> True | False | 'conflict' (#160: main moved after green CI -> the caller resolves and retries).
@@ -296,6 +296,7 @@ def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_rer
     #185: mark() (called once, only after the review passed) = GitHub auto-merge -> 'auto' | 'merged' (clean status: merged directly) | 'conflict' | False;
     state() -> 'merged' | 'conflict' | 'open'. With auto set, GitHub merges on green; the runner merges directly only if it stays green+open for `grace` polls.
     #344: merge()/mark() -> 'moved' (the head changed after the review) -> ('moved',): the caller checks the new head.
+    #911: pending_poll_s = the poll interval while the checks are pending (60 s: the cache refreshes once a minute).
     Returns ('merged',) | ('red', [names]) | ('timeout',) | ('conflict',) | ('merge-failed',) | ('ended',) | ('moved',)."""
     waited, reruns, old, stale = 0, 0, None, 0
     auto = False
@@ -327,7 +328,21 @@ def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_rer
             reruns += 1; rerun(); sleep(poll_s); waited += poll_s; continue
         if waited >= timeout_s:
             return ("timeout",)
-        sleep(poll_s); waited += poll_s
+        w = pending_poll_s or poll_s
+        sleep(w); waited += w
+
+def cached_checks(pr, real, rollup, clock=time.time, safety=120):
+    """#911: the get_checks() of the CI wait, answered from the cache. rollup(pr) = ghcache.pr_rollup. The real `gh pr checks` runs only when
+    the cached rollup is final (green/red: the real list decides, with the names), unknown (stale/dirty), or as a safety net every `safety` s
+    while it says pending. Pending from the cache = a one-entry pending list, no call."""
+    last = [clock()]
+    def get():
+        st = rollup(pr)
+        if st is not None and st not in ghcache.ROLLUP_FINAL and clock() - last[0] < safety:
+            return [{"name": "(cached rollup)", "bucket": "pending"}]
+        last[0] = clock()
+        return real()
+    return get
 
 def head_modified(text):
     """Pure (#344): a failed `gh pr merge --match-head-commit` because the PR head moved after the review."""
@@ -378,6 +393,12 @@ def auto_refused_clean(text):
     """Pure (#185): GitHub refuses `gh pr merge --auto` for a PR that is already green and clean ('clean status') -> merge directly."""
     return "clean status" in (text or "").lower()
 
+def pr_field(js, name):
+    """Pure (#911): one field of a `gh pr view --json <name>` answer (parsed here, so no -q and the cache can answer); '' when unreadable."""
+    try: v = json.loads(js or "{}").get(name)
+    except (ValueError, AttributeError): return ""
+    return v.strip() if isinstance(v, str) else ""
+
 def pr_state(js):
     """Pure (#185): `gh pr view --json state,mergeable` -> 'merged' | 'conflict' | 'open'."""
     try: d = json.loads(js or "{}")
@@ -409,6 +430,10 @@ def gate_refusal(body, check):
 def _gate(n):
     import owner_q; return owner_q.merge_gate(n)
 GATE = _gate          # tests swap in a fake
+
+def unreadable_gate(why):
+    """Pure (#908): True when merge_block's refusal only means 'the gate could not be read' (never a reason to BLOCK)."""
+    return why.startswith("cannot read the owner gate")
 
 def merge_block(pr, log=None):
     """#636: the one guard before any merge (runner and tools/runner/merge.py): draft, blocked / no-automerge / owner-merge, owner gate."""
@@ -808,7 +833,7 @@ def pass_choice(issues, local_lanes, remote_lanes, gv, core_held_n, locked, wher
 def pass_now(issues, gv=None):
     """#279: pass_choice with this PC's live inputs (governor, cloud refusal pause, PC load, core slots, issue locks)."""
     gv = gv or governor_now()
-    return pass_choice(issues, local_lanes_now(pcload.alarmed(RUNS)), lanes_now(gv["lanes"], refusal_state(), time.time()), gv,
+    return pass_choice(issues, local_lanes_now(pcload.alarmed(RUNS)), lanes_now(gv["lanes"], refusal_state(), time.time(), dead_state()), gv,
                        core_held(), lambda n: FileLock(f"issue-{n}").held_by_other())
 
 def stop_filter(chosen, gv):
@@ -896,7 +921,7 @@ def live_proof(base="https://oren-game.pages.dev"):
     ok True = `LIVE: ...` seen on production; ok False = a check failed (the issue stays open); ok None = could not run (closes, line says so)."""
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     try:
-        rc, out = run([sys.executable, str(ROOT / "tools/ci/deploy_ci.py"), "smoke", base], timeout=300)
+        rc, out = run([sys.executable, str(ROOT / "oren2/ci/deploy_ci.py"), "smoke", base], timeout=300)
     except Exception as e:
         return None, f"LIVE: not checked ({day}): the automatic check could not run: {str(e)[:120]}"
     if rc == 0: return True, f"LIVE: production smoke ok on {base} ({day}): page loads, save round trip, D1 bound, voice status"
@@ -1033,10 +1058,12 @@ def fresh_self():
     """#364: this runner's own helpers (issue_over) as runner.py is on disk now."""
     return fresh(sys.modules[__name__], log_line)
 
-def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=None):
+def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=None, life=None, dead_s=None):
     """Pure loop (#133): poll the GitHub-based status until it is done/stuck/question. Returns that status dict, or {'state': 'timeout'}.
-    ended() True (#234: issue closed / lane PR merged elsewhere) -> {'state': 'ended'}."""
-    start = clock()
+    ended() True (#234: issue closed / lane PR merged elsewhere) -> {'state': 'ended'}.
+    #841: life() = a signature of the session's signs of life (comments, branch heads); it and the status unchanged for dead_s -> {'state': 'dead', 'minutes': n}.
+    A life() that fails is no news either way (never counts as death)."""
+    start = clock(); sig = None; seen = start
     while True:
         try: st = get_status()
         except subprocess.TimeoutExpired: st = {}         # #284: a gh timeout under load: just poll again
@@ -1046,12 +1073,22 @@ def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=N
             return {"state": "ended", "line": "", "pr": st.get("pr")}
         if clock() - start >= timeout_s:
             return {"state": "timeout", "line": "", "pr": st.get("pr")}
+        if life and dead_s:
+            try: cur = (st.get("state"), (st.get("pr") or {}).get("number"), life())
+            except Exception: cur = None
+            if cur is not None and cur != sig: sig, seen = cur, clock()
+            elif cur is not None and clock() - seen >= dead_s:
+                return {"state": "dead", "line": "", "pr": st.get("pr"), "minutes": int((clock() - seen) // 60)}
         sleep(poll_s)
 
 class Refused(Exception):
     """#137: the cloud refused to start a session (CLI error, usage limit, no network): run locally or wait, never STUCK."""
 
-def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None, comment=None, has_draft=None):
+class Dead(Exception):
+    """#841: the cloud session showed no sign of life for `minutes`: the caller puts the issue back in the queue."""
+    def __init__(self, url, minutes): super().__init__(f"{url} silent {minutes} min"); self.url, self.minutes = url, minutes
+
+def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None, comment=None, has_draft=None, life=None, dead_s=None):
     """Start the cloud worker and wait for its comment. Returns the marker line (`RESULT: ...` / `QUESTION: ...`) like agent() does.
     on_start(start result) keeps the session id (#134: FIX points are sent back to this session).
     #747: has_draft() true (lane/<n> already has a draft PR but no RESULT) = resume at worker: the new session continues on that branch.
@@ -1063,8 +1100,11 @@ def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3
             raise Refused(s.get("error", "?"))
         if on_start: on_start(s)
         urls.append(s.get("url", "") or "?")
-        st = wait_remote(get_status, sleep, clock, timeout_s, poll_s, ended)
+        st = wait_remote(get_status, sleep, clock, timeout_s, poll_s, ended, life, dead_s)
         if st["state"] == "ended": raise Ended("cloud worker")
+        if st["state"] == "dead":
+            if comment: comment(f"Runner: the cloud session {urls[-1]} showed no sign of life for {st['minutes']} min (no comment, commit, branch or status change); back in the queue.")
+            raise Dead(urls[-1], st["minutes"])
         if st["state"] != "timeout":
             return st["line"]
         if attempt == 1 and comment:
@@ -1083,9 +1123,48 @@ def remote_paused(state, now):
 def note_due(state, now):
     return now - state.get("noted", -REFUSE_PAUSE_S) >= REFUSE_PAUSE_S
 
-def lanes_now(remote_lanes, state, now):
-    """Remote slots for this pass: none while a refused start is less than an hour old (no retry storm)."""
-    return 0 if remote_paused(state, now) else remote_lanes
+def lanes_now(remote_lanes, state, now, dead=None):
+    """Remote slots for this pass: none while a refused start is less than an hour old (no retry storm), nor while dead lanes pause starts (#841)."""
+    return 0 if remote_paused(state, now) or dead_paused(dead or {}, now) else remote_lanes
+
+# #841: dead cloud sessions. 2+ within DEAD_WINDOW_S -> no new cloud starts for DEAD_WINDOW_S, one alert per DEAD_NOTE_S.
+DEAD_MINUTES = int(CFG.get("dead_minutes", 20))
+DEAD_WINDOW_S = 1800
+DEAD_NOTE_S = 3 * 3600
+
+def dead_state():
+    try: return json.loads((RUNS / "dead_lanes.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError): return {}
+
+def dead_paused(state, now):
+    return now < state.get("until", 0)
+
+def dead_why(state, now):
+    n = len([t for t in state.get("times", []) if now - t < DEAD_WINDOW_S])
+    return f"dead lanes: {n}" if dead_paused(state, now) and n else ""
+
+def note_dead(state, now):
+    """Pure: one more dead session at `now` -> (new state, dead count in the last 30 min, send the alert?)."""
+    times = [t for t in state.get("times", []) if now - t < DEAD_WINDOW_S] + [now]
+    new = {**state, "times": times}
+    if len(times) >= 2: new["until"] = now + DEAD_WINDOW_S
+    alert = len(times) >= 2 and now - state.get("noted", -DEAD_NOTE_S) >= DEAD_NOTE_S
+    if alert: new["noted"] = now
+    return new, len(times), alert
+
+def record_dead(n, now=None):
+    """Remember a dead session; at 2 in 30 min pause starts (the pass logs `dead lanes: N`) and tell Telegram + the orchestrator once per 3 h."""
+    now = time.time() if now is None else now
+    st, count, alert = note_dead(dead_state(), now)
+    RUNS.mkdir(parents=True, exist_ok=True)
+    (RUNS / "dead_lanes.json").write_text(json.dumps(st), encoding="utf-8")
+    if alert:
+        msg = f"dead lanes: {count} cloud sessions silent {DEAD_MINUTES}+ min within 30 min (last #{n}); no new cloud starts for 30 min"
+        try:
+            import telegram; telegram.send(msg)
+        except Exception: pass
+        tell_orchestrator(msg)
+    return count
 
 def record_refusal(n, error, now=None):
     """Remember the refusal (pauses cloud starts for an hour); one orchestrator note + watchdog.log line per hour. -> True when noted."""
@@ -1280,9 +1359,30 @@ def human_without_question(issues):
 def polish_title(lane):
     return f"Polish backlog ({lane})"
 
+def is_decided(note):
+    return note.strip().lower().startswith("decided:")
+
+def decided_notes(notes):
+    """#901: the `decided: <option> (rule)` notes of a PASS-NOTES line (each becomes ONE owner notice, never a polish line)."""
+    return [x.strip() for x in (notes or "").split(";") if is_decided(x)]
+
 def polish_lines(notes, pr):
-    """'a; b' -> one backlog line per note, each with the PR number."""
-    return [f"- {x.strip()} (PR #{pr})" for x in notes.split(";") if x.strip()]
+    """'a; b' -> one backlog line per note, each with the PR number (decided: notes are owner notices, not polish)."""
+    return [f"- {x.strip()} (PR #{pr})" for x in notes.split(";") if x.strip() and not is_decided(x)]
+
+def notice_text(n, pr, note):
+    return f"Owner notice (#901, decided by rule, issue #{n}, PR #{pr}): {note} - override = a new issue (the old choice stays until it lands; /undo for a quick revert)."
+
+def post_decided(n, pr, notes):
+    """#901: every `decided:` note -> one notice line on the issue + one Telegram line (the weekly round list; kind `notice` once #895 exists)."""
+    out = []
+    for note in decided_notes(notes):
+        t = redact(notice_text(n, pr, note)); out.append(t)
+        gh("issue", "comment", str(n), "--body", t)
+        try:
+            import telegram; telegram.send(t)
+        except Exception: pass
+    return out
 
 def last_line(text, prefix):
     hits = [l.strip() for l in text.splitlines() if l.strip().startswith(prefix)]
@@ -1336,9 +1436,12 @@ def no_window(os_name=None):
     """#284: creationflags for every child process: CREATE_NO_WINDOW on Windows (no console window flashes), 0 elsewhere."""
     return 0x08000000 if (os_name or os.name) == "nt" else 0
 
+class GateUnreadable(Exception):
+    """#908: the owner gate could not be read (GitHub slow under load): not the issue's fault, the merge step retries next pass."""
+
 def is_transient(e):
-    """#284: a gh/git call that timed out under load is not the issue's fault: retry next pass, never BLOCK."""
-    return isinstance(e, subprocess.TimeoutExpired)
+    """#284: a gh/git call that timed out under load is not the issue's fault: retry next pass, never BLOCK. #908: so is an unreadable owner gate."""
+    return isinstance(e, (subprocess.TimeoutExpired, GateUnreadable))
 
 # #365: inside a watchdog tick (tick_mode) every call is bounded: no timeout -> TICK_TIMEOUT_S, a timeout is an rc-124 answer (never
 # raises), a rate limit is not slept on (ghcache), and after one gh timeout the tick's other gh calls fail at once. Threads keep their own rules.
@@ -1489,6 +1592,11 @@ PARK_MINUTES = int(CFG.get("park_minutes", 30))
 
 def tell_orchestrator(text):
     if USE_HERDR: hc("send", "orchestrator", text, timeout=30)
+
+def tell_all(text):
+    """#889: orchestrator + inspector."""
+    tell_orchestrator(text)
+    if USE_HERDR: hc("send", "inspector", text, timeout=30)
 
 def live(name):
     return USE_HERDR and hc_json("get", name, "--json").get("state") == "live"
@@ -1754,8 +1862,10 @@ TEST_LEVELS = ("Test level (#618): just before the VERDICT line, one line `TEST:
 def review_colours(round1=""):
     colours = ("Verdict colours (the last line, exactly one): `VERDICT: PASS` (GREEN, nothing to say); "
                "`VERDICT: PASS-NOTES <note>; <note>` (BLUE: nothing wrong for Oren or the parent, only polish such as naming, small cleanup, extra test idea, comment wording; one line, notes split by `;`); "
-               "`VERDICT: PURPLE <question in one line> merge-safe` or `... hold` (PURPLE: a real product/design choice only the owner can make, e.g. what Oren sees or hears or what the parent can do, the code works; "
-               "merge-safe = merge now and ask, hold = park until he answers; never for code style); "
+               "`VERDICT: PURPLE <question in one line> merge-safe` or `... hold` (PURPLE only for the owner-only kinds of CLAUDE.md 'Owner load' (#901): money or paid limits, "
+               "secrets/keys/logins, the kid's privacy, irreversible deletes, a click only his account can make; merge-safe = merge now and ask, hold = park until he answers; "
+               "never for a design choice and never for code style). A reversible kid-facing design choice with a recommended option is NOT PURPLE: take the recommended one "
+               "and write `VERDICT: PASS-NOTES decided: <option taken> (rule), other options: <a>, <b>` (use commas inside an option list); it merges as usual and goes to the owner's weekly round as a notice; "
                "`VERDICT: FIX <points>` (RED). Judge against the issue's `## Acceptance` list (#186). RED ONLY for: a missed Acceptance point, wrong behaviour for Oren or the parent, "
                "a failing or missing test for the change, security, data loss, a broken build. "
                "Justify each RED point in one line. Everything else is a BLUE note, never FIX.\n" + TEST_LEVELS)
@@ -1982,6 +2092,8 @@ def block(n, why, log):
         tail = "\n".join(Path(log).read_text(encoding="utf-8").splitlines()[-20:])
     except OSError:
         pass
+    gh007 = gitid.alarm(why + "\n" + tail, RUNS, tell_all, n=n)   # #889: a rejected push for e-mail privacy is named, not 'push failed'
+    if gh007: why = gh007
     set_labels(n, add=stuck_labels(), remove=["in-progress"])
     try: (RUNS / str(n)).mkdir(parents=True, exist_ok=True); (RUNS / str(n) / "rung.blocked").write_text("1")   # #716: the next start goes one rung up
     except OSError: pass
@@ -2115,7 +2227,8 @@ def update_lane(wt, br, log):
             if run(["git", "commit", "-q", "-m", "Rebuild index.html after merging main (#594)"], cwd=wt, log=log)[0]:
                 return 7, "could not commit the rebuilt index.html after merging main", ""
     if run(["git", "rev-parse", "HEAD"], cwd=wt)[1] == run(["git", "rev-parse", f"{REMOTE}/{br}"], cwd=wt)[1]: return 0, "", ""
-    if run(["git", "push", "-q", REMOTE, f"HEAD:{br}"], cwd=wt, log=log)[0]: return 5, "push failed", ""
+    rc, pout = run(["git", "push", "-q", REMOTE, f"HEAD:{br}"], cwd=wt, log=log)
+    if rc: return 5, gitid.alarm(pout, RUNS, tell_all) or "push failed", ""   # #889: GH007 -> its own reason + one alarm per hour
     return 0, "", run(["git", "rev-parse", "HEAD"], cwd=wt)[1].strip()
 
 def ci_integrate(n, wt, log, over=None, sha=""):
@@ -2129,9 +2242,10 @@ def ci_integrate(n, wt, log, over=None, sha=""):
         return 4, "no open PR for issue #%d" % n
     if not sha: return 7, f"PR #{pr}: no reviewed head sha, refusing to merge"
     why = merge_block(pr, log)
+    if unreadable_gate(why): raise GateUnreadable(why)           # #908: wait, retry on the next pass; never BLOCKED
     if why:                                                      # #185/#636: never a draft / no-automerge / blocked / owner-merge PR, nor a CLOSED owner gate
         disable_auto(pr, log); return 7, f"PR #{pr}: {why}"
-    mergeable = gh("pr", "view", str(pr), "--json", "mergeable", "-q", ".mergeable", log=log)[1].strip()
+    mergeable = pr_field(gh("pr", "view", str(pr), "--json", "mergeable", log=log)[1], "mergeable")   # #911: no -q: the cache can answer
     if needs_branch_update(mergeable):                           # #166: only a real conflict updates the branch
         rc, out, new = update_lane(wt, br, log)
         if rc: return rc, out
@@ -2139,16 +2253,19 @@ def ci_integrate(n, wt, log, over=None, sha=""):
             sha = new                                                # #185: the runner's own merge-main commit is the new head to match
             time.sleep(20)                                           # let GitHub start the new run
     why = {"merge": ""}
-    def get_checks():
+    def real_checks():
         try: return json.loads(gh("pr", "checks", str(pr), "--json", "name,bucket", log=log)[1] or "[]")
         except ValueError: return []
+    get_checks = cached_checks(pr, real_checks, ghcache.pr_rollup)     # #911: the cache's rollup first, `gh pr checks` only at a final state / every 120 s
     def stamp():
         return run(["gh", "run", "list", "--repo", REPO, "--branch", br, "--limit", "1", "--json", "databaseId,status,attempt", "-q", ".[0]|[.databaseId,.status,.attempt]|join(\":\")"], log=log)[1].strip()
     def rerun():
         rid = run(["gh", "run", "list", "--repo", REPO, "--branch", br, "--limit", "1", "--json", "databaseId", "-q", ".[0].databaseId"], log=log)[1].strip()
         if rid.isdigit(): run(["gh", "run", "rerun", rid, "--failed", "--repo", REPO], log=log)
     def refused():
-        return merge_block(pr, log)
+        w = merge_block(pr, log)
+        if unreadable_gate(w): raise GateUnreadable(w)           # #908: no merge now, no BLOCKED; the issue is retried next pass
+        return w
     def merge():                                                 # #185: no lock: GitHub merges atomically; the deploy keeps its own lock
         if refused(): return False
         rc_, o_ = gh("pr", "merge", str(pr), "--squash", "--match-head-commit", sha, log=log)
@@ -2166,7 +2283,7 @@ def ci_integrate(n, wt, log, over=None, sha=""):
         return pr_state(gh("pr", "view", str(pr), "--json", "state,mergeable", log=log)[1])
     def git(a): return run(["git", *a], cwd=wt)
     for _ in range(4):                                           # #344: the head moved after the PASS (a merge of main by the #262 resolver or the worker)
-        cur = gh("pr", "view", str(pr), "--json", "headRefOid", "-q", ".headRefOid", log=log)[1].strip()
+        cur = pr_field(gh("pr", "view", str(pr), "--json", "headRefOid", log=log)[1], "headRefOid")   # #911: no -q: the cache can answer
         if re.fullmatch(r"[0-9a-f]{40}", cur) and cur != sha:       # a gh error text is not a moved head
             run(["git", "fetch", "-q", REMOTE, BRANCH, br], cwd=wt, log=log)
             if head_moved(git, sha, cur, f"{REMOTE}/{BRANCH}") != "main":
@@ -2174,7 +2291,7 @@ def ci_integrate(n, wt, log, over=None, sha=""):
                 return 8, f"HEAD MOVED after the review: {cur[:7]} has new commits since the reviewed {sha[:7]} that are not only merges of main; re-review"
             log_to(log, f"[runner] #344: head {sha[:7]} -> {cur[:7]} is only a merge of main: counts as reviewed, waiting for CI on it")
             sha = cur
-        res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp, ended=over, mark=mark, state=state)
+        res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp, ended=over, mark=mark, state=state, pending_poll_s=60)
         if res[0] != "moved": break
     if res[0] == "ended": raise Ended("CI merge")
     if res[0] == "merged": return 0, "merged PR #%d" % pr
@@ -2189,7 +2306,7 @@ def find_pr_merged(n):
 def deploy_main(log):
     """After CI merges (#74): bring the integrate checkout to main, deploy ONCE (skipped when this sha is already deployed).
     #503: no rebuild + push to main here (that push raced other merges and ended runs BLOCKED): each PR carries its rebuilt
-    index.html files and CI (tools/ci/buildcheck.py) is red when they differ from a fresh build; deploy.sh builds from sources."""
+    index.html files and CI (oren2/ci/buildcheck.py) is red when they differ from a fresh build; deploy.sh builds from sources."""
     run(["git", "fetch", "-q", REMOTE], cwd=ROOT, log=log)
     if not (INTEG / ".git").exists():
         run(["git", "worktree", "prune"], cwd=ROOT); run(["git", "worktree", "add", "-B", "integrate", str(INTEG), f"{REMOTE}/{BRANCH}"], cwd=ROOT, log=log)
@@ -2324,6 +2441,7 @@ def process_locked(issue, where="local"):
                         if not rc: break
                         remove_worktree(wt, log); run(["git", "branch", "-D", f"lane/{n}"], cwd=ROOT, log=log)
                     if rc: raise Blocked("lane.sh failed twice (see run.log)")
+                    gitid.set_email(wt, run, gitid.email())      # #889: repo-local noreply address in every worktree
                     br = branch_of(n)                            # #246: a cloud worker's PR on claude/*: the worktree takes that branch's work
                     if br != f"lane/{n}":
                         run(["git", "fetch", "-q", REMOTE, br], cwd=wt, log=log)
@@ -2357,9 +2475,19 @@ def process_locked(issue, where="local"):
             try:
                 res = remote_worker(n, lane, "bug" in issue["labels"], rstart, lambda: fresh_remote().status(n, since=started),
                                     poll_sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over,
-                                    comment=lambda b: gh("issue", "comment", str(n), "--body", b), has_draft=lambda: draft_pr(n))
+                                    comment=lambda b: gh("issue", "comment", str(n), "--body", b), has_draft=lambda: draft_pr(n),
+                                    life=lambda: remote.life(n), dead_s=DEAD_MINUTES * 60)
                 remote_question(res)
                 out = res
+            except Dead as e:                            # #841: silent cloud session: one auto-resume, back to the queue (a draft PR is kept: the next run continues on it)
+                k = _count(n, "resumes")
+                if k >= AUTO_RESUMES: raise Blocked(f"cloud worker silent {e.minutes} min ({e.url}); already auto-resumed {k} times")
+                _resume_file(n, "resumes").parent.mkdir(parents=True, exist_ok=True)
+                _resume_file(n, "resumes").write_text(str(k + 1))
+                record_dead(n)
+                stat(n, lane, "waiting", why="dead session")
+                set_labels(n, add=["ready-for-agent"], remove=["in-progress"])
+                return f"WAITING: cloud session silent {e.minutes} min, back in the queue (auto-resume {k + 1}/{AUTO_RESUMES})"
             except Refused as e:                         # #137: local lane free -> run here; else give the issue back, it waits
                 if refusal_pauses(str(e)): record_refusal(n, str(e))   # #293: not when the PC was the cause
                 if pcload.alarmed(RUNS) or not local_lane_free(n):      # #293: no new local work while the PC is overloaded
@@ -2421,7 +2549,7 @@ def process_locked(issue, where="local"):
             if kind == "pass":
                 stat(n, lane, "review_pass", **me)
             if kind == "notes":                    # BLUE: merge now, notes go to the rolling polish issue
-                stat(n, lane, "review_pass", **me, colour="blue"); post_polish(n, lane, pr, text)
+                stat(n, lane, "review_pass", **me, colour="blue"); post_polish(n, lane, pr, text); post_decided(n, pr, text)
             if kind == "purple":                   # PURPLE: owner question; merge-safe merges, hold parks
                 stat_purple(n, lane, extra, me)
                 ask_owner(n, pr, text, extra)
@@ -2498,7 +2626,7 @@ def process_locked(issue, where="local"):
                                         ended=over, task=rereview_prompt(n, pr, reviewed["sha"], new), backoff=time.sleep)
             (d / "rereview.out").write_text(redact(rv), encoding="utf-8")
             kind_, text_, extra_ = parse_verdict(verdict)
-            if kind_ == "notes": post_polish(n, lane, pr, text_)
+            if kind_ == "notes": post_polish(n, lane, pr, text_); post_decided(n, pr, text_)
             if kind_ == "purple":
                 ask_owner(n, pr, text_, extra_)
                 if extra_ != "merge-safe": raise Parked(f"owner question: {text_[:200]}")
@@ -2756,6 +2884,8 @@ def run_pass():
     for r in (gv.get("ai") or {}).get("raise", []):          # #707: raises only add model:/effort: labels above the inbox ones
         for i in issues:
             if i["number"] == r["issue"]: i["labels"] += [f"model:{r['model']}"] * bool(r.get("model")) + [f"effort:{r['effort']}"] * bool(r.get("effort"))
+    dw = dead_why(dead_state(), time.time())      # #841: dead cloud sessions pause cloud starts
+    if dw: gv["why"] = dw; log_line(f"{now()} {dw}: no new cloud starts")
     pairs = pass_now(issues, gv)                  # #279: the same lane check as the watchdog (#137 refusal pause, #293 PC load, #269 stop)
     wmap = {c["number"]: w for c, w in pairs}
     chosen = [c for c, _ in pairs]

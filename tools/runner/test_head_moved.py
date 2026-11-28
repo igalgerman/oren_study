@@ -67,8 +67,8 @@ def ci(head, moved_once=False):
         calls.append(a)
         if a[:2] == ("pr", "view"):
             if "isDraft,labels,body" in a: return 0, '{"isDraft":false,"labels":[]}'
-            if "headRefOid" in a: return 0, st["head"]
-            if "mergeable" in a and "-q" in a: return 0, "MERGEABLE"
+            if "headRefOid" in a: return 0, '{"headRefOid":"%s"}' % st["head"]      # #911: JSON, no -q
+            if "mergeable" in a and "state,mergeable" not in a: return 0, '{"mergeable":"MERGEABLE"}'
             return 0, '{"state":"%s","mergeable":"MERGEABLE"}' % ("MERGED" if st["merged"] else "OPEN")
         if a[:2] == ("pr", "checks"): return 0, '[{"name":"tests","bucket":"pass"}]'
         if a[:2] == ("pr", "merge") and "--disable-auto" in a: return 0, ""
