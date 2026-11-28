@@ -238,10 +238,12 @@ def owner_note(now):
     return True
 
 def fallback(now, log):
-    """Until one trigger-made comment is seen (state 'proven'), start the observer prompt as a cloud job every FALLBACK_MIN
-    (remote.launch from the watchdog: returns at once, takes no runner lane). A failed start is retried at the next relay."""
+    """While the last trigger-made comment (state 'trigger_seen') is missing or older than OWNER_SILENT_H h (#689: not a sticky
+    'proven' flag), start the observer prompt as a cloud job every FALLBACK_MIN (remote.launch from the watchdog: returns at
+    once, takes no runner lane). A failed start is retried at the next relay."""
     st = load_state()
-    if st.get("proven") or now - st.get("fallback_at", 0) < FALLBACK_MIN * 60: return False
+    seen = _epoch(st.get("trigger_seen"))
+    if (seen and now - seen < OWNER_SILENT_H * 3600) or now - st.get("fallback_at", 0) < FALLBACK_MIN * 60: return False
     if LAUNCH: launch = LAUNCH
     else:
         import remote; launch = remote.launch

@@ -85,6 +85,19 @@ QW.tick(h.ts(), now=1180); assert sum("owner-q:k3" in s[1] for s in h.sent) == 1
 d = QW.page_data({"key": "x", "text": "איזה צבע? 1) ירוק (מומלץ) 2) כחול"})["questions"][0]
 assert d["text"] == "איזה צבע?" and d["options"] == ["ירוק (מומלץ)", "כחול"] and d["other"], d
 assert "1. ירוק" in QW.push_text({"text": "איזה צבע? 1) ירוק 2) כחול"})
+# #699: one Hebrew line, options as buttons, details under 'עוד' (page); Telegram: line + options + page link, no details
+lq = {"key": "d1", "text": "לשחרר את הגרסה? 1) כן 2) לא\nפירוט ארוך: הרבה הקשר כאן"}
+d = QW.page_data(lq)["questions"][0]
+assert d["text"] == "לשחרר את הגרסה?" and d["options"] == ["כן", "לא"] and "פירוט ארוך" in d["details"], d
+import importlib.util as _iu
+_sp = _iu.spec_from_file_location("ask_page", str(QW.ASK)); _am = _iu.module_from_spec(_sp); _sp.loader.exec_module(_am)
+_h = _am.page(QW.page_data(lq))
+assert "<summary>עוד</summary>" in _h and _h.index("לשחרר") < _h.index("<summary>"), "details collapsed after the line"
+(QW.DIR / "d1.log").write_text("http://127.0.0.1:1/p\n", encoding="utf-8")
+tg = QW.tg_text(lq)
+assert "פירוט ארוך" not in tg and "1. כן" in tg and "2. לא" in tg and "http://127.0.0.1:1/p" in tg, tg
+nf = QW.page_data({"key": "d2", "text": "מה לעשות?"})["questions"][0]
+assert nf["text"] == "מה לעשות?" and nf.get("free") and "details" not in nf, nf          # no options: line + answer box
 pm = QW.push_message({"key": "z", "text": "איזה צבע? 1) ירוק 2) כחול"})
 assert "\n" not in pm and "1. ירוק" in pm and "2. כחול" in pm and "AskUserQuestion" in pm, pm   # never asked in the terminal (#310)
 assert not re.search(r"#\d", pm.replace("#390", "")), pm                               # #368: no issue refs to go reading

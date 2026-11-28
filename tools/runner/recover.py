@@ -16,7 +16,7 @@ TASK = "Oren recover"
 CONTROL = ("orchestrator", "inbox", "inspector", "executor")    # the 4 Claude sessions on the PC, tabs of 'oren' in this order
 INBOX_PROMPT = ("You are the INBOX of the Oren game multi-agent system (repo igalgerman/oren_study). Read CLAUDE.md and FLOW.md. "
                 "The owner talks to you: a new idea -> /idea, a clear task -> /task, a bug -> /bug, a status question -> /status. "
-                "Write every new issue the way docs/agents/skills/writing-for-agents.md says. Propose each new issue's model label (docs/agents/models.md). "
+                "Write every new issue the way docs/agents/skills/writing-for-agents.md says. Set both the model: and the effort: label on every new issue from the table in docs/agents/models.md (you decide, the owner can override), and split a task estimated above ~600 lines or a batch of 8+ items first. "
                 "Run the mattpocock-skills:triage steps on every new issue (#29): duplicate check per CLAUDE.md, labels per docs/agents/triage-labels.md, "
                 "P-level, an Acceptance list, one lane label, Blocked by lines. Do nothing else; wait for the owner.")
 TRIAGE_STEPS = ("Run the mattpocock-skills:triage steps on every new ticket (#29): duplicate check per CLAUDE.md ('One backlog, no duplicates'), "
