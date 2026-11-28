@@ -1,0 +1,23 @@
+# Project registry (#956). The ONE place that names repos. Every tool reads repos from here (tools/projects.py).
+# Add a project = one [project.<name>] block (+ `setup.ps1 -Project <name>`). `paths` = tree prefixes that map to it.
+default = "infra"          # tooling/system work and unknown paths go here
+
+[project.game]
+repo = "igalgerman/oren_study"
+kind = "game"              # game | app | infra
+private = true
+paths = ["oren2/", "oren/"]
+deploy = "oren2/cf/tools/deploy.sh"
+test = "oren2/tests/run.sh"
+labels = ["pack"]
+question_channel = "owner_q"
+
+[project.infra]
+repo = "igalgerman/oren_study"   # TODO: becomes the INFRA repo after the 3-repo move (#926)
+kind = "infra"
+private = true
+paths = ["tools/", "docs/", ".github/", ".claude/"]
+deploy = ""
+test = "python3 tools/runner/run_tests.py"
+labels = []
+question_channel = "owner_q"
