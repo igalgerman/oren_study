@@ -109,12 +109,12 @@ async function tour(b, vp) {
       await K.evaluate(() => window.OREN.famPull()); }
     return 'message not shown: ' + txt; });
 
-  await check('time-limit', vp, K, `kid (${vp}) at a 5-min limit with 10 played: locked; parent (${other}) taps +15: kid unlocks`, async () => {
+  await check('time-limit', vp, K, `kid (${vp}) at a 5-min limit with 10 played: locked; parent (${other}) taps the grant button: kid unlocks`, async () => {
     await K.evaluate(() => { window.__health = false; }); await home(K); await K.evaluate(() => { const O = window.OREN, T = window.TAL; T.S().time[O.today()] = 600; const st = T.S().set; st.lim = Object.assign(st.lim || {}, { daily: 5, today: null }); O.persist(); O.famNow(); T.limCheck(); });
     if (!await until(K, () => !!document.querySelector('.tlock:not(.tyay)'))) return 'no lock when time is up';
     if (!await until(P, () => { window.OREN.famPull(); const l = window.TAL.S().set.lim; return l && l.daily === 5; }, null, 15000)) return 'parent did not get the limit';
-    await P.evaluate(() => window.TAL.parentPanel('time')); await P.locator('#sPar .pbig .bigbtn', { hasText: '+15' }).first().click();
-    return await until(K, () => !document.querySelector('.tlock:not(.tyay)'), null, 20000) || 'kid still locked after +15'; });
+    await P.evaluate(() => window.TAL.parentPanel('time')); await P.locator('#sPar .pbig .bigbtn', { hasText: 'עוֹד' }).first().click();
+    return await until(K, () => !document.querySelector('.tlock:not(.tyay)'), null, 20000) || 'kid still locked after the grant'; });
   const errs = [...K.errs, ...P.errs]; if (errs.length) console.log(`note ${vp}: page errors: ${errs.slice(0, 2).join(' | ').slice(0, 200)}`);
   await K.context().close(); await P.context().close();
 }

@@ -237,7 +237,7 @@ let b = null;
   /* #359: the mission rows live on the day view ("plan ahead"): one ✕ per row, the rest behind a tap */
   const rb = await p.evaluate(() => { const T = window.TAL, d = T.dailyEnsure(); if (!d.t.length) { d.t = ['math', T.dailyPool()[0]]; d.done = [0, 0]; } T.parentPanel('day');
     const row = document.querySelector('#sPar .pdplan'); const r = row ? [...row.querySelectorAll('button')].filter(x => x.offsetParent).map(x => x.textContent) : []; return r; });
-  ok('parent today: status + the big button (+15 min), the rest folded', pt.h === '⏱️ היום' && pt.big.join('|') === '+15 דק׳' && pt.vis === 0, JSON.stringify(pt));
+  ok('parent today: status + the minutes stepper (− N +) and one big button, the rest folded (#658)', pt.h === '⏱️ היום' && pt.big.join('|') === 'יֵשׁ לוֹ עוֹד 5 דק׳' && pt.vis === 2, JSON.stringify(pt));
   ok('parent day view: a mission row shows only ✕', rb.length === 1 && rb[0] === '✕', JSON.stringify(rb));
   ok('parent panel hides the kid gems', pt.gems === 'none');
   await p.locator('#sPar .tdrow').first().click(); await sleep(100);
