@@ -34,13 +34,14 @@ def ensure_handoff(path, template):
     p.write_bytes(Path(template).read_bytes())
     return True
 
-def control_argv(name, main_checkout, plugin_dir, claude="claude", python="python", watchdog=""):
+def control_argv(name, main_checkout, plugin_dir, claude="claude", python="python", watchdog="", model_dir=None):
     """-> (cwd, argv) of the program for orchestrator / inbox / inspector / executor / watchdog."""
     mc = str(main_checkout)
+    pd = ["--plugin-dir", str(model_dir)] if model_dir else []   # #850: the model + usage status line (not the orchestrator: it has oren-lanes)
     return {"orchestrator": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-orchestrator", "--plugin-dir", str(plugin_dir), ORCH_PROMPT]),
-            "inbox": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-inbox", INBOX_PROMPT]),
-            "inspector": (str(Path(mc).parent), [claude, "--model", "opus", "--remote-control", "oren-inspector", INSPECTOR_PROMPT]),
-            "executor": (mc, [claude, "--model", "opus", "--remote-control", "oren-executor", EXECUTOR_PROMPT]),
+            "inbox": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-inbox", *pd, INBOX_PROMPT]),
+            "inspector": (str(Path(mc).parent), [claude, "--model", "opus", "--remote-control", "oren-inspector", *pd, INSPECTOR_PROMPT]),
+            "executor": (mc, [claude, "--model", "opus", "--remote-control", "oren-executor", *pd, EXECUTOR_PROMPT]),
             "watchdog": (mc, [python, str(watchdog)])}[name]
 
 def hc_run_args(name, cwd, argv, space_id=""):
@@ -217,11 +218,13 @@ def start_control(R, name, space_id=None):
     """Start orchestrator / inbox / inspector (in 'oren') or the watchdog. Used by recover and by the watchdog's restart check."""
     if space_id is None: space_id = pick_space(spaces(R), control_space(R)) if name in CONTROL else ""
     mc = R.CFG.get("main_checkout", str(R.ROOT))
+    import gitid
+    gitid.set_email(mc, R.run)                        # #889: control sessions commit with the noreply address (repo-local, shared by worktrees)
     if name == "inspector":
         try: ensure_handoff(R.CFG.get("inspector_handoff", "C:/work/Oren_study/INSPECTOR_HANDOFF.md"), Path(mc) / "docs" / "roles" / "INSPECTOR_HANDOFF.template.md")
         except OSError as e: print("handoff not created:", e)
     cwd, argv = control_argv(name, mc, Path(mc) / "tools" / "mods" / "oren-lanes", shutil.which("claude") or "claude",
-                             sys.executable, R.HERE / "watchdog.py")
+                             sys.executable, R.HERE / "watchdog.py", Path(mc) / "tools" / "mods" / "oren-model")
     rc, out = R.hc(*hc_run_args(name, cwd, argv, space_id), timeout=60)
     print(name, out.strip()[:200])
     return rc

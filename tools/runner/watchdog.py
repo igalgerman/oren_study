@@ -696,7 +696,7 @@ def tick():
         for name, fn in (("observer_tick", observer_tick), ("ai_observer_tick", ai_observer_tick), ("nightly_tick", nightly_tick),
                          ("parked_tick", parked_tick), ("due_tick", due_tick), ("garden_tick", garden_tick),   # #282 #241 #187
                          ("issues_stuck_tick", issues_stuck_tick), ("desks_tick", desks_tick), ("canary_tick", canary_tick),   # #280 #330
-                         ("sync_tick", sync_tick), ("alarm_tick", alarm_tick), ("trends_tick", trends_tick), ("ai_tick", ai_tick), ("usage_tick", usage_tick), ("usage_alarm_tick", usage_alarm_tick), ("merges_tick", merges_tick), ("interaction_limit_tick", interaction_limit_tick),
+                         ("sync_tick", sync_tick), ("alarm_tick", alarm_tick), ("trends_tick", trends_tick), ("ai_tick", ai_tick), ("usage_tick", usage_tick), ("usage_alarm_tick", usage_alarm_tick), ("progress_alarm_tick", progress_alarm_tick), ("merges_tick", merges_tick), ("interaction_limit_tick", interaction_limit_tick),
                          ("lock_tick", lock_tick), ("orch_idle_tick", orch_idle_tick)):
             step(name, fn)
 
@@ -1033,6 +1033,34 @@ def usage_alarm_tick():
     if time.time() - _ualarm["last"] < 300: return
     _ualarm["last"] = time.time()
     import usage_alarms; importlib.reload(usage_alarms); usage_alarms.tick(tell, log)
+
+_palarm = {"last": 0.0}
+def progress_signals(cache, busy, lanes):
+    """#891: the facts cause() needs; read only when an alarm goes out (one gh call for main's checks, nothing else)."""
+    import canary, freeze
+    now = time.time(); s = {"stop": canary.gov_stop(), "frozen": freeze.is_frozen(R.RUNS), "all_busy": lanes > 0 and busy >= lanes}
+    try: s["beat_age_s"] = now - int((R.RUNS / "watchdog.beat").read_text(encoding="utf-8"))
+    except (OSError, ValueError): s["beat_age_s"] = None
+    s["control_bad"] = any((R.hc_json("get", w, "--json") or {}).get("state") != "live" for w in ("orchestrator", "inspector"))
+    rc, out = R.run(["gh", "api", f"repos/{R.REPO}/commits/{R.CFG.get('branch', 'main')}/check-runs?per_page=100"])
+    try: s["main_red"] = rc == 0 and any(c.get("conclusion") in ("failure", "timed_out") for c in json.loads(out).get("check_runs", []))
+    except ValueError: s["main_red"] = False
+    _, info, alive = lock_state(); s["lock_min"] = (now - info[2]) / 60 if info and alive else 0
+    pcts = [round(100 * r[0] / r[1]) for k in ("rate", "rate_owner") for r in (cache.get(k) or {}).values() if r and r[1]]
+    s["budget_pct"] = min(pcts) if pcts else None
+    return s
+
+def progress_alarm_tick():
+    """#891: every 5 min, from the gh cache: no merge/PR/commit/close/RESULT for progress_alarm_min while work is ready -> Telegram (Hebrew) + inspector + orchestrator."""
+    if time.time() - _palarm["last"] < 300: return
+    _palarm["last"] = time.time()
+    import ghcache, progress_alarm as PA, stats, telegram; importlib.reload(PA)
+    c = ghcache.load()
+    if not c: return
+    issues, _ = R.gate([{**i, "labels": [l["name"] for l in i.get("labels", [])]} for i in c.get("open") or []])
+    ready, busy = len(R.select(issues, 99, max_core=99)), sum("in-progress" in i["labels"] and "manual" not in i["labels"] for i in issues)
+    PA.tick(time.time(), c, stats.read_events(R.RUNS / "stats.jsonl"), ready, busy, lambda: progress_signals(c, busy, R.total_lanes()),
+            telegram.send, lambda m: [R.hc("send", w, m, timeout=30) for w in ("inspector", "orchestrator")], log)
 
 _merges = {"last": 0.0}
 def merges_tick():
