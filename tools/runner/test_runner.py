@@ -1,6 +1,9 @@
 # Unit test for the selection logic: python tools/runner/test_runner.py
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
+import re, trust   # #800: old fixtures have no author: default them to the owner (explicit authors still count; test_trust.py covers the real rules)
+_login = trust.login
+trust.login = lambda c: _login(c) or (("oren-study-bot" if re.match(r"\s*(OWNER ANSWER|ANSWERED)", c.get("body") or "") or "owner-answer:" in (c.get("body") or "") else "igalgerman") if isinstance(c, dict) else "")
 import subprocess as _sp; _real_popen = _sp.Popen; _pregen_popens = []
 class _NoPregenPopen(_real_popen):                 # #325: fail if any test path launches the real node pregen.js
     def __init__(self, args, *a, **k):
@@ -1360,7 +1363,7 @@ assert r.remote_resume(7, "pack", False, "session_w", "green", lambda s, x: sent
 assert sent[0][0] == "session_w" and "green" in sent[0][1] and "RESULT: DONE" in sent[0][1] and not starts
 kept = []
 assert r.remote_resume(7, "pack", False, "session_w", "green", lambda s, x: {"ok": False}, _st, done, lambda s: None, lambda: 0, on_start=kept.append) == "RESULT: DONE https://p"
-assert len(starts) == 1 and "green" in starts[0] and "gh issue view 7" in starts[0] and "lane/7" in starts[0] and kept[0]["session"] == "session_new"
+assert len(starts) == 1 and "green" in starts[0] and "view.py issue 7" in starts[0] and "lane/7" in starts[0] and kept[0]["session"] == "session_new"
 assert r.remote_resume(7, "pack", False, "", "green", lambda s, x: 1 / 0, _st, done, lambda s: None, lambda: 0) == "RESULT: DONE https://p"
 assert r.remote_resume(7, "pack", False, "", "g", None, lambda n, t, c: {"ok": False, "error": "limit"}, done, lambda s: None, lambda: 0).startswith("RESULT: STUCK")
 assert r.remote_resume(7, "pack", False, "s", "g", lambda s, x: {"ok": True}, _st, lambda: {"state": "question", "line": "QUESTION: c?"}, lambda s: None, lambda: 0) == "QUESTION: c?"

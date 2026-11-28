@@ -18,6 +18,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 import runner as R
+import trust
 
 LAST, STATE = R.RUNS / "ai_observer.last", R.RUNS / "ai_observer.state.json"
 MAX_FINDINGS, REPEAT_H, TIMEOUT_S = 5, 6, 600
@@ -192,7 +193,7 @@ def relay(tell, log, now, gh=None, api=None):
         try: page = json.loads(out) if rc == 0 else None
         except ValueError: page = None
         if not isinstance(page, list): return None
-        comments += [c for c in page if isinstance(c, dict)]
+        comments += [c for c in page if isinstance(c, dict) and trust.ok(c)]    # #800: REST user.login; only trusted authors
     comments.sort(key=lambda c: c.get("created_at") or "")
     readable = [c for c in comments if parse(c.get("body")) is not None]
     last = readable[-1] if readable else None

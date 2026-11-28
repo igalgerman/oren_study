@@ -5,7 +5,7 @@ The reviewer ends its comment with `TEST: T0|T1|T2|T3` (missing = T2). After a r
 and posts `TEST: PASS` or `TEST: FAIL <repro>` on the PR. FAIL goes back to the worker like a RED review (#303 loop).
 After deploy the scripted tour (oren2/ci/tour.js) runs on production; a fail opens a P0 bug (tour_fail_actions)."""
 import json, os, re, sys
-import remote
+import remote, trust
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "oren2", "ci"))
 from deploy_ci import TESTER_MARK, tour_fail_actions   # the post-deploy tour lives in CI (stdlib only); re-exported for the dashboard
 
@@ -62,7 +62,7 @@ def prompt(n, pr, level, url, repo=remote.REPO):
            "same test family, and play every kid <-> parent step across them. " if level == "T3" else "")
     tour = "".join(f"\n  {i}. {t}" for i, t in enumerate(TOUR, 1))
     return (f"You are the Tester (#618) for PR #{pr} (issue #{n}) in {repo}, unattended in a cloud session. Change NO files in the repo, "
-            f"push nothing. Read CLAUDE.md, the issue (`gh issue view {n} --repo {repo} --comments`) and the diff (`gh pr diff {pr} --repo {repo}`). "
+            f"push nothing. Read CLAUDE.md, the issue (`python3 tools/runner/view.py issue {n}` (trusted authors only)) and the diff (`gh pr diff {pr} --repo {repo}`). "
             f"Test level {level}. The PR's preview site is {url} (wait up to 10 min for it to answer with this PR's build). "
             "With Playwright (require('playwright'), chromium.launch()) in a real browser, at desktop 1366x768 AND phone 390x844: "
             "play the changed flows like Oren (6-7, taps, no reading) and like the parent. " + two +
@@ -89,7 +89,7 @@ def result_from(comments):
 def status(pr, run=remote.sh, since=None):
     """The tester's result comment on the PR since this round -> {state: done|working, line, body} (like remote.review_status)."""
     rc, out = run(["gh", "pr", "view", str(pr), "--repo", remote.REPO, "--json", "comments"])
-    try: comments = [c.get("body", "") for c in json.loads(out).get("comments", []) if not since or c.get("createdAt", "") >= since] if rc == 0 else []
+    try: comments = [c.get("body", "") for c in trust.only(json.loads(out).get("comments", [])) if not since or c.get("createdAt", "") >= since] if rc == 0 else []
     except ValueError: comments = []
     line, body = result_from(comments)
     return {"state": "done" if line else "working", "line": line, "body": body}
