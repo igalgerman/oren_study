@@ -3,7 +3,7 @@ import type { Register } from 'claude-code'
 
 import type { OrenLanesData, Row } from '../types/index'
 import {
-  finishedRuns, isLive, parseWindows, statusLine, trunc, usageJson, planJson, parseGov, parseConfig, parseEvents, panel, quietArgv, fromCache, GH_CACHE,
+  finishedRuns, isLive, parseWindows, statusLine, trunc, usageJson, planJson, parseGov, parseConfig, parseEvents, panel, quietArgv, fromCache, modeRecord, GH_CACHE,
 } from './lanes'
 import type { CloudLane, Gov, Issue, Limit, Pr, Win } from './lanes'
 
@@ -177,6 +177,8 @@ export const register: Register = on => {
         {head(p.doneHead)}
         {p.done.map(r => row(r))}
         <Box marginTop={1}>{row(p.forecast)}</Box>
+        <Box marginTop={1}>{row(p.mode)}</Box>
+        <Box><Button key="mode" label={`Mode → ${p.modeNext}`} onPress={async () => { await $.fs.write(`${RUNS}/override.json`, JSON.stringify(modeRecord(p.modeNext, Date.now() / 1000))); void refreshRef() }} /></Box>
         <Box marginTop={1}><Button key="refresh" label="Refresh" onPress={() => void refreshRef()} /></Box>
         {row({ text: 'updated ' + new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(d.updatedAt)) + ' · every 30 s', tone: 'dim' })}
       </Box>

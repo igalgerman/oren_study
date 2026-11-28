@@ -430,7 +430,17 @@ assert r.model_of(["model:bogus"]) == "sonnet"
 assert r.model_of(["model:fable"]) == "claude-fable-5-2"
 assert r.model_of(["model:sonnet", "model:opus"]) == "opus"                      # most capable wins if two labels
 assert r.reviewer_model(["model:opus"]) == "opus"
-assert r.reviewer_model(["model:haiku"]) == "sonnet" and r.reviewer_model([]) == "sonnet" and r.reviewer_model(["model:fable"]) == "sonnet"
+assert r.reviewer_model(["model:haiku"]) == r.reviewer_model([]) == r.reviewer_model(["model:fable"]) == "opus"   # #714: always opus
+# #714: floors(role, model, effort, labels) table
+assert r.floors("reviewer", "sonnet", None, []) == ("opus", "medium")
+assert r.floors("reviewer", "sonnet", "low", []) == ("opus", "medium")
+assert r.floors("reviewer", "sonnet", "medium", ["model:opus"]) == ("opus", "high")
+assert r.floors("reviewer", "sonnet", None, ["effort:xhigh"]) == ("opus", "high")
+assert r.floors("worker", "sonnet", "low") == ("sonnet", "medium")
+assert r.floors("worker", "haiku", "high") == ("sonnet", "high") and r.floors("resolver", "haiku")[0] == "sonnet"
+assert r.floors("dashboard_ai", "haiku", None) == ("haiku", "medium") and "dashboard_ai" in r.STATUS_ROLES
+assert r.floors("resolver", "sonnet") == ("sonnet", "medium") and r.floors("resolver", "opus") == ("opus", "medium")
+assert r.floors("tester", None)[0] == "sonnet"
 assert r.model_name(["model:fable"]) == "fable" and r.model_name([]) == "sonnet"
 # #713: effort label -> level; default medium; never below medium; most capable wins
 assert r.effort_of([]) == "medium" and r.effort_of(["pack", "P1"]) == "medium"
@@ -582,7 +592,7 @@ _src0 = (r.HERE / "runner.py").read_text(encoding="utf-8")
 assert _src0.count("pregen_cmd()") == 2 and "(popen or subprocess.Popen)(pregen_cmd()" in _src0
 assert "pre = start_pregen(log) if dep.startswith(\"deployed\") else \"\"" in _src0 and "{dep}.{pregen_note(pre)}" in _src0
 _src = (r.HERE / "runner.py").read_text(encoding="utf-8")
-_blk = _src.split('with FileLock("integrate", wait=True, note=f"#{n} deploy"):\n            stat(n, lane, "merged")', 1)[1].split("\n        m = sync_main", 1)[0]
+_blk = _src.split('with FileLock("integrate", wait=True, note=f"#{n} deploy"):\n            stat(n, lane, "merged"', 1)[1].split("\n        m = sync_main", 1)[0]
 assert "pregen.js" not in _src.split("def deploy_text", 1)[1].split("def pregen_cmd", 1)[0] and "start_pregen(log)" in _blk
 print("ok pregen outside the merge lock")
 # #166: merge straight on green; update the branch only on a real conflict; lock only around `gh pr merge`
@@ -684,6 +694,16 @@ W._orch.update(nudged=0.0, first=0.0, escalated=0.0)
 try: W.orch_idle_tick(now=_n, ts=_ts)
 finally: W.R.hc_json, W.R.gh, W.tell, W.windows = _saved
 assert len(_calls) == 1 and "#466" in _calls[0] and "#213" in _calls[0] and "#464" not in _calls[0] and "#465" not in _calls[0], _calls
+# #765: cloud run = no run-<n> window, but issue-<n>.lock held by a live pid -> PR not listed
+assert W.run_owned(_own, _ts, locked={213}) == {464, 465, 213}, W.run_owned(_own, _ts, locked={213})
+assert W.run_owned(_own, [], locked={500}) == {466} and W.run_owned(_own, [], locked={500}, parked={500}) == set()
+import tempfile as _tf, os as _os
+_runs0 = W.R.RUNS
+W.R.RUNS = Path(_tf.mkdtemp())
+(W.R.RUNS / "issue-213.lock").write_text(str(_os.getpid()) + "\n")       # live pid
+(W.R.RUNS / "issue-466.lock").write_text("99999999\n")                    # dead pid
+try: assert W.locked_issues() == {213}, W.locked_issues()
+finally: W.R.RUNS = _runs0
 print("ok #471 nudge skips PRs owned by a live run")
 # #542: PRs only the owner merges (owner-merge / no-automerge) are not nudged; owner-merge open 12 h -> ONE owner note (owner_q)
 _lb = lambda *ns: [{"name": x} for x in ns]
@@ -848,9 +868,26 @@ _G = {"stale_s": 900}
 def _u(pct, reset_h, week=None, week_reset_h=24 * 6, age=60):
     return {"five_h_pct": pct, "five_h_reset": _iso(_now + reset_h * 3600), "week_pct": week, "week_reset": _iso(_now + week_reset_h * 3600), "at": _iso(_now - age)}
 def _ux(week, H, age=60): return {"five_h_pct": None, "week_pct": week, "week_reset": _iso(_now + H * 3600), "at": _iso(_now - age)}   # Ultra: week bucket only
+# #712 owner override: only the lane count moves, inside the core's bounds
+_g0 = r.governor(_ux(40, 80), [], _now, _G, busy=3, ready=9)
+_o = lambda m, **k: r.override_make(m, _now, **k)
+g = r.override_apply(_g0, _o("fast"), _now)[0]; assert g["lanes"] == _g0["n_hi"] == 12 and g["override"]["mode"] == "fast", g
+_gs = r.governor(_ux(98, 80), [], _now, _G, busy=3, ready=9); assert _gs["stop"], _gs                      # W 98 >= week_stop: fast cannot start anything
+g = r.override_apply(_gs, _o("fast"), _now)[0]; assert g["stop"] and g["lanes"] == _gs["lanes"], g
+g, ex = r.override_apply(_g0, _o("fast"), _now + 3 * 3600 + 1); assert ex == "expired" and g["lanes"] == _g0["lanes"] and "override" not in g   # expiry -> normal
+assert r.override_apply(_g0, _o("fast", until_reset=True), _now + 80 * 3600 + 1)[1] == "expired"
+g = r.override_apply(_g0, _o("fast", until_reset=True), _now + 3600)[0]; assert g["lanes"] == 12 and g["override"]["until_reset"]
+assert r.override_apply(_g0, _o("20"), _now)[0]["lanes"] == _g0["n_hi"]                                    # lanes 20 -> clamped to N_hi
+assert r.override_apply(_g0, _o("2"), _now)[0]["lanes"] == 2
+g = r.override_apply(_g0, _o("save"), _now)[0]; assert g["lanes"] == max(_g0["n_lo"], round(0.6 * _g0["n_week"])) < _g0["n_hi"], g
+for m in ("fast", "save", "5", "normal"):                                                                  # models and efforts are never touched
+    g = r.override_apply(_g0, _o(m), _now)[0]; assert {k: v for k, v in g.items() if k not in ("lanes", "why", "override")} == {k: v for k, v in _g0.items() if k not in ("lanes", "why")}, m
+assert r.override_make("bogus", _now) is None and r.parse_for("3h") == 10800 and r.parse_for("90m") == 5400 and r.parse_for("x") is None
+assert "mode FAST until" in r.governor_text(r.override_apply(_g0, _o("fast"), _now)[0])
+print("ok #712 owner override")
 # #705 even pacing: 80h left, week 40%, 3 busy lanes, 9 ready -> need (94-40-0.3)/80-0.1 = 0.57 %/h -> ~3 lanes
 g = r.governor(_ux(40, 80), [], _now, _G, busy=3, ready=9); assert g["lanes"] == 3 and g["mode"] == "week-only" and abs(g["need"] - 0.5712) < 0.001 and g["n_hi"] == 12, g
-t = r.governor_text(g); assert t == "governor: 3 lanes: week 40%, behind pace (need 0.6%/h), 9 ready, reserve 5%", t
+t = r.governor_text(g); assert t == "governor: 3 lanes: week 40%, behind pace (need 0.6%/h), 9 ready, reserve 5% · b̂ 0.20%/h (prior) · p 0.24 budget: tight, fewer lanes", t
 # ahead of pace -> fewer lanes; behind -> more
 lo = r.governor(_ux(80, 80), [], _now, _G, busy=3, ready=9)["lanes"]; hi = r.governor(_ux(20, 80), [], _now, _G, busy=3, ready=9)["lanes"]
 assert lo < 3 < hi, (lo, hi)
@@ -870,7 +907,7 @@ assert p12["c"] == 94 and abs(p6["c"] - (99 - 5 * 5 / 11)) < 1e-9 and p6["need"]
 assert r.governor(_u(50, 2, week=1, week_reset_h=6), [], _now, _G, busy=2, ready=20)["lanes"] == 14
 g = r.governor(_u(90, 4, week=1, week_reset_h=6), [], _now, _G, busy=2, ready=20); assert g["mode"] == "5h+week" and g["lanes"] == 1 and g["n_hi"] < 2, g
 g = r.governor(_u(20, 4, week=1, week_reset_h=6), [], _now, _G, busy=2, ready=20); assert g["lanes"] == 12 and g["pct"] == 20, g
-assert r.governor_text(g).endswith(" · 5h 20% (cap 97%)"), r.governor_text(g)
+assert " · 5h 20% (cap 97%)" in r.governor_text(g), r.governor_text(g)
 # week-only: no 5h cap and no 5h stop even with a 5h value in an old shape of 99
 g = r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=20); assert g["pct"] is None and not g["stop"] and g["lanes"] == 16
 # 5h stop (99) stays on the 5h+week plan
@@ -906,6 +943,20 @@ while _tt < _end:
     _hr = _dt.fromtimestamp(_tt).hour
     _W += (0.40 * _L + (0.15 if 8 <= _hr < 23 else 0)) * 0.25; _mx = max(_mx, _W); _tt += 900
 assert 97 <= _W <= 99.5 and _mx < 100, (_W, _mx)
+# #709 burn-rate fit: synthetic week, b = 0.40 per weighted lane-hour, b0 = 0.15 %/h, k = 8 5h-% per week-%
+_hs = []; _w = 30.0; _f = 0.0
+for _i in range(24):                                  # 6 h of 15-min passes
+    _m = {"sonnet": 1 + _i % 3, "opus": _i % 2}; _wl = r.weighted_lanes(_m)
+    _hs.append({"at": _now - (24 - _i) * 900, "week": _w, "pct": _f, "reset": "R", "models": _m, "wlanes": _wl})
+    _dw = (0.40 * _wl + 0.15) * 0.25; _w += _dw; _f += 8 * _dw
+assert r.weighted_lanes({"sonnet": 2, "opus": 1, "haiku": 20, "fable": 1}) == 2 + 2 + 1 + 4
+_ft = r.burn_fit(_hs, _now)
+assert _ft["fit"] and abs(_ft["b"] - 0.40) < 0.04 and abs(_ft["b0"] - 0.15) < 0.015 and abs(_ft["k"] - 8) < 0.8, _ft
+assert r.burn_fit(_hs[-6:], _now) == {"b": r.GOV["b"], "b0": r.GOV["b0"], "k": r.GOV["k"], "fit": False}      # < 2 h of data: the priors
+assert r.burn_fit([], _now)["fit"] is False and r.burn_fit(_hs, _now + 8 * 3600)["fit"] is False           # nothing in the last 6 h
+_gf = r.governor(_ux(40, 80), _hs, _now, {"stale_s": 900}, busy=3, ready=9); assert _gf["b"] == _ft["b"] and _gf["fit"], _gf       # governor() uses the fit
+assert f"b̂ {_ft['b']:.2f}%/h" in r.governor_text(_gf) and "(prior)" not in r.governor_text(_gf)
+print("ok #709 burn fit recovered", {k: round(v, 3) for k, v in _ft.items() if k != "fit"})
 print("ok #705 governor: even pacing, bounds, reserve release, week-only, kind change, replay ends", round(_W, 1))
 # #704 stale / missing reading: hold prev 30 min, then the floor (1); never remote_lanes (_G fallback 4 must not appear)
 _old = _u(20, 4, age=16 * 60)
@@ -1455,24 +1506,33 @@ assert r.remote.fixes("Fixes #7", 7) and not r.remote.fixes("Fixes #70", 7)
 _saved = {k: getattr(r, k) for k in ("gh",)}
 try:                                                                                   # the DONE step with a fake gh: always closes
     _calls = []
-    def _lab(names):
+    def _lab(names, comments=()):
         _calls.clear()
         def g(*a, **k):
             _calls.append(a)
-            if a[:2] == ("issue", "view"): return 0, json.dumps({"labels": [{"name": x} for x in names]})
+            if a[:2] == ("issue", "view"): return 0, json.dumps({"labels": [{"name": x} for x in names], "comments": [{"body": c} for c in comments]})
             return 0, ""
         return g
-    for _names in (["pack", "later"], ["pack"]):                                       # also an issue that had 'later'
-        r.gh = _lab(_names); assert r.finish_issue(7, "Merged.") is True
-        assert ("issue", "close", "7", "--comment", "Merged.") in _calls, _calls
-        assert not any(a[:2] == ("issue", "comment") for a in _calls), _calls
+    closes = lambda: ("issue", "close", "7", "--comment", "Merged.") in _calls
+    # #744: no LIVE line and no proof -> stays open; a LIVE comment line -> closes; docs/tooling exempt
+    r.gh = _lab(["pack"]); assert r.finish_issue(7, "Merged.") is False and not any(a[:2] == ("issue", "close") for a in _calls), _calls
+    r.gh = _lab(["pack"], ["LIVE seen ok"]); assert r.finish_issue(7, "Merged.") is False      # not a `LIVE:` line
+    r.gh = _lab(["pack", "later"], ["x\nLIVE: kid screen seen on production 2026-11-28"]); assert r.finish_issue(7, "Merged.") is True and closes(), _calls
+    r.gh = _lab(["pack", "tooling"]); assert r.finish_issue(7, "Merged.") is True and closes(), _calls
+    # automatic proof: ok -> LIVE line goes into the close comment; none (could not run) -> closes with the 'not checked' line; failed -> open + back to a worker
+    r.gh = _lab(["pack"]); assert r.finish_issue(7, "Merged.", live=(True, "LIVE: smoke ok")) is True
+    assert ("issue", "close", "7", "--comment", "Merged.\nLIVE: smoke ok") in _calls, _calls
+    r.gh = _lab(["pack"]); assert r.finish_issue(7, "Merged.", live=(None, "LIVE: not checked: no network")) is True
+    r.gh = _lab(["pack"]); assert r.finish_issue(7, "Merged.", live=(False, "LIVE check FAILED")) is False
+    assert not any(a[:2] == ("issue", "close") for a in _calls) and any("ready-for-agent" in a for a in _calls), _calls
+    assert r.has_live_line(["a", "LIVE: x"]) and not r.has_live_line(["live: x", "LIVE:"])
 finally:
     for k, v in _saved.items(): setattr(r, k, v)
 _src = open(r.__file__, encoding="utf-8").read()
-assert 'finish_issue(n, f"Merged to' in _src and 'gh("issue", "close", str(n), "--comment", f"Merged to' not in _src   # the run's DONE step uses it
+assert 'finish_issue(n, f"Merged to' in _src and 'gh("issue", "close", str(n), "--comment", f"Merged to' not in _src and "live=live_proof()" in _src   # the run's DONE step uses it
 _i = _src.index('finish_issue(n, f"Merged to')
 assert _src.rindex("deploy_main(log)", 0, _i) < _i                                     # closes only after the merge + deploy step
-print("ok #652 close on merge + deploy, no later rule")
+print("ok #652 close on merge + deploy, #744 only with a LIVE line")
 assert _pregen_popens == [], _pregen_popens          # #325: no test path launched the real pregen.js
 print("ok #325 no real pregen under tests")
 
@@ -1625,3 +1685,59 @@ finally: r.stat = _old_stat
 assert _ev713 == [("parked", {"model": "sonnet", "effort": "medium", "colour": "purple"}),
                   ("review_pass", {"model": "sonnet", "effort": "medium", "colour": "purple"})], _ev713
 assert "stat_purple(n, lane, extra, me)" in inspect.getsource(r.process_locked)
+
+# #747: draft PR early; a draft PR without RESULT = resume at worker; DONE without PR -> the runner opens it
+_p = r.remote_worker_prompt(7, "pack")
+assert "--draft" in _p and "first green commit" in _p and "gh pr ready" in _p
+_tasks = []
+def _fs(n, task, cwd): _tasks.append(task); return {"ok": True, "session": "s", "url": "u"}
+r.remote_worker(7, "pack", False, _fs, lambda: {"state": "done", "line": "RESULT: DONE"}, lambda s: None, lambda: 0, 60, 30, has_draft=lambda: 5)
+assert "continue from it" in _tasks[-1] and "draft PR" in _tasks[-1]            # draft PR exists -> continue on lane/7
+r.remote_worker(7, "pack", False, _fs, lambda: {"state": "done", "line": "RESULT: DONE"}, lambda s: None, lambda: 0, 60, 30, has_draft=lambda: None)
+assert "continue from it" not in _tasks[-1]                                      # no draft -> fresh start
+_sv = (r.gh, r.run, r.find_pr)
+try:
+    _g = []
+    r.find_pr = lambda n: 5                       # pass level: a draft PR (no RESULT) is not resumed into review; a ready PR is
+    r.gh = lambda *a, **k: (0, json.dumps({"number": 5, "state": "OPEN", "isDraft": True}))
+    assert r.resume_lookup(7) is None
+    _ch = r.open_pr_resumes([{"number": 7}], r.resume_lookup)
+    assert _ch == [{"number": 7}] and not r._resume_file(7, "resume").exists()   # started as a worker, no resume=review stored
+    r.gh = lambda *a, **k: (0, json.dumps({"number": 5, "state": "OPEN", "isDraft": False, "mergeable": "MERGEABLE", "headRefOid": "x", "commits": [], "comments": []}))
+    assert r.resume_lookup(7) is not None
+    _g = []
+    r.find_pr = lambda n: 5                                                                    # also a claude/* PR
+    r.gh = lambda *a, **k: (_g.append(a), (0, json.dumps({"isDraft": True}) if a[:2] == ("pr", "view") else ""))[1]
+    assert r.draft_pr(7) == 5 and r.ensure_pr_ready(7) == 5 and ("pr", "ready", "5") in _g     # DONE + draft -> marked ready
+    _g.clear(); _made = []
+    r.gh = lambda *a, **k: (_g.append(a), (0, ""))[1]
+    r.find_pr = lambda n: 9 if any(x[:2] == ("pr", "create") for x in _g) else None
+    r.run = lambda cmd, **k: (0, "abc\trefs/heads/lane/7\n")
+    assert r.ensure_pr_ready(7) == 9 and any(x[:2] == ("pr", "create") and "Fixes #7" in x[-1] for x in _g)   # DONE, pushed, no PR -> runner opens it
+    _g.clear(); r.find_pr = lambda n: None; r.run = lambda cmd, **k: (0, "")
+    assert r.ensure_pr_ready(7) is None and not any(x[:2] == ("pr", "create") for x in _g)    # nothing pushed -> still blocked
+finally: r.gh, r.run, r.find_pr = _sv
+print("ok #747 draft PR resume + runner opens PR")
+
+# #711 budget pressure p and shift (0 or +1, never lower)
+for _p, _s in ((0.3, 0), (0.8, 0), (1.0, 0), (1.5, 1)):      # need = p * b * N_hi with b 0.2, N_hi 10
+    _pp, _sh = r.budget_shift(_p * 2.0, 0.2, 10); assert abs(_pp - _p) < 1e-9 and _sh == _s, (_p, _pp, _sh)
+assert r.budget_shift(0.6, 0.2, 10)[1] == 0 and r.budget_shift(3.0, 0.2, 10)[1] == 1 and r.budget_shift(1, 0.2, 0) == (None, 0)
+_g1 = r.governor(_ux(40, 80), [], _now, _G, busy=3, ready=9); assert _g1["shift"] == 0 and _g1["p"] < 1 and "budget: tight, fewer lanes" in r.governor_text(_g1), _g1
+_g2 = r.governor(_ux(1, 80), [], _now, _G, busy=3, ready=1); assert _g2["p"] > 1 and _g2["shift"] == 1 and "budget: behind, shift +1" in r.governor_text(_g2), _g2
+_gl = [r.governor(_ux(w, 80), [], _now, _G, busy=3, ready=9) for w in (10, 40, 70)]
+assert _gl[0]["p"] > _gl[1]["p"] > _gl[2]["p"] and _gl[0]["lanes"] >= _gl[1]["lanes"] >= _gl[2]["lanes"] and _gl[0]["lanes"] > _gl[2]["lanes"], _gl   # p falls -> fewer lanes
+assert all(x["shift"] in (0, 1) for x in _gl)
+
+# #719 budget shift at start: behind (+1) raises a core worker above the floors; tight (0) changes nothing; never lowers; an upgraded task keeps its rung
+assert r.apply_shift(1, "sonnet", "medium", "core") == ("sonnet", "high")                       # behind: Sonnet core task -> high
+assert r.apply_shift(0, "sonnet", "medium", "core") == ("sonnet", "medium")                     # tight: labels as they are
+assert r.apply_shift(1, "sonnet", "medium", "pack") == ("sonnet", "medium")                     # not core: unchanged
+assert r.apply_shift(-1, "sonnet", "high", "core") == ("sonnet", "high")                        # no negative shift
+for _m, _e in (("sonnet", "medium"), ("sonnet", "high"), ("opus", "medium"), ("opus", "xhigh"), ("fable", "high")):
+    for _s in (0, 1):
+        _m2, _e2 = r.apply_shift(_s, _m, _e, "core"); assert r._rung_index(_m2, _e2) >= r._rung_index(_m, _e) or _m == "fable", (_m, _e, _s)
+assert r.floors("worker", *r.apply_shift(1, "opus", "high", "core"), labels=()) [1] in ("high", "xhigh")   # a floor is never lowered
+_src719 = inspect.getsource(r.process_locked)
+assert "if not upgrade:" in _src719 and "apply_shift(shift" in _src719 and "shift=shift" in _src719 and '", shift +1"' in _src719   # upgraded task keeps its rung; shown in stat + comment
+assert r.governor_now(now=0)["shift"] in (0, 1)

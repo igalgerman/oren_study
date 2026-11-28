@@ -28,6 +28,7 @@ RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # same as runner.
 def sh(cmd, env=None):
     alt_env = None
     if cmd and str(cmd[0]) in ("gh", "gh.exe"):
+        import scrub; cmd, _ = scrub.scrub_cmd(cmd)      # #783: the kid's real name never reaches a GitHub write (canary writes through here)
         orig = dict(os.environ if env is None else env); orig.pop(ghauth.OWNER, None)
         env = ghauth.apply(cmd, dict(os.environ if env is None else env))   # #363: the App token
         if env.get("GH_TOKEN") and env.get("GH_TOKEN") != orig.get("GH_TOKEN"): alt_env = orig   # #469: same call as the owner

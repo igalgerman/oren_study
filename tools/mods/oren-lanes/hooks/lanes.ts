@@ -98,7 +98,20 @@ export function fromCache(text: string, nowMs: number): { issues: Issue[]; close
 }
 
 /** #239: the runner's governor state from .runs/governor.json (reset in epoch seconds). */
-export type Gov = { lanes?: number; stop?: boolean; pct?: number | null; projected?: number | null; reset?: number | null; text?: string; at?: number; eff?: number | null; wasted?: number }
+export type Gov = { lanes?: number; stop?: boolean; pct?: number | null; projected?: number | null; reset?: number | null; text?: string; at?: number; eff?: number | null; wasted?: number; override?: { mode: string; n?: number | null; until?: number | null; until_reset?: boolean } }
+
+/** #712: 'mode: FAST until 14:05' (the owner's override), or 'mode: normal'. */
+export function modeText(o: Gov['override'] | undefined, now: number): string {
+  if (!o) return 'mode: normal'
+  const name = o.mode === 'lanes' ? `lanes ${o.n}` : o.mode.toUpperCase()
+  return `mode: ${name} until ${o.until_reset ? 'reset' : o.until ? clock(o.until * 1000, now) : '?'}`
+}
+
+/** #712: the record the Mode button writes to .runs/override.json (3 h; the runner clamps it by the hard bounds). */
+export const modeRecord = (mode: string, now: number) => ({ mode, set: now, until: now + 3 * 3600, until_reset: false })
+
+/** #712: the button cycles normal -> fast -> save -> normal. */
+export const nextMode = (o: Gov['override'] | undefined): 'fast' | 'save' | 'normal' => !o || o.mode === 'normal' ? 'fast' : o.mode === 'fast' ? 'save' : 'normal'
 
 export function parseGov(json: string): Gov | null {
   try { const g = JSON.parse(json); return g && typeof g === 'object' ? g as Gov : null } catch { return null }
@@ -352,6 +365,7 @@ export function panel(p: PanelIn): Panel {
 
   return {
     header, needsYou, pc, desks, canary,
+    mode: { text: modeText(p.gov?.override, now), tone: p.gov?.override ? 'amber' : 'dim' }, modeNext: nextMode(p.gov?.override),   // #712
     lanesHead: `LANES ${lanes.length}/${cap}`, starts, lanes: laneRows,
     prs: prRow, next, nextMore: Math.max(0, nextAll.length - 5),
     doneHead: `DONE last hour: ${hour.length}`, done, forecast,

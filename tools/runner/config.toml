@@ -53,3 +53,11 @@ ci_timeout_minutes = 60
 github_app_id = 5939551
 github_app_installation_id = 186191764
 github_app_key = "C:/Users/97254/.oren/app.pem"
+
+# #710 usage alarms (usage_alarms.py): each rule fires at most once per usage_alarm_every_h hours
+usage_alarm_every_h = 3
+usage_underuse_pct = 94         # UNDERUSE: week + (b*N_hi + b0)*H below this = budget left over even at full speed
+usage_idle_min = 60             # IDLE: need > 0 while busy lanes < lanes for longer than this
+usage_behind_ratio = 0.5        # BEHIND: actual burn over usage_behind_h below this share of need
+usage_behind_h = 3
+usage_overuse_pct = 100         # OVERUSE: projected week % at the reset at or above this

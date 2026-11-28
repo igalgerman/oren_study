@@ -355,6 +355,21 @@ def issues_stuck_tick():
     """#280: no issue sits without a live state; owner questions re-pushed at 4 h, the 24 h rule."""
     import stuck
     stuck.tick(tell=tell, log=log)
+def privacy_tick(now=None, cache=None, gh=None):
+    """#783, every 10 min: no names file -> ONE warning a day; else issues/PRs touched in the last 30 min (ghcache read, no extra calls)
+    whose title or new comment holds the kid's name are rewritten through the scrub (cloud sessions write with their own gh)."""
+    import scrub, ghcache
+    now = now or time.time()
+    if not scrub.names(): scrub.warn_once(now, say=tell); return 0
+    if not scrub.sweep_due(now): return 0
+    gh = gh or R.gh
+    def title(kind, n, text): return gh(kind, "edit", str(n), "--title", text)[0] == 0
+    def comment(cid, text): return gh("api", "-X", "PATCH", f"repos/{R.REPO}/issues/comments/{cid}", "-f", f"body={text}")[0] == 0
+    n = scrub.sweep(cache if cache is not None else ghcache.load(), title, comment, now)
+    scrub.add_fixes(n)
+    if n: log(f"privacy sweep: fixed {n} title/comment(s)")
+    return n
+
 def due_tick():
     """#241, every 10 min: a passed 'Due:' line in an open issue -> one 'Due reached' comment + the orchestrator (+ owner popup)."""
     import due
@@ -655,6 +670,7 @@ def tick():
         step("cleanup", cleanup, all_ts)
         rts = step("run_rows", run_rows, ts) or ts   # #289: + the ONE poller's cloud lanes as virtual run-<n> rows
         step("sweep_tick", sweep_tick, all_ts)  # #492
+        step("privacy_tick", privacy_tick)      # #783
         step("reap_tick", reap_tick, ts)       # #248 (a virtual run ends itself when its issue closes)
         step("stuck_tick", stuck_tick, rts)
         step("net_due_tick", net_due_tick, rts) # #364
@@ -663,7 +679,7 @@ def tick():
         for name, fn in (("observer_tick", observer_tick), ("ai_observer_tick", ai_observer_tick), ("nightly_tick", nightly_tick),
                          ("parked_tick", parked_tick), ("due_tick", due_tick), ("garden_tick", garden_tick),   # #282 #241 #187
                          ("issues_stuck_tick", issues_stuck_tick), ("desks_tick", desks_tick), ("canary_tick", canary_tick),   # #280 #330
-                         ("sync_tick", sync_tick), ("alarm_tick", alarm_tick), ("trends_tick", trends_tick), ("ai_tick", ai_tick),
+                         ("sync_tick", sync_tick), ("alarm_tick", alarm_tick), ("trends_tick", trends_tick), ("ai_tick", ai_tick), ("usage_tick", usage_tick), ("usage_alarm_tick", usage_alarm_tick),
                          ("lock_tick", lock_tick), ("orch_idle_tick", orch_idle_tick)):
             step(name, fn)
 
@@ -869,17 +885,26 @@ def waiting_reviews(prs, now):
         if t >= ORCH_WAIT_MIN: out.append(p["number"])
     return sorted(out)
 
-def run_owned(prs, ts, parked=frozenset()):
+def run_owned(prs, ts, parked=frozenset(), locked=frozenset()):
     """Pure (#471): -> {PR numbers} whose issue has a LIVE run-<n> window that is not parked (issue labelled blocked).
     Such a PR is the runner's (it reviews and merges it): the #225 nudge must not send the orchestrator to it (race #464/#245/#302).
     PR -> issue: branch lane/<n>, or the body says Fixes/Closes/Refs #n (cloud claude/* branches)."""
     import remote
     live = {int(m.group(1)) for t in ts if t.get("state") == "live" for m in [re.match(r"^run-(\d+)$", t.get("name") or "")] if m}
+    live |= set(locked)                                  # #765: cloud runs have no run-<n> window: a held issue-<n>.lock is a live run too
     live -= set(parked)
     out = set()
     for p in prs:
         m = re.match(r"^lane/(\d+)$", p.get("headRefName") or "")
         if (m and int(m.group(1)) in live) or any(remote.fixes(p.get("body"), n) for n in live): out.add(p["number"])
+    return out
+
+def locked_issues():
+    """#765: issue numbers whose issue-<n>.lock is held by a live pid (the shared lanes poller holds them for cloud runs)."""
+    out = set()
+    for f in R.RUNS.glob("issue-*.lock"):
+        m = re.match(r"^issue-(\d+)\.lock$", f.name)
+        if m and R.FileLock(f"issue-{m.group(1)}").held_by_other(): out.add(int(m.group(1)))
     return out
 
 def orch_decision(state, waiting, st, now):
@@ -905,7 +930,7 @@ def orch_idle_tick(now=None, ts=None):
     rc2, out2 = R.gh("issue", "list", "--state", "open", "--label", "blocked", "--limit", "200", "--json", "number")
     try: parked = {i["number"] for i in json.loads(out2)} if rc2 == 0 else set()
     except (ValueError, KeyError, TypeError): parked = set()
-    owned = run_owned(prs, windows() if ts is None else ts, parked)   # #471: a live run reviews/merges its own PR
+    owned = run_owned(prs, windows() if ts is None else ts, parked, locked_issues())   # #471: a live run reviews/merges its own PR
     waiting = [n for n in waiting_reviews(prs, now) if n not in owned]
     act = orch_decision(state, waiting, _orch, now)
     if act == "reset":
@@ -975,6 +1000,20 @@ def garden_tick():
     try:
         if test_garden.run_if_due(R.RUNS / "garden.last"): log("test gardener started (weekly, #187)")
     except OSError as e: log(f"test gardener could not start: {e!r} (next try in a week; run python3 tools/test_garden.py by hand)")
+
+_usage = {"last": 0.0}
+def usage_tick():
+    """#708: every 30 min the per-entity usage table (.runs/usage_by_entity.json) + ENTITY alarms (watchdog tell + Telegram, once per entity per 3 h)."""
+    if time.time() - _usage["last"] < 1800: return
+    _usage["last"] = time.time()
+    import usage_entities; importlib.reload(usage_entities); usage_entities.tick(tell, log)
+
+_ualarm = {"last": 0.0}
+def usage_alarm_tick():
+    """#710: every 5 min the usage alarms (UNDERUSE, IDLE, BEHIND, OVERUSE, STALE, PLAN CHANGED): watchdog tell + Telegram, once per rule per 3 h."""
+    if time.time() - _ualarm["last"] < 300: return
+    _ualarm["last"] = time.time()
+    import usage_alarms; importlib.reload(usage_alarms); usage_alarms.tick(tell, log)
 
 def trends_tick():
     """#155: hourly patterns over 24 h (repeated BLOCKED reasons, finish/fix rates); reloaded so merged fixes apply."""

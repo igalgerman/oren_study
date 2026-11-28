@@ -60,7 +60,7 @@ now = time.mktime(time.strptime("2026-11-26 23:05", "%Y-%m-%d %H:%M"))
 Path(R.CFG["inspector_handoff"]).write_text("# Inspector\n\n## UPDATE\nyesterday\n\n## Rules\nr\n", encoding="utf-8")
 assert N.run_once(told.append, logs.append, now)
 cmd, kw = fc.calls[0]
-assert cmd[1:5] == ["-p", "--model", "sonnet", "--no-session-persistence"] and kw["timeout"] == 900 and "retro.md" in kw["input"] and "handoff.md" in kw["input"]
+assert cmd[1:7] == ["-p", "--model", "sonnet", "--effort", "medium", "--no-session-persistence"] and kw["timeout"] == 900 and "retro.md" in kw["input"] and "handoff.md" in kw["input"]
 assert "Edit" not in cmd and "Write" not in cmd and not any("comment" in c or "create" in c or "edit" in c for c in cmd)
 cr = [c for c in g.calls if c[:2] == ["issue", "create"]][0]
 assert cr[cr.index("--title") + 1] == "Daily retro 2026-11-26" and cr[cr.index("--label") + 1] == "retro,P2"
