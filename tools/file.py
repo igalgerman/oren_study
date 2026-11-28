@@ -10,6 +10,8 @@ import scrub
 def gh(args, **kw):
     """Every gh call goes through the privacy scrub (#783)."""
     cmd, inp = scrub.scrub_cmd(["gh", *args])[0], kw.pop("input", None)
+    kw.pop("text", None); kw.pop("universal_newlines", None)
+    kw.setdefault("encoding", "utf-8"); kw.setdefault("errors", "replace")   # #981: never the console code page (cp1255)
     return subprocess.run(cmd, input=inp, **kw)
 
 def resolve(project, paths, reg=None):
@@ -32,11 +34,16 @@ def plan(kind, project, title, body, labels=(), head=None, reg=None):
     for l in lab: cmd += ["--label", l]
     return {"repo": repo, "project": project, "labels": lab, "cmd": cmd}
 
+class DuplicateCheckError(Exception): pass
+
 def duplicates(repo, title, run=gh):
-    """Open or closed issues in `repo` whose title equals ours (case-insensitive)."""
+    """Open or closed issues in `repo` whose title equals ours (case-insensitive). An unreadable check raises DuplicateCheckError (#981)."""
     r = run(["issue", "list", "-R", repo, "--state", "all", "--limit", "200", "--json", "number,title,state"], capture_output=True, text=True)
-    if r.returncode: return []
-    return [i for i in json.loads(r.stdout or "[]") if i["title"].strip().lower() == title.strip().lower()]
+    if r.returncode: raise DuplicateCheckError(f"gh issue list failed (exit {r.returncode}): {(r.stderr or '').strip()[:200]}")
+    try: items = json.loads(r.stdout or "")
+    except (ValueError, TypeError): raise DuplicateCheckError("gh issue list gave empty or unreadable output")
+    if not isinstance(items, list): raise DuplicateCheckError("gh issue list gave unexpected output")
+    return [i for i in items if i["title"].strip().lower() == title.strip().lower()]
 
 def main(argv=None):
     a = argparse.ArgumentParser(prog="file.py")
@@ -49,7 +56,8 @@ def main(argv=None):
     if warn: print(warn, file=sys.stderr)
     pl = plan(o.kind, proj, o.title, o.body, o.label, o.head)
     if o.kind != "pr":
-        d = duplicates(pl["repo"], o.title) if not o.dry_run else []
+        try: d = duplicates(pl["repo"], o.title) if not o.dry_run else []
+        except DuplicateCheckError as e: print(f"duplicate check failed, nothing filed: {e}", file=sys.stderr); return 3
         if d: print(f"duplicate of #{d[0]['number']} ({d[0]['state']}) in {pl['repo']}: comment there instead", file=sys.stderr); return 2
     if o.dry_run: print(json.dumps(pl)); return 0
     return gh(pl["cmd"]).returncode
