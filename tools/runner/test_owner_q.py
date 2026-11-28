@@ -175,11 +175,13 @@ print("ok owner_q #608 owner gate only through an owner_q answer record")
 
 # #636: the merge gate. An issue is owner-gated when an owner question about it exists (any window but its own reviewer's
 # PURPLE: hold parks the issue, merge-safe merges by design). Gated + gate CLOSED -> never merge; gated + OPEN or not gated -> fine.
-qcs2 = [{"body": OQ.body(QK, "remote-64", "QUESTION: design ok?"), "reactionGroups": []},
+qcs2 = [{"body": OQ.body(QK, "remote-64", "QUESTION: design ok?", gates=[64]), "reactionGroups": []},
+        {"body": OQ.body("4" * 12, "remote-65", "QUESTION: how do I get the play-log key?"), "reactionGroups": []},
         {"body": OQ.body("3" * 12, "review-66", "QUESTION: blue or green?"), "reactionGroups": []}]
 assert OQ.merge_state(64, bot, qcs2) == "closed", "#557: the owner's #64 question unanswered + a bot 'design approved' -> closed"
 assert OQ.merge_state(64, bot + [{"body": OQ.answer_body(QK, "כן")}], qcs2) == "open"
 assert OQ.merge_state(65, [], qcs2) == "none", "no owner question about #65 -> not owner-gated"
+assert OQ.merge_state(65, [], qcs2) == "none", "#739: an open plain access question (no gates marker) never closes the merge gate"
 assert OQ.merge_state(66, [], qcs2) == "none", "a reviewer PURPLE question (merge-safe or hold) is not a merge gate"
 assert OQ.merge_state(64, None, qcs2) == "error" and OQ.merge_state(64, [], None) == "error"
 g4 = FakeGH(); OQ.STATE = tmp / "owner_q_merge.json"; OQ.GH = g4
@@ -230,9 +232,28 @@ assert "the hourly task does not run - re-login" in c, c                        
 OQ.post("#696b", "QUESTION: איזה צבע? 1) ירוק 2) כחול"); assert len(told) == 1, told        # Hebrew: no translation
 OQ.TRANSLATE = lambda t: None                                                           # translator down: original kept, still posted
 OQ.post("#696c", "QUESTION: still english")
-assert OQ.open_questions([{"body": posts(g5)[-1]["body"], "url": "u"}])[0]["text"] == "still english"
+t = OQ.open_questions([{"body": posts(g5)[-1]["body"], "url": "u"}])[0]["text"]
+assert t.startswith(OQ.FALLBACK_HE) and "/issues/" in t and "still english" not in t, t     # #699: fixed Hebrew line, never English
+assert "still english" in posts(g5)[-1]["body"]                                              # the original stays in the comment
 long_q = "שורה ראשונה.\nשורה שנייה ארוכה.\nשורה שלישית?"
 OQ.post("#696d", "QUESTION: " + long_q)
 assert OQ.open_questions([{"body": posts(g5)[-1]["body"], "url": "u"}])[0]["text"] == long_q, "whole text, not cut"
 OQ.TRANSLATE = None
 print("ok owner_q #696 Hebrew question, whole text")
+
+# #699 a slow or crashing translator never holds the tick longer than TR_TIMEOUT_S; the fallback Hebrew line is posted
+import time
+OQ.TR_TIMEOUT_S = 0.3
+OQ.TRANSLATE = lambda t: (time.sleep(5), "late")[1]
+g6 = FakeGH(); OQ.STATE = tmp / "owner_q_slow.json"; OQ.GH = g6
+t0 = time.time(); OQ.post("#699a", "QUESTION: slow translator"); dt = time.time() - t0
+assert dt < 2, dt
+t = OQ.open_questions([{"body": posts(g6)[-1]["body"], "url": "u"}])[0]["text"]
+assert t.startswith(OQ.FALLBACK_HE) and "slow translator" not in t and "late" not in t, t
+def boom(t): raise RuntimeError("x")
+OQ.TRANSLATE = boom; OQ.post("#699b", "QUESTION: crashing translator")
+assert OQ.open_questions([{"body": posts(g6)[-1]["body"], "url": "u"}])[0]["text"].startswith(OQ.FALLBACK_HE)
+OQ.TRANSLATE = lambda t: "תרגום טוב."; OQ.post("#699c", "QUESTION: fine")
+assert OQ.open_questions([{"body": posts(g6)[-1]["body"], "url": "u"}])[0]["text"] == "תרגום טוב."
+OQ.TRANSLATE = None; OQ.TR_TIMEOUT_S = 15
+print("ok owner_q #699 translation bounded, Hebrew fallback")

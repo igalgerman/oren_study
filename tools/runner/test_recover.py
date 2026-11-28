@@ -53,12 +53,13 @@ assert started == [], started
 # exact commands (owner, #140 comments)
 cwd, a = rc.control_argv("inbox", "C:/work/Oren_study/a", "P")
 assert cwd == "C:/work/Oren_study/a" and a[:5] == ["claude", "--model", "sonnet", "--remote-control", "oren-inbox"] and "INBOX" in a[5]
+assert "effort:" in a[5] and "split" in a[5] and "600 lines" in a[5]   # #718
 cwd, a = rc.control_argv("inspector", "C:/work/Oren_study/a", "P")
 assert Path(cwd) == Path("C:/work/Oren_study") and a[:5] == ["claude", "--model", "opus", "--remote-control", "oren-inspector"] and "INSPECTOR_HANDOFF.md" in a[5]
 cwd, a = rc.control_argv("orchestrator", "C:/work/Oren_study/a", "P")
 assert a[:7] == ["claude", "--model", "sonnet", "--remote-control", "oren-orchestrator", "--plugin-dir", "P"]
 cwd, a = rc.control_argv("executor", "C:/work/Oren_study/a", "P")
-assert cwd == "C:/work/Oren_study/a" and a[:5] == ["claude", "--model", "sonnet", "--remote-control", "oren-executor"] and "EXECUTOR.md" in a[5] and "executor" in rc.CONTROL
+assert cwd == "C:/work/Oren_study/a" and a[:5] == ["claude", "--model", "opus", "--remote-control", "oren-executor"] and "EXECUTOR.md" in a[5] and "executor" in rc.CONTROL
 assert rc.control_argv("watchdog", "M", "P", python="py", watchdog="W")[1] == ["py", "W"]
 h = rc.hc_run_args("inbox", "C:/m", ["claude"], "sp1")
 assert h[:4] == ["run", "--bg", "--no-parent", "--outlive-parent"] and "herdr.space=sp1" in h and h[-1] == "claude"

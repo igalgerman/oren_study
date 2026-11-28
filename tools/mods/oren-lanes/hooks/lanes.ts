@@ -54,11 +54,30 @@ export const trunc = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1)
 
 export type Limit = { kind: string; percentUsed: number; resetsAt?: string }
 
-/** #239: the reading the runner's usage governor needs (written to .runs/usage.json every refresh); null when there is no 5h reading. */
-export function usageJson(limits: Limit[], nowMs: number) {
+export type Usage = {
+  five_h_pct: number | null; five_h_reset: string | null; week_pct: number | null; week_reset: string | null
+  buckets: { kind: string; pct: number; reset: string | null }[]; read_at: string; at: string
+}
+
+/** #239/#706: the reading the runner's usage governor needs (.runs/usage.json); every bucket is kept, five_h_pct is null without a five_hour bucket.
+ *  read_at moves only when a value changes (prev = the last written reading); at = write time. null only when there is no bucket at all. */
+export function usageJson(limits: Limit[], nowMs: number, prev?: Partial<Usage> | null): Usage | null {
+  if (!limits.length) return null
   const f = limits.find(x => x.kind === 'five_hour'), w = limits.find(x => x.kind === 'seven_day')
-  if (!f) return null
-  return { five_h_pct: f.percentUsed, five_h_reset: f.resetsAt ?? null, week_pct: w ? w.percentUsed : null, week_reset: w?.resetsAt ?? null, at: new Date(nowMs).toISOString() }
+  const buckets = limits.map(l => ({ kind: l.kind, pct: l.percentUsed, reset: l.resetsAt ?? null }))
+  const at = new Date(nowMs).toISOString()
+  const same = !!prev && JSON.stringify(prev.buckets) === JSON.stringify(buckets) && !!prev.read_at
+  return {
+    five_h_pct: f ? f.percentUsed : null, five_h_reset: f?.resetsAt ?? null, week_pct: w ? w.percentUsed : null, week_reset: w?.resetsAt ?? null,
+    buckets, read_at: same ? prev!.read_at! : at, at,
+  }
+}
+
+/** #706: .runs/plan.json from `claude auth status` output: ONLY subscriptionType is kept (nothing else is stored or logged). */
+export function planJson(statusText: string, nowMs: number): { plan: string; at: string } | null {
+  let plan: unknown
+  try { plan = JSON.parse(statusText)?.subscriptionType } catch { return null }
+  return typeof plan === 'string' && /^[\w-]{1,32}$/.test(plan) ? { plan, at: new Date(nowMs).toISOString() } : null
 }
 
 /** #329: the ONE GitHub reader (the watchdog) writes this once a minute; the panel never calls gh itself. */
@@ -79,7 +98,20 @@ export function fromCache(text: string, nowMs: number): { issues: Issue[]; close
 }
 
 /** #239: the runner's governor state from .runs/governor.json (reset in epoch seconds). */
-export type Gov = { lanes?: number; stop?: boolean; pct?: number | null; projected?: number | null; reset?: number | null; text?: string; at?: number; eff?: number | null; wasted?: number }
+export type Gov = { lanes?: number; stop?: boolean; pct?: number | null; projected?: number | null; reset?: number | null; text?: string; at?: number; eff?: number | null; wasted?: number; override?: { mode: string; n?: number | null; until?: number | null; until_reset?: boolean } }
+
+/** #712: 'mode: FAST until 14:05' (the owner's override), or 'mode: normal'. */
+export function modeText(o: Gov['override'] | undefined, now: number): string {
+  if (!o) return 'mode: normal'
+  const name = o.mode === 'lanes' ? `lanes ${o.n}` : o.mode.toUpperCase()
+  return `mode: ${name} until ${o.until_reset ? 'reset' : o.until ? clock(o.until * 1000, now) : '?'}`
+}
+
+/** #712: the record the Mode button writes to .runs/override.json (3 h; the runner clamps it by the hard bounds). */
+export const modeRecord = (mode: string, now: number) => ({ mode, set: now, until: now + 3 * 3600, until_reset: false })
+
+/** #712: the button cycles normal -> fast -> save -> normal. */
+export const nextMode = (o: Gov['override'] | undefined): 'fast' | 'save' | 'normal' => !o || o.mode === 'normal' ? 'fast' : o.mode === 'fast' ? 'save' : 'normal'
 
 export function parseGov(json: string): Gov | null {
   try { const g = JSON.parse(json); return g && typeof g === 'object' ? g as Gov : null } catch { return null }
@@ -333,6 +365,7 @@ export function panel(p: PanelIn): Panel {
 
   return {
     header, needsYou, pc, desks, canary,
+    mode: { text: modeText(p.gov?.override, now), tone: p.gov?.override ? 'amber' : 'dim' }, modeNext: nextMode(p.gov?.override),   // #712
     lanesHead: `LANES ${lanes.length}/${cap}`, starts, lanes: laneRows,
     prs: prRow, next, nextMore: Math.max(0, nextAll.length - 5),
     doneHead: `DONE last hour: ${hour.length}`, done, forecast,

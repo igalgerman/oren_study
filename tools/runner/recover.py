@@ -16,9 +16,9 @@ TASK = "Oren recover"
 CONTROL = ("orchestrator", "inbox", "inspector", "executor")    # the 4 Claude sessions on the PC, tabs of 'oren' in this order
 INBOX_PROMPT = ("You are the INBOX of the Oren game multi-agent system (repo igalgerman/oren_study). Read CLAUDE.md and FLOW.md. "
                 "The owner talks to you: a new idea -> /idea, a clear task -> /task, a bug -> /bug, a status question -> /status. "
-                "Write every new issue the way docs/agents/skills/writing-for-agents.md says. Propose each new issue's model label (docs/agents/models.md). "
+                "Write every new issue the way docs/agents/skills/writing-for-agents.md says. Set both the model: and the effort: label on every new issue from the table in docs/agents/models.md (you decide, the owner can override), and split a task estimated above ~600 lines or a batch of 8+ items first. "
                 "Run the mattpocock-skills:triage steps on every new issue (#29): duplicate check per CLAUDE.md, labels per docs/agents/triage-labels.md, "
-                "P-level, an Acceptance list, one lane label, Blocked by lines. Do nothing else; wait for the owner.")
+                "P-level, an Acceptance list, one lane label, Blocked by lines. If the title or body says 'every' or 'all screens', or the owner says 'still missing', add the Acceptance point 'an automatic test walks every screen and fails with the list of screens that break the rule' (helper oren2/tests/walk.js, #745). Do nothing else; wait for the owner.")
 TRIAGE_STEPS = ("Run the mattpocock-skills:triage steps on every new ticket (#29): duplicate check per CLAUDE.md ('One backlog, no duplicates'), "
                 "labels per docs/agents/triage-labels.md, a P-level, an Acceptance list, one lane label (core/pack/review), 'Blocked by: #n' lines.")
 ORCH_PROMPT = "Read ORCHESTRATOR.md and continue as the orchestrator. Open the Oren lanes panel (/lanes)."
@@ -32,7 +32,7 @@ def control_argv(name, main_checkout, plugin_dir, claude="claude", python="pytho
     return {"orchestrator": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-orchestrator", "--plugin-dir", str(plugin_dir), ORCH_PROMPT]),
             "inbox": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-inbox", INBOX_PROMPT]),
             "inspector": (str(Path(mc).parent), [claude, "--model", "opus", "--remote-control", "oren-inspector", INSPECTOR_PROMPT]),
-            "executor": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-executor", EXECUTOR_PROMPT]),
+            "executor": (mc, [claude, "--model", "opus", "--remote-control", "oren-executor", EXECUTOR_PROMPT]),
             "watchdog": (mc, [python, str(watchdog)])}[name]
 
 def hc_run_args(name, cwd, argv, space_id=""):

@@ -29,8 +29,31 @@ def parse_level(text):
     hits = [h.upper() for h in LEVEL.findall(text or "")]
     return hits[-1] if hits and hits[-1] in LEVELS else DEFAULT
 
+# #746: a PR that touches sync, speech or the home redraw is always T3 (two devices at once), whatever the reviewer wrote.
+# The one list: files (the save server) and patterns on the changed lines (the game code in oren2/*.js, index.html).
+T3_FILES = re.compile(r"(^|/)cf/functions/api/save/")
+T3_CODE = re.compile(r"emit\(\s*['\"]synced['\"]|on\(\s*['\"]synced['\"]|\bfamPull\b|\bfamNow\b|\bmergeIn\b|\bfunction\s+(say|sayNext|sayOne|hush)\b|"
+                     r"\bhush\s*\(|\bsayNow\b|\bO\.quiet\s*\(\s*home\b|\bfunction\s+home\b")
+
+def touches_t3(diff):
+    """Pure: a unified diff (`gh pr diff`) -> True when a file in T3_FILES changes or an added/removed line matches T3_CODE.
+    The built copy oren2/cf/public/index.html is skipped (same lines as oren2/index.html)."""
+    path = ""
+    for ln in (diff or "").splitlines():
+        if ln.startswith("diff --git"):
+            path = ln.split(" b/", 1)[-1]
+            if T3_FILES.search(path): return True
+        elif ln[:1] in "+-" and ln[:3] not in ("+++", "---") and not path.startswith("oren2/cf/public/") and T3_CODE.search(ln): return True
+    return False
+
+def raise_level(level, diff):
+    """The reviewer's level, raised to T3 when the diff touches sync/speech/home-redraw code."""
+    return "T3" if touches_t3(diff) else level
+
 def needs_test(level): return level != "T0"
-def model_for(level): return "opus" if level == "T3" else "sonnet"
+def model_for(level):
+    """T1/T2 Sonnet, T3 Opus; effort medium (#714: runner.floors, via with_effort in the runner)."""
+    return "opus" if level == "T3" else "sonnet"
 def session_name(n): return f"test-{n}"
 def preview_url(pr): return f"https://pr-{pr}.oren-game.pages.dev"   # .github/workflows/preview.yml deploys branch pr-<n>
 
@@ -75,10 +98,10 @@ def fail_red(line, body="", level=""):
     """A `TEST: FAIL <repro>` -> the red text the #303 FIX loop takes (like a reviewer's VERDICT: FIX)."""
     return f"VERDICT: FIX tester{f' ({level})' if level else ''} found: {parse_result(line)[1]}\n\n{(body or '')[-3000:]}"
 
-def gate(review, run_tester):
+def gate(review, run_tester, diff=""):
     """Pure order after a review PASS: T0 -> merge; T1+ -> run_tester(level) -> (body, line); PASS -> merge,
     FAIL -> fix (the red text for the #303 loop), no line -> blocked. -> (step, level, text)."""
-    level = parse_level(review)
+    level = raise_level(parse_level(review), diff)
     if not needs_test(level): return ("merge", level, "")
     body, line = run_tester(level)
     kind, repro = parse_result(line)

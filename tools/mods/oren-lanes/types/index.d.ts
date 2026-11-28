@@ -7,6 +7,8 @@ export type Panel = {
   needsYou: Row | null
   pc: Row | null
   desks: Row | null   // #306: 'cloud desks: inbox ok · ask down' (red when down)
+  mode: Row           // #712: 'mode: FAST until 14:05' / 'mode: normal'
+  modeNext: 'fast' | 'save' | 'normal'   // #712: what the Mode button sets next
   canary: Row | null  // #330: 'flow ok HH:MM' or NEEDS-ATTENTION ... (red)
   lanesHead: string
   starts: Row
