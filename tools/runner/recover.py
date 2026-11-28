@@ -32,7 +32,7 @@ def control_argv(name, main_checkout, plugin_dir, claude="claude", python="pytho
     return {"orchestrator": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-orchestrator", "--plugin-dir", str(plugin_dir), ORCH_PROMPT]),
             "inbox": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-inbox", INBOX_PROMPT]),
             "inspector": (str(Path(mc).parent), [claude, "--model", "opus", "--remote-control", "oren-inspector", INSPECTOR_PROMPT]),
-            "executor": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-executor", EXECUTOR_PROMPT]),
+            "executor": (mc, [claude, "--model", "opus", "--remote-control", "oren-executor", EXECUTOR_PROMPT]),
             "watchdog": (mc, [python, str(watchdog)])}[name]
 
 def hc_run_args(name, cwd, argv, space_id=""):
