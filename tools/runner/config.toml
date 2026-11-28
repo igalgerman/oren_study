@@ -61,3 +61,7 @@ usage_idle_min = 60             # IDLE: need > 0 while busy lanes < lanes for lo
 usage_behind_ratio = 0.5        # BEHIND: actual burn over usage_behind_h below this share of need
 usage_behind_h = 3
 usage_overuse_pct = 100         # OVERUSE: projected week % at the reset at or above this
+
+# #800: trusted authors of control lines (trust.py)
+owner_login = "igalgerman"
+bot_logins = ["oren-study-bot", "oren-study-bot[bot]"]

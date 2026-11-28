@@ -2,6 +2,9 @@
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 import json, re, sys, tempfile, time
+import re, trust   # #800: old fixtures have no author: default them to the owner (explicit authors still count; test_trust.py covers the real rules)
+_login = trust.login
+trust.login = lambda c: _login(c) or (("oren-study-bot" if re.match(r"\s*(OWNER ANSWER|ANSWERED)", c.get("body") or "") or "owner-answer:" in (c.get("body") or "") else "igalgerman") if isinstance(c, dict) else "")
 from pathlib import Path
 sys.argv.append("--dry-run")
 import runner as R
@@ -91,7 +94,7 @@ qs = OQ.open_questions(cs)
 assert [q["window"] for q in qs] == ["#5", "#7", "#9", "#6"] and qs[0]["text"].startswith("לשנות") and qs[0]["url"], qs
 k5, k7 = qs[0]["key"], qs[1]["key"]
 assert OQ.mark_answered(k5, "כחול", gh=g)
-cs[1]["reactionGroups"] = [{"content": "THUMBS_UP", "users": {"totalCount": 1}}]       # the owner reacted: answered too
+cs[1]["reactionGroups"] = [{"content": "THUMBS_UP", "users": {"totalCount": 1, "nodes": [{"login": "igalgerman"}]}}]       # the owner reacted: answered too
 assert [q["window"] for q in OQ.open_questions(cs)] == ["#9", "#6"]
 # the owner replies in the issue -> the orchestrator is told once, with the open questions
 OQ.STATE = tmp / "owner_q.json"; told.clear()
@@ -156,7 +159,7 @@ assert OQ.gate(64, bot, qcs) == [], "a bot comment 'design approved' -> gate sti
 assert OQ.gate(64, bot + [{"body": OQ.answer_body(QK, "מאושר")}], qcs) == ["מאושר"], "an owner_q answer -> gate open"
 assert OQ.gate(64, [{"body": OQ.answer_body("1" * 12, "x")}], qcs) == [], "a record of another issue's question does not count"
 assert OQ.gate(64, [{"body": OQ.answer_body("2" * 12, "x")}], qcs) == [], "a record with no such question does not count"
-qcs[0]["reactionGroups"] = [{"content": "THUMBS_UP", "users": {"totalCount": 1}}]        # the owner reacted in #205
+qcs[0]["reactionGroups"] = [{"content": "THUMBS_UP", "users": {"totalCount": 1, "nodes": [{"login": "igalgerman"}]}}]        # the owner reacted in #205
 assert OQ.gate(64, bot, qcs) == ["reaction THUMBS_UP"]
 # the CLI reviewers and the runner use: `owner_q.py gate <n>` reads both issues, exit 0 = open
 g3 = FakeGH(); OQ.STATE = tmp / "owner_q_gate.json"; OQ.GH = g3
@@ -201,7 +204,7 @@ assert OQ.gate(64, [], gq) == [], "unanswered -> closed"
 assert OQ.gate(64, [{"body": OQ.answer_body(GK, "approve")}], gq) == ["approve"], "answered from window 'orchestrator' gating #64 -> OPEN"
 assert OQ.gate(65, [{"body": OQ.answer_body(GK, "approve")}], gq) == [], "it gates #64 only"
 assert OQ.gate(64, [{"body": OQ.answer_body(GK, "approve")}], [{"body": OQ.body(GK, "orchestrator", "QUESTION: building world design ok?")}]) == [], "no gates marker -> not #64's"
-gq[0]["reactionGroups"] = [{"content": "THUMBS_UP", "users": {"totalCount": 1}}]
+gq[0]["reactionGroups"] = [{"content": "THUMBS_UP", "users": {"totalCount": 1, "nodes": [{"login": "igalgerman"}]}}]
 assert OQ.gate(64, [], gq) == ["reaction THUMBS_UP"]
 # the CLI: ask --gates 64 posts the marker; gate #64 is OPEN after the answer record on #64
 g4 = FakeGH(); OQ.STATE = tmp / "owner_q_gates.json"; OQ.GH = g4

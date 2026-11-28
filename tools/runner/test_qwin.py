@@ -4,6 +4,9 @@ import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-t
 os.environ["OREN_TELEGRAM_ENV"] = os.path.join(os.environ["RUNNER_RUNS"], "no-telegram.env")   # #440: off unless a test sets it up
 os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 import json, re, sys, tempfile
+import re, trust   # #800: old fixtures have no author: default them to the owner (explicit authors still count; test_trust.py covers the real rules)
+_login = trust.login
+trust.login = lambda c: _login(c) or (("oren-study-bot" if re.match(r"\s*(OWNER ANSWER|ANSWERED)", c.get("body") or "") or "owner-answer:" in (c.get("body") or "") else "igalgerman") if isinstance(c, dict) else "")
 from pathlib import Path
 sys.argv.append("--dry-run")
 import runner as R

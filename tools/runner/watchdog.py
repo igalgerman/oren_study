@@ -185,7 +185,7 @@ def check_intake(ts):
     if not i: return
     n, name = i["number"], f"intake-{i['number']}"
     import recover
-    prompt = (f"/grill-me issue #{n} (gh issue view {n} --repo {R.CFG['repo']} --comments), then /to-tickets for what comes out of it, "
+    prompt = (f"/grill-me issue #{n} (python3 tools/runner/view.py issue {n}: trusted authors only), then /to-tickets for what comes out of it, "
               f"then close #{n} with links to the new tickets. Every ticket gets an '## Acceptance' section before ready-for-agent: 3-7 checkable points "
               f"+ the tests that prove them, and 'Out of scope' (#186). If #{n} is only waiting because it has no Acceptance section, "
               f"skip the grilling: write that section into #{n}'s body. " + recover.TRIAGE_STEPS)

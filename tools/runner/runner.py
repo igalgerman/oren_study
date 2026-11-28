@@ -8,7 +8,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import remote, ghcache, ghauth, pcload, tester   # pcload: #293 PC load watch; tester: #618
+import remote, ghcache, ghauth, pcload, tester, trust   # pcload: #293 PC load watch; tester: #618
 ROOT = HERE.parent.parent                      # repo checkout (tools/runner/../..)
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # #229: tests point this at a temp dir
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -200,6 +200,10 @@ def ask_acceptance(bad, now=None):
 
 def demote(i):
     return {**i, "labels": [l for l in i["labels"] if l != "ready-for-agent"] + ["needs-info"]}
+
+def untrusted_not_ready(issues):
+    """#800 Pure: the runner starts only issues opened by a trusted author: an untrusted one loses `ready-for-agent` here (never started)."""
+    return [i if trust.ok(i) else {**i, "labels": [l for l in i["labels"] if l != "ready-for-agent"]} for i in issues]
 
 def gate(issues):
     """#186: (issues with the Acceptance-less ones demoted, the refused list). Shared by the pass and the watchdog idle alarm."""
@@ -905,7 +909,7 @@ def finish_issue(n, text, live=None):
     No line and no proof: the issue stays open. A failed check keeps it open and sends it back to a worker. docs/tooling issues are exempt.
     Returns True when closed."""
     rc, out = gh("issue", "view", str(n), "--json", "labels,comments")
-    try: d = json.loads(out); labels = {l["name"] for l in d["labels"]}; comments = [c.get("body", "") for c in d.get("comments", [])]
+    try: d = json.loads(out); labels = {l["name"] for l in d["labels"]}; comments = [c.get("body", "") for c in trust.only(d.get("comments", []))]
     except (ValueError, KeyError, TypeError): return False
     if labels & LIVE_EXEMPT: return gh("issue", "close", str(n), "--comment", text)[0] == 0
     if not has_live_line(comments):
@@ -934,7 +938,7 @@ def remote_worker_prompt(n, lane, bug=False, retry=False):
     base = (f"You are an unattended worker for GitHub issue #{n} in repo {REPO} (lane: {lane}). If its title starts with 'Batch:', follow "
             f"its 'How to work' section: independent members (different files) may go to sub-agents (Agent tool); you integrate, test once "
             f"and open ONE PR with a 'Fixes #m' line per member. Read CLAUDE.md and FLOW.md, then the issue "
-            f"(`gh issue view {n} --repo {REPO} --comments`). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
+            f"(`python3 tools/runner/view.py issue {n}` (trusted authors only)). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
             f"{ACCEPT}\n" + owner_gate(n) + SPEC)
     if bug:
         base += "This is a BUG: follow docs/agents/skills/diagnosing-bugs.md, then tdd: reproduce it with a failing test, then fix it; say the root cause in the PR body.\n"
@@ -1151,13 +1155,13 @@ def resume_step(mergeable, verdict):
 
 def head_verdict(comments, head_time):
     """Pure: last VERDICT line of the PR comments made at/after the head commit (head_time ISO UTC); '' = the head has no review."""
-    return remote.verdict_from([c.get("body", "") for c in comments if c.get("createdAt", "") >= (head_time or "")])[0]
+    return remote.verdict_from([c.get("body", "") for c in trust.only(comments) if c.get("createdAt", "") >= (head_time or "")])[0]
 
 def pr_resume_info(pj):
     """Pure: `gh pr view --json number,mergeable,headRefOid,commits,comments` -> {pr, mergeable, verdict, sha, review, test}.
     review = the body of the head's VERDICT comment (its TEST level line, #618); test = the head's last `TEST: PASS|FAIL` line."""
     head = max((c.get("committedDate", "") for c in pj.get("commits") or []), default="")
-    since = [c.get("body", "") for c in pj.get("comments") or [] if c.get("createdAt", "") >= head]
+    since = [c.get("body", "") for c in trust.only(pj.get("comments") or []) if c.get("createdAt", "") >= head]
     line, body = remote.verdict_from(since)
     return {"pr": pj.get("number"), "mergeable": pj.get("mergeable", ""), "verdict": line,
             "sha": pj.get("headRefOid", ""), "review": body, "test": tester.result_from(since)[0]}
@@ -1268,7 +1272,7 @@ def human_without_question(issues):
     for i in issues:
         L = {(l.get("name") if isinstance(l, dict) else l) for l in i.get("labels") or []}
         if not {"blocked", "ready-for-human"} <= L: continue
-        bodies = [(c.get("body") or "") for c in i.get("comments") or []]
+        bodies = [(c.get("body") or "") for c in trust.only(i.get("comments") or [])]    # #800
         if any(re.search(r"^\s*QUESTION:", b, re.M) or b.startswith("Reviewer PURPLE question") for b in bodies): continue
         out.append(i["number"])
     return out
@@ -1719,7 +1723,7 @@ def worker_prompt(n, lane, review_text=None, bug=False):
     base = (f"You are an unattended worker for GitHub issue #{n} in repo {REPO} (lane: {lane}). If its title starts with 'Batch:', follow "
             f"its 'How to work' section: independent members (different files) may go to sub-agents (Agent tool); you integrate, test once "
             f"and open ONE PR with a 'Fixes #m' line per member. Read CLAUDE.md and FLOW.md, then the issue "
-            f"(`gh issue view {n} --repo {REPO} --comments`). Work only inside this worktree (your cwd). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
+            f"(`python3 tools/runner/view.py issue {n}` (trusted authors only)). Work only inside this worktree (your cwd). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
             f"{ACCEPT}\n" + owner_gate(n) + SPEC)
     if lane == "review":
         return base + (f"This is a read-only review issue: change NO files, make no commits, open no PR. Post your report as ONE issue comment "
@@ -1771,7 +1775,7 @@ def review_prompt(n, pr, round1=""):
 def remote_review_prompt(n, pr, round1=""):
     """#134: task for a cloud reviewer session. No terminal: the verdict is read from its PR comment."""
     return (f"You are a fresh, read-only reviewer for PR #{pr} (issue #{n}) in {REPO}, running unattended in a cloud session. Change NO files, "
-            f"make no commits, push nothing, open nothing. Read CLAUDE.md, FLOW.md, the issue with its comments (`gh issue view {n} --repo {REPO} --comments`) "
+            f"make no commits, push nothing, open nothing. Read CLAUDE.md, FLOW.md, the issue with its comments (`python3 tools/runner/view.py issue {n}` (trusted authors only)) "
             f"and the diff (`gh pr diff {pr} --repo {REPO}`, ignore the built index.html files). Check: correctness vs the issue, simplicity (one main action "
             "per screen), Hebrew with correct nikud, facts correct, no unrelated changes, tests for the change. Use the code-review skill if you have it "
             f"(Standards = CLAUDE.md + FLOW.md, Spec = the issue). Then post ONE comment on the PR (`gh pr comment {pr} --repo {REPO} --body-file <file>`, "
@@ -2732,9 +2736,9 @@ def start_chosen(chosen, wmap, spawn_=None, terms_=None, lanes_=None):
     return results
 
 def run_pass():
-    rc, out = gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
+    rc, out = gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body,author")
     if rc: print("gh failed:", out); log_pass_exit(out); return 1
-    issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
+    issues = untrusted_not_ready([{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)])   # #800
     issues, refused = gate(issues)                          # #186: no Acceptance section -> not started
     if refused and not DRY: ask_acceptance(refused)
     if not DRY:                                             # #264: owner gets only real questions; blocked issues with an open PR resume
