@@ -13,6 +13,8 @@ RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")
 TOKEN_FILE, LOG = RUNS / "gh_app_token.json", RUNS / "ghauth.log"   # .runs is gitignored; one token shared by every bot process
 REFRESH = 600              # s before expiry a new token is minted (tokens live 1 h)
 BACKOFF = 300              # s after a failed mint before the next try
+MINT_TRIES, MINT_WAIT = 3, (1, 3)   # #912: a mint is tried 3 times (waits between) before falling back / logging a failure
+LOCK_FILE, LOCK_STALE = RUNS / "gh_app_token.lock", 90   # #912: one process mints; the others wait for its token (a lock older than this is dead)
 OWNER = "OREN_GH_OWNER"    # env marker: run this gh call as the owner (e.g. the owner's budget on the dashboard)
 API = "https://api.github.com"
 
@@ -81,7 +83,33 @@ def _log(now, msg):
         with open(LOG, "a", encoding="utf-8") as f: f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(now))} {msg[:300]}\n")
     except OSError: pass
 
-def token(cfg=None, now=None, post=None, sign=None):
+_held = False
+def _lock(now, sleep=None, waits=10):
+    """#912: take the mint lock (O_EXCL file; a lock older than LOCK_STALE is dead). Another process holds it: wait up to `waits` s for its
+    token to land -> False (the caller reads the token file). True = we hold it."""
+    global _held
+    for i in range(waits + 1):
+        try:
+            RUNS.mkdir(parents=True, exist_ok=True)
+            fd = os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY); os.close(fd); _held = True; return True
+        except FileExistsError:
+            try:
+                if time.time() - LOCK_FILE.stat().st_mtime > LOCK_STALE: LOCK_FILE.unlink(); continue
+            except OSError: continue
+        except OSError: return True                     # cannot lock (read-only .runs): mint anyway, as before
+        d = _read()
+        if d.get("token") and d.get("expires_at", 0) - now > REFRESH: return False
+        if i < waits: (sleep or time.sleep)(1)
+    return False
+
+def _unlock():
+    global _held
+    if _held:
+        _held = False
+        try: LOCK_FILE.unlink()
+        except OSError: pass
+
+def token(cfg=None, now=None, post=None, sign=None, sleep=None):
     """The App installation token ('' = use the owner login). Minted once, shared via TOKEN_FILE, refreshed REFRESH s before expiry."""
     app = app_cfg(_cfg() if cfg is None else cfg)
     if not app: return ""
@@ -90,16 +118,27 @@ def token(cfg=None, now=None, post=None, sign=None):
     if d.get("token") and d.get("expires_at", 0) - now > REFRESH: return d["token"]
     if d.get("failed_at") and now - d["failed_at"] < BACKOFF: return ""
     app_id, inst, key = app
+    if not _lock(now, sleep):                          # #912: another process is minting: use its token when it lands
+        d = _read()
+        return d["token"] if d.get("token") and d.get("expires_at", 0) - now > 0 else ""
     try:
-        r = (post or post_token)(f"{API}/app/installations/{inst}/access_tokens", make_jwt(app_id, key, now, sign))
-        tok, exp = r["token"], parse_time(r.get("expires_at"))
-        _write({"token": tok, "expires_at": exp or int(now) + 3600})
-        _log(now, f"app token minted (expires {r.get('expires_at')})")
-        return tok
-    except Exception as e:
+        d = _read()                                    # a process that held the lock before us may have minted already
+        if d.get("token") and d.get("expires_at", 0) - now > REFRESH: return d["token"]
+        err = None
+        for k in range(MINT_TRIES):                    # #912: retried before the owner login / a queued record
+            try:
+                r = (post or post_token)(f"{API}/app/installations/{inst}/access_tokens", make_jwt(app_id, key, now, sign))
+                tok, exp = r["token"], parse_time(r.get("expires_at"))
+                _write({"token": tok, "expires_at": exp or int(now) + 3600})
+                _log(now, f"app token minted (expires {r.get('expires_at')})" + (f" after {k + 1} tries" if k else ""))
+                return tok
+            except Exception as e:
+                err = e
+                if k + 1 < MINT_TRIES: (sleep or time.sleep)(MINT_WAIT[min(k, len(MINT_WAIT) - 1)])
         _write({"failed_at": now})
-        _log(now, f"app token mint failed, gh uses the owner login for {BACKOFF} s: {type(e).__name__}: {e}")
+        _log(now, f"app token mint failed ({MINT_TRIES} tries), gh uses the owner login for {BACKOFF} s: {type(err).__name__}: {err}")
         return ""
+    finally: _unlock()
 
 def active(now=None):
     """True when bots currently run with the App token (dashboard: show budgets per identity)."""
