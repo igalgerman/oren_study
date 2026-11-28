@@ -217,6 +217,8 @@ def start_control(R, name, space_id=None):
     """Start orchestrator / inbox / inspector (in 'oren') or the watchdog. Used by recover and by the watchdog's restart check."""
     if space_id is None: space_id = pick_space(spaces(R), control_space(R)) if name in CONTROL else ""
     mc = R.CFG.get("main_checkout", str(R.ROOT))
+    import gitid
+    gitid.set_email(mc, R.run)                        # #889: control sessions commit with the noreply address (repo-local, shared by worktrees)
     if name == "inspector":
         try: ensure_handoff(R.CFG.get("inspector_handoff", "C:/work/Oren_study/INSPECTOR_HANDOFF.md"), Path(mc) / "docs" / "roles" / "INSPECTOR_HANDOFF.template.md")
         except OSError as e: print("handoff not created:", e)

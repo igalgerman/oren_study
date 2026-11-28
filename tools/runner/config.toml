@@ -3,6 +3,7 @@ repo = "igalgerman/oren_study"   # gh --repo
 remote = "origin"
 branch = "main"
 model = "sonnet"
+git_email = "4981680+igalgerman@users.noreply.github.com"   # #889: the only address sessions commit with (GitHub e-mail privacy push-block)
 local_lanes = 0                 # #133: worker windows on this PC (owner 26 Nov: 0, the PC froze; all workers in the cloud)
 remote_lanes = 6                # #133: cloud sessions (tools/runner/remote.py); a local lane busy + a remote slot free -> the worker runs in the cloud
 # #239/#705 usage governor: cloud lanes follow the remaining WEEK budget evenly, re-planned every pass (panel writes .runs/usage.json); the 5h window is only a cap
