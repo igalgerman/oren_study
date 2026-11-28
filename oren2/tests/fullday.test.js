@@ -25,10 +25,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const play = id => p.evaluate(({ id, SEC }) => {
     const T = window.TAL, O = window.OREN, H = window.HEALTH; const r = H.day(); const dm = H.domOf(id);
     window.__t += SEC * 1000; r.on += SEC; if (dm) r.dom[dm] = (r.dom[dm] | 0) + SEC; const s = T.S(); s.time[O.today()] = (s.time[O.today()] | 0) + SEC;
+    if (id !== 'math' && !/:/.test(id)) { s.last = { id, d: O.today() }; T.record(id, 3); }  /* marked before the path is re-checked, as a finished mission is */
     const d = T.dailyEnsure();
     if (id === 'math') { O.emit('levelDone', { id: 'sim' }); }
     else if (/:/.test(id)) { const k = d.t.findIndex((x, i) => x === id && !d.done[i]); if (k >= 0) d.done[k] = 1; O.persist(); }
-    else { s.last = { id, d: O.today() }; T.record(id, 3); }
     O.showMap(); }, { id, SEC });
   /* was a mission seen today while another one in the pool was not? */
   const note = async id => {
