@@ -10,7 +10,7 @@ Usage:
   python tools/runner/owner_q.py gate <#n>                      # #608: the owner's answers for issue n (exit 0 = gate open, 1 = closed)
 A PR whose issue is owner-gated (an owner question about it exists) never merges while that gate is CLOSED (#636, merge_gate).
 """
-import hashlib, json, os, re, shutil, subprocess, sys
+import hashlib, json, os, re, shutil, subprocess, sys, threading
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -47,6 +47,8 @@ def gates_of(b):
     return [int(x) for x in re.findall(r"\d+", m[1])] if m else []
 
 HE = re.compile(r"[א-ת]"); LAT = re.compile(r"[A-Za-z]")
+TR_TIMEOUT_S = 15     # #699: a translation never holds a watchdog tick (bound 60 s, #365) longer than this
+FALLBACK_HE = "הודעה מהמערכת. הפרטים ב-GitHub:"   # #699: shown instead of English when no Hebrew version exists
 TRANSLATE = None      # text -> Hebrew text or None; tests swap in a fake (default: one short call to a cheap model)
 
 def is_hebrew(t):
@@ -59,15 +61,26 @@ def _claude_hebrew(text):
         p = subprocess.run([shutil.which("claude") or "claude", "-p", "--model", "haiku", "--no-session-persistence"],
                            input="Write this text for a parent in short, plain Hebrew (no nikud). Keep every option, number and #issue as is. "
                                  "Output only the Hebrew text.\n\n" + text, capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", timeout=90, stdin=None, cwd=str(R.ROOT))
+                           errors="replace", timeout=TR_TIMEOUT_S, stdin=None, cwd=str(R.ROOT))
     except (OSError, subprocess.TimeoutExpired): return None
     out = (p.stdout or "").strip()
     return out if p.returncode == 0 and out and is_hebrew(out) else None
 
+def _bounded(fn, text, secs):
+    """#699: fn(text) in a daemon thread, at most `secs` s; a slow or failing translator -> None."""
+    box = []
+    def run():
+        try: box.append(fn(text))
+        except Exception: pass
+    t = threading.Thread(target=run, daemon=True); t.start(); t.join(secs)
+    return box[0] if box and not t.is_alive() else None
+
 def hebrew_of(question):
-    """#696: the question as Hebrew; a Hebrew text stays; no translation possible -> None (the original is shown)."""
+    """#696: the question as Hebrew; a Hebrew text stays; None = a Hebrew text or empty. #699: an English text whose translation
+    failed or timed out -> the fixed Hebrew fallback line (the caller adds the issue link), never the English."""
     q = re.sub(r"^QUESTION:\s*", "", question or "").strip()
-    return None if not q or is_hebrew(q) else (TRANSLATE or _claude_hebrew)(q)
+    if not q or is_hebrew(q): return None
+    return _bounded(TRANSLATE or _claude_hebrew, q, TR_TIMEOUT_S) or FALLBACK_HE
 
 def body(key, window, question, tail="", gates=(), he=None):
     """The comment text (parent-facing: Hebrew without nikud)."""
@@ -76,7 +89,9 @@ def body(key, window, question, tail="", gates=(), he=None):
     q = re.sub(r"^QUESTION:\s*", "", question).strip() or ("(מחכה לתשובה) " + (tail.strip().splitlines() or [""])[-1].strip())
     opts = options_of(question, tail)
     orig = f"\n\n<details><summary>English original</summary>\n\n{q}\n\n</details>" if he else ""
-    if he: q = he
+    if he:
+        n = ref[1:] if ref else _state().get("issue", "")
+        q = he if he != FALLBACK_HE else f"{FALLBACK_HE} https://github.com/{R.REPO}/issues/{n}"
     g = f"<!-- gates: {' '.join(f'#{n}' for n in gates)} -->" if gates else ""
     return (f"{MARK}<!-- owner-q:{key} -->{g}\n{head}\n\n**שאלה:** {q}\n"
             + ("".join(f"\n- {o}" for o in opts) + "\n" if opts else "") + orig

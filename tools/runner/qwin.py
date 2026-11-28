@@ -114,23 +114,33 @@ def split_options(text):
         return parts[0].strip(), [o.strip() for o in parts[2::2]]
     return (text or "").strip(), []
 
+def headline(q):
+    """#699: ('one Hebrew line', options, details): the first line of the question; everything else is details (hidden under 'עוד')."""
+    first, _, rest = (q.get("text", "") or "").strip().partition("\n")
+    text, opts = split_options(first)
+    return text, opts, rest.strip()
+
 def page_data(q):
-    """#368: the Hebrew page (tools/ask) for one question: the options as buttons (+ own answer), else a free answer."""
-    text, opts = split_options(q.get("text", ""))
+    """#368: the Hebrew page (tools/ask) for one question: the options as buttons (+ own answer), else a free answer.
+    #699: one line first, the details collapsed under 'עוד'."""
+    text, opts, rest = headline(q)
     item = {"id": "a", "text": text, "options": opts, "other": True} if opts else {"id": "a", "text": text, "free": True}
+    if rest: item["details"] = rest
     return {"title": "שאלה ממערכת המשחק", "intro": "בחר תשובה ולחץ שלח.", "questions": [item]}
 
 def push_text(q):
     """#368: the exact phone push: the question, numbered options, how to answer."""
-    text, opts = split_options(q.get("text", ""))
+    text, opts, _ = headline(q)
     return text + "".join(f"\n{i}. {o}" for i, o in enumerate(opts, 1)) + (
         "\nענה במספר בצ'אט, או בדף שנפתח בדפדפן" if opts else "\nענה בצ'אט, או בדף שנפתח בדפדפן")
 
 def tg_text(q):
-    """#440: the Telegram message: the question, numbered options, how to answer."""
-    text, opts = split_options(q.get("text", ""))
+    """#440: the Telegram message: the question line, numbered options, how to answer; #699: no details, the page link instead."""
+    text, opts, rest = headline(q)
+    link = page_url(q["key"]) if q.get("key") else ""
     return text + "".join(f"\n{i}. {o}" for i, o in enumerate(opts, 1)) + (
-        "\nענה במספר או במילים (Reply להודעה הזו), או בדף שנפתח במחשב" if opts else "\nענה כאן (Reply להודעה הזו), או בדף שנפתח במחשב")
+        "\nענה במספר או במילים (Reply להודעה הזו), או בדף שנפתח במחשב" if opts else "\nענה כאן (Reply להודעה הזו), או בדף שנפתח במחשב") + (
+        f"\nפרטים: {link}" if rest and link else "")
 
 def tg_answer(q_text, reply):
     """#440: '2' -> the 2nd option's text; anything else is his own answer."""
