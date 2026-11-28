@@ -5429,15 +5429,22 @@ function choose(dm,first,quiet){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.
 function newDay(){const d=T.dailyEnsure();d.done=d.done.map(x=>x||2);d.bs=d.t.length;d.ch=null;const dm=(wpick(doms(),1)[0]||{id:'math'}).id;choose(dm,null,1);}
 function lastStep(){const l=T.S().last;if(!l)return null;if(l.id==='math')return nextLevel()?'math':null;const d=T.S().daily;/* #634 not a mission he already played today */
   return T.dailyPool().includes(l.id)&&!(d&&d.d===O.today()&&d.t.includes(l.id))?l.id:null;}
+/* #657 a pick in "something else" opens that topic at once; it is put first among the open missions, so closing it leaves it as the next step of the path */
+function pickOther(dm){const d=T.dailyEnsure(),n0=d.t.length;choose(dm,null,1);if(d.t.length<=n0){home();return;}
+  const mine=id=>dm==='math'?id==='math':dm==='tog'?/^tog:/.test(id):ACT[id]&&(String(dm).startsWith('b:')?ACT[id].b.id===dm.slice(2):domOf(id)===dm);
+  let k=d.t.findIndex((x,i)=>i>=n0&&mine(x));if(k<0)k=n0;const at=Math.max(d.bs|0,d.done.findIndex(x=>!x));
+  if(at>=0&&at<k){const id=d.t.splice(k,1)[0];d.done.splice(k,1);d.t.splice(at,0,id);d.done.splice(at,0,0);k=at;}
+  O.persist();sfx.ok(2);runStep(k);}
 /* "something else": a few big tiles (math, the doors, together time); a door drills down to its buildings */
-function other(gr){O.setScreen('sTal','meadow',gr?()=>other():O.showMap);O.hud('');const say=gr?gr.n+'.':'מָה בָּא לְךָ? בְּחַר מָה שֶׁתִּרְצֶה.';const s=$('#sTal');s.innerHTML='';
-  s.appendChild(h('div','whead',`<span class="gd">${gr?gr.e:'🔍'}</span><h1>${gr?gr.n:'מָה בָּא לְךָ?'}</h1>`));const g=h('div','dall');
+const SAYOTHER='בְּחַר מַשֶּׁהוּ, וּמַתְחִילִים אוֹתוֹ מִיָּד!';
+function other(gr){O.setScreen('sTal','meadow',gr?()=>other():O.showMap);O.hud('');const say=SAYOTHER;const s=$('#sTal');s.innerHTML='';
+  s.appendChild(h('div','whead',`<span class="gd">${gr?gr.e:'🔍'}</span><h1>${gr?gr.n:'מָה בָּא לְךָ?'}</h1>`));s.appendChild(h('div','sub',SAYOTHER));const g=h('div','dall');
   const add=(ic,n,c,fn)=>{const b=h('button','dcard',`<span class="dic">${ic}</span><b>${n}</b>`);b.style.setProperty('--dc',c);b.onclick=()=>{sfx.pop(3);fn();};g.appendChild(b);};
   const blds=x=>x.ids.map(bid=>T.BUILD.find(b=>b.id===bid)).filter(b=>b&&poolOf([b.id]).length);
-  if(gr)blds(gr).forEach(b=>add(b.icon(),b.name,b.color,()=>choose('b:'+b.id)));
-  else{if(nextLevel())add(`<span>${MATH.e}</span>`,MATH.n,MATH.c,()=>choose('math'));
-    T.GROUPS.forEach(x=>{const bs=blds(x);if(bs.length)add(`<span>${x.e}</span>`,x.n,x.c,()=>bs.length>1?other(x):choose('b:'+bs[0].id));});
-    add('<span>🤝</span>','מְשַׂחֲקִים עִם אַבָּא אוֹ אִמָּא','#e0794a',()=>choose('tog'));}
+  if(gr)blds(gr).forEach(b=>add(b.icon(),b.name,b.color,()=>pickOther('b:'+b.id)));
+  else{if(nextLevel())add(`<span>${MATH.e}</span>`,MATH.n,MATH.c,()=>pickOther('math'));
+    T.GROUPS.forEach(x=>{const bs=blds(x);if(bs.length)add(`<span>${x.e}</span>`,x.n,x.c,()=>bs.length>1?other(x):pickOther('b:'+bs[0].id));});
+    add('<span>🤝</span>','מְשַׂחֲקִים עִם אַבָּא אוֹ אִמָּא','#e0794a',()=>pickOther('tog'));}
   s.appendChild(g);if(!gr)s.appendChild(doorsEl());O.sayNow=T.spk(say)+T.choiceSay(s,'.dcard b,.door b');O.emit('other',s);}
 /* ---------- path steps ---------- */
 function special(i,id){const [kind,k]=id.split(':');const isT=kind==='tog';const a=isT?TOG.find(x=>x.k===k):RW[k];
@@ -5468,7 +5475,7 @@ T.nextStep=nextStep;
 const quest=()=>T.quest?T.quest():{e:'⛵',k:'⛵',a:'',z:''};
 /* #266 the fixed clips of home and "something else" (for pregen) */
 T.addChoices([MATH.n,'מַסָּע','עִיר','מַמְלָכָה','אַרְקֵייד','מְשַׂחֲקִים עִם אַבָּא אוֹ אִמָּא','לְהַמְשִׁיךְ מֵאֵיפֹה שֶׁעָצַרְתִּי','מַשֶּׁהוּ אַחֵר','עוֹד פַּעַם','הַמְשֵׁךְ','סוֹף הַסִּפּוּר']);
-T.addSay(['בֹּקֶר טוֹב','צָהֳרַיִם טוֹבִים','עֶרֶב טוֹב'].map(x=>x+', אוֹרֶן! בְּמָה נְשַׂחֵק?').concat(['שָׁלוֹם אוֹרֶן! מָה בָּא לְךָ הַיּוֹם?','כָּל הַכָּבוֹד! עַכְשָׁו זְמַן חוֹפְשִׁי 🎈','סִיַּמְתָּ אֶת הַשְּׁבִיל! בּוֹא נִרְאֶה אֵיךְ נִגְמַר הַסִּפּוּר.','מָה בָּא לְךָ? בְּחַר מָה שֶׁתִּרְצֶה.']));
+T.addSay(['בֹּקֶר טוֹב','צָהֳרַיִם טוֹבִים','עֶרֶב טוֹב'].map(x=>x+', אוֹרֶן! בְּמָה נְשַׂחֵק?').concat(['שָׁלוֹם אוֹרֶן! מָה בָּא לְךָ הַיּוֹם?','כָּל הַכָּבוֹד! עַכְשָׁו זְמַן חוֹפְשִׁי 🎈','סִיַּמְתָּ אֶת הַשְּׁבִיל! בּוֹא נִרְאֶה אֵיךְ נִגְמַר הַסִּפּוּר.',SAYOTHER]));
 const stepInfo=id=>{if(id==='math')return {n:'שָׁלָב בְּחֶשְׁבּוֹן',ic:SPR.tree,c:'#d99a2b'};const [k,v]=String(id).split(':');
   if(k==='tog'){const a=TOG.find(x=>x.k===v)||{n:''};return {n:'🤝 '+a.n,ic:'<span>🤝</span>',c:'#e0794a'};}
   if(k==='rw')return {n:'מְשִׂימָה בַּבַּיִת',ic:`<span>${(RW[v]||{}).e||'🏠'}</span>`,c:'#2a9d8f'};
@@ -6165,7 +6172,9 @@ function remPanel(box,sec,re){const m=(T.S().set||{}).rem;
   const sb=h('button','pchip hmsgsend','📣 שלח');const upd=()=>{sb.disabled=!i.value.trim();};upd();
   i.oninput=upd;i.onkeydown=e=>{e.stopPropagation();if(e.key==='Enter')sb.click();};
   sb.onclick=()=>{const x=i.value.trim().slice(0,MSG_MAX);if(x)send(x);};
-  const g2=h('div','hmsgtype');g2.append(i,sb);f.appendChild(g2);s.appendChild(f);}
+  const g2=h('div','hmsgtype');g2.append(i,sb);f.appendChild(g2);s.appendChild(f);
+  /* #674: what an AI helper (MCP, docs/mcp-guide.md) sent or changed, newest first; shown only when there is something */
+  const ml=(T.S().set.mcpLog||[]).slice(-8).reverse();if(ml.length){const ai=h('div','pnote pmcplog','🤖 מה נשלח או שונה על ידי עוזר AI:');ml.forEach(x=>{const r=h('div','pstat');r.textContent=hm(x.t)+' · '+({send_message:'הודעה',send_reminder:'תזכורת',change_plan:'שינוי תוכנית',pause_today:'עצירה להיום',resume_today:'חזרה לרגיל'}[x.tool]||x.tool)+(x.x?' · '+x.x:'');ai.appendChild(r);});s.appendChild(ai);}}
 
 /* two big cards of other domains Oren did least today */
 const fresh=dm=>{if(dm==='math'||dm==='arcade')return true;const dt=((T.S().daily||{}).t)||[];return T.dailyPool().some(id=>H.domOf(id)===dm&&!dt.includes(id));};   /* #634 a domain with a mission he has not played today */
