@@ -1905,6 +1905,7 @@ function studio(first,back){setScreen('sStudio','meadow',first?null:(back||showM
     fr.append(frow('כּוֹבַע','phat',FHAT,o=>o[0]?mini('phat',o):'✖'));
     fr.append(frow('קִשּׁוּט','pacc',FACC,o=>o[0]?mini('pacc',o):'✖'));
     const names=h('div','frow','<h4>שֵׁם</h4>');for(const n of FNAME){const b=h('button','hatb fb fname'+(petName(save.av)===n?' sel':''),n);b.onclick=()=>pick('pname',n,n);names.appendChild(b);}fr.append(names);
+    const ages=h('div','frow','<h4>גִּיל</h4>');for(const [n,w] of FAGE){const b=h('button','hatb fb fname'+(save.av.page===n?' sel':''),String(n));b.onclick=()=>pick('page',n,petName(save.av)+', גִּיל '+w);ages.appendChild(b);}fr.append(ages);
     const go=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=()=>back?back():showMap(first);
     const col=h('div','');col.style.cssText='display:flex;flex-direction:column;align-items:center;gap:10px';col.append(pv,nm,pr);const right=h('div','');right.style.cssText='display:flex;flex-direction:column;gap:12px;align-items:center';right.append(tabs,rows);wrap.append(col,right);s.append(wrap,fr,go);};
   render();}
