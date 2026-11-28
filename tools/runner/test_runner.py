@@ -372,6 +372,26 @@ assert r.integrate_with_resolve(lambda: next(_mr), lambda f: True, 2)[0] == "fai
 _mr = iter([(2, "CONFLICTS"), (0, "ok")])
 assert r.integrate_with_resolve(lambda: next(_mr), lambda f: True, 2)[0] == "merged"            # merge conflict -> resolve round -> retry -> merged
 assert _cm([_ck("pending")] * 99, timeout_s=60, poll_s=30)[0] == ("timeout",)
+# #911: the CI wait polls the cache's rollup; `gh pr checks` only at a final state, when unknown, or every 120 s as a safety net
+_t, _real, _st = [1000.0], [], ["PENDING"]
+def _real_checks(): _real.append(_t[0]); return [{"name": "tests", "bucket": "pending"}]
+_gc = r.cached_checks(30, _real_checks, lambda n: _st[0], clock=lambda: _t[0])
+for _ in range(3): _t[0] += 30; assert r.ci_verdict(_gc()) == "pending" and not _real
+_t[0] += 30; _gc()
+assert len(_real) == 1 and _real[0] == 1120.0, f"pending: no `gh pr checks` before the 120 s safety net: {_real}"
+_t[0] += 60; _gc(); assert len(_real) == 1, "pending again: cache (the safety clock restarted at the real call)"
+_t[0] += 60; _gc(); assert len(_real) == 2, "120 s later: safety net"
+for _s in ("SUCCESS", "FAILURE", "ERROR"): _st[0] = _s; _n = len(_real); _gc(); assert len(_real) == _n + 1, f"a final rollup ({_s}) asks the real checks"
+_st[0] = None; _n = len(_real); _gc(); assert len(_real) == _n + 1, "unknown rollup (stale cache / dirty): real call"
+_t2, _real2 = [0.0], []
+_gc2 = r.cached_checks(1, lambda: _real2.append(1) or [], lambda n: "PENDING", clock=lambda: _t2[0])
+for _ in range(13): _t2[0] += 60; _gc2()          # 13 minutes of one lane in the CI wait
+assert len(_real2) <= 7, _real2                     # 13 lanes x ~0.5 real call a minute = 6.5 a minute (target <= 15)
+_sl = []
+_it = iter([_ck("pending")] * 3 + [_ck("pass")])
+assert r.ci_merge(lambda: next(_it), lambda: None, lambda: True, _sl.append, poll_s=30, pending_poll_s=60) == ("merged",) and _sl == [60, 60, 60], _sl
+assert r.pr_field('{"mergeable": "CONFLICTING"}', "mergeable") == "CONFLICTING" and r.pr_field("gh: error", "mergeable") == "" and r.pr_field("[]", "x") == ""
+assert r.pr_field(_json.dumps({"headRefOid": "a" * 40}), "headRefOid") == "a" * 40
 assert r.deploy_needed("a", "b") and not r.deploy_needed("b", "b") and r.deploy_needed("", "b") and not r.deploy_needed("a", "")
 assert r.conflict_files("CI RED\nc0\n") == ["c0"]
 assert r.integrate_with_resolve(iter([(6, "CI RED\nc0\n"), (0, "ok")]).__next__, lambda f: f == ["c0"], 2)[0] == "merged"
@@ -901,7 +921,7 @@ assert lo < 3 < hi, (lo, hi)
 g = r.governor(_ux(80, 80), [], _now, _G, busy=3, ready=9); assert "ahead of pace" in g["why"], g
 assert r.governor(_ux(94, 80), [], _now, _G, busy=3, ready=9)["lanes"] == 0                  # no budget left (need < 0) and N_lo 0
 # 1% used with 6 h left (and plenty of work): N_hi; only L + Q or the ceiling bounds it
-g = r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=20); assert g["lanes"] == 16 == g["n_hi"], g
+g = r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=30); assert g["lanes"] == 24 == g["n_hi"], g
 g = r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=3); assert g["lanes"] == 5 == g["n_hi"], g                 # L + Q
 assert r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=0)["lanes"] == 2                                         # no work: N_lo 0, N_hi = L
 assert r.governor(_ux(1, 6), [], _now, {"ceiling": 4}, busy=0, ready=20)["lanes"] == 4
@@ -916,7 +936,7 @@ g = r.governor(_u(90, 4, week=1, week_reset_h=6), [], _now, _G, busy=2, ready=20
 g = r.governor(_u(20, 4, week=1, week_reset_h=6), [], _now, _G, busy=2, ready=20); assert g["lanes"] == 12 and g["pct"] == 20, g
 assert " · 5h 20% (cap 97%)" in r.governor_text(g), r.governor_text(g)
 # week-only: no 5h cap and no 5h stop even with a 5h value in an old shape of 99
-g = r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=20); assert g["pct"] is None and not g["stop"] and g["lanes"] == 16
+g = r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=30); assert g["pct"] is None and not g["stop"] and g["lanes"] == 24
 # 5h stop (99) stays on the 5h+week plan
 g = r.governor(_u(99, 1, week=1, week_reset_h=6), [], _now, _G, busy=2, ready=20); assert g["stop"] and "STOP" in r.governor_text(g) and "governor: 0 lanes" in r.governor_text(g)
 assert not r.governor(_u(92.9, 0.1, week=1, week_reset_h=6), [], _now, _G, busy=2, ready=20)["stop"]
@@ -928,7 +948,7 @@ for _k, _w in enumerate([40, 40.6, 40.4, 41.0, 40.9, 41.6, 41.5, 42.0, 42.2, 42.
 assert _chg <= 2 and max(_ln) - min(_ln) <= 2, _ln
 assert r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=20, prev=4)["lanes"] == 6                      # +2 per pass at most
 assert r.governor(_ux(93, 20), [], _now, _G, busy=8, ready=20, prev=8)["lanes"] == 6                    # -2 per pass at most (the limit is far)
-assert r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=20, prev=16)["lanes"] == 16
+assert r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=30, prev=24)["lanes"] == 24
 # a plan (bucket kinds) change is logged once, by the pass
 assert r.plan_mode(_u(5, 1, week=3)) == "5h+week" and r.plan_mode(_ux(3, 5)) == "week-only" and r.plan_mode(None) == "none"
 assert r.plan_mode({"buckets": [{"kind": "five_hour", "pct": 1}, {"kind": "seven_day", "pct": 2}]}) == "5h+week" and r.plan_mode({"buckets": [{"kind": "seven_day", "pct": 2}]}) == "week-only"
@@ -938,8 +958,8 @@ _gd = r.governor_pass(3, now=_now, ready=9)       # DRY: pure; the log line is w
 assert r.plan_change(r.governor(_u(5, 1, week=3), [], _now, _G)["mode"], r.governor(_ux(3, 5), [], _now, _G)["mode"]) == "plan changed: 5h+week -> week-only"
 _cfg = open(os.path.join(os.path.dirname(r.__file__), "config.toml"), encoding="utf-8").read()
 for _k in ("governor_min", "governor_max", "governor_week_cap", "governor_target", "governor_week_target", "governor_pace"): assert _k + " " not in _cfg and _k not in r.GOV, _k
-for _k in ("governor_reserve = 5", "governor_reserve_release_h = 12", "governor_5h_cap = 97", "governor_ceiling = 16"): assert _k in _cfg, _k
-assert (r.GOV["reserve"], r.GOV["release_h"], r.GOV["cap_5h"], r.GOV["ceiling"]) == (5, 12, 97, 16)
+for _k in ("governor_reserve = 5", "governor_reserve_release_h = 12", "governor_5h_cap = 97", "governor_ceiling = 24"): assert _k in _cfg, _k
+assert (r.GOV["reserve"], r.GOV["release_h"], r.GOV["cap_5h"], r.GOV["ceiling"]) == (5, 12, 97, 24)
 # replay of this week (simple model): week rises 0.40 %/h per lane + 0.15 %/h owner 08-23, from Thu 26 14:30 at 39%, reset Sat 17:00, one pass per 15 min,
 # 5h bucket absent (Ultra), 20 ready issues: ends 97-99.5%, never 100% before the reset
 _t0 = _dt(2026, 11, 26, 14, 30).timestamp(); _end = _dt(2026, 11, 28, 17, 0).timestamp(); _W, _L, _tt, _mx = 39.0, 3, _t0, 0
@@ -1748,3 +1768,68 @@ assert r.floors("worker", *r.apply_shift(1, "opus", "high", "core"), labels=()) 
 _src719 = inspect.getsource(r.process_locked)
 assert "if not upgrade:" in _src719 and "apply_shift(shift" in _src719 and "shift=shift" in _src719 and '", shift +1"' in _src719   # upgraded task keeps its rung; shown in stat + comment
 assert r.governor_now(now=0)["shift"] in (0, 1)
+
+# #841: a cloud session with no sign of life for dead_minutes goes back to the queue; 2 dead lanes in 30 min pause starts
+_dead_s = r.DEAD_MINUTES * 60
+assert r.DEAD_MINUTES == 20
+_t = [0]
+_sl = lambda s: _t.__setitem__(0, _t[0] + s)
+_res = r.wait_remote(lambda: {"state": "working"}, _sl, lambda: _t[0], 3 * 3600, 60, life=lambda: "same", dead_s=_dead_s)   # silent: dead at 20 min
+assert _res["state"] == "dead" and _t[0] == 20 * 60 and _res["minutes"] == 20, (_res, _t)
+_t[0] = 0                                                                                                                    # a commit at 15 min: keeps waiting
+_res = r.wait_remote(lambda: {"state": "working"}, _sl, lambda: _t[0], 3 * 3600, 60, life=lambda: "c1" if _t[0] < 900 else "c2", dead_s=_dead_s)
+assert _res["state"] == "dead" and _t[0] == 15 * 60 + 20 * 60, _t     # the 20 min restart from the sign of life
+_t[0] = 0                                                                                                                    # a session that keeps showing life keeps the 3 h limit
+_res = r.wait_remote(lambda: {"state": "working"}, _sl, lambda: _t[0], 3 * 3600, 60, life=lambda: _t[0] // 600, dead_s=_dead_s)
+assert _res["state"] == "timeout" and _t[0] == 3 * 3600
+_t[0] = 0                                                                                                                    # a change of the status (a PR appears) is life too; a failing life() is not death
+_res = r.wait_remote(lambda: {"state": "working", "pr": {"number": 5} if _t[0] >= 600 else None}, _sl, lambda: _t[0], 3600, 60, life=lambda: "x", dead_s=_dead_s)
+assert _res["state"] == "dead" and _t[0] == 600 + 20 * 60
+def _boom(): raise OSError("gh down")
+_t[0] = 0
+assert r.wait_remote(lambda: {"state": "working"}, _sl, lambda: _t[0], 3600, 60, life=_boom, dead_s=_dead_s)["state"] == "timeout"
+# remote_worker: a dead session -> one comment (session link + minutes silent), Dead raised (the caller requeues; no second session here)
+_cm = []
+try: r.remote_worker(7, "pack", False, fake_start, lambda: {"state": "working"}, _sl, lambda: _t[0], 3 * 3600, 60, comment=_cm.append, life=lambda: "same", dead_s=_dead_s); assert False, "no Dead"
+except r.Dead as e: assert e.minutes == 20 and "session_x" in e.url
+assert len(_cm) == 1 and "session_x" in _cm[0] and "20 min" in _cm[0], _cm
+# dead lanes: 2 within 30 min -> no new cloud starts for 30 min, why = 'dead lanes: 2', ONE alert per 3 h
+_st = {}
+_st, _n, _alert = r.note_dead(_st, 1000); assert (_n, _alert) == (1, False) and not r.dead_paused(_st, 1000)
+_st, _n, _alert = r.note_dead(_st, 1000 + 20 * 60); assert (_n, _alert) == (2, True) and r.dead_paused(_st, 1000 + 20 * 60)
+assert r.dead_why(_st, 1000 + 20 * 60) == "dead lanes: 2" and r.lanes_now(4, {}, 0, dead=_st) == 0 and r.lanes_now(4, {}, 0, dead={}) == 4
+assert not r.dead_paused(_st, 1000 + 20 * 60 + 30 * 60 + 1) and r.dead_why(_st, 1000 + 20 * 60 + 30 * 60 + 1) == ""
+_st, _n, _alert = r.note_dead(_st, 1000 + 25 * 60); assert _n == 3 and _alert is False          # at most one alert per 3 h
+_st2, _n, _alert = r.note_dead({}, 5000); _st2, _n, _alert = r.note_dead(_st2, 5000 + 31 * 60); assert _n == 1 and not r.dead_paused(_st2, 5000 + 31 * 60)   # 30 min apart: no pause
+_st3 = r.note_dead({**_st, "times": []}, 1000 + 3 * 3600 + 30 * 60)[0]; assert r.note_dead(_st3, 1000 + 3 * 3600 + 40 * 60)[2] is True     # 3 h later: alert again
+print("ok #841 dead sessions")
+# remote.life: comments + branch heads; a new commit changes it; an unreadable GitHub raises
+import remote as _rm
+_cn = [1]; _sha = ["a"]
+def _fake_gh(cmd):
+    if cmd[1] == "issue": return 0, json.dumps({"comments": [{}] * _cn[0]})
+    return 0, json.dumps([{"ref": "refs/heads/lane/7", "object": {"sha": _sha[0]}}] if cmd[2].endswith("heads/lane/7") else [])
+_s0 = _rm.life(7, _fake_gh); assert _rm.life(7, _fake_gh) == _s0
+_sha[0] = "b"; assert _rm.life(7, _fake_gh) != _s0
+_s1 = _rm.life(7, _fake_gh); _cn[0] = 2; assert _rm.life(7, _fake_gh) != _s1
+try: _rm.life(7, lambda c: (1, "err")); assert False
+except OSError: pass
+print("ok #841 remote.life")
+
+# #901: reversible design choices are decided by rule (PASS-NOTES decided:), PURPLE only for the owner-only kinds
+for _p in (r.review_prompt(7, 9), r.remote_review_prompt(7, 9)):
+    assert "PASS-NOTES decided:" in _p and "NOT PURPLE" in _p and "never for a design choice" in _p, _p
+    for _k in ("money", "secrets/keys/logins", "privacy", "irreversible deletes", "click only his account"): assert _k in _p, _k
+    assert "a real product/design choice only the owner can make" not in _p
+_dn = "decided: voice B (rule), other options: A, C"
+assert r.parse_verdict(f"VERDICT: PASS-NOTES {_dn}; rename x") == ("notes", f"{_dn}; rename x", "")
+assert r.decided_notes(f"rename x; {_dn}") == [_dn] and r.decided_notes("rename x") == []
+assert r.polish_lines(f"{_dn}; rename x", 9) == ["- rename x (PR #9)"]                 # a decided note is no polish line
+_calls = []; _g0 = r.gh; r.gh = lambda *a, **k: (_calls.append(a), (0, ""))[1]
+import telegram as _tg; _t0 = _tg.send; _sent = []; _tg.send = lambda t, reply_to=0: _sent.append(t)
+try:
+    assert len(r.post_decided(7, 9, f"{_dn}; rename x")) == 1 and len(_calls) == 1 and len(_sent) == 1   # one decided: line -> one notice
+    assert "voice B" in _sent[0] and "other options: A, C" in _sent[0] and "#7" in _sent[0]
+    assert r.post_decided(7, 9, "rename x") == [] and len(_sent) == 1
+finally: r.gh = _g0; _tg.send = _t0
+print("ok #901 decided notices")

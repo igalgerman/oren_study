@@ -45,6 +45,7 @@ sys.path.insert(0, str(HERE))
 import ghauth     # #363: GitHub App token for the bots
 import runner as R   # config, gh(), select(), hc paths
 import owner_q as OQ # #193: the pinned 'Questions for the owner' issue
+import backoff as BO # #842: exponential backoff + one alert for a job that keeps failing
 
 EVERY = int(R.CFG.get("watchdog_seconds", 60))
 LOG = R.RUNS / "watchdog.log"
@@ -164,6 +165,10 @@ def check_lanes(ts):
     key, now = tuple(sorted(i["number"] for i in ready)), time.time()
     ok, why = pass_decision(R.FileLock("pass").held_by_other(), key, last_pass_start(), now)   # #284/#250: one pass alive at a time
     if not ok: return
+    last = last_pass_start()
+    again = bool(last and list(last.get("key") or []) == list(key))   # #842: same ready issues as the last start = that pass started nothing
+    if again and not BO.due("run-pass", now): return
+    (BO.failed if again else BO.ok)("run-pass", now, tell)            # a new ready issue resets the wait
     note_pass_start(key, now)
     orch = R.hc_json("get", "orchestrator", "--json").get("address", "")
     name = f"run-pass-{int(time.time()) % 100000}"
@@ -316,17 +321,41 @@ def sweep_tick(ts, now=None, seen=None, hc=None, say=None):
     if gone: say(f"sweep: removed {len(gone)} finished terminal(s) older than {SWEEP_MIN} min: " + " ".join(n for n, _ in gone[:20]))
     return len(gone)
 
-def check_control(ts):
-    """#140: a finished orchestrator / inbox / inspector terminal is removed (by address) and started again, same command as recover."""
-    import recover
-    for name, address in recover.finished_control(ts):
-        R.hc("rm", address, timeout=30)
+def check_control(ts, now=None):
+    """#140: a finished control terminal is removed (by address) and started again, same command as recover.
+    #935: a control role with NO terminal (tab closed by hand) is started after 2 checks in a row. One start per role per tick, and a role
+    just started counts as present for 10 min. Nothing starts while recover runs, while frozen, or when `hc ls` gave no rows (stale view)."""
+    import recover, freeze
+    now = now or time.time()
+    if not ts or freeze.is_frozen(R.RUNS): return
+    try:
+        if R.FileLock("recover").held_by_other(): return
+    except Exception: pass
+    f = R.RUNS / "control_state.json"
+    try: state = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError): state = {}
+    plan, state = recover.control_plan(state, ts, now)
+    try: f.write_text(json.dumps(state), encoding="utf-8")
+    except OSError: pass
+    for name, addrs, why in plan:
+        for a in addrs: R.hc("rm", a, timeout=30)
         rc = recover.start_control(R, name)
-        log(f"{name} had finished: restarted (rc {rc})")
-        if rc == 0 and name != "orchestrator": tell(f"WATCHDOG: {name} had finished; restarted it")
+        word = "had finished" if why == "finished" else "was closed (no tab)"
+        log(f"{name} {word}: restarted (rc {rc})")
+        if rc == 0 and name != "orchestrator": tell(f"WATCHDOG: {name} {word}; restarted it")
 
 def qwin_tick(ts):
-    import qwin; importlib.reload(qwin); qwin.tick(ts)   # #220/#390: page + phone push per open owner question
+    if not BO.due("qwin"): return                        # #842: a failing job waits 2, 4, 8 ... 60 min
+    import qwin; importlib.reload(qwin); before = qwin.OPEN_FAILS[0]
+    try: qwin.tick(ts)   # #220/#390: page + phone push per open owner question
+    except Exception: BO.failed("qwin", alert=tell); raise
+    (BO.failed if qwin.OPEN_FAILS[0] > before else BO.ok)("qwin", alert=tell)   # 'could not open' counts as a failure
+
+def console_tick():
+    """#872: mirror owner questions/notices to the console (D1); shadow unless console_answers = true."""
+    if not BO.due("console"): return
+    import console_mirror; importlib.reload(console_mirror)
+    (BO.failed if console_mirror.tick() else BO.ok)("console", alert=tell)
 
 def resume_tick():
     for n in R.resume_answered(): log(f"#{n}: owner answered the cloud question -> unparked, the next pass resumes its session (#135)")
@@ -663,6 +692,7 @@ def tick():
         step("check_windows", check_windows, ts)
         step("answers_tick", OQ.answers_tick, tell)
         step("qwin_tick", qwin_tick, ts)
+        step("console_tick", console_tick)
         step("resume_tick", resume_tick)
         step("check_lanes", check_lanes, ts)
         step("check_intake", check_intake, ts)
@@ -680,7 +710,7 @@ def tick():
         for name, fn in (("observer_tick", observer_tick), ("ai_observer_tick", ai_observer_tick), ("nightly_tick", nightly_tick),
                          ("parked_tick", parked_tick), ("due_tick", due_tick), ("garden_tick", garden_tick),   # #282 #241 #187
                          ("issues_stuck_tick", issues_stuck_tick), ("desks_tick", desks_tick), ("canary_tick", canary_tick),   # #280 #330
-                         ("sync_tick", sync_tick), ("alarm_tick", alarm_tick), ("trends_tick", trends_tick), ("ai_tick", ai_tick), ("usage_tick", usage_tick), ("usage_alarm_tick", usage_alarm_tick), ("merges_tick", merges_tick), ("interaction_limit_tick", interaction_limit_tick),
+                         ("sync_tick", sync_tick), ("alarm_tick", alarm_tick), ("trends_tick", trends_tick), ("ai_tick", ai_tick), ("usage_tick", usage_tick), ("usage_alarm_tick", usage_alarm_tick), ("progress_alarm_tick", progress_alarm_tick), ("merges_tick", merges_tick), ("interaction_limit_tick", interaction_limit_tick),
                          ("lock_tick", lock_tick), ("orch_idle_tick", orch_idle_tick)):
             step(name, fn)
 
@@ -966,14 +996,16 @@ def lock_tick(now=None):
 _ai = {"running": False}
 def ai_tick():
     """#171: hourly AI assessment for the dashboard, in a background thread (claude -p can take a minute)."""
-    if _ai["running"] or not R.CFG.get("ai_model", "haiku"): return
+    if _ai["running"] or not R.CFG.get("ai_model", "haiku") or not BO.due("ai"): return   # #842
     import dashboard; importlib.reload(dashboard)
     a = dashboard.ai_load()
     if a and time.time() - a.get("at", 0) < dashboard.AI_EVERY_MIN * 60: return
     _ai["running"] = True
     def work():
-        try: dashboard.ai_tick(log)
-        except Exception as e: log(f"ai assessment error: {e!r}")
+        try:
+            r = dashboard.ai_tick(log)
+            if r is not None: (BO.ok if r else BO.failed)("ai", alert=tell)
+        except Exception as e: log(f"ai assessment error: {e!r}"); BO.failed("ai", alert=tell)
         finally: _ai["running"] = False
     threading.Thread(target=work, daemon=True).start()
 
@@ -983,12 +1015,12 @@ def ghcache_tick(start=None):
     Never two at once; skipped when the cache is younger than 50 s."""
     import ghcache
     c = ghcache.load()
-    if _GH_BUSY.is_set() or (c and time.time() - c.get("ts", 0) < 50): return False
+    if _GH_BUSY.is_set() or (c and time.time() - c.get("ts", 0) < 50) or not BO.due("gh-cache"): return False   # #842
     _GH_BUSY.set()
     def work():
         owner = (lambda cmd: R.run(cmd, env={ghauth.OWNER: "1"}, timeout=120)) if ghauth.app_cfg(R.CFG) else None   # #363: owner budget too
-        try: ghcache.refresh(lambda cmd: R.run(cmd, timeout=120), run_owner=owner)
-        except Exception as e: log(f"gh cache refresh failed: {e}"[:300])      # old cache stays; readers fall back to gh when it is stale
+        try: ghcache.refresh(lambda cmd: R.run(cmd, timeout=120), run_owner=owner); BO.ok("gh-cache", alert=tell)
+        except Exception as e: log(f"gh cache refresh failed: {e}"[:300]); BO.failed("gh-cache", alert=tell)      # old cache stays; readers fall back to gh when it is stale
         finally: _GH_BUSY.clear()
     (start or (lambda f: threading.Thread(target=f, daemon=True).start()))(work)
     return True
@@ -1015,6 +1047,34 @@ def usage_alarm_tick():
     if time.time() - _ualarm["last"] < 300: return
     _ualarm["last"] = time.time()
     import usage_alarms; importlib.reload(usage_alarms); usage_alarms.tick(tell, log)
+
+_palarm = {"last": 0.0}
+def progress_signals(cache, busy, lanes):
+    """#891: the facts cause() needs; read only when an alarm goes out (one gh call for main's checks, nothing else)."""
+    import canary, freeze
+    now = time.time(); s = {"stop": canary.gov_stop(), "frozen": freeze.is_frozen(R.RUNS), "all_busy": lanes > 0 and busy >= lanes}
+    try: s["beat_age_s"] = now - int((R.RUNS / "watchdog.beat").read_text(encoding="utf-8"))
+    except (OSError, ValueError): s["beat_age_s"] = None
+    s["control_bad"] = any((R.hc_json("get", w, "--json") or {}).get("state") != "live" for w in ("orchestrator", "inspector"))
+    rc, out = R.run(["gh", "api", f"repos/{R.REPO}/commits/{R.CFG.get('branch', 'main')}/check-runs?per_page=100"])
+    try: s["main_red"] = rc == 0 and any(c.get("conclusion") in ("failure", "timed_out") for c in json.loads(out).get("check_runs", []))
+    except ValueError: s["main_red"] = False
+    _, info, alive = lock_state(); s["lock_min"] = (now - info[2]) / 60 if info and alive else 0
+    pcts = [round(100 * r[0] / r[1]) for k in ("rate", "rate_owner") for r in (cache.get(k) or {}).values() if r and r[1]]
+    s["budget_pct"] = min(pcts) if pcts else None
+    return s
+
+def progress_alarm_tick():
+    """#891: every 5 min, from the gh cache: no merge/PR/commit/close/RESULT for progress_alarm_min while work is ready -> Telegram (Hebrew) + inspector + orchestrator."""
+    if time.time() - _palarm["last"] < 300: return
+    _palarm["last"] = time.time()
+    import ghcache, progress_alarm as PA, stats, telegram; importlib.reload(PA)
+    c = ghcache.load()
+    if not c: return
+    issues, _ = R.gate([{**i, "labels": [l["name"] for l in i.get("labels", [])]} for i in c.get("open") or []])
+    ready, busy = len(R.select(issues, 99, max_core=99)), sum("in-progress" in i["labels"] and "manual" not in i["labels"] for i in issues)
+    PA.tick(time.time(), c, stats.read_events(R.RUNS / "stats.jsonl"), ready, busy, lambda: progress_signals(c, busy, R.total_lanes()),
+            telegram.send, lambda m: [R.hc("send", w, m, timeout=30) for w in ("inspector", "orchestrator")], log)
 
 _merges = {"last": 0.0}
 def merges_tick():
