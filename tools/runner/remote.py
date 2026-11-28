@@ -28,7 +28,7 @@ RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # same as runner.
 APP_ONLY = "OREN_GH_APP_ONLY"   # #800: env marker: this gh call must run as the App bot, never fall back to the owner login
 
 def sh(cmd, env=None):
-    alt_env = None
+    alt_env = None; app_only = False
     if cmd and str(cmd[0]) in ("gh", "gh.exe"):
         import scrub; cmd, _ = scrub.scrub_cmd(cmd)      # #783: the kid's real name never reaches a GitHub write (canary writes through here)
         orig = dict(os.environ if env is None else env); orig.pop(ghauth.OWNER, None)
@@ -50,7 +50,7 @@ def sh(cmd, env=None):
             return 124, f"timed out after {to:.0f} s: {' '.join(map(str, cmd))[:120]}"
         return p.returncode, (p.stdout or "") + (p.stderr or "")
     return ghcache.call(list(map(str, cmd)), raw,       # #329: gh reads from the shared cache (panel, per-lane polls), rate limits retried
-                        alt=(lambda: raw(alt_env)) if alt_env is not None else None, who="app" if alt_env is not None else "owner")   # #469: app limited -> owner at once
+                        alt=(lambda: raw(alt_env)) if alt_env is not None else None, who="app" if alt_env is not None or app_only else "owner")   # #469: app limited -> owner at once
 
 def clean_env():
     return {k: v for k, v in os.environ.items() if k != TOKEN_VAR}
