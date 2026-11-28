@@ -6,6 +6,7 @@ running for RESOLVE_WAIT_MIN while the head has not moved.
 Two failed rounds (still dirty, head not moved) -> blocked + needs-orchestrator (never ready-for-human: the owner never resolves).
 State: .runs/conflicts.json {pr: {n, rounds, head, told}}; dashboard count: .runs/pr_conflicts.json [pr numbers]."""
 import json, re, time
+import trust
 from pathlib import Path
 
 MAX_ROUNDS = 2
@@ -26,7 +27,7 @@ def is_dirty(p):
     return (p.get("mergeable") or "").upper() == "CONFLICTING" or (p.get("mergeStateStatus") or "").upper() == "DIRTY"
 
 def last_verdict(p):
-    hits = [h for c in p.get("comments") or [] for h in VERDICT.findall((c.get("body") if isinstance(c, dict) else c) or "")]
+    hits = [h for c in trust.only(p.get("comments")) for h in VERDICT.findall(c.get("body") or "")]    # #800
     return hits[-1].upper() if hits else ""
 
 def eligible(p, passed):
