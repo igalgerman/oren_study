@@ -361,6 +361,10 @@ def night_report_if_due(tell, log, hour=None, now=None, data=parked_data):
     if d is None: log("night report: GitHub unreadable"); return None
     st["parked_day"] = time.strftime("%Y-%m-%d", time.localtime(now)); save_state(st)
     text = parked.night_report(*d, now) + "\n" + models_line_now(now)
+    try:
+        import progress_alarm; k = progress_alarm.count(now=now)
+        if k: text += f"\nNo-progress alarms in 24 h: {k} (#891)"
+    except Exception: pass
     tell(text); log(text[:300])
     return text
 

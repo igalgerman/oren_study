@@ -75,7 +75,7 @@ tb = U.tick(tell=tolds.append, log=print, now=T0 + 10, send=tgs.append, root=roo
 assert tolds and tolds == tgs and "orchestrator" in tolds[0], tolds           # 100% of the day is the orchestrator (> 15%)
 n_told = len(tolds); U.tick(tell=tolds.append, log=print, now=T0 + 20, send=tgs.append, root=root, known=KNOWN); assert len(tolds) == n_told   # not again within 3 h
 out = (U.RUNS / U.OUT_NAME).read_text(encoding="utf-8"); d = json.loads(out)
-assert set(d) == {"day", "rows", "attention", "at"} and d["rows"] and d["attention"]
+assert set(d) == {"day", "rows", "sessions", "attention", "at"} and d["rows"] and d["attention"]
 assert SECRET not in out and "ORCHESTRATOR.md" not in out and SECRET not in "".join(tolds) and "content" not in out
 U.record_headless("governor", "haiku", {"input_tokens": 5, "output_tokens": 1}, 0.01, now=T0)
 assert SECRET not in (U.RUNS / "usage_headless.jsonl").read_text() and U.headless_rows(0)[0]["entity"] == "governor"
@@ -95,4 +95,14 @@ g = U.build(U.headless_rows(0) + [{"entity": "governor", "model": "haiku", "effo
 assert any(r["entity"] == "governor" for r in g)
 # prefix match needs a real length
 assert U.classify("Read", KNOWN) == "other" and U.classify("Read ORCHESTRATOR.md and continue", KNOWN) == "orchestrator"
+# --- #850 by_session: shares, week None, subagent rows count for the parent, tiny sessions dropped, compute() has sessions ---
+assert all(r["session"] == "s1" for r in raw), raw    # the subagent file counts for its parent session
+bs_rows = [{"entity": "inspector", "model": "sonnet", "tokens": 600, "session": "a"}, {"entity": "inspector/sub:Explore", "model": "sonnet", "tokens": 300, "session": "a"},
+           {"entity": "inbox", "model": "opus", "tokens": 50, "session": "b"}, {"entity": "other", "model": "sonnet", "tokens": 0.05, "session": "c"},
+           {"entity": "governor", "model": "sonnet", "tokens": 50}]
+bs = U.by_session(bs_rows, 10.0)
+assert sorted(bs) == ["a", "b"] and bs["a"]["entity"] == "inspector" and abs(bs["a"]["day_pct"] - 900 / 1050.05 * 100) < 0.01, bs
+assert abs(bs["a"]["week_pct"] - bs["a"]["day_pct"] * 0.1) < 0.001 and abs(bs["b"]["day_pct"] - 100 * 100 / 1050.05) < 0.01
+assert all(v["week_pct"] is None for v in U.by_session(bs_rows, None).values())
+assert "sessions" in U.compute(now=T0 + 10, root=root, known=KNOWN) and "s1" in U.compute(now=T0 + 10, root=root, known=KNOWN)["sessions"]
 print("test_usage_entities: ok")
