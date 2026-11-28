@@ -119,3 +119,6 @@ Owner asks for stats → `python tools/runner/stats.py`, answer in ≤5 lines.
 
 ## Handoff (nightly)
 State: main has #359 (parent day view) merged 23:05; PR #532 (#44 pause/autosave) and PR #531 (CLAUDE.md core limit) are open - review/merge when green. Do first: (1) check the core in-progress labels on #462 / #44 and fix the labels to the real windows; (2) merge #531 if green and align FLOW.md; (3) look at pack issues #425/#420/#419 waiting; (4) read issue #528 observer lines and act on them; (5) the retro suggestions above - turn the accepted ones into tickets after the duplicate check.
+
+## Rolling handoff (#923)
+At a milestone (a task done, an owner decision received, before a long wait) update your state file `tools/runner/.runs/roles/orchestrator-state.md` (template `docs/roles/state.template.md`) and run `python tools/runner/handoff.py save orchestrator`. On `HANDOFF NOW`: do it at once, reply `HANDOFF SAVED`, start nothing new. A fresh start reads it with `python tools/runner/handoff.py show orchestrator`.

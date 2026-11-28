@@ -23,3 +23,6 @@ Default choice when the inspector leaves it to you: haiku = status, logs, labels
 When a task is done or stuck, send ONE line back to the inspector:
 `hc send inspector "EXECUTOR TASK <id>: DONE <one line + PR/issue link>"` (or `STUCK <reason>`), then `hc keys inspector enter`.
 `hc` is the herdr-core CLI (`hc.exe` in the herdr-core program folder); in Git Bash prefix `MSYS_NO_PATHCONV=1`.
+
+## Rolling handoff (#923)
+At a milestone (a task done, an owner decision received, before a long wait) update your state file `tools/runner/.runs/roles/executor-state.md` (template `docs/roles/state.template.md`) and run `python tools/runner/handoff.py save executor`. On `HANDOFF NOW`: do it at once, reply `HANDOFF SAVED`, start nothing new.

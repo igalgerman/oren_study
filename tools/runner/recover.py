@@ -9,7 +9,7 @@ The WHOLE recovery after a restart (planned freeze #139, or a crash), in order:
   6. starts the watchdog when missing (it starts the runner passes), then reports in ONE issue comment (recover_issue) and to the orchestrator
 Also (#27, also with --open): herdr's sound setting from sounds.py (blocked and done sound different).
 Usage: python recover.py [--install | --open]   (--open = tools/orchestrator.cmd, #25: steps 1-4 + watchdog only)"""
-import json, os, shutil, sys, time
+import json, os, re, shutil, sys, time
 from pathlib import Path
 
 TASK = "Oren recover"
@@ -18,12 +18,14 @@ INBOX_PROMPT = ("You are the INBOX of the Oren game multi-agent system (repo iga
                 "The owner talks to you: a new idea -> /idea, a clear task -> /task, a bug -> /bug, a status question -> /status. "
                 "Write every new issue the way docs/agents/skills/writing-for-agents.md says. Set both the model: and the effort: label on every new issue from the table in docs/agents/models.md (you decide, the owner can override), and split a task estimated above ~600 lines or a batch of 8+ items first. "
                 "Run the mattpocock-skills:triage steps on every new issue (#29): duplicate check per CLAUDE.md, labels per docs/agents/triage-labels.md, "
-                "P-level, an Acceptance list, one lane label, Blocked by lines. If the title or body says 'every' or 'all screens', or the owner says 'still missing', add the Acceptance point 'an automatic test walks every screen and fails with the list of screens that break the rule' (helper oren2/tests/walk.js, #745). Do nothing else; wait for the owner.")
+                "P-level, an Acceptance list, one lane label, Blocked by lines. If the title or body says 'every' or 'all screens', or the owner says 'still missing', add the Acceptance point 'an automatic test walks every screen and fails with the list of screens that break the rule' (helper oren2/tests/walk.js, #745). At a milestone update tools/runner/.runs/roles/inbox-state.md and run `python tools/runner/handoff.py save inbox`; on HANDOFF NOW do it at once, reply HANDOFF SAVED. Do nothing else; wait for the owner.")
 TRIAGE_STEPS = ("Run the mattpocock-skills:triage steps on every new ticket (#29): duplicate check per CLAUDE.md ('One backlog, no duplicates'), "
                 "labels per docs/agents/triage-labels.md, a P-level, an Acceptance list, one lane label (core/pack/review), 'Blocked by: #n' lines.")
 ORCH_PROMPT = "Read ORCHESTRATOR.md and continue as the orchestrator. Open the Oren lanes panel (/lanes)."
 EXECUTOR_PROMPT = "Read docs/roles/EXECUTOR.md and follow it."   # cwd = the main checkout
-INSPECTOR_PROMPT = "You are the INSPECTOR of the Oren game multi-agent system. Read C:/work/Oren_study/INSPECTOR_HANDOFF.md first and follow it."
+INSPECTOR_PROMPT = ("You are the INSPECTOR of the Oren game multi-agent system. Run `python tools/runner/handoff.py show inspector` first, "
+                    "then read C:/work/Oren_study/INSPECTOR_HANDOFF.md and follow it.")
+HANDOFF_LINE = "Read your handoff (python tools/runner/handoff.py show {role}) and continue as the {role}."   # #923: first words of every fresh-start prompt
 
 # ---------- pure logic (test_recover.py) ----------
 def ensure_handoff(path, template):
@@ -37,11 +39,12 @@ def ensure_handoff(path, template):
 def control_argv(name, main_checkout, plugin_dir, claude="claude", python="python", watchdog="", model_dir=None):
     """-> (cwd, argv) of the program for orchestrator / inbox / inspector / executor / watchdog."""
     mc = str(main_checkout)
+    hl = lambda r, p: HANDOFF_LINE.format(role=r) + " " + p
     pd = ["--plugin-dir", str(model_dir)] if model_dir else []   # #850: the model + usage status line (not the orchestrator: it has oren-lanes)
-    return {"orchestrator": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-orchestrator", "--plugin-dir", str(plugin_dir), ORCH_PROMPT]),
-            "inbox": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-inbox", *pd, INBOX_PROMPT]),
-            "inspector": (str(Path(mc).parent), [claude, "--model", "opus", "--remote-control", "oren-inspector", *pd, INSPECTOR_PROMPT]),
-            "executor": (mc, [claude, "--model", "opus", "--remote-control", "oren-executor", *pd, EXECUTOR_PROMPT]),
+    return {"orchestrator": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-orchestrator", "--plugin-dir", str(plugin_dir), hl("orchestrator", ORCH_PROMPT)]),
+            "inbox": (mc, [claude, "--model", "sonnet", "--remote-control", "oren-inbox", *pd, hl("inbox", INBOX_PROMPT)]),
+            "inspector": (str(Path(mc).parent), [claude, "--model", "opus", "--remote-control", "oren-inspector", *pd, hl("inspector", INSPECTOR_PROMPT)]),
+            "executor": (mc, [claude, "--model", "opus", "--remote-control", "oren-executor", *pd, hl("executor", EXECUTOR_PROMPT)]),
             "watchdog": (mc, [python, str(watchdog)])}[name]
 
 def hc_run_args(name, cwd, argv, space_id=""):
@@ -254,7 +257,72 @@ def start_control(R, name, space_id=None):
     print(name, out.strip()[:200])
     return rc
 
+BUSY_STATES = ("working", "blocked")
+DEFAULT_BUSY_PATTERNS = [r"running in the background", r"\d+ (?:background )?(?:tasks?|agents?) running"]
+
+def busy_reason(role, status, queue_text="", screen="", patterns=None):
+    """#923: why a control session must not be refreshed now, else ''. Pure."""
+    if status in BUSY_STATES: return f"{role} is {status}"
+    if role == "executor" and any(len(c) > 3 and c[3].strip().lower() == "running" for c in (l.split("|") for l in (queue_text or "").splitlines())):
+        return "executor has a running task in its queue"
+    for pat in (DEFAULT_BUSY_PATTERNS if patterns is None else patterns):
+        if re.search(pat, screen or "", re.I): return f"{role} still has a background task or agent running"
+    return ""
+
+def refresh(role, d):
+    """#923: hand a control session off and start it fresh. d: hc(*args)->(rc,out), find(role)->terminal dict|None, start(role)->rc,
+    live_file, queue, patterns, wait_min, now, sleep, tell(to,text), log(msg), state_file. -> (rc, line): 4 busy, 3 no handoff written."""
+    t = d["find"](role)
+    if not t: return 4, f"refresh {role}: no live session found"
+    addr = t.get("address", "")
+    try: queue = Path(d["queue"]).read_text(encoding="utf-8") if role == "executor" else ""
+    except OSError: queue = ""
+    screen = d["hc"]("read", addr)[1] if addr else ""
+    why = busy_reason(role, t.get("status", ""), queue, screen, d.get("patterns"))
+    if why: return 4, f"refresh {role}: busy ({why})"
+    live = Path(d["live_file"])
+    before = live.stat().st_mtime if live.exists() else None
+    d["hc"]("send", addr, "HANDOFF NOW: update your state file, run `python tools/runner/handoff.py save " + role + "`, reply HANDOFF SAVED, start nothing new.")
+    d["hc"]("keys", addr, "enter")
+    deadline = d["now"]() + d["wait_min"] * 60
+    while True:
+        cur = live.stat().st_mtime if live.exists() else None
+        if cur != before: break
+        if d["now"]() >= deadline:
+            line = f"refresh {role}: no handoff written in {d['wait_min']} min, nothing killed"
+            d["log"](line); d["tell"]("inspector" if role != "inspector" else "orchestrator", f"REFRESH FAILED: {role} wrote no handoff, left running")
+            return 3, line
+        d["sleep"](5)
+    d["hc"]("keep", addr, "--off"); d["hc"]("kill", addr); d["hc"]("rm", addr)    # by ADDRESS, never by name
+    rc = d["start"](role)
+    line = f"refresh {role}: restarted fresh from its handoff (rc {rc})"
+    d["log"](line)
+    try:
+        sf = Path(d["state_file"]); st = json.loads(sf.read_text(encoding="utf-8")) if sf.exists() else {}
+        st[role] = d["now"](); sf.write_text(json.dumps(st), encoding="utf-8")
+    except (OSError, ValueError): pass
+    d["tell"]("orchestrator" if role == "inspector" else "inspector", f"REFRESH: {role} restarted fresh from its handoff")
+    return (0 if rc == 0 else 1), line
+
+def refresh_cmd(role):
+    R = _R()
+    if role not in CONTROL: print(f"usage: recover.py refresh <{'|'.join(CONTROL)}>"); return 2
+    import handoff
+    def find(r):
+        for t in R.hc_json("ls", "--all", "--json").get("terminals", []):
+            if t.get("state") == "live" and control_role(t) == r: return t
+        return None
+    def log(m):
+        handoff._log(R.RUNS, m)
+    rc, line = refresh(role, dict(hc=lambda *a: R.hc(*a, timeout=60), find=find, start=lambda r: start_control(R, r),
+        live_file=handoff.live_path(role, R.RUNS), queue=R.CFG.get("executor_queue", ""),
+        patterns=R.CFG.get("handoff_busy_patterns", DEFAULT_BUSY_PATTERNS), wait_min=float(R.CFG.get("handoff_wait_min", 5)),
+        now=time.time, sleep=time.sleep, tell=lambda to, text: R.hc("send", to, text, timeout=30), log=log,
+        state_file=R.RUNS / "handoff.json"))
+    print(line); return rc
+
 def main():
+    if sys.argv[1:2] == ["refresh"]: return refresh_cmd(sys.argv[2] if len(sys.argv) > 2 else "")
     R = _R()
     if "--install" in sys.argv:
         user = (os.environ.get("USERDOMAIN", "") + "\\" if os.environ.get("USERDOMAIN") else "") + os.environ.get("USERNAME", "")

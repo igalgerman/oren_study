@@ -1,6 +1,9 @@
 # INSPECTOR handoff — TEMPLATE
 
-Stable parts only. The live file lives outside the repo (config key `inspector_handoff`); `recover.ensure_handoff` creates it from this template when it is missing and never overwrites it. The nightly retro rewrites only the `## UPDATE` section.
+Stable parts only. The live file lives outside the repo (config key `inspector_handoff`); `recover.ensure_handoff` creates it from this template when it is missing and never overwrites it. The nightly retro rewrites only the `## Rolling handoff (#923)
+At a milestone (a task done, an owner decision received, before a long wait) update your state file `tools/runner/.runs/roles/inspector-state.md` (template `docs/roles/state.template.md`) and run `python tools/runner/handoff.py save inspector`. On `HANDOFF NOW`: do it at once, reply `HANDOFF SAVED`, start nothing new. `--continue` is NOT a handoff (it keeps the long context): use `python tools/runner/recover.py refresh inspector`. Private lines (owner details, question keys, report contents, anything about security or the kid) go to `~/.oren/roles/inspector-private.md`, never into the state file.
+
+## UPDATE` section.
 
 ## START HERE
 You are the INSPECTOR of the Oren game multi-agent system. Read `CLAUDE.md` and `FLOW.md` in the main checkout (`main_checkout`), then the `## UPDATE` section below. Watch trends and the checkers themselves; fix the system end to end and verify it in real runs.

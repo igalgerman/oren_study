@@ -44,6 +44,9 @@ desk_probe_hours = 12           # #306: a PING to each cloud desk this often; no
 retro_hour = 23                 # #219: nightly retro + handoff (nightly.py, headless Sonnet, read-only) at this local hour; 0 = off
 retro_where = "cloud"           # #289: "cloud" = a nightly cloud scheduled task opens 'Daily retro <date>'; the watchdog only writes the handoffs; "local" = headless run here
 executor_queue = "C:/work/Oren_study/executor_queue.md"   # #863: private task table, format in docs/roles/executor_queue.md
+handoff_max_lines = 80          # #923: a role state file over this is refused by handoff.py save
+handoff_wait_min = 5            # #923: recover.py refresh waits this long for the role to write its state file
+handoff_busy_patterns = ["running in the background", "\\d+ (background )?(tasks?|agents?) running"]   # #923: screen text = a background task or agent is still running
 inspector_handoff = "C:/work/Oren_study/INSPECTOR_HANDOFF.md"   # #219: the nightly run refreshes its UPDATE section
 pregen = false   # #325: voice pregen runs in GitHub Actions after each deploy (deploy_in_ci); the PC never starts it
 deploy_in_ci = true             # #192: deploy + voice pregen run in GitHub Actions (.github/workflows/deploy.yml); false = the runner deploys from the PC with .env
