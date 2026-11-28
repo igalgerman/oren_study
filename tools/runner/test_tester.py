@@ -17,6 +17,8 @@ print("ok level")
 # who tests: T0 nobody; T1/T2 Sonnet; T3 Opus with two browsers
 assert not T.needs_test("T0") and all(T.needs_test(l) for l in ("T1", "T2", "T3"))
 assert T.model_for("T1") == T.model_for("T2") == "sonnet" and T.model_for("T3") == "opus"
+import runner as _R
+assert _R.floors("tester", T.model_for("T3"), "low") == ("opus", "medium") and _R.floors("tester", T.model_for("T1")) == ("sonnet", "medium")   # #714
 assert T.session_name(618) == "test-618"
 assert T.preview_url(640) == "https://pr-640.oren-game.pages.dev"
 print("ok roles")

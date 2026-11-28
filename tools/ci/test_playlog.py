@@ -46,6 +46,14 @@ ok("summary: questions right/wrong", "questions 2, right 1, wrong 0" in txt, txt
 ok("summary: a silent voice wait from the first fail to the next play", "silent voice waits 1" in txt and "sentence abc: 4.0 s until the next voice" in txt, txt)
 ok("summary: repeats of a mission and a question", "repeats: add-0 x2, question x1 x2" in txt, txt)
 
+# #730 mission ends: done/skip/left per mission
+E2 = EV + [{"sid": "s1", "i": 11, "t": T + 95000, "k": "mdone", "m": "add-0", "sec": 40},
+           {"sid": "s1", "i": 12, "t": T + 96000, "k": "mskip", "m": "add-1", "sec": 5},
+           {"sid": "s1", "i": 13, "t": T + 97000, "k": "mleft", "m": "add-1", "sec": 3}]
+t2 = "\n".join(P.summary(E2))
+ok("#730 summary: done/skip/left per mission", "add-0: done 1, skip 0, left 0" in t2 and "add-1: done 0, skip 1, left 1" in t2, t2)
+ok("#730 summary: no end events = no ends block", "mission ends" not in txt)
+
 # main: writes ~/.oren/playlog/<day>.json (outside the repo), prints the summary, never the key
 out = io.StringIO()
 with contextlib.redirect_stdout(out): rc = P.main(["day", "2026-11-27"], get=fake)
