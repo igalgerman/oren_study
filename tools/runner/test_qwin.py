@@ -4,6 +4,9 @@ import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-t
 os.environ["OREN_TELEGRAM_ENV"] = os.path.join(os.environ["RUNNER_RUNS"], "no-telegram.env")   # #440: off unless a test sets it up
 os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 import json, re, sys, tempfile
+import re, trust   # #800: old fixtures have no author: default them to the owner (explicit authors still count; test_trust.py covers the real rules)
+_login = trust.login
+trust.login = lambda c: _login(c) or (("oren-study-bot" if re.match(r"\s*(OWNER ANSWER|ANSWERED)", c.get("body") or "") or "owner-answer:" in (c.get("body") or "") else "igalgerman") if isinstance(c, dict) else "")
 from pathlib import Path
 sys.argv.append("--dry-run")
 import runner as R
@@ -45,12 +48,13 @@ win = lambda: sorted(n for n, t in h.t.items() if t["state"] == "live" and n.sta
 
 class FakeSpawn:
     """#368: ask.py started by qwin.tick itself (no LLM): records the command, hands back a pid."""
-    def __init__(self): self.cmds, self.killed = [], []
+    def __init__(self): self.cmds, self.killed, self.live = [], [], set()
     def spawn(self, cmd, out, err):
-        self.cmds.append(cmd); return 4000 + len(self.cmds)
-    def kill(self, pid): self.killed.append(pid)
+        self.cmds.append(cmd); self.live.add(4000 + len(self.cmds)); return 4000 + len(self.cmds)
+    def kill(self, pid): self.killed.append(pid); self.live.discard(pid)
+    def alive(self, pid): return pid in self.live          # #894: the fake pid check
 sp = FakeSpawn()
-QW._spawn, QW._kill = sp.spawn, sp.kill
+QW._spawn, QW._kill, QW._alive = sp.spawn, sp.kill, sp.alive
 asked = lambda: [Path(c[c.index(QW.ASK) + 1]).stem for c in sp.cmds]
 
 # #368/#390: the first tick writes the question page AND sends the phone push at the same moment (owner 26 Nov 20:15),
@@ -69,7 +73,7 @@ pushes = [s for s in h.sent if "PushNotification" in s[1]]
 assert [s[0] for s in pushes] == ["inbox", "orchestrator"], pushes                    # one push per idle session per tick
 for s in pushes: assert "\n" not in s[1] and "\r" not in s[1], s                       # one line (#390)
 m = pushes[0][1]
-assert "owner-q:k1" in m and "שאלה 1?" in m and "qwin.py answer k1" in m and "PUSH-RESULT" in m, m
+assert "owner-q:k1" in m and "שאלה 1?" in m and "qwin.py answer" not in m and "PUSH-RESULT" in m, m   # #803: no session records an answer
 assert QW.load()["k1"]["via"] == "inbox" and QW.load()["k2"]["via"] == "orchestrator" and not QW.load()["k3"].get("via")
 # a busy session gets nothing; k3 waits for the next tick with an idle session
 h.status = {"inbox": "working", "orchestrator": "working"}; h.sent.clear()
@@ -369,6 +373,183 @@ opened[:] += [{"key": f"z{i}", "window": f"#5{i}", "source": f"issue-5{i}", "tex
 QW.tick(h6.ts(), now=100120); assert {"z0", "z1"} <= set(asked()), asked()
 srv2.shutdown()
 print("ok qwin #696 alert is a notice, question has buttons")
+
+# #803 the third channel: the chat with the inspector. is_inspector (pure), chat-answer refusals, the bot record, the Telegram
+# confirmation with 10 min to undo, `אשר`, late `בטל`, Telegram off, a page answer that wins.
+INS = {"name": "inspector", "state": "live", "cwd": "C:/work/Oren_study", "foreground": {"argv": ["claude", "--remote-control", "oren-inspector"], "pid": 10}}
+other = {"name": "worker", "state": "live", "cwd": "C:/work/Oren_study/a", "foreground": {"argv": ["claude"], "pid": 20}}
+D = "C:/work/Oren_study"
+ok_i = lambda chain, ts, d=D: QW.is_inspector(chain, ts, d)
+assert ok_i([5, 10, 1], [INS, other])
+assert not ok_i([5, 20, 1], [INS, other])                                         # another terminal's claude
+assert not ok_i([10], [other])                                                    # no inspector
+assert not ok_i([10], [INS, {**INS, "name": "inspector", "foreground": {**INS["foreground"], "pid": 11}}])   # two inspectors
+assert not ok_i([10], [{**INS, "foreground": {"argv": ["claude"], "pid": 10}, "name": "inspector"}])         # no --remote-control oren-inspector
+assert not ok_i([10], [{**INS, "foreground": {"argv": ["python", "--remote-control", "oren-inspector"], "pid": 10}}])   # not claude
+assert not ok_i([10], [{**INS, "cwd": "C:/work/other"}])                          # wrong cwd
+assert not ok_i([10], None) and not ok_i([10], [])                                # herdr unreadable
+# live_terminals: hc ls --json, then hc get per live terminal
+_calls = []
+def _fh(*a, **kw):
+    _calls.append(a)
+    if a[0] == "ls": return 0, json.dumps({"terminals": [{"name": "inspector", "address": "w1", "state": "live"}, {"name": "x", "address": "w2", "state": "finished"}]})
+    if a[0] == "get": return 0, json.dumps(INS)
+    return 1, ""
+QW._hc = _fh; lt = QW.live_terminals()
+assert [t["name"] for t in lt] == ["inspector"] and ("get", "w1", "--json") in [c[:3] for c in _calls] and ok_i([10], lt)
+QW._hc = lambda *a, **kw: (1, ""); assert QW.live_terminals() is None
+
+class GH3:
+    """fake gh: issue comments by the App bot"""
+    def __init__(self): self.c, self.calls = {}, []
+    def __call__(self, *a, **kw):
+        self.calls.append(a)
+        if a[:2] == ("issue", "comment"):
+            self.c.setdefault(int(a[2]), []).append({"body": a[a.index("--body") + 1], "author": {"login": "oren-study-bot"}, "reactionGroups": []}); return 0, "u\n"
+        if a[:2] == ("issue", "view"): return 0, json.dumps({"comments": self.c.get(int(a[2]), [])})
+        if a[:2] == ("api", "graphql"):          # #824: owner_q.comments reads GraphQL (-F n=<issue>)
+            n = int(a[a.index("-F") + 1].split("=", 1)[1])
+            return 0, json.dumps({"data": {"repository": {"issue": {"comments": {"nodes": self.c.get(n, []), "pageInfo": {"hasNextPage": False}}}}}})
+        return 0, ""
+g3 = GH3(); QW._gh = g3; OQ.GH = g3
+srv3 = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeTG); threading.Thread(target=srv3.serve_forever, daemon=True).start()
+TG.API = f"http://127.0.0.1:{srv3.server_port}"; FakeTG.down[0] = False
+h7 = FakeHerdr(); h7.status = {"inbox": "working", "orchestrator": "working"}; QW._hc, QW._run = h7.hc, h7.run
+QW.is_inspector_real = QW.is_inspector
+chain = [[10]]
+QW._chain = lambda: chain[0]; QW.live_terminals = lambda: [INS, other]; QW._inspector_dir = lambda: Path(D)
+chat_log = []; QW.log = chat_log.append
+BODY = lambda i: [c["body"] for c in g3.c.get(i, [])]
+N = [0]
+def scenario(text="כן או לא? 1) כן 2) לא"):
+    """a fresh open question (61, gates 62) with its page + Telegram question sent; -> key, t0"""
+    N[0] += 1; key = f"c0ffee00000{N[0]}"; t0 = 300000 + N[0] * 10000
+    QW.STATE, QW.CHAT_STATE = tmp / f"qw-chat{N[0]}.json", tmp / f"chat{N[0]}.json"; OQ.CHAT_STATE = QW.CHAT_STATE
+    g3.c.clear(); g3.calls.clear(); FakeTG.calls.clear(); marked.clear(); h7.sent.clear(); chat_log.clear()
+    opened[:] = [{"key": key, "window": "#61", "source": "issue-61", "text": text, "gates": [62], "url": "u"}]
+    QW.tick(h7.ts(), now=t0); g3.calls.clear(); return key, t0
+conf = lambda: [p for p in sent() if "נרשמה תשובה מהצ'אט" in p["text"]]
+# a refused chat-answer (another session): no gh call, non-zero, one log line, one Telegram note
+key, t0 = scenario(); chain[0] = [5, 20, 1]
+rc, msg = QW.chat_answer(key, "כן", "הוא אמר כן")
+assert rc != 0 and not g3.calls, g3.calls
+assert len([l for l in chat_log if "REFUSED" in l]) == 1 and len([p for p in sent() if "נדחתה" in p["text"]]) == 1, (chat_log, sent())
+chain[0] = [10]
+# a missing / empty / too long --quote is refused (no gh call)
+for q in (None, "", "  ", "x" * 501): assert QW.chat_answer(key, "כן", q)[0] != 0 and not g3.calls
+assert QW.main(["chat-answer", key, "כן"]) != 0 and QW.main(["answer", key, "כן"]) == 2     # no --quote; the old `answer` CLI refuses
+assert not marked and not g3.calls
+# accepted: exactly one bot record per issue (asking issue + the gated one), redacted quote, no ANSWERED/relay/page stop
+QW.R.SECRETS.append("SeCrEtToKeN"); killed0 = len(sp.killed)
+assert QW.chat_answer(key, "כן", "הוא אמר כן SeCrEtToKeN")[0] == 0
+for i in (61, 62):
+    assert len(BODY(i)) == 1 and "via=inspector-chat" in BODY(i)[0] and "הוא אמר כן ***" in BODY(i)[0] and "SeCrEtToKeN" not in BODY(i)[0], BODY(i)
+    assert OQ.record_answer(BODY(i)[0]) is None                                              # never an old-style answer record
+assert not marked and not [s for s in h7.sent if "OWNER ANSWERED" in s[1]] and len(sp.killed) == killed0
+# the tick confirms it once, as a reply to the question's Telegram message, with the quote
+tgq = QW.load()[key]["tg"]; QW.tick(h7.ts(), now=t0 + 60)
+assert len(conf()) == 1 and conf()[0]["reply_to_message_id"] == tgq and "הוא אמר כן" in conf()[0]["text"] and 'בטל' in conf()[0]["text"], sent()
+QW.tick(h7.ts(), now=t0 + 120); assert len(conf()) == 1                                      # once
+assert not marked and not any("final" in b for b in BODY(61))                                # the gate stays closed in the window
+# 10 minutes without undo: final marker (both issues), ANSWERED, relay, ✓
+QW.tick(h7.ts(), now=t0 + 60 + 599); assert not marked
+QW.tick(h7.ts(), now=t0 + 60 + 600)
+assert all(any(f"owner-answer-final:{key}" in b for b in BODY(i)) for i in (61, 62)), BODY(62)
+assert marked == [(key, "כן")] and [s for s in h7.sent if "OWNER ANSWERED" in s[1]] and len(sp.killed) > killed0, (marked, h7.sent)
+assert [p for p in sent() if p["text"] == "✓ נכנסה לתוקף"], sent()
+assert not any("OWNER ANSWER (question window" in b for i in (61, 62) for b in BODY(i))      # no second record: the chat record + final marker are it
+# a late בטל (a Reply to the confirmation) -> too late
+mid = QW.load_chat()[key]["mid"]; upd(101, "בטל", reply=mid); QW.tick(h7.ts(), now=t0 + 800)
+assert any(p["text"].startswith("מאוחר מדי") for p in sent()) and not any("undo" in b for b in BODY(61)), sent()
+# a Reply בטל inside the window: undo record, no final marker, the question stays open
+key, t0 = scenario(); QW.chat_answer(key, "לא", "לא")
+QW.tick(h7.ts(), now=t0 + 60); mid = QW.load_chat()[key]["mid"]; upd(102, "בטל", reply=mid)
+QW.tick(h7.ts(), now=t0 + 120)
+assert all(any(f"owner-answer-undo:{key}" in b for b in BODY(i)) for i in (61, 62)) and any(p["text"].startswith("בוטל") for p in sent())
+QW.tick(h7.ts(), now=t0 + 900); assert not marked and not any("final" in b for b in BODY(61)) and QW.load()[key].get("answered") is None
+# a plain בטל while one chat answer is pending
+key, t0 = scenario(); QW.chat_answer(key, "לא", "לא"); QW.tick(h7.ts(), now=t0 + 60)
+upd(103, "בטל", date=t0 + 70); QW.tick(h7.ts(), now=t0 + 120); QW.tick(h7.ts(), now=t0 + 900)
+assert any(f"owner-answer-undo:{key}" in b for b in BODY(61)) and not marked and not any("final" in b for b in BODY(61))
+# `אשר` = in force at once
+key, t0 = scenario(); QW.chat_answer(key, "כן", "כן"); QW.tick(h7.ts(), now=t0 + 60); mid = QW.load_chat()[key]["mid"]
+upd(104, "אשר", reply=mid); QW.tick(h7.ts(), now=t0 + 120)
+assert marked == [(key, "כן")] and any(f"owner-answer-final:{key}" in b for b in BODY(61)), marked
+# Telegram off / failing: no confirmation, no final marker, ONE alarm after 10 minutes to the inspector and the orchestrator
+key, t0 = scenario(); QW.chat_answer(key, "כן", "כן"); FakeTG.down[0] = True; FakeTG.calls.clear()
+QW.tick(h7.ts(), now=t0 + 60); QW.tick(h7.ts(), now=t0 + 400); assert not [s for s in h7.sent if "not confirmed" in s[1]]
+QW.tick(h7.ts(), now=t0 + 700); QW.tick(h7.ts(), now=t0 + 760); QW.tick(h7.ts(), now=t0 + 5000)
+assert sorted(s[0] for s in h7.sent if "not confirmed" in s[1]) == ["inspector", "orchestrator"], h7.sent
+assert not marked and not any("final" in b for b in BODY(61)); FakeTG.down[0] = False
+# a page answer inside the window wins: the chat record never comes into force
+key, t0 = scenario(); QW.chat_answer(key, "כן", "כן"); QW.tick(h7.ts(), now=t0 + 60)
+(QW.DIR / f"{key}.answers.json").write_text(json.dumps({"answers": {"a": "לא"}}, ensure_ascii=False), encoding="utf-8")
+QW.tick(h7.ts(), now=t0 + 120); assert marked == [(key, "לא")], marked
+opened.clear(); QW.tick(h7.ts(), now=t0 + 180); QW.tick(h7.ts(), now=t0 + 1000)
+assert marked == [(key, "לא")] and not any("final" in b for b in BODY(61)), (marked, BODY(61))
+# a Telegram answer inside the window wins too
+key, t0 = scenario(); QW.chat_answer(key, "כן", "כן"); QW.tick(h7.ts(), now=t0 + 60)
+upd(105, "2", reply=QW.load()[key]["tg"]); QW.tick(h7.ts(), now=t0 + 120)
+assert marked == [(key, "לא")], marked
+opened.clear(); QW.tick(h7.ts(), now=t0 + 1000); assert marked == [(key, "לא")] and not any("final" in b for b in BODY(61))
+srv3.shutdown(); TG.ENV = tmp / "no-telegram.env"
+print("ok qwin #803 inspector chat channel")
+
+# ---------- #894: a page never dies while its question is open ----------
+def fresh(n=1):
+    global opened
+    QW.STATE.write_text("{}"); opened = [{"key": f"p{i}", "window": f"#{900+i}", "source": f"issue-{900+i}", "text": f"שאלה {i}? 1) כן 2) לא"} for i in range(n)]
+    sp.cmds.clear(); sp.killed.clear(); sp.live.clear(); h.sent.clear(); h.status = {"inbox": "working", "orchestrator": "working"}
+    for f in QW.DIR.glob("p*"): f.unlink()
+QW._hc, QW._run = h.hc, h.run
+OQ.open_list = lambda gh=None: [dict(q) for q in opened]
+OQ.mark_answered = lambda key, ans="", gh=None: True
+QW._app_post = lambda n, t: True
+T = lambda now: QW.tick(h.ts(), now=now)
+# 1+5: dead page restarted with backoff 1, 2, 5, 10, 10 min; one restart per tick; logged once per restart
+logs = []; QW.log = logs.append
+fresh(); T(0); assert asked() == ["p0"]
+sp.live.clear(); T(30); assert len(sp.cmds) == 1                        # backoff: not before 1 min
+T(61); assert len(sp.cmds) == 2 and len([l for l in logs if "page restarted" in l]) == 1
+T(62); assert len(sp.cmds) == 2                                         # alive again: nothing
+for gap, n in [(120, 3), (300, 4), (600, 5), (600, 6)]:
+    sp.live.clear(); t = QW.load()["p0"]["last_start"]; T(t + gap - 1); assert len(sp.cmds) == n - 1; T(t + gap); assert len(sp.cmds) == n, (gap, n)
+assert len([l for l in logs if "page restarted" in l]) == 5
+# 5: the 24 h timeout (page long alive, then gone) restarts at once, backoff starts over
+t = QW.load()["p0"]["last_start"]; T(t + 90000)                          # alive until now
+sp.live.clear(); T(t + 90001); assert len(sp.cmds) == 7, len(sp.cmds)
+# 2: answered on the page but still open after 10 min -> page again, not treated as answered
+fresh(); T(0); (QW.DIR / "p0.answers.json").write_text(json.dumps({"answers": {"a": "כן"}})); sp.live.clear()
+T(100); assert QW.load()["p0"]["answered"] and len(sp.cmds) == 1         # relayed; still open, waiting for the confirmation
+T(100 + 599); assert QW.load()["p0"]["answered"] and len(sp.cmds) == 1
+T(100 + 600); e = QW.load()["p0"]; assert not e["answered"] and len(sp.cmds) == 2 and not (QW.DIR / "p0.answers.json").exists(), e
+# 4: answered and confirmed closed -> entry dropped, page stopped
+(QW.DIR / "p0.answers.json").write_text(json.dumps({"answers": {"a": "לא"}})); T(800); pid = QW.load()["p0"]["pid"]; opened.clear(); T(900)
+assert "p0" not in QW.load() and pid not in sp.live, (QW.load(), sp.live)
+# no duplicate pages for one key: many ticks with a live page start nothing
+fresh(); [T(i * 60) for i in range(5)]; assert len(sp.cmds) == 1
+# 3: `page <key>`: live page -> its URL, no new process; dead -> started; unknown -> rc 1; the ping carries the way
+(QW.DIR / "p0.log").write_text("http://127.0.0.1:7/\n"); assert QW.page_cmd("p0", now=500) == (0, "http://127.0.0.1:7/") and len(sp.cmds) == 1
+sp.live.clear(); QW.page_cmd("p0", now=501); assert len(sp.cmds) == 2
+assert QW.page_cmd("nope")[0] == 1
+assert "qwin.py page p0" in QW.push_text(opened[0]) and "qwin.py page p0" in QW.tg_text(opened[0])
+fresh(); sp.live.clear(); assert QW.page_cmd("p0", now=5)[0] == 0 and asked() == ["p0"]       # no entry yet: created
+# the last question-back rule: Hebrew and English, no option -> no record, gate stays closed, question and page stay open
+posted = []; QW._app_post = lambda n, t: posted.append((n, t)) or True
+marked = []; OQ.mark_answered = lambda key, ans="", gh=None: marked.append(key) or True
+for qb in ["למה צריך את זה?", "Why do we need this?", "מה זה אומר?"]:
+    fresh(); T(0); (QW.DIR / "p0.answers.json").write_text(json.dumps({"answers": {"a": qb}}), encoding="utf-8"); sp.live.clear(); h.sent.clear()
+    T(10)
+    e = QW.load()["p0"]
+    assert not e.get("answered") and not posted and not marked, (qb, posted, marked)
+    assert any("FOLLOW-UP QUESTION" in m and qb in m for _, m in h.sent), h.sent
+    assert len(sp.cmds) == 2 and not (QW.DIR / "p0.answers.json").exists(), qb                    # page back at once
+    assert OQ.open_list() and QW.chat_answer.__name__                                              # still open
+assert QW.question_back("2?", "מה? 1) כן 2) לא") is False and QW.question_back("Yes?", "ok? 1) Yes 2) No") is False
+assert QW.question_back("כן", "x? 1) כן 2) לא") is False and QW.question_back("למה?", "x? 1) כן 2) לא") is True
+fresh(); T(0); (QW.DIR / "p0.answers.json").write_text(json.dumps({"answers": {"a": "כן"}})); T(5)      # a real answer still counts
+assert QW.load()["p0"]["answered"] and marked == ["p0"] and posted, (marked, posted)
+print("ok qwin #894 page always alive")
 
 # #368 real process: the real _spawn starts the real ask.py (no browser), the URL is read from its log,
 # an answer POSTed to the page lands in <key>.answers.json and page_answer reads it

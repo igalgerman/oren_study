@@ -444,6 +444,24 @@ const NIK = /[ְ-ׇּׁׂ]/, HEB = /[א-ת]/;
   const st423 = await p.evaluate(() => { const O = window.OREN, T = window.TAL, F = window.FRIEND; O.save.en2 = {}; delete O.save.mixs; O.save.mix = { c: 1, s: 1 }; const d = T.dailyEnsure(); d.t = ['read-first', 'world-flag']; d.done = [0, 0]; d.bs = 0; O.persist();
     F.stepStart(1); const a = F._lead(''); O.showMap(); return { a, want: window.STORYMIX.wordSay('red') }; });
   ok('#423 the path step: the friend says the scene word after the opening line', st423.a.split('⁣').includes(st423.want), JSON.stringify(st423));
+  // --- #663 the story comes across: opening, chase strip, one-tap "what happened" ---
+  const st663 = await p.evaluate(async () => { const O = window.OREN, T = window.TAL, F = window.FRIEND, M = window.STORYMIX; window.__mixIntro = true; delete O.save.mixIntro;
+    const d = T.dailyEnsure(); d.t = ['read-first', 'math']; d.done = [0, 0]; O.save.mix = { c: 2, s: 3 }; O.showMap(); await new Promise(r => setTimeout(r, 500));   // the map's own screen event first, then ONE stepStart on a fresh strip
+    F.stepStart(0); const ic1 = (document.querySelector('#frPath .fpc') || {}).textContent; const ov = document.querySelector('.frintro'), txt = ov ? ov.textContent : '', btn = ov && ov.querySelector('button');
+    const held = F._lead(''); if (btn) btn.click(); const gone = !document.querySelector('.frintro'), seen = O.save.mixIntro;
+    const lines = F.speakList(), again = F.mixIntro();
+    const strip = document.querySelector('#frPath'), ic = strip && strip.querySelector('.fpc');
+    strip.click(); const cc = document.querySelector('.frchase'), ct = cc ? cc.textContent : '';
+    const want = M.scene({ c: 2, s: 2 }).close, nxt = M.scene({ c: 2, s: 3 }).open; const pic = !!(cc && cc.querySelector('svg'));
+    cc && cc.querySelector('button').click(); const closed = !document.querySelector('.frchase');
+    O.save.mix = { c: 1, s: 1 }; const first = F.chase(); O.save.mix = { c: 1, s: 1 }; delete window.__mixIntro;
+    return { txt, held, gone, seen, again, ic: ic1, ct, want, nxt, pic, closed, first, lines, all: M.SCRIPT.flatMap((ch, c) => ch.sc.map((_, i) => F.chase({ c: c + 1, s: i + 1 }))).length }; });
+  ok('#663 first time: an opening with the Mixer (who) and what to do, one button, the first scene line waits', /הַמְּבַלְבֵּל/.test(st663.txt) && /מִשִּׂימָה/.test(st663.txt) && st663.held === '', JSON.stringify([st663.txt, st663.held]));
+  ok('#663 the button closes it (skip), it is not shown again', st663.gone && st663.seen === 1 && st663.again === false);
+  ok('#663 the strip shows the chapter icon', st663.ic === '🕰️', st663.ic);
+  ok('#663 a tap on the strip: the chase card with a picture, what happened (closing line of the last scene) and what is next', st663.pic && st663.ct.includes(st663.want) && st663.ct.includes(st663.nxt) && st663.closed, st663.ct);
+  ok('#663 chapter start: nothing happened yet (no past lines)', st663.first && st663.first.past.length === 0);
+  ok('#663 all opening/chase lines have nikud and are in the pregen list', st663.lines.filter(x => /[א-ת]/.test(x) && !NIK.test(x)).length === 0 && st663.lines.some(x => x.includes('מִשִּׂימָה')) && st663.all === 60);
   ok('#572 no page errors', !errs.length, errs.join(' | '));
   await b.close(); L.finish('friend', res);
 })().catch(e => { console.log('FAIL crashed — ' + e.message); console.log('RESULT friend 0 1'); process.exitCode = 1; });

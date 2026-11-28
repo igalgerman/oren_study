@@ -8,7 +8,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import remote, ghcache, ghauth, pcload, tester, scrub   # pcload: #293 PC load watch; tester: #618
+import remote, ghcache, ghauth, pcload, tester, trust, scrub, gitid   # pcload: #293 PC load watch; tester: #618
 ROOT = HERE.parent.parent                      # repo checkout (tools/runner/../..)
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # #229: tests point this at a temp dir
 CFG = tomllib.loads((HERE / "config.toml").read_text(encoding="utf-8"))
@@ -200,6 +200,10 @@ def ask_acceptance(bad, now=None):
 
 def demote(i):
     return {**i, "labels": [l for l in i["labels"] if l != "ready-for-agent"] + ["needs-info"]}
+
+def untrusted_not_ready(issues):
+    """#800 Pure: the runner starts only issues opened by a trusted author: an untrusted one loses `ready-for-agent` here (never started)."""
+    return [i if trust.ok(i) else {**i, "labels": [l for l in i["labels"] if l != "ready-for-agent"]} for i in issues]
 
 def gate(issues):
     """#186: (issues with the Acceptance-less ones demoted, the refused list). Shared by the pass and the watchdog idle alarm."""
@@ -804,7 +808,7 @@ def pass_choice(issues, local_lanes, remote_lanes, gv, core_held_n, locked, wher
 def pass_now(issues, gv=None):
     """#279: pass_choice with this PC's live inputs (governor, cloud refusal pause, PC load, core slots, issue locks)."""
     gv = gv or governor_now()
-    return pass_choice(issues, local_lanes_now(pcload.alarmed(RUNS)), lanes_now(gv["lanes"], refusal_state(), time.time()), gv,
+    return pass_choice(issues, local_lanes_now(pcload.alarmed(RUNS)), lanes_now(gv["lanes"], refusal_state(), time.time(), dead_state()), gv,
                        core_held(), lambda n: FileLock(f"issue-{n}").held_by_other())
 
 def stop_filter(chosen, gv):
@@ -905,7 +909,7 @@ def finish_issue(n, text, live=None):
     No line and no proof: the issue stays open. A failed check keeps it open and sends it back to a worker. docs/tooling issues are exempt.
     Returns True when closed."""
     rc, out = gh("issue", "view", str(n), "--json", "labels,comments")
-    try: d = json.loads(out); labels = {l["name"] for l in d["labels"]}; comments = [c.get("body", "") for c in d.get("comments", [])]
+    try: d = json.loads(out); labels = {l["name"] for l in d["labels"]}; comments = [c.get("body", "") for c in trust.only(d.get("comments", []))]
     except (ValueError, KeyError, TypeError): return False
     if labels & LIVE_EXEMPT: return gh("issue", "close", str(n), "--comment", text)[0] == 0
     if not has_live_line(comments):
@@ -934,7 +938,7 @@ def remote_worker_prompt(n, lane, bug=False, retry=False):
     base = (f"You are an unattended worker for GitHub issue #{n} in repo {REPO} (lane: {lane}). If its title starts with 'Batch:', follow "
             f"its 'How to work' section: independent members (different files) may go to sub-agents (Agent tool); you integrate, test once "
             f"and open ONE PR with a 'Fixes #m' line per member. Read CLAUDE.md and FLOW.md, then the issue "
-            f"(`gh issue view {n} --repo {REPO} --comments`). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
+            f"(`python3 tools/runner/view.py issue {n}` (trusted authors only)). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
             f"{ACCEPT}\n" + owner_gate(n) + SPEC)
     if bug:
         base += "This is a BUG: follow docs/agents/skills/diagnosing-bugs.md, then tdd: reproduce it with a failing test, then fix it; say the root cause in the PR body.\n"
@@ -1029,10 +1033,12 @@ def fresh_self():
     """#364: this runner's own helpers (issue_over) as runner.py is on disk now."""
     return fresh(sys.modules[__name__], log_line)
 
-def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=None):
+def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=None, life=None, dead_s=None):
     """Pure loop (#133): poll the GitHub-based status until it is done/stuck/question. Returns that status dict, or {'state': 'timeout'}.
-    ended() True (#234: issue closed / lane PR merged elsewhere) -> {'state': 'ended'}."""
-    start = clock()
+    ended() True (#234: issue closed / lane PR merged elsewhere) -> {'state': 'ended'}.
+    #841: life() = a signature of the session's signs of life (comments, branch heads); it and the status unchanged for dead_s -> {'state': 'dead', 'minutes': n}.
+    A life() that fails is no news either way (never counts as death)."""
+    start = clock(); sig = None; seen = start
     while True:
         try: st = get_status()
         except subprocess.TimeoutExpired: st = {}         # #284: a gh timeout under load: just poll again
@@ -1042,12 +1048,22 @@ def wait_remote(get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, ended=N
             return {"state": "ended", "line": "", "pr": st.get("pr")}
         if clock() - start >= timeout_s:
             return {"state": "timeout", "line": "", "pr": st.get("pr")}
+        if life and dead_s:
+            try: cur = (st.get("state"), (st.get("pr") or {}).get("number"), life())
+            except Exception: cur = None
+            if cur is not None and cur != sig: sig, seen = cur, clock()
+            elif cur is not None and clock() - seen >= dead_s:
+                return {"state": "dead", "line": "", "pr": st.get("pr"), "minutes": int((clock() - seen) // 60)}
         sleep(poll_s)
 
 class Refused(Exception):
     """#137: the cloud refused to start a session (CLI error, usage limit, no network): run locally or wait, never STUCK."""
 
-def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None, comment=None, has_draft=None):
+class Dead(Exception):
+    """#841: the cloud session showed no sign of life for `minutes`: the caller puts the issue back in the queue."""
+    def __init__(self, url, minutes): super().__init__(f"{url} silent {minutes} min"); self.url, self.minutes = url, minutes
+
+def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3600, poll_s=60, on_start=None, ended=None, comment=None, has_draft=None, life=None, dead_s=None):
     """Start the cloud worker and wait for its comment. Returns the marker line (`RESULT: ...` / `QUESTION: ...`) like agent() does.
     on_start(start result) keeps the session id (#134: FIX points are sent back to this session).
     #747: has_draft() true (lane/<n> already has a draft PR but no RESULT) = resume at worker: the new session continues on that branch.
@@ -1059,8 +1075,11 @@ def remote_worker(n, lane, bug, start, get_status, sleep, clock, timeout_s=3 * 3
             raise Refused(s.get("error", "?"))
         if on_start: on_start(s)
         urls.append(s.get("url", "") or "?")
-        st = wait_remote(get_status, sleep, clock, timeout_s, poll_s, ended)
+        st = wait_remote(get_status, sleep, clock, timeout_s, poll_s, ended, life, dead_s)
         if st["state"] == "ended": raise Ended("cloud worker")
+        if st["state"] == "dead":
+            if comment: comment(f"Runner: the cloud session {urls[-1]} showed no sign of life for {st['minutes']} min (no comment, commit, branch or status change); back in the queue.")
+            raise Dead(urls[-1], st["minutes"])
         if st["state"] != "timeout":
             return st["line"]
         if attempt == 1 and comment:
@@ -1079,9 +1098,48 @@ def remote_paused(state, now):
 def note_due(state, now):
     return now - state.get("noted", -REFUSE_PAUSE_S) >= REFUSE_PAUSE_S
 
-def lanes_now(remote_lanes, state, now):
-    """Remote slots for this pass: none while a refused start is less than an hour old (no retry storm)."""
-    return 0 if remote_paused(state, now) else remote_lanes
+def lanes_now(remote_lanes, state, now, dead=None):
+    """Remote slots for this pass: none while a refused start is less than an hour old (no retry storm), nor while dead lanes pause starts (#841)."""
+    return 0 if remote_paused(state, now) or dead_paused(dead or {}, now) else remote_lanes
+
+# #841: dead cloud sessions. 2+ within DEAD_WINDOW_S -> no new cloud starts for DEAD_WINDOW_S, one alert per DEAD_NOTE_S.
+DEAD_MINUTES = int(CFG.get("dead_minutes", 20))
+DEAD_WINDOW_S = 1800
+DEAD_NOTE_S = 3 * 3600
+
+def dead_state():
+    try: return json.loads((RUNS / "dead_lanes.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError): return {}
+
+def dead_paused(state, now):
+    return now < state.get("until", 0)
+
+def dead_why(state, now):
+    n = len([t for t in state.get("times", []) if now - t < DEAD_WINDOW_S])
+    return f"dead lanes: {n}" if dead_paused(state, now) and n else ""
+
+def note_dead(state, now):
+    """Pure: one more dead session at `now` -> (new state, dead count in the last 30 min, send the alert?)."""
+    times = [t for t in state.get("times", []) if now - t < DEAD_WINDOW_S] + [now]
+    new = {**state, "times": times}
+    if len(times) >= 2: new["until"] = now + DEAD_WINDOW_S
+    alert = len(times) >= 2 and now - state.get("noted", -DEAD_NOTE_S) >= DEAD_NOTE_S
+    if alert: new["noted"] = now
+    return new, len(times), alert
+
+def record_dead(n, now=None):
+    """Remember a dead session; at 2 in 30 min pause starts (the pass logs `dead lanes: N`) and tell Telegram + the orchestrator once per 3 h."""
+    now = time.time() if now is None else now
+    st, count, alert = note_dead(dead_state(), now)
+    RUNS.mkdir(parents=True, exist_ok=True)
+    (RUNS / "dead_lanes.json").write_text(json.dumps(st), encoding="utf-8")
+    if alert:
+        msg = f"dead lanes: {count} cloud sessions silent {DEAD_MINUTES}+ min within 30 min (last #{n}); no new cloud starts for 30 min"
+        try:
+            import telegram; telegram.send(msg)
+        except Exception: pass
+        tell_orchestrator(msg)
+    return count
 
 def record_refusal(n, error, now=None):
     """Remember the refusal (pauses cloud starts for an hour); one orchestrator note + watchdog.log line per hour. -> True when noted."""
@@ -1151,13 +1209,13 @@ def resume_step(mergeable, verdict):
 
 def head_verdict(comments, head_time):
     """Pure: last VERDICT line of the PR comments made at/after the head commit (head_time ISO UTC); '' = the head has no review."""
-    return remote.verdict_from([c.get("body", "") for c in comments if c.get("createdAt", "") >= (head_time or "")])[0]
+    return remote.verdict_from([c.get("body", "") for c in trust.only(comments) if c.get("createdAt", "") >= (head_time or "")])[0]
 
 def pr_resume_info(pj):
     """Pure: `gh pr view --json number,mergeable,headRefOid,commits,comments` -> {pr, mergeable, verdict, sha, review, test}.
     review = the body of the head's VERDICT comment (its TEST level line, #618); test = the head's last `TEST: PASS|FAIL` line."""
     head = max((c.get("committedDate", "") for c in pj.get("commits") or []), default="")
-    since = [c.get("body", "") for c in pj.get("comments") or [] if c.get("createdAt", "") >= head]
+    since = [c.get("body", "") for c in trust.only(pj.get("comments") or []) if c.get("createdAt", "") >= head]
     line, body = remote.verdict_from(since)
     return {"pr": pj.get("number"), "mergeable": pj.get("mergeable", ""), "verdict": line,
             "sha": pj.get("headRefOid", ""), "review": body, "test": tester.result_from(since)[0]}
@@ -1268,7 +1326,7 @@ def human_without_question(issues):
     for i in issues:
         L = {(l.get("name") if isinstance(l, dict) else l) for l in i.get("labels") or []}
         if not {"blocked", "ready-for-human"} <= L: continue
-        bodies = [(c.get("body") or "") for c in i.get("comments") or []]
+        bodies = [(c.get("body") or "") for c in trust.only(i.get("comments") or [])]    # #800
         if any(re.search(r"^\s*QUESTION:", b, re.M) or b.startswith("Reviewer PURPLE question") for b in bodies): continue
         out.append(i["number"])
     return out
@@ -1485,6 +1543,11 @@ PARK_MINUTES = int(CFG.get("park_minutes", 30))
 
 def tell_orchestrator(text):
     if USE_HERDR: hc("send", "orchestrator", text, timeout=30)
+
+def tell_all(text):
+    """#889: orchestrator + inspector."""
+    tell_orchestrator(text)
+    if USE_HERDR: hc("send", "inspector", text, timeout=30)
 
 def live(name):
     return USE_HERDR and hc_json("get", name, "--json").get("state") == "live"
@@ -1720,7 +1783,7 @@ def worker_prompt(n, lane, review_text=None, bug=False):
     base = (f"You are an unattended worker for GitHub issue #{n} in repo {REPO} (lane: {lane}). If its title starts with 'Batch:', follow "
             f"its 'How to work' section: independent members (different files) may go to sub-agents (Agent tool); you integrate, test once "
             f"and open ONE PR with a 'Fixes #m' line per member. Read CLAUDE.md and FLOW.md, then the issue "
-            f"(`gh issue view {n} --repo {REPO} --comments`). Work only inside this worktree (your cwd). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
+            f"(`python3 tools/runner/view.py issue {n}` (trusted authors only)). Work only inside this worktree (your cwd). Implement ONLY what the issue asks. Use the mattpocock-skills:tdd skill (test first).\n"
             f"{ACCEPT}\n" + owner_gate(n) + SPEC)
     if lane == "review":
         return base + (f"This is a read-only review issue: change NO files, make no commits, open no PR. Post your report as ONE issue comment "
@@ -1772,7 +1835,7 @@ def review_prompt(n, pr, round1=""):
 def remote_review_prompt(n, pr, round1=""):
     """#134: task for a cloud reviewer session. No terminal: the verdict is read from its PR comment."""
     return (f"You are a fresh, read-only reviewer for PR #{pr} (issue #{n}) in {REPO}, running unattended in a cloud session. Change NO files, "
-            f"make no commits, push nothing, open nothing. Read CLAUDE.md, FLOW.md, the issue with its comments (`gh issue view {n} --repo {REPO} --comments`) "
+            f"make no commits, push nothing, open nothing. Read CLAUDE.md, FLOW.md, the issue with its comments (`python3 tools/runner/view.py issue {n}` (trusted authors only)) "
             f"and the diff (`gh pr diff {pr} --repo {REPO}`, ignore the built index.html files). Check: correctness vs the issue, simplicity (one main action "
             "per screen), Hebrew with correct nikud, facts correct, no unrelated changes, tests for the change. Use the code-review skill if you have it "
             f"(Standards = CLAUDE.md + FLOW.md, Spec = the issue). Then post ONE comment on the PR (`gh pr comment {pr} --repo {REPO} --body-file <file>`, "
@@ -1978,6 +2041,8 @@ def block(n, why, log):
         tail = "\n".join(Path(log).read_text(encoding="utf-8").splitlines()[-20:])
     except OSError:
         pass
+    gh007 = gitid.alarm(why + "\n" + tail, RUNS, tell_all, n=n)   # #889: a rejected push for e-mail privacy is named, not 'push failed'
+    if gh007: why = gh007
     set_labels(n, add=stuck_labels(), remove=["in-progress"])
     try: (RUNS / str(n)).mkdir(parents=True, exist_ok=True); (RUNS / str(n) / "rung.blocked").write_text("1")   # #716: the next start goes one rung up
     except OSError: pass
@@ -2111,7 +2176,8 @@ def update_lane(wt, br, log):
             if run(["git", "commit", "-q", "-m", "Rebuild index.html after merging main (#594)"], cwd=wt, log=log)[0]:
                 return 7, "could not commit the rebuilt index.html after merging main", ""
     if run(["git", "rev-parse", "HEAD"], cwd=wt)[1] == run(["git", "rev-parse", f"{REMOTE}/{br}"], cwd=wt)[1]: return 0, "", ""
-    if run(["git", "push", "-q", REMOTE, f"HEAD:{br}"], cwd=wt, log=log)[0]: return 5, "push failed", ""
+    rc, pout = run(["git", "push", "-q", REMOTE, f"HEAD:{br}"], cwd=wt, log=log)
+    if rc: return 5, gitid.alarm(pout, RUNS, tell_all) or "push failed", ""   # #889: GH007 -> its own reason + one alarm per hour
     return 0, "", run(["git", "rev-parse", "HEAD"], cwd=wt)[1].strip()
 
 def ci_integrate(n, wt, log, over=None, sha=""):
@@ -2320,6 +2386,7 @@ def process_locked(issue, where="local"):
                         if not rc: break
                         remove_worktree(wt, log); run(["git", "branch", "-D", f"lane/{n}"], cwd=ROOT, log=log)
                     if rc: raise Blocked("lane.sh failed twice (see run.log)")
+                    gitid.set_email(wt, run, gitid.email())      # #889: repo-local noreply address in every worktree
                     br = branch_of(n)                            # #246: a cloud worker's PR on claude/*: the worktree takes that branch's work
                     if br != f"lane/{n}":
                         run(["git", "fetch", "-q", REMOTE, br], cwd=wt, log=log)
@@ -2353,9 +2420,19 @@ def process_locked(issue, where="local"):
             try:
                 res = remote_worker(n, lane, "bug" in issue["labels"], rstart, lambda: fresh_remote().status(n, since=started),
                                     poll_sleep, time.time, 3 * 3600, 60, on_start=save_session, ended=over,
-                                    comment=lambda b: gh("issue", "comment", str(n), "--body", b), has_draft=lambda: draft_pr(n))
+                                    comment=lambda b: gh("issue", "comment", str(n), "--body", b), has_draft=lambda: draft_pr(n),
+                                    life=lambda: remote.life(n), dead_s=DEAD_MINUTES * 60)
                 remote_question(res)
                 out = res
+            except Dead as e:                            # #841: silent cloud session: one auto-resume, back to the queue (a draft PR is kept: the next run continues on it)
+                k = _count(n, "resumes")
+                if k >= AUTO_RESUMES: raise Blocked(f"cloud worker silent {e.minutes} min ({e.url}); already auto-resumed {k} times")
+                _resume_file(n, "resumes").parent.mkdir(parents=True, exist_ok=True)
+                _resume_file(n, "resumes").write_text(str(k + 1))
+                record_dead(n)
+                stat(n, lane, "waiting", why="dead session")
+                set_labels(n, add=["ready-for-agent"], remove=["in-progress"])
+                return f"WAITING: cloud session silent {e.minutes} min, back in the queue (auto-resume {k + 1}/{AUTO_RESUMES})"
             except Refused as e:                         # #137: local lane free -> run here; else give the issue back, it waits
                 if refusal_pauses(str(e)): record_refusal(n, str(e))   # #293: not when the PC was the cause
                 if pcload.alarmed(RUNS) or not local_lane_free(n):      # #293: no new local work while the PC is overloaded
@@ -2733,9 +2810,9 @@ def start_chosen(chosen, wmap, spawn_=None, terms_=None, lanes_=None):
     return results
 
 def run_pass():
-    rc, out = gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body")
+    rc, out = gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels,createdAt,updatedAt,title,body,author")
     if rc: print("gh failed:", out); log_pass_exit(out); return 1
-    issues = [{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)]
+    issues = untrusted_not_ready([{**i, "labels": [l["name"] for l in i["labels"]]} for i in json.loads(out)])   # #800
     issues, refused = gate(issues)                          # #186: no Acceptance section -> not started
     if refused and not DRY: ask_acceptance(refused)
     if not DRY:                                             # #264: owner gets only real questions; blocked issues with an open PR resume
@@ -2752,6 +2829,8 @@ def run_pass():
     for r in (gv.get("ai") or {}).get("raise", []):          # #707: raises only add model:/effort: labels above the inbox ones
         for i in issues:
             if i["number"] == r["issue"]: i["labels"] += [f"model:{r['model']}"] * bool(r.get("model")) + [f"effort:{r['effort']}"] * bool(r.get("effort"))
+    dw = dead_why(dead_state(), time.time())      # #841: dead cloud sessions pause cloud starts
+    if dw: gv["why"] = dw; log_line(f"{now()} {dw}: no new cloud starts")
     pairs = pass_now(issues, gv)                  # #279: the same lane check as the watchdog (#137 refusal pause, #293 PC load, #269 stop)
     wmap = {c["number"]: w for c, w in pairs}
     chosen = [c for c, _ in pairs]

@@ -2,6 +2,9 @@
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 import json, subprocess, sys, tempfile, threading, time
+import re, trust   # #800: old fixtures have no author: default them to the owner (explicit authors still count; test_trust.py covers the real rules)
+_login = trust.login
+trust.login = lambda c: _login(c) or (("oren-study-bot" if re.match(r"\s*(OWNER ANSWER|ANSWERED)", c.get("body") or "") or "owner-answer:" in (c.get("body") or "") else "igalgerman") if isinstance(c, dict) else "")
 from pathlib import Path
 sys.argv.append("--dry-run")
 import runner as R
@@ -45,9 +48,11 @@ assert A.fresh([a, a], {}, 0)[0] == [a]                                  # twice
 print("ok repeat filter")
 
 # ---- one run: command line, .last file, tell only new, owner finding -> #193 when it exists ----
+def GQL(cs, more=False): return json.dumps({"data": {"repository": {"issue": {"comments": {"pageInfo": {"hasNextPage": more, "endCursor": "c1" if more else None}, "nodes": cs}}}}})   # #800: owner_q.comments reads GraphQL
 told, logs, gh_calls = [], [], []
 def fake_gh(*a, **kw):
     gh_calls.append(a)
+    if a[:2] == ("api", "graphql"): return 0, GQL([])
     if a[:2] == ("issue", "list"): return 0, json.dumps([{"number": 193, "title": OQ.TITLE}])
     if a[:2] == ("issue", "view"): return 0, json.dumps({"comments": []})
     return 0, "https://github.com/x/y/issues/193#c1\n"
@@ -103,7 +108,7 @@ print("ok cloud lanes")
 # ---------- #289: the AI observer runs as a cloud scheduled task; the PC only relays its comment (no claude -p here) ----------
 A.STATE = tmp / "ai_observer.cloud.json"
 A.LAUNCH = lambda *a, **kw: {"ok": True}; A.OWNER_POST = lambda w, q: "url"   # #525: never a real cloud start / owner post here
-OQ.GH = lambda *a, **kw: (0, json.dumps({"comments": []}) if a[:2] == ("issue", "view") else "[]")   # #603: the once-cleanup reads #193
+OQ.GH = lambda *a, **kw: (0, GQL([]) if a[:2] == ("api", "graphql") else "[]")   # #603: the once-cleanup reads #193
 claude = FakeClaude(out="OBSERVER: never used")
 A.RUN = claude
 # round 2 of #485: gh has no `lastComment` JSON field (rc=1 on every call) and `--json comments` stops at 100. The fakes return
@@ -245,6 +250,7 @@ assert not A.for_owner("x -> orchestrator: y") and A.for_owner("x -> owner: merg
 A.STATE = tmp / "ai_observer.603.json"; OQ.STATE = tmp / "owner_q.603.json"
 posted = []
 def gh603(*a, **kw):
+    if a[:2] == ("api", "graphql"): return 0, GQL([])
     if a[:2] == ("issue", "list"): return 0, json.dumps([{"number": 205, "title": OQ.TITLE}])
     if a[:2] == ("issue", "view"): return 0, json.dumps({"comments": []})
     if a[:2] == ("issue", "comment"): posted.append(a[-1]); return 0, "https://github.com/x/y/issues/205#c9\n"
@@ -261,6 +267,7 @@ OLD = [qc("a" * 12, "ai-observer", "#557 dirty -> orchestrator: rebase, or ask t
        qc("d" * 12, "ai-observer-1700000000", "QUESTION: cloud AI observer silent since 01:00 - log in again")]
 marks = []
 def gh_old(*a, **kw):
+    if a[:2] == ("api", "graphql"): return 0, GQL(OLD)
     if a[:2] == ("issue", "list"): return 0, json.dumps([{"number": 205, "title": OQ.TITLE}])
     if a[:2] == ("issue", "view"): return 0, json.dumps({"comments": OLD})
     if a[:2] == ("issue", "comment"): marks.append(a[-1]); return 0, "ok"

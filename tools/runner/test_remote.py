@@ -1,6 +1,9 @@
 # Unit test for remote.py with a fake CLI: python tools/runner/test_remote.py
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
+import re, trust   # #800: old fixtures have no author: default them to the owner (explicit authors still count; test_trust.py covers the real rules)
+_login = trust.login
+trust.login = lambda c: _login(c) or (("oren-study-bot" if re.match(r"\s*(OWNER ANSWER|ANSWERED)", c.get("body") or "") or "owner-answer:" in (c.get("body") or "") else "igalgerman") if isinstance(c, dict) else "")
 import json
 import remote as r
 import owner_q as OQ   # #608: the owner answer record
@@ -37,8 +40,14 @@ start_cmd = next(c[0] for c in f.calls if c[0][1] == "run")
 first = " ".join(start_cmd)
 assert " run " in f"{first} " and "--name remote-143" in first and "--cloud" in first, first
 assert "unset CLAUDE_CODE_OAUTH_TOKEN" in first, first
-assert start_cmd[-1] == "do it", "task passed as its own argument"
+assert start_cmd[-1].endswith("do it") and "user.email" in start_cmd[-1], "task passed as its own argument"
 assert any("wait" in c[0] for c in f.calls), "waits for the start command to end"
+# #778: every cloud start has an explicit permission mode (else the owner's 'auto' default sends approval asks to his phone)
+bash_line = start_cmd[start_cmd.index("-c") + 1]
+assert "--permission-mode bypassPermissions" in bash_line and bash_line.endswith('--cloud "$1"'), bash_line
+assert r.start_command("opus", "high") == ('unset CLAUDE_CODE_OAUTH_TOKEN; "$0" --model opus --effort high '
+                                           '--permission-mode bypassPermissions --cloud "$1"'), r.start_command("opus", "high")
+assert r.start_command() == 'unset CLAUDE_CODE_OAUTH_TOKEN; "$0" --permission-mode bypassPermissions --cloud "$1"'
 # terminal could not even start -> refused
 f = Fake(("run", 1, "hc: no server"))
 s = r.start(143, "do it", cwd="C:/x", run=f)
@@ -218,7 +227,7 @@ PARK = {"body": "Parked (cloud): the cloud session waits for the owner."}
 assert r.answer_after_question([Q]) == ""                                                    # no answer yet
 assert r.answer_after_question([Q, PARK]) == ""                                              # runner/tool comments are no answer
 assert r.answer_after_question([Q, PARK, {"body": OQ.answer_body("abcdef012345", "green")}]) == "green"
-assert r.answer_after_question(["x", Q["body"], OQ.answer_body("abcdef012345", "2")]) == "2"   # plain bodies work too
+assert r.answer_after_question([{"body": "x"}, {"body": Q["body"]}, {"body": OQ.answer_body("abcdef012345", "2")}]) == "2"
 assert r.answer_after_question([Q, {"body": OQ.answer_body("abcdef012345", "ירוק")}]) == "ירוק"     # #608: the owner_q record
 # #608: only an owner_q answer record counts; any free comment from the shared account is no answer
 assert r.answer_after_question([Q, {"body": "OWNER ANSWER (question window, owner-q:abcdef012345): ירוק"}]) == ""   # no hidden record mark

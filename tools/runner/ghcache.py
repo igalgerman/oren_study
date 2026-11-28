@@ -121,44 +121,61 @@ def mark_dirty(target, now=None): _append(DIRTY, f"{now if now is not None else 
 def caller_of(cmd):
     return f"{Path(sys.argv[0] or 'py').stem}:{cmd[1] if len(cmd) > 1 else ''}"
 
-def note_call(now=None, who="app", caller=None):
-    _append(CALLS, f"{now if now is not None else time.time():.0f} {who} {caller or caller_of(['gh'])}")
+def endpoint_of(cmd):
+    """Endpoint of a gh call with numbers/ids replaced and no query string (#848): 'repos/{o}/{r}/issues/{n}/comments';
+    `gh issue list` -> 'issue list'. Never a token, never a query value. No spaces (one log field)."""
+    try:
+        if len(cmd) > 2 and cmd[1] == "api":
+            a = next((x for x in cmd[2:] if x == "graphql" or re.match(r"/?(repos|user|orgs|search|rate_limit|app|installation)", x)), "")
+            if a == "graphql": return "graphql"
+            parts = a.split("?")[0].strip("/").split("/")
+            if len(parts) >= 3 and parts[0] == "repos": parts[1:3] = ["{o}", "{r}"]
+            return "/".join("{n}" if re.fullmatch(r"\d+", x) else "{sha}" if re.fullmatch(r"[0-9a-f]{40}", x) else x for x in parts)[:120] or "api"
+        return "_".join(str(x) for x in cmd[1:3] if not str(x).startswith("-"))[:40]
+    except Exception: return ""
+
+def note_call(now=None, who="app", caller=None, endpoint=""):
+    _append(CALLS, f"{now if now is not None else time.time():.0f} {who} {caller or caller_of(['gh'])}" + (f" {endpoint.replace(' ', '_')}" if endpoint else ""))
 
 def _lines(path):
     try: return path.read_text(encoding="utf-8").splitlines()
     except OSError: return []
 
 def _calls():
-    """gh_calls.log -> [(ts, who, caller)] (old one-field lines: who/caller '?')."""
+    """gh_calls.log -> [(ts, who, caller, endpoint)] (old lines: endpoint ''; one-field lines: who/caller '?')."""
     out = []
     for l in _lines(CALLS):
         f = l.split()
-        try: out.append((float(f[0]), f[1] if len(f) > 1 else "?", f[2] if len(f) > 2 else "?"))
+        try: out.append((float(f[0]), f[1] if len(f) > 1 else "?", f[2] if len(f) > 2 else "?", f[3] if len(f) > 3 else ""))
         except (IndexError, ValueError): pass
     return out
 
 def calls_per_min(now=None):
     now = time.time() if now is None else now
-    return sum(1 for t, _, _ in _calls() if now - 60 <= t <= now + 1)
+    return sum(1 for t, *_ in _calls() if now - 60 <= t <= now + 1)
 
 def calls_by(now=None):
     now = time.time() if now is None else now
     out = {}
-    for t, who, _ in _calls():
+    for t, who, *_ in _calls():
         if now - 60 <= t <= now + 1: out[who] = out.get(who, 0) + 1
     return out
 
 def top_report(t0, t1):
     """Calls per minute between t0 and t1: 'HH:MM  total  who n top-caller · ...' (find what bursts, #469)."""
     mins = {}
-    for t, who, caller in _calls():
+    tot = {}
+    for t, who, caller, ep in _calls():
         if t0 <= t <= t1:
+            caller = f"{caller} {ep}" if ep else caller
+            tot[caller] = tot.get(caller, 0) + 1
             d = mins.setdefault(int(t // 60) * 60, {}).setdefault(who, {})
             d[caller] = d.get(caller, 0) + 1
     rows = []
     for m in sorted(mins):
         per = sorted(((sum(cs.values()), who, max(cs, key=cs.get)) for who, cs in mins[m].items()), key=lambda x: (-x[0], x[1]))
         rows.append(f"{time.strftime('%H:%M', time.localtime(m))}  {sum(n for n, _, _ in per)}  " + " · ".join(f"{w} {n} {c}" for n, w, c in per))
+    if tot: rows += ["", "total by caller + endpoint:"] + [f"{n:6d}  {c}" for c, n in sorted(tot.items(), key=lambda x: (-x[1], x[0]))[:15]]
     return "\n".join(rows)
 
 def _ts_ok(line, since):
@@ -194,14 +211,14 @@ def _usable(now):
     c = load()
     return c if c and now - c.get("ts", 0) <= MAX_AGE else None
 
-_COMMENTS = "comments(last:100){totalCount nodes{body createdAt url author{login} reactionGroups{content users{totalCount}}}}"   # #637: url + reactions (owner_q)
+_COMMENTS = "comments(last:100){totalCount nodes{body createdAt url author{login} reactionGroups{content users(first:20){totalCount nodes{login}}}}}"   # #637: url + reactions (owner_q)
 _Q = ("query($o:String!,$r:String!,$oc:String,$cc:String,$wo:Boolean!,$wc:Boolean!,$full:Boolean!){repository(owner:$o,name:$r){"
       "open:issues(states:OPEN,first:100,after:$oc,orderBy:{field:CREATED_AT,direction:DESC})@include(if:$wo){totalCount pageInfo{hasNextPage endCursor}"
       " nodes{number title body url state createdAt updatedAt closedAt labels(first:30){nodes{name}} " + _COMMENTS + "}}"
       " closed:issues(states:CLOSED,first:100,after:$cc,orderBy:{field:UPDATED_AT,direction:DESC})@include(if:$wc){totalCount pageInfo{hasNextPage endCursor}"
       " nodes{number title url state createdAt updatedAt closedAt labels(first:30){nodes{name}}}}"
       " prs:pullRequests(first:100,orderBy:{field:UPDATED_AT,direction:DESC})@include(if:$full){nodes{number url title headRefName body state isDraft"
-      " mergedAt createdAt updatedAt closedAt labels(first:30){nodes{name}} mergeable autoMergeRequest{enabledAt} closingIssuesReferences(first:5){nodes{number}} commits(last:1){nodes{commit{committedDate statusCheckRollup{state}}}} comments(last:50){totalCount nodes{body createdAt url author{login} reactionGroups{content users{totalCount}}}}}}"
+      " mergedAt createdAt updatedAt closedAt labels(first:30){nodes{name}} mergeable autoMergeRequest{enabledAt} closingIssuesReferences(first:5){nodes{number}} commits(last:1){nodes{commit{committedDate statusCheckRollup{state}}}} comments(last:50){totalCount nodes{body createdAt url author{login} reactionGroups{content users(first:20){totalCount nodes{login}}}}}}}"
       " openPrs:pullRequests(states:OPEN)@include(if:$full){totalCount}"
       " refs(refPrefix:\"refs/heads/lane/\",first:100,orderBy:{field:TAG_COMMIT_DATE,direction:DESC})@include(if:$full){pageInfo{hasNextPage} nodes{name target{... on Commit{committedDate}}}}"
       "}}")
@@ -374,7 +391,7 @@ def call(cmd, raw, now=None, sleep=None, alt=None, who="app"):
     rc, out = 1, ""
     for k in range(tries):
         for j, (name, fn) in enumerate(ids):
-            note_call(now, name, caller); rc, out = fn()
+            note_call(now, name, caller, endpoint_of(cmd)); rc, out = fn()
             if rc == 0 or not rate_limited(out): break
             mark_limited(name, out)
             if j + 1 < len(ids): _switch_log(name, ids[j + 1][0])

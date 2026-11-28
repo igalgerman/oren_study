@@ -195,7 +195,7 @@ const { chromium } = require('playwright');
   }
   /* ---------- #8 P3 leftovers (docs/simplicity-spec.md + docs/qa-deep-report.md) ---------- */
   await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.__arc.open(() => {}); }); await L.sleep(150);
-  ok('#8 arcade: no "✨ new" tag on the cabinets', await p.evaluate(() => document.querySelectorAll('#sTal .cab').length === 8 && !document.querySelector('#sTal .hs.new') && !/חָדָשׁ/.test(document.querySelector('#sTal .cabs').textContent)));
+  ok('#8 arcade: no "✨ new" tag on the cabinets', await p.evaluate(() => document.querySelectorAll('#sTal .cab').length === 10 && !document.querySelector('#sTal .hs.new') && !/חָדָשׁ/.test(document.querySelector('#sTal .cabs').textContent)));
   await p.evaluate(() => window.__arc.start('frog')); await L.sleep(300);
   r = await p.evaluate(() => { const bg = e => getComputedStyle(e).backgroundColor; const f = document.querySelector('.jb:not(.back)'), m = document.querySelector('.jb.back'); return { f: bg(f), m: bg(m) }; });
   ok('#8 frog: "−1" is quieter than the forward jumps (not yellow)', r.m !== 'rgb(255, 210, 63)' && r.m !== r.f, JSON.stringify(r));
@@ -235,6 +235,22 @@ const { chromium } = require('playwright');
   r = await p.evaluate(() => ({ rows: [...document.querySelectorAll('#sStudio .orow h4')].map(x => x.textContent), price: document.querySelectorAll('#sStudio .pr').length }));
   ok('#426 studio: no hat row, nothing to buy', !r.rows.some(t => /כּוֹבַע/.test(t)) && r.price === 0 && r.rows.length >= 2, JSON.stringify(r));
   await L.shot(p, { path: require('path').join(L.SHOTDIR, `426-studio-${L.variant}.png`) });
+  /* ---------- #661 the friend: name, colour, hat, accessory, age (+ kind) ---------- */
+  r = await p.evaluate(() => { const O = window.OREN; O.save.av = { hair: 'brown', skin: 'light', shirt: 'blue', pants: 'jeans', pet: 'cat' }; O.save.story.intro = 1; O.persist();
+    const NIK = /[ְ-ׇּׁׂ]/, kinds = { kind: Object.keys(O.PETS).length, colour: O.FCOL.length, hat: O.FHAT.length, acc: O.FACC.length, name: O.FNAME.length, age: O.FAGE.length };
+    O.studio(false, () => {}); const rows = [...document.querySelectorAll('#sStudio .frow')]; const pics = rows.map(x => x.querySelectorAll('button').length);
+    const base = O.PET().s(); O.save.av.pcol = 'red'; O.save.av.phat = 'cap'; O.save.av.pacc = 'bow'; O.save.av.pname = 'זִיו'; O.save.av.page = 5;
+    const dressed = O.PET().s(), hello = window.TAL.friend(), nm = O.PET().n;
+    const texts = O.friendTexts(); return { kinds, pics, titles: rows.map(x => x.querySelector('h4').textContent), changed: base !== dressed && hello === dressed, nm, nik: texts.every(t => NIK.test(t)), nt: texts.length, lockedBtn: document.querySelectorAll('#sStudio .frow .lk').length }; });
+  ok('#661 friend: 5+ kinds of choices (kind, colour, hat, accessory, name, age), 4+ options each', Object.values(r.kinds).filter(n => n >= 4).length >= 5 && r.pics.length >= 5 && r.pics.every(n => n >= 4), JSON.stringify(r));
+  ok('#661 friend: some options are locked until stars are earned', r.lockedBtn >= 3, String(r.lockedBtn));
+  ok('#661 friend: colour/hat/accessory change the picture everywhere (home sprite), the chosen name shows, all texts with nikud', r.changed && r.nm === 'זִיו' && r.nik && r.nt >= 8, JSON.stringify(r));
+  r = await p.evaluate(() => { const O = window.OREN; O.studio(false, () => {}); window.__saidLast = null; const w = O.say; const names = [...document.querySelectorAll('#sStudio .fname')]; names[0].click(); const sel = document.querySelector('#sStudio .fname.sel'); return { n: O.save.av.pname, sel: sel && sel.textContent, back: Object.values(localStorage).some(v => v.includes('"pname":"' + O.save.av.pname + '"')) }; });
+  ok('#661 friend: tapping a name picks it, saves it (in save.av, synced with the hero)', r.n === r.sel && r.back, JSON.stringify(r));
+  await p.evaluate(() => { window.OREN.save.av.pcol = 'purple'; window.OREN.save.av.phat = 'wizard'; window.OREN.studio(false, () => {}); }); await L.sleep(200);
+  r = await p.evaluate(() => ({ lk: document.querySelectorAll('#sStudio .frow .lk').length, hs: document.documentElement.scrollWidth <= innerWidth + 1 }));
+  ok('#661 friend studio: no horizontal overflow', r.hs, JSON.stringify(r));
+  await L.shot(p, { path: require('path').join(L.SHOTDIR, `661-friend-${L.variant}.png`), fullPage: true });
   r = await p.evaluate(() => { const T = window.TAL; T.parentPanel('full'); return /תגים/.test(document.querySelector('#sPar').textContent); });
   ok('#426 parent panel: no badge count', !r);
   await p.locator('#sPar .bigbtn', { hasText: 'יציאה' }).click(); await L.sleep(300);

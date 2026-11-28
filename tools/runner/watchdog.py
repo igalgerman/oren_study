@@ -45,6 +45,7 @@ sys.path.insert(0, str(HERE))
 import ghauth     # #363: GitHub App token for the bots
 import runner as R   # config, gh(), select(), hc paths
 import owner_q as OQ # #193: the pinned 'Questions for the owner' issue
+import backoff as BO # #842: exponential backoff + one alert for a job that keeps failing
 
 EVERY = int(R.CFG.get("watchdog_seconds", 60))
 LOG = R.RUNS / "watchdog.log"
@@ -164,6 +165,10 @@ def check_lanes(ts):
     key, now = tuple(sorted(i["number"] for i in ready)), time.time()
     ok, why = pass_decision(R.FileLock("pass").held_by_other(), key, last_pass_start(), now)   # #284/#250: one pass alive at a time
     if not ok: return
+    last = last_pass_start()
+    again = bool(last and list(last.get("key") or []) == list(key))   # #842: same ready issues as the last start = that pass started nothing
+    if again and not BO.due("run-pass", now): return
+    (BO.failed if again else BO.ok)("run-pass", now, tell)            # a new ready issue resets the wait
     note_pass_start(key, now)
     orch = R.hc_json("get", "orchestrator", "--json").get("address", "")
     name = f"run-pass-{int(time.time()) % 100000}"
@@ -185,7 +190,7 @@ def check_intake(ts):
     if not i: return
     n, name = i["number"], f"intake-{i['number']}"
     import recover
-    prompt = (f"/grill-me issue #{n} (gh issue view {n} --repo {R.CFG['repo']} --comments), then /to-tickets for what comes out of it, "
+    prompt = (f"/grill-me issue #{n} (python3 tools/runner/view.py issue {n}: trusted authors only), then /to-tickets for what comes out of it, "
               f"then close #{n} with links to the new tickets. Every ticket gets an '## Acceptance' section before ready-for-agent: 3-7 checkable points "
               f"+ the tests that prove them, and 'Out of scope' (#186). If #{n} is only waiting because it has no Acceptance section, "
               f"skip the grilling: write that section into #{n}'s body. " + recover.TRIAGE_STEPS)
@@ -326,7 +331,11 @@ def check_control(ts):
         if rc == 0 and name != "orchestrator": tell(f"WATCHDOG: {name} had finished; restarted it")
 
 def qwin_tick(ts):
-    import qwin; importlib.reload(qwin); qwin.tick(ts)   # #220/#390: page + phone push per open owner question
+    if not BO.due("qwin"): return                        # #842: a failing job waits 2, 4, 8 ... 60 min
+    import qwin; importlib.reload(qwin); before = qwin.OPEN_FAILS[0]
+    try: qwin.tick(ts)   # #220/#390: page + phone push per open owner question
+    except Exception: BO.failed("qwin", alert=tell); raise
+    (BO.failed if qwin.OPEN_FAILS[0] > before else BO.ok)("qwin", alert=tell)   # 'could not open' counts as a failure
 
 def resume_tick():
     for n in R.resume_answered(): log(f"#{n}: owner answered the cloud question -> unparked, the next pass resumes its session (#135)")
@@ -360,7 +369,8 @@ def privacy_tick(now=None, cache=None, gh=None):
     whose title or new comment holds the kid's name are rewritten through the scrub (cloud sessions write with their own gh)."""
     import scrub, ghcache
     now = now or time.time()
-    if not scrub.names(): scrub.warn_once(now, say=tell); return 0
+    try: scrub.require()
+    except RuntimeError: scrub.warn_once(now, say=tell); return 0     # #876: loud, one alarm per hour (a day before)
     if not scrub.sweep_due(now): return 0
     gh = gh or R.gh
     def title(kind, n, text): return gh(kind, "edit", str(n), "--title", text)[0] == 0
@@ -679,7 +689,7 @@ def tick():
         for name, fn in (("observer_tick", observer_tick), ("ai_observer_tick", ai_observer_tick), ("nightly_tick", nightly_tick),
                          ("parked_tick", parked_tick), ("due_tick", due_tick), ("garden_tick", garden_tick),   # #282 #241 #187
                          ("issues_stuck_tick", issues_stuck_tick), ("desks_tick", desks_tick), ("canary_tick", canary_tick),   # #280 #330
-                         ("sync_tick", sync_tick), ("alarm_tick", alarm_tick), ("trends_tick", trends_tick), ("ai_tick", ai_tick), ("usage_tick", usage_tick), ("usage_alarm_tick", usage_alarm_tick),
+                         ("sync_tick", sync_tick), ("alarm_tick", alarm_tick), ("trends_tick", trends_tick), ("ai_tick", ai_tick), ("usage_tick", usage_tick), ("usage_alarm_tick", usage_alarm_tick), ("merges_tick", merges_tick), ("interaction_limit_tick", interaction_limit_tick),
                          ("lock_tick", lock_tick), ("orch_idle_tick", orch_idle_tick)):
             step(name, fn)
 
@@ -965,14 +975,16 @@ def lock_tick(now=None):
 _ai = {"running": False}
 def ai_tick():
     """#171: hourly AI assessment for the dashboard, in a background thread (claude -p can take a minute)."""
-    if _ai["running"] or not R.CFG.get("ai_model", "haiku"): return
+    if _ai["running"] or not R.CFG.get("ai_model", "haiku") or not BO.due("ai"): return   # #842
     import dashboard; importlib.reload(dashboard)
     a = dashboard.ai_load()
     if a and time.time() - a.get("at", 0) < dashboard.AI_EVERY_MIN * 60: return
     _ai["running"] = True
     def work():
-        try: dashboard.ai_tick(log)
-        except Exception as e: log(f"ai assessment error: {e!r}")
+        try:
+            r = dashboard.ai_tick(log)
+            if r is not None: (BO.ok if r else BO.failed)("ai", alert=tell)
+        except Exception as e: log(f"ai assessment error: {e!r}"); BO.failed("ai", alert=tell)
         finally: _ai["running"] = False
     threading.Thread(target=work, daemon=True).start()
 
@@ -982,12 +994,12 @@ def ghcache_tick(start=None):
     Never two at once; skipped when the cache is younger than 50 s."""
     import ghcache
     c = ghcache.load()
-    if _GH_BUSY.is_set() or (c and time.time() - c.get("ts", 0) < 50): return False
+    if _GH_BUSY.is_set() or (c and time.time() - c.get("ts", 0) < 50) or not BO.due("gh-cache"): return False   # #842
     _GH_BUSY.set()
     def work():
         owner = (lambda cmd: R.run(cmd, env={ghauth.OWNER: "1"}, timeout=120)) if ghauth.app_cfg(R.CFG) else None   # #363: owner budget too
-        try: ghcache.refresh(lambda cmd: R.run(cmd, timeout=120), run_owner=owner)
-        except Exception as e: log(f"gh cache refresh failed: {e}"[:300])      # old cache stays; readers fall back to gh when it is stale
+        try: ghcache.refresh(lambda cmd: R.run(cmd, timeout=120), run_owner=owner); BO.ok("gh-cache", alert=tell)
+        except Exception as e: log(f"gh cache refresh failed: {e}"[:300]); BO.failed("gh-cache", alert=tell)      # old cache stays; readers fall back to gh when it is stale
         finally: _GH_BUSY.clear()
     (start or (lambda f: threading.Thread(target=f, daemon=True).start()))(work)
     return True
@@ -1014,6 +1026,24 @@ def usage_alarm_tick():
     if time.time() - _ualarm["last"] < 300: return
     _ualarm["last"] = time.time()
     import usage_alarms; importlib.reload(usage_alarms); usage_alarms.tick(tell, log)
+
+_merges = {"last": 0.0}
+def merges_tick():
+    """#851: every 5 min, from the gh cache: one `merged` event in stats.jsonl per merged PR of the last 7 days that has none yet (auto-merge, by hand)."""
+    if time.time() - _merges["last"] < 300: return
+    _merges["last"] = time.time()
+    import stats, ghcache; importlib.reload(stats)
+    c = ghcache.load()
+    if not c: return
+    new = stats.record_merges(c.get("prs") or [], days=7)
+    if new: log(f"stats: {len(new)} merged event(s) recorded for PRs the runner did not merge: " + ", ".join(f"#{e['issue']} ({e['by']})" for e in new))
+
+_ilimit = {"last": 0.0}
+def interaction_limit_tick():
+    """#829: hourly, read each public repo's interaction-limits expiry; alarm 14 days before (daily) or at once when gone."""
+    if time.time() - _ilimit["last"] < 3600: return
+    _ilimit["last"] = time.time()
+    import interaction_limit; importlib.reload(interaction_limit); interaction_limit.tick(tell, log)
 
 def trends_tick():
     """#155: hourly patterns over 24 h (repeated BLOCKED reasons, finish/fix rates); reloaded so merged fixes apply."""

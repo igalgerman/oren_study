@@ -1,5 +1,8 @@
 # Unit test for ghcache.py (#329: one GitHub reader + cache, retry on rate limit) with fakes: python tools/runner/test_ghcache.py
 import os, tempfile; os.environ["OREN_TEST"] = "1"; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
+import re, trust   # #800: old fixtures have no author: default them to the owner (explicit authors still count; test_trust.py covers the real rules)
+_login = trust.login
+trust.login = lambda c: _login(c) or (("oren-study-bot" if re.match(r"\s*(OWNER ANSWER|ANSWERED)", c.get("body") or "") or "owner-answer:" in (c.get("body") or "") else "igalgerman") if isinstance(c, dict) else "")
 import json, time
 from pathlib import Path
 import ghcache as G
@@ -117,12 +120,12 @@ assert json.loads(out)["comments"][0]["body"] == "VERDICT: PASS"
 
 # #637: comments keep url + reactionGroups (a thumbs-up answers an owner question); > 100 comments -> real gh (it pages)
 for sel in (G._COMMENTS, G._Q.split("prs:")[1]):
-    assert "url" in sel.split("comments(")[1] and "reactionGroups{content users{totalCount}}" in sel and "totalCount" in sel.split("comments(")[1], sel
+    assert "url" in sel.split("comments(")[1] and "reactionGroups{content users(first:20){totalCount nodes{login}}}" in sel and "totalCount" in sel.split("comments(")[1], sel
 import owner_q as OQ
 QB = "<!-- owner_q --><!-- owner-q:{k} -->\n**#{n}** חלון `remote-{n}`\n\n**שאלה:** q{n}?\n"
 QCS = [{"body": QB.format(k="47df330c6428", n=392), "createdAt": "2026-11-27T10:00:00Z", "author": {"login": "o"},
         "url": "https://github.com/x/issues/205#issuecomment-1", "reactionGroups": [{"content": "THUMBS_UP", "users": {"totalCount": 1}}]},
-       {"body": QB.format(k="3381e878897f", n=53), "createdAt": "2026-11-27T10:01:00Z", "author": {"login": "o"},
+       {"body": QB.format(k="3381e878897f", n=53), "createdAt": "2026-11-27T10:01:00Z", "author": {"login": "igalgerman"},
         "url": "https://github.com/x/issues/205#issuecomment-2", "reactionGroups": [{"content": "THUMBS_UP", "users": {"totalCount": 0}}]}]
 Q205 = {**OPEN[1], "number": 205, "title": "Questions for the owner", "comments": {"totalCount": 2, "nodes": QCS}}
 cc = G.load(); G._save({**cc, "open": cc["open"] + [G._flat(Q205)]})
@@ -299,6 +302,17 @@ G.CALLS.write_text("".join(f"{t} {w} {c}\n" for t, w, c in [(NOW, "app", "watchd
 assert G.calls_per_min(now=NOW + 30) == 3 and G.calls_by(now=NOW + 30) == {"app": 2, "owner": 1}
 rep = G.top_report(NOW - 1, NOW + 120)
 assert rep.splitlines()[0].endswith("3  app 2 watchdog:api · owner 1 owner_q:issue") and "remote:pr" in rep.splitlines()[1], rep
+# #848: endpoint per call (numbers replaced, no query/token), old lines parse, top groups by caller + endpoint
+assert G.endpoint_of(["gh", "api", "repos/igalgerman/oren_study/issues/848/comments?per_page=100&access_token=SECRET"]) == "repos/{o}/{r}/issues/{n}/comments"
+assert G.endpoint_of(["gh", "api", "-X", "GET", "repos/a/b/pulls/7"]) == "repos/{o}/{r}/pulls/{n}" and G.endpoint_of(["gh", "api", "graphql", "-f", "query=x"]) == "graphql"
+assert G.endpoint_of(["gh", "issue", "list", "--json", "x"]) == "issue_list" and G.endpoint_of(["gh"]) == ""
+G.CALLS.write_text(f"{NOW} app watchdog:api\ngarbage\n{NOW+1} app watchdog:api repos/{{o}}/{{r}}/issues/{{n}}/comments\n{NOW+2} app watchdog:api repos/{{o}}/{{r}}/issues/{{n}}/comments\n{NOW+3} owner x:pr pr_list\n", encoding="utf-8")
+assert [c[3] for c in G._calls()] == ["", "repos/{o}/{r}/issues/{n}/comments", "repos/{o}/{r}/issues/{n}/comments", "pr_list"]
+tail = G.top_report(NOW - 1, NOW + 120).split("total by caller + endpoint:")[1].split("\n")
+assert tail[1].split(None, 1) == ["2", "watchdog:api repos/{o}/{r}/issues/{n}/comments"] and any(l.split(None, 1) == ["1", "watchdog:api"] for l in tail), tail
+G.note_call(NOW, "app", "w:api", G.endpoint_of(["gh", "api", "repos/a/b/issues/3"]))
+assert G.CALLS.read_text(encoding="utf-8").splitlines()[-1] == f"{NOW} app w:api repos/{{o}}/{{r}}/issues/{{n}}"
+print("ok #848 endpoint log + top by caller+endpoint")
 G.LIMITED.unlink(missing_ok=True)
 G.mark_limited("app", "You have exceeded a secondary rate limit", now=NOW + 5)
 line = G.status_line({"ts": NOW, "rate": {"graphql": [4000, 5000]}, "rate_owner": {"graphql": [3000, 5000]}}, 3, now=NOW + 20, by={"app": 2, "owner": 1})

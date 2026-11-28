@@ -2,6 +2,9 @@
 import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-test-")   # #229: tests never write to the live .runs
 os.environ["OREN_TEST"] = "1"   # #325: start_pregen never launches a real pregen.js under tests
 import json, re, sys, tempfile, time
+import re, trust   # #800: old fixtures have no author: default them to the owner (explicit authors still count; test_trust.py covers the real rules)
+_login = trust.login
+trust.login = lambda c: _login(c) or (("oren-study-bot" if re.match(r"\s*(OWNER ANSWER|ANSWERED)", c.get("body") or "") or "owner-answer:" in (c.get("body") or "") else "igalgerman") if isinstance(c, dict) else "")
 from pathlib import Path
 sys.argv.append("--dry-run")
 import runner as R
@@ -30,6 +33,10 @@ class FakeGH:
         if a[:2] == ("issue", "pin"): self.issues[int(a[2])]["pinned"] = True; return 0, ""
         if a[:2] == ("issue", "view"):
             return 0, json.dumps({"comments": self.issues[int(a[2])]["comments"]})
+        if a[:2] == ("api", "graphql"):            # #800: owner_q.comments = GraphQL pages of self.page comments
+            n = int(next(x for x in a if x.startswith("n=")).split("=")[1]); cur = next((x[2:] for x in a if x.startswith("c=")), "")
+            cs = self.issues[n]["comments"]; i = int(cur or 0); j = i + getattr(self, "page", 100)
+            return 0, json.dumps({"data": {"repository": {"issue": {"comments": {"pageInfo": {"hasNextPage": j < len(cs), "endCursor": str(j)}, "nodes": cs[i:j]}}}}})
         if a[:2] == ("issue", "comment"):
             cs = self.issues[int(a[2])]["comments"]
             cs.append({"body": a[a.index("--body") + 1], "url": f"https://github.com/x/y/issues/{a[2]}#c{len(cs)}", "reactionGroups": []})
@@ -91,7 +98,7 @@ qs = OQ.open_questions(cs)
 assert [q["window"] for q in qs] == ["#5", "#7", "#9", "#6"] and qs[0]["text"].startswith("לשנות") and qs[0]["url"], qs
 k5, k7 = qs[0]["key"], qs[1]["key"]
 assert OQ.mark_answered(k5, "כחול", gh=g)
-cs[1]["reactionGroups"] = [{"content": "THUMBS_UP", "users": {"totalCount": 1}}]       # the owner reacted: answered too
+cs[1]["reactionGroups"] = [{"content": "THUMBS_UP", "users": {"totalCount": 1, "nodes": [{"login": "igalgerman"}]}}]       # the owner reacted: answered too
 assert [q["window"] for q in OQ.open_questions(cs)] == ["#9", "#6"]
 # the owner replies in the issue -> the orchestrator is told once, with the open questions
 OQ.STATE = tmp / "owner_q.json"; told.clear()
@@ -156,7 +163,7 @@ assert OQ.gate(64, bot, qcs) == [], "a bot comment 'design approved' -> gate sti
 assert OQ.gate(64, bot + [{"body": OQ.answer_body(QK, "מאושר")}], qcs) == ["מאושר"], "an owner_q answer -> gate open"
 assert OQ.gate(64, [{"body": OQ.answer_body("1" * 12, "x")}], qcs) == [], "a record of another issue's question does not count"
 assert OQ.gate(64, [{"body": OQ.answer_body("2" * 12, "x")}], qcs) == [], "a record with no such question does not count"
-qcs[0]["reactionGroups"] = [{"content": "THUMBS_UP", "users": {"totalCount": 1}}]        # the owner reacted in #205
+qcs[0]["reactionGroups"] = [{"content": "THUMBS_UP", "users": {"totalCount": 1, "nodes": [{"login": "igalgerman"}]}}]        # the owner reacted in #205
 assert OQ.gate(64, bot, qcs) == ["reaction THUMBS_UP"]
 # the CLI reviewers and the runner use: `owner_q.py gate <n>` reads both issues, exit 0 = open
 g3 = FakeGH(); OQ.STATE = tmp / "owner_q_gate.json"; OQ.GH = g3
@@ -201,7 +208,7 @@ assert OQ.gate(64, [], gq) == [], "unanswered -> closed"
 assert OQ.gate(64, [{"body": OQ.answer_body(GK, "approve")}], gq) == ["approve"], "answered from window 'orchestrator' gating #64 -> OPEN"
 assert OQ.gate(65, [{"body": OQ.answer_body(GK, "approve")}], gq) == [], "it gates #64 only"
 assert OQ.gate(64, [{"body": OQ.answer_body(GK, "approve")}], [{"body": OQ.body(GK, "orchestrator", "QUESTION: building world design ok?")}]) == [], "no gates marker -> not #64's"
-gq[0]["reactionGroups"] = [{"content": "THUMBS_UP", "users": {"totalCount": 1}}]
+gq[0]["reactionGroups"] = [{"content": "THUMBS_UP", "users": {"totalCount": 1, "nodes": [{"login": "igalgerman"}]}}]
 assert OQ.gate(64, [], gq) == ["reaction THUMBS_UP"]
 # the CLI: ask --gates 64 posts the marker; gate #64 is OPEN after the answer record on #64
 g4 = FakeGH(); OQ.STATE = tmp / "owner_q_gates.json"; OQ.GH = g4
@@ -257,3 +264,23 @@ OQ.TRANSLATE = lambda t: "תרגום טוב."; OQ.post("#699c", "QUESTION: fine"
 assert OQ.open_questions([{"body": posts(g6)[-1]["body"], "url": "u"}])[0]["text"] == "תרגום טוב."
 OQ.TRANSLATE = None; OQ.TR_TIMEOUT_S = 15
 print("ok owner_q #699 translation bounded, Hebrew fallback")
+
+# #803 inspector-chat answers: CLOSED without the bot's final marker, OPEN with it, CLOSED again with an undo, CLOSED when not the App bot
+CK = QK
+qcs = [{"body": OQ.body(QK, "remote-64", "QUESTION: design ok?"), "reactionGroups": []}, {"body": OQ.body("1" * 12, "remote-65", "QUESTION: other?"), "reactionGroups": []}]
+qcs2 = [qcs[0]]
+qcs2[0] = {**qcs[0], "body": OQ.body(QK, "remote-64", "QUESTION: design ok?", gates=[64])}
+rec = {"body": OQ.chat_answer_body(CK, "כן", "הוא אמר כן"), "author": {"login": "oren-study-bot"}}
+fin = {"body": f"<!-- owner-answer-final:{CK} -->", "author": {"login": "oren-study-bot"}}
+und = {"body": f"<!-- owner-answer-undo:{CK} -->", "author": {"login": "oren-study-bot"}}
+as_owner = lambda c: {**c, "author": {"login": "igalgerman"}}
+assert OQ.gate(64, [rec], qcs) == [], "chat record without the final marker = CLOSED"
+assert OQ.gate(64, [rec, fin], qcs) == ["כן (inspector chat)"], "with the final marker = OPEN"
+assert OQ.gate(64, [rec, fin, und], qcs) == [] and OQ.gate(64, [rec, und, fin], qcs) == [], "with an undo record = CLOSED"
+assert OQ.gate(64, [as_owner(rec), fin], qcs) == [] and OQ.gate(64, [rec, as_owner(fin)], qcs) == [], "not written by the App bot = CLOSED (#800)"
+assert OQ.gate(64, [{**rec, "author": {"login": "someone"}}, fin], qcs) == []
+assert OQ.gate(64, [fin], qcs) == [], "a final marker alone is nothing"
+assert OQ.gate(65, [rec, fin], qcs) == [], "a record for another issue's question does not count"
+assert OQ.merge_state(64, [rec], qcs2) == "closed" and OQ.merge_state(64, [rec, fin], qcs2) == "open" and OQ.merge_state(64, [rec, fin, und], qcs2) == "closed"
+assert OQ.record_answer(rec["body"]) is None, "the old record pattern never matches a chat record"
+print("ok owner_q #803 inspector chat gate")
