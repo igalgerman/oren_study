@@ -67,15 +67,50 @@ def fake_gh(*a):
     if a[0] == "api": return 0, "[]"
     return 0, ""
 st = {}
-P.tick(fake_gh, told.append, lambda s: None, now=now, questions=lambda: qs, st=st)
+P.tick(fake_gh, told.append, lambda s: None, now=now, questions=lambda: qs, st=st, api=lambda *a: (0, "[]"))
 edits = [a for a in calls if a[:2] == ("issue", "edit")]
 assert ("issue", "edit", "50", "--add-label", "ready-for-agent") in edits, edits
 pe = next(a for a in edits if a[2] == "278")
 assert "ready-for-agent" in pe and "P3" in pe and "--body" in pe, pe
 assert any(a[:3] == ("issue", "comment", "50") for a in calls)
 assert len(told) == 1 and "#50" in told[0] and "#278" in told[0] and "parked without owner question: #61" in told[0], told
-told.clear(); P.tick(fake_gh, told.append, lambda s: None, now=now + 600, questions=lambda: qs, st=st)
+told.clear(); P.tick(fake_gh, told.append, lambda s: None, now=now + 600, questions=lambda: qs, st=st, api=lambda *a: (0, "[]"))
 assert told == [], told                                                               # at most once an hour
 calls.clear(); P.tick(lambda *a: (1, "boom"), told.append, lambda s: None, now=now + 7200, questions=lambda: qs, st=st)
 assert told == []                                                                     # gh error: nothing done
 print("parked tests OK")
+
+# --- #978: comments are read with the real `gh api` argument shape (no --repo), past the first 100, unreadable = skipped ---
+argv = []
+def fake_run(cmd, **kw):
+    argv.append(cmd); pg = int(cmd[-1].rsplit("&page=", 1)[1])
+    return 0, json.dumps([{"body": "- n", "created_at": iso(1)}] * (100 if pg == 1 else 7))
+P.R.run, _run0 = fake_run, P.R.run
+try: cs = P.list_comments(278)
+finally: P.R.run = _run0
+assert len(cs) == 107 and len(argv) == 2, (len(cs), argv)
+assert argv[0][:2] == ["gh", "api"] and "--repo" not in argv[0] and argv[0][2].startswith("repos/") and "per_page=100" in argv[0][2], argv[0]
+assert P.list_comments(1, lambda *a: (1, "unknown flag")) is None and P.list_comments(1, lambda *a: (0, "not json")) is None
+
+# --- #978: a list labelled `later` with many comments is promoted; a list over 8 notes hands 8 and keeps the rest ---
+many = I(247, ["pack", "later"], title="Polish backlog (pack)", body="Rolling list...\n\n- a0", c=2)
+cms = [cm(1, f"- a{k}") for k in range(1, 12)]            # 12 notes
+assert P.polish_due(many, cms, now) and P.polish_due(many, cms[:4], now) and not P.polish_due(many, cms[:3], now)
+head, rest = P.split_list(many, cms)
+assert head.count("\n- ") == 8 and rest == [f"- a{k}" for k in range(8, 12)], (head, rest)
+assert P.split_list(many, cms[:6]) == (None, [])
+calls.clear(); told.clear()
+def gh978(*a):
+    calls.append(a)
+    if a[:2] == ("issue", "list"): return 0, json.dumps([{**many, "labels": [{"name": l} for l in many["labels"]]}])
+    if a[:2] == ("pr", "list"): return 0, "[]"
+    return 0, ""
+P.tick(gh978, told.append, lambda s: None, now=now, questions=lambda: set(), st={}, api=lambda *a: (0, json.dumps(cms)))
+cr = [a for a in calls if a[:2] == ("issue", "create")]
+assert len(cr) == 1 and "- a8" in cr[0][-1] and "- a7" not in cr[0][-1] and "later" in cr[0], cr
+ed = next(a for a in calls if a[:3] == ("issue", "edit", "247"))
+assert "ready-for-agent" in ed and "Exactly the 8 notes" in ed[ed.index("--body") + 1] and calls.index(cr[0]) < calls.index(ed)
+calls.clear()
+P.tick(gh978, told.append, lambda s: None, now=now, questions=lambda: set(), st={}, api=lambda *a: (1, "unknown flag: --repo"))
+assert not any(a[0] == "issue" and a[1] in ("edit", "create") and a[2:3] != ("list",) for a in calls[2:]), calls   # unreadable comments: nothing done
+print("ok #978 parked")

@@ -1373,6 +1373,8 @@ def human_without_question(issues):
         out.append(i["number"])
     return out
 
+_POLISH_LOCK = threading.Lock()   # #978
+
 def polish_title(lane):
     return f"Polish backlog ({lane})"
 
@@ -2072,16 +2074,34 @@ def post_polish(n, lane, pr, notes):
     lines = polish_lines(notes, pr)
     if not lines: return
     title = polish_title(lane)
-    rc, out = gh("issue", "list", "--state", "open", "--search", f'"{title}" in:title', "--json", "number,title")
-    num = None
-    try: num = next((x["number"] for x in json.loads(out) if x["title"] == title), None)
-    except ValueError: pass
     body = "\n".join(lines)
-    if num:
-        gh("issue", "comment", str(num), "--body", body)
-    else:
-        gh("issue", "create", "--title", title, "--label", lane, "--body",
-           "Rolling list of BLUE review notes (polish only). When 5-8 notes are here, ONE worker does them in one PR.\n\n" + body)
+    with _POLISH_LOCK:                                    # #978: search + create is one step (concurrent runs made 3 lists in 1 s)
+        rc, out = gh("issue", "list", "--state", "open", "--search", f'"{title}" in:title', "--json", "number,title,labels")
+        try: found = json.loads(out) if rc == 0 else None
+        except (ValueError, TypeError): found = None
+        if not isinstance(found, list):                   # #978: a failed or unreadable search is not 'none found'
+            log_line(f"post_polish: search for '{title}' unreadable (rc {rc}); no issue created, notes: {body[:300]}"); return
+        open_ = lambda x: x.get("title") == title and not {"ready-for-agent", "in-progress"} & {l["name"] if isinstance(l, dict) else l for l in x.get("labels") or []}
+        num = max((x["number"] for x in found if open_(x)), default=None)
+        if num is None:                                   # the search index lags behind a just-created issue: ask the cache too
+            f = RUNS / f"polish-{lane}.num"
+            try: cached = int(f.read_text().strip())
+            except (OSError, ValueError): cached = None
+            if cached:
+                rc2, out2 = gh("issue", "view", str(cached), "--json", "state,labels")
+                try:
+                    v = json.loads(out2) if rc2 == 0 else {}
+                    if v.get("state") == "OPEN" and not {"ready-for-agent", "in-progress"} & {l["name"] for l in v.get("labels") or []}: num = cached
+                except (ValueError, TypeError, KeyError): pass
+        if num:
+            gh("issue", "comment", str(num), "--body", body)
+        else:
+            rc3, out3 = gh("issue", "create", "--title", title, "--label", lane, "--body",
+                           "Rolling list of BLUE review notes (polish only). When 5-8 notes are here, ONE worker does them in one PR.\n\n" + body)
+            m = re.search(r"/issues/(\d+)", out3 or "")
+            if rc3 == 0 and m:
+                try: RUNS.mkdir(exist_ok=True); (RUNS / f"polish-{lane}.num").write_text(m[1])
+                except OSError: pass
 
 def ask_owner(n, pr, question, flag):
     """PURPLE: the question goes to the owner via the orchestrator (never to the worker); on hold the issue is parked."""
