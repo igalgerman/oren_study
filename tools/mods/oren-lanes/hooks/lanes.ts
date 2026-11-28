@@ -54,11 +54,30 @@ export const trunc = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1)
 
 export type Limit = { kind: string; percentUsed: number; resetsAt?: string }
 
-/** #239: the reading the runner's usage governor needs (written to .runs/usage.json every refresh); null when there is no 5h reading. */
-export function usageJson(limits: Limit[], nowMs: number) {
+export type Usage = {
+  five_h_pct: number | null; five_h_reset: string | null; week_pct: number | null; week_reset: string | null
+  buckets: { kind: string; pct: number; reset: string | null }[]; read_at: string; at: string
+}
+
+/** #239/#706: the reading the runner's usage governor needs (.runs/usage.json); every bucket is kept, five_h_pct is null without a five_hour bucket.
+ *  read_at moves only when a value changes (prev = the last written reading); at = write time. null only when there is no bucket at all. */
+export function usageJson(limits: Limit[], nowMs: number, prev?: Partial<Usage> | null): Usage | null {
+  if (!limits.length) return null
   const f = limits.find(x => x.kind === 'five_hour'), w = limits.find(x => x.kind === 'seven_day')
-  if (!f) return null
-  return { five_h_pct: f.percentUsed, five_h_reset: f.resetsAt ?? null, week_pct: w ? w.percentUsed : null, week_reset: w?.resetsAt ?? null, at: new Date(nowMs).toISOString() }
+  const buckets = limits.map(l => ({ kind: l.kind, pct: l.percentUsed, reset: l.resetsAt ?? null }))
+  const at = new Date(nowMs).toISOString()
+  const same = !!prev && JSON.stringify(prev.buckets) === JSON.stringify(buckets) && !!prev.read_at
+  return {
+    five_h_pct: f ? f.percentUsed : null, five_h_reset: f?.resetsAt ?? null, week_pct: w ? w.percentUsed : null, week_reset: w?.resetsAt ?? null,
+    buckets, read_at: same ? prev!.read_at! : at, at,
+  }
+}
+
+/** #706: .runs/plan.json from `claude auth status` output: ONLY subscriptionType is kept (nothing else is stored or logged). */
+export function planJson(statusText: string, nowMs: number): { plan: string; at: string } | null {
+  let plan: unknown
+  try { plan = JSON.parse(statusText)?.subscriptionType } catch { return null }
+  return typeof plan === 'string' && /^[\w-]{1,32}$/.test(plan) ? { plan, at: new Date(nowMs).toISOString() } : null
 }
 
 /** #329: the ONE GitHub reader (the watchdog) writes this once a minute; the panel never calls gh itself. */
