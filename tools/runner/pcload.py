@@ -1,7 +1,7 @@
 """PC load watch (#293): the watchdog checks the PC itself, so the owner never has to notice a slow PC first.
 Every EVERY_S (2 min), from the watchdog tick: CPU %, free RAM %, and how many chrome-headless-shell / node / claude / python / gh / conhost
 processes run (psutil when installed, else ONE powershell call with Get-CimInstance Win32_Process; no console window).
-Alarm causes: CPU > 85% for 4 min, free RAM < 15%, chrome-headless-shell > 5, claude > live control sessions + 2.
+Alarm causes: CPU > 85% for 4 min, free RAM < 15%, chrome-headless-shell > 5, claude > live control sessions + 1 (#688).
 An alarm names the top 3 processes by RAM and their owner (parent pids walked up to a herdr terminal or the Claude session that started
 them), goes to the orchestrator AND the inspector (hc send), once per 60 min per cause and sooner only when worse (#567: RAM down
 5+ points, claude count up; the sent times live in .runs/pc_alarm.json so a watchdog reload does not forget them), plus a watchdog.log line.
@@ -14,12 +14,12 @@ from pathlib import Path
 
 HERE = Path(__file__).parent
 RUNS = Path(os.environ.get("RUNNER_RUNS") or HERE / ".runs")   # same as runner.RUNS (no runner import: the runner imports this file)
-EVERY_S, CPU_MAX, CPU_FOR_S, RAM_MIN, CHROME_MAX, CLAUDE_EXTRA = 120, 85, 240, 15, 5, 2
+EVERY_S, CPU_MAX, CPU_FOR_S, RAM_MIN, CHROME_MAX, CLAUDE_EXTRA = 120, 85, 240, 15, 5, 1
 ALARM_EVERY_S = 3600      # #567: once per 60 min per cause (sooner only when worse)
 WORSE = {"ram": -5, "claude": 1}   # #567: RAM free down 5+ points / claude count up -> sent again before the 60 min
 FRESH_S = 600             # pc.json older than this (watchdog not running) counts as not alarmed
 WATCH = ("chrome-headless-shell", "node", "claude", "python", "gh", "conhost")
-CONTROL = ("orchestrator", "inbox", "inspector")   # recover.CONTROL: the Claude sessions that always run on the PC
+CONTROL = ("orchestrator", "inbox", "inspector", "executor")   # #688: recover.CONTROL + the executor (EXECUTOR.md): expected Claude sessions
 
 def kind(name):
     """'Python3.12.exe' -> 'python'; a name we do not count -> None."""
@@ -68,6 +68,11 @@ def owner(pid, procs, terms):
             claude = f"claude session {m[1]}" if m else f"claude session pid {pid}"
         pid = p.get("ppid")
     return claude or "unknown"
+
+def control_count(ts):
+    """#688: live terminals that are a control session, matched like recover.control_role (name, label name=, --remote-control, tab)."""
+    import recover
+    return sum(t.get("state") == "live" and recover.control_role(t, CONTROL) is not None for t in ts or [])
 
 def top3(procs, terms):
     big = sorted(procs, key=lambda p: -(p.get("rss") or 0))[:3]
@@ -156,8 +161,7 @@ def tick(ts, send, log, now=None, sample=None, runs=None, collect=collect, st=No
     st["at"] = now
     s = sample if sample is not None else collect()
     if not s: return []
-    live = [t for t in ts or [] if t.get("state") == "live"]
-    control = sum((t.get("name") or "") in CONTROL for t in live)
+    control = control_count(ts)
     found = causes(s, st, now, control)
     runs.mkdir(parents=True, exist_ok=True)
     (runs / "pc.json").write_text(json.dumps({"text": line(s), "alarm": bool(found), "causes": [k for k, _ in found], "at": now,

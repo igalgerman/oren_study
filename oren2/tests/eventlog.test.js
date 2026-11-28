@@ -19,7 +19,7 @@ function fakeD1() {
 (async () => {
   const m = await import(require('url').pathToFileURL(path.join(L.ROOT, 'cf', 'dist', '_worker.js')).href);
   const kv = new Map(); const KV = { get: async k => kv.get(k) || null, put: async (k, v) => { kv.set(k, v); }, delete: async k => { kv.delete(k); }, list: async o => ({ keys: [...kv.keys()].filter(k => k.startsWith(o.prefix)).map(name => ({ name })) }) };
-  const D1 = fakeD1(); const env = { DIAG_KEY: 'sekret', SAVES: KV, DB: D1 };
+  const D1 = fakeD1(); const env = { DIAG_KEY: 'sekret', LOG_READ_KEY: 'rd-key-675', SAVES: KV, DB: D1 };
   const f = (u, o, e = env) => m.default.fetch(new Request('https://oren.test' + u, o), e);
   const fam = 'a0'.repeat(16), H = { headers: { 'x-admin-key': 'sekret' } };
   const post = (b, e) => f('/api/log', { method: 'POST', body: typeof b === 'string' ? b : JSON.stringify(b) }, e);
@@ -42,10 +42,24 @@ function fakeD1() {
     ok('log: bad family id / bad body / empty / too many events rejected', (await post({ fam: 'x', sid: 'abcd1234', ev })).status === 400 && (await post('x')).status === 400
       && (await post({ fam, sid: 'abcd1234', ev: [] })).status === 400 && (await post({ fam, sid: 'abcd1234', ev: Array(401).fill({ k: 'tap', t: t0 }) })).status === 400 && (await post({ fam, sid: '!', ev })).status === 400);
     ok('log: oversized batch rejected (413)', (await post({ fam, sid: 'abcd1234', ev: [{ k: 'tap', t: t0, x: 'a'.repeat(70000) }] })).status === 413);
-    ok('log: GET on /api/log is 405', (await f('/api/log')).status === 405);
+    ok('log: GET on /api/log is 405 (with a key; 401 without)', (await f('/api/log', H)).status === 405 && (await f('/api/log')).status === 401);
     const nk = new Map(); const noDb = await post({ fam, sid: 'abcd1234', ev }, { SAVES: { ...KV, put: async (k, v) => nk.set(k, v) } });
     ok('log: no D1 = 503 and nothing written to KV (1k writes a day)', noDb.status === 503 && nk.size === 0);
-    const s = await (await f('/api/log/summary?days=7')).json(); const d = s.days && s.days[0];
+    // #675 every GET under /api/log needs the parent key (DIAG_KEY) or the separate read token (LOG_READ_KEY): no key = 401, no data
+    { const RK = { headers: { 'x-admin-key': 'rd-key-675' } }, BAD = { headers: { 'x-admin-key': 'nope' } };
+      for (const pth of ['/api/log/summary?days=7', '/api/log/raw', '/api/log/review', '/api/log/digest', '/api/log/nosuch', '/api/log']) {
+        const a = await f(pth), at = await a.text(), b = await f(pth, BAD), c = await f(pth, H), d = await f(pth, RK);
+        ok('#675 ' + pth + ': no key = 401 with no data', a.status === 401 && at.length < 40 && !/days|ev|sid|tap/.test(at), a.status + ' ' + at.slice(0, 80));
+        ok('#675 ' + pth + ': wrong key = 401, the parent key and the read token both open it', b.status === 401 && c.status !== 401 && d.status !== 401, [b.status, c.status, d.status].join(' ')); }
+      ok('#675 summary: the read token gives the same summary as the parent key', JSON.stringify(await (await f('/api/log/summary?days=7', RK)).json()) === JSON.stringify(await (await f('/api/log/summary?days=7', H)).json()));
+      ok('#675 no secrets set = every read refused (an empty key never matches)', (await f('/api/log/summary', { headers: { 'x-admin-key': '' } }, { ...env, DIAG_KEY: undefined, LOG_READ_KEY: undefined })).status === 401
+        && (await f('/api/log/summary', RK, { ...env, LOG_READ_KEY: '' })).status === 401); }
+    // #715 the read token is read-only: summary 200, but a write or delete with it is refused and stores nothing
+    { const RK = { headers: { 'x-admin-key': 'rd-key-675' } }, n0 = rows().length;
+      ok('#715 LOG_READ_KEY reads /api/log/summary (200)', (await f('/api/log/summary?days=7', RK)).status === 200);
+      const bad = []; for (const mt of ['DELETE', 'PUT', 'PATCH']) for (const pth of ['/api/log', '/api/log/summary', '/api/log/raw']) { const r = await f(pth, { method: mt, headers: { 'x-admin-key': 'rd-key-675' } }); if (r.status < 400) bad.push(mt + ' ' + pth + ' ' + r.status); }
+      ok('#715 LOG_READ_KEY is refused on any write (DELETE/PUT/PATCH on every log path fail, nothing stored or removed)', !bad.length && rows().length === n0, bad.join(', ') + ' ' + rows().length + '/' + n0); }
+    const s = await (await f('/api/log/summary?days=7', H)).json(); const d = s.days && s.days[0];
     ok('summary: one day with sessions, events and play minutes', s.days.length === 1 && d.sessions === 1 && d.events === 13 && d.min > 0.2 && d.min < 0.4, JSON.stringify(d));
     ok('summary: right/wrong per mission, questions and answer time', d.missions['add-0'] && d.missions['add-0'].open === 1 && d.missions['add-0'].q === 2 && d.missions['add-0'].right === 1 && d.missions['add-0'].wrong === 1 && d.missions['add-0'].ms === 3000 && d.right === 1 && d.wrong === 1, JSON.stringify(d.missions));
     ok('summary: help, popups, errors, taps, voice Google/browser share', d.help.tip === 1 && d.popups.tb === 1 && d.errors === 1 && d.taps === 2 && d.voice.google === 1 && d.voice.browser === 1 && d.voice.share === 0.5, JSON.stringify(d));
@@ -56,7 +70,7 @@ function fakeD1() {
     D1.db.prepare('INSERT INTO evlog(fam,sid,at,tz,n,ev) VALUES(?,?,?,?,?,?)').run('mid', 'mid00000', t0 - 20 * 864e5, 0, 1, JSON.stringify([{ k: 'tap', t: t0 - 20 * 864e5 }]));
     D1.db.prepare('INSERT INTO evlog(fam,sid,at,tz,n,ev) VALUES(?,?,?,?,?,?)').run('yr', 'yr000000', t0 - 366 * 864e5, 0, 1, JSON.stringify([{ k: 'tap', t: t0 - 366 * 864e5 }]));
     D1.db.prepare('INSERT INTO evlog(fam,sid,at,tz,n,ev) VALUES(?,?,?,?,?,?)').run('half', 'half0000', t0 - 200 * 864e5, 0, 1, JSON.stringify([{ k: 'tap', t: t0 - 200 * 864e5 }]));
-    const s30 = await (await f('/api/log/summary?days=30')).json();
+    const s30 = await (await f('/api/log/summary?days=30', H)).json();
     ok('#641 prune: raw events older than 365 days are deleted, newer ones (20, 31, 200 days) kept', !rows().some(x => x.fam === 'yr') && ['old', 'mid', 'half'].every(k => rows().some(x => x.fam === k)) && s30.days.length === 2, JSON.stringify(rows().map(x => x.fam)));
     D1.db.exec('DELETE FROM evlog'); }
   // #641 raw read with paging and filters: /api/log/raw?from&to&sid&k&n&after|before (admin key only)
@@ -99,7 +113,7 @@ function fakeD1() {
     const x = await m.default.fetch(new Request('http://localhost' + q.url, { method: q.method, headers: q.headers, body: q.method === 'GET' || q.method === 'HEAD' ? undefined : body }), env);
     const hd = {}; x.headers.forEach((v, k) => { hd[k] = v; }); r.writeHead(x.status, hd); r.end(Buffer.from(await x.arrayBuffer())); }); }).listen(0);
   const BASE = 'http://localhost:' + srv.address().port;
-  const summary = async (raw) => (await fetch(BASE + '/api/log/summary?days=1' + (raw ? '&raw=' + raw : ''), raw ? H : {})).json();
+  const summary = async (raw) => (await fetch(BASE + '/api/log/summary?days=1' + (raw ? '&raw=' + raw : ''), H)).json();
   const b = await chromium.launch();
   const ctx = await b.newContext(L.VIEWPORT); await ctx.addInitScript(() => { window.__fast = true; window.__famGap = 0; window.TAL_noHome = true; });
   const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));

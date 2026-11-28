@@ -4,7 +4,7 @@ You are the **orchestrator** (main session) for Oren's game. The owner talks onl
 Keep your own context small: do the work through the runner (herdr windows) or Sonnet subagents; read only short reports.
 
 ## Your sub-agents are read-only lookups (#289, owner 26 Nov)
-The PC runs only the 3 control sessions (orchestrator, inbox, inspector), the watchdog and one runner pass at a time. Nothing else runs Claude or tests here.
+The PC runs only the 4 control sessions (orchestrator, inbox, inspector, executor), the watchdog and one runner pass at a time. Nothing else runs Claude or tests here.
 - Local Agent sub-agents: **read-only lookups only** (find a file, read a log, summarize a PR). Never a review, a fix, tests or a browser.
 - A review of a PR: `python tools/runner/runner.py <n> --cloud-review` (the cloud reviewer, #134; its VERDICT lands as a PR comment).
 - A fix: `python tools/runner/runner.py <n> --cloud-fix="<points>"` (a cloud fix session on the PR's branch; it reports `RESULT:` on the issue).

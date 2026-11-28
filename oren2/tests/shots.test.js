@@ -65,7 +65,7 @@ const JPG = 'data:image/jpeg;base64,' + Buffer.alloc(900, 7).toString('base64');
     ok('cap: at most 100 screenshots per day, the oldest dropped (the first session loses its shots first)', all === 100 && imgs(h, 'capses04').length === 30 && imgs(h, 'capses01').length === 10, all + ' ' + imgs(h, 'capses01').length);
     ins('oldses01', now - 15 * 864e5, [1, 2]); ins('oldses02', now - 13 * 864e5, [1]);
     const w0 = D1.log.length;
-    await f('/api/log/summary?days=1'); // a summary read runs the prune
+    await f('/api/log/summary?days=1', H); // a summary read runs the prune
     const R = rows(); const byS = s => R.filter(r => r.sid === s);
     ok('prune: screenshots older than 14 days deleted, newer kept', byS('oldses01')[0].sh === null && byS('oldses01')[0].ns === 0 && byS('oldses02')[0].ns === 1);
     ok('prune: rows whose shots are all over the caps are cleared', byS('capses01').filter(r => r.ns > 0).length === 2 && byS('capses04').every(r => r.ns === 10), JSON.stringify(byS('capses01').map(r => r.ns)));

@@ -3,16 +3,30 @@
 
   python3 tools/playlog.py day 2026-11-27
 
-The admin key is read from ~/.oren/diag.key (never printed). The events go to ~/.oren/playlog/<day>.json: private, outside
+The key: #715 the environment variable LOG_READ_KEY first (cloud sessions: set in the cloud environment, docs/agents/remote.md), then #675 the read token LOG_READ_KEY from the local .env at the repo root (the automated readers' key, also a Cloudflare
+Pages secret; never committed, printed or posted), else the parent key from ~/.oren/diag.key (never printed). The events go to ~/.oren/playlog/<day>.json: private, outside
 the repo (the repo is public, never commit or post raw events). The day is the PC's local day. Paging: /api/log/raw,
 5000 events a page, oldest first (from/to/after), until next is null.
 """
-import json, os, sys, time, urllib.parse, urllib.request
+import json, os, re, sys, time, urllib.parse, urllib.request
 from pathlib import Path
 
 SITE = os.environ.get("OREN_SITE", "https://oren-game.pages.dev")
 HOME = Path(os.environ.get("OREN_HOME") or Path.home() / ".oren")
+ENV = Path(os.environ.get("OREN_ENV") or Path(__file__).resolve().parents[1] / ".env")
 PAGE, MAX_PAGES = 5000, 400
+
+
+def read_token():
+    """#715 LOG_READ_KEY from the environment (cloud sessions), else #675 from the local .env, or '' when neither has it."""
+    k = os.environ.get("LOG_READ_KEY", "").strip()
+    if k: return k
+    try: lines = ENV.read_text(encoding="utf-8").splitlines()
+    except OSError: return ""
+    for line in lines:
+        m = re.match(r"\s*(?:export\s+)?LOG_READ_KEY\s*=\s*(.*)$", line)
+        if m: return m[1].strip().strip("\"'")
+    return ""
 
 
 def day_range(day):
@@ -106,9 +120,10 @@ def main(argv, get=None):
     try: frm, to = day_range(day)
     except ValueError: print("bad day, use YYYY-MM-DD"); return 2
     if get is None:
-        kf = HOME / "diag.key"
-        if not kf.is_file(): print(f"no admin key: put it in {kf}"); return 2
-        get = http_get(kf.read_text(encoding="utf-8").strip())
+        key, kf = read_token(), HOME / "diag.key"
+        if not key and not kf.is_file():
+            print(f"LOG_READ_KEY missing in the cloud environment (on the PC: put it in {ENV} or the admin key in {kf})"); return 2
+        get = http_get(key or kf.read_text(encoding="utf-8").strip())
     try: ev = fetch_all(get, frm, to)
     except (OSError, ValueError, RuntimeError) as e:   # HTTPError/URLError are OSErrors; the URL and key are not printed
         print(f"download failed: {getattr(e, 'code', '') or type(e).__name__}"); return 1

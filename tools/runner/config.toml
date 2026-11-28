@@ -7,12 +7,14 @@ local_lanes = 0                 # #133: worker windows on this PC (owner 26 Nov:
 remote_lanes = 6                # #133: cloud sessions (tools/runner/remote.py); a local lane busy + a remote slot free -> the worker runs in the cloud
 # #239 usage governor: the cloud lane count follows the 5h window (panel writes .runs/usage.json); usage missing or > 15 min old -> remote_lanes
 governor_target = 99            # aim: 5h usage at its reset close to this % (owner 26 Nov 14:30: was 90)
-governor_min = 2
-governor_max = 8
+governor_min = 8               # owner 28 Nov: temporary until the new governor (many lanes now)
+governor_max = 16              # owner 28 Nov: Ultra plan, temporary until the new governor
 governor_stop = 99              # 5h at/above this %: no new run (owner 26 Nov 14:10: was 93)
+governor_reserve = 5            # #703: ceiling C = 99 - reserve; week >= C: only express runs (705 makes it the owner reserve)
 governor_pace = 3.5             # 5h % per hour per busy cloud lane when the last hour has too few samples
-governor_week_cap = 4           # week projected above governor_week_target at its reset (ahead) -> at most this many cloud lanes
+governor_week_cap = 8           # week projected above governor_week_target at its reset (ahead) -> at most this many cloud lanes
 governor_week_target = 99       # #274: aim for the week % at the weekly reset; projected below (behind) -> governor_max lanes; the 5h stop still wins
+governor_week_stop = 97         # #698 owner 28 Nov: week at/above this %: no new run (runs in flight finish) until the weekly reset
 express_lanes = 2               # #72: extra lanes for issues labelled express (owner-approved), on top of the local + remote lanes (26 Nov: 2, two express P0s at once)
 max_core = 5                    # owner 27 Nov: 3 -> 5 (23 core issues waited while lanes were free; #262 auto-resolve, #503 build check)
 worktree_prefix = "C:/work/Oren_study/wt-"
