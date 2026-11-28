@@ -432,6 +432,12 @@ assert r.model_of(["model:sonnet", "model:opus"]) == "opus"                     
 assert r.reviewer_model(["model:opus"]) == "opus"
 assert r.reviewer_model(["model:haiku"]) == "sonnet" and r.reviewer_model([]) == "sonnet" and r.reviewer_model(["model:fable"]) == "sonnet"
 assert r.model_name(["model:fable"]) == "fable" and r.model_name([]) == "sonnet"
+# #713: effort label -> level; default medium; never below medium; most capable wins
+assert r.effort_of([]) == "medium" and r.effort_of(["pack", "P1"]) == "medium"
+assert r.effort_of(["effort:high"]) == "high" and r.effort_of(["effort:xhigh", "model:opus"]) == "xhigh"
+assert r.effort_of(["effort:medium", "effort:high"]) == "high"
+assert r.effort_of(["effort:low"]) == "medium" and r.effort_of(["effort:bogus"]) == "medium"
+assert r.raise_effort("low") == "medium" and r.raise_effort(None) == "medium" and r.raise_effort("max") == "max"
 print("ok model labels")
 
 # #133: remote lanes (local_lanes / remote_lanes), remote worker start, results from GitHub
@@ -728,8 +734,8 @@ _src = (r.HERE / "runner.py").read_text(encoding="utf-8")
 _ci = _src.split("def ci_integrate", 1)[1].split("def find_pr_merged", 1)[0]
 assert '"--auto"' in _ci and "auto_refused_clean" in _ci and "disable_auto(pr, log)" in _ci and "FileLock" not in _ci
 _proc = _src.split("verdict = \"\"; red = \"\"", 1)[1]
-assert _proc.index('stat(n, lane, "review_pass")') < _proc.index("ci_integrate(")
-_fix = _proc.split('stat(n, lane, "review_fix")', 1)[0].rsplit("if kind != \"fix\":", 1)[1]
+assert _proc.index('stat(n, lane, "review_pass", **me)') < _proc.index("ci_integrate(")
+_fix = _proc.split('stat(n, lane, "review_fix", **me)', 1)[0].rsplit("if kind != \"fix\":", 1)[1]
 assert "disable_auto(pr, log)" in _fix
 assert '"--auto"' not in _src.split("def ci_integrate", 1)[0]                                 # nothing marks a PR before the review
 print("ok #185 auto-merge after PASS")
@@ -872,11 +878,30 @@ assert r.governor(_u(93, 1, week=39, week_reset_h=24 * 3), [], _now, _G)["stop"]
 t = r.governor_text(r.governor(_u(20, 4, week=39, week_reset_h=24 * 3), [], _now, _G))
 assert t.startswith("governor: 8 lanes, aim 90% (5h 20% -> ~") and " · week 39% -> ~68% at " in t and t.endswith(")"), t
 assert _time_mod.strftime("%a %H:%M", _time_mod.localtime(_now + 24 * 3 * 3600)) in t, t
-# stale / missing -> config remote_lanes
-assert r.governor(_u(20, 4, age=16 * 60), [], _now, _G)["lanes"] == 4
-assert r.governor(None, [], _now, _G)["lanes"] == 4 and not r.governor(None, [], _now, _G)["stop"]
-assert r.governor({"at": "junk"}, [], _now, _G)["lanes"] == 4
-assert "no fresh usage" in r.governor_text(r.governor(None, [], _now, _G))
+# #704 stale / missing reading: hold prev 30 min, then the floor (1); never remote_lanes (_G fallback 4 must not appear)
+_old = _u(20, 4, age=16 * 60)
+g = r.governor(_old, [], _now, _G, prev=6); assert g["lanes"] == 6 and g["why"] == "stale reading: hold" and g["stale_since"] == _now and not g["stop"], g
+g = r.governor(_old, [], _now + 29 * 60, _G, prev=6, stale_since=_now); assert g["lanes"] == 6 and g["why"] == "stale reading: hold", g
+g = r.governor(_old, [], _now + 30 * 60, _G, prev=6, stale_since=_now); assert g["lanes"] == 1 and g["why"] == "stale reading: floor" and not g["stop"], g
+g = r.governor(None, [], _now, _G, prev=2); assert g["lanes"] == 2 and g["why"] == "stale reading: hold", g
+g = r.governor({"at": "junk"}, [], _now, _G); assert g["lanes"] == 1 and g["why"] == "stale reading: floor", g          # nothing to hold: floor
+g = r.governor(_u(20, 4, week=98, week_reset_h=24, age=16 * 60), [], _now + 3600, _G, prev=6, stale_since=_now, ); assert g["lanes"] == 0 and g["stop"], g   # no budget: N_lo 0
+assert "stale reading" in r.governor_text(r.governor(None, [], _now, _G, prev=3))
+# 5h 15% frozen 45 min with busy lanes -> stale; shorter / idle / value changed -> not stale
+_fz = lambda n, busy=4, pct=15: [{"at": _now - 60 * m, "pct": pct, "reset": _iso(_now + 4 * 3600), "busy": busy} for m in range(n, -1, -5)]
+_uf = _u(15, 4)
+g = r.governor(_uf, _fz(45), _now, _G, prev=4); assert g["why"] == "stale reading: hold" and g["lanes"] == 4, g
+assert r.governor(_uf, _fz(40), _now, _G, prev=4)["why"] != "stale reading: hold"
+assert r.governor(_uf, _fz(45, busy=0), _now, _G, prev=4)["why"].startswith("pace")
+assert r.governor(_u(16, 4), _fz(45), _now, _G, prev=4)["why"].startswith("pace")
+assert r.governor(_u(15, 4, week=99.5), _fz(45), _now, _G, prev=4)["why"].startswith("limit hit")           # W >= 99: not stale
+_ur = {**_uf, "read_at": _iso(_now - 46 * 60)}; assert r.governor(_ur, _fz(45), _now, _G, prev=4)["why"] == "stale reading: hold"   # read_at wins
+assert r.governor({**_uf, "read_at": _iso(_now - 5 * 60)}, _fz(45), _now, _G, prev=4)["why"].startswith("pace")
+# week-only data (no five_h bucket) is not stale and never remote_lanes
+g = r.governor({"five_h_pct": None, "week_pct": 40, "week_reset": _iso(_now + 3 * 86400), "at": _iso(_now - 60)}, [], _now, _G, prev=3)
+assert g["why"] == "no 5h usage: week only" and g["lanes"] == 3 and not g["stop"] and "stale_since" not in g, g
+assert r.governor({"five_h_pct": None, "week_pct": 40, "at": _iso(_now - 60)}, [], _now, _G)["lanes"] == _G["min"]
+assert "fallback" not in r.GOV
 # pace from the last hour (same window): 10 pts in 1h with 5 busy lanes = 2%/h/lane -> 20% + 2*n*4 <= 90 -> 8
 _rs = _iso(_now + 4 * 3600)
 _h = [{"at": _now - 3600, "pct": 10, "reset": _rs, "busy": 5}, {"at": _now - 60, "pct": 20, "reset": _rs, "busy": 5}]
@@ -891,7 +916,7 @@ t = r.governor_text(r.governor(_u(20, 4), [], _now, _G)); assert t.startswith("g
 g = r.governor(_u(95, -0.05), [], _now, _G); assert not g["stop"] and g["lanes"] == r.governor(_u(0, 5), [], _now, _G)["lanes"] > 0 and g["pct"] == 0 and g["why"] == "new 5h window", g
 assert g["reset"] > _now and "new 5h window" in r.governor_text(g) and "STOP" not in r.governor_text(g), r.governor_text(g)
 g = r.governor(_u(95, 0.05), [], _now, _G); assert g["stop"] and "STOP" in r.governor_text(g)   # reset still ahead -> stop per governor_stop
-assert r.governor(_u(95, -0.05, age=16 * 60), [], _now, _G)["why"].startswith("no fresh usage")   # stale -> fallback unchanged
+assert r.governor(_u(95, -0.05, age=16 * 60), [], _now, _G)["why"].startswith("stale reading")   # stale -> floor (#704)
 # #269: on stop only express issues still start (below 100%); 100% -> nothing
 _ch = [{"number": 1, "labels": ["core"]}, {"number": 2, "labels": ["express", "core"]}]
 assert r.stop_filter(_ch, {"stop": False, "pct": 50}) == _ch
@@ -939,7 +964,7 @@ assert r.lane_gate(6, 4, _ws[1:]) == (6, None)                                  
 # the governor applies the rule (projection follows the held count); a stop / fallback is unchanged
 g = r.governor(_u(5, 1), [], _now, _G, prev=4, wins=_ws); assert g["lanes"] == 4 and "hold 4" in g["why"] and abs(g["projected"] - (5 + 3.5 * 4)) < 1e-9, g
 assert r.governor(_u(5, 1), [], _now, _G, prev=4, wins=_up)["lanes"] == 8
-assert r.governor(None, [], _now, _G, prev=2, wins=_ws)["lanes"] == 4
+assert r.governor(None, [], _now, _G, prev=2, wins=_ws)["lanes"] == 2          # #704 stale: hold
 # shown on the panel and dashboard (both print governor.json's text)
 t = r.eff_text(_ws); assert t == " · efficiency 1.00 merged/10% (last 0.75) · wasted 1 (last 3)", t
 assert r.eff_text([]) == "" and r.eff_text([{**_ws[2], "eff": None}]) == " · efficiency - · wasted 1", r.eff_text([{**_ws[2], "eff": None}])
@@ -984,7 +1009,7 @@ _ends = iter([False, True])
 assert r.wait_remote(lambda: next(_seq), lambda s: _t.__setitem__(0, _t[0] + s), lambda: _t[0], 3600, 30, ended=lambda: next(_ends))["state"] == "ended" and _t[0] == 30
 assert r.wait_remote(lambda: {"state": "done", "line": "RESULT: DONE x"}, lambda s: None, lambda: 0, 100, 30, ended=lambda: True)["state"] == "done"
 # remote_worker / remote_review / remote_fix raise Ended instead of waiting 3 h
-_ok = lambda *a: {"ok": True, "session": "s", "url": "u"}
+_ok = lambda *a, **k: {"ok": True, "session": "s", "url": "u"}
 for _f in (lambda: r.remote_worker(7, "pack", False, _ok, lambda: {"state": "working"}, lambda s: None, lambda: 0, ended=lambda: True),
            lambda: r.remote_review(7, 9, "", _ok, lambda: {"state": "working"}, lambda s: None, lambda: 0, ended=lambda: True),
            lambda: r.remote_fix(7, "s", "fix", lambda *a: {"ok": True}, _ok, lambda: {"state": "working"}, lambda s: None, lambda: 0, ended=lambda: True)):
@@ -1135,7 +1160,7 @@ r.set_where = lambda n, w: _wh.append(w); r.set_labels = lambda n, add=(), remov
 r.remove_worktree = lambda *a, **k: None; r.close_windows = lambda n: None
 r.block = lambda *a, **k: _did.append("block"); r.issue_over = lambda n, since: False
 r.record_refusal = lambda n, err, now=None: _did.append(("refused", err)) or True
-r.remote.start = lambda *a: {"ok": False, "error": "Error: Cloud session create failed: limit"}
+r.remote.start = lambda *a, **k: {"ok": False, "error": "Error: Cloud session create failed: limit"}
 r.agent = lambda *a, **k: (_did.append("agent"), ("out", "RESULT: STUCK test stop"))[1]
 try:
     r.local_lane_free = lambda n: False
@@ -1281,7 +1306,7 @@ _sent, _starts, _lab = [], [], []
 r.gh = lambda *a, **k: (0, ""); r.run = lambda *a, **k: (0, ""); r.stat = lambda *a, **k: None; r.set_where = lambda *a: None
 r.issue_over = lambda n, since: False; r.tell_orchestrator = lambda t: None
 r.set_labels = lambda n, add=(), remove=(): _lab.append((tuple(add), tuple(remove)))
-r.remote.start = lambda *a: _starts.append(a) or {"ok": True, "session": "x", "url": "u"}
+r.remote.start = lambda *a, **k: _starts.append(a) or {"ok": True, "session": "x", "url": "u"}
 r.remote.send = lambda s, t: _sent.append((s, t)) or {"ok": True}
 r.remote.status = lambda n, since=None: {"state": "question", "line": "QUESTION: and blue?"}
 _oq.post = lambda *a, **k: ""
@@ -1561,7 +1586,18 @@ g = r.governor(_u(0, 4.9, week=50), [_h(4.9), _h(4.9)], _now, _Gw); assert not g
 g = r.governor(_u(0, 4.9, week=50), [{**_h(4.7), "busy": 0}, _h(4.8)], _now, _Gw); assert not g["limit_hit"], g   # idle lanes
 _uw = {"five_h_pct": None, "week_pct": 100, "week_reset": _iso(_now + 3600), "at": _iso(_now - 60)}   # no 5h bucket
 g = r.governor(_uw, [], _now, _Gw); assert g["stop"] and g["limit_hit"], g
-g = r.governor({**_uw, "week_pct": 50}, [], _now, _Gw); assert not g["stop"] and not g["limit_hit"] and g["lanes"] == 4, g
+g = r.governor({**_uw, "week_pct": 50}, [], _now, _Gw, prev=4); assert not g["stop"] and not g["limit_hit"] and g["lanes"] == 4, g
 assert r.limit_requeue("RESULT: STUCK cloud worker died twice without a RESULT line (a, b)", True)
 assert r.limit_requeue("", True) and not r.limit_requeue("RESULT: STUCK cloud worker died twice x", False) and not r.limit_requeue("RESULT: DONE", True)
 print("ok #703 governor: week hard bounds, limit_hit, week-only usage, died run goes back in the queue")
+
+# #713: PURPLE hold/merge-safe stat events (a hold must not crash, must say "parked")
+_ev713 = []
+_old_stat = r.stat; r.stat = lambda n, lane, event, **x: _ev713.append((event, x))
+try:
+    r.stat_purple(5, "pack", "hold", {"model": "sonnet", "effort": "medium"})
+    r.stat_purple(5, "pack", "merge-safe", {"model": "sonnet", "effort": "medium"})
+finally: r.stat = _old_stat
+assert _ev713 == [("parked", {"model": "sonnet", "effort": "medium", "colour": "purple"}),
+                  ("review_pass", {"model": "sonnet", "effort": "medium", "colour": "purple"})], _ev713
+assert "stat_purple(n, lane, extra, me)" in inspect.getsource(r.process_locked)

@@ -119,11 +119,10 @@ def gate(n, issue_comments, question_comments):
 
 def merge_state(n, issue_comments, question_comments):
     """Pure (#636): the owner gate as the merge sees it -> 'none' (no owner question about #n: not owner-gated), 'open', 'closed',
-    or 'error' (unreadable: the caller refuses). Its own reviewer's PURPLE question (window review-<n>) is no merge gate:
+    or 'error' (unreadable: the caller refuses). #739: only a question marked `--gates n` counts; a plain worker question (access, how-to) does not. Its own reviewer's PURPLE question (window review-<n>) is no merge gate:
     'hold' parks the issue anyway, 'merge-safe' merges by design."""
     if issue_comments is None or question_comments is None: return "error"
-    qs = [c for c in question_comments if KEY_RE.search(c.get("body") or "") and (re.search(rf"\*\*#{n}\*\*", c.get("body") or "")
-          or n in gates_of(c.get("body")))   # #630: a question that gates #n gates its merge too
+    qs = [c for c in question_comments if KEY_RE.search(c.get("body") or "") and n in gates_of(c.get("body"))   # #739: only a question marked as a gate (--gates n) gates the merge; a plain worker question never does
           and f"`review-{n}`" not in (c.get("body") or "")]
     if not qs: return "none"
     return "open" if gate(n, issue_comments, qs) else "closed"

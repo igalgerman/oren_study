@@ -3,7 +3,7 @@ import type { Register } from 'claude-code'
 
 import type { OrenLanesData, Row } from '../types/index'
 import {
-  finishedRuns, isLive, parseWindows, statusLine, trunc, usageJson, parseGov, parseConfig, parseEvents, panel, quietArgv, fromCache, GH_CACHE,
+  finishedRuns, isLive, parseWindows, statusLine, trunc, usageJson, planJson, parseGov, parseConfig, parseEvents, panel, quietArgv, fromCache, GH_CACHE,
 } from './lanes'
 import type { CloudLane, Gov, Issue, Limit, Pr, Win } from './lanes'
 
@@ -81,9 +81,20 @@ export const register: Register = on => {
         let limits: Limit[] = []
         try {
           limits = ((await $.session.usage()).rateLimits ?? []) as any
-          const u = usageJson(limits, await $.clock.now())
-          if (u) await $.fs.write(`${RUNS}/usage.json`, JSON.stringify(u))   // #239: read by the runner's usage governor
+          let prevU = null
+          try { prevU = JSON.parse(await readText(`${RUNS}/usage.json`)) } catch { /* first write */ }
+          const u = usageJson(limits, await $.clock.now(), prevU)
+          if (u) await $.fs.write(`${RUNS}/usage.json`, JSON.stringify(u))   // #239/#706: read by the runner's usage governor
         } catch { /* no reading */ }
+        try {   // #706: the plan label once a day; only subscriptionType is kept
+          let last = 0
+          try { last = Date.parse(JSON.parse(await readText(`${RUNS}/plan.json`)).at) || 0 } catch { /* none yet */ }
+          if ((await $.clock.now()) - last > 24 * 3600e3) {
+            const r = await quietRun($, ['claude', 'auth', 'status'], { timeoutMs: 30000 })
+            const pj = r.exitCode === 0 ? planJson(r.stdout, await $.clock.now()) : null
+            if (pj) await $.fs.write(`${RUNS}/plan.json`, JSON.stringify(pj))
+          }
+        } catch { /* no plan read */ }
 
         const where: Record<number, string> = {}
         for (const i of open ?? []) {

@@ -24,10 +24,18 @@ In a cloud session `gh` has no GraphQL: use the REST API only (`gh api repos/iga
 of igalgerman/oren_study (`git clone https://github.com/igalgerman/oren_study` when the working directory has none) and read
 this file from `main`. If this file is not on main: stop at once.
 
+## Play log (#715)
+The cloud environment has `LOG_READ_KEY` (read-only, set by the owner, see docs/agents/remote.md). Read the log with
+`python3 tools/playlog.py day <date>` or `GET https://oren-game.pages.dev/api/log/summary?days=1` with header
+`x-admin-key: $LOG_READ_KEY`. Never print, log, commit or post the key and never ask for it. If it is not set, write the single
+line `LOG_READ_KEY missing in the cloud environment` and go on without the log. Post aggregates only (counts, ids, times), never
+raw events or kid answers.
+
 ## AI observer
 You are the AI OBSERVER of the Oren study automatic flow: a read-only auditor. Change NOTHING except the one comment below.
 Rules: FLOW.md, ORCHESTRATOR.md, docs/agents/triage-labels.md. Labels: `ready-for-human` = the owner must answer;
 `blocked` + `needs-orchestrator` = the orchestrator handles it; `in-progress` = a lane runs it; `later` = held only when the owner asks (#652).
+Play log (optional): the same "Play log" section applies; one aggregate line at most, never the key.
 Check, with a few REST calls only:
 1. Open issues (`gh api 'repos/igalgerman/oren_study/issues?state=open&per_page=100'`): labels that contradict each other or
    the `Blocked by: #n` lines; in-progress with no runner comment for hours; an owner-lane issue an agent could do.
@@ -42,7 +50,9 @@ or the single line `no problems`. "owner" only when it is truly his decision. No
 You are the NIGHTLY RETRO of the Oren study flow for today (Asia/Jerusalem date). Read-only except the one issue below.
 Follow docs/agents/skills/retro.md for the DAY (today's issues, PRs, runner/reviewer comments, `Deploy failed`/canary issues,
 the `ai-observer` issue comments), then docs/agents/skills/handoff.md for the two handoffs. Every proposal points to a concrete
-moment (an issue/PR #n, a comment time HH:MM); no evidence -> leave it out. If the issue `Daily retro <date>` exists: stop.
+moment (an issue/PR #n, a comment time HH:MM); no evidence -> leave it out. Play log: read today's with the section "Play log"
+above (summary endpoint or tools/playlog.py with `LOG_READ_KEY` from the environment, never ask for the key) and end the issue
+body with `PLAYLOG: HTTP <status>, <n> sessions` (status code and session count only, never the key or raw events). If the issue `Daily retro <date>` exists: stop.
 Else create it (labels `retro`, `P2`) with exactly this body:
 ```
 Nightly retro (cloud scheduled task, #289). Nothing was applied: the orchestrator turns the accepted ones into tickets.

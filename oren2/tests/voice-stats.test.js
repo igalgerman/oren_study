@@ -276,6 +276,29 @@ const INIT = () => {
     ok('#399 no page errors', !errs.length, errs.join('|'));
     await ctx.close(); }
 
+  // #724 Edge-like browser (Edge user agent + a Windows tablet): each question's recorded voice plays, no `no-audio` retry/fail, no wait over 5 s
+  { const EDGE = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0';
+    const ctx = await b.newContext({ ...L.VIEWPORT, serviceWorkers: 'block', userAgent: EDGE });
+    await ctx.addInitScript(INIT);
+    await ctx.route('**/*', r => { const u = new URL(r.request().url());
+      if (u.origin !== 'https://oren.test') return r.fulfill({ status: 404, body: '' });
+      if (u.pathname === '/') return r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: HTML });
+      if (u.pathname === '/api/tts/status') return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"ver":3}' });
+      if (u.pathname === '/api/tts/stats') return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+      return r.fulfill({ status: u.pathname.startsWith('/api/save/') && r.request().method() !== 'GET' ? 200 : 404, contentType: 'application/json', body: '{"ok":true}' }); });
+    const p = await ctx.newPage(); await p.goto('https://oren.test/'); await L.noCoach(p);
+    await p.evaluate(() => { window.OREN.save.story.intro = 1; window.TAL.S().prof = { an: 'cat', col: '#3a8fc4', love: 'art' }; window.OREN.showMap(); });
+    await p.waitForFunction(() => window.__gv && window.__gv.ok, null, { timeout: 8000 });
+    const qs = ['כַּמָּה זֶה שָׁלוֹשׁ וְעוֹד אַרְבַּע?', 'אֵיזֶה מִסְפָּר בָּא אַחֲרֵי חָמֵשׁ?', 'בְּחַר אֶת הַתְּשׁוּבָה הַנְּכוֹנָה', 'כָּל הַכָּבוֹד אוֹרֶן'];
+    const lag = [];
+    for (const q of qs) { const t0 = Date.now(); const before = await p.evaluate(() => window.__played.length); await p.evaluate(q => { window.__fast = false; window.OREN.hush(); window.OREN.say(q); }, q);
+      await p.waitForFunction(n => window.__played.length > n, before, { timeout: 5000 }).then(() => lag.push(Date.now() - t0), () => lag.push(99999)); await sleep(80); }
+    const r = await p.evaluate(() => ({ played: window.__played.length, retry: window.__fx.length, browser: speechSynthesis.log.length, ua: navigator.userAgent }));
+    ok('#724 Edge UA: every question plays its recording', r.played === qs.length && /Edg\//.test(r.ua), JSON.stringify(r));
+    ok('#724 Edge UA: 0 no-audio retries or fails, no browser voice', r.retry === 0 && r.browser === 0, JSON.stringify(r));
+    ok('#724 Edge UA: no silent wait over 5 s', lag.every(x => x < 5000), lag.join(','));
+    await ctx.close(); }
+
   // 6. source check: no screen makes its own browser utterance (only browserSay does), so one screen never mixes two voices
   { const src = fs.readFileSync(require('path').join(L.ROOT, 'index.html'), 'utf8');
     const n = (src.match(/new SpeechSynthesisUtterance/g) || []).length;

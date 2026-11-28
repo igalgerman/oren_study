@@ -57,6 +57,26 @@ ran.clear(); RM.start(7, "task", ".", run=_run)
 assert "--model" not in " ".join(next(a for a in ran if "--bg" in a))
 print("ok remote.start model")
 
+# #713: effort in the command lines (cloud start, local claude -p, interactive agent) and in the stat events
+ran.clear(); RM.start(7, "task", ".", run=_run, effort="high")
+assert "--effort high" in " ".join(next(a for a in ran if "--bg" in a))
+ws = []
+r.with_effort(lambda n, t, c, **k: ws.append(k) or {"ok": True}, "high")(7, "t", ".", model="opus")
+assert ws == [{"effort": "high", "model": "opus"}], ws
+sh = []
+def _fake_run(cmd, **k): sh.append(cmd); return (0, "ok")
+_old = r.run; r.run = _fake_run
+try:
+    r.claude_hidden("p", ".", ["Read"], None, "sonnet", effort="high")
+finally: r.run = _old
+assert sh[0][sh[0].index("--effort") + 1] == "high", sh
+assert "effort" in inspect.signature(r.agent).parameters and '"--effort"' in inspect.getsource(r.agent)
+src = inspect.getsource(r.process_locked)
+for ev in ("start", "review_pass", "fix_done", "resolve", "test_pass"):
+    assert f'"{ev}"' in src
+assert "effort=eff" in src and "model=model_name" in src
+print("ok effort")
+
 # ---- dashboard counts the escalations (24 h) ----
 now = time.time()
 ev = [{"ts": now - 600, "issue": 5, "event": "start"}, {"ts": now - 300, "issue": 5, "event": "red_escalated"},
