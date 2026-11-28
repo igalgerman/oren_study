@@ -335,6 +335,10 @@ const storyHelp=lv=>{const r=O.readHelp?O.readHelp():{m:'try',w:25};
   if(r.m==='read')return {band:'read',line:0,all:0,wrong:['line','all']};
   if(r.m==='alone')return {band:'alone',line:null,all:null,wrong:['line','all']};
   const b=helpOf(lv);return b.all==null?b:Object.assign({},b,{line:b.line&&r.w,all:b.band==='low'?Math.round(r.w*.4):r.w});};
+/* #731 story chapters: n lines -> [[from,to],...]; up to 4 lines stay one chapter, longer ones are cut in pieces of at most 3 lines; a chapter's reading time (a slow reader, 2 s a word) stays under STORY_CHAPTER_S */
+T.STORY_CHAPTER_S=240;
+T.storyChapters=n=>{if(n<=4)return [[0,n]];const k=Math.ceil(n/3),out=[];let a=0;for(let i=0;i<k;i++){const b=a+Math.ceil((n-a)/(k-i));out.push([a,b]);a=b;}return out;};
+T.storyChapterSecs=lines=>lines.reduce((t,l)=>t+String(l).replace(/<[^>]+>/g,' ').split(/\s+/).filter(Boolean).length*2,0);
 const STORY_SAY='קְרָא אֶת הַסִּפּוּר, וְאַחַר כָּךְ עוֹנִים עַל שְׁאֵלוֹת.';
 const storyLv=()=>{try{const R=window.READBANK2;return R&&R.level?R.level('story')|0||1:1;}catch(e){return 1;}};
 let SS=null;   /* the story being played: {id, t0, lv, help, wrong, heard, log} */
@@ -353,7 +357,7 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
   const shows=k=>(ss.wrong&&help.wrong.includes(k))||(help[k]!=null&&Date.now()-ss.t0>=D(help[k]*1000));
   const heard=()=>{ss.heard=true;ss.log.r='l';};
   /* the story and, under its last line (normal flow, never over the text), one row: one 🔊 "read to me" (when allowed) and one forward "▶ הַמְשֵׁךְ" (G2/G4: no per-line 🔊, a tap on a line reads it) */
-  function page(box,fwd){const pg=h('div','story');pg.innerHTML=`<div class="sth"><span>${o.spr[0]}</span><h2>${o.title}</h2><span>${o.spr[1]}</span></div>`+o.lines.map((x,i)=>`<p class="sl" data-i="${i}">${x}</p>`).join('');box.appendChild(pg);
+  function page(box,fwd,r){const pg=h('div','story');r=r||[0,o.lines.length];pg.innerHTML=`<div class="sth"><span>${o.spr[0]}</span><h2>${o.title}</h2><span>${o.spr[1]}</span></div>`+o.lines.map((x,i)=>i>=r[0]&&i<r[1]?`<p class="sl" data-i="${i}">${x}</p>`:'').join('');box.appendChild(pg);
     const row=h('div','btnrow strow');const rd=h('button','bigbtn blue sm strd',ICON.say);rd.setAttribute('aria-label','הַקְרֵא לִי');row.append(rd,fwd);box.appendChild(row);
     const mark=i=>pg.querySelectorAll('.sl').forEach(p=>p.classList.toggle('cur',+p.dataset.i===i));
     pg.addEventListener('click',e=>{if(e.target.closest('.rdb'))heard();},true);
@@ -377,7 +381,11 @@ function storyScreen(o){/* o: {act (activity id for the day log), id (quiz id), 
   /* #420: "words we will meet": 2-3 hard words of the story with a picture, a tap says the word */
   if(o.hw&&o.hw.length){const c=h('div','sthw',`<div class="sthwt">${HW_T}</div>`);const r=h('div','sthwr');
     o.hw.forEach(([w,pic])=>{const b=h('button','hwt',`<span class="hwp">${pic}</span><span class="hww">${w}</span>`);b.type='button';b.onclick=()=>{O.sfx.pop(1);O.say(w);};r.appendChild(b);});c.appendChild(r);s.appendChild(c);}
-  const go=h('button','bigbtn stgo',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=questions;page(s,go);
+  /* #731 chapters: a long story is read in chapters of about 3 lines (<= STORY_CHAPTER_S each); the one button of a chapter is "continue", the last one leads to the questions */
+  const ch=T.storyChapters(o.lines.length);
+  const chapter=k=>{if(k){s.querySelectorAll('.story,.strow,.sthw').forEach(x=>x.remove());T.readStop&&T.readStop();O.hush();}
+    const go=h('button','bigbtn stgo',ICON.play+'<span>הַמְשֵׁךְ</span>');go.onclick=k<ch.length-1?()=>chapter(k+1):questions;page(s,go,ch[k]);s.scrollTop=0;};
+  chapter(0);
   if(help.band!=='read'&&window.FRIEND&&FRIEND.readFirst){O.sayNow=T.spk(FRIEND.READFIRST);FRIEND.readFirst();}else O.sayNow=STORY_SAY;}   /* read to him: no "try alone first" */
 T.addSay([STORY_SAY]);T.storyScreen=storyScreen;T.READ_HELP=READ_HELP;T.helpOf=helpOf;T.storyHelp=storyHelp;window.__story={get ss(){return SS;}};
 function readStory(k,back){const st=STORIES[k];storyScreen({act:'story-'+k,id:'story-'+k,title:st.t,name:st.t,tp:T.plainHe(st.t),goal:st.goal,spr:st.spr.map(x=>ALLSPR(x)),lines:st.s,hw:st.hw,

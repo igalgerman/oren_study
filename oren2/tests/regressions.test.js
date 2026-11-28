@@ -66,8 +66,8 @@ const { chromium } = require('playwright');
     const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
     await p.goto(L.URL); await L.noCoach(p);
     const toQuiz = {
-      'story-1': () => document.querySelector('#sTal .btnrow .bigbtn:last-child').click(),
-      'story-new': () => document.querySelector('#sTal .btnrow .bigbtn:last-child').click(),
+      'story-1': () => { for (let i = 0; i < 4 && document.querySelector('#sTal .stgo'); i++) document.querySelector('#sTal .btnrow .bigbtn:last-child').click(); },   /* #731: through the chapters */
+      'story-new': () => { for (let i = 0; i < 6 && document.querySelector('#sTal .stgo'); i++) document.querySelector('#sTal .btnrow .bigbtn:last-child').click(); },
       'sci-day': () => { const r = document.querySelector('#earthR'); r.value = 180; r.oninput(); document.querySelector('#sTal > .bigbtn').click(); },
       'sci-states': () => { const g = [...document.querySelectorAll('#sTal .bigbtn')].pop(); g.hidden = false; g.click(); },
       'sci-plant': () => { for (let d = 0; d < 4; d++) { window.__plant.water(); window.__plant.next(); } },
@@ -257,11 +257,12 @@ const { chromium } = require('playwright');
       () => p.evaluate(() => { const q = window.__quiz; return !document.querySelector('#sTal .lccard') || (q && q.i === 1); }));
     await p.evaluate(() => { window.__lessons = false; });
     await check('story', () => p.evaluate(() => { document.querySelector('#ov').hidden = true; const T = window.TAL; T.openHub(); T.ACT['story-0'].run(() => T.openHub()); }),
-      () => p.evaluate(() => !document.querySelector('#sTal .stgo') && !!document.querySelector('#sTal .chs')));
+      () => p.evaluate(() => (!document.querySelector('#sTal .stgo') && !!document.querySelector('#sTal .chs')) || (+((document.querySelector('#sTal .story .sl') || {}).dataset || {}).i > 0)));   /* #731: the next step of a long story is its next chapter */
     ok('#356 forward: every screen with a next step shows ‹ in the top bar (' + seen.join(', ') + ')', miss.length === 0, miss.join(', '));
     ok('#356 forward: a tap does the next step', wrong.length === 0, wrong.join(', '));
     ok('#356 forward: always in the same place', pos.size === 1, [...pos].join(' | '));
     ok('#356 back is there too on each of them', noBk.length === 0, noBk.join(', '));
+    for (let i = 0; i < 3 && await p.evaluate(() => !!document.querySelector('#sTal .stgo')); i++) { const f = await fwdAt(); if (f) await p.mouse.click(f.x, f.y); await L.sleep(250); }   /* #731: on to the questions through the chapters */
     const q = await fwdAt(); ok('#356 forward: none on a question screen (answering is the step)', !q && (await backOn()), JSON.stringify(q));
     await p.evaluate(() => { const T = window.TAL; T.openHub(); }); await L.sleep(150);
     ok('#356 forward: none on the hub (no single next step)', !(await fwdAt()));

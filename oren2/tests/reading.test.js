@@ -165,8 +165,27 @@ async function stories(b) {
   const rows = await p.evaluate(() => [...document.querySelectorAll('.dllog .dlrow.dl-c')].map(x => x.textContent));
   ok('parent day log shows the story name, its goal, read alone / listened and the level', rows.length === 4 && rows.every(t => /🎯/.test(t) && /רמה 1/.test(t)) && rows.filter(t => /קרא לבד/.test(t)).length === 2 && rows.filter(t => /האזין/.test(t)).length === 2, JSON.stringify(rows));
   await words420(p, run);
+  await chapters731(p);
   ok('stories: no JS errors', !errs.length, errs.slice(0, 3).join(' | '));
   await ctx.close();
+}
+
+/* ---------- #731: a story is read in chapters of at most STORY_CHAPTER_S seconds; each chapter has one button (continue); the last leads to the questions ---------- */
+async function chapters731(p) {
+  const d = await p.evaluate(() => { const T = window.TAL, all = [...window.READBANK2.stories.map(s => ['R' + s.id, s.s]), ...T.STORIES.map((s, k) => ['B' + k, s.s])];
+    const long = all.filter(([, l]) => { const c = T.storyChapters(l.length); return c.some(([a, b]) => T.storyChapterSecs(l.slice(a, b)) > T.STORY_CHAPTER_S) || c[0][0] !== 0 || c[c.length - 1][1] !== l.length || c.some(([a, b], i) => b <= a || (i && c[i - 1][1] !== a)); }).map(x => x[0]);
+    return { long, n: all.length, multi: all.filter(([, l]) => T.storyChapters(l.length).length > 1).length, budget: T.STORY_CHAPTER_S }; });
+  ok('#731 no story chapter is longer than the budget (every bank and bedtime story, chapters cover every line)', d.long.length === 0 && d.n > 50 && d.budget <= 240, JSON.stringify(d));
+  ok('#731 stories of 5+ lines are cut into chapters', d.multi >= 2, JSON.stringify(d));
+  const ch = await p.evaluate(() => { const T = window.TAL, c = T.storyChapters(T.STORIES[11].s.length); return c.map(([a, b]) => b - a); });
+  await p.evaluate(() => window.TAL.readStory(11, () => {})); await L.sleep(150);
+  const c1 = await p.evaluate(() => ({ lines: document.querySelectorAll('#sTal .story .sl').length, btns: [...document.querySelectorAll('#sTal .strow .bigbtn')].filter(b => !b.hidden && !b.classList.contains('strd')).length, go: !!document.querySelector('#sTal .stgo') }));
+  await p.evaluate(() => document.querySelector('#sTal .stgo').click()); await L.sleep(150);
+  const c2 = await p.evaluate(() => ({ lines: document.querySelectorAll('#sTal .story .sl').length, stories: document.querySelectorAll('#sTal .story').length, go: !!document.querySelector('#sTal .stgo'), q: !!window.__quiz && !window.__quiz.wrap.hidden }));
+  await p.evaluate(() => document.querySelector('#sTal .stgo').click()); await L.sleep(150);
+  const c3 = await p.evaluate(() => ({ q: !!document.querySelector('#sTal .tqc, #sTal .chs'), go: !!document.querySelector('#sTal .stgo') }));
+  ok('#731 chapter 1 then chapter 2 (cut by storyChapters), each with the one continue button; the last continue opens the questions',
+    c1.lines === ch[0] && c1.btns === 1 && c1.go && c2.lines === ch[1] && c2.stories === 1 && c2.go && c3.q && !c3.go, JSON.stringify([ch, c1, c2, c3]));
 }
 
 /* ---------- #420: "words we will meet" before a story; words he taps while reading come back the next day in word practice ---------- */
