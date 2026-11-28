@@ -320,6 +320,18 @@ def where(n):
     try: return (RUNS / str(n) / "where").read_text().strip()
     except OSError: return ""
 
+def lane_dates(nums, run=sh):
+    """#911: the last commit date of lane/<n> for every n in ONE call (a GraphQL query with an alias per lane), not one REST call per lane.
+    -> {n: iso date}; a lane with no branch or an unreadable answer is missing."""
+    if not nums: return {}
+    o, r = REPO.split("/", 1)
+    q = "query($o:String!,$r:String!){repository(owner:$o,name:$r){" + " ".join(
+        f'l{n}:ref(qualifiedName:"refs/heads/lane/{n}"){{target{{... on Commit{{committedDate}}}}}}' for n in nums) + "}}"
+    rc, out = run(["gh", "api", "graphql", "-f", f"query={q}", "-f", f"o={o}", "-f", f"r={r}"])
+    try: repo = json.loads(out)["data"]["repository"]
+    except (ValueError, KeyError, TypeError): return {}
+    return {n: ((repo.get(f"l{n}") or {}).get("target") or {}).get("committedDate", "") for n in nums if (repo.get(f"l{n}") or {}).get("target")} if rc == 0 else {}
+
 def cloud(run=sh, now=None):
     """All open issues labelled cloud, plus in-progress ones whose run is remote (.runs/<n>/where, #236)."""
     import time
@@ -337,12 +349,12 @@ def cloud(run=sh, now=None):
     allp = json.loads(out) if rc == 0 and out.strip() else []
     prs = {p["headRefName"]: p for p in allp}
     rows = []
+    prof = {i["number"]: prs.get(f"lane/{i['number']}") or next((p for p in allp if fixes(p.get("body"), i["number"])), None) for i in issues}   # #246: claude/* head
+    dates = lane_dates([n for n, p in prof.items() if not p], run)       # #911: one call for all lanes without a PR
     for i in sorted(issues, key=lambda i: i["number"]):
-        pr = prs.get(f"lane/{i['number']}") or next((p for p in allp if fixes(p.get("body"), i["number"])), None)   # #246: claude/* head
+        pr = prof[i["number"]]
         commit = max((c.get("committedDate", "") for c in (pr or {}).get("commits") or []), default="")
-        if not pr:
-            rc, out = run(["gh", "api", f"repos/{REPO}/branches/lane/{i['number']}", "--jq", ".commit.commit.committer.date"])
-            commit = out.strip() if rc == 0 else ""
+        if not pr: commit = dates.get(i["number"], "")
         rows.append(cloud_lane(i, pr, commit, now, manual=not (RUNS / str(i["number"])).is_dir(),
                                waiting=waiting_core(i["number"]), since=run_since(i["number"])))
     return rows

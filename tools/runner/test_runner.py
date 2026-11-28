@@ -372,6 +372,26 @@ assert r.integrate_with_resolve(lambda: next(_mr), lambda f: True, 2)[0] == "fai
 _mr = iter([(2, "CONFLICTS"), (0, "ok")])
 assert r.integrate_with_resolve(lambda: next(_mr), lambda f: True, 2)[0] == "merged"            # merge conflict -> resolve round -> retry -> merged
 assert _cm([_ck("pending")] * 99, timeout_s=60, poll_s=30)[0] == ("timeout",)
+# #911: the CI wait polls the cache's rollup; `gh pr checks` only at a final state, when unknown, or every 120 s as a safety net
+_t, _real, _st = [1000.0], [], ["PENDING"]
+def _real_checks(): _real.append(_t[0]); return [{"name": "tests", "bucket": "pending"}]
+_gc = r.cached_checks(30, _real_checks, lambda n: _st[0], clock=lambda: _t[0])
+for _ in range(3): _t[0] += 30; assert r.ci_verdict(_gc()) == "pending" and not _real
+_t[0] += 30; _gc()
+assert len(_real) == 1 and _real[0] == 1120.0, f"pending: no `gh pr checks` before the 120 s safety net: {_real}"
+_t[0] += 60; _gc(); assert len(_real) == 1, "pending again: cache (the safety clock restarted at the real call)"
+_t[0] += 60; _gc(); assert len(_real) == 2, "120 s later: safety net"
+for _s in ("SUCCESS", "FAILURE", "ERROR"): _st[0] = _s; _n = len(_real); _gc(); assert len(_real) == _n + 1, f"a final rollup ({_s}) asks the real checks"
+_st[0] = None; _n = len(_real); _gc(); assert len(_real) == _n + 1, "unknown rollup (stale cache / dirty): real call"
+_t2, _real2 = [0.0], []
+_gc2 = r.cached_checks(1, lambda: _real2.append(1) or [], lambda n: "PENDING", clock=lambda: _t2[0])
+for _ in range(13): _t2[0] += 60; _gc2()          # 13 minutes of one lane in the CI wait
+assert len(_real2) <= 7, _real2                     # 13 lanes x ~0.5 real call a minute = 6.5 a minute (target <= 15)
+_sl = []
+_it = iter([_ck("pending")] * 3 + [_ck("pass")])
+assert r.ci_merge(lambda: next(_it), lambda: None, lambda: True, _sl.append, poll_s=30, pending_poll_s=60) == ("merged",) and _sl == [60, 60, 60], _sl
+assert r.pr_field('{"mergeable": "CONFLICTING"}', "mergeable") == "CONFLICTING" and r.pr_field("gh: error", "mergeable") == "" and r.pr_field("[]", "x") == ""
+assert r.pr_field(_json.dumps({"headRefOid": "a" * 40}), "headRefOid") == "a" * 40
 assert r.deploy_needed("a", "b") and not r.deploy_needed("b", "b") and r.deploy_needed("", "b") and not r.deploy_needed("a", "")
 assert r.conflict_files("CI RED\nc0\n") == ["c0"]
 assert r.integrate_with_resolve(iter([(6, "CI RED\nc0\n"), (0, "ok")]).__next__, lambda f: f == ["c0"], 2)[0] == "merged"

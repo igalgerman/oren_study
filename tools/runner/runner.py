@@ -288,7 +288,7 @@ def ci_verdict(checks):
 def failed_checks(checks):
     return [c.get("name", "?") for c in checks or [] if c.get("bucket") in ("fail", "cancel")]
 
-def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_reruns=1, stamp=None, max_stale=10, ended=None, mark=None, state=None, grace=4):
+def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_reruns=1, stamp=None, max_stale=10, ended=None, mark=None, state=None, grace=4, pending_poll_s=None):
     """Pure decision loop (#74): wait for the PR checks, then merge. Red -> rerun the failed jobs once (flaky), still red -> send back to the worker.
     stamp() = run id/status/attempt of the latest run: after a rerun, red is ignored until it changes (the old failed run is still shown for a while).
     merge() -> True | False | 'conflict' (#160: main moved after green CI -> the caller resolves and retries).
@@ -296,6 +296,7 @@ def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_rer
     #185: mark() (called once, only after the review passed) = GitHub auto-merge -> 'auto' | 'merged' (clean status: merged directly) | 'conflict' | False;
     state() -> 'merged' | 'conflict' | 'open'. With auto set, GitHub merges on green; the runner merges directly only if it stays green+open for `grace` polls.
     #344: merge()/mark() -> 'moved' (the head changed after the review) -> ('moved',): the caller checks the new head.
+    #911: pending_poll_s = the poll interval while the checks are pending (60 s: the cache refreshes once a minute).
     Returns ('merged',) | ('red', [names]) | ('timeout',) | ('conflict',) | ('merge-failed',) | ('ended',) | ('moved',)."""
     waited, reruns, old, stale = 0, 0, None, 0
     auto = False
@@ -327,7 +328,21 @@ def ci_merge(get_checks, rerun, merge, sleep, timeout_s=3600, poll_s=30, max_rer
             reruns += 1; rerun(); sleep(poll_s); waited += poll_s; continue
         if waited >= timeout_s:
             return ("timeout",)
-        sleep(poll_s); waited += poll_s
+        w = pending_poll_s or poll_s
+        sleep(w); waited += w
+
+def cached_checks(pr, real, rollup, clock=time.time, safety=120):
+    """#911: the get_checks() of the CI wait, answered from the cache. rollup(pr) = ghcache.pr_rollup. The real `gh pr checks` runs only when
+    the cached rollup is final (green/red: the real list decides, with the names), unknown (stale/dirty), or as a safety net every `safety` s
+    while it says pending. Pending from the cache = a one-entry pending list, no call."""
+    last = [clock()]
+    def get():
+        st = rollup(pr)
+        if st is not None and st not in ghcache.ROLLUP_FINAL and clock() - last[0] < safety:
+            return [{"name": "(cached rollup)", "bucket": "pending"}]
+        last[0] = clock()
+        return real()
+    return get
 
 def head_modified(text):
     """Pure (#344): a failed `gh pr merge --match-head-commit` because the PR head moved after the review."""
@@ -377,6 +392,12 @@ def merge_conflict(text):
 def auto_refused_clean(text):
     """Pure (#185): GitHub refuses `gh pr merge --auto` for a PR that is already green and clean ('clean status') -> merge directly."""
     return "clean status" in (text or "").lower()
+
+def pr_field(js, name):
+    """Pure (#911): one field of a `gh pr view --json <name>` answer (parsed here, so no -q and the cache can answer); '' when unreadable."""
+    try: v = json.loads(js or "{}").get(name)
+    except (ValueError, AttributeError): return ""
+    return v.strip() if isinstance(v, str) else ""
 
 def pr_state(js):
     """Pure (#185): `gh pr view --json state,mergeable` -> 'merged' | 'conflict' | 'open'."""
@@ -2201,7 +2222,7 @@ def ci_integrate(n, wt, log, over=None, sha=""):
     if unreadable_gate(why): raise GateUnreadable(why)           # #908: wait, retry on the next pass; never BLOCKED
     if why:                                                      # #185/#636: never a draft / no-automerge / blocked / owner-merge PR, nor a CLOSED owner gate
         disable_auto(pr, log); return 7, f"PR #{pr}: {why}"
-    mergeable = gh("pr", "view", str(pr), "--json", "mergeable", "-q", ".mergeable", log=log)[1].strip()
+    mergeable = pr_field(gh("pr", "view", str(pr), "--json", "mergeable", log=log)[1], "mergeable")   # #911: no -q: the cache can answer
     if needs_branch_update(mergeable):                           # #166: only a real conflict updates the branch
         rc, out, new = update_lane(wt, br, log)
         if rc: return rc, out
@@ -2209,9 +2230,10 @@ def ci_integrate(n, wt, log, over=None, sha=""):
             sha = new                                                # #185: the runner's own merge-main commit is the new head to match
             time.sleep(20)                                           # let GitHub start the new run
     why = {"merge": ""}
-    def get_checks():
+    def real_checks():
         try: return json.loads(gh("pr", "checks", str(pr), "--json", "name,bucket", log=log)[1] or "[]")
         except ValueError: return []
+    get_checks = cached_checks(pr, real_checks, ghcache.pr_rollup)     # #911: the cache's rollup first, `gh pr checks` only at a final state / every 120 s
     def stamp():
         return run(["gh", "run", "list", "--repo", REPO, "--branch", br, "--limit", "1", "--json", "databaseId,status,attempt", "-q", ".[0]|[.databaseId,.status,.attempt]|join(\":\")"], log=log)[1].strip()
     def rerun():
@@ -2238,7 +2260,7 @@ def ci_integrate(n, wt, log, over=None, sha=""):
         return pr_state(gh("pr", "view", str(pr), "--json", "state,mergeable", log=log)[1])
     def git(a): return run(["git", *a], cwd=wt)
     for _ in range(4):                                           # #344: the head moved after the PASS (a merge of main by the #262 resolver or the worker)
-        cur = gh("pr", "view", str(pr), "--json", "headRefOid", "-q", ".headRefOid", log=log)[1].strip()
+        cur = pr_field(gh("pr", "view", str(pr), "--json", "headRefOid", log=log)[1], "headRefOid")   # #911: no -q: the cache can answer
         if re.fullmatch(r"[0-9a-f]{40}", cur) and cur != sha:       # a gh error text is not a moved head
             run(["git", "fetch", "-q", REMOTE, BRANCH, br], cwd=wt, log=log)
             if head_moved(git, sha, cur, f"{REMOTE}/{BRANCH}") != "main":
@@ -2246,7 +2268,7 @@ def ci_integrate(n, wt, log, over=None, sha=""):
                 return 8, f"HEAD MOVED after the review: {cur[:7]} has new commits since the reviewed {sha[:7]} that are not only merges of main; re-review"
             log_to(log, f"[runner] #344: head {sha[:7]} -> {cur[:7]} is only a merge of main: counts as reviewed, waiting for CI on it")
             sha = cur
-        res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp, ended=over, mark=mark, state=state)
+        res = ci_merge(get_checks, rerun, merge, time.sleep, int(CFG.get("ci_timeout_minutes", 60)) * 60, stamp=stamp, ended=over, mark=mark, state=state, pending_poll_s=60)
         if res[0] != "moved": break
     if res[0] == "ended": raise Ended("CI merge")
     if res[0] == "merged": return 0, "merged PR #%d" % pr
