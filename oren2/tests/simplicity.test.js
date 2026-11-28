@@ -195,7 +195,7 @@ const { chromium } = require('playwright');
   }
   /* ---------- #8 P3 leftovers (docs/simplicity-spec.md + docs/qa-deep-report.md) ---------- */
   await p.evaluate(() => { document.querySelector('#ov').hidden = true; window.__arc.open(() => {}); }); await L.sleep(150);
-  ok('#8 arcade: no "✨ new" tag on the cabinets', await p.evaluate(() => document.querySelectorAll('#sTal .cab').length === 7 && !document.querySelector('#sTal .hs.new') && !/חָדָשׁ/.test(document.querySelector('#sTal .cabs').textContent)));
+  ok('#8 arcade: no "✨ new" tag on the cabinets', await p.evaluate(() => document.querySelectorAll('#sTal .cab').length === 8 && !document.querySelector('#sTal .hs.new') && !/חָדָשׁ/.test(document.querySelector('#sTal .cabs').textContent)));
   await p.evaluate(() => window.__arc.start('frog')); await L.sleep(300);
   r = await p.evaluate(() => { const bg = e => getComputedStyle(e).backgroundColor; const f = document.querySelector('.jb:not(.back)'), m = document.querySelector('.jb.back'); return { f: bg(f), m: bg(m) }; });
   ok('#8 frog: "−1" is quieter than the forward jumps (not yellow)', r.m !== 'rgb(255, 210, 63)' && r.m !== r.f, JSON.stringify(r));
