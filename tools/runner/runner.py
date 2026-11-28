@@ -673,6 +673,54 @@ def governor(usage, hist, now, g=None, prev=None, wins=None, stale_since=None, b
           "projected": None if pct is None else pct + g["k"] * g["b"] * max(lanes, busy) * h5, "week_projected": None}
     return week_gate(gv, g, stalled_5h(usage, hist) if mode == "5h+week" else False)
 
+def parse_for(txt):
+    """Pure (#712): '3h' / '90m' / '2' (hours) -> seconds; anything else -> None."""
+    import re
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)([hm]?)", str(txt or "").strip().lower())
+    return None if not m or float(m.group(1)) <= 0 else float(m.group(1)) * (60 if m.group(2) == "m" else 3600)
+
+def override_make(mode, now, dur_s=3 * 3600, until_reset=False):
+    """Pure (#712): the .runs/override.json record for `fast|normal|save|<N>`; None for a bad mode. lanes N = an int >= 0."""
+    mode = str(mode).strip().lower()
+    if mode in ("fast", "normal", "save"): ov = {"mode": mode}
+    elif mode.isdigit(): ov = {"mode": "lanes", "n": int(mode)}
+    else: return None
+    return {**ov, "set": now, "until": None if until_reset else now + (dur_s or 3 * 3600), "until_reset": bool(until_reset)}
+
+def override_apply(gv, ov, now):
+    """Pure (#712, proposal 3.3): the owner's override moves ONLY the lane count, inside the core's bounds: never above N_hi, never below N_lo,
+    never past a stop (week >= week_stop, hard bounds #703) and never a change of model or effort. fast = N_hi; save = 0.6 x N_week; lanes N = N;
+    normal = no change. Expired (`until` passed, or `until_reset` and the week reset passed) -> (gv, 'expired'). -> (gv, None|'expired')."""
+    if not isinstance(ov, dict) or ov.get("mode") not in ("fast", "normal", "save", "lanes"): return gv, None
+    wr = gv.get("week_reset")
+    if (ov.get("until") is not None and ov["until"] <= now) or (ov.get("until_reset") and wr is not None and wr <= now): return gv, "expired"
+    gv = {**gv, "override": {"mode": ov["mode"], "n": ov.get("n"), "until": ov.get("until") if not ov.get("until_reset") else wr, "until_reset": bool(ov.get("until_reset"))}}
+    if ov["mode"] == "normal" or gv.get("stop") or gv.get("n_hi") is None: return gv, None
+    hi, lo = int(gv["n_hi"]), int(gv.get("n_lo") or 0)
+    want = {"fast": hi, "save": int(round(0.6 * max(0.0, gv.get("n_week") or 0.0))), "lanes": ov.get("n") or 0}[ov["mode"]]
+    n = max(lo, min(int(want), hi))
+    if n != gv["lanes"]: gv["why"] = f"override {override_text(gv['override'])}: {gv['lanes']} -> {n} lanes; " + gv["why"]
+    gv["lanes"] = n
+    return gv, None
+
+def override_text(o):
+    """'FAST until 14:05' / 'lanes 4 until reset' (panel + governor line)."""
+    name = f"lanes {o.get('n')}" if o.get("mode") == "lanes" else str(o.get("mode")).upper()
+    until = "reset" if o.get("until_reset") else f"{datetime.fromtimestamp(o['until']).astimezone():%H:%M}" if o.get("until") else "?"
+    return f"{name} until {until}"
+
+def override_step(gv, now):
+    """Read .runs/override.json and apply it; an expired one is deleted and logged ('back to normal'). Never raises."""
+    f = RUNS / "override.json"
+    try: ov = json.loads(f.read_text(encoding="utf-8"))
+    except Exception: return gv
+    gv, ex = override_apply(gv, ov, now)
+    if ex and not DRY:
+        try: f.unlink()
+        except OSError: pass
+        log_line(f"{datetime.fromtimestamp(now).astimezone():%Y-%m-%d %H:%M:%S} governor: override {ov.get('mode')} expired, back to normal")
+    return gv
+
 def budget_shift(need, b, n_hi):
     """Pure (#711): budget pressure p = need / (b * N_hi) and the shift for workers above the floors: +1 when p > 1 (more budget than the
     lanes can burn), else 0. A tight budget (p < 1) only lowers the lane count (N_week); there is no -1, nothing is ever made cheaper."""
@@ -711,6 +759,7 @@ def governor_text(gv):
     s = f"governor: {n} lanes: {gv['why']}"
     if gv.get("b") is not None: s += f" · b̂ {gv['b']:.2f}%/h" + ("" if gv.get("fit") else " (prior)")
     if gv.get("pct") is not None: s += f" · 5h {gv['pct']:.0f}% (cap {gv.get('target', GOV['cap_5h']):.0f}%)"
+    if gv.get("override"): s += " · mode " + override_text(gv["override"])
     if gv.get("p") is not None: s += f" · p {gv['p']:.2f} budget: " + ("behind, shift +1" if gv.get("shift") else "tight, fewer lanes")
     return s + (" · STOP" if gv["stop"] else "")
 
@@ -786,6 +835,7 @@ def governor_pass(remote_busy, now=None, ready=None, models=None):
     try: prev_mode = json.loads((RUNS / "governor.json").read_text(encoding="utf-8")).get("mode")
     except Exception: prev_mode = None
     gv = governor(usage, hist, now, prev=prev, wins=wins, stale_since=stale_since, busy=remote_busy, ready=ready)
+    gv = override_step(gv, now)      # #712: the owner's mode, inside the core's bounds; the AI step reads gv['override']
     if DRY: return gv
     try:                                             # #707: the AI step decides inside the core's bounds; any failure -> the core alone
         import ai_governor as AG
@@ -2473,7 +2523,19 @@ def do_freeze():
                         find_pr, lambda n, b: gh("issue", "comment", str(n), "--body", b), remote, time.sleep, time.time)
     print(res["message"]); return 0 if not res["open"] else 1
 
+def do_override():
+    """#712: runner.py --lanes-mode fast|normal|save|<N> [--for 3h|--until-reset] -> .runs/override.json."""
+    a = sys.argv; i = a.index("--lanes-mode")
+    mode = a[i + 1] if i + 1 < len(a) else ""
+    dur = parse_for(a[a.index("--for") + 1]) if "--for" in a and a.index("--for") + 1 < len(a) else 3 * 3600
+    ov = override_make(mode, time.time(), dur, "--until-reset" in a) if dur else None
+    if not ov: print("usage: runner.py --lanes-mode fast|normal|save|<N> [--for 3h|--until-reset]"); return 2
+    RUNS.mkdir(exist_ok=True)
+    (RUNS / "override.json").write_text(json.dumps(ov), encoding="utf-8")
+    print("override written:", override_text({**ov, "until": ov["until"]})); return 0
+
 def main():
+    if "--lanes-mode" in sys.argv: return do_override()
     if "--freeze" in sys.argv or "--unfreeze" in sys.argv: return do_freeze()
     import freeze
     if freeze.is_frozen(RUNS) and not DRY:

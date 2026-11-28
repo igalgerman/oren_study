@@ -868,6 +868,23 @@ _G = {"stale_s": 900}
 def _u(pct, reset_h, week=None, week_reset_h=24 * 6, age=60):
     return {"five_h_pct": pct, "five_h_reset": _iso(_now + reset_h * 3600), "week_pct": week, "week_reset": _iso(_now + week_reset_h * 3600), "at": _iso(_now - age)}
 def _ux(week, H, age=60): return {"five_h_pct": None, "week_pct": week, "week_reset": _iso(_now + H * 3600), "at": _iso(_now - age)}   # Ultra: week bucket only
+# #712 owner override: only the lane count moves, inside the core's bounds
+_g0 = r.governor(_ux(40, 80), [], _now, _G, busy=3, ready=9)
+_o = lambda m, **k: r.override_make(m, _now, **k)
+g = r.override_apply(_g0, _o("fast"), _now)[0]; assert g["lanes"] == _g0["n_hi"] == 12 and g["override"]["mode"] == "fast", g
+_gs = r.governor(_ux(98, 80), [], _now, _G, busy=3, ready=9); assert _gs["stop"], _gs                      # W 98 >= week_stop: fast cannot start anything
+g = r.override_apply(_gs, _o("fast"), _now)[0]; assert g["stop"] and g["lanes"] == _gs["lanes"], g
+g, ex = r.override_apply(_g0, _o("fast"), _now + 3 * 3600 + 1); assert ex == "expired" and g["lanes"] == _g0["lanes"] and "override" not in g   # expiry -> normal
+assert r.override_apply(_g0, _o("fast", until_reset=True), _now + 80 * 3600 + 1)[1] == "expired"
+g = r.override_apply(_g0, _o("fast", until_reset=True), _now + 3600)[0]; assert g["lanes"] == 12 and g["override"]["until_reset"]
+assert r.override_apply(_g0, _o("20"), _now)[0]["lanes"] == _g0["n_hi"]                                    # lanes 20 -> clamped to N_hi
+assert r.override_apply(_g0, _o("2"), _now)[0]["lanes"] == 2
+g = r.override_apply(_g0, _o("save"), _now)[0]; assert g["lanes"] == max(_g0["n_lo"], round(0.6 * _g0["n_week"])) < _g0["n_hi"], g
+for m in ("fast", "save", "5", "normal"):                                                                  # models and efforts are never touched
+    g = r.override_apply(_g0, _o(m), _now)[0]; assert {k: v for k, v in g.items() if k not in ("lanes", "why", "override")} == {k: v for k, v in _g0.items() if k not in ("lanes", "why")}, m
+assert r.override_make("bogus", _now) is None and r.parse_for("3h") == 10800 and r.parse_for("90m") == 5400 and r.parse_for("x") is None
+assert "mode FAST until" in r.governor_text(r.override_apply(_g0, _o("fast"), _now)[0])
+print("ok #712 owner override")
 # #705 even pacing: 80h left, week 40%, 3 busy lanes, 9 ready -> need (94-40-0.3)/80-0.1 = 0.57 %/h -> ~3 lanes
 g = r.governor(_ux(40, 80), [], _now, _G, busy=3, ready=9); assert g["lanes"] == 3 and g["mode"] == "week-only" and abs(g["need"] - 0.5712) < 0.001 and g["n_hi"] == 12, g
 t = r.governor_text(g); assert t == "governor: 3 lanes: week 40%, behind pace (need 0.6%/h), 9 ready, reserve 5% · b̂ 0.20%/h (prior) · p 0.24 budget: tight, fewer lanes", t

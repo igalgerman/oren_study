@@ -206,7 +206,7 @@ test('#330 the panel shows the canary line (.runs/canary.json text), red on NEED
   expect(panel(base({ canary: 'NEEDS-ATTENTION: canary #401 step pr late (30 min)' })).canary!.tone).toBe('red')
 })
 
-import { fromCache, GH_CACHE } from './lanes'
+import { fromCache, GH_CACHE, modeRecord } from './lanes'
 
 test('#329 the panel reads GitHub only from the shared cache (.runs/gh_cache.json), never when stale', () => {
   const L = (...n: string[]) => n.map(name => ({ name }))
@@ -240,4 +240,14 @@ test('#437 UP NEXT shows the tier and sorts express, P0, tier, bug, P1..P3', () 
   expect(p.issues.next).toEqual([5, 3, 4, 2, 1])
   expect(p.next.find(r => r.text.includes('#1 '))!.text).toMatch(/^P1 T2 #1 /)
   expect(p.next.find(r => r.text.includes('#2 '))!.text).toMatch(/^P2 #2 /)
+})
+
+test('#712 the panel shows the owner mode and the Mode button cycles normal -> fast -> save -> normal', () => {
+  expect(panel(base()).mode).toEqual({ text: 'mode: normal', tone: 'dim' })
+  expect(panel(base()).modeNext).toBe('fast')
+  const g = { override: { mode: 'fast', until_reset: true } }
+  expect(panel(base({ gov: g as never })).mode).toEqual({ text: 'mode: FAST until reset', tone: 'amber' })
+  expect(panel(base({ gov: g as never })).modeNext).toBe('save')
+  expect(panel(base({ gov: { override: { mode: 'save' } } as never })).modeNext).toBe('normal')
+  expect(modeRecord('fast', 1000)).toEqual({ mode: 'fast', set: 1000, until: 1000 + 10800, until_reset: false })
 })
