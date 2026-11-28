@@ -21,6 +21,9 @@
 - One clear main action per screen for Oren (age 6-7, new to computers, very smart).
 - When unsure whether something is needed — ask, or leave it out.
 
+## Rules that hold on every screen (#745)
+- An issue about something that must hold on every screen (voice, back/forward, help) gets this Acceptance point: "an automatic test walks every screen and fails with the list of screens that break the rule". Use the helper `oren2/tests/walk.js` (example: `tests/walk.test.js`). Not just the screens you looked at.
+
 ## Language
 - Talk to the user in English.
 - Kid-facing text in Hebrew with correct nikud; parent-facing text can be without nikud.

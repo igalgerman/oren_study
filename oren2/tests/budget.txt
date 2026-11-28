@@ -63,3 +63,4 @@ music2-phone 60           # same file on the phone viewport: ~30 s
 fullday 60                # #634 a simulated 60-minute day on home (~40 missions) + 3 mission checks + 3 flag rounds: ~16 s
 arcade-desktop 90          # #668 air hockey round added (~15 s: countdown + mouse/key checks + a played round)
 arcade-phone 90            # #668 same on the phone viewport
+walk 60                   # #745 example walker: helper self-check + walks all ~120 activities for the back control: ~15 s
