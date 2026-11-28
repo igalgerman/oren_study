@@ -102,9 +102,42 @@ def floors(role, model, effort=None, labels=()):
     if model in (None, "haiku") and role not in STATUS_ROLES: model = "sonnet"
     return model or "haiku", eff
 
-def fix_model(rnd, wm):
-    """#303: the last fix round (FIX_ROUNDS) uses Opus; a stronger model (fable) stays."""
-    return "opus" if rnd >= FIX_ROUNDS and wm not in ("opus", MODEL_IDS["fable"]) else wm
+# #716: each failed review/test moves the next fix run one rung up; max/fable stay owner-only.
+LADDER = [("sonnet", "medium"), ("sonnet", "high"), ("opus", "medium"), ("opus", "high"), ("opus", "xhigh")]
+
+def _rung_index(model, effort):
+    eff = raise_effort(effort)
+    if model == "opus": return 2 + min(_EFFORTS.index(eff) - 1, 2)
+    return 0 if eff == "medium" else 1               # sonnet (and a haiku raised to sonnet) at medium / high or more
+
+def next_rung(model, effort):
+    """#716: (model, effort) one rung up the ladder; never above opus-xhigh; fable (and effort max) stay as they are."""
+    if model == MODEL_IDS["fable"] or effort == "max": return model, effort
+    return LADDER[min(_rung_index(model, effort) + 1, len(LADDER) - 1)]
+
+def fix_rung(rnd, model, effort):
+    """#716: the rung of fix round rnd (1, 2): rnd steps up from the worker's rung; the last round (FIX_ROUNDS) is at least opus-high."""
+    cur = (model, effort)
+    for _ in range(rnd): cur = next_rung(*cur)
+    if rnd >= FIX_ROUNDS and cur[0] != MODEL_IDS["fable"] and _rung_index(*cur) < 3 and cur[1] != "max": cur = LADDER[3]
+    return cur
+
+def read_rung(n):
+    """#716: the last (model, effort) a run of issue n used, when that run ended blocked (rung + rung.blocked files); else None."""
+    try:
+        if not (RUNS / str(n) / "rung.blocked").exists(): return None
+        m, e = (RUNS / str(n) / "rung").read_text().split()
+        return m, e
+    except (OSError, ValueError): return None
+
+def write_rung(n, model, effort):
+    try:
+        (RUNS / str(n)).mkdir(parents=True, exist_ok=True)
+        (RUNS / str(n) / "rung").write_text(f"{model} {effort}")
+    except OSError: pass
+
+def rung_name(model, effort):
+    return f"{'fable' if model == MODEL_IDS['fable'] else model}-{effort}"
 
 def red_escalation(n, reviews):
     """#303: comment when the reviewer is still RED after the last fix round: every review, for the orchestrator (never the owner)."""
@@ -466,6 +499,45 @@ def gov_windows(hist, events, now):
                     "merged": merged, "wasted": sum(e.get("event") in WASTED for e in inw), "eff": merged / (used / 10) if used >= 1 else None})
     return out
 
+MODEL_W = {"sonnet": 1.0, "opus": 2.0, "haiku": 0.05, "fable": 4.0}     # #709 priors (API price ratio, unverified)
+FIT_WINDOW_S, FIT_MIN_S, HIST_KEEP_S = 6 * 3600, 2 * 3600, 8 * 24 * 3600
+
+def weighted_lanes(models):
+    """Pure (#709): {model: busy lanes} -> busy lanes weighted by the model priors."""
+    return sum(MODEL_W.get(m, 1.0) * n for m, n in (models or {}).items())
+
+def _wk(h):
+    if h.get("week") is not None: return float(h["week"])
+    for b in h.get("buckets") or []:
+        if isinstance(b, dict) and b.get("kind") == "seven_day" and b.get("pct") is not None: return float(b["pct"])
+    return None
+
+def burn_fit(hist, now, g=None):
+    """Pure (#709): samples [{at, week, pct, reset, wlanes, ...}] -> {b, b0, k, fit} from the last 6 h by least squares.
+    Per pair of passes: dWeek = b*wlanes*dt + b0*dt (b = week-% per weighted busy lane-hour, b0 = base burn %/h of owner chats and control
+    sessions); k = 5h-% per week-% (through the origin, same 5h window only). Less than 2 h of data (or no variation in the lanes): the
+    priors, fit False."""
+    g = {**GOV, **(g or {})}
+    out = {"b": g["b"], "b0": g["b0"], "k": g["k"], "fit": False}
+    s = sorted((h for h in hist or [] if now - FIT_WINDOW_S <= h.get("at", 0) <= now and _wk(h) is not None), key=lambda h: h["at"])
+    if len(s) < 3 or s[-1]["at"] - s[0]["at"] < FIT_MIN_S: return out
+    rows = []                                                   # (dt, wl*dt, dweek, d5h or None)
+    for a, c in zip(s, s[1:]):
+        dt = (c["at"] - a["at"]) / 3600; dw = _wk(c) - _wk(a)
+        if dt <= 0 or dt > 1 or dw < 0: continue                # a gap, or the weekly reset
+        wl = a.get("wlanes", 0)                                  # the lanes busy after sample a drive the burn until c
+        d5 = (c["pct"] - a["pct"]) if a.get("pct") is not None and c.get("pct") is not None and a.get("reset") == c.get("reset") else None
+        rows.append((dt, wl * dt, dw, d5))
+    sxx, sxz, szz = sum(r[1] ** 2 for r in rows), sum(r[1] * r[0] for r in rows), sum(r[0] ** 2 for r in rows)
+    sxy, szy = sum(r[1] * r[2] for r in rows), sum(r[0] * r[2] for r in rows)
+    det = sxx * szz - sxz ** 2
+    if len(rows) < 3 or det <= 1e-9 * max(1.0, sxx * szz): return out        # no variation in the busy lanes: b and b0 cannot be told apart
+    b, b0 = (sxy * szz - szy * sxz) / det, (sxx * szy - sxz * sxy) / det
+    out.update(b=max(0.02, b), b0=max(0.0, b0), fit=True)
+    kk = [(r[2], r[3]) for r in rows if r[3] is not None and r[2] > 0 and r[3] >= 0]
+    if kk and sum(w * w for w, _ in kk) > 0: out["k"] = max(1.0, sum(w * d for w, d in kk) / sum(w * w for w, _ in kk))
+    return out
+
 def lane_gate(proposed, prev, wins):
     """Pure (#245): -> (lanes, reason or None). More lanes than now only while the last finished window's efficiency did not drop
     when its lanes went up (review/merge is the bottleneck then: more lanes only burn usage)."""
@@ -554,7 +626,7 @@ def governor(usage, hist, now, g=None, prev=None, wins=None, stale_since=None, b
     5h cap when a 5h bucket exists (week-only: no 5h cap, no 5h stop); the 5h stop (pct >= stop) and #698 week stop (week >= week_stop) stay;
     #704 stale reading -> hold prev for hold_s from `stale_since` (returned in the dict, pass it back), then N_lo
     (1 while the week is below week_stop, else 0); never the config remote_lanes."""
-    g = {**GOV, **(g or {})}
+    g = {**GOV, **burn_fit(hist, now, g), **(g or {})}      # #709: fitted b, b0, k (priors with < 2 h of data)
     if usage and usage.get("buckets") is not None:           # #706 shape -> the old fields
         bk = {b.get("kind"): b for b in usage["buckets"] if isinstance(b, dict)}
         usage = {**usage, "five_h_pct": (bk.get("five_hour") or {}).get("pct"), "five_h_reset": (bk.get("five_hour") or {}).get("reset"),
@@ -596,7 +668,7 @@ def governor(usage, hist, now, g=None, prev=None, wins=None, stale_since=None, b
     if wk >= g["week_stop"]:
         stop = True; why = f"week {wk:.0f}% >= {g['week_stop']:.0f}%: no new run until the weekly reset"   # #698 week hard stop
     gv = {"lanes": lanes, "stop": stop, "pct": pct, "reset": reset, "mode": mode, "need": parts["need"], "n_hi": parts["n_hi"], "n_lo": parts["n_lo"], "n_week": parts["n_week"],
-          "reserve": parts["reserve"], "c": parts["c"], "ready": ready, "target": g["cap_5h"], "week_pct": wk, "week_reset": wreset, "why": why, "now": now,
+          "reserve": parts["reserve"], "c": parts["c"], "ready": ready, "b": g["b"], "b0": g["b0"], "k": g["k"], "fit": g["fit"] if "fit" in g else False, "target": g["cap_5h"], "week_pct": wk, "week_reset": wreset, "why": why, "now": now,
           "projected": None if pct is None else pct + g["k"] * g["b"] * max(lanes, busy) * h5, "week_projected": None}
     return week_gate(gv, g, stalled_5h(usage, hist) if mode == "5h+week" else False)
 
@@ -629,6 +701,7 @@ def governor_text(gv):
     n = 0 if gv["stop"] else gv["lanes"]
     if gv.get("need") is None: return f"governor: {n} lanes ({gv['why']})" + (" · STOP" if gv["stop"] else "")
     s = f"governor: {n} lanes: {gv['why']}"
+    if gv.get("b") is not None: s += f" · b̂ {gv['b']:.2f}%/h" + ("" if gv.get("fit") else " (prior)")
     if gv.get("pct") is not None: s += f" · 5h {gv['pct']:.0f}% (cap {gv.get('target', GOV['cap_5h']):.0f}%)"
     return s + (" · STOP" if gv["stop"] else "")
 
@@ -675,7 +748,7 @@ def stop_filter(chosen, gv):
 
 AI_LABELS = {}      # #707: issue number -> labels, filled by run_pass for the AI governor floors
 
-def governor_pass(remote_busy, now=None, ready=None):
+def governor_pass(remote_busy, now=None, ready=None, models=None):
     """Read .runs/usage.json, keep a sample in .runs/usage_hist.jsonl, write .runs/governor.json. Returns the governor dict; never raises."""
     now = now or time.time()
     try: usage = json.loads((RUNS / "usage.json").read_text(encoding="utf-8"))
@@ -688,9 +761,9 @@ def governor_pass(remote_busy, now=None, ready=None):
                 except Exception: pass
         except Exception: pass
         return out
-    hist = jsonl("usage_hist.jsonl", 5000)
+    hist = jsonl("usage_hist.jsonl", 20000)      # #709: 8 days
     events = [e for e in jsonl("stats.jsonl", 5000) if e.get("ts", 0) > now - 16 * 3600]   # #245
-    wins = gov_windows(hist, events, now)
+    wins = gov_windows([h for h in hist if now - h.get("at", 0) < 16 * 3600], events, now)
     try: prev = int(json.loads((RUNS / "governor.json").read_text(encoding="utf-8"))["lanes"])
     except Exception: prev = None
     try: stale_since = json.loads((RUNS / "governor.json").read_text(encoding="utf-8")).get("stale_since")
@@ -709,10 +782,13 @@ def governor_pass(remote_busy, now=None, ready=None):
     try:
         RUNS.mkdir(exist_ok=True)
         sp = gv["pct"] if gv["pct"] is not None else (usage or {}).get("five_h_pct")     # #704: samples go on while stale (the frozen check needs them)
-        if sp is not None:                           # #245: 16 h of samples = the current and the last two 5h windows
-            hist = [h for h in hist if now - h.get("at", 0) < 16 * 3600] + [{"at": now, "pct": float(sp), "reset": usage.get("five_h_reset"), "busy": remote_busy, "lanes": gv["lanes"]}]
+        wsp = gv.get("week_pct")
+        if sp is not None or wsp is not None:        # #709: 8 days of samples, all buckets + busy lanes per model (#245: the 5h windows read the last 16 h)
+            hist = [h for h in hist if now - h.get("at", 0) < HIST_KEEP_S] + [{"at": now, "pct": None if sp is None else float(sp), "reset": (usage or {}).get("five_h_reset"),
+                    "week": wsp, "buckets": (usage or {}).get("buckets"), "busy": remote_busy, "lanes": gv["lanes"],
+                    "models": models or {}, "wlanes": weighted_lanes(models) if models else remote_busy}]
             (RUNS / "usage_hist.jsonl").write_text("".join(json.dumps(h) + "\n" for h in hist), encoding="utf-8")
-            wins = gov_windows(hist, events, now)
+            wins = gov_windows([h for h in hist if now - h.get("at", 0) < 16 * 3600], events, now)
         (RUNS / "governor.json").write_text(json.dumps({**gv, **eff_fields(wins), "text": governor_text(gv) + eff_text(wins), "at": now}), encoding="utf-8")
         pc = plan_change(prev_mode, gv.get("mode"))
         if pc: log_line(f"{datetime.fromtimestamp(now).astimezone():%Y-%m-%d %H:%M:%S} governor: {pc}")     # #705: once, at the change
@@ -1368,11 +1444,12 @@ class FileLock:
         self.path.unlink(missing_ok=True)
 
 def claude_hidden(prompt, cwd, tools, log, model=MODEL, effort=None):
-    cmd = [shutil.which("claude") or "claude", "-p", "--model", model, *(["--effort", effort] if effort else []), "--permission-mode", "auto",
+    cmd = [shutil.which("claude") or "claude", "-p", "--model", model, *(["--effort", effort] if effort else []), "--permission-mode", "auto", "--output-format", "json",
            "--disallowedTools", *DENY_TOOLS, "--allowedTools", *tools]
     # prompt goes via stdin; "--allowedTools" is variadic so keep it last
     rc, out = run(cmd, cwd=cwd, input=prompt, log=log, timeout=3 * 3600)
-    return out
+    import usage_entities as UE
+    return UE.unwrap(out, "local-run", model)
 
 # ---------- herdr terminals ----------
 HERDR_APP = CFG.get("herdr_app", r"C:\Users\97254\AppData\Local\Programs\herdr-app\herdr-app.exe")
@@ -1792,6 +1869,8 @@ def block(n, why, log):
     except OSError:
         pass
     set_labels(n, add=stuck_labels(), remove=["in-progress"])
+    try: (RUNS / str(n)).mkdir(parents=True, exist_ok=True); (RUNS / str(n) / "rung.blocked").write_text("1")   # #716: the next start goes one rung up
+    except OSError: pass
     gh("issue", "comment", str(n), "--body", redact(f"Runner blocked: {why}\n\nLast log lines:\n```\n{tail[-2500:]}\n```"))
     tell_orchestrator(f"STUCK #{n}: {why[:300]} — decide: unblock, split, or ask the owner")
 
@@ -2007,6 +2086,14 @@ def ready_count(issues):
     """#705: Q for the governor: ready issues that are not running or blocked."""
     return sum("ready-for-agent" in i["labels"] and not {"in-progress", "blocked"} & set(i["labels"]) for i in issues)
 
+def busy_models(issues):
+    """#709: {model: busy cloud lanes} of the in-progress issues (worker model from the label)."""
+    out = {}
+    for i in issues:
+        n = i["number"]
+        if "in-progress" in i["labels"] and where_of(n) == "remote" and not waiting_core(n): out[model_name(i["labels"])] = out.get(model_name(i["labels"]), 0) + 1
+    return out
+
 def remote_busy(busy):
     """#277: in-progress issues that really use a cloud lane (a run still waiting for a core slot does not)."""
     return sum(where_of(b) == "remote" and not waiting_core(b) for b in busy)
@@ -2058,8 +2145,15 @@ def process_locked(issue, where="local"):
     log = d / "run.log"
     wt = Path(CFG["worktree_prefix"] + str(n))
     wm = floors("worker", model_of(issue["labels"]))[0]
-    eff = effort_of(issue["labels"]); rstart = with_effort(remote.start, eff)   # #713
-    rm, reff = floors("reviewer", None, eff, issue["labels"])                   # #714: reviewer opus, medium (high for model:opus / effort:high)
+    eff = effort_of(issue["labels"]); reff0 = eff
+    upgrade = None
+    if read_rung(n):                                                            # #716: a blocked restart starts one rung above its last run
+        wm, eff = next_rung(*read_rung(n)); upgrade = "blocked restart"
+        try: (RUNS / str(n) / "rung.blocked").unlink()
+        except OSError: pass
+    write_rung(n, wm, eff)
+    rstart = with_effort(remote.start, eff, wm if upgrade else None)           # #713
+    rm, reff = floors("reviewer", None, reff0, issue["labels"])                   # #714: reviewer opus, medium (high for model:opus / effort:high)
     rstart_rev = with_effort(remote.start, reff, rm)
     rstart_test = with_effort(remote.start, floors("tester", "sonnet")[1])      # #714: tester medium
     resolver = lambda k: floors("resolver", "opus" if k >= 2 else "sonnet")     # #714: sonnet medium; opus medium on the 2nd failure of the same conflict
@@ -2068,6 +2162,7 @@ def process_locked(issue, where="local"):
     try:
         stat(n, lane, "start", model=model_name(issue["labels"]), effort=eff, where=where, code_mode=code_mode(n))
         set_labels(n, add=["in-progress"]); gh("issue", "comment", str(n), "--body", f"Runner: started ({lane} lane, {where}, worker {model_name(issue['labels'])}, effort {eff}, reviewer {rm}).")
+        if upgrade: gh("issue", "comment", str(n), "--body", f"Runner: upgraded to {rung_name(wm, eff)} ({upgrade}).")
         run(["git", "fetch", "-q", REMOTE], cwd=ROOT, log=log)
         def prep_worktree():
             pushed = bool(find_pr(n)) or bool(run(["git", "ls-remote", "--heads", REMOTE, f"lane/{n}"], cwd=ROOT)[1].strip())
@@ -2146,7 +2241,7 @@ def process_locked(issue, where="local"):
             gh("issue", "close", str(n), "--comment", "Review report posted above (runner).")
             set_labels(n, remove=["in-progress"]); close_windows(n); return "DONE report posted"
 
-        verdict = ""; red = ""; reviewed = {"sha": ""}
+        verdict = ""; red = ""; reviewed = {"sha": ""}; tfail0 = False
         if step in ("resolve", "merge"):                 # #264: the head already has a PASS (or must be resolved first): straight to integrate
             pr = find_pr(n)
             if not pr: raise Blocked(f"auto-resume: no open PR for #{n}")
@@ -2159,9 +2254,10 @@ def process_locked(issue, where="local"):
                     n, pr, lv, rstart_test, lambda: fresh_tester().status(pr, since=since), poll_sleep, time.time, 5400, 60, ended=over))
                 if go == "blocked": raise Blocked(f"tester ({level}): {ttext[:300]}")
                 stat(n, lane, "test_pass" if go == "merge" and level != "T0" else "test_skip" if go == "merge" else "test_fail", level=level, **me)
-                if go == "fix": step, red0 = "fix", ttext                # the #303 FIX loop below, round 1 = this fail
+                if go == "fix": step, red0, tfail0 = "fix", ttext, True  # the #303 FIX loop below, round 1 = this fail
         reviews = []
         for rnd in range(1, FIX_ROUNDS + 2):
+            tfail = tfail0 and rnd == 1
             if step in ("resolve", "merge"): break
             pr = find_pr(n)
             if not pr: raise Blocked("worker said DONE but no open PR for #%d (lane/%d, the RESULT line's PR, or a PR body 'Fixes #%d')" % (n, n, n))
@@ -2192,13 +2288,17 @@ def process_locked(issue, where="local"):
                 if go == "merge":
                     stat(n, lane, "test_pass" if level != "T0" else "test_skip", level=level, **me); break
                 if go == "blocked": raise Blocked(f"tester ({level}): {ttext[:300]}")
-                stat(n, lane, "test_fail", level=level, **me)
+                stat(n, lane, "test_fail", level=level, **me); tfail = True
                 (d / f"test{rnd}.out").write_text(redact(ttext), encoding="utf-8")
                 kind, rv, verdict, text = "fix", ttext, ttext.splitlines()[0], ttext.splitlines()[0][len("VERDICT: FIX "):]
             if kind != "fix":
                 raise Blocked(verdict or "reviewer gave no VERDICT line" + (f": {rv[:300]}" if where == "remote" else ""))
             disable_auto(pr, log)                  # #185: FIX after a (hand) auto-merge mark: never merge the unfixed PR
             stat(n, lane, "review_fix", **me)
+            fm, fe = fix_rung(rnd, wm, eff); up = (fm, fe) != (wm, eff)         # #716: one rung up per failed review/test
+            if up:
+                write_rung(n, fm, fe)
+                gh("issue", "comment", str(n), "--body", f"Runner: upgraded to {rung_name(fm, fe)} ({'TEST: FAIL' if tfail else 'review FIX'}, fix round {rnd}).")
             reviews.append(rv or verdict)
             if rnd == FIX_ROUNDS + 1:               # #303: still RED after the Opus round -> the orchestrator, with every review
                 stat(n, lane, "blocked"); stat(n, lane, "red_escalated")
@@ -2208,14 +2308,14 @@ def process_locked(issue, where="local"):
             red = text or rv[-1500:]
             if where == "remote":                  # #134: FIX goes back to the cloud worker session (or a new cloud fix session)
                 since = utc()
-                res = remote_fix(n, saved_session(), rv, remote.send, rstart, lambda: fresh_remote().status(n, since=since), poll_sleep, time.time,
-                                 3 * 3600, 60, on_start=save_session, ended=over, br=branch_of(n), model=fix_model(rnd, wm) if rnd >= FIX_ROUNDS else None)
+                res = remote_fix(n, saved_session(), rv, remote.send, with_effort(remote.start, fe) if up else rstart, lambda: fresh_remote().status(n, since=since), poll_sleep, time.time,
+                                 3 * 3600, 60, on_start=save_session, ended=over, br=branch_of(n), model=fm if up else None)
                 remote_question(res)
             else:
-                out, res = agent(f"issue-{n}-fix" + ("" if rnd == 1 else str(rnd)), worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / f"worker{rnd + 1}.log", "RESULT:", n, "worker", fix_model(rnd, wm), over=over, effort=eff)
+                out, res = agent(f"issue-{n}-fix" + ("" if rnd == 1 else str(rnd)), worker_prompt(n, lane, rv, bug="bug" in issue["labels"]), wt, WORKER_TOOLS, d / f"worker{rnd + 1}.log", "RESULT:", n, "worker", fm, over=over, effort=fe)
             if not res.startswith("RESULT: DONE"):
                 raise Blocked(res or "fix worker gave no RESULT line")
-            stat(n, lane, "fix_done", **me)
+            stat(n, lane, "fix_done", **{**me, "model": rung_name(fm, fe).rsplit("-", 1)[0], "effort": fe}, upgraded=up)
         if where == "remote": prep_worktree()        # #134: after the cloud review/fix rounds, so the worktree has the final pushed branch
 
         kind = {"ci": False}
@@ -2493,7 +2593,7 @@ def run_pass():
             log_line(f"{now()} #{m}: auto-resume at {step}")
     busy = [i["number"] for i in issues if "in-progress" in i["labels"]]
     AI_LABELS.clear(); AI_LABELS.update({i["number"]: i["labels"] for i in issues})
-    gv = governor_pass(remote_busy(busy), ready=ready_count(issues))         # #239: remote lane count from the 5h usage (#277: a run waiting for a core slot holds no cloud lane)
+    gv = governor_pass(remote_busy(busy), ready=ready_count(issues), models=busy_models(issues))         # #239: remote lane count from the 5h usage (#277: a run waiting for a core slot holds no cloud lane)
     for r in (gv.get("ai") or {}).get("raise", []):          # #707: raises only add model:/effort: labels above the inbox ones
         for i in issues:
             if i["number"] == r["issue"]: i["labels"] += [f"model:{r['model']}"] * bool(r.get("model")) + [f"effort:{r['effort']}"] * bool(r.get("effort"))

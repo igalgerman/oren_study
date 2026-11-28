@@ -67,7 +67,7 @@ def build_prompt():
 def command(model=None):
     """The claude command line. The prompt goes on stdin (--allowedTools takes a list and would swallow it)."""
     m, eff = R.floors("observer", model or MODEL)    # #714
-    return [shutil.which("claude") or "claude", "-p", "--model", m, "--effort", eff, "--no-session-persistence",
+    return [shutil.which("claude") or "claude", "-p", "--model", m, "--effort", eff, "--no-session-persistence", "--output-format", "json",
             "--tools", "Read,Grep,Glob,Bash", "--allowedTools", *TOOLS, "--disallowedTools", *DENY]
 
 def ask_claude(prompt):
@@ -77,7 +77,8 @@ def ask_claude(prompt):
     except subprocess.TimeoutExpired: return False, f"timeout after {TIMEOUT_S // 60} min"
     except OSError as e: return False, f"could not start claude: {e!r}"
     if p.returncode: return False, f"claude exit {p.returncode}: {((p.stderr or '') + (p.stdout or '')).strip()[:200]}"
-    return True, p.stdout or ""
+    import usage_entities as UE
+    return True, UE.unwrap(p.stdout or "", "observer", MODEL)
 
 LINE = re.compile(r"^\s*[-*]?\s*`?OBSERVER:\s*(.+?)`?\s*$")
 
