@@ -76,6 +76,8 @@ $SecretItems = @(
   @{ Id = 'app-ids';          Kind = 'appids'; Required = $true;  KeyNames = @('github_app_id', 'github_app_installation_id') }
 )
 
+function Have([string]$cmd) { return [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
+
 # Names of the keys set (non-empty) in a key=value file text; values are never kept.
 function Get-KeyNamesSet([string]$Text) {
   $names = @()
@@ -164,7 +166,6 @@ function Add-Result([string]$Step, [string]$Name, [string]$Status, [string]$Hint
   [void]$results.Add([pscustomobject]@{ Step = $Step; Name = $Name; Status = $Status; Hint = $Hint })
   Write-Host ("{0,-7} {1}: {2} {3}" -f $Status, $Step, $Name, $Hint)
 }
-function Have([string]$cmd) { return [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
 function Winget-Or-Page([string]$Id, [string]$Page, [string]$Name, [string]$Step, [scriptblock]$Probe = $null) {
   if ($Install -and $Id -and (Have 'winget')) {
     & winget install --id $Id -e --silent --accept-package-agreements --accept-source-agreements | Out-Null

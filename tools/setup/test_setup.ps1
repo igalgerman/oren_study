@@ -59,9 +59,21 @@ $ai = Get-ItemState $it['app-ids'] $th $tc $cf
 Eq 'ids missing' ($ai.Missing -join ',') 'github_app_installation_id'
 $out = & powershell -NoProfile -File (Join-Path $here 'setup.ps1') -Check -HomeDir $th -CheckoutDir $tc -ConfigPath $cfgf 2>&1 | Out-String
 Eq 'check exit 1 when missing' $LASTEXITCODE 1
+if ($out -match 'not recognized') { $fail += '-Check run printed a PowerShell error: ' + $out }
 if ($out.Contains($fake)) { $fail += 'a secret value appears in the -Check output' }
 foreach ($i in $SecretItems) { if ($out -notmatch [regex]::Escape($i.Id)) { $fail += "-Check output misses item $($i.Id)" } }
 if ($out -notmatch 'TELEGRAM_CHAT_ID') { $fail += '-Check does not name the missing key' }
+
+# gh / claude logged in: fake shims that exit 0 / 1 (Windows .cmd) -> present / missing
+if ($env:OS -eq 'Windows_NT') {
+  $sd = Join-Path ([IO.Path]::GetTempPath()) ("shim-" + [guid]::NewGuid()); New-Item -ItemType Directory -Force -Path $sd | Out-Null
+  Set-Content (Join-Path $sd 'gh.cmd') '@exit /b 0'; Set-Content (Join-Path $sd 'claude.cmd') '@exit /b 1'
+  $oldPath = $env:PATH; $env:PATH = "$sd;$oldPath"
+  $o2 = & powershell -NoProfile -File (Join-Path $here 'setup.ps1') -Check -HomeDir $th -CheckoutDir $tc -ConfigPath $cfgf 2>&1 | Out-String
+  $env:PATH = $oldPath; Remove-Item -Recurse -Force $sd
+  if ($o2 -notmatch 'present\s+gh-login') { $fail += 'gh logged in should read present' }
+  if ($o2 -notmatch 'missing\s+claude-login') { $fail += 'claude not logged in should read missing' }
+}
 Remove-Item -Recurse -Force $th
 
 # the Hebrew checklist has every item of the table, at most 10 rows
