@@ -217,8 +217,8 @@ assert len(starts) == n0 + 1 and not A.load_state().get("proven")
 TR = {"created_at": "2026-11-28T17:30:00Z", "body": "no problems"}
 A.relay(told.append, lambda s: None, t0 + 42 * 3600, gh=GH(), api=API([FB, TR]))
 assert A.load_state().get("proven") is True
-for k in range(1, 3): A.relay(told.append, lambda s: None, t0 + 42 * 3600 + k * 3600, gh=GH(), api=API([]))
-assert len(starts) == n0 + 1, starts                                              # off while the trigger is < 3 h old (#689)
+for k in range(1, 2): A.relay(told.append, lambda s: None, t0 + 42 * 3600 + k * 3600, gh=GH(), api=API([]))
+assert len(starts) == n0 + 1, starts                                              # off while the trigger is < 2 h old (#689, #857)
 np = len(posts)
 A.relay(told.append, lambda s: None, t0 + 54 * 3600, gh=GH(), api=API([]))       # trigger silent again 3 h+: owner note again
 assert len(posts) == np + 1 and "silent since " + time.strftime("%H:%M", time.localtime(t0 + 41.5 * 3600)) in posts[-1][1], posts
@@ -229,6 +229,10 @@ A.save_state({"proven": True, "trigger_seen": iso(t0 - 4 * 3600)}); assert A.fal
 assert not A.fallback(t0 + 30 * 60, lambda s: None) and len(starts) == 1              # at most once per FALLBACK_MIN
 A.save_state({"proven": True, "trigger_seen": iso(t0 - 3600)}); assert not A.fallback(t0, lambda s: None) and len(starts) == 1
 A.save_state({"proven": True, "trigger_seen": iso(t0 - 4 * 3600), "fallback_at": t0 - 30 * 60}); assert not A.fallback(t0, lambda s: None)
+# #857: the fallback waits for 2 h of silence on #528 (an Actions-clock comment counts like a trigger comment)
+A.save_state({"proven": True, "trigger_seen": iso(t0 - 90 * 60)}); assert not A.fallback(t0, lambda s: None) and len(starts) == 1
+A.save_state({"proven": True, "trigger_seen": iso(t0 - 130 * 60)}); assert A.fallback(t0, lambda s: None) and len(starts) == 2
+print("ok #857 fallback only after 2 h without an observer line")
 print("ok #689 fallback runs again when the trigger is silent")
 # a failed cloud start is retried at the next relay (not an hour later)
 A.STATE = tmp / "ai_observer.525b.json"; starts.clear(); A.LAUNCH = LAUNCH(ok=False)

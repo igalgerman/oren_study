@@ -89,7 +89,7 @@ jobs:
         if: hashFiles('tools/runner/runner.py') != ''
         run: |
           fail=0
-          for t in tools/runner/test_*.py tools/test_*.py tools/ask/test/*_test.py; do
+          for t in tools/runner/test_*.py tools/split/test_*.py tools/test_*.py tools/ask/test/*_test.py; do
             echo "== $t"; python3 "$t" || { echo "FAILED: $t"; fail=1; }
           done
           exit $fail

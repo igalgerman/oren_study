@@ -7,7 +7,7 @@ import calendar, html, json, re, shutil, subprocess, sys, time, webbrowser
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE.parent))
 import runner as R          # gh(), blockers(), CFG
 import stats as S           # pipeline timings from stats.jsonl
 import trends as T          # stuck reasons from runner.log
@@ -262,7 +262,9 @@ def text(m):
     if m.get("github"): lines.append(m["github"])                     # #329: calls/min, graphql/core left, alarm < 20%
     if m.get("progress"): lines.append(m["progress"])                  # #891: NEEDS-ATTENTION: no progress Nh
     if m.get("canary"): lines.append("Canary: " + m["canary"])          # #330: flow ok HH:MM | NEEDS-ATTENTION ...
+    if m.get("control"): lines.append(m["control"])                    # #890: NEEDS-ATTENTION: control session <role> <state> since HH:MM
     if m.get("usage"): lines.append(m["usage"])                         # #708: usage per entity (top rows, NEEDS-ATTENTION)
+    import alerts; lines += alerts.lines()                            # #844: alarms the orchestrator could not get
     import backoff; lines += backoff.lines()                           # #842: backoff: <job> next try HH:MM
     if m.get("pc"): lines.append(m["pc"])                               # #293: PC: CPU x% · RAM y% free (· ALARM)
     v = m.get("voice")                                                  # #400: kid sentences with no recording (after the last pregen)
@@ -546,7 +548,7 @@ def page(m):
             f'<title>Oren game: status {hhmm(now)}</title><style>{CSS}</style></head><body><main>'
             f'<h1>Oren game: work status</h1><div class="sub">Updated {time.strftime("%a %d %b %H:%M", time.localtime(now))} (Israel time). '
             f'For fresh numbers run tools\\dashboard.cmd again.</div>'
-            f'{top}<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}{" · " + e(m["governor"]) if m.get("governor") else ""}</div>{pc_div(m.get('privacy'), e)}{f'<div class="sub">{e(m["github"])}</div>' if m.get("github") else ""}{f'<div class="sub">{e(m["progress"])}</div>' if m.get("progress") else ""}{f'<div class="sub">Canary: {e(m["canary"])}</div>' if m.get("canary") else ""}{pc_div(m.get('pc'), e)}{f'<pre class="sub"{chr(32)}style="white-space:pre-wrap">{e(m["usage"])}</pre>' if m.get("usage") else ""}{qcard}{needs}{bottom}{timeline}{cloud}{_health_card(m)}{_ai_card(m)}'
+            f'{top}<div class="tiles">{tiles}</div><div class="sub">Lanes: {m["lanes"]}{" · " + e(m["governor"]) if m.get("governor") else ""}</div>{pc_div(m.get('privacy'), e)}{f'<div class="sub">{e(m["github"])}</div>' if m.get("github") else ""}{f'<div class="sub">{e(m["progress"])}</div>' if m.get("progress") else ""}{f'<div class="sub">Canary: {e(m["canary"])}</div>' if m.get("canary") else ""}{pc_div(m.get('pc'), e)}{f'<pre class="sub"{chr(32)}style="white-space:pre-wrap">{e(m["usage"])}</pre>' if m.get("usage") else ""}{qcard}{needs}{bottom}{timeline}{cloud}{projects_card()}{_health_card(m)}{_ai_card(m)}'
             f'<h2 class="more">More details</h2><div class="sub">Everything else is here. Click a line to open it.</div>'
             f'{lists}{recent}{truth}{charts}{speed}{_ov_card(m)}{how}</main></body></html>')
 
@@ -554,6 +556,15 @@ def _clock(ts, now):
     """'09:22' today, 'Wed 21:40' on another day."""
     same = time.strftime("%d", time.localtime(ts)) == time.strftime("%d", time.localtime(now))
     return time.strftime("%H:%M" if same else "%a %H:%M", time.localtime(ts))
+
+def projects_card(reg=None):
+    """#956: one table of every project in projects.toml (project column); a new block there shows up with no code change."""
+    import projects as PJ
+    e = html.escape
+    try: pj = PJ.projects(reg)
+    except Exception: return ""
+    rows = "".join(f'<tr><td class="n">{e(n)}</td><td>{e(p["repo"])}</td><td class="n">{e(p.get("kind", ""))}</td><td class="n">{"private" if p.get("private") else "public"}</td></tr>' for n, p in pj.items())
+    return f'<section class="card"><h2>Projects <span class="count">{len(pj)}</span></h2><table><tr><th>project</th><th>repo</th><th>kind</th><th>access</th></tr>{rows}</table></section>'
 
 def _health_card(m):
     """Short 'is the system healthy' list: one line per check, a plain label first (OK / STOPPED? / FAILED / LOW / STUCK)."""
@@ -759,6 +770,7 @@ def gather():
     except Exception: m["canary"] = ""
     try: m["progress"] = json.loads((R.RUNS / "progress_alarm.json").read_text(encoding="utf-8")).get("text", "")   # #891
     except Exception: m["progress"] = ""
+    import control_health; m["control"] = control_health.line()   # #890
     import pcload; m["pc"] = pc_line(pcload.load(), now)    # #293 (written by the watchdog)
     m["voice"] = ci_voice() if ci else None                # #400
     return m

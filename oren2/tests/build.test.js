@@ -75,6 +75,26 @@ const shots = !!process.env.SHOTS;
     const pw = await W(p); await pick(p, 'wood'); await cell(p, 1, 1).click(); await sleep(30);
     await p.evaluate(() => window.OREN.parentPlay(false)); await sleep(50);
     ok(tag + ': parent play starts an empty world and never writes the kid\'s world', pw && Object.keys(pw.a.meadow).length === 16 && JSON.stringify(await W(p)) === before);
+    // ---------- #679 show Dad or Mom: one button, appears in the parent panel, a heart goes back to his device ----------
+    await p.evaluate(() => { const O = window.OREN; O.save.set = O.save.set || {}; delete O.save.set.show; O.save.gems = 50; O.kingdom(); }); await sleep(100);
+    await pick(p, 'wood'); await cell(p, 5, 2).click(); await sleep(30);
+    const sb = await p.evaluate(() => [...document.querySelectorAll('#sKing .bwshow')].map(e => e.textContent));
+    ok(tag + ': #679 one "show Dad or Mom" button after building, Hebrew with nikud', sb.length === 1 && NIK.test(sb[0]), sb.join());
+    await shot(p, tag + '-show');
+    await p.locator('#sKing .bwshow').click(); await sleep(80);
+    let sh = await p.evaluate(() => (window.OREN.save.set || {}).show || []);
+    ok(tag + ': #679 the creation is saved for the parent (set.show) and the button says it was sent', sh.length === 1 && sh[0].a['5,2'] === 'wood' && await p.locator('#sKing .bwshow.sent').count() === 1, JSON.stringify(sh).slice(0, 120));
+    for (let k = 0; k < 7; k++) await p.evaluate(() => window.BW.show());
+    sh = await p.evaluate(() => window.OREN.save.set.show);
+    ok(tag + ': #679 caps: at most 5 saved creations, each under 1500 bytes', sh.length === 5 && sh.every(x => JSON.stringify(x).length <= 1500), sh.length + ' ' + Math.max(...sh.map(x => JSON.stringify(x).length)));
+    await parentDay(p);
+    ok(tag + ': #679 the parent day tab shows what he showed (3 newest) with a heart and a well-done button', await p.locator('#sPar .bwshow-row').count() === 3 && await p.locator('#sPar .bwshow-row').first().locator('.bwrb').count() === 2);
+    if (shots) await L.shot(p, { path: L.SHOTDIR + '/build-' + tag + '-parentshow.png', fullPage: true });
+    await p.locator('#sPar .bwshow-row').first().locator('.bwrb').first().click(); await sleep(80);
+    const rem = await p.evaluate(() => window.OREN.save.set.rem);
+    ok(tag + ': #679 the heart is a ready message only for his device (to kid), spoken text with nikud', rem && rem.k === 'msg' && rem.to === 'kid' && rem.x === 'אוֹהֲבִים אוֹתְךָ!', JSON.stringify(rem));
+    ok(tag + ': #679 the answered creation shows "sent", no second tap', await p.locator('#sPar .bwshow-row').first().locator('.bwrb').count() === 0);
+    ok(tag + ': #679 every new kid line is in the pregen list', await p.evaluate(() => { const l = window.BW.speakList(); return l.some(x => /לְאַבָּא/.test(x)) && l.length > 0; }));
     // ---------- parent day tab: a picture of what he built ----------
     await parentDay(p);
     const pic = await p.evaluate(() => { const e = document.querySelector('#sPar .bwpic'); return e ? { svg: !!e.querySelector('svg'), btn: e.querySelectorAll('button,input,select').length, txt: e.textContent.trim() } : null; });

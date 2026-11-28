@@ -318,7 +318,7 @@ def compute(now=None, root=None, known=None, terminals=None):
     rows = build(raw, wk, now=now)
     return {"day": time.strftime("%Y-%m-%d", time.localtime(now)), "rows": rows, "sessions": by_session(raw, wk), "attention": [], "at": now}
 
-def tick(tell=print, log=print, now=None, send=None, **kw):
+def tick(tell=print, log=print, now=None, send=None, alarm=None, **kw):
     """Watchdog hook: write the table, send the due alarms (watchdog tell + Telegram) and keep them as NEEDS-ATTENTION."""
     now = now or time.time()
     t = compute(now, **kw)
@@ -332,6 +332,7 @@ def tick(tell=print, log=print, now=None, send=None, **kw):
         (RUNS / "usage_alarm.json").write_text(json.dumps(sent), encoding="utf-8")
     except OSError as e: log(f"usage table not saved: {e!r}")
     for x in texts:
+        if alarm: alarm("USAGE-ENTITY", re.sub(r"[^A-Za-z0-9#_.\-]", "", x.split(":")[0].replace(" ", "-"))[:30], "ALARM (usage): " + x); continue   # #844
         tell("ALARM (usage): " + x)
         try:
             (send or __import__("telegram").send)("ALARM (usage): " + x)
