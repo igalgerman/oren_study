@@ -144,7 +144,9 @@ const MSG_MAX=120,msgOf=m=>m&&m.k==='msg'&&typeof m.x==='string'?m.x.trim().slic
 const remOk=m=>m&&(REM[m.k]||msgOf(m));
 /* #413: 6 ready one-tap messages (audio made in advance: in the pregen list); Oren answers with one face (f) */
 const READY=['אַבָּא גֵּאֶה בְּךָ!','אִמָּא גֵּאָה בְּךָ!','אוֹהֲבִים אוֹתְךָ!','כָּל הַכָּבוֹד, אוֹרֶן!','עוֹד מְעַט אוֹכֶל!','בּוֹא רֶגַע אֵלֵינוּ.'],FACES=['❤️','😊','👍','😂'];
-H.readyMsgs=()=>READY.slice();T.addSay&&T.addSay(READY);
+H.readyMsgs=()=>READY.slice();
+/* #679: the parent's one-tap answer to what Oren showed: ready message n (2 = heart, 3 = well done), now, only on his play device */
+H.reply=n=>{const x=READY[n];if(!x)return false;const t=now();T.S().set.rem={k:'msg',x,at:t,t,to:'kid',by:O.dev};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);return true;};T.addSay&&T.addSay(READY);
 /* #617: only on Oren's play device (never on the parent's phone that sent it) */
 function remCheck(t){const m=(T.S().set||{}).rem;if(!m||m.ok||!remOk(m)||t<m.at||t-m.at>REM_OLD||(O.kidDev&&!O.kidDev(m))){remSince=null;return false;}
   if(!remSince||remSince.t!==m.t)remSince={t:m.t,at:t};
