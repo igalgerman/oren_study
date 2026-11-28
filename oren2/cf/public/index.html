@@ -53,7 +53,7 @@ svg.px{shape-rendering:crispEdges;display:block}
 @media (max-width:440px){body.pzon .hud-mid .chip{display:none}}/* a phone has no room for the title next to the pause button (activities hide it anyway) */
 .pzov{position:fixed;inset:0;z-index:95;display:grid;place-items:center;background:rgba(20,40,60,.74);backdrop-filter:blur(3px);padding:16px}
 .pzov .card{display:flex;flex-direction:column;align-items:center;gap:14px;background:var(--paper);padding:24px 32px;max-width:420px;width:100%;box-sizing:border-box;text-align:center;box-shadow:0 0 0 6px var(--ink),0 14px 0 6px rgba(0,0,0,.3);animation:pop .35s ease-out both}
-.pzov .pzi svg{width:90px;height:90px}.pzov h2{margin:0;font-size:32px;line-height:1.35}.pzov .bigbtn svg{width:30px;height:30px}
+.pzov .pzi svg,.pzov .hav svg{width:90px;height:90px}.pzov.remote .hav svg{width:140px;height:140px}.pzov h2{margin:0;font-size:32px;line-height:1.35}.pzov .bigbtn svg{width:30px;height:30px}
 .ibtn.off{opacity:.5}
 /* #403 audio blocked: a small muted-speaker mark on the speaker button (no popup) */
 .ibtn.blk{position:relative}.ibtn.blk::after{content:'';position:absolute;top:-7px;inset-inline-end:-7px;width:22px;height:22px;border-radius:50%;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c0392b' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 9v6h4l5 4V5L8 9H4z' fill='%23c0392b'/%3E%3Cpath d='M16 9l5 6M21 9l-5 6'/%3E%3C/svg%3E") center/15px no-repeat;box-shadow:0 0 0 2px #c0392b;pointer-events:none}
@@ -1301,7 +1301,9 @@ function hereResume(){const r=HERE.boot;HERE.boot=null;if(!r||!r.id||kidSave)ret
   HERE.want=null;if(!done){herePut(null);return false;}if(r.pz)pauseOn();return true;}
 /* the pause button: one big "continue" button over the game; play time does not count; a reload comes back paused */
 const paused=()=>document.body.classList.contains('paused');
-function pauseOn(){if(paused())return;hush();document.body.classList.add('paused');const o=h('div','pzov',`<div class="card"><div class="pzi">${ICON.pause}</div><h2>עָצַרְנוּ לְרֶגַע</h2></div>`);
+/* #659 remote=1: the parent paused from the panel: the friend and no button (the parent resumes), nothing written to HERE */
+function pauseOn(rm){if(paused())return;hush();document.body.classList.add('paused');const fr=rm&&window.TAL&&TAL.friend?`<div class="hav bob">${TAL.friend()}</div>`:`<div class="pzi">${ICON.pause}</div>`;const o=h('div','pzov'+(rm?' remote':''),`<div class="card">${fr}<h2>עָצַרְנוּ לְרֶגַע</h2></div>`);
+  if(rm){document.body.appendChild(o);return;}
   const b=h('button','bigbtn',ICON.play+'<span>הַמְשֵׁךְ</span>');b.onclick=()=>{sfx.pop(2);pauseOff();};o.firstChild.appendChild(b);document.body.appendChild(o);
   const r=hereGet();if(r){r.pz=1;herePut(r);}setTimeout(()=>b.focus(),50);}
 function pauseOff(){document.querySelectorAll('.pzov').forEach(e=>e.remove());document.body.classList.remove('paused');const r=hereGet();if(r&&r.pz){delete r.pz;herePut(r);}}
@@ -1806,7 +1808,7 @@ const wipeEl=$('#wipe');wipeEl.innerHTML='<i></i>'.repeat(70);
 function wipe(){if(window.__fast||RM())return;sfx.whoosh();wipeEl.hidden=false;[...wipeEl.children].forEach((c,i)=>{const r=i/10|0,col=i%10;c.style.animation='none';void c.offsetWidth;c.style.animation='';c.style.animationDelay=((r+col)*22)+'ms';});clearTimeout(wipe.t);wipe.t=setTimeout(()=>wipeEl.hidden=true,720);}
 function setScreen(id,w,back){SQ.scr++;hush();AUTO.scr=Date.now();if(window.HELP)HELP.stop();document.body.classList.toggle('inpar',id==='sPar');document.body.classList.remove('act');window.__noAuto=0;/* leaving a screen stops any reading aloud; the new screen may speak right after */['sStart','sHome','sMap','sWorld','sLearn','sPlay','sKing','sStudio','sTeach','sTable','sFinal','sTal','sPar'].forEach(s=>$('#'+s).hidden=s!==id);$('#hud').hidden=id==='sStart';$('#hudMid').innerHTML='';/* #8: no stale label from the last screen */$('#ov').hidden=true;{const dl=$('#dlg');if(!dl.hidden){dl.hidden=true;dl.innerHTML='';}}/* #356: a story dialog belongs to the screen it was opened on */
   if(app.dataset.w!==(w||'meadow')){app.dataset.w=w||'meadow';bgW=app.dataset.w;paintBG(performance.now());}setTheme(THEME_OF[app.dataset.w]||'map');
-  pauseOff();if(!ACTIVE_S.includes(id)&&id!=='sStart'&&id!=='sPar')herePut(null);backTo=back||null;$('#btnBack').style.visibility=back?'visible':'hidden';$('#btnBack').innerHTML=back===showMap||(back&&back.home)?ICON.home:ICON.back;$('#screens').scrollTop=0;play=null;stopSpeed();updateGems();wipe();evScreen(id);emit('screen',id,back);pzSync();}
+  if(!document.querySelector('.pzov.remote'))pauseOff();/* #659 the parent's pause stays over a screen change (a sync redraws home) */if(!ACTIVE_S.includes(id)&&id!=='sStart'&&id!=='sPar')herePut(null);backTo=back||null;$('#btnBack').style.visibility=back?'visible':'hidden';$('#btnBack').innerHTML=back===showMap||(back&&back.home)?ICON.home:ICON.back;$('#screens').scrollTop=0;play=null;stopSpeed();updateGems();wipe();evScreen(id);emit('screen',id,back);pzSync();}
 $('#btnSay').innerHTML=ICON.say;$('#btnMusic').innerHTML=ICON.music;$('#icoStart').innerHTML=ICON.play;
 if(!save.avOren){save.av=Object.assign({},save.av,OREN_LOOK);save.avOren=1;try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}}
 if(hatsBack())try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){}
@@ -4352,7 +4354,7 @@ function dailyEnsure(){const s=S();if(s.daily&&s.daily.d===today()){const d=s.da
   const plan=S().set.plan;let t=[];
   if(plan&&plan.length){const used=new Set();t=plan.map(sp=>{if(sp==='math')return 'math';if(String(sp).startsWith('act:')){const aid=sp.slice(4);if(ACT[aid]&&dailyPool().includes(aid)&&!used.has(aid)){used.add(aid);return aid;}sp='any';}const pool=dailyPool().filter(id=>!used.has(id)&&(sp==='any'||ACT[id].b.id===sp));const id=pool.length?fitPick([...used],pool):pick(dailyPool().filter(x=>!used.has(x)));used.add(id);return id||'math';}).concat(cr);}
   s.daily={d:today(),t,done:t.map(()=>0),claimed:0,ch:t.length?'plan':0,cr:t.length?[]:cr};O.persist();return s.daily;}
-function dailyMark(id){const d=dailyEnsure();const i=d.t.indexOf(id);if(i>=0&&!d.done[i]){d.done[i]=1;}}
+function dailyMark(id){const d=dailyEnsure();(d.q=d.q||[]).includes(id)||d.q.push(id);/* #634 #811 q = missions not to offer again today: played (also outside the path) or quit fast */const i=d.t.indexOf(id);if(i>=0&&!d.done[i]){d.done[i]=1;}}
 O.on('levelDone',(lv)=>{if(!lv||lv.type==='train')return;S().last={id:'math',d:today()};const d=dailyEnsure();const i=d.t.findIndex((x,k)=>x==='math'&&!d.done[k]);if(i>=0){d.done[i]=1;O.persist();}});
 /* ---------- map integration ---------- */
 O.on('map',m=>{const rs=m.querySelector('.reset');if(rs)rs.remove();if(window.TAL_noHome)return;m.querySelectorAll('.hello,.statline').forEach(e=>e.remove());m.querySelectorAll('.topbar .tool').forEach(t=>{if(/הַמַּמְלָכָה|הַגִּבּוֹר שֶׁלִּי/.test(t.textContent))t.remove();});});
@@ -5533,7 +5535,7 @@ function choose(dm,first,quiet){const d=T.dailyEnsure(),S0=T.S();const bonus=(d.
   const isEn=x=>!!(ACT[x]&&ACT[x].b&&ACT[x].b.id==='eng'),noEn=a=>dm==='b:eng'?a:a.filter(x=>!isEn(x)||x===first);st=noEn(st);
   if(!st.length)st=['math'];
   /* a domain that rested yesterday: the path starts with it, where Oren stopped (once a day) */
-  if(!bonus&&!d.rv&&window.HEALTH){d.rv=1;const rv=window.HEALTH.review().find(x=>!d.t.includes(x)&&!st.includes(x));if(rv&&!isEn(rv))st=[rv].concat(st);}
+  if(!bonus&&!d.rv&&window.HEALTH){d.rv=1;const rv=window.HEALTH.review().find(x=>!d.t.includes(x)&&!(d.q||[]).includes(x)&&!st.includes(x));if(rv&&!isEn(rv))st=[rv].concat(st);}
   /* #358 variety: a mission that would repeat the kind is swapped for the engine's next pick in this domain, then in the others */
   st=T.vary(d.t,st,()=>{let ex=[];[dm,...wpick(doms().filter(x=>x.id!==gid(dm)),9).map(o=>o.id)].forEach(id=>{if(id!=='tog')ex=ex.concat(noEn(stepsOf(id,3,new Set([...d.t,...(d.q||[]),...st,...ex]))).filter(x=>!ex.includes(x)));});return ex;});
   /* #424 one short English scene per path, once a day, while English is on for him */
@@ -6344,7 +6346,23 @@ function showRem(m){if(m.k==='msg')return showMsg(m);const x=REM[m.k];
 let remWhen=0;
 /* #617: the delivery status the parent sees: "נשלח…" until Oren's device showed it, then "אורן שמע ✓" (and his face answer) */
 const remStat=m=>`${m.k==='msg'?'💬 '+msgOf(m):REM[m.k].p} · ${m.s||m.ok?'אורן שמע ✓'+(m.f?' · אורן ענה: '+m.f:''):'נשלח…'+(now()<m.at?' · תופיע ב-'+hm(m.at):'')}`;
-H.remRefresh=()=>{const el=document.querySelector('#sPar .hremst'),m=(T.S().set||{}).rem;if(el&&remOk(m))el.textContent=remStat(m);};
+H.remRefresh=()=>{if(document.querySelector('#sPar .hpzst')){const m=(T.S().set||{}).pz,on=pzOn(m),ok=on&&m.ok;document.querySelector('#sPar .hpzst').textContent=ok?'המשחק עצור ✓':on?'נשלח… ממתין למכשיר של אורן':'המשחק פועל';document.querySelector('#sPar .hpzbtn span').textContent=on?(ok?'המשך את המשחק':'ביטול'):'עצור את המשחק עכשיו';}const el=document.querySelector('#sPar .hremst'),m=(T.S().set||{}).rem;if(el&&remOk(m))el.textContent=remStat(m);};
+/* ---------- #659 the parent pauses the game: set.pz = {on, t, to:'kid', by, ok}; only Oren's device obeys (O.kidDev, panel closed) ----------
+   The device saves first, then shows the friend's calm pause screen and only then writes ok (the panel shows "עצור" after that).
+   Resume = on:0. A pause older than REM_OLD ends by itself. No button for Oren: the parent resumes. */
+const pzOn=m=>!!(m&&m.to==='kid'&&m.on&&now()-m.t<REM_OLD);
+function pzCheck(){const m=(T.S().set||{}).pz,rm=document.querySelector('.pzov.remote');
+  if(pzOn(m)){if(O.kidDev&&!O.kidDev(m))return;if(vis('#sPar'))return;
+    if(O.paused&&!rm)O.pauseOff();/* Oren's own pause becomes the parent's, so the parent's resume works */
+    if(!O.paused){O.persist();O.pauseOn(1);}
+    if(!m.ok){m.ok=1;O.persist();O.famNow&&O.famNow();}}
+  else if(rm&&O.paused)O.pauseOff();}
+setInterval(pzCheck,1000);
+function pzPanel(box,sec,re){const m=(T.S().set||{}).pz,on=pzOn(m),ok=on&&m.ok;
+  const s=sec(box,'⏸️ עצירת המשחק','<div class="pnote">אורן יראה מסך רגוע עם החבר. ההתקדמות נשמרת קודם.</div>');
+  const st=h('div','pstat hpzst');st.textContent=ok?'המשחק עצור ✓':on?'נשלח… ממתין למכשיר של אורן':'המשחק פועל';s.appendChild(st);
+  const b=h('button','bigbtn sm hpzbtn','<span>'+(on?(ok?'המשך את המשחק':'ביטול'):'עצור את המשחק עכשיו')+'</span>');
+  b.onclick=()=>{const t=now();T.S().set.pz=on?{on:0,t,to:'kid',by:O.dev}:{on:1,t,to:'kid',by:O.dev};O.persist();O.famNow&&O.famNow();sfx.ok&&sfx.ok(1);re&&re();};s.appendChild(b);}
 function remPanel(box,sec,re){const m=(T.S().set||{}).rem;
   const s=sec(box,'🔔 תזכורת לאורן','<div class="pnote">אורן יראה תמונה גדולה וישמע אותה בקול — בסוף מה שהוא עושה עכשיו (עד דקה המתנה).</div>');
   if(remOk(m)&&now()-m.at<REM_OLD){const st=h('div','pstat hremst');st.textContent=remStat(m);s.appendChild(st);}
@@ -6366,9 +6384,9 @@ function cards(ex){const r=day();return DOMS.filter(d=>d.id!==ex&&!H.resting(d.i
 function goDom(dm){close();sfx.pop&&sfx.pop(3);
   if(dm==='math'){const lv=T.nextLevel&&T.nextLevel();if(lv){if(!O.save.story[lv.w.id+'-in'])O.showWorld(lv.w);else O.startLevel(lv);}else O.showJourney();return;}
   if(dm==='arcade'){window.TAL_arcade(O.showMap);return;}
-  const tl=T.S().tl,dt=((T.S().daily||{}).t)||[];let pool=T.dailyPool().filter(id=>H.domOf(id)===dm).sort((a,b)=>((tl[a]||{}).n|0)-((tl[b]||{}).n|0));
+  const tl=T.S().tl,dt=[...(((T.S().daily||{}).t)||[]),...(((T.S().daily||{}).q)||[])];let pool=T.dailyPool().filter(id=>H.domOf(id)===dm).sort((a,b)=>((tl[a]||{}).n|0)-((tl[b]||{}).n|0));
   const nw=pool.filter(id=>!dt.includes(id));if(nw.length)pool=nw;   /* #634 not a mission he already played today */
-  const id=pool.length?O.pick(pool.slice(0,3)):null;if(id)T.ACT[id].run(O.showMap);else O.showMap();}
+  const id=pool.length?O.pick(pool.slice(0,3)):null;if(id){const d=T.dailyEnsure();(d.q=d.q||[]).includes(id)||d.q.push(id);O.persist();}if(id)T.ACT[id].run(O.showMap);else O.showMap();}
 H.goDom=goDom;
 function chooser(cls,dm,head,sub,oneMore){const r=day();const el=lock('htopic '+cls,`<div class="hfr"><span class="hav bob">${friend()}</span><span class="hk">🌙</span></div><h2>${head}</h2><div class="sub">${sub}</div>`);
   const row=h('div','hcards');cards(dm).forEach(d=>{const b=h('button','dcard',`<span class="dic"><span>${d.e}</span></span><b>${d.n}</b>`);b.style.setProperty('--dc',d.c);b.onclick=()=>goDom(d.id);row.appendChild(b);});el.firstChild.appendChild(row);
@@ -6399,7 +6417,7 @@ document.addEventListener('click',e=>{if(bypass||off())return;const el=e.target.
 
 /* ---------- parent panel (no nikud) ---------- */
 /* part: 'today' = the reminder + today's log (day tab), 'set' = the settings (settings tab), none = all */
-H.panel=(box,sec,re,part)=>{const c=cfg(),r=day();if(part!=='set')remPanel(box,sec,re);
+H.panel=(box,sec,re,part)=>{const c=cfg(),r=day();if(part!=='set'){pzPanel(box,sec,re);remPanel(box,sec,re);}
   const s1=part==='today'?null:sec(box,'הפסקות, ארוחות והחלפת נושא','<div class="pnote">בסוף פעילות (אף פעם לא באמצע שאלה): כל כמה דקות פעילות — הפסקה של כחצי דקה עם החבר, בסבב: מים, שירותים, תנועה, מנוחת עיניים. בזמן ארוחה המשחק עוצר עד "אכלתי" (לפחות 10 דקות, או סיסמת הורה). אחרי הרבה זמן באותו תחום — החבר מציע תחום אחר, והתחום נח עד מחר.</div>');
   if(s1){const tg=h('div','popt','<span>תזכורות:</span>');[['water','💧 מים'],['toilet','🚽 שירותים'],['move','🤸 תנועה'],['eyes','👀 עיניים'],['meal','🍽️ ארוחות']].forEach(([k,n])=>{const b=h('button','pchip'+(c.off[k]?'':' on'),n);b.onclick=()=>{H.setCfg('off',{[k]:c.off[k]?0:1});re&&re();};tg.appendChild(b);});s1.appendChild(tg);
   const iv=h('div','popt','<span>הפסקה כל:</span>');[15,20,30].forEach(v=>{const b=h('button','pchip'+(c.brk===v?' on':''),v+' דק׳');b.onclick=()=>{H.setCfg('brk',v);re&&re();};iv.appendChild(b);});s1.appendChild(iv);
