@@ -3,6 +3,8 @@
 
   python3 tools/playlog.py day 2026-11-27
 
+#730 the summary ends with one line per mission: done / skip / left (events mdone, mskip, mleft).
+
 The key: #715 the environment variable LOG_READ_KEY first (cloud sessions: set in the cloud environment, docs/agents/remote.md), then #675 the read token LOG_READ_KEY from the local .env at the repo root (the automated readers' key, also a Cloudflare
 Pages secret; never committed, printed or posted), else the parent key from ~/.oren/diag.key (never printed). The events go to ~/.oren/playlog/<day>.json: private, outside
 the repo (the repo is public, never commit or post raw events). The day is the PC's local day. Paging: /api/log/raw,
@@ -97,6 +99,13 @@ def summary(ev):
         rep = [f"{m} x{n}" for m, n in seen.items() if n > 1] + [f"question {q} x{n}" for q, n in qs.items() if n > 1]
         if rep: lines.append("  repeats: " + ", ".join(rep))
     lines.append(f"questions {qn}, right {right}, wrong {wrong}")
+    ends = {}
+    for e in ev:
+        k = {"mdone": 0, "mskip": 1, "mleft": 2}.get(e.get("k"))
+        if k is not None: ends.setdefault(e.get("m", "?"), [0, 0, 0])[k] += 1
+    if ends:
+        lines.append("mission ends (done/skip/left)")
+        for m, (d, s_, l) in sorted(ends.items()): lines.append(f"  {m}: done {d}, skip {s_}, left {l}")
     lines.append(f"silent voice waits {len(waits)}")
     for sid, e, ms in waits:
         lines.append(f"  {hm(e['t'])} {sid} {e.get('why', e.get('ev'))} sentence {e.get('sn', '?')}: "

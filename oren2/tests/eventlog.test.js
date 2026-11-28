@@ -138,6 +138,16 @@ function fakeD1() {
     ok('#641 session start is the first event of the session and has the screen size', raw[raw.length - 1] && raw[raw.length - 1].k === 'ss' && ss.scw > 0 && ss.sch > 0, JSON.stringify(ss)); }
   { const ms = K('mis')[0] || {};
     ok('#641 mission start says why it was picked (the tap and screen that opened it, or auto)', ms.auto === 1 || (!!ms.tg && !!ms.via), JSON.stringify(ms)); }
+  // #730 mission ends: mdone / mskip / mleft, each written once (DAYLOG end paths)
+  { const r = await p.evaluate(() => { const O = window.OREN, DL = window.DAYLOG; const ids = window.TAL.dailyPool().slice(0, 4); if (DL.cur()) DL.end('b'); const n0 = O.evBuf().length;
+      DL.begin(ids[0]); DL.end('c', 3); DL.end('c', 3);      /* done (2nd end ignored) */
+      DL.begin(ids[1]); DL.end('k');                         /* skipped */
+      DL.begin(ids[2]); DL.cur().n = 2; DL.end('q');         /* left in the middle */
+      DL.begin(ids[3]); DL.end('q');                         /* opened and closed at once = left */
+      DL.begin(ids[0]); DL.end('p'); DL.begin(ids[1]); DL.end('b');   /* parent skip and break: no event */
+      return { ids, ev: O.evBuf().slice(n0).filter(e => /^m(done|skip|left)$/.test(e.k)).map(e => [e.k, e.m, typeof e.sec]) }; });
+    ok('#730 mdone, mskip, mleft: one event per mission end, with mission id and seconds; parent skip and break write none',
+      JSON.stringify(r.ev) === JSON.stringify([['mdone', r.ids[0], 'number'], ['mskip', r.ids[1], 'number'], ['mleft', r.ids[2], 'number'], ['mleft', r.ids[3], 'number']]), JSON.stringify(r)); }
   ok('session end on page hide', K('se').length === 1 && K('se')[0].dur >= 0);
   ok('screen changes with time spent', K('scr').some(e => e.s === 'sPlay') && K('scr').every(e => typeof e.ms === 'number'), JSON.stringify(K('scr').slice(0, 3)));
   ok('answers carry the time to answer and the question id', K('ans').length === 3 && K('ans').every(e => e.ms >= 0 && e.q && e.m === q0.m), JSON.stringify(K('ans')));

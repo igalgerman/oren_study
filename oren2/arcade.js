@@ -39,7 +39,7 @@ function finish(id,score,stars,extra){if(cur){cur.stop();cur=null;}T.setKey(null
 /* #351 difficulty: a level 0..CAP per game (not the record). 3 stars -> one step up, 1 star -> one step down; wider numbers (1-20) only after 3 good rounds in a row */
 const CAP=4;
 const tune=id=>{const a=A(),l=brk?0:Math.max(0,Math.min(CAP,(a.lv||{})[id]|0)),w=!brk&&((a.gr||{})[id]|0)>=3;/* #428 a break round: the calm base level */
-  return {lv:l,wide:w,max:w?20:10,line:w?50:l>=2?20:10,sp:[.035*(1+l*.08),.056*(1+l*.08)],spawn:950-l*40,stay:2400-l*150,gap:1100-l*60,meter:.055*(1+l*.1),zone:34-l*2,rivalT:60000-l*3500};};
+  return {lv:l,wide:w,max:w?20:10,line:w?50:l>=2?20:10,sp:[.035*(1+l*.08),.056*(1+l*.08)],spawn:950-l*40,stay:2400-l*150,gap:1100-l*60,meter:.055*(1+l*.1),zone:34-l*2,rivalT:60000-l*3500,pk:.8*(1+l*.06),ai:.42*(1+l*.08)};};
 const adapt=(id,stars)=>{const a=A();a.lv=a.lv||{};a.gr=a.gr||{};const l=tune(id).lv;
   if(stars>=3){a.lv[id]=Math.min(CAP,l+1);a.gr[id]=(a.gr[id]|0)+1;}else{a.gr[id]=0;if(stars<=1)a.lv[id]=Math.max(0,l-1);}};
 const COLS=[['#ff4b5c','אֲדֻמִּים'],['#3d8bff','כְּחֻלִּים'],['#ffd23f','צְהֻבִּים'],['#3cd070','יְרֻקִּים']];
@@ -168,6 +168,8 @@ function breakRound(id,next){id=G(id)?id:GAMES[0].id;brk={next:next||O.showMap,i
 /* a pack file adds its own game here (runner.js) */
 T.arcKit={frame,countdown,finish,tune,setCur:c=>{cur=c;}};T.arcAdd=(gm,fn)=>{if(!G(gm.id))GAMES.push(gm);RUN[gm.id]=fn;};
 T.arcBreak=breakRound;T.arcGames=GAMES;
+/* #668 a pack file adds its own cabinet: T.arcPack.add(gameInfo, run) (airhockey.js) */
+T.arcPack={add:(gm,fn)=>{if(G(gm.id))return;GAMES.push(gm);RUN[gm.id]=fn;T.addChoices&&T.addChoices([gm.n]);},frame,countdown,finish,tune,setCur:c=>{cur=c;}};
 window.TAL_arcade=openArcade;T.arcade=openArcade;
 window.__arc={open:openArcade,start,brk:breakRound,get inBreak(){return !!brk;},get brkId(){return brk?brk.id:null;},get cur(){return cur;},finish:sc=>cur&&cur.finish(sc),hit:()=>cur&&cur.hit(),state:()=>A(),tune,q:id=>qGen(tune(id))};
 })();

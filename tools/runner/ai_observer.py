@@ -66,7 +66,8 @@ def build_prompt():
 
 def command(model=None):
     """The claude command line. The prompt goes on stdin (--allowedTools takes a list and would swallow it)."""
-    return [shutil.which("claude") or "claude", "-p", "--model", model or MODEL, "--no-session-persistence",
+    m, eff = R.floors("observer", model or MODEL)    # #714
+    return [shutil.which("claude") or "claude", "-p", "--model", m, "--effort", eff, "--no-session-persistence", "--output-format", "json",
             "--tools", "Read,Grep,Glob,Bash", "--allowedTools", *TOOLS, "--disallowedTools", *DENY]
 
 def ask_claude(prompt):
@@ -76,7 +77,8 @@ def ask_claude(prompt):
     except subprocess.TimeoutExpired: return False, f"timeout after {TIMEOUT_S // 60} min"
     except OSError as e: return False, f"could not start claude: {e!r}"
     if p.returncode: return False, f"claude exit {p.returncode}: {((p.stderr or '') + (p.stdout or '')).strip()[:200]}"
-    return True, p.stdout or ""
+    import usage_entities as UE
+    return True, UE.unwrap(p.stdout or "", "observer", MODEL)
 
 LINE = re.compile(r"^\s*[-*]?\s*`?OBSERVER:\s*(.+?)`?\s*$")
 
@@ -238,10 +240,12 @@ def owner_note(now):
     return True
 
 def fallback(now, log):
-    """Until one trigger-made comment is seen (state 'proven'), start the observer prompt as a cloud job every FALLBACK_MIN
-    (remote.launch from the watchdog: returns at once, takes no runner lane). A failed start is retried at the next relay."""
+    """While the last trigger-made comment (state 'trigger_seen') is missing or older than OWNER_SILENT_H h (#689: not a sticky
+    'proven' flag), start the observer prompt as a cloud job every FALLBACK_MIN (remote.launch from the watchdog: returns at
+    once, takes no runner lane). A failed start is retried at the next relay."""
     st = load_state()
-    if st.get("proven") or now - st.get("fallback_at", 0) < FALLBACK_MIN * 60: return False
+    seen = _epoch(st.get("trigger_seen"))
+    if (seen and now - seen < OWNER_SILENT_H * 3600) or now - st.get("fallback_at", 0) < FALLBACK_MIN * 60: return False
     if LAUNCH: launch = LAUNCH
     else:
         import remote; launch = remote.launch

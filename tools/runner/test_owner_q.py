@@ -232,9 +232,28 @@ assert "the hourly task does not run - re-login" in c, c                        
 OQ.post("#696b", "QUESTION: איזה צבע? 1) ירוק 2) כחול"); assert len(told) == 1, told        # Hebrew: no translation
 OQ.TRANSLATE = lambda t: None                                                           # translator down: original kept, still posted
 OQ.post("#696c", "QUESTION: still english")
-assert OQ.open_questions([{"body": posts(g5)[-1]["body"], "url": "u"}])[0]["text"] == "still english"
+t = OQ.open_questions([{"body": posts(g5)[-1]["body"], "url": "u"}])[0]["text"]
+assert t.startswith(OQ.FALLBACK_HE) and "/issues/" in t and "still english" not in t, t     # #699: fixed Hebrew line, never English
+assert "still english" in posts(g5)[-1]["body"]                                              # the original stays in the comment
 long_q = "שורה ראשונה.\nשורה שנייה ארוכה.\nשורה שלישית?"
 OQ.post("#696d", "QUESTION: " + long_q)
 assert OQ.open_questions([{"body": posts(g5)[-1]["body"], "url": "u"}])[0]["text"] == long_q, "whole text, not cut"
 OQ.TRANSLATE = None
 print("ok owner_q #696 Hebrew question, whole text")
+
+# #699 a slow or crashing translator never holds the tick longer than TR_TIMEOUT_S; the fallback Hebrew line is posted
+import time
+OQ.TR_TIMEOUT_S = 0.3
+OQ.TRANSLATE = lambda t: (time.sleep(5), "late")[1]
+g6 = FakeGH(); OQ.STATE = tmp / "owner_q_slow.json"; OQ.GH = g6
+t0 = time.time(); OQ.post("#699a", "QUESTION: slow translator"); dt = time.time() - t0
+assert dt < 2, dt
+t = OQ.open_questions([{"body": posts(g6)[-1]["body"], "url": "u"}])[0]["text"]
+assert t.startswith(OQ.FALLBACK_HE) and "slow translator" not in t and "late" not in t, t
+def boom(t): raise RuntimeError("x")
+OQ.TRANSLATE = boom; OQ.post("#699b", "QUESTION: crashing translator")
+assert OQ.open_questions([{"body": posts(g6)[-1]["body"], "url": "u"}])[0]["text"].startswith(OQ.FALLBACK_HE)
+OQ.TRANSLATE = lambda t: "תרגום טוב."; OQ.post("#699c", "QUESTION: fine")
+assert OQ.open_questions([{"body": posts(g6)[-1]["body"], "url": "u"}])[0]["text"] == "תרגום טוב."
+OQ.TRANSLATE = None; OQ.TR_TIMEOUT_S = 15
+print("ok owner_q #699 translation bounded, Hebrew fallback")
