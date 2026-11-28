@@ -61,19 +61,58 @@ assert out[0]["labels"] == [] and out[1]["labels"] == ["ready-for-agent"] and ou
 KEY = "abcdef012345"
 q = {"body": OQ.body(KEY, "remote-64", "QUESTION: ok?", gates=[64]), "author": {"login": BOT}, "reactionGroups": []}
 rec = OQ.answer_body(KEY, "yes")
-assert OQ.gate(64, [c(rec, EVIL)], [q]) == [] and OQ.gate(64, [c(rec, OWN)], [q]) == [] and OQ.gate(64, [c(rec, None)], [q]) == []
+LATE, EARLY = "2026-11-28T12:28:45Z", "2026-11-28T12:28:44Z"   # trust_since itself is already after the cutoff (strictly before counts)
+assert OQ.gate(64, [c(rec, EVIL)], [q]) == [] and OQ.gate(64, [c(rec, OWN, LATE)], [q]) == [] and OQ.gate(64, [c(rec, None)], [q]) == []
 assert OQ.gate(64, [c(rec, BOT)], [q]) == ["yes"]
 assert r.answer_after_question([c("QUESTION: x", OWN), c(rec, EVIL)]) == "" and r.answer_after_question([c("QUESTION: x", OWN), c(rec, BOT)]) == "yes"
 assert r.answer_after_question([c("QUESTION: x", EVIL), c(rec, BOT)]) == ""
 rx = lambda who: {**q, "reactionGroups": [{"content": "THUMBS_UP", "users": {"totalCount": 1, "nodes": [{"login": who}]}}]}
 assert OQ.gate(64, [], [rx(EVIL)]) == [] and OQ.gate(64, [], [{**q, "reactionGroups": [{"content": "X", "users": {"totalCount": 3}}]}]) == []
 assert OQ.gate(64, [], [rx(OWN)]) == ["reaction THUMBS_UP"]
-assert OQ.answered_keys([c(f"ANSWERED owner-q:{KEY}", EVIL), c(f"ANSWERED owner-q:{KEY}", OWN)]) == set()
+assert OQ.answered_keys([c(f"ANSWERED owner-q:{KEY}", EVIL), c(f"ANSWERED owner-q:{KEY}", OWN, LATE)]) == set()
 assert OQ.answered_keys([c(f"ANSWERED owner-q:{KEY}", BOT)]) == {KEY}
 assert OQ.answered_keys([rx(EVIL)]) == set() and OQ.answered_keys([rx(OWN)]) == {KEY}
 assert OQ.open_questions([c(q["body"], EVIL)]) == [] and len(OQ.open_questions([c(q["body"], BOT)])) == 1
+# grandfather (trust_since): the owner login's ANSWERED line / answer record from BEFORE the cutoff still counts; from then on only the bot
+assert T.SINCE == "2026-11-28T12:28:45Z" and T.old_owner(c("x", OWN, EARLY)) and not T.old_owner(c("x", OWN, LATE)) and not T.old_owner(c("x", OWN, "2026-11-29T00:00:00Z"))
+assert not T.old_owner(c("x", EVIL, EARLY)) and not T.old_owner(c("x", None, EARLY)) and not T.old_owner({"body": "x", "author": {"login": OWN}}) and T.answer_ok(c("x", BOT, LATE))
+assert OQ.answered_keys([c(f"ANSWERED owner-q:{KEY}", OWN, EARLY)]) == {KEY} and OQ.answered_keys([c(f"ANSWERED owner-q:{KEY}", EVIL, EARLY)]) == set()
+assert OQ.answered_keys([c(f"ANSWERED owner-q:{KEY}", OWN, LATE), c("hi", OWN, EARLY)]) == set()
+assert OQ.gate(64, [c(rec, OWN, EARLY)], [q]) == ["yes"] and OQ.gate(64, [c(rec, EVIL, EARLY)], [q]) == []
+assert r.answer_after_question([c("QUESTION: x", OWN, "2026-11-28T10:00:00Z"), c(rec, OWN, EARLY)]) == "yes"
+assert r.answer_after_question([c("QUESTION: x", OWN, "2026-11-28T10:00:00Z"), c(rec, OWN, LATE)]) == ""
+old_q = {**q, "createdAt": EARLY}
+assert OQ.open_questions([c(old_q["body"], BOT, EARLY), c(f"ANSWERED owner-q:{KEY}", OWN, EARLY)]) == []
+assert len(OQ.open_questions([c(old_q["body"], BOT, EARLY), c(f"ANSWERED owner-q:{KEY}", OWN, LATE)])) == 1
 # new_answers: only the owner's own replies, never a stranger's
 assert OQ.new_answers([c("hello", EVIL), c("hi", OWN)], 0) == [c("hi", OWN)]
+
+# comments(): GraphQL with the reacting users, paged by cursor (first:100): #205 has more than 100 comments; same dict shape as before
+def gqlpage(nodes, nxt): return json.dumps({"data": {"repository": {"issue": {"comments": {"pageInfo": {"hasNextPage": bool(nxt), "endCursor": nxt}, "nodes": nodes}}}}})
+allc = [{"body": f"c{i}", "createdAt": EARLY, "url": f"u{i}", "author": {"login": OWN}, "reactionGroups": []} for i in range(250)]
+allc[7]["reactionGroups"] = [{"content": "THUMBS_UP", "users": {"totalCount": 1, "nodes": [{"login": OWN}]}}]
+calls = []
+def fgh(*a, **kw):
+    calls.append(a); assert a[:2] == ("api", "graphql") and "--repo" not in a
+    qy = next(x for x in a if x.startswith("query=")); assert "reactionGroups{content users(first:20){totalCount nodes{login}}}" in qy and "first:100" in qy and "author{login}" in qy and "createdAt" in qy and "url" in qy
+    i = int(next((x[2:] for x in a if x.startswith("c=")), "0")); assert "n=205" in a
+    return 0, gqlpage(allc[i:i + 100], str(i + 100) if i + 100 < len(allc) else None)
+got = OQ.comments(205, fgh)
+assert got == allc and len(calls) == 3 and OQ.owner_reacted(got[7]) and not OQ.owner_reacted(got[8])
+assert OQ.comments(205, lambda *a, **k: (1, "boom")) is None and OQ.comments(205, lambda *a, **k: (0, "{}")) is None and OQ.comments(205, lambda *a, **k: (0, '{"errors": []}')) is None
+n_pages = []
+assert OQ.comments(205, lambda *a, **k: (n_pages.append(1), (0, gqlpage([], "x")))[1]) is None and len(n_pages) == OQ.MAX_PAGES
+# the owner's thumbs-up read through comments() opens the gate
+qk = {"body": OQ.body("8eb414316b40", "remote-687", "QUESTION: ok?", gates=[687]), "createdAt": EARLY, "url": "u", "author": {"login": BOT},
+      "reactionGroups": [{"content": "THUMBS_UP", "users": {"totalCount": 1, "nodes": [{"login": OWN}]}}]}
+fq = lambda *a, **k: (0, gqlpage([qk], None))
+assert OQ.gate(687, [], OQ.comments(205, fq)) == ["reaction THUMBS_UP"] and OQ.open_questions(OQ.comments(205, fq)) == []
+# the default path is plain `gh api` through R.run (gh api has no --repo flag), never R.gh
+seen = []; real_run = R.run
+R.run = lambda cmd, **kw: (seen.append(cmd), (0, gqlpage([], None)))[1]
+OQ.GH = R.gh
+try: assert OQ.comments(205) == [] and seen[0][:3] == ["gh", "api", "graphql"] and "--repo" not in seen[0]
+finally: R.run = real_run
 
 # qwin: no App token -> the record is queued, never posted under another login (fake gh = the App; real path refuses without a token)
 posts = []
@@ -85,6 +124,16 @@ OQ._save({"issue": 0, "posted": []})
 assert OQ.post_or_queue(64, rec) is False and sent[0][1].get(r.APP_ONLY) == "1" and OQ._state()["pending_answers"] == [{"n": 64, "text": rec}]
 r.sh = lambda cmd, env=None: (sent.append(cmd), (0, ""))[1]
 OQ.flush_pending(); assert OQ._state()["pending_answers"] == [] and sent[-1][1] == "issue" and "--body" in sent[-1]
+# mark_answered: the App only (no gh fallback through R.gh) and queued when that fails; a test fake gh still works
+OQ._save({"issue": 205, "posted": []}); sent.clear(); OQ.GH = R.gh
+r.sh = lambda cmd, env=None: (sent.append((cmd, dict(env or {}))), (1, "no App token: not posting under another login (#800)"))[1]
+assert OQ.mark_answered("a" * 12, "yes") is False and sent[0][1].get(r.APP_ONLY) == "1" and "issue" in sent[0][0] and "ANSWERED owner-q:" + "a" * 12 + " yes" in sent[0][0][-1]
+assert [p["n"] for p in OQ._state()["pending_answers"]] == [205] and OQ._state()["pending_answers"][0]["text"].startswith("ANSWERED owner-q:")
+r.sh = lambda cmd, env=None: (sent.append((cmd, dict(env or {}))), (0, ""))[1]
+assert OQ.mark_answered("b" * 12) is True and sent[-1][1].get(r.APP_ONLY) == "1"
+OQ.answers_tick(lambda m: None); assert OQ._state()["pending_answers"] == [] and all(e.get(r.APP_ONLY) == "1" for _, e in sent[2:]), sent   # the queue is flushed as the App too
+fk = []; OQ._save({"issue": 205, "posted": []})
+assert OQ.mark_answered("c" * 12, "z", gh=lambda *a, **k: (fk.append(a), (0, ""))[1]) is True and fk[0][:2] == ("issue", "comment")
 r.sh = real_sh
 # the real sh refuses an App-only call without an App token (no fallback to the owner login)
 os.environ.pop("GH_TOKEN", None)

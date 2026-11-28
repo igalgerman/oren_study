@@ -209,7 +209,7 @@ def answer_after_question(comments):
     A later RESULT/QUESTION line, or a `Runner: started` (a resumed run used it), means nothing waits."""
     import owner_q                                   # lazy: owner_q imports runner, which imports this module
     comments = trust.only(comments)                  # #800: QUESTION lines from trusted authors only; answer records from the App bot only
-    bodies = [((c.get("body") or "").strip(), trust.is_bot(c)) for c in comments]
+    bodies = [((c.get("body") or "").strip(), trust.answer_ok(c)) for c in comments]
     q = max((i for i, (b, _) in enumerate(bodies) if (m := MARK.search(b)) and m[0].strip().startswith("QUESTION:")), default=-1)
     if q < 0: return ""
     out = []
