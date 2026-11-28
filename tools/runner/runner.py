@@ -499,6 +499,45 @@ def gov_windows(hist, events, now):
                     "merged": merged, "wasted": sum(e.get("event") in WASTED for e in inw), "eff": merged / (used / 10) if used >= 1 else None})
     return out
 
+MODEL_W = {"sonnet": 1.0, "opus": 2.0, "haiku": 0.05, "fable": 4.0}     # #709 priors (API price ratio, unverified)
+FIT_WINDOW_S, FIT_MIN_S, HIST_KEEP_S = 6 * 3600, 2 * 3600, 8 * 24 * 3600
+
+def weighted_lanes(models):
+    """Pure (#709): {model: busy lanes} -> busy lanes weighted by the model priors."""
+    return sum(MODEL_W.get(m, 1.0) * n for m, n in (models or {}).items())
+
+def _wk(h):
+    if h.get("week") is not None: return float(h["week"])
+    for b in h.get("buckets") or []:
+        if isinstance(b, dict) and b.get("kind") == "seven_day" and b.get("pct") is not None: return float(b["pct"])
+    return None
+
+def burn_fit(hist, now, g=None):
+    """Pure (#709): samples [{at, week, pct, reset, wlanes, ...}] -> {b, b0, k, fit} from the last 6 h by least squares.
+    Per pair of passes: dWeek = b*wlanes*dt + b0*dt (b = week-% per weighted busy lane-hour, b0 = base burn %/h of owner chats and control
+    sessions); k = 5h-% per week-% (through the origin, same 5h window only). Less than 2 h of data (or no variation in the lanes): the
+    priors, fit False."""
+    g = {**GOV, **(g or {})}
+    out = {"b": g["b"], "b0": g["b0"], "k": g["k"], "fit": False}
+    s = sorted((h for h in hist or [] if now - FIT_WINDOW_S <= h.get("at", 0) <= now and _wk(h) is not None), key=lambda h: h["at"])
+    if len(s) < 3 or s[-1]["at"] - s[0]["at"] < FIT_MIN_S: return out
+    rows = []                                                   # (dt, wl*dt, dweek, d5h or None)
+    for a, c in zip(s, s[1:]):
+        dt = (c["at"] - a["at"]) / 3600; dw = _wk(c) - _wk(a)
+        if dt <= 0 or dt > 1 or dw < 0: continue                # a gap, or the weekly reset
+        wl = a.get("wlanes", 0)                                  # the lanes busy after sample a drive the burn until c
+        d5 = (c["pct"] - a["pct"]) if a.get("pct") is not None and c.get("pct") is not None and a.get("reset") == c.get("reset") else None
+        rows.append((dt, wl * dt, dw, d5))
+    sxx, sxz, szz = sum(r[1] ** 2 for r in rows), sum(r[1] * r[0] for r in rows), sum(r[0] ** 2 for r in rows)
+    sxy, szy = sum(r[1] * r[2] for r in rows), sum(r[0] * r[2] for r in rows)
+    det = sxx * szz - sxz ** 2
+    if len(rows) < 3 or det <= 1e-9 * max(1.0, sxx * szz): return out        # no variation in the busy lanes: b and b0 cannot be told apart
+    b, b0 = (sxy * szz - szy * sxz) / det, (sxx * szy - sxz * sxy) / det
+    out.update(b=max(0.02, b), b0=max(0.0, b0), fit=True)
+    kk = [(r[2], r[3]) for r in rows if r[3] is not None and r[2] > 0 and r[3] >= 0]
+    if kk and sum(w * w for w, _ in kk) > 0: out["k"] = max(1.0, sum(w * d for w, d in kk) / sum(w * w for w, _ in kk))
+    return out
+
 def lane_gate(proposed, prev, wins):
     """Pure (#245): -> (lanes, reason or None). More lanes than now only while the last finished window's efficiency did not drop
     when its lanes went up (review/merge is the bottleneck then: more lanes only burn usage)."""
@@ -587,7 +626,7 @@ def governor(usage, hist, now, g=None, prev=None, wins=None, stale_since=None, b
     5h cap when a 5h bucket exists (week-only: no 5h cap, no 5h stop); the 5h stop (pct >= stop) and #698 week stop (week >= week_stop) stay;
     #704 stale reading -> hold prev for hold_s from `stale_since` (returned in the dict, pass it back), then N_lo
     (1 while the week is below week_stop, else 0); never the config remote_lanes."""
-    g = {**GOV, **(g or {})}
+    g = {**GOV, **burn_fit(hist, now, g), **(g or {})}      # #709: fitted b, b0, k (priors with < 2 h of data)
     if usage and usage.get("buckets") is not None:           # #706 shape -> the old fields
         bk = {b.get("kind"): b for b in usage["buckets"] if isinstance(b, dict)}
         usage = {**usage, "five_h_pct": (bk.get("five_hour") or {}).get("pct"), "five_h_reset": (bk.get("five_hour") or {}).get("reset"),
@@ -629,7 +668,7 @@ def governor(usage, hist, now, g=None, prev=None, wins=None, stale_since=None, b
     if wk >= g["week_stop"]:
         stop = True; why = f"week {wk:.0f}% >= {g['week_stop']:.0f}%: no new run until the weekly reset"   # #698 week hard stop
     gv = {"lanes": lanes, "stop": stop, "pct": pct, "reset": reset, "mode": mode, "need": parts["need"], "n_hi": parts["n_hi"], "n_lo": parts["n_lo"], "n_week": parts["n_week"],
-          "reserve": parts["reserve"], "c": parts["c"], "ready": ready, "target": g["cap_5h"], "week_pct": wk, "week_reset": wreset, "why": why, "now": now,
+          "reserve": parts["reserve"], "c": parts["c"], "ready": ready, "b": g["b"], "b0": g["b0"], "k": g["k"], "fit": g["fit"] if "fit" in g else False, "target": g["cap_5h"], "week_pct": wk, "week_reset": wreset, "why": why, "now": now,
           "projected": None if pct is None else pct + g["k"] * g["b"] * max(lanes, busy) * h5, "week_projected": None}
     return week_gate(gv, g, stalled_5h(usage, hist) if mode == "5h+week" else False)
 
@@ -662,6 +701,7 @@ def governor_text(gv):
     n = 0 if gv["stop"] else gv["lanes"]
     if gv.get("need") is None: return f"governor: {n} lanes ({gv['why']})" + (" · STOP" if gv["stop"] else "")
     s = f"governor: {n} lanes: {gv['why']}"
+    if gv.get("b") is not None: s += f" · b̂ {gv['b']:.2f}%/h" + ("" if gv.get("fit") else " (prior)")
     if gv.get("pct") is not None: s += f" · 5h {gv['pct']:.0f}% (cap {gv.get('target', GOV['cap_5h']):.0f}%)"
     return s + (" · STOP" if gv["stop"] else "")
 
@@ -708,7 +748,7 @@ def stop_filter(chosen, gv):
 
 AI_LABELS = {}      # #707: issue number -> labels, filled by run_pass for the AI governor floors
 
-def governor_pass(remote_busy, now=None, ready=None):
+def governor_pass(remote_busy, now=None, ready=None, models=None):
     """Read .runs/usage.json, keep a sample in .runs/usage_hist.jsonl, write .runs/governor.json. Returns the governor dict; never raises."""
     now = now or time.time()
     try: usage = json.loads((RUNS / "usage.json").read_text(encoding="utf-8"))
@@ -721,9 +761,9 @@ def governor_pass(remote_busy, now=None, ready=None):
                 except Exception: pass
         except Exception: pass
         return out
-    hist = jsonl("usage_hist.jsonl", 5000)
+    hist = jsonl("usage_hist.jsonl", 20000)      # #709: 8 days
     events = [e for e in jsonl("stats.jsonl", 5000) if e.get("ts", 0) > now - 16 * 3600]   # #245
-    wins = gov_windows(hist, events, now)
+    wins = gov_windows([h for h in hist if now - h.get("at", 0) < 16 * 3600], events, now)
     try: prev = int(json.loads((RUNS / "governor.json").read_text(encoding="utf-8"))["lanes"])
     except Exception: prev = None
     try: stale_since = json.loads((RUNS / "governor.json").read_text(encoding="utf-8")).get("stale_since")
@@ -742,10 +782,13 @@ def governor_pass(remote_busy, now=None, ready=None):
     try:
         RUNS.mkdir(exist_ok=True)
         sp = gv["pct"] if gv["pct"] is not None else (usage or {}).get("five_h_pct")     # #704: samples go on while stale (the frozen check needs them)
-        if sp is not None:                           # #245: 16 h of samples = the current and the last two 5h windows
-            hist = [h for h in hist if now - h.get("at", 0) < 16 * 3600] + [{"at": now, "pct": float(sp), "reset": usage.get("five_h_reset"), "busy": remote_busy, "lanes": gv["lanes"], "week": usage.get("week_pct")}]
+        wsp = gv.get("week_pct")
+        if sp is not None or wsp is not None:        # #709: 8 days of samples, all buckets + busy lanes per model (#245: the 5h windows read the last 16 h)
+            hist = [h for h in hist if now - h.get("at", 0) < HIST_KEEP_S] + [{"at": now, "pct": None if sp is None else float(sp), "reset": (usage or {}).get("five_h_reset"),
+                    "week": wsp, "buckets": (usage or {}).get("buckets"), "busy": remote_busy, "lanes": gv["lanes"],
+                    "models": models or {}, "wlanes": weighted_lanes(models) if models else remote_busy}]
             (RUNS / "usage_hist.jsonl").write_text("".join(json.dumps(h) + "\n" for h in hist), encoding="utf-8")
-            wins = gov_windows(hist, events, now)
+            wins = gov_windows([h for h in hist if now - h.get("at", 0) < 16 * 3600], events, now)
         (RUNS / "governor.json").write_text(json.dumps({**gv, **eff_fields(wins), "text": governor_text(gv) + eff_text(wins), "at": now}), encoding="utf-8")
         pc = plan_change(prev_mode, gv.get("mode"))
         if pc: log_line(f"{datetime.fromtimestamp(now).astimezone():%Y-%m-%d %H:%M:%S} governor: {pc}")     # #705: once, at the change
@@ -2043,6 +2086,14 @@ def ready_count(issues):
     """#705: Q for the governor: ready issues that are not running or blocked."""
     return sum("ready-for-agent" in i["labels"] and not {"in-progress", "blocked"} & set(i["labels"]) for i in issues)
 
+def busy_models(issues):
+    """#709: {model: busy cloud lanes} of the in-progress issues (worker model from the label)."""
+    out = {}
+    for i in issues:
+        n = i["number"]
+        if "in-progress" in i["labels"] and where_of(n) == "remote" and not waiting_core(n): out[model_name(i["labels"])] = out.get(model_name(i["labels"]), 0) + 1
+    return out
+
 def remote_busy(busy):
     """#277: in-progress issues that really use a cloud lane (a run still waiting for a core slot does not)."""
     return sum(where_of(b) == "remote" and not waiting_core(b) for b in busy)
@@ -2542,7 +2593,7 @@ def run_pass():
             log_line(f"{now()} #{m}: auto-resume at {step}")
     busy = [i["number"] for i in issues if "in-progress" in i["labels"]]
     AI_LABELS.clear(); AI_LABELS.update({i["number"]: i["labels"] for i in issues})
-    gv = governor_pass(remote_busy(busy), ready=ready_count(issues))         # #239: remote lane count from the 5h usage (#277: a run waiting for a core slot holds no cloud lane)
+    gv = governor_pass(remote_busy(busy), ready=ready_count(issues), models=busy_models(issues))         # #239: remote lane count from the 5h usage (#277: a run waiting for a core slot holds no cloud lane)
     for r in (gv.get("ai") or {}).get("raise", []):          # #707: raises only add model:/effort: labels above the inbox ones
         for i in issues:
             if i["number"] == r["issue"]: i["labels"] += [f"model:{r['model']}"] * bool(r.get("model")) + [f"effort:{r['effort']}"] * bool(r.get("effort"))
