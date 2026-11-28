@@ -332,6 +332,31 @@ assert marked[-1] == ("p1", "אוקיי") and len(marked) == 2, marked          
 srv.shutdown(); TG.ENV = tmp / "no-telegram.env"; QW.log = lambda m: None
 print("ok qwin telegram old state after deploy")
 
+# #696 an alert note (ai-observer) is a NOTICE: Telegram message with the whole text, no page, no push, no waiting.
+# A real question still gets its page with option buttons and the Telegram text with numbered options.
+QW.STATE = tmp / "qwin10.json"; sp.cmds.clear(); h6.sent.clear(); FakeTG.calls.clear(); FakeTG.updates.clear()
+TG.ENV = tmp / "telegram.env"
+srv2 = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeTG); threading.Thread(target=srv2.serve_forever, daemon=True).start()
+TG.API = f"http://127.0.0.1:{srv2.server_port}"
+alert = "התראה: המשימה השעתית לא רצה.\nהתחבר מחדש ל-claude.ai/code ואז Scheduled, ההמשך ממשיך בינתיים."
+h6.status = {"inbox": "idle", "orchestrator": "idle"}
+opened[:] = [{"key": "a1", "window": "ai-observer-5", "source": "ai-observer-5", "text": alert, "url": "u"},
+             {"key": "q1", "window": "#41", "source": "issue-41", "text": "איזה צבע? 1) ירוק 2) כחול", "url": "u"}]
+QW.tick(h6.ts(), now=100000)
+assert asked() == ["q1"], asked()                                                        # no page for the alert
+assert not any("owner-q:a1" in s[1] for s in h6.sent), h6.sent                           # no phone push for it either
+al = [p for p in sent() if p["text"].startswith("התראה")]
+assert len(al) == 1 and al[0]["text"] == alert, sent()                                    # one notice, the whole text, asks nothing
+qd = json.loads((QW.DIR / "q1.json").read_text(encoding="utf-8"))["questions"][0]
+assert qd["options"] == ["ירוק", "כחול"], qd                                              # real question: option buttons on the page
+assert [p["text"] for p in sent() if "1. ירוק" in p["text"] and "2. כחול" in p["text"]], sent()   # and numbered in Telegram
+QW.tick(h6.ts(), now=100060); assert len([p for p in sent() if p["text"].startswith("התראה")]) == 1   # once
+# a notice never fills the 3 page slots
+opened[:] += [{"key": f"z{i}", "window": f"#5{i}", "source": f"issue-5{i}", "text": f"שאלה {i}?", "url": "u"} for i in range(3)]
+QW.tick(h6.ts(), now=100120); assert {"z0", "z1"} <= set(asked()), asked()
+srv2.shutdown()
+print("ok qwin #696 alert is a notice, question has buttons")
+
 # #368 real process: the real _spawn starts the real ask.py (no browser), the URL is read from its log,
 # an answer POSTed to the page lands in <key>.answers.json and page_answer reads it
 import importlib, time, urllib.request

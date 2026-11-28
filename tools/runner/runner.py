@@ -403,9 +403,10 @@ def total_lanes():
     return LOCAL_LANES + REMOTE_LANES
 
 # #239 usage governor: cloud lane count follows the 5h window (the panel writes .runs/usage.json every refresh); #274: and the week
-GOV = {"target": float(CFG.get("governor_target", 99)), "min": int(CFG.get("governor_min", 2)), "max": int(CFG.get("governor_max", 8)),
+GOV = {"target": float(CFG.get("governor_target", 99)), "min": int(CFG.get("governor_min", 2)), "max": int(CFG.get("governor_max", 16)),
        "stop": float(CFG.get("governor_stop", 99)), "pace": float(CFG.get("governor_pace", 3.5)), "week_cap": int(CFG.get("governor_week_cap", 4)),
-       "week_target": float(CFG.get("governor_week_target", 99)), "stale_s": 15 * 60, "fallback": REMOTE_LANES}
+       "week_target": float(CFG.get("governor_week_target", 99)), "week_stop": float(CFG.get("governor_week_stop", 97)),
+       "stale_s": 15 * 60, "fallback": REMOTE_LANES}
 def _ts(iso):
     try: return datetime.fromisoformat(str(iso).replace("Z", "+00:00")).timestamp()
     except Exception: return None
@@ -470,7 +471,7 @@ def governor(usage, hist, now, g=None, prev=None, wins=None):
     """Pure (#239): usage.json dict (or None) + samples + now -> {lanes, stop, pct, projected, reset, week_pct, week_projected, week_reset, why}.
     Most remote lanes in [min, max] whose projection at the 5h reset stays <= target (min when even that is above); 5h >= stop -> no new run;
     #274 week: projected week % at its reset (linear at the pace so far) below week_target -> max lanes, above -> at most week_cap
-    (not in the first 8 h of a week: too early to project); usage missing or older than 15 min -> config remote_lanes."""
+    (not in the first 8 h of a week: too early to project); #698 week >= week_stop (97) -> no new run until the week resets; usage missing or older than 15 min -> config remote_lanes."""
     g = {**GOV, **(g or {})}
     at = _ts((usage or {}).get("at"))
     if not usage or at is None or now - at > g["stale_s"] or usage.get("five_h_pct") is None:
@@ -499,6 +500,8 @@ def governor(usage, hist, now, g=None, prev=None, wins=None):
     stop = pct >= g["stop"]
     if stop: why = f"5h {pct:.0f}% >= {g['stop']:.0f}%: no new run"
     if fresh: why = "new 5h window"
+    if wk is not None and wreset is not None and wreset > now and float(wk) >= g.get("week_stop", 101):
+        stop = True; why = f"week {float(wk):.0f}% >= {g['week_stop']:.0f}%: no new run until the weekly reset"   # #698 week hard stop
     return {"lanes": lanes, "stop": stop, "pct": pct, "projected": proj(lanes), "reset": reset, "target": g["target"],
             "week_pct": None if wk is None else float(wk), "week_projected": wproj, "week_reset": wreset, "why": why}
 

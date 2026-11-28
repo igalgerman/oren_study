@@ -89,10 +89,11 @@ def plan(open_qs, ts, st, now):
     keys = {q["key"] for q in open_qs}
     close = [k for k in st if k not in keys]
     remind = [k for k in st if k in keys and st[k].get("via") and now - st[k]["since"] >= REMIND_S and not st[k].get("reminded")]
-    busy = {st[k]["name"] for k in st if k in keys and not st[k].get("answered")}   # #368: its page is waiting
+    busy = {st[k]["name"] for k in st if k in keys and not st[k].get("answered") and not is_note(st[k])}   # #368: its page is waiting
     start = []
     for q in open_qs:
         if q["key"] in st: continue                     # one window per question, ever (no duplicates after a restart either)
+        if is_note(q): start.append(q); continue        # #696: a notice has no page and takes no slot
         name = win_name(q)
         if name in busy or len(busy) >= MAX_WINDOWS: continue   # waits: same issue's earlier question, or 3 windows open
         busy.add(name); start.append(q)
@@ -147,7 +148,7 @@ def tg_send(st, now):
     if not TG.config(): return
     for key, e in st.items():
         if e.get("answered") or e.get("tg") or e.get("tg_note") or not is_note(e): continue
-        mid = TG.send(R.one_line(e.get("text", "")))
+        mid = TG.send(e.get("text", ""))     # #696: the whole text
         if mid: e["tg_note"] = mid; log(f"{e['name']}: telegram note sent for {key}")
     if not any(e.get("tg") and not e.get("answered") and not is_note(e) for e in st.values()):   # an old-state note never blocks
         nxt = sorted(((e["since"], i, k) for i, (k, e) in enumerate(st.items())
@@ -237,11 +238,11 @@ def tick(ts, now=None):
     for q in start:                                       # #368: the page, started by python itself
         name, key = win_name(q), q["key"]
         st[key] = {"name": name, "since": now, "source": q.get("source", ""), "issue": issue_no(q), "text": q.get("text", ""),
-                   "gates": q.get("gates", []), "pid": start_page(q)}
+                   "gates": q.get("gates", []), "pid": 0 if is_note(q) else start_page(q)}
         log(f"{name}: page started for {key} (pid {st[key]['pid']})")
     idle = [t["name"] for n in PUSHERS for t in ts if t.get("name") == n and t.get("state") == "live" and t.get("status") in IDLE]
     for key, e in st.items():
-        if e.get("answered"): continue
+        if e.get("answered") or is_note(e): continue    # #696: a notice: no page, no push, nothing to answer
         if not e.get("page") and page_url(key): e["page"] = page_url(key); log(f"{e['name']}: page at {e['page']}")
         a = page_answer(key)
         if a is not None:                                 # #368: the page answered: relay it ourselves
