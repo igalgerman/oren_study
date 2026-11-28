@@ -1,6 +1,7 @@
 """#684 parent digest with a fixture day and a fake send. Run: python3 tools/runner/test_parent_digest.py"""
 import os, sys, tempfile
 os.environ["OREN_HOME"] = tempfile.mkdtemp(prefix="digest-test-")
+os.environ["OREN_TEST"] = "1"
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import parent_digest as D
 
