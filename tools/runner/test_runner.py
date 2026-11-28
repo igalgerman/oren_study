@@ -870,7 +870,7 @@ def _u(pct, reset_h, week=None, week_reset_h=24 * 6, age=60):
 def _ux(week, H, age=60): return {"five_h_pct": None, "week_pct": week, "week_reset": _iso(_now + H * 3600), "at": _iso(_now - age)}   # Ultra: week bucket only
 # #705 even pacing: 80h left, week 40%, 3 busy lanes, 9 ready -> need (94-40-0.3)/80-0.1 = 0.57 %/h -> ~3 lanes
 g = r.governor(_ux(40, 80), [], _now, _G, busy=3, ready=9); assert g["lanes"] == 3 and g["mode"] == "week-only" and abs(g["need"] - 0.5712) < 0.001 and g["n_hi"] == 12, g
-t = r.governor_text(g); assert t == "governor: 3 lanes: week 40%, behind pace (need 0.6%/h), 9 ready, reserve 5% · b̂ 0.20%/h (prior)", t
+t = r.governor_text(g); assert t == "governor: 3 lanes: week 40%, behind pace (need 0.6%/h), 9 ready, reserve 5% · b̂ 0.20%/h (prior) · p 0.24 budget: tight, fewer lanes", t
 # ahead of pace -> fewer lanes; behind -> more
 lo = r.governor(_ux(80, 80), [], _now, _G, busy=3, ready=9)["lanes"]; hi = r.governor(_ux(20, 80), [], _now, _G, busy=3, ready=9)["lanes"]
 assert lo < 3 < hi, (lo, hi)
@@ -890,7 +890,7 @@ assert p12["c"] == 94 and abs(p6["c"] - (99 - 5 * 5 / 11)) < 1e-9 and p6["need"]
 assert r.governor(_u(50, 2, week=1, week_reset_h=6), [], _now, _G, busy=2, ready=20)["lanes"] == 14
 g = r.governor(_u(90, 4, week=1, week_reset_h=6), [], _now, _G, busy=2, ready=20); assert g["mode"] == "5h+week" and g["lanes"] == 1 and g["n_hi"] < 2, g
 g = r.governor(_u(20, 4, week=1, week_reset_h=6), [], _now, _G, busy=2, ready=20); assert g["lanes"] == 12 and g["pct"] == 20, g
-assert r.governor_text(g).endswith(" · 5h 20% (cap 97%)"), r.governor_text(g)
+assert " · 5h 20% (cap 97%)" in r.governor_text(g), r.governor_text(g)
 # week-only: no 5h cap and no 5h stop even with a 5h value in an old shape of 99
 g = r.governor(_ux(1, 6), [], _now, _G, busy=2, ready=20); assert g["pct"] is None and not g["stop"] and g["lanes"] == 16
 # 5h stop (99) stays on the 5h+week plan
@@ -1692,3 +1692,13 @@ try:
     assert r.ensure_pr_ready(7) is None and not any(x[:2] == ("pr", "create") for x in _g)    # nothing pushed -> still blocked
 finally: r.gh, r.run, r.find_pr = _sv
 print("ok #747 draft PR resume + runner opens PR")
+
+# #711 budget pressure p and shift (0 or +1, never lower)
+for _p, _s in ((0.3, 0), (0.8, 0), (1.0, 0), (1.5, 1)):      # need = p * b * N_hi with b 0.2, N_hi 10
+    _pp, _sh = r.budget_shift(_p * 2.0, 0.2, 10); assert abs(_pp - _p) < 1e-9 and _sh == _s, (_p, _pp, _sh)
+assert r.budget_shift(0.6, 0.2, 10)[1] == 0 and r.budget_shift(3.0, 0.2, 10)[1] == 1 and r.budget_shift(1, 0.2, 0) == (None, 0)
+_g1 = r.governor(_ux(40, 80), [], _now, _G, busy=3, ready=9); assert _g1["shift"] == 0 and _g1["p"] < 1 and "budget: tight, fewer lanes" in r.governor_text(_g1), _g1
+_g2 = r.governor(_ux(1, 80), [], _now, _G, busy=3, ready=1); assert _g2["p"] > 1 and _g2["shift"] == 1 and "budget: behind, shift +1" in r.governor_text(_g2), _g2
+_gl = [r.governor(_ux(w, 80), [], _now, _G, busy=3, ready=9) for w in (10, 40, 70)]
+assert _gl[0]["p"] > _gl[1]["p"] > _gl[2]["p"] and _gl[0]["lanes"] >= _gl[1]["lanes"] >= _gl[2]["lanes"] and _gl[0]["lanes"] > _gl[2]["lanes"], _gl   # p falls -> fewer lanes
+assert all(x["shift"] in (0, 1) for x in _gl)
