@@ -17,6 +17,9 @@ if [ -z "$DBID" ]; then
 fi
 [ -z "$DBID" ] && echo "WARNING: D1 not bound (token lacks 'D1: Edit'?): family saves stay on KV (#109)"
 if [ -n "$DBID" ]; then
+  for M in cf/migrations/*.sql; do   # every migration is CREATE ... IF NOT EXISTS: safe to apply on each deploy (#869)
+    curl -sS -X POST "${AUTH[@]}" -H 'content-type: application/json' -d "$(python3 -c "import json,sys;print(json.dumps({'sql':open(sys.argv[1]).read()}))" "$M")" "$API/d1/database/$DBID/query" >/dev/null || true
+  done
   curl -sS -X PATCH "${AUTH[@]}" -H 'content-type: application/json'     -d "{\"deployment_configs\":{\"production\":{\"d1_databases\":{\"DB\":{\"id\":\"$DBID\"}}},\"preview\":{\"d1_databases\":{\"DB\":{\"id\":\"$DBID\"}}}}}"     "$API/pages/projects/oren-game" >/dev/null
 fi
 curl -sS -X POST "https://api.cloudflare.com/client/v4/accounts/$ACC/pages/projects/oren-game/deployments" \

@@ -37,6 +37,8 @@ for f in ("runner.py", "watchdog.py", "qwin.py", "remote.py", "ai_observer.py", 
 assert R.is_transient(subprocess.TimeoutExpired(["gh", "api", "graphql"], 1.48))
 assert not R.is_transient(R.Blocked("lane.sh failed twice"))
 assert not R.is_transient(ValueError("x"))
+assert R.is_transient(R.GateUnreadable("cannot read the owner gate of #1")) and R.unreadable_gate("cannot read the owner gate of #1")   # #908: never BLOCKED
+assert not R.unreadable_gate("the owner gate of #1 is CLOSED (x)") and not R.unreadable_gate("")
 # a cloud-status poll that times out just polls again
 t = [0]
 seq = iter([subprocess.TimeoutExpired("gh", 60), {"state": "working"}, {"state": "done", "line": "RESULT: DONE"}])

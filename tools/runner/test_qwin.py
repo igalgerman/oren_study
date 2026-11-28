@@ -48,12 +48,13 @@ win = lambda: sorted(n for n, t in h.t.items() if t["state"] == "live" and n.sta
 
 class FakeSpawn:
     """#368: ask.py started by qwin.tick itself (no LLM): records the command, hands back a pid."""
-    def __init__(self): self.cmds, self.killed = [], []
+    def __init__(self): self.cmds, self.killed, self.live = [], [], set()
     def spawn(self, cmd, out, err):
-        self.cmds.append(cmd); return 4000 + len(self.cmds)
-    def kill(self, pid): self.killed.append(pid)
+        self.cmds.append(cmd); self.live.add(4000 + len(self.cmds)); return 4000 + len(self.cmds)
+    def kill(self, pid): self.killed.append(pid); self.live.discard(pid)
+    def alive(self, pid): return pid in self.live          # #894: the fake pid check
 sp = FakeSpawn()
-QW._spawn, QW._kill = sp.spawn, sp.kill
+QW._spawn, QW._kill, QW._alive = sp.spawn, sp.kill, sp.alive
 asked = lambda: [Path(c[c.index(QW.ASK) + 1]).stem for c in sp.cmds]
 
 # #368/#390: the first tick writes the question page AND sends the phone push at the same moment (owner 26 Nov 20:15),
@@ -182,6 +183,24 @@ d = QW.answer("6"*12, "approve")
 assert d.get("gates") == {64: True}, d
 assert any(a[:3] == ("issue", "comment", "64") and OQ.record_answer(a[-1]) == ("6"*12, "approve") for a in gh_calls), gh_calls
 print("ok qwin #630 answer recorded on the gated issue")
+
+# #897: the App is rate limited: the answer record and the ANSWERED line are queued (never posted under another login),
+# the question is answered-queued (no second ask), and the next flush posts them
+KEY7 = "7" * 12
+opened.append({"key": KEY7, "window": "#677", "source": "issue-677", "text": "שער?", "url": "u7", "gates": []})
+sent_as = []
+limited = [True]
+def app_gh(*a, **kw):
+    sent_as.append(a)
+    return (1, "API rate limit exceeded") if limited[0] and a[:2] == ("issue", "comment") else (0, "")
+QW._gh = app_gh
+OQ._save({"issue": 205, "posted": []})
+d = QW.answer(KEY7, "yes")
+assert d.get("issue") is False and KEY7 in OQ.queued_keys(), (d, OQ._state())      # the record is queued, not posted
+limited[0] = False
+OQ.flush_pending(app_gh)
+assert OQ._state()["pending_answers"] == [] and any(a[:3] == ("issue", "comment", "677") and OQ.record_answer(a[-1]) == (KEY7, "yes") for a in sent_as), sent_as
+print("ok qwin #897 App rate limited: answer queued, then posted by the flush")
 
 # #390: the push's result is checked on the pushing session's screen and logged once: Claude Code's 'Not sent' (or the
 # session's own PUSH-RESULT line) -> watchdog.log says so (second channel: Telegram, #440, once set up); ok -> logged too
@@ -493,6 +512,62 @@ assert marked == [(key, "לא")], marked
 opened.clear(); QW.tick(h7.ts(), now=t0 + 1000); assert marked == [(key, "לא")] and not any("final" in b for b in BODY(61))
 srv3.shutdown(); TG.ENV = tmp / "no-telegram.env"
 print("ok qwin #803 inspector chat channel")
+
+# ---------- #894: a page never dies while its question is open ----------
+def fresh(n=1):
+    global opened
+    QW.STATE.write_text("{}"); opened = [{"key": f"p{i}", "window": f"#{900+i}", "source": f"issue-{900+i}", "text": f"שאלה {i}? 1) כן 2) לא"} for i in range(n)]
+    sp.cmds.clear(); sp.killed.clear(); sp.live.clear(); h.sent.clear(); h.status = {"inbox": "working", "orchestrator": "working"}
+    for f in QW.DIR.glob("p*"): f.unlink()
+QW._hc, QW._run = h.hc, h.run
+OQ.open_list = lambda gh=None: [dict(q) for q in opened]
+OQ.mark_answered = lambda key, ans="", gh=None: True
+QW._app_post = lambda n, t: True
+T = lambda now: QW.tick(h.ts(), now=now)
+# 1+5: dead page restarted with backoff 1, 2, 5, 10, 10 min; one restart per tick; logged once per restart
+logs = []; QW.log = logs.append
+fresh(); T(0); assert asked() == ["p0"]
+sp.live.clear(); T(30); assert len(sp.cmds) == 1                        # backoff: not before 1 min
+T(61); assert len(sp.cmds) == 2 and len([l for l in logs if "page restarted" in l]) == 1
+T(62); assert len(sp.cmds) == 2                                         # alive again: nothing
+for gap, n in [(120, 3), (300, 4), (600, 5), (600, 6)]:
+    sp.live.clear(); t = QW.load()["p0"]["last_start"]; T(t + gap - 1); assert len(sp.cmds) == n - 1; T(t + gap); assert len(sp.cmds) == n, (gap, n)
+assert len([l for l in logs if "page restarted" in l]) == 5
+# 5: the 24 h timeout (page long alive, then gone) restarts at once, backoff starts over
+t = QW.load()["p0"]["last_start"]; T(t + 90000)                          # alive until now
+sp.live.clear(); T(t + 90001); assert len(sp.cmds) == 7, len(sp.cmds)
+# 2: answered on the page but still open after 10 min -> page again, not treated as answered
+fresh(); T(0); (QW.DIR / "p0.answers.json").write_text(json.dumps({"answers": {"a": "כן"}})); sp.live.clear()
+T(100); assert QW.load()["p0"]["answered"] and len(sp.cmds) == 1         # relayed; still open, waiting for the confirmation
+T(100 + 599); assert QW.load()["p0"]["answered"] and len(sp.cmds) == 1
+T(100 + 600); e = QW.load()["p0"]; assert not e["answered"] and len(sp.cmds) == 2 and not (QW.DIR / "p0.answers.json").exists(), e
+# 4: answered and confirmed closed -> entry dropped, page stopped
+(QW.DIR / "p0.answers.json").write_text(json.dumps({"answers": {"a": "לא"}})); T(800); pid = QW.load()["p0"]["pid"]; opened.clear(); T(900)
+assert "p0" not in QW.load() and pid not in sp.live, (QW.load(), sp.live)
+# no duplicate pages for one key: many ticks with a live page start nothing
+fresh(); [T(i * 60) for i in range(5)]; assert len(sp.cmds) == 1
+# 3: `page <key>`: live page -> its URL, no new process; dead -> started; unknown -> rc 1; the ping carries the way
+(QW.DIR / "p0.log").write_text("http://127.0.0.1:7/\n"); assert QW.page_cmd("p0", now=500) == (0, "http://127.0.0.1:7/") and len(sp.cmds) == 1
+sp.live.clear(); QW.page_cmd("p0", now=501); assert len(sp.cmds) == 2
+assert QW.page_cmd("nope")[0] == 1
+assert "qwin.py page p0" in QW.push_text(opened[0]) and "qwin.py page p0" in QW.tg_text(opened[0])
+fresh(); sp.live.clear(); assert QW.page_cmd("p0", now=5)[0] == 0 and asked() == ["p0"]       # no entry yet: created
+# the last question-back rule: Hebrew and English, no option -> no record, gate stays closed, question and page stay open
+posted = []; QW._app_post = lambda n, t: posted.append((n, t)) or True
+marked = []; OQ.mark_answered = lambda key, ans="", gh=None: marked.append(key) or True
+for qb in ["למה צריך את זה?", "Why do we need this?", "מה זה אומר?"]:
+    fresh(); T(0); (QW.DIR / "p0.answers.json").write_text(json.dumps({"answers": {"a": qb}}), encoding="utf-8"); sp.live.clear(); h.sent.clear()
+    T(10)
+    e = QW.load()["p0"]
+    assert not e.get("answered") and not posted and not marked, (qb, posted, marked)
+    assert any("FOLLOW-UP QUESTION" in m and qb in m for _, m in h.sent), h.sent
+    assert len(sp.cmds) == 2 and not (QW.DIR / "p0.answers.json").exists(), qb                    # page back at once
+    assert OQ.open_list() and QW.chat_answer.__name__                                              # still open
+assert QW.question_back("2?", "מה? 1) כן 2) לא") is False and QW.question_back("Yes?", "ok? 1) Yes 2) No") is False
+assert QW.question_back("כן", "x? 1) כן 2) לא") is False and QW.question_back("למה?", "x? 1) כן 2) לא") is True
+fresh(); T(0); (QW.DIR / "p0.answers.json").write_text(json.dumps({"answers": {"a": "כן"}})); T(5)      # a real answer still counts
+assert QW.load()["p0"]["answered"] and marked == ["p0"] and posted, (marked, posted)
+print("ok qwin #894 page always alive")
 
 # #368 real process: the real _spawn starts the real ask.py (no browser), the URL is read from its log,
 # an answer POSTed to the page lands in <key>.answers.json and page_answer reads it
