@@ -13,6 +13,7 @@ import watchdog as W
 
 tmp = Path(tempfile.mkdtemp())
 OQ.STATE = tmp / "owner_q.json"
+OQ.CACHE = tmp / "owner_q_comments.json"; OQ.CACHE_TTL = 0   # #912: old sections read fresh every time; the #912 section turns the 60 s cache on
 _lt = time.localtime                   # #207: Windows rejects negative times; fail the same way on Linux
 def _win_localtime(t=None):
     if t is not None and t < 0: raise OSError(22, "Invalid argument")
@@ -205,7 +206,7 @@ def _flaky(n, s_):
     return _gr(n, s_)
 OQ._gate_read = _flaky
 assert OQ.merge_gate(64, sleep=slept.append) == "closed", "#908: a failed first read is retried"
-assert secs == [OQ.GATE_TRIES[0], OQ.GATE_TRIES[1]] and secs[1] > secs[0] and slept == [OQ.GATE_BACKOFF[0]], (secs, slept)
+assert secs == [OQ.GATE_TRIES[0], OQ.GATE_TRIES[1]] and min(secs) >= 60 and slept == [OQ.GATE_BACKOFF[0]], (secs, slept)   # #912: 60 s, not quick()
 OQ._gate_read = _gr; g4.fail = False
 print("ok owner_q #908 gate read retried with a longer timeout")
 print("ok owner_q #636 merge gate: gated + CLOSED never merges")
@@ -297,6 +298,12 @@ assert OQ.merge_state(64, [rec], qcs2) == "closed" and OQ.merge_state(64, [rec, 
 assert OQ.record_answer(rec["body"]) is None, "the old record pattern never matches a chat record"
 print("ok owner_q #803 inspector chat gate")
 
+# #872: a record with `via` is still the same owner-answer record: the gate does not change
+_b = OQ.answer_body("0123456789ab", "כן", "console")
+assert "via console" in _b and OQ.record_answer(_b) == ("0123456789ab", "כן")
+assert OQ.record_answer(OQ.answer_body("0123456789ab", "כן")) == ("0123456789ab", "כן")
+print("ok owner_q answer record via")
+
 # ---- #897: an owner answer is written only as the App, also while the App is rate limited ----
 import remote as RM, ghauth, ghcache, subprocess as _sp
 K1, K2 = OQ.key_of("#677", "QUESTION: gate?"), OQ.key_of("#9", "QUESTION: max_core?")
@@ -357,3 +364,117 @@ assert OQ.answered_keys(g.issues[205]["comments"]) == set() and OQ.repair([K2], 
 g.issues[205]["comments"][-1]["author"] = {"login": "oren-study-bot"}
 assert OQ.answered_keys(g.issues[205]["comments"]) == {K2} and OQ.repair([K2], g) == {} and len(g.issues[205]["comments"]) == 3
 print("ok owner_q #897 owner answers are App-only, queued answers")
+
+# ---- #912: 60 s comments cache, App-token identity, archive, slow gate read, alarm config ----
+import ghcache, ghauth
+OQ.CACHE_TTL = 60; OQ.CACHE = tmp / "oq912.json"; OQ.STATE = tmp / "owner_q912.json"; OQ._save({"issue": 205, "posted": []})
+class Counting(FakeGH):
+    def __init__(self): super().__init__(); self.reads = 0
+    def __call__(self, *a, **kw):
+        if a[:2] == ("api", "graphql"): self.reads += 1
+        return super().__call__(*a, **kw)
+g = Counting(); g.issues[205] = {"title": OQ.TITLE, "comments": [{"body": OQ.body(K1, "#677", "QUESTION: gate?"), "author": {"login": "igalgerman"}}]}
+g.issues[677] = {"title": "x", "comments": []}
+_t = time.time; T = [_t() + 1000.0]; time.time = lambda: T[0]
+try:
+    assert len(OQ.comments(205, g)) == 1 and g.reads == 1
+    T[0] += 30; OQ.comments(205, g); assert g.reads == 1, "cache hit inside 60 s"
+    T[0] += 31; OQ.comments(205, g); assert g.reads == 2, "TTL expired -> a fresh read"
+    # dirty after our own write (post_app, mark_answered, _post comment): the next read is fresh
+    OQ.comments(205, g); assert g.reads == 2
+    assert OQ.post_app(205, f"ANSWERED owner-q:{K1} yes\n{OQ.MARK}", g) is True
+    assert len(OQ.comments(205, g)) == 2 and g.reads == 3, "our write -> the next read is fresh"
+    OQ.comments(677, g); n0 = g.reads; OQ.comments(677, g); assert g.reads == n0, "cached again"
+    assert OQ.mark_answered(OQ.key_of("#3", "QUESTION: z"), "ok", g) and OQ.comments(205, g) is not None and g.reads == n0 + 1
+    OQ.comments(205, g); n1 = g.reads
+    ghcache.mark_dirty("205"); OQ.comments(205, g); assert g.reads == n1 + 1, "a write from another process (dirty log) also makes it fresh"
+    T[0] += 1; OQ.comments(205, g); n2 = g.reads; OQ.comments(205, g); assert g.reads == n2
+    _x = OQ.gate(677, OQ.comments(677, g), OQ.question_comments(g)); _y = OQ.open_list(g)
+    assert _x == [] and _y is not None and g.reads == n2, "gate / open read the cache"
+    g.fail = True; T[0] += 100; assert OQ.comments(205, g) is None, "a failed read is not cached"
+finally: time.time = _t
+print("ok owner_q #912 comments cache: hit, TTL expiry, dirty after our write")
+
+# which identity ran the query: App token first (the same path as every bot call)
+seen_env = []
+_apply, _rr = ghauth.apply, R.subprocess.run
+def fake_apply(cmd, env, tok=None): seen_env.append((list(cmd), ghauth.OWNER in env)); return env   # OWNER marker = "run as the owner"
+class _PP:
+    returncode, stderr = 0, ""
+    stdout = json.dumps({"data": {"repository": {"issue": {"comments": {"pageInfo": {"hasNextPage": False}, "nodes": []}}}}})
+ghauth.apply = fake_apply; R.subprocess.run = lambda cmd, **kw: _PP()
+OQ.CACHE = tmp / "oq912b.json"; OQ.GH = R.gh   # the real bot path
+try: assert OQ.comments(205) == [] and len(seen_env) == 1 and seen_env[0][0][:3] == ["gh", "api", "graphql"] and seen_env[0][1] is False, seen_env   # went through ghauth.apply, not marked owner
+finally: ghauth.apply, R.subprocess.run = _apply, _rr
+print("ok owner_q #912 the comments query runs as the App (ghauth.apply), owner only as the #469 fallback")
+
+# a slow fake gh (answers after 15 s of the quick clock) is read by the gate: no 'could not read GitHub'
+OQ.CACHE_TTL = 0; OQ._save({"issue": 205, "posted": []})
+class Slow(FakeGH):
+    def __call__(self, *a, **kw):
+        if a[:2] == ("api", "graphql"):
+            left = ghcache.quick_left()
+            if left is not None and left < 15: return 124, "timed out"
+            ghcache._clock_t[0] += 15
+        return super().__call__(*a, **kw)
+ghcache._clock_t = [0.0]; _c = ghcache._clock; ghcache._clock = lambda: ghcache._clock_t[0]
+gs = Slow(); gs.issues[205] = {"title": OQ.TITLE, "comments": [{"body": OQ.body(K1, "#64", "QUESTION: ok?", gates=(64,)), "author": {"login": "igalgerman"}}]}; gs.issues[64] = {"title": "x", "comments": []}
+OQ.GH = gs
+try:
+    assert OQ.merge_gate(64, sleep=lambda s: None) == "closed", "slow gh (15 s) is read, not 'error'"
+    buf = type('B', (io.StringIO,), {'reconfigure': lambda self, **k: None})()
+    with contextlib.redirect_stdout(buf): rc = OQ.main(["gate", "64"])
+    assert "could not read GitHub" not in buf.getvalue() and rc == 1, buf.getvalue()
+    with contextlib.redirect_stdout(buf): assert OQ.main(["open"]) == 0
+finally: ghcache._clock = _c
+print("ok owner_q #912 slow gh read by gate / open with no 'could not read GitHub'")
+
+# archive: answered + older than a month moves, open stays, state follows, a gate still finds its answer
+def mk_q(key, win, text, day, gates=(), react=False):
+    c = {"body": OQ.body(key, win, text, gates=gates), "author": {"login": "igalgerman"}, "createdAt": f"2026-{day}T10:00:00Z", "url": f"https://github.com/x/y/issues/205#issuecomment-1{day.replace('-', '')}", "reactionGroups": []}
+    return c
+KA, KB, KC = OQ.key_of("#70", "QUESTION: old answered?"), OQ.key_of("#71", "QUESTION: old reacted?"), OQ.key_of("#72", "QUESTION: open?")
+qa, qb, qc = mk_q(KA, "#70", "QUESTION: old answered?", "09-01", (70,)), mk_q(KB, "#71", "QUESTION: old reacted?", "09-02", (71,)), mk_q(KC, "#72", "QUESTION: open?", "09-03", (72,))
+qb["reactionGroups"] = [{"content": "THUMBS_UP", "users": {"nodes": [{"login": "igalgerman"}]}}]
+ans = {"body": f"ANSWERED owner-q:{KA} yes\n{OQ.MARK}", "author": {"login": "oren-study-bot"}, "createdAt": "2026-09-01T11:00:00Z", "url": "https://github.com/x/y/issues/205#issuecomment-9001", "reactionGroups": []}
+free = {"body": "thanks", "author": {"login": "igalgerman"}, "createdAt": "2026-09-05T11:00:00Z", "url": "https://github.com/x/y/issues/205#issuecomment-9002", "reactionGroups": []}
+class Arch(FakeGH):
+    def __call__(self, *a, **kw):
+        if a[:3] == ("api", "-X", "DELETE"):
+            cid = a[3].rsplit("/", 1)[1]; cs = self.issues[205]["comments"]; before = len(cs)
+            cs[:] = [c for c in cs if not c.get("url", "").endswith("issuecomment-" + cid)]; self.deleted = getattr(self, "deleted", []) + [cid]
+            return (0, "") if len(cs) < before else (1, "404")
+        return super().__call__(*a, **kw)
+now = OQ._iso("2026-11-28T12:00:00Z")
+ga = Arch(); ga.issues[205] = {"title": OQ.TITLE, "comments": [dict(c) for c in (qa, ans, qb, qc, free)]}; ga.issues[64] = {"title": "x", "comments": []}
+OQ.STATE = tmp / "owner_q912c.json"; OQ._save({"issue": 205, "posted": [KA, KB, KC], "seen": 5}); OQ.GH = ga
+plan = OQ.archive_plan(ga.issues[205]["comments"], now)
+assert [p["key"] for p in plan] == [KA, KB] and [len(p["comments"]) for p in plan] == [2, 1], "answered (ANSWERED line or owner reaction) + old moves; open + the owner's free comment stay"
+r = OQ.archive(False, ga, now); assert r["moved"] == 0 and len(ga.issues[205]["comments"]) == 5 and not [i for i in ga.issues if i >= 900 and OQ.ARCH_TITLE in ga.issues[i]["title"]], "dry-run writes nothing"
+r = OQ.archive(True, ga, now)
+arch = [n for n, i in ga.issues.items() if i["title"].startswith(OQ.ARCH_TITLE)]
+assert r["moved"] == 3 and len(arch) == 1 and ga.issues[arch[0]]["title"] == OQ.ARCH_TITLE + "2026-09)" and "manual" in ga.issues[arch[0]]["args"] and not ga.issues[arch[0]].get("pinned")
+assert len(ga.issues[arch[0]]["comments"]) == 3 and [c["body"] for c in ga.issues[205]["comments"]] == [qc["body"], "thanks"], "the pinned issue keeps the open ones"
+st = OQ._state(); assert st["archives"] == arch and st["seen"] == 2 and st["posted"] == [KA, KB, KC] and st["issue"] == 205, st
+# a gate that points at the archived question still finds its answer reaction / ANSWERED line
+OQ.CACHE_TTL = 0
+assert OQ.question_comments(ga) is not None and any(KA in (c.get("body") or "") for c in OQ.question_comments(ga))
+OQ.archive(True, ga, now); assert len(ga.issues[arch[0]]["comments"]) == 3, "second run moves nothing again"
+# the reacted one moves later with its reaction kept as a marker the gate counts (only from the bot)
+moved_b = [c for c in ga.issues[arch[0]]["comments"] if KB in c["body"]]
+assert len(moved_b) == 1 and "archived-reaction:THUMBS_UP" in moved_b[0]["body"]
+moved_b[0]["author"] = {"login": "oren-study-bot"}
+assert OQ.gate(71, [], [moved_b[0]]) == ["reaction THUMBS_UP"], "the owner's reaction survives the move"
+# a copy that failed to post is never followed by a delete of the original
+gf = Arch(); gf.issues[205] = {"title": OQ.TITLE, "comments": [dict(qa), dict(ans)]}; OQ.STATE = tmp / "owner_q912d.json"; OQ._save({"issue": 205, "posted": []})
+_call = gf.__call__; gf.__class__ = type("F", (Arch,), {"__call__": lambda self, *a, **kw: (1, "fail") if a[:2] == ("issue", "comment") and a[2] != "205" else Arch.__call__(self, *a, **kw)})
+r = OQ.archive(True, gf, now); assert r["moved"] == 0 and len(gf.issues[205]["comments"]) == 2, "copy failed: originals stay"
+# watchdog tick: nothing moves until the owner's OK for the first move (archive --apply sets archive_ok)
+gt = Arch(); gt.issues[205] = {"title": OQ.TITLE, "comments": [dict(qa), dict(ans)]}; OQ.STATE = tmp / "owner_q912e.json"; OQ._save({"issue": 205, "posted": []})
+assert OQ.archive_tick(gt, now) is None and len(gt.issues[205]["comments"]) == 2
+s_ = OQ._state(); s_["archive_ok"] = True; OQ._save(s_); assert OQ.archive_tick(gt, now)["moved"] == 2
+print("ok owner_q #912 archive: dry-run, move keeps state + gate, reaction kept, never deletes without a copy")
+
+# the 'record queued' alarm waits for the configured minutes (default 10)
+assert OQ.ALARM_S == int(R.CFG.get("owner_q_alarm_min", 10)) * 60 == 600
+print("ok owner_q #912 alarm after owner_q_alarm_min")

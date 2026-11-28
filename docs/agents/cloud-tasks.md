@@ -4,12 +4,13 @@ The AI observer (#203) and the nightly retro (#219) run as Claude Code **cloud s
 never the paid API, never `claude -p` on the PC). Config: `ai_observer_where = "cloud"`, `retro_where = "cloud"`
 (`tools/runner/config.toml`; `"local"` = the old headless run on the PC). The PC watchdog only relays (no LLM there):
 - `ai_observer.relay`: every 5 min it reads the newest comment on the open issue labelled `ai-observer` ('AI observer (cloud)')
-  and sends new `OBSERVER:` lines to the orchestrator (6 h repeat filter, owner findings to #193). Silent 3 h -> one note.
+  and sends new `OBSERVER:` lines to the orchestrator (6 h repeat filter, never to the owner questions, #899). Silent 3 h -> one note.
 - `nightly.cloud_retro`: from `retro_hour` on it looks for the issue `Daily retro <date>` and writes the inspector handoff
   (`inspector_handoff`, outside the repo) and the ORCHESTRATOR.md handoff PR. None 2 h after `retro_hour` -> one note.
-- #525 (the triggers never ran, 27 Nov): no trigger-made observer comment for 3 h -> ONE owner note through `owner_q`
-  (also Telegram): 'cloud AI observer silent since HH:MM - log in again (/login) or check claude.ai/code -> Scheduled', at most
-  every 12 h. Until one trigger-made comment is seen, the watchdog itself starts the AI observer prompt below every hour as a
+- #525 (the triggers never ran, 27 Nov): no trigger-made observer comment for 3 h -> nothing for the owner when the reason is known
+  (governor week stop, the fallback ran). Else ONE owner to-do item (#895) and, until that list exists, a Telegram notice:
+  'cloud AI observer silent since HH:MM - log in again (/login) or check claude.ai/code -> Scheduled', at most every 24 h,
+  never through `owner_q` (#899). Until one trigger-made comment is seen, the watchdog itself starts the AI observer prompt below every hour as a
   cloud job (`remote.launch`, window `cloud-observer`, no runner lane), and the retro prompt once a day when no
   `Daily retro <date>` exists 2 h after `retro_hour` (window `cloud-retro`). A fallback run starts its comment / issue body
   with the line `<!-- fallback #525 -->`, so it never counts as proof that the trigger works.

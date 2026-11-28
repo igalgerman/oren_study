@@ -3,6 +3,7 @@ import os, tempfile; os.environ["RUNNER_RUNS"] = tempfile.mkdtemp(prefix="runs-t
 os.environ["OREN_TEST"] = "1"
 import json
 import trust as T, remote as r, tester as TS, runner as R, owner_q as OQ, conflicts as C, canary as CA, qwin as W, view as V, ai_observer as AO
+OQ.CACHE_TTL = 0   # #912: this suite reads fresh every time
 
 OWN, BOT, EVIL = "igalgerman", "oren-study-bot", "mallory"
 def c(body, who=EVIL, at="2026-11-28T12:00:00Z", rest=False):

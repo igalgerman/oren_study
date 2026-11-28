@@ -351,6 +351,12 @@ def qwin_tick(ts):
     except Exception: BO.failed("qwin", alert=tell); raise
     (BO.failed if qwin.OPEN_FAILS[0] > before else BO.ok)("qwin", alert=tell)   # 'could not open' counts as a failure
 
+def console_tick():
+    """#872: mirror owner questions/notices to the console (D1); shadow unless console_answers = true."""
+    if not BO.due("console"): return
+    import console_mirror; importlib.reload(console_mirror)
+    (BO.failed if console_mirror.tick() else BO.ok)("console", alert=tell)
+
 def resume_tick():
     for n in R.resume_answered(): log(f"#{n}: owner answered the cloud question -> unparked, the next pass resumes its session (#135)")
 
@@ -686,6 +692,7 @@ def tick():
         step("check_windows", check_windows, ts)
         step("answers_tick", OQ.answers_tick, tell)
         step("qwin_tick", qwin_tick, ts)
+        step("console_tick", console_tick)
         step("resume_tick", resume_tick)
         step("check_lanes", check_lanes, ts)
         step("check_intake", check_intake, ts)
